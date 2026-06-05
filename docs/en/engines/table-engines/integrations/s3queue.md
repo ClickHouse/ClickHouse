@@ -172,6 +172,16 @@ Possible values:
 
 Default value: empty string.
 
+### `after_processing_move_preserve_path` {#after_processing_move_preserve_path}
+
+If `true`, the full source object path is appended to `after_processing_move_prefix` when moving a successfully processed file, so the source directory structure under the bucket is preserved at the destination. If `false`, only the file name is used and the source directory structure is flattened.
+
+Possible values:
+
+- `true` / `false`.
+
+Default value: `false`.
+
 ### `after_processing_move_secret_access_key` {#after_processing_move_secret_access_key}
 
 Secret Access Key for S3 bucket to move successfully processed files to, if the destination is another S3 bucket.
