@@ -85,7 +85,7 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
             continue;
         }
 
-        bool make_nullable;
+        bool make_nullable = false;
         if (make_columns_nullable == 0)
             make_nullable = false;
         else if (make_columns_nullable == 1)

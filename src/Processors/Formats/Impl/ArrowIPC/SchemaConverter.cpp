@@ -311,7 +311,8 @@ buildField(
     flatbuffers::Offset<void> type_offset;
     std::vector<flatbuffers::Offset<flatbuf::Field>> children;
 
-    auto make_int = [&](int bits, bool is_signed) {
+    auto make_int = [&](int bits, bool is_signed)
+    {
         type_type = flatbuf::Type_Int;
         type_offset = flatbuf::CreateInt(b, bits, is_signed).Union();
     };

@@ -38,7 +38,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int NOT_IMPLEMENTED;
     extern const int THERE_IS_NO_COLUMN;
     extern const int DUPLICATE_COLUMN;
 }
