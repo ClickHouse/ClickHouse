@@ -420,21 +420,12 @@ std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const Str
 
     const bool has_role_mapping = !role_search_params.empty();
 
-    /// If an entry already exists in memory but was materialized through a path
-    /// that did not resolve role mapping, refresh it via the service-bind lookup.
-    ///
-    /// The trigger for this is the interserver `<secret>` path in distributed
-    /// `EXECUTE AS`: the originating shard fans out to other shards under
-    /// `AlwaysAllowCredentials{initial_user}`, which short-circuits in
-    /// `areLDAPCredentialsValidNoLock` and stores the user with an empty
-    /// `external_roles`. A subsequent local `EXECUTE AS <same user>` on that
-    /// shard would otherwise hit the cached entry and run with only the common
-    /// roles (mapped roles silently dropped). The signal that a cached entry
-    /// is incomplete is that `users_external_roles[name]` does not have one
-    /// entry per configured `role_search_params`. A real LDAP login leaves a
-    /// per-search-params entry behind even when the user has no group
-    /// memberships (the inner set is empty), so this distinguishes
-    /// "AlwaysAllow short-circuit" from "user is in no `clickhouse-*` group".
+    /// An entry may exist in memory yet have been materialized without resolving role
+    /// mapping -- notably the interserver `AlwaysAllowCredentials` path in distributed
+    /// `EXECUTE AS`, which caches the user with empty `external_roles`. Such incomplete
+    /// entries have fewer `users_external_roles[name]` entries than `role_search_params`
+    /// (a real login always leaves one per search param, even if empty); refresh them
+    /// via the service bind.
     if (id && has_role_mapping)
     {
         const auto eit = users_external_roles.find(name);

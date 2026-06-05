@@ -71,12 +71,9 @@ private:
 
     mutable std::mutex mutex;
     LDAPParams ldap_client_params_blueprint TSA_GUARDED_BY(mutex) ;
-    /// Names of LDAP servers that were declared in the config but failed to parse,
-    /// together with the error message produced by `parseLDAPServer`. Consulted by
-    /// `findLDAPUser` so a misconfigured server surfaces as a query-time error
-    /// instead of silently degrading to `UNKNOWN_USER` for `EXECUTE AS`. Cleared
-    /// on every `setConfiguration` call so that a `SYSTEM RELOAD CONFIG` that
-    /// fixes the misconfiguration drops the error.
+    /// LDAP servers declared in config but rejected by `parseLDAPServer`, with the error.
+    /// `findLDAPUser` rethrows it so a misconfigured server fails loud at query time
+    /// instead of degrading to `UNKNOWN_USER`. Rebuilt on every `setConfiguration`.
     LDAPParseErrors ldap_server_parse_errors TSA_GUARDED_BY(mutex) ;
     mutable LDAPCaches ldap_caches TSA_GUARDED_BY(mutex) ;
     std::optional<GSSAcceptorContext::Params> kerberos_params TSA_GUARDED_BY(mutex) ;

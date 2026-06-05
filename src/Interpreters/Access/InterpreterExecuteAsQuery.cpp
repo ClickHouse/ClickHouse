@@ -22,40 +22,18 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Resolves the target user name to a UUID.
+    /// Resolves the target user name to a UUID, preserving the pre-PR `getID<User>`
+    /// storage precedence: the first storage in `user_directories` order that has the
+    /// name cached in memory wins (including an LDAP storage ordered before `users_xml`).
     ///
-    /// Two-pass lookup so that the existing storage precedence is preserved:
+    ///   1. In-memory `find<User>`. If it hits an LDAP-owned entry, run the forced
+    ///      lookup to refresh possibly-stale role mapping (see `LDAPAccessStorage::findImpl`).
+    ///   2. On a miss, `force_external_lookup=true` lets `LDAPAccessStorage` service-bind
+    ///      the directory to resolve users not yet cached here. No-op for other storages.
+    ///   3. Still nothing -> `getID` for the canonical `UNKNOWN_USER` error.
     ///
-    ///   1. A normal `find<User>(name)` first. This walks all configured storages in
-    ///      `user_directories` order and returns the first storage whose in-memory
-    ///      state has a user of that name. The same precedence the pre-PR
-    ///      `getID<User>` path had: the first storage in order wins. So if the LDAP
-    ///      storage is ordered before `users_xml`, and the LDAP storage has already
-    ///      cached the name (e.g. via a prior LDAP login on this server), the LDAP
-    ///      entry wins. The two-pass logic does NOT make a local user win
-    ///      regardless of `user_directories` order; what it prevents is the forced
-    ///      LDAP lookup from materializing an LDAP entry on a global normal-lookup
-    ///      miss, which would shadow a local user that would otherwise have won.
-    ///   2. If pass 1 hit an entry in an LDAP storage, ask the LDAP storage to
-    ///      refresh it via the service-bind lookup. This catches the cache-poisoning
-    ///      scenario in distributed `EXECUTE AS` with interserver `<secret>`: the
-    ///      originating shard fans out under `AlwaysAllowCredentials{initial_user}`,
-    ///      which short-circuits in `LDAPAccessStorage::areLDAPCredentialsValidNoLock`
-    ///      and materializes the user with empty `external_roles`. A subsequent
-    ///      local `EXECUTE AS <same user>` would otherwise inherit only the common
-    ///      roles. `LDAPAccessStorage::findImpl(name, force_external_lookup=true)`
-    ///      detects an entry whose `users_external_roles[name]` is missing entries
-    ///      for configured `role_search_params` and refreshes it via the service
-    ///      bind. For non-LDAP storages, the forced lookup is a no-op (returns the
-    ///      same id), so we only take this branch for an LDAP-owned id.
-    ///   3. If pass 1 missed, retry with `force_external_lookup=true`. That lets
-    ///      `LDAPAccessStorage` resolve names that are not yet in its in-memory
-    ///      cache by querying the upstream directory with the configured
-    ///      service-bind credentials. This covers users provisioned in LDAP who
-    ///      have not yet authenticated against this server since the last restart.
-    ///
-    /// If both passes miss, fall through to `getID` so the caller sees the canonical
-    /// `UNKNOWN_USER` error message.
+    /// The two-pass logic does NOT override storage order; it only stops the forced
+    /// lookup from materializing an LDAP entry that would shadow a local user on a miss.
     UUID resolveImpersonationTargetUser(const ContextPtr & context, const String & target_user_name)
     {
         const auto & access_control = context->getAccessControl();
