@@ -349,20 +349,26 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking, bool check_
 
     while (waitpid_retcode < 0)
     {
-        /// `wait4` behaves like `waitpid` for our purposes — same pid/status/options
-        /// and EINTR semantics — and additionally fills `rusage` atomically when the
-        /// child is reaped, giving accurate per-child CPU and memory without a
-        /// separate procfs walk.
-        waitpid_retcode = wait4(pid, &status, options, &local_rusage);
+        /// Reap the child. Only the resource-accounting path (executable UDFs,
+        /// `Config::collect_resource_usage`) needs per-child `rusage`, so it uses
+        /// `wait4` — which is `waitpid` plus an `rusage` out-parameter, with
+        /// identical pid/status/options/EINTR semantics. Every other consumer
+        /// keeps plain `waitpid` and allocates nothing.
+        if (config.collect_resource_usage)
+            waitpid_retcode = wait4(pid, &status, options, &local_rusage);
+        else
+            waitpid_retcode = waitpid(pid, &status, options);
         if (waitpid_retcode > 0)
         {
-            /// The child is reaped. Record that before any throwing work (the
-            /// allocation below): if it threw with `wait_called` still false, the
-            /// destructor would route this already-reaped — and possibly pid-reused —
-            /// child through `waitForPid` and SIGTERM.
+            /// A reaped pid may be reused immediately, so `wait_called` must be set the
+            /// moment the child is reaped — before any operation that can throw — so the
+            /// destructor never waits on or signals an unrelated process.
             wait_called = true;
-            last_resource_usage = std::make_unique<LastChildResourceUsage>();
-            last_resource_usage->rusage = local_rusage;
+            if (config.collect_resource_usage)
+            {
+                last_resource_usage = std::make_unique<LastChildResourceUsage>();
+                last_resource_usage->rusage = local_rusage;
+            }
             break;
         }
         if (!blocking && !waitpid_retcode)

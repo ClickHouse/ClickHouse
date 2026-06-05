@@ -561,20 +561,18 @@ namespace
                 }
             }
 
-            /// Executable (non-pool) path: `wait4` populated the child rusage when it
-            /// exited (see `ShellCommand::tryWaitImpl`). With `check_exit_code=true`,
-            /// `prepare` already reaped via `command->wait`, so `isWaitCalled()` is true
-            /// and we just read the captured usage. With `check_exit_code=false` the source
-            /// deliberately does NOT wait for the child, so this reap stays NON-BLOCKING:
-            /// a WNOHANG reap harvests rusage when the child has already exited, otherwise
-            /// we skip accounting and let `~ShellCommand` apply its bounded
-            /// command_termination_timeout + SIGTERM teardown. Blocking here would turn a
-            /// bounded cleanup into a query hang for a UDF that closes stdout but lingers.
-            ///
-            /// Exit-status validation is intentionally skipped here: a `check_exit_code=false`
-            /// UDF that exits non-zero must not produce a spurious `CHILD_WAS_NOT_EXITED_NORMALLY`
-            /// log entry. The surrounding `try/catch` now only guards a genuine `wait4` or
-            /// allocation failure, not exit-status decoding.
+            /// Executable (non-pool) path: account the child's `rusage`, which
+            /// `ShellCommand::tryWaitImpl` captures via `wait4`. Under `check_exit_code=true`
+            /// `prepare` has already reaped the child (`isWaitCalled()`), so the usage is
+            /// just read back. Under `check_exit_code=false` the source does not wait for
+            /// the child, so it is reaped here — non-blocking and without status validation:
+            ///   * non-blocking: a child that closed stdout but keeps running is left to
+            ///     `~ShellCommand`'s bounded `command_termination_timeout` + SIGTERM
+            ///     teardown, so enabling profiling cannot turn cleanup into a query hang;
+            ///   * no status check: a non-zero exit is not an error under
+            ///     `check_exit_code=false`, so it must not raise CHILD_WAS_NOT_EXITED_NORMALLY.
+            /// Usage is recorded only if the child has already exited; the `try/catch`
+            /// guards a genuine `wait4` failure.
             if (configuration.sampler && command && !process_pool)
             {
                 if (!command->isWaitCalled())
@@ -852,6 +850,11 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     }
     else
     {
+        /// Only executable (non-pool) UDFs collect child rusage via `wait4`; the
+        /// attached sampler is that signal. Pool workers (which meter via /proc)
+        /// and non-UDF consumers (StorageExecutable, dictionaries, bridges) keep
+        /// plain `waitpid`.
+        command_config.collect_resource_usage = (source_configuration.sampler != nullptr);
         if (configuration.execute_direct)
             process = ShellCommand::executeDirect(command_config);
         else
