@@ -28,7 +28,7 @@ public:
     size_t getGroupOffset() const { return group_offset; }
     const Names & getColumns() const { return columns; }
 
-    void applyOrder(SortDescription sort_desc);
+    void applyOrder(bool in_order_) { in_order = in_order_; }
 
     /// Skip the resize-to-one-stream and run one `LimitByTransform` per input stream.
     /// Set by `optimizeLimitByPerPartition`; assumes upstream streams carry disjoint
