@@ -52,9 +52,9 @@ void SnappyWriteBuffer::writeCompressedChunk(const char * data, size_t size)
     /// Compute masked CRC-32C of the uncompressed data.
     uint32_t crc = maskedCrc32c(data, size);
 
-    uint8_t chunk_type;
-    const char * payload;
-    size_t payload_size;
+    uint8_t chunk_type = 0;
+    const char * payload = nullptr;
+    size_t payload_size = 0;
 
     if (compressed_size < size)
     {
