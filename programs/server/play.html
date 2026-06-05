@@ -193,6 +193,20 @@
             overflow-y: clip;
         }
 
+        /* When the databases list is expanded, lay out the bottom icons (Web
+           Terminal, GitHub) side by side instead of stacked, so the list of
+           databases/tables gets more vertical space. */
+        #menu.databases-opened
+        {
+            grid-template-columns: auto 1fr;
+            grid-template-areas: "databases-icon databases-icon" "contents contents" "terminal-icon github-icon";
+        }
+
+        #menu.databases-opened #github-icon
+        {
+            justify-self: start;
+        }
+
         #main
         {
             overflow: auto;
@@ -2695,11 +2709,13 @@ function toggleDatabases() {
             if (ok !== false) {
                 databases_toggle.dataset['opened'] = 1;
                 menu_elem.style.cursor = 'w-resize';
+                menu_elem.classList.add('databases-opened');
             }
         });
     } else {
         delete databases_toggle.dataset['opened'];
         menu_elem.style.cursor = 'e-resize';
+        menu_elem.classList.remove('databases-opened');
         let databases_elem = document.getElementById('databases');
         while (databases_elem.firstChild) databases_elem.removeChild(databases_elem.firstChild);
     }
@@ -3642,6 +3658,23 @@ function appendTextareaResizer() {
     queryDiv.appendChild(resizer);
 }
 
+function resizeQueryAreaIfSlightlyOverflowing()
+{
+    const textarea = document.getElementById('query');
+    const current_height = textarea.offsetHeight;
+    if (!current_height) { return; }
+
+    const style = window.getComputedStyle(textarea);
+    const vertical_border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+    const required_height = textarea.scrollHeight + vertical_border;
+    const max_auto_resize_height = current_height * 1.3;
+
+    if (required_height > current_height && required_height <= max_auto_resize_height)
+    {
+        textarea.style.height = `${required_height}px`;
+    }
+}
+
 let lexer_module;
 async function loadLexer() {
     // base64 -w0 build/src/Parsers/Lexer.wasm
@@ -4282,6 +4315,8 @@ async function updateQueryParams()
 
 query_area.addEventListener('input', () =>
 {
+    resizeQueryAreaIfSlightlyOverflowing();
+
     /// Run the update synchronously instead of with a setTimeout: the heavy work
     /// (WASM tokenize, building backdrop HTML) is fast, and the await chain inside
     /// `updateQueryParams` runs in microtasks — i.e. it finishes before the browser
@@ -4327,6 +4362,7 @@ if (theme) {
 /// If run_immediately is set, run the query after params are ready.
 if (query_area.value)
 {
+    resizeQueryAreaIfSlightlyOverflowing();
     updateQueryParams().then(() =>
     {
         const urlParamValues = {};
