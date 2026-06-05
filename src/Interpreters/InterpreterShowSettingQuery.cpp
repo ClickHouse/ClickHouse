@@ -34,6 +34,7 @@ BlockIO InterpreterShowSettingQuery::execute()
     return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
 }
 
+void registerInterpreterShowSettingQuery(InterpreterFactory & factory);
 void registerInterpreterShowSettingQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
