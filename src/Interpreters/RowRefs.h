@@ -19,13 +19,19 @@ class ColumnReplicated;
 struct ColumnAccessIndex
 {
     enum Type : uint8_t { Columns, RowStore };
+
+    ColumnAccessIndex(Type type_, size_t index_, size_t field_offset_ = 0, size_t field_size_ = 0, bool is_nullable_ = false)
+        : type(type_), index(index_), field_offset(field_offset_), field_size(field_size_), is_nullable(is_nullable_)
+    {
+    }
+
     Type type;
     size_t index;
 
     /// Valid only when type is RowStore.
-    size_t field_offset = 0;
-    size_t field_size = 0;
-    bool is_nullable = false;
+    size_t field_offset;
+    size_t field_size;
+    bool is_nullable;
 
     bool operator==(const ColumnAccessIndex &) const = default;
 };
