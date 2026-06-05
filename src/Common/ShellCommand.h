@@ -73,9 +73,8 @@ public:
 
         /// When true, `tryWaitImpl` reaps with `wait4` and captures the child's
         /// `rusage` (read back via `getLastChild*`/`wasChildReaped`). When false
-        /// (the default), it reaps with plain `waitpid` and allocates nothing —
-        /// so non-UDF consumers are unaffected. Set only on the executable
-        /// (non-pool) UDF path.
+        /// (the default) it reaps with plain `waitpid` and allocates nothing.
+        /// Set for executable (non-pool) UDFs, which read the usage.
         bool collect_resource_usage = false;
     };
 

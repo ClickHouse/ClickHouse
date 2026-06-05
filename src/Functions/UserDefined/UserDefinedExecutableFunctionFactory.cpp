@@ -251,8 +251,8 @@ public:
             ShellCommandSourceConfiguration shell_command_source_configuration;
 
             /// Count every executeImpl call — both pool and executable paths — even those
-            /// that fail before the child is ready. Resource counters below only fire when
-            /// the child actually ran and was observed.
+            /// that fail before the child is ready. The other resource counters are
+            /// emitted only when the child actually ran and was observed.
             ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInvocations);
 
             std::shared_ptr<UDFProcessSubtreeSampler> sampler = std::make_shared<UDFProcessSubtreeSampler>();
