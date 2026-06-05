@@ -14,7 +14,8 @@ ORDER BY id
 SETTINGS
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
-    auto_statistics_types = 'uniq,minmax';
+    auto_statistics_types = 'uniq,minmax',
+    merge_max_block_size = 8192; -- prevent extreme per-block values injected by the test harness from making the merge time out
 
 SYSTEM STOP MERGES test_table;
 
