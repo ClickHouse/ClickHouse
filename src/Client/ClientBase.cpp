@@ -1969,12 +1969,12 @@ bool isStdinDataAvailableNonBlocking(ReadBuffer & std_in, int fd)
     if (std_in.hasPendingData())
         return true;
 
-    struct pollfd pfd;
+    struct pollfd pfd{};
     pfd.fd = fd;
     pfd.events = POLLIN;
     pfd.revents = 0;
 
-    int ret;
+    int ret = 0;
     do
     {
         ret = poll(&pfd, 1, 0);
