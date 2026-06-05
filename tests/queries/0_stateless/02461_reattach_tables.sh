@@ -70,11 +70,20 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_1"
 ${CLICKHOUSE_CLIENT} --reattach_tables_before_query_execution=1 -q "SELECT number FROM system.numbers LIMIT 1"
 ${CLICKHOUSE_CLIENT} --reattach_tables_before_query_execution=1 -q "SELECT number FROM system.numbers LIMIT 1"
 
-# CTE name should not match a real table with the same name.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_cte"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_cte (a UInt64) ENGINE = MergeTree ORDER BY a"
-check_if_not_detached "WITH (SELECT 1) AS t_reattach_cte SELECT * FROM t_reattach_cte" "t_reattach_cte"
+
+# A real CTE (WITH name AS (subquery)) shadows a table with the same name, so the table is not used.
+check_if_not_detached "WITH t_reattach_cte AS (SELECT 1) SELECT * FROM t_reattach_cte" "t_reattach_cte"
+
+# A scalar WITH alias does NOT shadow a table name in FROM: `WITH (SELECT 1) AS t_reattach_cte SELECT * FROM
+# t_reattach_cte` reads the real table, so it is detached.
+check_if_detached "WITH (SELECT 1) AS t_reattach_cte SELECT * FROM t_reattach_cte" "t_reattach_cte"
+
+# A CTE's own definition body may reference a real table with the same name (only the CTE currently being
+# resolved is hidden), so the real table is read inside the body and detached.
+check_if_detached "WITH t_reattach_cte AS (SELECT * FROM t_reattach_cte) SELECT * FROM t_reattach_cte" "t_reattach_cte"
 
 # A CTE defined only in a nested subquery must NOT shadow the same name in an outer FROM clause.
-check_if_detached "SELECT * FROM t_reattach_cte WHERE a IN (WITH (SELECT 1) AS t_reattach_cte SELECT t_reattach_cte)" "t_reattach_cte"
+check_if_detached "SELECT * FROM t_reattach_cte WHERE a IN (WITH t_reattach_cte AS (SELECT 1) SELECT * FROM t_reattach_cte)" "t_reattach_cte"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_cte"
