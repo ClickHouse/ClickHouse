@@ -251,26 +251,31 @@ namespace
 using ReadType = CachedOnDiskReadBufferFromFile::ReadType;
 using ReadInfo = CachedOnDiskReadBufferFromFile::ReadInfo;
 
-/// Fetch the remote object's last modification time for diagnostics, alongside its size: a recent
-/// timestamp confirms the object was overwritten between listing and reading. Best-effort -- a
-/// failed metadata request must never mask the diagnostic we are building, so fall back to "None".
-String getRemoteFileLastModifiedForLog(ReadBufferFromFileBase & buf)
+/// Format the remote object's last modification time for diagnostics, alongside its size: a recent
+/// timestamp confirms the object was overwritten between listing and reading. Returns "None" when the
+/// metadata is unavailable (e.g. a non-remote buffer).
+String formatRemoteFileLastModified(const std::optional<RemoteFileMetadata> & metadata)
 {
-    std::optional<time_t> last_modified;
-    try
-    {
-        last_modified = buf.getRemoteFileLastModificationTime();
-    }
-    catch (...) // NOLINT(bugprone-empty-catch)
-    {
-    }
-
-    if (!last_modified.has_value())
+    if (!metadata.has_value())
         return "None";
 
     WriteBufferFromOwnString out;
-    writeDateTimeText(*last_modified, out);
-    return fmt::format("{} (unix time {})", out.str(), *last_modified);
+    writeDateTimeText(metadata->last_modification_time, out);
+    return fmt::format("{} (unix time {})", out.str(), metadata->last_modification_time);
+}
+
+/// Best-effort metadata lookup for log-only diagnostics: a failed metadata request must never mask
+/// the message being built, so fall back to std::nullopt (rendered as "None").
+std::optional<RemoteFileMetadata> tryGetRemoteFileMetadata(ReadBufferFromFileBase & buf)
+{
+    try
+    {
+        return buf.getRemoteFileMetadata();
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        return std::nullopt;
+    }
 }
 
 std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
@@ -817,16 +822,17 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                 if (state.bytes_to_predownload)
                 {
                     /// The remote object may have been overwritten with shorter content
-                    /// between listing and reading. Check the actual remote file size to
-                    /// distinguish that from a genuine logic error.
-                    auto object_size = state.buf->getRemoteFileSize();
-                    if (object_size.has_value()
-                        && *object_size == file_segment.getCurrentWriteOffset())
+                    /// between listing and reading. Check the actual remote file metadata (size and
+                    /// last modification time, fetched in a single request) to distinguish that from
+                    /// a genuine logic error.
+                    const auto remote_metadata = state.buf->getRemoteFileMetadata();
+                    if (remote_metadata.has_value()
+                        && remote_metadata->size == file_segment.getCurrentWriteOffset())
                     {
                         /// We reached the real end of the (now shorter) object while
                         /// predownloading, before reaching the bytes the reader actually
                         /// needs: those lie beyond the truncated object, because
-                        /// offset == current_write_offset + bytes_to_predownload > *object_size.
+                        /// offset == current_write_offset + bytes_to_predownload > remote_metadata->size.
                         ///
                         /// There is no valid data to return for `offset`. We must NOT treat
                         /// this as EOF (return a short/zero read): the caller would then
@@ -840,8 +846,8 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                             "Remote object was truncated between listing and reading: "
                             "actual object size {}, last modified {}, but need to read until offset {}. "
                             "Current file segment: {}",
-                            *object_size,
-                            getRemoteFileLastModifiedForLog(*state.buf),
+                            remote_metadata->size,
+                            formatRemoteFileLastModified(remote_metadata),
                             offset,
                             file_segment.getInfoForLog());
                     }
@@ -857,8 +863,8 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                         offset,
                         state.buf->eof(),
                         state.buf->internalBuffer().size(),
-                        object_size ? std::to_string(*object_size) : "None",
-                        getRemoteFileLastModifiedForLog(*state.buf));
+                        remote_metadata ? std::to_string(remote_metadata->size) : "None",
+                        formatRemoteFileLastModified(remote_metadata));
                 }
 
                 chassert(!state.buf->hasPendingData());
@@ -1430,12 +1436,12 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         else
             download_finished_time = "None";
 
-        std::optional<size_t> object_size;
+        std::optional<RemoteFileMetadata> remote_metadata;
         std::optional<size_t> impl_read_until_position;
         std::optional<std::string> impl_read_stop_reason;
         if (state.read_type != ReadType::CACHED)
         {
-            object_size = state.buf->getRemoteFileSize();
+            remote_metadata = state.buf->getRemoteFileMetadata();
 
 #if USE_AWS_S3
             if (const auto * s3_buf = dynamic_cast<const ReadBufferFromS3 *>(state.buf.get()))
@@ -1446,7 +1452,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
 #endif
         }
 
-        if (object_size.has_value() && *object_size == offset)
+        if (remote_metadata.has_value() && remote_metadata->size == offset)
         {
             /// The remote object is smaller than file_size_ indicated, e.g. the object was
             /// overwritten with shorter content between listing and reading.
@@ -1455,7 +1461,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
                 log,
                 "Remote object is smaller than expected: read {} bytes but expected to read until position {}. "
                 "Actual object size: {}, last modified: {}, expected size: {}, stop reason: {}. Treating as EOF.",
-                offset, info.read_until_position, *object_size, getRemoteFileLastModifiedForLog(*state.buf), file_size_,
+                offset, info.read_until_position, remote_metadata->size, formatRemoteFileLastModified(remote_metadata), file_size_,
                 impl_read_stop_reason ? *impl_read_stop_reason : "None");
             if (file_segment.isDownloader())
                 file_segment.setDownloadFinishedWithoutContinuation();
@@ -1487,8 +1493,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             "current file segment: {}",
             offset + size,
             size,
-            object_size ? std::to_string(*object_size) : "None",
-            getRemoteFileLastModifiedForLog(*state.buf),
+            remote_metadata ? std::to_string(remote_metadata->size) : "None",
+            formatRemoteFileLastModified(remote_metadata),
             file_size_,
             info.read_until_position,
             toString(state.read_type),
@@ -1657,7 +1663,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
                     "Read {} bytes instead of requested {}. Offset: {}, read_until_position: {}, "
                     "remote object last modified: {}",
                     read_bytes, n, offset, current_info.read_until_position,
-                    getRemoteFileLastModifiedForLog(*current_state->buf));
+                    formatRemoteFileLastModified(tryGetRemoteFileMetadata(*current_state->buf)));
                 break;
             }
 

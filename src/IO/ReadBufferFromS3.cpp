@@ -429,14 +429,10 @@ size_t ReadBufferFromS3::getObjectSizeFromS3() const
     return S3::getObjectSize(*client_ptr, bucket, key, version_id);
 }
 
-std::optional<size_t> ReadBufferFromS3::getRemoteFileSize() const
+std::optional<RemoteFileMetadata> ReadBufferFromS3::getRemoteFileMetadata() const
 {
-    return getObjectSizeFromS3();
-}
-
-std::optional<time_t> ReadBufferFromS3::getRemoteFileLastModificationTime() const
-{
-    return S3::getObjectInfo(*client_ptr, bucket, key, version_id).last_modification_time;
+    const auto object_info = S3::getObjectInfo(*client_ptr, bucket, key, version_id);
+    return RemoteFileMetadata{.size = object_info.size, .last_modification_time = object_info.last_modification_time};
 }
 
 off_t ReadBufferFromS3::getPosition()

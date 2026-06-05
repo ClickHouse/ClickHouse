@@ -53,9 +53,7 @@ public:
 
     std::optional<size_t> tryGetFileSize() override;
 
-    std::optional<size_t> getRemoteFileSize() const override;
-
-    std::optional<time_t> getRemoteFileLastModificationTime() const override;
+    std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
 
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
