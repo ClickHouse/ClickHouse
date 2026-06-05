@@ -280,6 +280,25 @@
         <password></password>
     </interserver_http_credentials>-->
 
+    <!-- Multi-stage distributed query execution (experimental, enabled per query with the
+         `make_distributed_plan` setting). When a query uses streaming exchanges, workers connect
+         directly to each other on this port to pass intermediate results.
+
+         Security: the streaming exchange handshake is NOT authenticated. The port must be treated
+         like the interserver port: reachable only from trusted ClickHouse nodes in the same cluster,
+         never from untrusted networks. For that reason the listener is started only when an explicit
+         `streaming_exchange_listen_host` is configured; setting only the port logs an error and does
+         not start the listener. Bind it to a private interface and protect it with a firewall.
+         Exchanges are keyed by a random per-query identifier, which makes blind injection into a
+         running query impractical, but this is defense in depth, not an access-control mechanism.
+      -->
+    <!--
+    <distributed_query>
+        <streaming_exchange_port>9223</streaming_exchange_port>
+        <streaming_exchange_listen_host>127.0.0.1</streaming_exchange_listen_host>
+    </distributed_query>
+    -->
+
     <!-- Listen specified address.
          Use :: (wildcard IPv6 address), if you want to accept connections both with IPv4 and IPv6 from everywhere.
          Notes:
