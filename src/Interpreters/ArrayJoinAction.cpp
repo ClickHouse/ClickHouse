@@ -27,7 +27,8 @@ namespace ErrorCodes
 
 std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type)
 {
-    type = removeNullable(type);
+    if (type->isNullable())
+        return nullptr;
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         return std::shared_ptr<const DataTypeArray>{type, array_type};
@@ -43,8 +44,6 @@ std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type)
 static ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
 {
     ColumnPtr unwrapped_column = column;
-    if (const auto * nullable = typeid_cast<const ColumnNullable *>(unwrapped_column.get()))
-        unwrapped_column = nullable->getNestedColumnPtr();
 
     if (typeid_cast<const ColumnArray *>(unwrapped_column.get()))
         return unwrapped_column;

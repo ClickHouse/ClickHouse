@@ -174,10 +174,10 @@ SELECT throwIf(NOT isNull(arrayReduceInRanges(
     CAST(NULL AS Nullable(Array(Int32))))))
 FORMAT Null;
 
-DROP TABLE IF EXISTS nullable_array_join_more_functions;
-CREATE TABLE nullable_array_join_more_functions (a Nullable(Array(Int32))) ENGINE = Memory;
-INSERT INTO nullable_array_join_more_functions VALUES (NULL), ([]), ([1, 2]);
-SELECT throwIf(count() != 2) FROM (SELECT arrayJoin(a) FROM nullable_array_join_more_functions) FORMAT Null;
-DROP TABLE nullable_array_join_more_functions;
+SELECT arrayJoin(CAST([1, 2] AS Nullable(Array(Int32)))); -- { serverError TYPE_MISMATCH }
+
+SELECT x
+FROM (SELECT CAST(NULL AS Nullable(Array(UInt8))) AS a)
+LEFT ARRAY JOIN a AS x; -- { serverError TYPE_MISMATCH }
 
 SELECT 'ok';
