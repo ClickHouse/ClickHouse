@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: requires ICU for collation support.
+
 -- In-order optimizations (DISTINCT in order, LIMIT BY in order) must not be applied across a sort
 -- that uses a collator: it orders rows by collation key, not by value, so equal values are not
 -- adjacent (e.g. 'a' and 'A' under a case-insensitive collation), which these optimizations rely on.
