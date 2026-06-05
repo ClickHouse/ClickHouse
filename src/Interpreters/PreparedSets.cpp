@@ -465,9 +465,11 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// the in-place optimization (and primary key analysis) for plans without clone support, at
     /// the cost of not being able to recover from a silent in-place build failure for those plans.
     std::unique_ptr<QueryPlan> plan;
+    bool source_preserved = false;
     try
     {
         plan = std::make_unique<QueryPlan>(source->clone());
+        source_preserved = true;
     }
     catch (const Exception & e)
     {
@@ -476,11 +478,20 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         plan = std::move(source);
     }
 
+    /// When the source plan was cloned, `source` is preserved and a silent in-place failure can be
+    /// recovered by a deferred build in `DelayedCreatingSetsStep::makePlansForSets`. In that case do
+    /// not share this speculative build through `PreparedSetsCache`: if the in-place pipeline stops
+    /// silently (e.g. subquery timeout with `overflow_mode = 'break'`, or the failpoint that skips
+    /// `finishInsert`), the `CreatingSetsTransform` destructor would store an exception into the
+    /// cache for this key, and the later deferred build would rethrow it via `shared_future::get`
+    /// instead of rebuilding from the preserved `source`. The deferred build still uses the cache.
+    /// When the source was consumed (non-clonable fallback), there is no deferred build, so the
+    /// original cache behavior is preserved.
     auto creating_set = std::make_unique<CreatingSetStep>(
         plan->getCurrentHeader(),
         set_and_key,
         network_transfer_limits,
-        prepared_sets_cache);
+        source_preserved ? nullptr : prepared_sets_cache);
     creating_set->setStepDescription("Create set for subquery");
     plan->addStep(std::move(creating_set));
 

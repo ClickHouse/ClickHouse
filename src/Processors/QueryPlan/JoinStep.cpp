@@ -340,10 +340,18 @@ QueryPlanStepPtr JoinStep::clone() const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone is not supported for {}", join->getName());
 
     auto cloned = std::make_unique<JoinStep>(*this);
+
+    /// When `swap_streams` is set (e.g. after `optimizeJoinLegacy`), the underlying `IJoin` was
+    /// built with reversed sample blocks: the optimizer calls `join->clone(table_join, right_header,
+    /// left_header)` and `updatePipeline` swaps the child pipelines before execution. Reproduce the
+    /// same post-swap header order here, otherwise the cloned join would be rebuilt with the original
+    /// (unswapped) header order and execute against metadata for the wrong build side.
+    const auto & left_sample_header = swap_streams ? input_headers[1] : input_headers[0];
+    const auto & right_sample_header = swap_streams ? input_headers[0] : input_headers[1];
     cloned->join = join->clone(
         std::make_shared<TableJoin>(join->getTableJoin()),
-        input_headers[0],
-        input_headers[1]);
+        left_sample_header,
+        right_sample_header);
     if (keep_left_read_in_order)
         cloned->join->keepLeftPipelineInOrder();
     cloned->join_algorithm_header.reset();
