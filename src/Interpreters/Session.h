@@ -111,6 +111,7 @@ private:
     LoggerPtr getAuditLoggerIfEnabled() const;
 
     mutable bool notified_session_log_about_login = false;
+    mutable bool notified_about_login_failure = false;
     const UUID auth_id;
     const ContextPtr global_context;
 

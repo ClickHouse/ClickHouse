@@ -25,6 +25,11 @@ node_user_dcl = cluster.add_instance(
     main_configs=["configs/logger_audit_user_dcl.xml"],
     stay_alive=True,
 )
+node_mysql_ssl_required = cluster.add_instance(
+    "node_audit_mysql_ssl_required",
+    main_configs=["configs/logger_audit_mysql_ssl_required.xml"],
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -110,9 +115,9 @@ def test_audit_log_object_names(start_cluster):
     node_dml_misc.query("CREATE TABLE test.t_audit(a int) ENGINE=Memory")
     node_dml_misc.query("INSERT INTO test.t_audit VALUES (0),(1),(2)")
 
-    assert_audit_log_contain_with_retry(node_dml_misc, "DML")
-    log_content = node_dml_misc.grep_in_log("DML", from_host=True, filename="clickhouse-server.audit.log")
-    assert "test.t_audit" in log_content
+    assert_audit_log_contain_with_retry(node_dml_misc, "test.t_audit")
+    log_content = node_dml_misc.grep_in_log("test.t_audit", from_host=True, filename="clickhouse-server.audit.log")
+    assert "DML" in log_content
 
 
 def test_audit_log_newline_escaping(start_cluster):
@@ -233,49 +238,30 @@ def test_audit_log_mysql_ssl_required_failure(start_cluster):
     """When MySQL requires SSL but client doesn't support it, must emit LoginFailure with client IP."""
     unique_user = "mysql_ssl_req_audit_user"
 
-    # Create a config that requires secure transport for MySQL
-    mysql_secure_config = """<clickhouse>
-    <mysql_port>9004</mysql_port>
-    <mysql_require_secure_transport>true</mysql_require_secure_transport>
-</clickhouse>
-"""
-    node_user_dcl.exec_in_container(
-        ["bash", "-c", f"echo '{mysql_secure_config}' > /etc/clickhouse-server/config.d/mysql_secure.xml"]
+    node_mysql_ssl_required.query(
+        f"CREATE USER IF NOT EXISTS {unique_user} IDENTIFIED WITH double_sha1_password BY 'secret123'"
     )
-    node_user_dcl.query("SYSTEM RELOAD CONFIG")
-
-    # Wait for reload to take effect
-    time.sleep(1)
 
     s = None
     try:
-        # Connect to MySQL port and complete the initial handshake exchange
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(5)
-        s.connect((node_user_dcl.ip_address, 9004))
-        # Read server's Handshake packet first
+        s.connect((node_mysql_ssl_required.ip_address, 9004))
         s.recv(4096)
-        # Send a valid HandshakeResponse without CLIENT_SSL flag
         s.sendall(mysql_handshake_response(unique_user))
-        # Read error response
         s.recv(4096)
     except Exception:
-        pass  # Expected to fail
+        pass
     finally:
         try:
             if s:
                 s.close()
         except Exception:
             pass
-        # Clean up config
-        node_user_dcl.exec_in_container(
-            ["bash", "-c", "rm -f /etc/clickhouse-server/config.d/mysql_secure.xml"]
-        )
-        node_user_dcl.query("SYSTEM RELOAD CONFIG")
+        node_mysql_ssl_required.query(f"DROP USER IF EXISTS {unique_user}")
 
-    # Verify LoginFailure was logged with the unique username and client IP
-    assert_audit_log_contain_with_retry(node_user_dcl, unique_user)
-    log_content = node_user_dcl.grep_in_log(unique_user, from_host=True, filename="clickhouse-server.audit.log")
+    assert_audit_log_contain_with_retry(node_mysql_ssl_required, unique_user)
+    log_content = node_mysql_ssl_required.grep_in_log(unique_user, from_host=True, filename="clickhouse-server.audit.log")
     assert "LoginFailure" in log_content, "LoginFailure must be emitted for SSL-required failure"
     assert "Unknown Host" not in log_content, "Client IP must be recorded for SSL-required failure, not 'Unknown Host'"
 
