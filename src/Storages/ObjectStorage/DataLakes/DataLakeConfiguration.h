@@ -171,11 +171,15 @@ public:
         current_metadata->checkAlterIsPossible(commands);
     }
 
-    void alter(ObjectStoragePtr object_storage, const AlterCommands & params, ContextPtr context) override
+    void alter(
+        ObjectStoragePtr object_storage,
+        const AlterCommands & params,
+        ContextPtr context,
+        const StorageID & storage_id,
+        std::shared_ptr<DataLake::ICatalog> catalog) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        current_metadata->alter(params, context);
-
+        current_metadata->alter(params, context, storage_id, catalog);
     }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, StorageObjectStorageConfiguration::CredentialsConfigurationCallback refresh_credentials_callback) override
