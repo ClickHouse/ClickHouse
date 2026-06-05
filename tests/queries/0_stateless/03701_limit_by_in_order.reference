@@ -43,7 +43,7 @@ Sorted ORDER BY val LIMIT BY key: LimitByTransform
 Sorted ORDER BY val, key LIMIT BY key: LimitByTransform
 Sorted ORDER BY key LIMIT BY key, val: LimitByTransform
 Sorted ORDER BY key, dt LIMIT BY key, val: LimitByTransform
-Sorted w/o ORDER BY: LimitByTransform (InOrder)
+Sorted w/o ORDER BY: LimitBySortedStreamTransform
 
 -- Sorted with LIMIT 1 BY
 0
