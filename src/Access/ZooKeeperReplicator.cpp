@@ -575,6 +575,20 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
         watched_queue->clear();
     }
 
+    /// The lock must be acquired before reading the children list, not after.
+    /// `insertEntity` first creates the entity's znode in ZooKeeper and only then
+    /// takes `mutex` to put the entity into `memory_storage`. If we read the
+    /// children list without holding `mutex`, a concurrent `insertEntity` may
+    /// commit the entity to ZooKeeper and to `memory_storage` after our snapshot
+    /// was taken but before we acquire `mutex`; `removeAllExcept` below would then
+    /// evict that freshly inserted entity because its uuid is missing from the
+    /// stale snapshot, making it temporarily unresolvable by name (UNKNOWN_ROLE).
+    /// Holding `mutex` across `getChildrenWatch` guarantees that the znode of
+    /// every entity currently in `memory_storage` is already committed in
+    /// ZooKeeper and therefore present in the snapshot. This matches the `all`
+    /// branch below, which also reads entities from ZooKeeper under `mutex`.
+    std::lock_guard lock{mutex};
+
     const String zookeeper_uuids_path = zookeeper_path + "/uuid";
     Coordination::Stat stat;
     const auto entity_uuid_strs = zookeeper->getChildrenWatch(
@@ -586,8 +600,6 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
     entity_uuids.reserve(entity_uuid_strs.size());
     for (const String & entity_uuid_str : entity_uuid_strs)
         entity_uuids.emplace_back(parseUUID(entity_uuid_str));
-
-    std::lock_guard lock{mutex};
 
     if (all)
     {
