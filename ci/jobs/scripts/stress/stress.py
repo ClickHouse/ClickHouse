@@ -272,7 +272,6 @@ class RandomServerRestarter(RandomRestarter):
 
     def _loop_body(self) -> None:
         with self._restart_lock:
-            self._restart_deadline = time.monotonic() + self._server_start_timeout
             try:
                 open(self.RESTART_MARKER_FILE, "w").close()
             except OSError:
@@ -282,6 +281,7 @@ class RandomServerRestarter(RandomRestarter):
                     self._stop_hard()
                 else:
                     self._stop_graceful()
+                self._restart_deadline = time.monotonic() + self._server_start_timeout
                 self._start_and_wait()
             finally:
                 try:
@@ -1155,7 +1155,7 @@ def main():
     is_sanitizer = os.environ.get("IS_SANITIZER_BUILD") == "1"
     min_server_start_interval = 300.0 if is_sanitizer else 120.0
     max_server_start_interval = 600.0 if is_sanitizer else 360.0
-    server_start_timeout = 150.0 if is_sanitizer else 120.0
+    server_start_timeout = 250.0 if is_sanitizer else 180.0
     # Build chaos threads list — started inside run_func_test after smoke check.
     # Order matters: stop runs in reverse so services come down before the
     # query killer, and the server stops last (hung check needs it alive).
