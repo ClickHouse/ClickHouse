@@ -224,7 +224,10 @@ Arguments:
 - `-f`, `--format`, `--output-format` — output format, `TSV` by default.
 - `-d`, `--database` — default database, `_local` by default.
 - `--stacktrace` — whether to dump debug output in case of exception.
-- `--echo` — print query before execution.
+- `--echo [ <bool> ]` — print each query before execution. Takes an optional boolean value. Enabled by default in interactive mode and disabled in batch mode. Note: because `--echo` now takes an optional value, a positional query placed immediately after a bare `--echo` is consumed as its value; use `--echo --query "..."`, `--echo -q "..."`, `--echo=false`, or piped `stdin` instead.
+- `--echo-formatted [ <bool> ]` — format the echoed queries. Takes an optional boolean value. Enabled by default in interactive mode and disabled in batch mode.
+- `--echo-query-id [ <bool> ]` — print the `query_id` before execution. Takes an optional boolean value. Enabled by default in interactive mode and disabled in batch mode.
+- `--highlight`, `--hilite` `<bool>` — toggle syntax highlighting of the command prompt and the echoed queries. Enabled by default. Highlighting is applied only when writing to a terminal.
 - `--verbose` — more details on query execution.
 - `--logger.console` — Log to console.
 - `--logger.log` — Log file name.
@@ -245,7 +248,7 @@ Lists all the files in the current working directory accessible to clickhouse-lo
 
 You can run it in interactive mode like:
 
-```sql 
+```sql title="Query"
 ClickHouse local version 26.3.1.1.
 
 :) ls
@@ -293,7 +296,7 @@ With `clickhouse-local` and `-q`:
 
 ## Examples {#examples}
 
-```bash
+```bash title="Query"
 $ echo -e "1,2\n3,4" | clickhouse-local --structure "a Int64, b Int64" \
     --input-format "CSV" --query "SELECT * FROM table"
 Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
@@ -303,7 +306,7 @@ Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
 
 Previous example is the same as:
 
-```bash
+```bash title="Query"
 $ echo -e "1,2\n3,4" | clickhouse-local -n --query "
     CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin);
     SELECT a, b FROM table;
@@ -315,7 +318,7 @@ Read 2 rows, 32.00 B in 0.000 sec., 4987 rows/sec., 77.93 KiB/sec.
 
 You don't have to use `stdin` or `--file` argument, and can open any number of files using the [`file` table function](../../sql-reference/table-functions/file.md):
 
-```bash
+```bash title="Query"
 $ echo 1 | tee 1.tsv
 1
 
@@ -330,18 +333,14 @@ $ clickhouse-local --query "
 
 Now let's output memory user for each Unix user:
 
-Query:
-
-```bash
+```bash title="Query"
 $ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' \
     | clickhouse-local --structure "user String, mem Float64" \
         --query "SELECT user, round(sum(mem), 2) as memTotal
             FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty"
 ```
 
-Result:
-
-```text
+```text title="Response"
 Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ┏━━━━━━━━━━┳━━━━━━━━━━┓
 ┃ user     ┃ memTotal ┃
