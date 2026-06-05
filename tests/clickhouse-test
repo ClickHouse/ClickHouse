@@ -1512,10 +1512,14 @@ class SettingsRandomizer:
         # That is why we use it with fallback to 'greedy'.
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
         "max_bytes_before_external_join": lambda: random.choice([0, 1000000000]),
+        "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8]),
         "query_plan_optimize_join_order_randomize": lambda: 1 if random.random() < 0.1 else random.randint(2, 1_000_000),
-        # changing grace_hash_join_initial_buckets is giving wrong results in a test
-        # "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8, 16, 32, 64, 128]),
+        "use_top_k_dynamic_filtering_for_variable_length_types": lambda: random.randint(0, 1),
+        # Default 16 MiB; randomize across small/large to exercise both the coalescing
+        # path and the cap that splits long miss runs into multiple reads.
+        "page_cache_max_coalesced_bytes": lambda: random.choice([65536, 1048576, 16777216, 67108864]),
         # Default-true optimize/enable settings: disable with 0.05 probability
+        "optimize_dictget_tuple_element": lambda: random.random() > 0.05,
         "execute_exists_as_scalar_subquery": lambda: random.random() > 0.05,
         "normalize_function_names": lambda: random.random() > 0.05,
         "enable_join_runtime_filters": lambda: random.random() > 0.05,
@@ -1564,6 +1568,8 @@ class SettingsRandomizer:
         "optimize_use_projection_filtering": "optimize_use_projections",
         # top-k dynamic filtering requires the top-k skip index path to be active
         "use_top_k_dynamic_filtering": "use_skip_indexes_for_top_k",
+        # variable-length opt-in only matters when the parent dynamic filter is on
+        "use_top_k_dynamic_filtering_for_variable_length_types": "use_top_k_dynamic_filtering",
         # statistics cache is pointless when statistics are disabled
         "use_statistics_cache": "use_statistics",
     }
@@ -4995,20 +5001,34 @@ def do_run_tests(
                     stop_testing.set()
 
             if stop_testing.is_set():
-                print("Stopping tests, terminating all processes...")
-                # Wait briefly for test results to be written
-                sleep(5)
-                for p in processes:
-                    if p.is_alive():
-                        p.terminate()
-                # Wait for processes to exit, then force-kill stragglers
-                for p in processes:
-                    p.join(timeout=10)
-                    if p.is_alive():
-                        print(f"Force killing process {p.name} (pid {p.pid})")
-                        p.kill()
-                for p in processes:
-                    p.join(timeout=5)
+                # Mask SIGTERM during the cleanup: when we terminate a worker,
+                # its `except KeyboardInterrupt` handler in `run_tests_array`
+                # calls `stop_tests()`, which broadcasts SIGTERM to the whole
+                # process group via `cleanup_child_processes`. Without this
+                # mask the signal would reach us mid-join, `signal_handler`
+                # would raise `Terminated`, and we would exit with 128+15=143
+                # instead of `STOP_TESTING_EXIT_CODE` - causing the job-side
+                # parser to misclassify the run as "terminated unexpectedly"
+                # (`Result.Status.ERROR`) rather than synthesizing the
+                # `Server died` FAIL leaf that bugfix validation needs.
+                old_sigterm_handler = signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                try:
+                    print("Stopping tests, terminating all processes...")
+                    # Wait briefly for test results to be written
+                    sleep(5)
+                    for p in processes:
+                        if p.is_alive():
+                            p.terminate()
+                    # Wait for processes to exit, then force-kill stragglers
+                    for p in processes:
+                        p.join(timeout=10)
+                        if p.is_alive():
+                            print(f"Force killing process {p.name} (pid {p.pid})")
+                            p.kill()
+                    for p in processes:
+                        p.join(timeout=5)
+                finally:
+                    signal.signal(signal.SIGTERM, old_sigterm_handler)
                 if global_time_limit_reached:
                     raise StopTesting(
                         "global time limit reached",
