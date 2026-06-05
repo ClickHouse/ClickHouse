@@ -195,9 +195,17 @@ def test_disabled_endpoint_returns_403():
     head = instance_disabled.http_request("webterminal", method="HEAD")
     assert head.status_code == 403
 
+    # Use a browser-valid upgrade (matching `Host` and a same-origin `Origin`)
+    # so the `403` is attributable to `enable_webterminal=false` and not to the
+    # independent missing-`Origin` rejection. Otherwise a regression that gates
+    # only `GET`/`HEAD` but lets valid WebSocket upgrades through would still
+    # pass here.
+    host_header = f"{instance_disabled.ip_address}:8123"
     sock = socket.create_connection((instance_disabled.ip_address, 8123), timeout=10)
     try:
-        response = _ws_handshake(sock, instance_disabled.ip_address)
+        response = _ws_handshake(
+            sock, host_header, origin=f"http://{instance_disabled.ip_address}:8123"
+        )
         assert response.startswith(b"HTTP/1.1 403"), response
     finally:
         sock.close()
