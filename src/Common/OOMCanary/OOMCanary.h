@@ -31,6 +31,10 @@ namespace DB
 /// all queries, cancel all merges, queue event to `system.crash_log`, and
 /// optionally relaunch. Note that synchronous system log flushing is
 /// deliberately avoided under memory pressure.
+///
+/// Requires Linux >= 5.3: the monitor owns the canary via `pidfd_open` and
+/// `epoll`-waits on the pidfd, so there is no `/proc`-polling fallback. On
+/// older kernels `pidfd_open` fails and the canary disables itself at startup.
 class OOMCanary
 {
 public:

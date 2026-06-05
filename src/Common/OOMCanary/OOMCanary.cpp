@@ -226,7 +226,8 @@ try
         const int pidfd = syscall_pidfd_open(pid);
         if (pidfd < 0)
         {
-            LOG_WARNING(log, "pidfd_open failed for canary pid {}: {}; disabling", pid, errnoToString());
+            LOG_WARNING(log, "pidfd_open failed for canary pid {}: {}; the OOM canary requires Linux >= 5.3, disabling",
+                pid, errnoToString());
             ::kill(pid, SIGKILL);
             reapChild(pid);
             break;

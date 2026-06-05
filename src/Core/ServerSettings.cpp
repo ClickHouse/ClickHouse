@@ -1508,6 +1508,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Bool, oom_canary_enable, false, R"(
     Experimental. Enable the OOM canary: a sacrificial child process that attracts the Linux OOM killer
     before the main ClickHouse server process, giving the server a chance to shed load.
+    Requires Linux >= 5.3 (for `pidfd_open`); the canary is disabled at startup on older kernels.
     The OOM response requires cgroup v2 `memory.events` OOM-kill evidence and may run global query
     cancellation, merge cancellation, and `system.crash_log` writes. Behavior may change between
     ClickHouse versions until production validation is complete.
