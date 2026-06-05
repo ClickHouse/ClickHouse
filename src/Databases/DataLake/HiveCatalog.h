@@ -47,7 +47,7 @@ public:
     DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE; }
 
 private:
-    void reconnect() const;
+    void reconnectUnlocked() const TSA_REQUIRES(client_mutex);
 
     template <typename Func>
     void executeWithRetry(Func && func) const;

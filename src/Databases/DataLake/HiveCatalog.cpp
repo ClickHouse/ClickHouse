@@ -78,13 +78,12 @@ HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & bas
     : ICatalog(warehouse_)
     , base_url(base_url_)
 {
-    reconnect();
+    std::lock_guard lock(client_mutex);
+    reconnectUnlocked();
 }
 
-void HiveCatalog::reconnect() const
+void HiveCatalog::reconnectUnlocked() const TSA_REQUIRES(client_mutex)
 {
-    std::lock_guard lock(client_mutex);
-
     if (transport && transport->isOpen())
     {
         try
@@ -115,9 +114,10 @@ void HiveCatalog::executeWithRetry(Func && func) const
 
     for (int i = 0; i < max_retries; ++i)
     {
+        std::unique_lock lock(client_mutex);
+
         try
         {
-            std::lock_guard lock(client_mutex);
             func();
             return;
         }
@@ -127,7 +127,7 @@ void HiveCatalog::executeWithRetry(Func && func) const
 
             try
             {
-                reconnect();
+                reconnectUnlocked();
             }
             catch (const std::exception & ex)
             {
