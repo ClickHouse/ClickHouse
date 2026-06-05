@@ -25,32 +25,32 @@ INSERT INTO br_r1 SELECT number FROM numbers(1);
 INSERT INTO br_r2 SELECT number, number % 1 FROM numbers(10);
 INSERT INTO br_r3 SELECT number, number % 10, number % 100 FROM numbers(100);
 
-SELECT sum(sipHash64(l1.id, l3.id, r1.id, r3.id))
+SELECT sum(sipHash64(l1.id, l3.id, r1.id, r2.id, r3.id))
 FROM br_l1 l1
 JOIN br_l2 l2 ON l1.id = l2.l1_id
 JOIN br_l3 l3 ON l2.id = l3.l2_id
 JOIN br_r3 r3 ON l3.bridge_key = r3.bridge_key
-JOIN br_r2 r2 ON r3.id = r2.r1_id
+JOIN br_r2 r2 ON r3.r2_id = r2.id
 JOIN br_r1 r1 ON r2.r1_id = r1.id
 SETTINGS query_plan_optimize_join_order_algorithm = 'dphyp', enable_parallel_replicas = 0;
 
 -- DPsize must produce the same result.
-SELECT sum(sipHash64(l1.id, l3.id, r1.id, r3.id))
+SELECT sum(sipHash64(l1.id, l3.id, r1.id, r2.id, r3.id))
 FROM br_l1 l1
 JOIN br_l2 l2 ON l1.id = l2.l1_id
 JOIN br_l3 l3 ON l2.id = l3.l2_id
 JOIN br_r3 r3 ON l3.bridge_key = r3.bridge_key
-JOIN br_r2 r2 ON r3.id = r2.r1_id
+JOIN br_r2 r2 ON r3.r2_id = r2.id
 JOIN br_r1 r1 ON r2.r1_id = r1.id
 SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize', enable_parallel_replicas = 0;
 
 -- Greedy must produce the same result.
-SELECT sum(sipHash64(l1.id, l3.id, r1.id, r3.id))
+SELECT sum(sipHash64(l1.id, l3.id, r1.id, r2.id, r3.id))
 FROM br_l1 l1
 JOIN br_l2 l2 ON l1.id = l2.l1_id
 JOIN br_l3 l3 ON l2.id = l3.l2_id
 JOIN br_r3 r3 ON l3.bridge_key = r3.bridge_key
-JOIN br_r2 r2 ON r3.id = r2.r1_id
+JOIN br_r2 r2 ON r3.r2_id = r2.id
 JOIN br_r1 r1 ON r2.r1_id = r1.id
 SETTINGS query_plan_optimize_join_order_algorithm = 'greedy', enable_parallel_replicas = 0;
 
