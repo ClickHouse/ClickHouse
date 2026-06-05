@@ -716,6 +716,21 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
         }
     }
 
+    // Reject cost-unit changes from config/Keeper refresh just like the SQL path does. The
+    // scheduler hierarchy is built per unit, so silently swapping units would leave classifiers
+    // handing back `ResourceLink`s for the wrong pointer field.
+    for (const auto & change : changes)
+    {
+        if (!change.before || !change.after)
+            continue;
+        auto * before_resource = typeid_cast<ASTCreateResourceQuery *>(change.before.get());
+        auto * after_resource = typeid_cast<ASTCreateResourceQuery *>(change.after.get());
+        if (before_resource && after_resource && before_resource->unit != after_resource->unit)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cost unit of resource '{}' cannot be changed; drop and recreate the resource instead.",
+                change.name);
+    }
+
     // Update local entities
     local_entities = std::move(local_new_entities);
 

@@ -29,6 +29,7 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
         {"type", std::make_shared<DataTypeString>(), "Type of a scheduling node."},
         {"weight", std::make_shared<DataTypeFloat64>(), "Weight of a node, used by a parent node of `fair` type."},
         {"priority", std::make_shared<DataTypeInt64>(), "Priority of a node, used by a parent node of 'priority' type (Lower value means higher priority)."},
+        {"precedence", std::make_shared<DataTypeInt64>(), "Precedence of a node, used by space-shared (memory) parent nodes to order admission and eviction (Lower value means higher precedence)."},
 
         // ITimeSharedNode
         {"is_active", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
@@ -157,6 +158,7 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(node->getTypeName());
         res_columns[i++]->insert(node->info.weight);
         res_columns[i++]->insert(node->info.priority.value);
+        res_columns[i++]->insert(node->info.precedence.value);
 
         Field is_active;
         Field active_children;
