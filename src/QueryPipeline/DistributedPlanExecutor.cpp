@@ -1154,7 +1154,7 @@ protected:
             {
                 try
                 {
-                    auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, poll_wait_ms, context);
+                    auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, poll_wait_ms, context, /*for_cleanup*/ true);
                     if (task_status.status != "Running")
                         return true;
                 }

@@ -80,7 +80,7 @@ String sendTask(const String & endpoint_uri, const String & unique_task_id, cons
 
 /// Get task status by its id.
 /// If wait_for_ms is set, the function will wait for the task to finish for the specified amount of time.
-DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const String & task_id, UInt32 wait_for_ms, const ContextPtr & context)
+DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const String & task_id, UInt32 wait_for_ms, const ContextPtr & context, bool for_cleanup)
 {
     auto credentials = context->getInterserverCredentials();
     Poco::Net::HTTPBasicCredentials creds{};
@@ -92,13 +92,24 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
 
     ConnectionTimeouts timeouts;
     timeouts.connection_timeout = Poco::Timespan(100 * 1000);
-    timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
-    timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
     ReadSettings read_settings;
-    /// Safe to retry: read-only.
-    read_settings.http_settings.max_tries = 3;
-    read_settings.http_settings.retry_initial_backoff_ms = 200;
-    read_settings.http_settings.retry_max_backoff_ms = 1000;
+    if (for_cleanup)
+    {
+        /// Bound a best-effort cleanup poll: the receive timeout only needs to cover the worker's
+        /// server-side wait plus a small network margin, and a failed poll must not retry.
+        timeouts.send_timeout = Poco::Timespan(2 * 1000 * 1000);
+        timeouts.receive_timeout = Poco::Timespan((wait_for_ms + 2000) * 1000);
+        read_settings.http_settings.max_tries = 1;
+    }
+    else
+    {
+        timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
+        timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
+        /// Safe to retry: read-only.
+        read_settings.http_settings.max_tries = 3;
+        read_settings.http_settings.retry_initial_backoff_ms = 200;
+        read_settings.http_settings.retry_max_backoff_ms = 1000;
+    }
 
     Poco::URI uri(endpoint_uri);
     uri.addQueryParameter("operation",   "get_status");
