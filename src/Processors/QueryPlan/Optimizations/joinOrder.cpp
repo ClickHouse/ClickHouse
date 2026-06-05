@@ -725,11 +725,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
         JoinLocality::Unspecified,
         std::ranges::to<std::vector>(entry.edges | std::views::transform([](const auto * e) { return *e; })));
 
-    if (!entry.left && !entry.right) {
-        LOG_TEST(log, "Both sides are leaf nodes!"); // TODO remove it
-        return std::make_shared<DPJoinEntry>(BitSet::fromUint(S), entry.estimated_rows, entry.column_stats);
+    if (!entry.left && !entry.right)
+    {
+        const size_t relation_id = std::countr_zero(S);
+        return std::make_shared<DPJoinEntry>(relation_id, entry.estimated_rows, entry.column_stats);
     }
-
 
     // This is a join node - create using the join constructor
     auto left = buildPhysicalPlan(dptable, entry.left);
@@ -858,6 +858,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                             join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,
                             std::ranges::to<std::vector>(edge | std::views::transform([](const auto * e) { return *e; })));
                         auto new_best_plan = std::make_shared<DPJoinEntry>(left, right, new_cost, cardinality, std::move(join_operator));
+
+                        // TODO
+                        for (auto* e : edge) {
+                            LOG_TEST(log, "Plan {} has edges: {}", toString(combined_relations), e->dump());
+                        }
 
                         LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
                             new_best_plan->dump(), new_best_plan->left->dump(), new_best_plan->right->dump(),
