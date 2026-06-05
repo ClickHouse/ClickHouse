@@ -25,7 +25,7 @@ configurable via [`input_format_hive_text_fields_delimiter`](#format-settings).
 mapped positionally onto the columns of the destination table, so the column
 names and types are taken from the table (or from an explicitly provided
 structure) rather than inferred from the data. While reading, ClickHouse parses
-dates and times in best-effort mode (see [`date_time_input_format`](/operations/settings/settings-formats#date_time_input_format)),
+dates and times in best-effort mode (see [`date_time_input_format`](/operations/settings/formats#date_time_input_format)),
 fills omitted trailing fields with column defaults, and skips fields it does not
 recognize.
 
