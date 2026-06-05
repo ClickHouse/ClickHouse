@@ -384,6 +384,11 @@ size_t ColumnVector<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, i
     const T * d = data.data();
     const T ref = d[begin];
 
+    /// Resolve a run of length one with a single comparison. This is the common case for
+    /// high-cardinality keys, where it avoids the fixed cost of the vectorized block scan below.
+    if (begin + 1 < end && !CompareHelper<T>::equals(d[begin + 1], ref, nan_direction_hint))
+        return begin + 1;
+
     /// First scan a short window linearly, which resolves short runs cheaply.
     static constexpr size_t window = 256;
     size_t window_end = std::min(begin + window, end);
