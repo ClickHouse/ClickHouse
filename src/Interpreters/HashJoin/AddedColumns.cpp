@@ -1,5 +1,6 @@
 #include <Interpreters/HashJoin/AddedColumns.h>
 #include <DataTypes/NullableUtils.h>
+#include <Interpreters/JoinUtils.h>
 
 namespace DB
 {
@@ -15,6 +16,8 @@ JoinOnKeyColumns::JoinOnKeyColumns(
     , join_mask_column(JoinCommon::getColumnAsMask(block.getSourceBlock(), cond_column_name))
     , key_sizes(key_sizes_)
 {
+    /// Probe side: same `NaN`-as-NULL extension as the build side. Issue #106531.
+    JoinCommon::extendJoinKeyNullMapWithFloatNaNs(key_columns, null_map_holder, null_map);
 }
 
 size_t LazyOutput::buildOutput(

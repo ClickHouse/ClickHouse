@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Common/HashTable/Hash.h>
@@ -88,6 +89,21 @@ ColumnRawPtrs getRawPointers(const Columns & columns);
 void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys);
 
 ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names_right);
+
+/// Extend the JOIN-key null map so any row whose float key holds a `NaN` is treated as `NULL`.
+/// Per `IEEE 754` (and SQL `JOIN ON` semantics) `NaN != NaN`, but the hash table compares float
+/// keys bitwise via `bitEquals`, so two `NaN`s with identical bit patterns wrongly match. Folding
+/// `NaN` rows into the null map makes both build and probe sides skip them, consistent with how
+/// `NULL` keys never join.
+///
+/// `key_columns` are the raw key columns AFTER `extractNestedColumnsAndNullMap` peeled off any
+/// outer `Nullable`. If `null_map_holder` is empty and at least one float column has a `NaN`,
+/// a fresh `ColumnUInt8` is allocated and assigned. `null_map` is updated to point into the
+/// (possibly new) holder. Non-float columns are skipped.
+void extendJoinKeyNullMapWithFloatNaNs(
+    const ColumnRawPtrs & key_columns,
+    ColumnPtr & null_map_holder,
+    ConstNullMapPtr & null_map);
 
 /// Throw an exception if join condition column is not UIint8
 void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,

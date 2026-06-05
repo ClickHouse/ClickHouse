@@ -10,7 +10,10 @@
 #include <base/types.h>
 
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
+#include <Common/NaNUtils.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <Columns/ColumnSparse.h>
@@ -344,6 +347,53 @@ FullMergeJoinCursor::FullMergeJoinCursor(std::vector<size_t> key_indices_, bool 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty sort description for FullMergeJoinCursor");
 }
 
+namespace
+{
+
+/// If `column` is a float column with at least one `NaN`, return a `NullMap` with the
+/// `NaN` rows marked, OR-folded over the existing `existing_null_map` (may be `nullptr`).
+/// Otherwise return `existing_null_map` unchanged. The result keeps `MergeJoin` from
+/// matching `NaN` keys against each other (issue #106531).
+template <typename T>
+ColumnPtr foldNaNsIntoNullMapImpl(const ColumnPtr & existing_null_map, const ColumnVector<T> & vec)
+{
+    const auto & data = vec.getData();
+    const size_t size = data.size();
+
+    auto result = ColumnUInt8::create(size, static_cast<UInt8>(0));
+    auto & result_data = result->getData();
+
+    const NullMap * existing_data = nullptr;
+    if (existing_null_map)
+        existing_data = &assert_cast<const ColumnUInt8 &>(*existing_null_map).getData();
+
+    bool found = false;
+    for (size_t i = 0; i < size; ++i)
+    {
+        const UInt8 prev = existing_data ? (*existing_data)[i] : UInt8{0};
+        const bool nan = isNaN(data[i]);
+        result_data[i] = prev | static_cast<UInt8>(nan);
+        found = found || nan;
+    }
+
+    if (!found)
+        return existing_null_map; /// keep the original, possibly empty, holder
+    return result;
+}
+
+ColumnPtr foldFloatNaNsIntoNullMap(const ColumnPtr & existing_null_map, const IColumn & column)
+{
+    if (const auto * f32 = typeid_cast<const ColumnFloat32 *>(&column))
+        return foldNaNsIntoNullMapImpl<Float32>(existing_null_map, *f32);
+    if (const auto * f64 = typeid_cast<const ColumnFloat64 *>(&column))
+        return foldNaNsIntoNullMapImpl<Float64>(existing_null_map, *f64);
+    if (const auto * bf16 = typeid_cast<const ColumnVector<BFloat16> *>(&column))
+        return foldNaNsIntoNullMapImpl<BFloat16>(existing_null_map, *bf16);
+    return existing_null_map;
+}
+
+}
+
 const Chunk & FullMergeJoinCursor::getCurrent() const
 {
     return current_chunk;
@@ -378,6 +428,10 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
             null_map = column_nullable->getNullMapColumnPtr();
             column = column_nullable->getNestedColumnPtr();
         }
+        /// Treat float `NaN` keys as NULL: per IEEE 754 / SQL semantics `NaN != NaN`, but
+        /// `nullableCompareAt` falls through to `compareAt`/`FloatCompareHelper::equals`
+        /// which returns 0 for two `NaN`s. Issue #106531.
+        null_map = foldFloatNaNsIntoNullMap(null_map, *column);
         null_maps.push_back(std::move(null_map));
         sort_columns.push_back(std::move(column));
     }

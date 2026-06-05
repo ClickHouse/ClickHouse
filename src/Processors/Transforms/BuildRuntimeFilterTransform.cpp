@@ -1,6 +1,10 @@
 #include <Processors/Transforms/BuildRuntimeFilterTransform.h>
 #include <Processors/Chunk.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/FilterDescription.h>
 #include <Columns/IColumn.h>
+#include <Common/NaNUtils.h>
 #include <Interpreters/Context.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
@@ -88,6 +92,54 @@ IProcessor::Status BuildRuntimeFilterTransform::prepare()
     return status;
 }
 
+namespace
+{
+
+/// Drop rows where the float column has `NaN` so the runtime filter never carries any
+/// `NaN` entry. JOIN ON treats `NaN` as never-matching (issue #106531) - if `NaN` were
+/// inserted, the bloom/exact-match would match it bitwise on the probe side and either
+/// (a) wrongly let an INNER probe through, or (b) wrongly exclude a probe `NaN` from an
+/// ANTI/LEFT result. Returns the original column when no `NaN` is found or when the
+/// column type is not float.
+template <typename T>
+ColumnPtr filterOutNaNsImpl(const ColumnVector<T> & vec)
+{
+    const auto & data = vec.getData();
+    const size_t size = data.size();
+
+    /// Fast scan for any `NaN`. Common case: there isn't one.
+    bool has_nan = false;
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (isNaN(data[i]))
+        {
+            has_nan = true;
+            break;
+        }
+    }
+    if (!has_nan)
+        return nullptr;
+
+    auto filter = ColumnUInt8::create(size);
+    auto & filter_data = filter->getData();
+    for (size_t i = 0; i < size; ++i)
+        filter_data[i] = static_cast<UInt8>(!isNaN(data[i]));
+    return vec.filter(filter_data, /* result_size_hint = */ -1);
+}
+
+ColumnPtr filterOutNaNs(const ColumnPtr & column)
+{
+    if (const auto * f32 = typeid_cast<const ColumnFloat32 *>(column.get()))
+        return filterOutNaNsImpl<Float32>(*f32);
+    if (const auto * f64 = typeid_cast<const ColumnFloat64 *>(column.get()))
+        return filterOutNaNsImpl<Float64>(*f64);
+    if (const auto * bf16 = typeid_cast<const ColumnVector<BFloat16> *>(column.get()))
+        return filterOutNaNsImpl<BFloat16>(*bf16);
+    return nullptr;
+}
+
+}
+
 void BuildRuntimeFilterTransform::transform(Chunk & chunk)
 {
     ColumnPtr filter_column = chunk.getColumns()[filter_column_position];
@@ -99,6 +151,11 @@ void BuildRuntimeFilterTransform::transform(Chunk & chunk)
             filter_column->size(),
             false);
     }
+
+    /// Strip `NaN` rows from float keys so they are never registered in the runtime filter.
+    /// Issue #106531.
+    if (auto without_nans = filterOutNaNs(filter_column))
+        filter_column = std::move(without_nans);
 
     built_filter->insert(filter_column);
 }

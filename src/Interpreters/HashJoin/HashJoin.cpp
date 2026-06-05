@@ -786,6 +786,11 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             ConstNullMapPtr null_map{};
             ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
+            /// Treat float `NaN` keys as NULL: per IEEE 754 / SQL semantics `NaN != NaN`, but
+            /// the hash table compares floats bitwise via `bitEquals`, so `NaN` keys with
+            /// matching bit patterns would otherwise wrongly join. Issue #106531.
+            JoinCommon::extendJoinKeyNullMapWithFloatNaNs(key_columns, null_map_holder, null_map);
+
             /// If RIGHT or FULL save blocks with nulls for NotJoinedBlocks
             UInt8 save_nullmap = 0;
             if (isRightOrFull(kind) && null_map)

@@ -4,7 +4,10 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/FilterDescription.h>
+
+#include <Common/NaNUtils.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -385,6 +388,102 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
     }
 
     return key_columns;
+}
+
+namespace
+{
+
+/// Mark `NaN` rows of one float key column inside `mutable_null_map`. Returns whether any
+/// `NaN` was found. Skips non-float columns (caller is expected to gate on type already, but
+/// guarding here keeps the helper safe).
+template <typename T>
+bool markNaNsOfFloatColumn(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_map)
+{
+    const auto * vec = typeid_cast<const ColumnVector<T> *>(&column);
+    if (!vec)
+        return false;
+
+    const auto & data = vec->getData();
+    chassert(data.size() == mutable_null_map.size());
+
+    bool found = false;
+    for (size_t i = 0, size = data.size(); i < size; ++i)
+    {
+        if (isNaN(data[i]))
+        {
+            mutable_null_map[i] = 1;
+            found = true;
+        }
+    }
+    return found;
+}
+
+}
+
+void extendJoinKeyNullMapWithFloatNaNs(
+    const ColumnRawPtrs & key_columns,
+    ColumnPtr & null_map_holder,
+    ConstNullMapPtr & null_map)
+{
+    /// Scan key columns once to find float columns. We are about to potentially allocate a
+    /// fresh null map - do that lazily, only when at least one float column is present and
+    /// has a `NaN`.
+    auto ensure_mutable_null_map = [&](size_t size) -> PaddedPODArray<UInt8> *
+    {
+        if (!null_map_holder)
+            null_map_holder = ColumnUInt8::create(size, static_cast<UInt8>(0));
+
+        MutableColumnPtr mutable_holder = IColumn::mutate(std::move(null_map_holder));
+        auto * data_ref = &assert_cast<ColumnUInt8 &>(*mutable_holder).getData();
+        null_map_holder = std::move(mutable_holder);
+        return data_ref;
+    };
+
+    bool any_changes = false;
+    for (const auto * column : key_columns)
+    {
+        const IColumn * unwrapped = column;
+        if (const auto * lc = checkAndGetColumn<ColumnLowCardinality>(unwrapped))
+            unwrapped = lc->getDictionary().getNestedColumn().get();
+
+        const bool is_f32 = checkAndGetColumn<ColumnFloat32>(unwrapped) != nullptr;
+        const bool is_f64 = checkAndGetColumn<ColumnFloat64>(unwrapped) != nullptr;
+        const bool is_bf16 = checkAndGetColumn<ColumnVector<BFloat16>>(unwrapped) != nullptr;
+
+        if (!is_f32 && !is_f64 && !is_bf16)
+            continue;
+
+        /// `LowCardinality` keys go through the dictionary - we only see `NaN` rows by
+        /// indexing via the position column. Conservatively extend through the materialized
+        /// path: HashJoin/MergeJoin always materialize keys before they reach this helper
+        /// (see `JoinCommon::materializeColumns` and `recursiveRemoveLowCardinality` at the
+        /// `extractNestedColumnsAndNullMap` callers), so the `column` we receive is already
+        /// the full numeric column. The `LowCardinality` branch above is defense-in-depth;
+        /// in practice it won't fire in JOIN code paths.
+        if (column != unwrapped)
+            continue;
+
+        const size_t size = column->size();
+        auto * mutable_null_map = ensure_mutable_null_map(size);
+
+        bool found = false;
+        if (is_f32)
+            found = markNaNsOfFloatColumn<Float32>(*column, *mutable_null_map);
+        else if (is_f64)
+            found = markNaNsOfFloatColumn<Float64>(*column, *mutable_null_map);
+        else if (is_bf16)
+            found = markNaNsOfFloatColumn<BFloat16>(*column, *mutable_null_map);
+
+        any_changes |= found;
+    }
+
+    if (any_changes)
+        null_map = &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData();
+    /// If we allocated a fresh holder above but found no `NaN` and the original `null_map`
+    /// was empty, leave `null_map` as it was (`nullptr`) - HashJoin treats a `nullptr`
+    /// `null_map` as "no rows are NULL" which is faster than a zero-bitmap.
+    else if (null_map_holder && !null_map)
+        null_map_holder = nullptr;
 }
 
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
