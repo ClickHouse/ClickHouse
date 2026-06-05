@@ -250,7 +250,7 @@ struct DeltaLakeMetadataImpl
         RelativePathWithMetadata object_info(metadata_file_path);
         auto buf = createReadBuffer(object_info, object_storage, context, log);
 
-        char c;
+        char c = 0;
         String sum_json;
         while (!buf->eof())
         {
@@ -317,7 +317,7 @@ struct DeltaLakeMetadataImpl
 
                 String path;
                 Poco::URI::decode(add_object->getValue<String>("path"), path);
-                auto full_path = fs::path(table_path) / path;
+                auto full_path = resolvePathInsideTable(table_path, path);
                 result.insert(full_path);
 
                 auto filename = fs::path(path).filename().string();
@@ -363,7 +363,7 @@ struct DeltaLakeMetadataImpl
 
                 String path;
                 Poco::URI::decode(remove_object->getValue<String>("path"), path);
-                result.erase(fs::path(table_path) / path);
+                result.erase(resolvePathInsideTable(table_path, path));
             }
         }
         insertDeltaRowToLogTable(context, sum_json, table_path, metadata_file_path);
@@ -567,7 +567,7 @@ struct DeltaLakeMetadataImpl
                 continue;
 
             auto filename = fs::path(path).filename().string();
-            auto full_path = fs::path(table_path) / path;
+            auto full_path = resolvePathInsideTable(table_path, path);
             auto it = file_partition_columns.find(full_path);
             if (it == file_partition_columns.end())
             {
@@ -599,7 +599,7 @@ struct DeltaLakeMetadataImpl
             }
 
             LOG_TEST(log, "Adding {}", path);
-            const auto [_, inserted] = result.insert(std::filesystem::path(table_path) / path);
+            const auto [_, inserted] = result.insert(full_path);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
         }
@@ -714,8 +714,8 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
     if (type_name.starts_with("decimal(") && type_name.ends_with(')'))
     {
         ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
-        size_t precision;
-        size_t scale;
+        size_t precision = 0;
+        size_t scale = 0;
         readIntText(precision, buf);
         skipWhitespaceIfAny(buf);
         assertChar(',', buf);

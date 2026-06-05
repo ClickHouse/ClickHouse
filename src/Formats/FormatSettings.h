@@ -30,6 +30,7 @@ struct FormatSettings
     bool null_as_default = true;
     bool force_null_for_omitted_fields = false;
     bool decimal_trailing_zeros = false;
+    UInt64 float_precision = 0;
     bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -38,6 +39,9 @@ struct FormatSettings
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 25000;
     UInt64 max_bytes_to_read_for_schema_inference = 32 * 1024 * 1024;
+    /// Internal flag used to surface expensive non-seekable fallbacks only when schema inference
+    /// runs for a known format, not while trying multiple candidate formats during detection.
+    bool log_full_buffer_fallback_during_schema_inference = false;
 
     String column_names_for_schema_inference{};
     String schema_inference_hints{};
