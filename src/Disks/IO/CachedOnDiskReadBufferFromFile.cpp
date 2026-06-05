@@ -272,8 +272,9 @@ std::optional<RemoteFileMetadata> tryGetRemoteFileMetadata(ReadBufferFromFileBas
     {
         return buf.getRemoteFileMetadata();
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (...)
     {
+        /// Ok: best-effort diagnostics -- a failed metadata lookup must not mask the message being built.
         return std::nullopt;
     }
 }
