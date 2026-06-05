@@ -77,7 +77,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         task_progress->incrementPiecewiseAtomically(progress);
     };
 
-    auto task_function = [task_description, object_storage, object_storage_path, query_context, task_promise, is_task_cancelled, update_progress]() mutable
+    auto task_function = [task_description, object_storage, object_storage_path, distributed_query_id = unique_temp_file_path, query_context, task_promise, is_task_cancelled, update_progress]() mutable
     {
         try
         {
@@ -92,7 +92,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
             auto process_list_entry = query_context->getProcessList().insert(task_description.task.task_id, query_plan_hash, &ast_stub, query_context, start_watch.getStart(), false);
             query_context->setProcessListElement(process_list_entry->getQueryStatus());
 
-            doExecuteTask(task_description, object_storage, object_storage_path, query_context, is_task_cancelled, update_progress);
+            doExecuteTask(task_description, object_storage, object_storage_path, distributed_query_id, query_context, is_task_cancelled, update_progress);
             task_promise->set_value("");
         }
         catch (std::exception & e)

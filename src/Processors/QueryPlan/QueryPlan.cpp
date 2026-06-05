@@ -879,7 +879,7 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         ExchangeDescriptions exchange_descriptions;
         exchange_descriptions[final_result_exchange.name] = final_result_exchange;
         auto exchange_lookup = createExchangeLookup(
-            object_storage_path,
+            toString(unique_query_id),
             exchange_descriptions,
             task_to_host_map ? ExchangeStreamSources{task_to_host_map->getExchangeStreamSourceHosts()} : ExchangeStreamSources{},
             temporary_files,
@@ -913,7 +913,7 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
 
         /// In-memory exchanges (execute_locally) must outlive the executor: the result reader drains
         /// final_result after the driver has finished. Remove them when the pipeline resources go away.
-        resources.custom_resources.emplace_back(makeInMemoryExchangesCleaner(object_storage_path));
+        resources.custom_resources.emplace_back(makeInMemoryExchangesCleaner(toString(unique_query_id)));
 
         /// Add temporary files cleaner to the resources so that all temporary files are removed after the pipeline is executed
         if (final_result_exchange.kind == ExchangeDescription::Kind::Persisted)

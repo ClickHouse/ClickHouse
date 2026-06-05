@@ -97,9 +97,12 @@ struct DistributedQueryTaskDescription
     SettingsChanges settings_changes;
 };
 
-/// Executes a task locally
+/// Executes a task locally. `distributed_query_id` is the node-independent identifier of the whole
+/// distributed query (the same value on every node); it keys the in-memory and streaming exchanges,
+/// while `object_storage_path` locates this node's persisted temporary files.
 void doExecuteTask(const DistributedQueryTaskDescription & task, ObjectStoragePtr object_storage,
-    const String & object_storage_path, ContextMutablePtr context, std::function<bool()> is_cancelled = nullptr, ProgressCallback progress_callback = nullptr);
+    const String & object_storage_path, const String & distributed_query_id, ContextMutablePtr context,
+    std::function<bool()> is_cancelled = nullptr, ProgressCallback progress_callback = nullptr);
 
 /// Returns object storage and path for temporary files
 std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context);

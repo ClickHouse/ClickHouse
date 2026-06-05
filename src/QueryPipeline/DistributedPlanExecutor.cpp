@@ -490,6 +490,9 @@ TemporaryFileLookupPtr createTemporaryFilesLookup(ObjectStoragePtr object_storag
     return std::make_shared<TemporaryFilesInObjectStorage>(object_storage_, object_storage_path_, input_temporary_files_, output_temporary_files_);
 }
 
+/// `query_id` must be the node-independent distributed query id: it keys the in-memory and streaming
+/// exchanges, so producers and consumers on different nodes (and the cleanup paths) must agree on it.
+/// It must not embed any node-local object-storage subpath, which would differ between nodes.
 ExchangeLookupPtr createExchangeLookup(
     const String & query_id,
     const ExchangeDescriptions & exchanges_,
@@ -561,7 +564,8 @@ static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, Cont
 }
 
 void doExecuteTask(const DistributedQueryTaskDescription & task_description, ObjectStoragePtr object_storage,
-    const String & object_storage_path, ContextMutablePtr context, std::function<bool()> is_cancelled, ProgressCallback progress_callback)
+    const String & object_storage_path, const String & distributed_query_id, ContextMutablePtr context,
+    std::function<bool()> is_cancelled, ProgressCallback progress_callback)
 {
     Stopwatch execute_task_watch;
     const auto & task = task_description.task;
@@ -588,7 +592,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     pipeline_settings.temporary_file_lookup = temporary_files;
     pipeline_settings.parameter_lookup = std::make_shared<TaskParameters>(task.parameters);
     pipeline_settings.exchange_lookup = createExchangeLookup(
-        object_storage_path,
+        distributed_query_id,
         task_description.exchanges,
         task_description.exchange_stream_sources,
         temporary_files,
@@ -696,7 +700,7 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
 {
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(toString(unique_query_id), context);
 
-    doExecuteTask(task, object_storage, object_storage_path, Context::createCopy(context), [is_cancelled]() -> bool { return *is_cancelled; });
+    doExecuteTask(task, object_storage, object_storage_path, toString(unique_query_id), Context::createCopy(context), [is_cancelled]() -> bool { return *is_cancelled; });
 }
 
 /// Runs tasks in local threads. Useful for testing and debugging.
@@ -714,7 +718,7 @@ public:
         /// task stuck in InMemoryExchange::getChunk never returns. The exchanges are not removed here:
         /// the result reader still drains final_result after the driver finishes; removal happens when
         /// the query pipeline is destroyed (see makeInMemoryExchangesCleaner).
-        InMemoryExchanges::instance()->cancelQuery(getTemporaryFilesPath(toString(unique_query_id), context));
+        InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id));
 
         for (auto & [_, tasks] : stage_tasks)
             for (auto & task : tasks)
