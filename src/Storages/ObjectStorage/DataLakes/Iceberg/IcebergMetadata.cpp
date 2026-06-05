@@ -166,32 +166,64 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     ContextPtr context_,
     LoggerPtr log)
 {
-    /// Probe content cache with std::nullopt — we never use the catalog
-    /// hint UUID for content cache operations because an unvalidated hint
-    /// could poison the global cache (a stale hint stored under hint_uuid:
-    /// metadata_file_path would be read by a later table with that stale hint
-    /// as its real UUID). Content caching is handled entirely by the
-    /// retroactive insert under the validated parsed `table_uuid` below.
     const auto [metadata_version, metadata_file_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, true);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
-    String raw_metadata_json;
-    auto metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, std::nullopt, raw_metadata_json);
-    Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
-    String table_location = metadata_object->getValue<String>(f_location);
+
     std::optional<String> table_uuid = std::nullopt;
-    if (metadata_object->has(Iceberg::f_table_uuid))
+    String raw_metadata_json;
+    Poco::JSON::Object::Ptr metadata_object;
+
+    /// Probe content cache with the catalog hint UUID (without insert-on-miss).
+    /// This is safe because:
+    /// - On miss: we read from storage and insert under the validated parsed UUID.
+    /// - On hit: we verify the cached JSON's `table-uuid` field matches the hint.
+    if (const auto & hint = configuration->catalog_uuid_hint; !hint.empty())
     {
-        table_uuid = normalizeUuid(metadata_object->getValue<String>(f_table_uuid));
-        /// Retroactively populate the cache with the validated parsed UUID.
-        if (cache_ptr)
+        String cached = cache_ptr ? cache_ptr->tryGetTableMetadata(
+            IcebergMetadataFilesCache::getKey(normalizeUuid(hint), metadata_file_path))
+                                  : std::string{};
+        if (!cached.empty())
         {
-            auto cache_key = IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path);
-            cache_ptr->getOrSetTableMetadata(cache_key, [json = std::move(raw_metadata_json)]() mutable { return std::move(json); });
+            Poco::JSON::Parser parser;
+            auto candidate = parser.parse(cached).extract<Poco::JSON::Object::Ptr>();
+            if (candidate->has(f_table_uuid))
+            {
+                String cached_uuid = normalizeUuid(candidate->getValue<String>(f_table_uuid));
+                if (cached_uuid == normalizeUuid(hint))
+                {
+                    /// Hit from a prior validated init: cached JSON belongs to this table.
+                    raw_metadata_json = std::move(cached);
+                    metadata_object = candidate;
+                    table_uuid = cached_uuid;
+                }
+            }
         }
     }
-    else
+
+    /// Fetch and parse the metadata file if the cache probe did not succeed.
+    if (!metadata_object)
+    {
+        metadata_object = getMetadataJSONObject(
+            metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, std::nullopt, raw_metadata_json);
+        if (metadata_object->has(f_table_uuid))
+        {
+            table_uuid = normalizeUuid(metadata_object->getValue<String>(f_table_uuid));
+        }
+    }
+
+    Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
+    String table_location = metadata_object->getValue<String>(f_location);
+
+    /// Insert under validated parsed UUID. Use setTableMetadata to avoid the
+    /// return-value copy that getOrSetTableMetadata would incur when the key
+    /// was already cached (e.g. from a prior init where `table_uuid` matched).
+    if (table_uuid && cache_ptr)
+    {
+        auto cache_key = IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path);
+        cache_ptr->setTableMetadata(cache_key, std::move(raw_metadata_json));
+    }
+    else if (table_uuid && !cache_ptr)
     {
         if (format_version >= 2)
         {

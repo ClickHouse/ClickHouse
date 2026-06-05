@@ -134,7 +134,29 @@ public:
         : Base(cache_policy, CurrentMetrics::IcebergMetadataFilesCacheBytes, CurrentMetrics::IcebergMetadataFilesCacheFiles, max_size_in_bytes, max_count, size_ratio)
     {}
 
-    static String getKey(const String& table_uuid, const String & data_path) { return table_uuid + ":" + data_path; }
+    static String getKey(const String& table_uuid, const String & data_path)
+    {
+        return table_uuid + '\0' + data_path;
+    }
+
+    /// Probe the cache without insert-on-miss. Returns the cached JSON or empty string on miss.
+    /// Caller must verify the returned JSON's `table-uuid` matches the expected UUID before use.
+    std::string tryGetTableMetadata(const String & data_path)
+    {
+        auto cell = Base::get(data_path);
+        if (cell)
+            return std::get<String>(cell->cached_element);
+        return {};
+    }
+
+    /// Set the cache without returning the value (avoids copy-on-hit).
+    /// Caller should only call this when they know the key is not already cached.
+    void setTableMetadata(const String & data_path, String && metadata_json_str)
+    {
+        Base::set(
+            data_path,
+            std::make_shared<IcebergMetadataFilesCacheCell>(std::move(metadata_json_str)));
+    }
 
     template <typename LoadFunc>
     String getOrSetTableMetadata(const String & data_path, LoadFunc && load_fn)
