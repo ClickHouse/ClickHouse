@@ -1,6 +1,6 @@
-#include <IO/UTFConvertingReadBuffer.h>
 #include <IO/ParallelReadBuffer.h>
 #include <IO/PeekableReadBuffer.h>
+#include <IO/UTFConvertingReadBuffer.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -41,6 +41,86 @@ uint32_t combineSurrogates(uint16_t high, uint16_t low)
 {
     return 0x10000 + ((static_cast<uint32_t>(high) & 0x3FF) << 10) + (static_cast<uint32_t>(low) & 0x3FF);
 }
+
+bool isBOMPrefix(const uint8_t * prefix, size_t len)
+{
+    if (len == 0)
+    {
+        return true;
+    }
+    if (len == 1)
+    {
+        return prefix[0] == 0xEF || prefix[0] == 0xFF || prefix[0] == 0xFE || prefix[0] == 0x00;
+    }
+    if (len == 2)
+    {
+        if (prefix[0] == 0xEF)
+        {
+            return prefix[1] == 0xBB;
+        }
+        if (prefix[0] == 0xFF)
+        {
+            return prefix[1] == 0xFE;
+        }
+        if (prefix[0] == 0xFE)
+        {
+            return prefix[1] == 0xFF;
+        }
+        if (prefix[0] == 0x00)
+        {
+            return prefix[1] == 0x00;
+        }
+        return false;
+    }
+    if (len == 3)
+    {
+        if (prefix[0] == 0xEF && prefix[1] == 0xBB)
+        {
+            return prefix[2] == 0xBF;
+        }
+        if (prefix[0] == 0xFF && prefix[1] == 0xFE)
+        {
+            return prefix[2] == 0x00;
+        }
+        if (prefix[0] == 0x00 && prefix[1] == 0x00)
+        {
+            return prefix[2] == 0xFE;
+        }
+        return false;
+    }
+    if (len == 4)
+    {
+        if (prefix[0] == 0xFF && prefix[1] == 0xFE && prefix[2] == 0x00)
+        {
+            return prefix[3] == 0x00;
+        }
+        if (prefix[0] == 0x00 && prefix[1] == 0x00 && prefix[2] == 0xFE)
+        {
+            return prefix[3] == 0xFF;
+        }
+        return false;
+    }
+    return false;
+}
+
+bool isDefinitiveBOM(const uint8_t * prefix, size_t len)
+{
+    if (len == 2)
+    {
+        if (prefix[0] == 0xFE && prefix[1] == 0xFF)
+        {
+            return true;
+        }
+    }
+    if (len == 3)
+    {
+        if (prefix[0] == 0xEF && prefix[1] == 0xBB && prefix[2] == 0xBF)
+        {
+            return true;
+        }
+    }
+    return false;
+}
 }
 
 UTFConvertingReadBuffer::UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> impl_)
@@ -69,8 +149,18 @@ void UTFConvertingReadBuffer::detectBOM()
     {
         if (!impl->hasPendingData())
         {
-            if (!impl->next())
+            if (bytes_read > 0 && !isBOMPrefix(bom_buffer, bytes_read))
+            {
                 break;
+            }
+            if (isDefinitiveBOM(bom_buffer, bytes_read))
+            {
+                break;
+            }
+            if (!impl->next())
+            {
+                break;
+            }
         }
 
         size_t available = impl->available();
@@ -78,6 +168,15 @@ void UTFConvertingReadBuffer::detectBOM()
         memcpy(bom_buffer + bytes_read, impl->position(), to_copy);
         impl->position() += to_copy;
         bytes_read += to_copy;
+
+        if (!isBOMPrefix(bom_buffer, bytes_read))
+        {
+            break;
+        }
+        if (isDefinitiveBOM(bom_buffer, bytes_read))
+        {
+            break;
+        }
     }
 
     /// Check for BOMs (order matters: check UTF-32 before UTF-16)
