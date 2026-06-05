@@ -1,5 +1,6 @@
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 
+#include <Columns/ColumnConst.h>
 #include <Common/logger_useful.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>

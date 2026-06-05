@@ -130,7 +130,8 @@ PoolWithFailover::PoolWithFailover(
         uint64_t wait_timeout_,
         size_t connect_timeout_,
         size_t rw_timeout_,
-        bool bg_reconnect_)
+        bool bg_reconnect_,
+        bool enable_compression_)
     : max_tries(max_tries_)
     , shareable(false)
     , wait_timeout(wait_timeout_)
@@ -145,7 +146,10 @@ PoolWithFailover::PoolWithFailover(
             connect_timeout_,
             rw_timeout_,
             default_connections_,
-            max_connections_));
+            max_connections_,
+            MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
+            MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT,
+            enable_compression_));
         if (bg_reconnect)
             DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_by_priority[0].back()), shareable));
     }
