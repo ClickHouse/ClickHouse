@@ -29,6 +29,7 @@ You cannot perform the following queries:
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
+[SETTINGS enable_compression=0]
 ```
 
 **Engine Parameters**
@@ -37,6 +38,22 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 - `database` — Remote database name.
 - `user` — MySQL user.
 - `password` — User password.
+
+**Settings**
+
+### `enable_compression` {#enable-compression}
+
+Enables zlib compression for the MySQL protocol connection. When set to `1`, ClickHouse requests protocol-level compression from the MySQL server.
+
+Default value: `0`.
+
+Example:
+
+```sql
+CREATE DATABASE mysql_db
+ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
+SETTINGS enable_compression = 1;
+```
 
 ## Data types support {#data_types-support}
 
