@@ -103,19 +103,36 @@ def run_tests(
     # a master-side memory-limit failure would be inverted as a reproduced bug.
     limit_source = build_type if build_type is not None else Info().job_name
     memory_limit = 10 * 2**30 if "asan_ubsan" in limit_source else 5 * 2**30
+    # Hand the time budget to `clickhouse-test` itself via `--global_time_limit`
+    # so it stops *gracefully* between tests and exits with
+    # `GLOBAL_TIME_LIMIT_EXIT_CODE` - reported as a benign "time limit reached"
+    # rather than "Server died". The external `Shell.run` timeout below is kept
+    # only as a larger safety net: it sends SIGTERM to the whole process group
+    # and so should fire only for a genuinely frozen process, not pre-empt the
+    # graceful stop.
+    global_time_limit_arg = (
+        f" --global_time_limit {global_time_limit}" if global_time_limit > 0 else ""
+    )
     # `set -o pipefail` is required so that the pipeline's exit code reflects
     # `clickhouse-test`'s exit code rather than `tee`'s. Without it, a non-zero
     # exit from `clickhouse-test` is silently swallowed by `tee` returning 0.
     command = f"set -o pipefail; clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
-                --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count} \
+                --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count}{global_time_limit_arg} \
                 {extra_args} \
                 --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
-    return Shell.run(
-        command, verbose=True, timeout=global_time_limit if global_time_limit > 0 else None
-    )
+    # Allow a margin over the graceful budget for the run to wind down before the
+    # external hard kill engages. The last in-flight test can be deep inside its
+    # own per-test alarm window when the deadline is reached: `clickhouse-test`
+    # arms that alarm as `int(args.timeout * 1.1) + 60` (720s with the default
+    # `--timeout 600`), after which it stops gracefully. The margin must exceed
+    # that bound (plus the worker shutdown wind-down) so the external SIGTERM
+    # fires only for a genuinely frozen process and never pre-empts the graceful
+    # `GLOBAL_TIME_LIMIT_EXIT_CODE` stop (which would be reported as "Server died").
+    outer_timeout = global_time_limit + 900 if global_time_limit > 0 else None
+    return Shell.run(command, verbose=True, timeout=outer_timeout)
 
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
