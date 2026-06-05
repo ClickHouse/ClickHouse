@@ -3519,7 +3519,15 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
                         if (!node)
                             return;
                         if (const auto * ident = node->as<ASTIdentifier>())
+                        {
+                            /// Record the full name and every part. A compound identifier
+                            /// such as `_a.x` binds its first part (`_a`) during analysis,
+                            /// so the lambda variable must avoid colliding with `_a`, not
+                            /// just with the whole `_a.x`.
                             used_identifiers.insert(ident->name());
+                            for (const auto & part : ident->name_parts)
+                                used_identifiers.insert(part);
+                        }
                         for (const auto & child : node->children)
                             collect_identifiers(child.get());
                     };
