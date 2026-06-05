@@ -287,3 +287,124 @@ def test_reload_zookeeper(started_cluster):
     cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
     cluster.wait_zookeeper_nodes_to_start(["zoo1", "zoo2", "zoo3"])
     reset_zookeeper_config((node1, node2), default_zk_config)
+
+
+# Stress parameters for the UNKNOWN_ROLE race regression test below.
+RACE_SEED_ENTITIES = 1500
+RACE_CHURNERS = 6
+RACE_VICTIMS = 6
+RACE_DURATION_SECONDS = 45
+
+# In-container driver. Numeric parameters (SEED/CHURNERS/VICTIMS/DURATION) are
+# prepended as shell variable assignments by the test, so this body needs no
+# Python string substitution (keeps the literal shell braces intact).
+_RACE_DRIVER_BODY = r"""
+set -u
+CLIENT="clickhouse-client"
+
+# Bloat the /uuid children list so the (previously lock-free) snapshot read in
+# refreshEntities is slow and the eviction window is wide.
+for i in $(seq 0 $((SEED - 1))); do
+    echo "CREATE SETTINGS PROFILE IF NOT EXISTS seed_$i SETTINGS max_execution_time=$((i % 100 + 1));"
+done | $CLIENT --multiquery
+
+FOUND=/tmp/race_found
+rm -f "$FOUND"
+END=$(( $(date +%s) + DURATION ))
+
+# Keep the /uuid children list volatile so a stale-snapshot watch refresh is
+# almost always in flight.
+churn() {
+    local w=$1 i=0 n
+    while [ "$(date +%s)" -lt "$END" ] && [ ! -e "$FOUND" ]; do
+        n="churn_${w}_$((i % 4))"
+        $CLIENT --multiquery -q "CREATE SETTINGS PROFILE IF NOT EXISTS $n SETTINGS max_execution_time=$((i % 50 + 1)); DROP SETTINGS PROFILE IF EXISTS $n;" >/dev/null 2>&1
+        i=$((i + 1))
+    done
+}
+
+# Create a role and immediately reference it by name (CREATE USER ... DEFAULT
+# ROLE, CREATE QUOTA ... TO). On the buggy build the role gets evicted from the
+# local cache in between and one of these fails with UNKNOWN_ROLE.
+victim() {
+    local w=$1 name="race_$w" out
+    while [ "$(date +%s)" -lt "$END" ] && [ ! -e "$FOUND" ]; do
+        out=$($CLIENT --multiquery -q "
+            DROP SETTINGS PROFILE IF EXISTS $name;
+            DROP QUOTA IF EXISTS $name;
+            DROP USER IF EXISTS $name;
+            DROP ROLE IF EXISTS $name;
+            CREATE SETTINGS PROFILE $name SETTINGS max_execution_time=60;
+            CREATE ROLE $name SETTINGS PROFILE $name;
+            CREATE USER $name IDENTIFIED BY 'p' DEFAULT ROLE $name;
+            CREATE QUOTA $name KEYED BY user_name FOR INTERVAL 1 hour NO LIMITS TO $name;
+        " 2>&1)
+        case "$out" in
+            *UNKNOWN_ROLE* | *"There is no role"*)
+                echo "$out" > "$FOUND"
+                return ;;
+        esac
+    done
+}
+
+for w in $(seq 1 $CHURNERS); do churn "$w" & done
+for w in $(seq 1 $VICTIMS); do victim "$w" & done
+wait
+
+if [ -e "$FOUND" ]; then
+    echo "RACE_DETECTED"
+    cat "$FOUND"
+    exit 0
+fi
+echo "NO_RACE"
+"""
+
+
+def _race_cleanup(node):
+    # Drop everything the race regression test may have created.
+    stmts = [
+        f"DROP SETTINGS PROFILE IF EXISTS seed_{i}" for i in range(RACE_SEED_ENTITIES)
+    ]
+    for w in range(RACE_CHURNERS):
+        for s in range(4):
+            stmts.append(f"DROP SETTINGS PROFILE IF EXISTS churn_{w + 1}_{s}")
+    for w in range(RACE_VICTIMS):
+        stmts += [
+            f"DROP QUOTA IF EXISTS race_{w + 1}",
+            f"DROP USER IF EXISTS race_{w + 1}",
+            f"DROP ROLE IF EXISTS race_{w + 1}",
+            f"DROP SETTINGS PROFILE IF EXISTS race_{w + 1}",
+        ]
+    node.query(";\n".join(stmts))
+
+
+# Regression test for a TOCTOU race in ReplicatedAccessStorage: the background
+# watch thread used to read the /uuid children list without holding the mutex and
+# then evict everything not in that (stale) snapshot via removeAllExcept. A role
+# created and immediately referenced by name on the same connection could be
+# evicted from the local cache in between, so the next statement that resolves the
+# role failed with "There is no role ... (UNKNOWN_ROLE)" even though CREATE ROLE
+# had just succeeded. https://github.com/ClickHouse/ClickHouse/issues/106521
+#
+# This is a probabilistic stress test: it reliably fails on the buggy build and
+# never false-positives on the fixed build (within a victim the role is created
+# and used with nothing dropping it in between, so the only thing that could
+# remove it was the racing watch eviction).
+def test_create_role_then_reference_it_no_unknown_role(started_cluster):
+    node = node1
+    params = (
+        f"SEED={RACE_SEED_ENTITIES}\n"
+        f"CHURNERS={RACE_CHURNERS}\n"
+        f"VICTIMS={RACE_VICTIMS}\n"
+        f"DURATION={RACE_DURATION_SECONDS}\n"
+    )
+    driver = params + _RACE_DRIVER_BODY
+    try:
+        result = node.exec_in_container(["bash", "-c", driver])
+        assert "RACE_DETECTED" not in result, (
+            "ReplicatedAccessStorage evicted a freshly created role "
+            "(UNKNOWN_ROLE race):\n" + result
+        )
+        assert "NO_RACE" in result, result
+    finally:
+        _race_cleanup(node)
