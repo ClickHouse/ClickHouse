@@ -133,6 +133,7 @@ class SparkTable:
         self.file_format = _file_format
         self.storage = _storage
         self.catalog = _catalog
+        self.check_constraints: dict[str, str] = {}
 
     def get_namespace_path(self) -> str:
         return f"test.{self.table_name}"
