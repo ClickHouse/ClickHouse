@@ -1145,9 +1145,13 @@ protected:
             auto & stage = all_stages[stage_name];
             stage->finished_tasks++;
 
-            /// Is somebody already waiting for the result?
-            if (stage->finished_tasks == stage->started_tasks && stage_results.contains(stage_name))
+            /// Signal completion at most once: a status-poll race can make the counts match again
+            /// after the stage finished, and setting the promise twice throws.
+            if (stage->finished_tasks == stage->started_tasks && stage_results.contains(stage_name) && !stage->promise_signaled)
+            {
+                stage->promise_signaled = true;
                 stage->promise.set_value();
+            }
 
             stage_tasks[stage_name].erase(task_name); // TODO: really need to erase?
         }
@@ -1232,6 +1236,7 @@ protected:
             Int64 started_tasks = 0;
             Int64 finished_tasks = 0;
             std::promise<void> promise;
+            bool promise_signaled = false;
         };
 
         using StageInfoPtr = std::shared_ptr<StageInfo>;
