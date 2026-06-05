@@ -310,7 +310,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
         if (!columns_info_list.empty())
         {
             std::lock_guard lock(row_store_transfer_mutex);
-            blocks_to_columns_info.push_back(BlockToColumnsInfo{std::move(columns_info_list)});
+            blocks_to_columns_info.push_back(BlockToColumnsInfo{std::move(columns_info_list), use_zero_copy});
         }
     };
 
@@ -958,7 +958,6 @@ void ConcurrentHashJoin::finalizeRowStoreStatus()
     auto & first_hash_join = hash_joins[0]->data;
     auto & first_hash_join_data = *getData(hash_joins[0]);
 
-    size_t rows_to_join = 0;
     auto & column_replicated_flags = first_hash_join_data.column_replicated_flags;
     for (const auto & hash_join : hash_joins)
     {
@@ -971,8 +970,7 @@ void ConcurrentHashJoin::finalizeRowStoreStatus()
                 return;
             }
 
-            /// Collect joined rows and column replicated flags from each hash join.
-            rows_to_join += data.rows_to_join;
+            /// Collect column replicated flags from each hash join.
             const auto & src_flags = getData(hash_join)->column_replicated_flags;
             chassert(column_replicated_flags.size() == src_flags.size());
             for (size_t j = 0; j < column_replicated_flags.size(); ++j)
@@ -980,12 +978,27 @@ void ConcurrentHashJoin::finalizeRowStoreStatus()
         }
     }
 
+    /// Count the rows of hash join payload. Can differ from rows_to_join because of the Selector for ASOF join.
+    size_t payload_rows = 0;
+    for (const auto & block_columns_info : blocks_to_columns_info)
+    {
+        const auto & columns_info_list = block_columns_info.columns_info_list;
+        if (columns_info_list.empty())
+            continue;
+
+        if (block_columns_info.shared_row_store)
+            payload_rows += columns_info_list.front()->rows();
+        else
+            for (const auto * columns_info : columns_info_list)
+                payload_rows += columns_info->rows();
+    }
+
     /// Select the row store columns and their indexes based on the first hash join data.
     const auto & block = first_hash_join->savedBlockSample();
     auto access_indexes_opt = HashJoin::computeColumnAccessIndexes(
         block,
         column_replicated_flags,
-        rows_to_join,
+        payload_rows,
         table_join->maxBytesForHashJoinRowStore(),
         table_join->minColumnsForHashJoinRowStore());
 

@@ -2412,11 +2412,16 @@ void HashJoin::finalizeRowStoreStatus()
         return;
     }
 
+    /// Count the rows of hash join payload. Can differ from rows_to_join because of the Selector for ASOF join.
+    size_t payload_rows = 0;
+    for (const auto & scattered_cols : data->columns)
+        payload_rows += scattered_cols.columns_info.rows();
+
     const Block & block = savedBlockSample();
     auto access_indexes = computeColumnAccessIndexes(
         block,
         data->column_replicated_flags,
-        data->rows_to_join,
+        payload_rows,
         table_join->maxBytesForHashJoinRowStore(),
         table_join->minColumnsForHashJoinRowStore());
 
@@ -2440,7 +2445,7 @@ void HashJoin::finalizeRowStoreStatus()
 std::optional<ColumnAccessIndexes> HashJoin::computeColumnAccessIndexes(
     const Block & block,
     const std::vector<bool> & column_replicated_flags,
-    size_t rows_to_join,
+    size_t payload_rows,
     size_t max_row_store_bytes,
     size_t min_row_store_columns)
 {
@@ -2458,7 +2463,7 @@ std::optional<ColumnAccessIndexes> HashJoin::computeColumnAccessIndexes(
     }
 
     /// Select the columns that fit into the capacity and compute the layout of the row store.
-    const auto [layout, filter] = RowDataStore::computeLayout(eligible_columns, rows_to_join, max_row_store_bytes);
+    const auto [layout, filter] = RowDataStore::computeLayout(eligible_columns, payload_rows, max_row_store_bytes);
     size_t row_store_size = std::ranges::count(filter, true);
     if (row_store_size < min_row_store_columns)
         return {};

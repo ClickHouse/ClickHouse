@@ -634,7 +634,7 @@ private:
     static std::optional<ColumnAccessIndexes> computeColumnAccessIndexes(
         const Block & block,
         const std::vector<bool> & column_replicated_flags,
-        size_t rows_to_join,
+        size_t payload_rows,
         size_t max_row_store_bytes,
         size_t min_row_store_columns);
     void finalizeRowStoreStatus();

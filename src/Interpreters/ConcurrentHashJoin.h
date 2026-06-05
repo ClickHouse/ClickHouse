@@ -134,6 +134,8 @@ private:
     struct BlockToColumnsInfo
     {
         std::vector<ColumnsInfo *> columns_info_list;
+        /// Whether the columns infos of this block share one row store (zero-copy).
+        bool shared_row_store = false;
     };
 
     std::vector<BlockToColumnsInfo> blocks_to_columns_info;
