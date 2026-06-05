@@ -3,6 +3,7 @@
 #include <Core/SortDescription.h>
 #include <IO/Operators.h>
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
@@ -104,26 +105,53 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
 
 #if USE_EMBEDDED_COMPILER
 
-static CHJIT & getJITInstance()
+namespace
 {
-    static CHJIT jit;
-    return jit;
+    std::mutex sort_description_jit_mutex;
+    /// See `aggregator_jit_instance` in `Aggregator.cpp` for the rationale of `shared_ptr` ownership.
+    std::shared_ptr<CHJIT> sort_description_jit_instance;
+}
+
+static std::shared_ptr<CHJIT> getJITInstancePtr()
+{
+    std::lock_guard lock(sort_description_jit_mutex);
+    if (!sort_description_jit_instance)
+        sort_description_jit_instance = std::make_shared<CHJIT>();
+    return sort_description_jit_instance;
+}
+
+void resetSortDescriptionJITInstance()
+{
+    std::lock_guard lock(sort_description_jit_mutex);
+    sort_description_jit_instance.reset();
 }
 
 class CompiledSortDescriptionFunctionHolder final : public CompiledExpressionCacheEntry
 {
 public:
-    explicit CompiledSortDescriptionFunctionHolder(CompiledSortDescriptionFunction compiled_function_)
+    explicit CompiledSortDescriptionFunctionHolder(CompiledSortDescriptionFunction compiled_function_, std::shared_ptr<CHJIT> jit_owner_)
         : CompiledExpressionCacheEntry(compiled_function_.compiled_module.size)
         , compiled_sort_description_function(compiled_function_)
+        , jit_owner(std::move(jit_owner_))
     {}
 
     ~CompiledSortDescriptionFunctionHolder() override
     {
-        getJITInstance().deleteCompiledModule(compiled_sort_description_function.compiled_module);
+        try
+        {
+            /// Use the JIT instance that compiled this module (see `CompiledAggregateFunctionsHolder`).
+            jit_owner->deleteCompiledModule(compiled_sort_description_function.compiled_module);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     CompiledSortDescriptionFunction compiled_sort_description_function;
+
+private:
+    std::shared_ptr<CHJIT> jit_owner;
 };
 
 static std::string getSortDescriptionDump(const SortDescription & description, const DataTypes & header_types)
@@ -195,8 +223,9 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
         {
             LOG_TRACE(getLogger(), "Compile sort description {}", description_dump);
 
-            auto compiled_sort_description = compileSortDescription(getJITInstance(), description, sort_description_types, description_dump);
-            return std::make_shared<CompiledSortDescriptionFunctionHolder>(std::move(compiled_sort_description));
+            auto jit_owner = getJITInstancePtr();
+            auto compiled_sort_description = compileSortDescription(*jit_owner, description, sort_description_types, description_dump);
+            return std::make_shared<CompiledSortDescriptionFunctionHolder>(std::move(compiled_sort_description), std::move(jit_owner));
         });
 
         compiled_sort_description_holder = std::static_pointer_cast<CompiledSortDescriptionFunctionHolder>(compiled_function_cache_entry);
@@ -204,8 +233,9 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
     else
     {
         LOG_TRACE(getLogger(), "Compile sort description {}", description_dump);
-        auto compiled_sort_description = compileSortDescription(getJITInstance(), description, sort_description_types, description_dump);
-        compiled_sort_description_holder = std::make_shared<CompiledSortDescriptionFunctionHolder>(std::move(compiled_sort_description));
+        auto jit_owner = getJITInstancePtr();
+        auto compiled_sort_description = compileSortDescription(*jit_owner, description, sort_description_types, description_dump);
+        compiled_sort_description_holder = std::make_shared<CompiledSortDescriptionFunctionHolder>(std::move(compiled_sort_description), std::move(jit_owner));
     }
 
     auto comparator_function = compiled_sort_description_holder->compiled_sort_description_function.comparator_function;
