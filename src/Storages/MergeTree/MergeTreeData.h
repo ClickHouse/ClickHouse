@@ -992,6 +992,16 @@ public:
     std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 
+    /// True iff the data types in the sorting key actually changed between two metadata snapshots.
+    /// `verifySortingKey` only inspects `sorting_key.data_types`, so when the type list is unchanged,
+    /// the check produces the same result as at CREATE time and re-running it is unnecessary.
+    /// Used by `StorageMergeTree::alter` and `StorageReplicatedMergeTree::alter` to skip the
+    /// suspicious-primary-key check on ALTERs that cannot affect the sorting key (settings,
+    /// comments, codec changes, column placement modifiers, etc.) when the user has already
+    /// disabled `allow_suspicious_primary_key` for the current session but the table was created
+    /// with it enabled.
+    static bool sortingKeyTypesChanged(const KeyDescription & old_sorting_key, const KeyDescription & new_sorting_key);
+
     /// Should be called if part data is suspected to be corrupted.
     /// Has the ability to check all other parts
     /// which reside on the same disk of the suspicious part.

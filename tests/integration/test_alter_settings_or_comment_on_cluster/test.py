@@ -33,11 +33,11 @@ def started_cluster():
 
 def test_mixed_settings_and_comment_alter_on_cluster(started_cluster):
     # Regression test for ON CLUSTER ALTER batches that mix MODIFY SETTING /
-    # RESET SETTING with column or table comments. The storage-side fast path
-    # in StorageReplicatedMergeTree::alter for "settings or comment" ALTERs
-    # skips the replicated log entry, so the DDL routing must execute the
-    # query on every replica rather than only on the leader. Without the
-    # routing fix, the leader applies the change and the followers diverge.
+    # RESET SETTING with column or table comments. Such mixed batches must
+    # converge across all replicas. They take the standard replicated-log
+    # path in StorageReplicatedMergeTree::alter (the local-only fast paths
+    # only apply to pure-settings or pure-comment ALTERs), so the DDL
+    # routing forwards them as normal replicated ALTERs.
     ch1.query(
         database="test_db",
         sql="CREATE TABLE mixed_alter (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/mixed_alter', 'r1') ORDER BY tuple()",
@@ -97,10 +97,11 @@ def test_mixed_settings_and_comment_alter_on_cluster(started_cluster):
 
 
 def test_modify_column_comment_only_on_cluster(started_cluster):
-    # `ALTER ... MODIFY COLUMN c COMMENT 'x'` parses as `ASTAlterCommand::MODIFY_COLUMN`
-    # but the resolved `AlterCommand::isCommentAlter` treats it as comment-only, so the
-    # storage layer skips the replicated log entry. The DDL routing layer must agree, or
-    # leader-only routing leaves followers with stale comments.
+    # `ALTER ... MODIFY COLUMN c COMMENT 'x'` parses as `ASTAlterCommand::MODIFY_COLUMN`.
+    # It does not change the resolved sorting-key data types, so the gating in
+    # StorageMergeTree::alter / StorageReplicatedMergeTree::alter skips the
+    # suspicious-primary-key check. It still goes through the replicated-log
+    # path, so all replicas converge.
     ch1.query(
         database="test_db",
         sql="CREATE TABLE modcol_comment (id UInt64, x String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/modcol_comment', 'r1') ORDER BY id",

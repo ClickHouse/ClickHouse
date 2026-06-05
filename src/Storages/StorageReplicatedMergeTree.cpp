@@ -6744,6 +6744,9 @@ void StorageReplicatedMergeTree::alter(
     const auto & query_settings = query_context->getSettingsRef();
 
     StorageInMemoryMetadata future_metadata = *getInMemoryMetadataPtr(query_context, false);
+    /// Snapshot the sorting key before applying commands so it can be compared with the
+    /// resolved future sorting key to decide whether `verifySortingKey` must run.
+    KeyDescription old_sorting_key = future_metadata.sorting_key;
 
     removeImplicitStatistics(future_metadata.columns);
     commands.apply(future_metadata, query_context);
@@ -6776,25 +6779,18 @@ void StorageReplicatedMergeTree::alter(
         return;
     }
 
-    if (commands.areNonReplicatedAlterCommands())
-    {
-        /// Mixed `MODIFY SETTING` + `MODIFY COMMENT` / `COMMENT COLUMN` / `RESET SETTING` is still
-        /// a metadata-only ALTER: neither subcommand can change the sorting key, so the suspicious
-        /// primary key check must not run. `commands.isSettingsAlter` and `commands.isCommentAlter`
-        /// are both `all_of` checks and therefore both return false for mixed statements; this branch
-        /// closes that gap so they are handled the same way as the pure-settings / pure-comment cases.
-        merge_strategy_picker.refreshState();
-        changeSettings(future_metadata.settings_changes, table_lock_holder);
-
-        setInMemoryMetadata(future_metadata);
-
-        /// It is safe to ignore exceptions here as only settings and comments are changed,
-        /// neither of which is validated in `alterTable`.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
-        return;
-    }
-
-    if (!query_settings[Setting::allow_suspicious_primary_key])
+    /// `verifySortingKey` rejects sorting keys that contain `SimpleAggregateFunction`
+    /// (and other suspicious types). It is required at CREATE time and on ALTERs that can
+    /// actually change the sorting key. Re-running it on ALTERs that cannot affect the
+    /// sorting key (e.g. column codec changes, column placement modifiers, mixed
+    /// settings/comment statements, etc.) would otherwise reject those ALTERs on tables
+    /// that were created with `allow_suspicious_primary_key = 1` once that setting is no
+    /// longer in effect. Compare the resolved sorting-key data types directly so the
+    /// check fires only when the key would observe a different verdict than it did at
+    /// CREATE time. `StorageMergeTree::alter` performs the same check in the same
+    /// position.
+    if (!query_settings[Setting::allow_suspicious_primary_key]
+        && MergeTreeData::sortingKeyTypesChanged(old_sorting_key, future_metadata.sorting_key))
     {
         MergeTreeData::verifySortingKey(future_metadata.sorting_key);
     }

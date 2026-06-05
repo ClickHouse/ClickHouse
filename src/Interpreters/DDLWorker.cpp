@@ -818,17 +818,17 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
 
     if (auto * alter = ast_ddl->as<ASTAlterQuery>())
     {
-        // Setting/comment alters (including mixed batches like
-        // MODIFY COMMENT ..., MODIFY SETTING ...) should be executed on all
-        // replicas. The storage-side fast path in StorageReplicatedMergeTree::alter
-        // for such commands skips the replicated log, so leader-only routing
-        // would leave the followers diverged.
+        /// Pure-settings and pure-comment alters take the local-only fast paths in
+        /// `StorageReplicatedMergeTree::alter` that skip the replicated log entry, so
+        /// they must be executed on every replica directly. Mixed batches (for example
+        /// `MODIFY COMMENT ..., MODIFY SETTING ...`) and other metadata-only ALTERs go
+        /// through the standard replicated-log path in `StorageReplicatedMergeTree::alter`,
+        /// which already routes the change to every replica via the log.
         if (alter->isSettingsAlter() ||
             alter->isFreezeAlter() ||
             alter->isUnlockSnapshot() ||
             alter->isMovePartitionToDiskOrVolumeAlter() ||
-            alter->isCommentAlter() ||
-            alter->isSettingsOrCommentAlter())
+            alter->isCommentAlter())
             return false;
     }
 
