@@ -585,7 +585,7 @@ SELECT database, name FROM system.tables WHERE database = 'test_database_backup'
 └──────────────────────┴──────────────┘
 ```
 )DOCS_MD",
-        .syntax = "ENGINE = Backup('database_name', 'backup_destination')",
+        .syntax = "ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))",
         .related = {}});
 }
 
