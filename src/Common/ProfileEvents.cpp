@@ -825,9 +825,9 @@ The server successfully detected this situation and will download merged part fr
     M(CachedWriteBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache", ValueType::Bytes) \
     M(CachedWriteBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache", ValueType::Microseconds) \
     \
-    M(ReaderExecutorBytesFromPageCache, "Bytes ReaderExecutor served to the consumer from the page cache tier.", ValueType::Bytes) \
-    M(ReaderExecutorBytesFromFilesystemCache, "Bytes ReaderExecutor served to the consumer from the filesystem cache tier.", ValueType::Bytes) \
-    M(ReaderExecutorBytesFromSource, "Bytes ReaderExecutor fetched from source after missing all cache tiers.", ValueType::Bytes) \
+    M(ReaderExecutorBytesFromPageCache, "Physical bytes ReaderExecutor issued from the page cache tier (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorRequestedBytes.", ValueType::Bytes) \
+    M(ReaderExecutorBytesFromFilesystemCache, "Physical bytes ReaderExecutor issued from the filesystem cache tier (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorRequestedBytes.", ValueType::Bytes) \
+    M(ReaderExecutorBytesFromSource, "Physical bytes ReaderExecutor issued to the source after missing all cache tiers (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorRequestedBytes.", ValueType::Bytes) \
     M(ReaderExecutorBytesPushedToCacheSync, "Bytes ReaderExecutor wrote back into cache tiers via put from a foreground (synchronous) read.", ValueType::Bytes) \
     M(ReaderExecutorBytesPushedToCacheAsync, "Bytes ReaderExecutor wrote back into cache tiers via put from a background prefetch read.", ValueType::Bytes) \
     M(ReaderExecutorCacheGetRequests, "Number of ICacheHandle::get invocations in ReaderExecutor.", ValueType::Number) \
