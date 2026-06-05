@@ -106,8 +106,12 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+            /// Only suppress NO_COMMON_TYPE, which is what getLeastSupertype throws when the
+            /// alternative type is incompatible with the other argument (e.g. comparison functions
+            /// calling executeGeneric). All other errors (including ILLEGAL_TYPE_OF_ARGUMENT) are
+            /// value-dependent and must propagate — for example, geoToS2 throws ILLEGAL_TYPE_OF_ARGUMENT
+            /// for NaN coordinates after build() has already succeeded for a Float64 alternative.
+            if (e.code() != ErrorCodes::NO_COMMON_TYPE)
                 throw;
             return nullptr;
         }
