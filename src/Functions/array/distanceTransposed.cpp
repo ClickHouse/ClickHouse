@@ -40,25 +40,20 @@ extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 /// Base kernel pattern for distance functions.
 /// Each kernel must provide:
 ///   - static constexpr auto name: function name
-///   - static void distance<T>(...): main distance calculation using simsimd
+///   - static constexpr simsimd_metric_kind_t metric_kind (under USE_SIMSIMD): SimSIMD metric to resolve and call
+///   - static void distance<T>(...): scalar distance, used when no SimSIMD kernel is available
 ///   - static void distanceScalar<InputType, AccumulatorType>(...): fallback scalar implementation
 
 struct L2DistanceTransposed
 {
     static constexpr auto name = "L2DistanceTransposed";
+#if USE_SIMSIMD
+    static constexpr simsimd_metric_kind_t metric_kind = simsimd_metric_l2_k;
+#endif
 
     template <typename T>
     static void distance(const T * __restrict x, const T * __restrict y, std::size_t array_size, Float64 * result)
     {
-#if USE_SIMSIMD
-        if constexpr (std::is_same_v<T, BFloat16>)
-            simsimd_l2_bf16(reinterpret_cast<const simsimd_bf16_t *>(x), reinterpret_cast<const simsimd_bf16_t *>(y), array_size, result);
-        else if constexpr (std::is_same_v<T, Float32>)
-            simsimd_l2_f32(x, y, array_size, result);
-        else if constexpr (std::is_same_v<T, Float64>)
-            simsimd_l2_f64(x, y, array_size, result);
-        return;
-#endif
         if constexpr (std::is_same_v<T, BFloat16>)
             distanceScalar<BFloat16, Float32>(x, y, array_size, result);
         else if constexpr (std::is_same_v<T, Float32>)
@@ -85,20 +80,13 @@ struct L2DistanceTransposed
 struct CosineDistanceTransposed
 {
     static constexpr auto name = "cosineDistanceTransposed";
+#if USE_SIMSIMD
+    static constexpr simsimd_metric_kind_t metric_kind = simsimd_metric_cos_k;
+#endif
 
     template <typename T>
     static void distance(const T * __restrict x, const T * __restrict y, std::size_t array_size, Float64 * result)
     {
-#if USE_SIMSIMD
-        if constexpr (std::is_same_v<T, BFloat16>)
-            simsimd_cos_bf16(reinterpret_cast<const simsimd_bf16_t *>(x), reinterpret_cast<const simsimd_bf16_t *>(y), array_size, result);
-        else if constexpr (std::is_same_v<T, Float32>)
-            simsimd_cos_f32(x, y, array_size, result);
-        else if constexpr (std::is_same_v<T, Float64>)
-            simsimd_cos_f64(x, y, array_size, result);
-        return;
-#endif
-        /// Fallback to scalar implementation if simsimd is not available. Algorithms also originate from simsimd, but are decoupled
         if constexpr (std::is_same_v<T, BFloat16>)
             distanceScalar<BFloat16, Float32>(x, y, array_size, result);
         else if constexpr (std::is_same_v<T, Float32>)
@@ -420,6 +408,27 @@ private:
         return executeImpl(converted_arguments, nullptr, input_rows_count);
     }
 
+#if USE_SIMSIMD
+    /// Resolve the SimSIMD kernel for this distance metric and calculation type, or nullptr if none exists.
+    template <typename CalcT>
+    static simsimd_metric_dense_punned_t resolveSimdKernel()
+    {
+        const simsimd_datatype_t datatype = std::is_same_v<CalcT, BFloat16>
+            ? simsimd_datatype_bf16_k
+            : (std::is_same_v<CalcT, Float32> ? simsimd_datatype_f32_k : simsimd_datatype_f64_k);
+        simsimd_metric_dense_punned_t simd_kernel = nullptr;
+        simsimd_capability_t unused_capability = simsimd_cap_any_k;
+        simsimd_find_kernel_punned(
+            Kernel::metric_kind,
+            datatype,
+            simsimd_capabilities(),
+            simsimd_cap_any_k,
+            reinterpret_cast<simsimd_kernel_punned_t *>(&simd_kernel),
+            &unused_capability);
+        return simd_kernel;
+    }
+#endif
+
     /// RefT is the type of the reference vector, CalcT is the type used for calculation
     template <typename RefT, typename CalcT, bool ref_is_const>
     ColumnPtr executeDistanceCalculation(
@@ -458,6 +467,10 @@ private:
         VectorWithMemoryTracking<CalcT> block(block_size * padded_array_size);
         auto block_row = [&](size_t r) -> CalcT * { return block.data() + r * padded_array_size; };
 
+#if USE_SIMSIMD
+        const simsimd_metric_dense_punned_t simd_kernel = resolveSimdKernel<CalcT>();
+#endif
+
         for (size_t base_row = 0; base_row < input_rows_count; base_row += block_size)
         {
             const size_t rows_in_block = std::min(block_size, input_rows_count - base_row);
@@ -490,8 +503,15 @@ private:
                 }();
 
                 auto * dst = block_row(r);
+                Float64 * res = &result_data[base_row + r];
 
-                Kernel::distance(dst, ref_data, qbit_size, &result_data[base_row + r]);
+#if USE_SIMSIMD
+                /// Branch is scary, but clang hoists it out of the loop.
+                if (simd_kernel)
+                    simd_kernel(dst, ref_data, qbit_size, res);
+                else
+#endif
+                    Kernel::distance(dst, ref_data, qbit_size, res);
             }
         }
 
