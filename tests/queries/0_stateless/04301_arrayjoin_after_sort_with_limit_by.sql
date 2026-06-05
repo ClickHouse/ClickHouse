@@ -9,6 +9,15 @@
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (id UInt32, pos UInt32, a Array(UInt32)) ENGINE = MergeTree ORDER BY tuple();
 
+-- Stop merges so the four parts inserted below stay separate. The bad plan
+-- needs the per-stream `LimitByTransform` to run before the lifted `arrayJoin`,
+-- and that transform only fires when the read pipeline has multiple streams
+-- (`pipeline.getNumStreams() > 1`), which requires multiple parts. If a
+-- background merge collapsed the parts into one before the `SELECT` runs, an
+-- unfixed build would read a single stream, never attach the per-stream limit,
+-- and the test would become a false negative.
+SYSTEM STOP MERGES t;
+
 -- Multiple parts so the read pipeline has multiple streams (per-stream
 -- `LimitByTransform` only fires when `pipeline.getNumStreams() > 1`).
 INSERT INTO t VALUES (1, 1, []), (1, 2, [1]);
