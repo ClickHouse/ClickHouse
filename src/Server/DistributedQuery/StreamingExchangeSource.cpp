@@ -282,6 +282,14 @@ std::optional<Chunk> StreamingExchangeSource::tryGenerate()
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
             "Final data packet on exchange stream {} carries {} rows; it must be empty", stream_name, num_rows);
 
+    /// A data packet must carry exactly the header's columns, or values would be dropped while the
+    /// row count is kept. A header-less stream (e.g. SELECT count()) sends rows with zero columns.
+    const size_t expected_columns = output.getHeader().columns();
+    if (num_rows != 0 && num_columns != expected_columns)
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            "Data packet on exchange stream {} carries {} rows with {} columns, but the stream header has {} columns",
+            stream_name, num_rows, num_columns, expected_columns);
+
     std::optional<Chunk> result;
     if (num_columns != 0)
     {
