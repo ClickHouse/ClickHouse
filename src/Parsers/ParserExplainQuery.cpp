@@ -137,9 +137,16 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         /// We only do this when there is no second FORMAT keyword following -- if there
         /// is one, the user wrote the double-FORMAT form explicitly and the first FORMAT
         /// genuinely belongs to the INSERT.
+        /// We also keep the FORMAT on the INSERT when it describes the insert's input data,
+        /// i.e. when the data is read FROM INFILE or via the `input` table function -- in
+        /// those cases the format is required for the insert input, not the EXPLAIN output.
         if (auto * insert_query = query->as<ASTInsertQuery>())
         {
-            if (insert_query->select && !insert_query->format.empty() && insert_query->format != "Values" && !insert_query->settings_ast)
+            ASTPtr input_function;
+            insert_query->tryFindInputFunction(input_function);
+
+            if (insert_query->select && !insert_query->format.empty() && insert_query->format != "Values"
+                && !insert_query->settings_ast && !insert_query->infile && !input_function)
             {
                 ParserKeyword s_format(Keyword::FORMAT);
                 if (!s_format.checkWithoutMoving(pos, expected))
