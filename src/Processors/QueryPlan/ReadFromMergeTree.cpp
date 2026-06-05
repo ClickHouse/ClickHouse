@@ -4755,6 +4755,12 @@ namespace
 
 void ReadFromMergeTree::serialize(Serialization & ctx) const
 {
+    /// Serializing the STREAM modifier is not implemented yet, so reject it instead of silently
+    /// reading a plain snapshot with different semantics.
+    if (query_info.isStream())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support a distributed read with the STREAM modifier");
+
     /// Serialization does not yet carry read-in-order, deferred FINAL filters, or a selected
     /// projection; refuse to distribute reads relying on them rather than read with wrong semantics.
     if (distributed_read_bucket_count > 0)
