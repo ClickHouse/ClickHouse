@@ -75,7 +75,10 @@ bool dagContainsNonReadySet(const ActionsDAG & dag)
     {
         if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
         {
-            const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            if (!column_set)
+                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+
             if (column_set)
             {
                 auto future_set = column_set->getData();
@@ -148,16 +151,13 @@ FilterResult filterResultForNotMatchedRows(
 
         if (input->column)
         {
-            /// ActionsDAG::addColumn normalizes ColumnConst to size 0; expand to size 1
-            /// because evaluatePartialResult is called below with input_rows_count == 1.
-            ColumnPtr constant_column = ColumnConst::create(input->column->getDataColumnPtr(), 1);
-            auto constant_column_with_type_and_name = ColumnWithTypeAndName{constant_column, input->result_type, input->result_name};
+            auto constant_column_with_type_and_name = ColumnWithTypeAndName{input->column, input->result_type, input->result_name};
             filter_input.emplace(input, std::move(constant_column_with_type_and_name));
             continue;
         }
 
         auto constant_column = input->result_type->createColumnConst(1, input->result_type->getDefault());
-        auto constant_column_with_type_and_name = ColumnWithTypeAndName{std::move(constant_column), input->result_type, input->result_name};
+        auto constant_column_with_type_and_name = ColumnWithTypeAndName{constant_column, input->result_type, input->result_name};
         filter_input.emplace(input, std::move(constant_column_with_type_and_name));
     }
 

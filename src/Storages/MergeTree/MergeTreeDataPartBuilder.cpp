@@ -71,7 +71,7 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
     if (!part_info)
         part_info = MergeTreePartInfo::fromPartName(name, data.format_version);
 
-    auto data_settings = data.getSettings(projection ? &projection->settings_changes : nullptr);
+    auto data_settings = data.getSettings(projection);
 
     switch (part_type->getValue())
     {
@@ -179,7 +179,7 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromDisk()
 
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromVolume()
 {
-    chassert(volume);
+    assert(volume);
     auto [storage, mark_type] = getPartStorageAndMarkType(volume, root_path, part_dir, read_settings);
 
     if (!storage || !mark_type)
@@ -195,7 +195,7 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromVolume()
 
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromStorage()
 {
-    chassert(part_storage);
+    assert(part_storage);
     auto mark_type = MergeTreeIndexGranularityInfo::getMarksTypeFromFilesystem(*part_storage);
 
     if (!mark_type)

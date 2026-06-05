@@ -1,5 +1,4 @@
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -41,7 +40,7 @@ namespace QueryPlanFormat
     constexpr std::string_view TABLE_PREFIX = "__table";
 
     /// Matches `__table<digits>.` at position pos, returns the position after the dot or 0 on mismatch.
-    static size_t matchTablePrefix(std::string_view name, size_t pos)
+    size_t matchTablePrefix(std::string_view name, size_t pos)
     {
         if (!name.substr(pos).starts_with(TABLE_PREFIX))
             return 0;
@@ -146,7 +145,7 @@ namespace QueryPlanFormat
         out << '\n';
     }
 
-    static PrettyColumnName formatFilterPretty(
+    PrettyColumnName formatFilterPretty(
         const ActionsDAG & dag,
         const String & column_name,
         const std::unordered_map<String, PrettyColumnName> & pretty_names,
@@ -201,27 +200,26 @@ namespace QueryPlanFormat
 
         String formatConstant(const ActionsDAG::Node * node)
         {
-            if (!node->column)
+            if (!node->column || node->column->empty())
                 return node->result_name;
 
             if (node->result_type && WhichDataType(node->result_type).isSet())
                 return node->result_name;
 
-            /// node->column is a size-0 ColumnConst; read the value from its data column.
-            const auto & data_col = node->column->getDataColumnPtr();
             WhichDataType data_type(node->result_type);
 
             if (data_type.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())
             {
                 WriteBufferFromOwnString buf;
                 writeChar('\'', buf);
-                node->result_type->getDefaultSerialization()->serializeText(*data_col, 0, buf, {});
+                const auto & col = node->column->convertToFullColumnIfConst();
+                node->result_type->getDefaultSerialization()->serializeText(*col, 0, buf, {});
                 writeChar('\'', buf);
                 return buf.str();
             }
 
             Field value;
-            data_col->get(0, value);
+            node->column->get(0, value);
             return applyVisitor(FieldVisitorToString(), value);
         }
 
@@ -242,7 +240,9 @@ namespace QueryPlanFormat
             if (!set_node->column)
                 return trimColumnIdentifier(set_node->result_name);
 
-            const ColumnSet * column_set = typeid_cast<const ColumnSet *>(&set_node->column->getDataColumn());
+            const auto * column_ptr = set_node->column.get();
+            const auto * col_const = typeid_cast<const ColumnConst *>(column_ptr);
+            const ColumnSet * column_set = col_const ? typeid_cast<const ColumnSet *>(&col_const->getDataColumn()) : typeid_cast<const ColumnSet *>(column_ptr);
 
             if (!column_set || !column_set->getData())
                 return trimColumnIdentifier(set_node->result_name);
