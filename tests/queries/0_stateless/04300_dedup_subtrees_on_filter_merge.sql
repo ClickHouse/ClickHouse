@@ -25,8 +25,14 @@ SELECT count() FROM (SELECT 1 AS x WHERE x = 1 AND 1 = x);
 -- the same canonical column; query result must be unchanged
 SELECT count() FROM numbers(100) WHERE number > 0 AND number > 0;
 
--- Non-deterministic functions must NOT be deduped (two calls give different values)
-SELECT count() FROM numbers(100) WHERE rand() % 256 < 256 AND rand() % 256 < 256;
+-- Non-deterministic functions in different scopes must NOT be deduped. The inner rand
+-- aliased as `x` and the outer rand are separate FUNCTION nodes; merging them would
+-- collapse the predicate to `x = x` and return 100 instead of ~0
+SELECT 'rand not deduped across scopes', countIf(explain LIKE '%FUNCTION rand()%') = 2
+FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM (SELECT rand() AS x FROM numbers(100)) WHERE rand() = x
+);
 
 -- Nested subquery with same predicate on different alias chains. Without alias
 -- look-through (dropped because some functions like `formatRow` consume names),
@@ -73,10 +79,24 @@ SELECT number FROM (
     SELECT number, arrayMap(x -> x + 1, [number])[1] AS a FROM numbers(5)
 ) WHERE arrayMap(x -> x + 2, [number])[1] = 5;
 
--- Globally non-deterministic functions (rand, randConstant) must not be deduped.
--- If the outer `rand()` were merged with inner `x`, the predicate would collapse to
--- `x = x` and return 100; correct behavior is two independent rands → ~0 matches
-SELECT count() FROM (SELECT rand() AS x FROM numbers(100)) WHERE rand() = x;
+-- name-sensitive parent over a name-insensitive child, `plus(a,1)` and `plus(b,1)` get
+-- merged by value-only dedup, but the formatRow parents must stay distinct (they observe
+-- the original child names in their JSON keys)
+SELECT count() FROM (
+    SELECT number AS a, number AS b,
+           formatRowNoNewline('JSONEachRow', plus(a, 1)) AS fa
+    FROM numbers(1)
+) WHERE formatRowNoNewline('JSONEachRow', plus(b, 1)) != fa;
+
+SELECT 'nested formatRow stays distinct', countIf(explain LIKE '%FUNCTION formatRowNoNewline%') = 2
+FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM (
+        SELECT number AS a, number AS b,
+               formatRowNoNewline('JSONEachRow', plus(a, 1)) AS fa
+        FROM numbers(1)
+    ) WHERE formatRowNoNewline('JSONEachRow', plus(b, 1)) != fa
+);
 
 -- Some deterministic functions consume their argument names (`formatRow*` uses them
 -- as JSON keys). Looking through aliases would falsely equate two such calls over

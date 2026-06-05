@@ -1039,16 +1039,16 @@ EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
         if (node.type != ActionType::FUNCTION || !node.function_base)
             continue;
 
-        /// for name-sensitive functions keep alias identity so f(a) and f(b) over the same value stay distinct
+        // for name-sensitive functions keep raw children so siblings already merged by ec don't drag the parent in
         const bool look_through_aliases = node.function_base->isNameInsensitive();
         std::vector<const Node *> arg_classes;
         arg_classes.reserve(node.children.size());
         for (const auto * c : node.children)
         {
-            if (!look_through_aliases && c->type == ActionType::ALIAS)
-                arg_classes.push_back(c);
-            else
+            if (look_through_aliases)
                 arg_classes.push_back(ec.find(c));
+            else
+                arg_classes.push_back(c);
         }
 
         auto & candidates = functions_by_name[getFunctionCanonicalName(node.function_base->getName())];
@@ -1084,17 +1084,30 @@ void ActionsDAG::deduplicateSubtrees()
 
     for (auto & node : nodes)
     {
-        /// don't rewrite alias children of name-sensitive functions
-        const bool preserve_alias_args =
+        /// name-sensitive functions read child names, so any rewrite has to keep the original name visible
+        const bool preserve_arg_names =
             node.type == ActionType::FUNCTION
             && node.function_base
             && !node.function_base->isNameInsensitive();
 
         for (auto & child : node.children)
         {
-            if (preserve_alias_args && child->type == ActionType::ALIAS)
+            if (!preserve_arg_names)
+            {
+                child = ec.find(child);
                 continue;
-            child = ec.find(child);
+            }
+            /// alias children already carry their own name, leave them as is
+            if (child->type == ActionType::ALIAS)
+                continue;
+            const Node * canon = ec.find(child);
+            if (canon == child)
+                continue;
+            /// when the canonical has a different name, wrap it so the function still sees the original
+            if (canon->result_name == child->result_name)
+                child = canon;
+            else
+                child = &addAlias(*canon, child->result_name);
         }
     }
 
