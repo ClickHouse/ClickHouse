@@ -318,14 +318,14 @@ SETTINGS optimize_inverse_dictionary_lookup = 1
 max_rows_in_set + break, no rewrite - plan
 SELECT groupArray(__table1.id) AS `groupArray(id)`
 FROM default.data_set_limit AS __table1
-WHERE __table1.id IN [1, 2]
+WHERE __table1.id IN _CAST([1, 2], \'Array(UInt64)\')
 SETTINGS optimize_inverse_dictionary_lookup = 1, max_rows_in_set = 1, set_overflow_mode = \'break\'
 max_rows_in_set + break, no rewrite
 [1,2]
 max_rows_in_set + throw, rewrite - plan
 SELECT groupArray(__table1.id) AS `groupArray(id)`
 FROM default.data_set_limit AS __table1
-WHERE __table1.id IN [1, 2]
+WHERE __table1.id IN _CAST([1, 2], \'Array(UInt64)\')
 SETTINGS optimize_inverse_dictionary_lookup = 1, max_rows_in_set = 1, set_overflow_mode = \'throw\'
 max_rows_in_set + throw: execution raises SET_SIZE_LIMIT_EXCEEDED
 max_bytes_in_set + break, no rewrite

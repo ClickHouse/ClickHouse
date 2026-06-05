@@ -47,7 +47,7 @@ Wide dict key vs narrow column, no rewrite
 Empty rewrite, Nullable predicate, rewrite - plan
 SELECT count() AS `count()`
 FROM default.data_nullable_predicate AS __table1
-WHERE isNull(__table1.id IN [])
+WHERE isNull(__table1.id IN _CAST([], \'Array(UInt64)\'))
 SETTINGS optimize_inverse_dictionary_lookup = 1
 Empty rewrite, Nullable predicate, rewrite
 1
