@@ -6,6 +6,9 @@ CREATE TABLE test_3(id UInt64, a Array(Int64)) ENGINE = MergeTree ORDER BY id;
 
 insert into test_3 select number, [number] from numbers(0, 100000);
 
+-- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0.
+SET max_rows_to_group_by = 0;
+
 SELECT count()
 FROM test_3 AS a, test_3 AS b, test_3 AS c, test_3 AS d
 WHERE (a.id = (b.id + 1)) AND (b.id = (c.id + 100)) AND ((c.id % 11111) = ((d.id % 12345) + 17));

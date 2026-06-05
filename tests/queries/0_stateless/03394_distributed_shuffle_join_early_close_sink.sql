@@ -1,6 +1,8 @@
 -- Tags: long, no-fasttest, no-old-analyzer
 
 SET query_plan_join_swap_table = 0;
+-- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0.
+SET max_rows_to_group_by = 0;
 
 CREATE TABLE test(id UInt64, data String) ENGINE=MergeTree() ORDER BY id SETTINGS index_granularity=10000;
 
