@@ -232,8 +232,10 @@ static size_t addNewFilterStepOrThrow(
 
     /// New filter column is the first one.
     String split_filter_column_name = split_filter.dag.getOutputs()[split_filter.filter_pos]->result_name;
-    node.step = std::make_unique<FilterStep>(
+    auto new_filter_step = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter.dag), std::move(split_filter_column_name), split_filter.remove_filter);
+    new_filter_step->setCountOutputRows(filter->countsOutputRows());
+    node.step = std::move(new_filter_step);
     node.step->setStepDescription(*filter);
 
     child->updateInputHeader(node.step->getOutputHeader(), child_idx);
@@ -1148,11 +1150,13 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             filter_node.children.push_back(parent_node->children[i]);
             parent_node->children[i] = &filter_node;
 
-            filter_node.step = std::make_unique<FilterStep>(
+            auto new_filter_step = std::make_unique<FilterStep>(
                 filter_node.children.front()->step->getOutputHeader(),
                 filter->getExpression().clone(),
                 filter->getFilterColumnName(),
                 filter->removesFilterColumn());
+            new_filter_step->setCountOutputRows(filter->countsOutputRows());
+            filter_node.step = std::move(new_filter_step);
         }
 
         ///       - Filter - Something
@@ -1168,7 +1172,11 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             return 0;
 
         // actual push down will be done when plan for local parallel replica will be optimized
-        FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
+        FilterDAGInfo info{
+            filter->getExpression().clone(),
+            filter->getFilterColumnName(),
+            filter->removesFilterColumn(),
+            filter->countsOutputRows()};
         parallel_replicas_local_plan->addFilter(std::move(info));
         std::swap(*parent_node, *child_node);
         return 1;
@@ -1176,7 +1184,11 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(child.get()))
     {
-        FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
+        FilterDAGInfo info{
+            filter->getExpression().clone(),
+            filter->getFilterColumnName(),
+            filter->removesFilterColumn(),
+            filter->countsOutputRows()};
         read_from_merge->addFilter(std::move(info));
         std::swap(*parent_node, *child_node);
         return 1;

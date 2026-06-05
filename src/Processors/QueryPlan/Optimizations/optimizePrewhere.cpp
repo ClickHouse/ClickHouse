@@ -157,6 +157,8 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (typeid_cast<ReadFromMerge *>(child_node->step.get()))
         return;
 
+    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
+
     const auto & storage_snapshot = source_step_with_filter->getStorageSnapshot();
     const auto & storage = storage_snapshot->storage;
     if (!storage.canMoveConditionsToPrewhere())
@@ -182,7 +184,6 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     /// - vector search lookups with disabled rescoring
     /// - PREWHERE
     /// The former is more impactful, therefore disable PREWHERE if both may be used.
-    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
     if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value() && !settings[Setting::vector_search_with_rescoring])
         return;
 
@@ -273,11 +274,15 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     QueryPlanStepPtr new_step;
     if (!optimize_result.fully_moved_to_prewhere)
     {
-        new_step = std::make_unique<FilterStep>(
+        auto new_filter_step = std::make_unique<FilterStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
+
+        new_filter_step->setCountOutputRows(filter_step->countsOutputRows());
+
+        new_step = std::move(new_filter_step);
     }
     else
     {

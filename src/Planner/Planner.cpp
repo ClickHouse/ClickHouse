@@ -62,6 +62,8 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#include <string_view>
+
 #include <Analyzer/Utils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -620,6 +622,8 @@ ALWAYS_INLINE void addFilterStep(
         std::move(actions),
         filter_analysis_result.filter_column_name,
         filter_analysis_result.remove_filter_column);
+    if (std::string_view(step_description, size - 1) == "WHERE")
+        where_step->setCountOutputRows(true);
     appendSetsFromActionsDAG(where_step->getExpression(), useful_sets);
     where_step->setStepDescription(step_description);
     query_plan.addStep(std::move(where_step));

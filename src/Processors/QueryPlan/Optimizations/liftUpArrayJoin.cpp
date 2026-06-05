@@ -50,8 +50,12 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (expression_step)
         new_step = std::make_unique<ExpressionStep>(array_join_step->getOutputHeader(), std::move(split_actions.second));
     else
-        new_step = std::make_unique<FilterStep>(array_join_step->getOutputHeader(), std::move(split_actions.second),
-                                              filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+    {
+        auto new_filter_step = std::make_unique<FilterStep>(
+            array_join_step->getOutputHeader(), std::move(split_actions.second), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+        new_filter_step->setCountOutputRows(filter_step->countsOutputRows());
+        new_step = std::move(new_filter_step);
+    }
 
     new_step->setStepDescription(fmt::format("{} [split]", parent->getStepDescription()), settings.max_step_description_length);
     parent = std::move(new_step);

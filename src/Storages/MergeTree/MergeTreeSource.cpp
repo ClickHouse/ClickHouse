@@ -1,11 +1,17 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/EventFD.h>
 #include <Common/setThreadName.h>
+
+namespace ProfileEvents
+{
+    extern const Event RowsAfterWhere;
+}
 
 namespace DB
 {
@@ -136,8 +142,8 @@ private:
 };
 #endif
 
-MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_)
-    : ISource(std::make_shared<const Block>(processor_->getHeader())), processor(std::move(processor_)), log_name(log_name_)
+MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_, bool count_output_rows_)
+    : ISource(std::make_shared<const Block>(processor_->getHeader())), processor(std::move(processor_)), log_name(log_name_), count_output_rows(count_output_rows_)
 {
 #if defined(OS_LINUX)
     if (processor->getSettings().use_asynchronous_read_from_pool)
@@ -182,6 +188,10 @@ Chunk MergeTreeSource::processReadResult(ChunkAndProgress chunk)
 {
     if (chunk.num_read_rows || chunk.num_read_bytes)
         progress(chunk.num_read_rows, chunk.num_read_bytes);
+
+    if (count_output_rows)
+        if (auto rows = chunk.chunk.getNumRows())
+            ProfileEvents::increment(ProfileEvents::RowsAfterWhere, rows);
 
     finished = chunk.is_finished;
 

@@ -66,6 +66,7 @@ struct FilterDAGInfo
     ActionsDAG actions;
     String column_name;
     bool do_remove_column = false;
+    bool count_output_rows = false;
 
     std::string dump() const;
 

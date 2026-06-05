@@ -295,6 +295,7 @@ struct SplitFilterResult
 
     /// Those are available input positions for the next step (main branch).
     std::vector<bool> available_input_positions;
+    bool count_output_rows = false;
 };
 
 static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const std::vector<bool> & required_outputs, const std::vector<bool> & required_inputs)
@@ -355,7 +356,11 @@ static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const s
     filter_dag_info.column_name = name;
     filter_dag_info.do_remove_column = filter_step.removesFilterColumn();
 
-    return { std::move(filter_dag_info), std::move(split_result.second), std::move(new_required_inputs) };
+    return {
+        std::move(filter_dag_info),
+        std::move(split_result.second),
+        std::move(new_required_inputs),
+        filter_step.countsOutputRows()};
 }
 
 static ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
@@ -562,7 +567,13 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         // std::cerr << ".. Lazy header " << lazy_reading->getOutputHeader()->dumpNames() << std::endl;
     }
 
-    std::list<std::variant<ActionsDAG, FilterDAGInfo>> main_steps;
+    struct MainFilterStep
+    {
+        FilterDAGInfo filter;
+        bool count_output_rows = false;
+    };
+
+    std::list<std::variant<ActionsDAG, MainFilterStep>> main_steps;
     std::list<ActionsDAG> lazy_steps;
 
     for (const auto & step_to_split : steps_to_split | std::views::reverse)
@@ -588,7 +599,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
             auto split_result = splitFilterStep(*filter_step, step_to_split.required_positions, required_columns);
             // std::cerr << "fsplit_result l: " << split_result.main_filter_step.actions.dumpDAG() << std::endl;
             // std::cerr << "fsplit_result r: " << split_result.lazy_expression_step.dumpDAG() << std::endl;
-            main_steps.push_back(std::move(split_result.main_filter_step));
+            main_steps.push_back(MainFilterStep{std::move(split_result.main_filter_step), split_result.count_output_rows});
             lazy_steps.push_back(std::move(split_result.lazy_expression_step));
             required_columns = std::move(split_result.available_input_positions);
         }
@@ -614,10 +625,12 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         }
         else
         {
-            auto filter_dag_info = std::move(std::get<FilterDAGInfo>(step));
-            main_plan.addStep(std::make_unique<FilterStep>(
+            auto filter_step_info = std::move(std::get<MainFilterStep>(step));
+            auto filter_step = std::make_unique<FilterStep>(
                 main_plan.getCurrentHeader(),
-                std::move(filter_dag_info.actions), filter_dag_info.column_name, filter_dag_info.do_remove_column));
+                std::move(filter_step_info.filter.actions), filter_step_info.filter.column_name, filter_step_info.filter.do_remove_column);
+            filter_step->setCountOutputRows(filter_step_info.count_output_rows);
+            main_plan.addStep(std::move(filter_step));
         }
     }
 

@@ -12,7 +12,7 @@ struct ChunkAndProgress;
 class MergeTreeSource final : public ISource
 {
 public:
-    explicit MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_);
+    explicit MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_, bool count_output_rows_ = false);
     ~MergeTreeSource() override;
 
     std::string getName() const override;
@@ -31,6 +31,7 @@ protected:
 private:
     MergeTreeSelectProcessorPtr processor;
     const std::string log_name;
+    bool count_output_rows = false;
 
 #if defined(OS_LINUX)
     struct AsyncReadingState;

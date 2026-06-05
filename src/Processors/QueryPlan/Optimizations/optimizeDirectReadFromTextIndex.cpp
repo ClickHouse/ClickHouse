@@ -764,7 +764,10 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
 
     bool removes_filter_column = filter_step->removesFilterColumn();
     auto new_filter_column_name = result_filter_node->result_name;
-    filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
+    auto new_filter_step = std::make_unique<FilterStep>(
+        read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
+    new_filter_step->setCountOutputRows(filter_step->countsOutputRows());
+    filter_node->step = std::move(new_filter_step);
 }
 
 }

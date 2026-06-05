@@ -431,8 +431,8 @@ std::string PrewhereInfo::dump() const
 std::string FilterDAGInfo::dump() const
 {
     WriteBufferFromOwnString ss;
-    ss << "FilterDAGInfo for column '" << column_name <<"', do_remove_column "
-       << do_remove_column << "\n";
+    ss << "FilterDAGInfo for column '" << column_name << "', do_remove_column "
+       << do_remove_column << ", count_output_rows " << count_output_rows << "\n";
 
     ss << "actions " << actions.dumpDAG() << "\n";
 
