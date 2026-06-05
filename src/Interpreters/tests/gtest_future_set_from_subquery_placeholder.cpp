@@ -101,6 +101,11 @@ TEST(FutureSetFromSubquery, BuildSkipsPlanWithPlaceholder)
 
     auto built = future_set->build(SizeLimits{}, /*prepared_sets_cache=*/ nullptr);
     EXPECT_EQ(built, nullptr);
+
+    // The skipped build must NOT consume the source plan: pin the
+    // `getQueryPlan` / serialization contract so the guard can never
+    // be reordered to land after `std::move(source)`.
+    EXPECT_NE(future_set->getQueryPlan(), nullptr);
 }
 
 /// Targeted-guard sanity: a non-correlated source plan must still be wrapped in a
