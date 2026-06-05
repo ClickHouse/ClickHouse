@@ -149,7 +149,7 @@ ArrowIPC::MessageWriter::WrittenMessage ArrowIPCBlockOutputFormat::writeBatchMes
     auto record_batch = ArrowIPC::flatbuf::CreateRecordBatch(builder, batch.num_rows, nodes_vec, buffers_vec, compression_off);
 
     flatbuffers::Offset<void> header_off;
-    ArrowIPC::flatbuf::MessageHeader header_type;
+    ArrowIPC::flatbuf::MessageHeader header_type = ArrowIPC::flatbuf::MessageHeader_NONE;
     if (dictionary_id)
     {
         header_type = ArrowIPC::flatbuf::MessageHeader_DictionaryBatch;

@@ -152,6 +152,7 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
     /// The file format needs random access. Use the input directly only when it is genuinely a
     /// seekable file with a known size (`tryGetFileSizeFromReadBuffer` returns 0 for pipes); otherwise
     /// load it entirely into memory, matching the Apache Arrow library's behaviour for such inputs.
+    chassert(in); /// the input buffer is set in the constructor and is never null
     size_t file_size = 0;
     seekable = dynamic_cast<SeekableReadBuffer *>(in);
     std::optional<size_t> known_size;
