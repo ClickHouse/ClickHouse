@@ -13,3 +13,5 @@ yes
 --- Test 6: Minmax skip index with bare column
 1	one
 2	two
+--- Test 7: PREWHERE with bare column
+999

@@ -9,7 +9,7 @@ SETTINGS index_granularity = 8192;
 
 INSERT INTO test_bool_index SELECT number, toString(number) FROM numbers(1000);
 
-SELECT count() FROM test_bool_index WHERE id SETTINGS force_primary_key = 1;
+SELECT count() FROM test_bool_index WHERE id SETTINGS force_primary_key = 1, optimize_use_projections = 0;
 
 DROP TABLE test_bool_index;
 
@@ -87,3 +87,18 @@ INSERT INTO test_minmax_skip VALUES (0, 'zero'), (1, 'one'), (2, 'two');
 SELECT id, value FROM test_minmax_skip WHERE id SETTINGS force_data_skipping_indices = 'id_minmax';
 
 DROP TABLE test_minmax_skip;
+
+SELECT '--- Test 7: PREWHERE with bare column';
+
+DROP TABLE IF EXISTS test_prewhere;
+
+CREATE TABLE test_prewhere (id Int32, value String)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8192;
+
+INSERT INTO test_prewhere SELECT number, toString(number) FROM numbers(1000);
+
+SELECT count() FROM test_prewhere PREWHERE id SETTINGS force_primary_key = 1, optimize_use_projections = 0;
+
+DROP TABLE test_prewhere;
