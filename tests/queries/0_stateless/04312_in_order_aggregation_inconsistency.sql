@@ -1,6 +1,6 @@
 -- Inconsistency: hash-based grouping keys rows by their raw value bytes, while sort/in-order
 -- grouping keys them by `compareAt`. For floats these disagree: `+0.0`/`-0.0` and distinct
--- `NaN` payloads have different bytes but compare equal, so in-order operators put such keys
+-- `NaN` payloads have different bytes but compare equal, so in-order operators (`compareAt`) put such keys
 -- in one group while hash operators keep them separate.
 
 DROP TABLE IF EXISTS test;
