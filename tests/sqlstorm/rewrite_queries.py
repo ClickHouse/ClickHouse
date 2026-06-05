@@ -43,6 +43,17 @@ def find_balanced_parens(s, start):
     return -1
 
 
+def strip_outer_parens(s):
+    """Strip surrounding whitespace and any fully-enclosing balanced parentheses.
+
+    `((SELECT 1))` -> `SELECT 1`, but `(a) + (b)` is left unchanged because the
+    first `(` does not match the final `)`."""
+    s = s.strip()
+    while s.startswith('(') and find_balanced_parens(s, 0) == len(s) - 1:
+        s = s[1:-1].strip()
+    return s
+
+
 def rewrite_function_call(sql, func_name, rewriter):
     """Find and rewrite all calls to func_name(args) using the rewriter function.
     rewriter(args_string) -> replacement_string
@@ -449,7 +460,11 @@ def rewrite_any_array(sql):
             continue
         inner = sql[paren_start + 1:paren_end]
         # Leave subquery operands to ClickHouse's native `ANY(subquery)` handling.
-        if re.match(r'\s*(?:SELECT|WITH)\b', inner, re.IGNORECASE):
+        # Strip any enclosing parentheses first so parenthesized subqueries such
+        # as `ANY((SELECT ...))` are also recognized and left untouched, instead
+        # of being rewritten to `has((SELECT ...), lhs)` (invalid: `has` requires
+        # an array operand).
+        if re.match(r'(?:SELECT|WITH)\b', strip_outer_parens(inner), re.IGNORECASE):
             result.append(sql[i:paren_end + 1])
             i = paren_end + 1
             continue

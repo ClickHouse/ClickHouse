@@ -92,6 +92,17 @@ class TestAnyArrayRewrite(unittest.TestCase):
         sql = "SELECT * FROM t WHERE x = ANY(WITH c AS (SELECT 1) SELECT * FROM c)"
         self.assertEqual(rewrite_query(sql), sql)
 
+    def test_parenthesized_subquery_operand_left_untouched(self):
+        # A parenthesized subquery `ANY((SELECT ...))` is also a subquery and
+        # must not be rewritten to `has((SELECT ...), x)` (invalid: `has`
+        # requires an array operand).
+        sql = "SELECT * FROM t WHERE x = ANY((SELECT id FROM u))"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_parenthesized_with_subquery_operand_left_untouched(self):
+        sql = "SELECT * FROM t WHERE x = ANY((WITH c AS (SELECT 1) SELECT * FROM c))"
+        self.assertEqual(rewrite_query(sql), sql)
+
 
 def _sort_key(f):
     """Mirror of `runner._sort_key` — kept inline to avoid importing the runner
