@@ -596,6 +596,19 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
         const auto meta_it = family_meta.find(logical_name);
         const FamilyMeta & fm = (meta_it == family_meta.end()) ? empty_meta : meta_it->second;
 
+        if (fm.type == "histogram" && labels.contains("le"))
+        {
+            for (const char * marker : {"sum", "count"})
+            {
+                if (auto it = labels.find(marker); it != labels.end() && it->second.empty())
+                    throwIncorrect(
+                        fmt::format(
+                            "Histogram sample for family '{}' cannot combine 'le' with empty '{}' marker label",
+                            logical_name, marker),
+                        line);
+            }
+        }
+
         ext.read_columns.assign(columns.size(), 0);
 
         const auto setString = [&](std::optional<size_t> idx, std::string_view str)

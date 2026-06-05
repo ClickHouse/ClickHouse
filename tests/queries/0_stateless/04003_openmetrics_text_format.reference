@@ -56,6 +56,11 @@ h_bucket{le="0.5"} 3
 s{le="0.5"} 3
 
 # EOF
+# TYPE bytes_total counter
+# UNIT bytes_total bytes
+bytes_total 1
+
+# EOF
 # TYPE h histogram
 h_sum 9
 

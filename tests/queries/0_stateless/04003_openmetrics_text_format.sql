@@ -317,6 +317,10 @@ FORMAT OpenMetrics;
 -- Summary + `{le: "0.5"}` -> `<name>{le="0.5"}` (no `_bucket` rewrite, `le` preserved).
 SELECT 's' AS name, 3.0 AS value, '' AS help, 'summary' AS type, map('le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
 FORMAT OpenMetrics;
+-- Output: non-empty `unit` column emits `# UNIT <name> <unit>` before samples.
+SELECT 'bytes_total' AS name, 1.0 AS value, '' AS help, 'counter' AS type, CAST(map(), 'Map(String, String)') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, 'bytes' AS unit
+FORMAT OpenMetrics;
+
 -- Histogram + `{sum: ""}` marker -> `<name>_sum` (label dropped).
 SELECT 'h' AS name, 9.0 AS value, '' AS help, 'histogram' AS type, map('sum', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
 FORMAT OpenMetrics;
@@ -329,6 +333,14 @@ FORMAT OpenMetrics;
 -- Summary + non-empty `count` label -> kept as a normal label (no `_count` rewrite).
 SELECT 's' AS name, 8.0 AS value, '' AS help, 'summary' AS type, map('count', 'oops') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
 FORMAT OpenMetrics;
+
+-- Histogram rows cannot combine `le` with empty `sum`/`count` marker labels (bucket vs sum/count).
+SELECT 'h' AS name, 1.0 AS value, '' AS help, 'histogram' AS type, map('sum', '', 'le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 'h' AS name, 2.0 AS value, '' AS help, 'histogram' AS type, map('count', '', 'le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h_sum{le="0.5"} 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h{sum="",le="0.5"} 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 
 -- Histogram `+Inf` / `_count` synthesis preserves non-marker labels per series.
 SELECT 'req' AS name, 10.0 AS value, '' AS help, 'histogram' AS type, map('job', 'api', 'count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit

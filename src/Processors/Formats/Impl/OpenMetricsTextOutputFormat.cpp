@@ -167,6 +167,26 @@ void validateOpenMetricsLabelName(const String & name)
             name, FORMAT_NAME);
 }
 
+/// A histogram row is either a bucket (`le`) or a `_sum`/`_count` sample (empty marker
+/// labels), not both. Reject the internal representation that would emit two suffixes.
+void validateHistogramRowLabels(const String & metric_type, const std::map<String, String> & labels)
+{
+    if (metric_type != "histogram")
+        return;
+
+    if (!labels.contains("le"))
+        return;
+
+    for (const char * marker : {"sum", "count"})
+    {
+        if (auto it = labels.find(marker); it != labels.end() && it->second.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Histogram row for output format '{}' cannot combine 'le' with empty '{}' marker label",
+                FORMAT_NAME, marker);
+    }
+}
+
 /// OpenMetrics label values only permit `\\`, `\"`, and `\n` escapes (matching the input
 /// parser's `readQuotedString`). Generic `writeDoubleQuotedString` also emits `\t`, `\r`,
 /// `\0`, etc., which our reader rejects and strict consumers can reject too.
@@ -404,6 +424,9 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
     write_attribute("# TYPE ", current_metric.type);
     write_attribute("# UNIT ", current_metric.unit);
 
+    for (const auto & val : current_metric.values)
+        validateHistogramRowLabels(current_metric.type, val.labels);
+
     bool use_buckets = current_metric.type == "histogram" || current_metric.type == "summary";
     if (use_buckets)
         fixupBucketLabels(current_metric);
@@ -571,6 +594,8 @@ void registerOutputFormatOpenMetrics(FormatFactory & factory)
     /// value is passed through verbatim, including the Prometheus-style `untyped`), so claiming
     /// version compliance would be misleading to strict consumers.
     factory.setContentType(FORMAT_NAME, "application/openmetrics-text; charset=utf-8");
+    /// Each stream ends with `# EOF`; appending another exposition would make the file unreadable.
+    factory.markFormatHasNoAppendSupport(FORMAT_NAME);
 }
 
 }
