@@ -405,7 +405,7 @@
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \
     M(QueryAnalysisMicroseconds, "Total time spent in query analysis: name and type resolution of the query tree by QueryAnalysisPass.", ValueType::Microseconds) \
     M(QueryTreeOptimizeMicroseconds, "Total time spent running query tree passes: query analysis and query tree level optimizations.", ValueType::Microseconds) \
-    M(QueryPlanningMicroseconds, "Total time spent building the query plan from the query tree.", ValueType::Microseconds) \
+    M(QueryPlanningMicroseconds, "Total time spent building the query plan from the query tree, summed across nested planners (subqueries, CTEs, and UNION branches).", ValueType::Microseconds) \
     \
     M(DeltaLakePartitionPrunedFiles, "Number of skipped files during DeltaLake partition pruning", ValueType::Number) \
     M(DeltaLakeSnapshotInitializations, "Number of times a DeltaLake table snapshot was initialized (loaded from object storage)", ValueType::Number) \
