@@ -2,6 +2,7 @@
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/SortCursor.h>
+#include <DataTypes/IDataType.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/NegativeLimitByTransform.h>
 #include <base/defines.h>
@@ -236,7 +237,7 @@ void NegativeLimitByTransform::consume(Chunk chunk)
     key_columns.reserve(key_positions.size());
     for (size_t pos : key_positions)
     {
-        normalized_cols.push_back(removeSpecialRepresentations(cols[pos]));
+        normalized_cols.push_back(removeSpecialRepresentations(cols[pos])->convertToFullColumnIfConst());
         key_columns.push_back(normalized_cols.back().get());
     }
 
@@ -346,13 +347,16 @@ NegativeLimitBySortedStreamTransform::NegativeLimitBySortedStreamTransform(
     , group_offset(group_offset_)
     , group_window_size(computeWindowSize(group_length_, group_offset_))
 {
+    prev_key_columns.reserve(key_positions.size());
+    for (size_t position : key_positions)
+        prev_key_columns.push_back(header->getByPosition(position).type->createColumn());
 }
 
 bool NegativeLimitBySortedStreamTransform::sameAsPrevChunkKey(const Columns & cols, UInt64 row) const
 {
-    for (size_t i = 0; i < key_positions.size(); ++i)
+    for (size_t i = 0; i < cols.size(); ++i)
     {
-        if (cols[key_positions[i]]->compareAt(row, 0, *prev_key_columns[i], 1) != 0)
+        if (cols[i]->compareAt(row, 0, *prev_key_columns[i], 1) != 0)
             return false;
     }
     return true;
@@ -360,21 +364,11 @@ bool NegativeLimitBySortedStreamTransform::sameAsPrevChunkKey(const Columns & co
 
 void NegativeLimitBySortedStreamTransform::rememberKey(const Columns & cols, UInt64 row)
 {
-    if (key_positions.empty())
-        return;
-
-    if (prev_key_columns.empty())
-    {
-        prev_key_columns.reserve(key_positions.size());
-        for (auto pos : key_positions)
-            prev_key_columns.emplace_back(cols[pos]->cloneEmpty());
-    }
-
-    for (size_t i = 0; i < key_positions.size(); ++i)
+    for (size_t i = 0; i < prev_key_columns.size(); ++i)
     {
         if (!prev_key_columns[i]->empty())
             prev_key_columns[i]->popBack(prev_key_columns[i]->size());
-        prev_key_columns[i]->insertFrom(*cols[key_positions[i]], row);
+        prev_key_columns[i]->insertFrom(*cols[i], row);
     }
 }
 
@@ -446,6 +440,11 @@ void NegativeLimitBySortedStreamTransform::consume(Chunk chunk)
     auto columns_ptr = std::make_shared<const Columns>(chunk.detachColumns());
     const auto & cols = *columns_ptr;
 
+    Columns normalized_keys;
+    normalized_keys.reserve(key_positions.size());
+    for (size_t pos : key_positions)
+        normalized_keys.push_back(removeSpecialRepresentations(cols[pos])->convertToFullColumnIfConst());
+
     auto append_run = [&](UInt64 start, UInt64 length)
     {
         current_group_window.slices.push_back({columns_ptr, start, length});
@@ -457,8 +456,10 @@ void NegativeLimitBySortedStreamTransform::consume(Chunk chunk)
 
     /// Row 0 is the only row that needs `prev_key_columns` - it sits on the chunk boundary.
     /// If the key changes at the boundary, the previous chunk's group will never be seen
-    /// again and we can safely finalize it.
-    if (!prev_key_columns.empty() && !sameAsPrevChunkKey(cols, 0))
+    /// again and we can safely finalize it. The holder is empty before the first chunk (and
+    /// when there are no non-constant grouping keys), so there is nothing to compare then.
+    const bool have_previous_chunk_key = !prev_key_columns.empty() && !prev_key_columns.front()->empty();
+    if (have_previous_chunk_key && !sameAsPrevChunkKey(normalized_keys, 0))
         finalizeWindow(current_group_window);
 
     /// Segment the sorted chunk into maximal runs of rows that share the same key; each run is
@@ -476,8 +477,9 @@ void NegativeLimitBySortedStreamTransform::consume(Chunk chunk)
         run_start = run_end;
     }
 
-    /// Remember this chunk's last row for the next chunk's boundary check.
-    rememberKey(cols, num_rows - 1);
+    /// Remember this chunk's last row for the next chunk's boundary check. With no non-constant
+    /// grouping keys this is a no-op (nothing to remember).
+    rememberKey(normalized_keys, num_rows - 1);
 }
 
 bool NegativeLimitBySortedStreamTransform::canGenerate()
