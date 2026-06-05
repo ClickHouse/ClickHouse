@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
+#include <Columns/ColumnConst.h>
+
 
 namespace DB
 {
@@ -101,7 +103,7 @@ const ActionsDAG::Node & addClonedDAGToDAG(
     if (original_dag_node->type == ActionsDAG::ActionType::COLUMN)
     {
         const auto & new_node = new_dag->addColumn(
-            ColumnWithTypeAndName(original_dag_node->column, original_dag_node->result_type, original_dag_node->result_name));
+            original_dag_node->column, original_dag_node->result_type, original_dag_node->result_name);
         node_remap[original_dag_node] = {new_dag.get(), &new_node};
         return new_node;
     }
@@ -166,11 +168,10 @@ const ActionsDAG::Node & addAndTrue(
 {
     Field const_true_value(true);
 
-    ColumnWithTypeAndName const_true_column;
-    const_true_column.column = DataTypeUInt8().createColumnConst(0, const_true_value);
-    const_true_column.type = std::make_shared<DataTypeUInt8>();
+    auto const_true_type = std::make_shared<DataTypeUInt8>();
+    auto const_true_column = const_true_type->createColumnConst(0, const_true_value);
 
-    const auto * const_true_node = &dag->addColumn(std::move(const_true_column));
+    const auto * const_true_node = &dag->addColumn(std::move(const_true_column), std::move(const_true_type), "");
     ActionsDAG::NodeRawConstPtrs children = {&filter_node_to_normalize, const_true_node};
     FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
     return addFunction(dag, func_builder_and, children);
