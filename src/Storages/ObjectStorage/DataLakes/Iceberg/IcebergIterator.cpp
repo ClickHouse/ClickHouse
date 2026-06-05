@@ -27,6 +27,7 @@
 #include <Interpreters/Context.h>
 
 #include <IO/CompressedReadBufferWrapper.h>
+#include <IO/Progress.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
@@ -123,8 +124,8 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
     if (beg_it != end_it)
     {
         auto previous_it = std::prev(end_it);
-        assert(*beg_it);
-        assert(*previous_it);
+        chassert(*beg_it);
+        chassert(*previous_it);
         LOG_DEBUG(
             logger,
             "Preliminary check got {} {} delete elements for data file {}, taken data file object info: {}, first taken delete object info is "
@@ -398,6 +399,10 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         }
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
+
+        if (callback)
+            callback(FileProgress(0, size_t(manifest_file_entry->parsed_entry->file_size_in_bytes)));
+
         return object_info;
     }
     {
