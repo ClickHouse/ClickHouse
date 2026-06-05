@@ -89,6 +89,34 @@ INSERT INTO r32 VALUES (1.5), (nan), (-nan);
 SELECT '--- Float32 INNER ---';
 SELECT v FROM (SELECT l32.v FROM l32 INNER JOIN r32 ON l32.k = r32.k) ORDER BY v;
 
+-- `BFloat16` regression coverage. The fix dispatches on `BFloat16` in
+-- `extendJoinKeyNullMapWithFloatNaNs` (`HashJoin`/`ConcurrentHashJoin`),
+-- `foldFloatNaNsIntoNullMap` (`MergeJoinTransform`) and `filterOutNaNs`
+-- (`BuildRuntimeFilterTransform`).
+CREATE TABLE lbf (k BFloat16, v String) ENGINE = Memory();
+CREATE TABLE rbf (k BFloat16) ENGINE = Memory();
+INSERT INTO lbf VALUES (toBFloat16(1.5), 'm'), (toBFloat16(nan), 'nan-l'), (toBFloat16(-nan), 'neg-nan-l');
+INSERT INTO rbf VALUES (toBFloat16(1.5)), (toBFloat16(nan)), (toBFloat16(-nan));
+
+SELECT '--- BFloat16 hash INNER ---';
+SELECT v FROM (SELECT lbf.v FROM lbf INNER JOIN rbf ON lbf.k = rbf.k) ORDER BY v;
+
+SELECT '--- BFloat16 hash LEFT ---';
+SELECT v FROM (SELECT lbf.v FROM lbf LEFT JOIN rbf ON lbf.k = rbf.k) ORDER BY v;
+
+SELECT '--- BFloat16 hash ANTI ---';
+SELECT v FROM (SELECT lbf.v FROM lbf ANTI JOIN rbf ON lbf.k = rbf.k) ORDER BY v;
+
+SET join_algorithm = 'full_sorting_merge';
+
+SELECT '--- BFloat16 full_sorting_merge INNER ---';
+SELECT v FROM (SELECT lbf.v FROM lbf INNER JOIN rbf ON lbf.k = rbf.k) ORDER BY v;
+
+SET join_algorithm = 'default';
+
+DROP TABLE IF EXISTS lbf;
+DROP TABLE IF EXISTS rbf;
+
 CREATE TABLE ln (k Nullable(Float64), v String) ENGINE = Memory();
 CREATE TABLE rn (k Nullable(Float64)) ENGINE = Memory();
 INSERT INTO ln VALUES (1.5, 'm'), (nan, 'nan-l'), (NULL, 'null-l');

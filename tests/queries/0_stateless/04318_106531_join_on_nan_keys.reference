@@ -30,6 +30,17 @@ nan-l	nan	0
 unmatched	2.5	0
 --- Float32 INNER ---
 m
+--- BFloat16 hash INNER ---
+m
+--- BFloat16 hash LEFT ---
+m
+nan-l
+neg-nan-l
+--- BFloat16 hash ANTI ---
+nan-l
+neg-nan-l
+--- BFloat16 full_sorting_merge INNER ---
+m
 --- Nullable(Float64) INNER ---
 m
 --- Nullable(Float64) ANTI ---
