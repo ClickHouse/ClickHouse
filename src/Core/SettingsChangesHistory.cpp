@@ -166,6 +166,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_throw_on_quota_exceeded", true, true, "New setting"},
             {"variant_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Variant implementation"},
             {"dynamic_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Dynamic implementation"},
+            {"engine_file_skip_failed_data_files", false, false, "New setting to skip files that fail to open or read in File engine tables."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {

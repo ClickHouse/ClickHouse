@@ -5808,6 +5808,15 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
+    DECLARE(Bool, engine_file_skip_failed_data_files, false, R"(
+Enables or disables skipping files that fail to open or read (e.g. a corrupted gzip archive) in [File](../../engines/table-engines/special/file.md) engine tables.
+
+Possible values:
+- 0 — `SELECT` throws an exception when a file cannot be read.
+- 1 — `SELECT` skips files that cannot be read and returns results only from files that were read successfully.
+
+Note: This setting applies only to data reading. If format is not specified, schema inference on a corrupted file will still cause an error.
+)", 0) \
     DECLARE(Bool, engine_url_skip_empty_files, false, R"(
 Enables or disables skipping empty files in [URL](../../engines/table-engines/special/url.md) engine tables.
 

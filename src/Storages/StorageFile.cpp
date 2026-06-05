@@ -7,6 +7,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Storages/MergeTree/checkDataPart.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
@@ -97,6 +98,7 @@ namespace Setting
     extern const SettingsBool engine_file_allow_create_multiple_files;
     extern const SettingsBool engine_file_empty_if_not_exists;
     extern const SettingsBool engine_file_skip_empty_files;
+    extern const SettingsBool engine_file_skip_failed_data_files;
     extern const SettingsBool engine_file_truncate_on_insert;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds max_execution_time;
@@ -132,6 +134,7 @@ namespace ErrorCodes
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int CANNOT_STAT;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int CANNOT_DETECT_FORMAT;
@@ -597,6 +600,9 @@ namespace
                     return {nullptr, cached_columns, format};
             }
 
+            /// Note: engine_file_skip_failed_data_files setting only protects data reading (generate function),
+            /// not schema inference. If schema detection is needed (no explicit format),
+            /// corrupted files will still cause errors here. Users should specify format explicitly.
             return {createReadBuffer(path, file_stat, false, -1, compression_method, getContext()), std::nullopt, format};
         }
 
@@ -1467,8 +1473,63 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
     return true;
 }
 
+namespace
+{
+    /// Errors that must never be silently skipped by `engine_file_skip_failed_data_files`.
+    /// Internal invariant violations, query cancellation, and OOM conditions must always propagate.
+    bool isFatalForSkipFailedFiles(const Exception & e)
+    {
+        return e.code() == ErrorCodes::LOGICAL_ERROR
+            || e.code() == ErrorCodes::QUERY_WAS_CANCELLED
+            || isNotEnoughMemoryErrorCode(e.code());
+    }
+}
+
 Chunk StorageFileSource::generate()
 {
+    /// Common handler for `engine_file_skip_failed_data_files`: rethrows the in-flight exception if
+    /// skipping is disabled, otherwise logs a warning and resets reader state so the outer loop
+    /// can advance to the next file. Must be invoked from within a `catch` block.
+    auto skip_or_rethrow = [&]
+    {
+        if (!getContext()->getSettingsRef()[Setting::engine_file_skip_failed_data_files])
+            throw;
+        LOG_WARNING(getLogger("StorageFileSource"), "Skipping file {} due to an error: {}", current_path, getCurrentExceptionMessage(false));
+        reader.reset();
+        pipeline = nullptr;
+        input_format.reset();
+        if (files_iterator->isReadFromArchive())
+        {
+            /// Advance within the current archive so subsequent good entries are not lost.
+            if (archive_reader && read_buf && !files_iterator->isSingleFileReadFromArchive())
+            {
+                try
+                {
+                    file_enumerator = archive_reader->nextFile(std::move(read_buf));
+                }
+                catch (const Exception & e)
+                {
+                    if (isFatalForSkipFailedFiles(e))
+                        throw;
+                    file_enumerator = nullptr;
+                    archive_reader.reset();
+                }
+                catch (const Poco::Exception &)
+                {
+                    file_enumerator = nullptr;
+                    archive_reader.reset();
+                }
+            }
+            else
+            {
+                file_enumerator = nullptr;
+            }
+        }
+        read_buf.reset();
+        if (storage->use_table_fd)
+            finished_generate = true;
+    };
+
     while (!finished_generate)
     {
         /// Open file lazily on first read. This is needed to avoid too many open files from different streams.
@@ -1598,7 +1659,22 @@ Chunk StorageFileSource::generate()
                 if (need_only_count && tryGetCountFromCache(file_stat))
                     continue;
 
-                read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+                try
+                {
+                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+                }
+                catch (const Exception & e)
+                {
+                    if (isFatalForSkipFailedFiles(e))
+                        throw;
+                    skip_or_rethrow();
+                    continue;
+                }
+                catch (const Poco::Exception &)
+                {
+                    skip_or_rethrow();
+                    continue;
+                }
             }
 
             size_t file_num = 0;
@@ -1694,7 +1770,24 @@ Chunk StorageFileSource::generate()
         }
 
         Chunk chunk;
-        if (reader->pull(chunk))
+        bool pulled = false;
+        try
+        {
+            pulled = reader->pull(chunk);
+        }
+        catch (const Exception & e)
+        {
+            if (isFatalForSkipFailedFiles(e))
+                throw;
+            skip_or_rethrow();
+            continue;
+        }
+        catch (const Poco::Exception &)
+        {
+            skip_or_rethrow();
+            continue;
+        }
+        if (pulled)
         {
             UInt64 num_rows = chunk.getNumRows();
             total_rows_in_file += num_rows;

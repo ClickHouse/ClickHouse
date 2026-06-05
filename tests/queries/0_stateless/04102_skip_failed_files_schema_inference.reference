@@ -1,0 +1,4 @@
+=== With explicit format (LineAsString) + setting enabled: SUCCESS ===
+2
+=== Without format (schema inference) + setting enabled: FAILS ===
+1
