@@ -13,8 +13,6 @@ using namespace DB;
 namespace
 {
 
-/// Build a minimal SELECT * FROM t AST: one ASTTablesInSelectQuery wrapping a
-/// single ASTTableExpression with a non-compound ASTTableIdentifier.
 ASTPtr buildSelectFromTable(const String & table_name)
 {
     auto select = make_intrusive<ASTSelectQuery>();
@@ -43,22 +41,17 @@ ASTPtr buildSelectFromTable(const String & table_name)
 
 }
 
-/// Regression for issue #105370 (STID 3440-3393): segfault in
-/// `AddDefaultDatabaseVisitor::visit(ASTSelectQuery &, ...)` when AST mutation has left
-/// `recursive_with` set without a corresponding `WITH` expression.
 TEST(AddDefaultDatabaseVisitor, RecursiveWithFlagWithoutWithClauseDoesNotCrash)
 {
     auto select = buildSelectFromTable("t");
     auto & select_typed = select->as<ASTSelectQuery &>();
 
-    /// Deliberately break the parser invariant: flag is true but no WITH expression exists.
     select_typed.recursive_with = true;
     ASSERT_EQ(select_typed.with(), nullptr);
 
     AddDefaultDatabaseVisitor visitor(getContext().context, "default_db");
     ASSERT_NO_FATAL_FAILURE(visitor.visit(select));
 
-    /// The visitor must still apply default-database rewriting to the table identifier.
     auto * tables = select_typed.tables()->as<ASTTablesInSelectQuery>();
     ASSERT_NE(tables, nullptr);
     auto * tables_element = tables->children.at(0)->as<ASTTablesInSelectQueryElement>();
@@ -70,8 +63,6 @@ TEST(AddDefaultDatabaseVisitor, RecursiveWithFlagWithoutWithClauseDoesNotCrash)
     EXPECT_TRUE(identifier->compound());
 }
 
-/// Sanity baseline: with `recursive_with = false` and no `WITH` clause (the normal case),
-/// the visitor must continue to work.
 TEST(AddDefaultDatabaseVisitor, NoWithClauseDoesNotCrash)
 {
     auto select = buildSelectFromTable("t");

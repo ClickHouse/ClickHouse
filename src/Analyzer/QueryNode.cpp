@@ -450,7 +450,8 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
 ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto select_query = make_intrusive<ASTSelectQuery>();
-    select_query->recursive_with = is_recursive_with;
+    /// Preserve the parser invariant `recursive_with -> with() != nullptr`.
+    select_query->recursive_with = is_recursive_with && hasWith();
     select_query->distinct = is_distinct;
     select_query->limit_with_ties = is_limit_with_ties;
     select_query->group_by_with_totals = is_group_by_with_totals;
