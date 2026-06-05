@@ -75,11 +75,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
-<<<<<<< analyzer-fix-filter-non-aggregate
     extern const SettingsBool analyzer_compatibility_allow_non_aggregate_in_having;
-=======
     extern const SettingsBool enable_streaming_queries;
->>>>>>> master
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_inline_views;
     extern const SettingsBool asterisk_include_alias_columns;
