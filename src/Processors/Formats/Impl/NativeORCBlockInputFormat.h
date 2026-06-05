@@ -6,7 +6,6 @@
 
 #include <Core/BlockMissingValues.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
 #include <IO/ReadBufferFromString.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -63,7 +62,7 @@ std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
     const KeyCondition & key_condition, const Block & header, const orc::Type & schema, const FormatSettings & format_settings);
 
 class ORCColumnToCHColumn;
-class NativeORCBlockInputFormat : public IInputFormat
+class NativeORCBlockInputFormat final : public IInputFormat
 {
 public:
     NativeORCBlockInputFormat(
@@ -113,15 +112,15 @@ private:
     FormatFilterInfoPtr format_filter_info;
 
     std::vector<int> selected_stripes;
-    size_t read_iterator;
-    size_t prefetch_iterator;
+    size_t read_iterator{};
+    size_t prefetch_iterator{};
 
     std::unique_ptr<orc::StripeInformation> current_stripe_info;
 
     std::atomic<int> is_stopped{0};
 };
 
-class NativeORCSchemaReader : public ISchemaReader
+class NativeORCSchemaReader final : public ISchemaReader
 {
 public:
     NativeORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
