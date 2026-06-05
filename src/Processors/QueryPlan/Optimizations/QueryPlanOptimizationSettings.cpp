@@ -125,7 +125,6 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int INVALID_SETTING_VALUE;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
@@ -304,20 +303,18 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
     }
 
 #ifdef OS_LINUX
-    /// The streaming exchange listener starts only when both the port and a listen host are set.
-    /// Default to Streaming only when it is available, else Persisted, and reject an explicit Streaming
-    /// request without a listener instead of planning fragments that connect to a missing listener.
-    const auto & config = from->getConfigRef();
-    const bool streaming_listener_configured =
-        config.getUInt("distributed_query.streaming_exchange_port", 0) != 0
-        && !getMultipleValuesFromConfig(config, "distributed_query", "streaming_exchange_listen_host").empty();
-
-    if (distributed_plan_force_exchange_kind.empty())
+    /// Auto-select the exchange kind when it is not forced: use Streaming only when its listener will
+    /// run (both the port and a listen host are configured), otherwise Persisted. This avoids planning
+    /// Streaming exchanges that would connect to a listener that was never started. A forced kind and
+    /// local execution (which routes exchanges through in-memory queues) are left untouched.
+    if (distributed_plan_force_exchange_kind.empty() && !distributed_plan_execute_locally)
+    {
+        const auto & config = from->getConfigRef();
+        const bool streaming_listener_configured =
+            config.getUInt("distributed_query.streaming_exchange_port", 0) != 0
+            && !getMultipleValuesFromConfig(config, "distributed_query", "streaming_exchange_listen_host").empty();
         distributed_plan_force_exchange_kind = streaming_listener_configured ? "Streaming" : "Persisted";
-    else if (distributed_plan_force_exchange_kind == "Streaming" && !streaming_listener_configured)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Streaming exchange is requested but the streaming exchange listener is not configured "
-            "(set `distributed_query.streaming_exchange_port` and `streaming_exchange_listen_host`)");
+    }
 #endif
 }
 }
