@@ -5,7 +5,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
-#include <Common/HashCombine32.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
@@ -108,12 +107,11 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
     return res;
 }
 
-/// Hash variable-length string rows using hardware CRC32C (via updateWeakHash32).
-///
-/// fmix32 requires 2 serial multiplions per 8-byte block (~18 cycles/block)
-/// while _mm_crc32_u64 costs 3 cycles/block — 2.5× fewer instructions, 1.45× fewer cycles
-/// at identical branch-miss rates. Given it is impractical to SIMD-ise fmix32 in this case,
-/// we use CRC32C instead.
+/// Hash variable-length string rows using hardware CRC32C (via updateWeakHash32), seeding
+/// every row with the canonical WEAK_HASH32_INITIAL_VALUE and combining the finalized per-row
+/// hash via combineWeakHash32 on the non-initial path (instead of CRC-chaining the prior into
+/// the seed) so a materialized column and a transparent wrapper (Const/LowCardinality/Sparse)
+/// of the same value compose identically across chunks. See IColumn::computeHashInto.
 static void NO_INLINE computeHashIntoStringImpl(
     const UInt8 * chars, const ColumnString::Offset * offsets, size_t row_begin, size_t row_end, UInt32 * hash_data, bool initial)
 {
@@ -124,12 +122,8 @@ static void NO_INLINE computeHashIntoStringImpl(
     {
         const auto offset = offsets[i];
         const auto str_size = offset - prev_offset;
-        /// Always hash with the canonical seed, then combine the finalized per-row hash on the
-        /// non-initial path (instead of CRC-chaining the prior as the seed) so a materialized
-        /// column and a transparent wrapper (Const/LowCardinality/Sparse) of the same value
-        /// compose identically across chunks. See IColumn::computeHashInto.
         const uint32_t h = ::updateWeakHash32(pos, str_size, WEAK_HASH32_INITIAL_VALUE);
-        *hash_data = initial ? h : fmix32Combined(h, *hash_data);
+        *hash_data = initial ? h : combineWeakHash32(h, *hash_data);
 
         pos += str_size;
         prev_offset = offset;

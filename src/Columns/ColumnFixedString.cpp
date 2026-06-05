@@ -5,7 +5,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <base/memcmpSmall.h>
-#include <Common/HashCombine32.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
@@ -153,28 +152,11 @@ void ColumnFixedString::updateHashWithValueRange(size_t begin, size_t end, SipHa
     hash.update(reinterpret_cast<const char *>(&chars[n * begin]), n * (end - begin));
 }
 
-/// Fold `n` bytes through fmix32 in 4-byte chunks and return the raw pre-final-fmix32 value.
-/// The string length is XOR'd in before the final fmix32 (applied externally) so rows
-/// of different widths never collide.
-[[gnu::always_inline]] static inline uint32_t hashFixedStringRaw32(const UInt8 * row, size_t n) noexcept
-{
-    uint32_t acc = 0;
-    size_t off = 0;
-    for (; off + 4 <= n; off += 4)
-    {
-        uint32_t word = 0;
-        __builtin_memcpy(&word, row + off, 4);
-        acc = fmix32(acc ^ word);
-    }
-    if (off < n)
-    {
-        uint32_t tail = 0;
-        __builtin_memcpy(&tail, row + off, n - off);
-        acc = fmix32(acc ^ tail);
-    }
-    return acc ^ static_cast<uint32_t>(n); // length terminator; outer fmix32 applied at call site
-}
-
+/// Hash fixed-width rows using hardware CRC32C (via `updateWeakHash32`) seeded with the
+/// canonical `WEAK_HASH32_INITIAL_VALUE` (the per-row hash mixes the width in, so rows of
+/// different widths never collide), then combine the finalized per-row hash uniformly via
+/// `combineWeakHash32` so the composition is representation-independent across column types.
+/// See IColumn::computeHashInto.
 MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE),
     computeHashIntoFixedStringImpl,
@@ -184,15 +166,12 @@ MULTITARGET_FUNCTION_X86_V4(
             if (initial)
             {
                 for (size_t i = 0; i < n_rows; ++i)
-                    out[i] = fmix32(hashFixedStringRaw32(chars + i * row_n, row_n));
+                    out[i] = ::updateWeakHash32(chars + i * row_n, row_n, WEAK_HASH32_INITIAL_VALUE);
             }
             else
             {
-                // Combine the finalized per-row hash so materialized and wrapped
-                // (Const/LowCardinality/Sparse) representations compose identically.
-                // See IColumn::computeHashInto.
                 for (size_t i = 0; i < n_rows; ++i)
-                    out[i] = fmix32Combined(fmix32(hashFixedStringRaw32(chars + i * row_n, row_n)), out[i]);
+                    out[i] = combineWeakHash32(::updateWeakHash32(chars + i * row_n, row_n, WEAK_HASH32_INITIAL_VALUE), out[i]);
             }
         }))
 

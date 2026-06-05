@@ -4,7 +4,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/HashCombine32.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 
@@ -171,7 +170,7 @@ void ColumnConst::computeHashInto(size_t row_begin, size_t row_end, uint32_t * h
     for (size_t i = row_begin; i < row_end; ++i)
     {
         uint32_t & out = hash_out[i - row_begin];
-        out = initial ? value : fmix32Combined(value, out);
+        out = initial ? value : combineWeakHash32(value, out);
     }
 }
 

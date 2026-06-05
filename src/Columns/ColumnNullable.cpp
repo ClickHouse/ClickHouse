@@ -5,7 +5,7 @@
 #include <Columns/MaskOperations.h>
 #include <IO/Operators.h>
 #include <Common/Arena.h>
-#include <Common/HashCombine32.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
 #include <Common/TargetSpecific.h>
@@ -100,7 +100,7 @@ MULTITARGET_FUNCTION_X86_V4(
                                   {
                                       const uint32_t null_mask = uint32_t{0} - static_cast<uint32_t>(null_map[i] != 0);
                                       const uint32_t base = (null_mask & NULL_ROW_HASH) | (~null_mask & nested_hash[i]);
-                                      out[i] = fmix32Combined(base, out[i]);
+                                      out[i] = combineWeakHash32(base, out[i]);
                                   }
                               }))
 

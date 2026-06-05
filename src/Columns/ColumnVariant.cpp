@@ -7,7 +7,6 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/HashCombine32.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
@@ -968,7 +967,7 @@ void ColumnVariant::computeHashInto(size_t row_begin, size_t row_end, uint32_t *
         const Discriminator discr = local_discriminators_data[i];
         const uint32_t value = discr == NULL_DISCRIMINATOR ? 0 : nested_hashes[discr][offsets_data[i]];
         uint32_t & out = hash_out[i - row_begin];
-        out = initial ? value : fmix32Combined(value, out);
+        out = initial ? value : combineWeakHash32(value, out);
     }
 }
 

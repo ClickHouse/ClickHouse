@@ -14,7 +14,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Common/HashCombine32.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/thread_local_rng.h>
 
 #include <cstring>
@@ -158,18 +158,18 @@ TEST(ComputeHashInto, InitialFlagSemantics)
 
     EXPECT_EQ(out_init, out_zero);
 
-    // initial==false must combine with the existing value.
-    // Use fmix32Combined to match what computeHashInto(initial=false) produces:
-    // re-hashing the same column into itself is fmix32Combined(hash, hash).
+    // initial==false must combine with the existing value via the uniform combineWeakHash32:
+    // re-hashing the same column into itself is combineWeakHash32(h(row), prior) where the
+    // prior equals h(row), so the result is combineWeakHash32(out_init[i], out_init[i]).
     std::vector<uint32_t> combined_manual(n);
     for (size_t i = 0; i < n; ++i)
-        combined_manual[i] = fmix32Combined(out_init[i], out_init[i]);
+        combined_manual[i] = combineWeakHash32(out_init[i], out_init[i]);
 
     std::vector<uint32_t> combined_api = out_init;
     col->computeHashInto(0, n, combined_api.data(), false);
 
     EXPECT_NE(combined_api, out_init) << "initial=false must modify the buffer";
-    EXPECT_EQ(combined_api, combined_manual) << "initial=false must combine via fmix32Combined(h(row), prior)";
+    EXPECT_EQ(combined_api, combined_manual) << "initial=false must combine via combineWeakHash32(h(row), prior)";
 }
 
 
@@ -546,8 +546,9 @@ TEST(ComputeHashInto, ColumnArrayRangeSplitAndLength)
 // ──────────────────────────────────────────────────────────────────────
 // 12b. ColumnArray: all-zero / repeated-zero arrays of different lengths must
 //      not collapse to the same hash (and therefore all route to shard 0).
-//      fmix32(0) == 0 and fmix32Combined(0, 0) == 0, so the array length must be
-//      mixed explicitly; the [7]-based test above does not exercise this.
+//      The CRC32C fold seeds with WEAK_HASH32_INITIAL_VALUE and extends the chain per
+//      element, so the array length is mixed in implicitly; the [7]-based test above
+//      does not exercise the all-zero case.
 // ──────────────────────────────────────────────────────────────────────
 TEST(ComputeHashInto, ColumnArrayAllZeroKeysDistinct)
 {
@@ -654,7 +655,7 @@ TEST(ComputeHashInto, ColumnNullableRangeSplit)
 //     route to different aggregation shards / grace_hash partitions.
 //
 //     Before the fix the leaf columns combined the *raw* value on initial=false
-//     while wrappers combined the *finalized* fmix32(raw); these tests fail in
+//     while wrappers combined the *finalized* per-row hash; these tests fail in
 //     that state and pass once both combine the finalized per-row hash.
 // ──────────────────────────────────────────────────────────────────────
 namespace
@@ -804,7 +805,7 @@ TEST(ComputeHashInto, ReprIndependenceConstFixedString)
         << "Materialized FixedString and ColumnConst(FixedString) of the same value must compose identically";
 }
 
-// ColumnSparse exercises the per-row gather combine path (the same fmix32Combined(value, prior)
+// ColumnSparse exercises the per-row gather combine path (the same combineWeakHash32(value, prior)
 // shape that ColumnLowCardinality and ColumnReplicated use via ColumnIndex), with values that
 // vary per row rather than a single broadcast constant.
 TEST(ComputeHashInto, ReprIndependenceSparseUInt64)
@@ -891,12 +892,12 @@ TEST(ComputeHashInto, ReprIndependenceReplicatedUInt64)
 
 
 // ──────────────────────────────────────────────────────────────────────
-// 17. Wide (128/256-bit) numeric types exercise the >8-byte folding path in
-//     hashValueRaw32 (ColumnVector) and hashDecimalRaw32 (ColumnDecimal),
-//     which the smaller types never reach. A bug in that fold would silently
-//     change routing for wide keys while passing the rest of the suite, so
-//     each type is checked for distinct hashes, row-range split independence,
-//     and initial=false (Const) composition.
+// 17. Wide (128/256-bit) numeric types exercise the multi-word CRC32C path in
+//     weakHashValue32 (ColumnVector) and weakHashDecimalValue32 (ColumnDecimal),
+//     where intHashCRC32 folds several 64-bit words, which the smaller types never
+//     reach. A bug in that fold would silently change routing for wide keys while
+//     passing the rest of the suite, so each type is checked for distinct hashes,
+//     row-range split independence, and initial=false (Const) composition.
 // ──────────────────────────────────────────────────────────────────────
 namespace
 {

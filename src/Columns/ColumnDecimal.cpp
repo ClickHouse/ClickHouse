@@ -1,6 +1,5 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/HashCombine32.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/RadixSort.h>
@@ -168,36 +167,13 @@ void ColumnDecimal<T>::updateHashWithValueRange(size_t begin, size_t end, SipHas
     hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
 }
 
-/// Extract raw uint32 for a decimal value (mirrors hashValueRaw32 in ColumnVector.cpp).
-/// Accesses .value directly to avoid wide::integer implicit-conversion constraints.
+/// Finalized per-row CRC32C hash of a decimal value (seeded with `WEAK_HASH32_INITIAL_VALUE`).
+/// Accesses .value directly to avoid wide::integer implicit-conversion constraints; `intHashCRC32`
+/// consumes the whole native word (folding 64-bit words for 128/256-bit decimals).
 template <is_decimal T>
-[[gnu::always_inline]] static inline uint32_t hashDecimalRaw32(const T & v) noexcept
+[[gnu::always_inline]] static inline uint32_t weakHashDecimalValue32(const T & v) noexcept
 {
-    using NativeT = T::NativeType;
-    const NativeT & native = v.value;
-    if constexpr (sizeof(NativeT) <= sizeof(uint32_t))
-    {
-        return static_cast<uint32_t>(native);
-    }
-    else if constexpr (sizeof(NativeT) == sizeof(uint64_t))
-    {
-        uint64_t bits = 0;
-        __builtin_memcpy(&bits, &native, sizeof(bits));
-        return static_cast<uint32_t>(bits) ^ fmix32(static_cast<uint32_t>(bits >> 32));
-    }
-    else
-    {
-        // 128-bit / 256-bit: fold four bytes at a time with inner fmix32 steps.
-        uint32_t acc = 0;
-        const auto * p = reinterpret_cast<const uint8_t *>(&native);
-        for (size_t off = 0; off < sizeof(NativeT); off += 4)
-        {
-            uint32_t word = 0;
-            __builtin_memcpy(&word, p + off, 4);
-            acc = fmix32(acc ^ word);
-        }
-        return acc;
-    }
+    return static_cast<uint32_t>(intHashCRC32(v.value, WEAK_HASH32_INITIAL_VALUE));
 }
 
 MULTITARGET_FUNCTION_X86_V4(
@@ -208,7 +184,7 @@ MULTITARGET_FUNCTION_X86_V4(
                                   if (initial)
                                   {
                                       for (size_t i = 0; i < n; ++i)
-                                          out[i] = fmix32(hashDecimalRaw32(src[i]));
+                                          out[i] = weakHashDecimalValue32(src[i]);
                                   }
                                   else
                                   {
@@ -216,7 +192,7 @@ MULTITARGET_FUNCTION_X86_V4(
                                       // (Const/LowCardinality/Sparse) representations compose identically.
                                       // See IColumn::computeHashInto.
                                       for (size_t i = 0; i < n; ++i)
-                                          out[i] = fmix32Combined(fmix32(hashDecimalRaw32(src[i])), out[i]);
+                                          out[i] = combineWeakHash32(weakHashDecimalValue32(src[i]), out[i]);
                                   }
                               }))
 

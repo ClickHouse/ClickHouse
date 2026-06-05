@@ -2,7 +2,7 @@
 #include <Common/Exception.h>
 #include <DataTypes/NumberTraits.h>
 #include <base/demangle.h>
-#include <Common/HashCombine32.h>
+#include <Common/HashTable/Hash.h>
 
 namespace DB
 {
@@ -507,7 +507,7 @@ void ColumnIndex::computeHashInto(
         {
             const uint32_t value = dict_hash_data[data[i]];
             uint32_t & out = hash_out[i - row_begin];
-            out = initial ? value : fmix32Combined(value, out);
+            out = initial ? value : combineWeakHash32(value, out);
         }
     };
 

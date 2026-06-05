@@ -17,7 +17,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
-#include <Common/HashCombine32.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
@@ -464,7 +463,7 @@ void ColumnAggregateFunction::computeHashInto(size_t row_begin, size_t row_end, 
         }
         const uint32_t value = ::updateWeakHash32(v.data(), v.size(), WEAK_HASH32_INITIAL_VALUE);
         uint32_t & out = hash_out[i - row_begin];
-        out = initial ? value : fmix32Combined(value, out);
+        out = initial ? value : combineWeakHash32(value, out);
     }
 }
 

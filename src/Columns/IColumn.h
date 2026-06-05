@@ -386,28 +386,31 @@ public:
     /// Per-row weak hash kernel.  Writes a 32-bit hash for each row in
     /// [row_begin, row_end) into the caller-provided buffer `hash_out` (must hold
     /// at least row_end - row_begin entries).  It's a fast weak hash function,
-    /// mainly needed to scatter data between threads.
+    /// mainly needed to scatter data between threads (sharded aggregation,
+    /// `grace_hash` joins, parallel-window partitioning, hash-join scatter).
     ///
     /// When `initial == true` the buffer is overwritten:
     ///     hash_out[i] = h(row_begin + i)
     ///
     /// When `initial == false` the buffer is combined with the per-row hash,
     /// composing hashes across multiple key columns without intermediate allocations:
-    ///     hash_out[i] = fmix32Combined(h(row_begin + i), hash_out[i])
+    ///     hash_out[i] = combineWeakHash32(h(row_begin + i), hash_out[i])
     ///
     /// `h(row)` is the finalized per-row hash — exactly the value the column writes
-    /// on the `initial == true` path (a high-quality 32-bit MurmurHash3 `fmix32`
-    /// finalizer with full avalanche).
+    /// on the `initial == true` path — a 32-bit hash based on hardware CRC32C
+    /// (`_mm_crc32_u64` / `__crc32cd` / `updateWeakHash32`, seeded with
+    /// `WEAK_HASH32_INITIAL_VALUE`).
     ///
     /// REPRESENTATION-INDEPENDENCE CONTRACT: the non-initial path must combine this
-    /// same finalized `h(row)`, not a column-private intermediate (e.g. the raw value
-    /// before `fmix32`, or a CRC chained through the prior).  This is required so that
-    /// two physically different but logically equal columns — a materialized column and
-    /// a transparent wrapper of the same values (`ColumnConst`, `ColumnLowCardinality`,
-    /// `ColumnSparse`, `ColumnReplicated`) — produce identical composed hashes.  Wrappers
-    /// can only obtain the nested column's finalized `h` (via `computeHashInto(initial=true)`),
-    /// so every column must combine `h`, never its pre-finalized form.  Equivalently:
-    ///     computeHashInto(initial=false) == fmix32Combined(<initial value of the row>, prior)
+    /// same finalized `h(row)` with `combineWeakHash32`, not a column-private intermediate
+    /// (e.g. the raw value before hashing, or a CRC seed chained through the prior).  This
+    /// is required so that two physically different but logically equal columns — a
+    /// materialized column and a transparent wrapper of the same values (`ColumnConst`,
+    /// `ColumnLowCardinality`, `ColumnSparse`, `ColumnReplicated`) — produce identical
+    /// composed hashes.  Wrappers can only obtain the nested column's finalized `h` (via
+    /// `computeHashInto(initial=true)`), so every column must combine `h`, never its
+    /// pre-finalized form.  Equivalently:
+    ///     computeHashInto(initial=false) == combineWeakHash32(<initial value of the row>, prior)
     /// Violating this routes equal multi-column keys to different aggregation shards or
     /// `grace_hash` join partitions.
     ///

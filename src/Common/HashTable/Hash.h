@@ -129,6 +129,24 @@ inline UInt64 intHashCRC32(T x, UInt64 updated_value)
 /// Default initial value for `updateWeakHash32` hashing chains (all bits set).
 inline constexpr UInt32 WEAK_HASH32_INITIAL_VALUE = ~UInt32(0);
 
+/// Canonical cross-column combiner for routing hashes (sharded aggregation, `grace_hash` joins,
+/// parallel-window partitioning, hash-join scatter).
+///
+/// Chains a FINALIZED per-row hash `value` with the prior accumulator `prior` using one
+/// hardware CRC32C step. Every column type combines its own finalized per-row hash with
+/// this exact function, which makes the composition representation-independent: two
+/// SQL-equal keys hash identically regardless of physical column representation (e.g. a
+/// materialized column versus a `ColumnConst`, `ColumnLowCardinality`, or `ColumnSparse`).
+///
+/// `prior` and `value` are packed into the two halves of the 64-bit CRC input so the result
+/// is order-sensitive: `combineWeakHash32(x, y) != combineWeakHash32(y, x)` in general. (A
+/// plain `intHashCRC32(value, prior)` would be order-INSENSITIVE for 32-bit operands, making
+/// the multi-column keys `(a, b)` and `(b, a)` collide.)
+inline UInt32 combineWeakHash32(UInt32 value, UInt32 prior)
+{
+    return static_cast<UInt32>(intHashCRC32((static_cast<UInt64>(prior) << 32) | value, WEAK_HASH32_INITIAL_VALUE));
+}
+
 inline UInt32 updateWeakHash32(const UInt8 * pos, size_t size, UInt32 updated_value)
 {
     if (size < 8)

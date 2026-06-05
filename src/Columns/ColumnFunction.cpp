@@ -2,7 +2,7 @@
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/validateColumnType.h>
-#include <Common/HashCombine32.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
@@ -329,7 +329,7 @@ void ColumnFunction::computeHashInto(size_t row_begin, size_t row_end, uint32_t 
                 hash_out[i] = 0;
         else
             for (size_t i = 0; i < n; ++i)
-                hash_out[i] = fmix32Combined(0, hash_out[i]);
+                hash_out[i] = combineWeakHash32(0, hash_out[i]);
         return;
     }
 
@@ -359,7 +359,7 @@ void ColumnFunction::computeHashInto(size_t row_begin, size_t row_end, uint32_t 
         first = false;
     }
     for (size_t i = 0; i < n; ++i)
-        hash_out[i] = fmix32Combined(function_hash[i], hash_out[i]);
+        hash_out[i] = combineWeakHash32(function_hash[i], hash_out[i]);
 }
 
 void ColumnFunction::updateHashFast(SipHash & hash) const

@@ -7,7 +7,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
-#include <Common/HashCombine32.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
@@ -427,7 +427,7 @@ void ColumnTuple::computeHashInto(size_t row_begin, size_t row_end, uint32_t * h
                 hash_out[i] = 0;
         else
             for (size_t i = 0; i < n; ++i)
-                hash_out[i] = fmix32Combined(0, hash_out[i]);
+                hash_out[i] = combineWeakHash32(0, hash_out[i]);
         return;
     }
 
@@ -458,7 +458,7 @@ void ColumnTuple::computeHashInto(size_t row_begin, size_t row_end, uint32_t * h
         first = false;
     }
     for (size_t i = 0; i < n; ++i)
-        hash_out[i] = fmix32Combined(tuple_hash[i], hash_out[i]);
+        hash_out[i] = combineWeakHash32(tuple_hash[i], hash_out[i]);
 }
 
 void ColumnTuple::updateHashFast(SipHash & hash) const

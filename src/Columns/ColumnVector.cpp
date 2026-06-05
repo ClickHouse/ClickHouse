@@ -15,7 +15,6 @@
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/HashCombine32.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/NaNUtils.h>
@@ -78,70 +77,37 @@ void ColumnVector<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash
     hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
 }
 
-/// Extract the raw uint32 input for fmix32/fmix32Combined from a value of type T.
+/// Finalized per-row CRC32C hash of a value of type T (seeded with `WEAK_HASH32_INITIAL_VALUE`).
 ///
-/// Shared by both the initial and combine paths so the extraction logic is written once.
-///   - ≤4 bytes: cast to uint32_t (fmix32 applied externally)
-///   - 8 bytes:  fold high and low halves via fmix32(high) ^ low (fmix32 applied externally)
-///   - >8 bytes: fold consecutive 4-byte words through fmix32 internally; result is returned as-is
-///   - float: normalise -0.0 to +0.0 before bit-casting
+/// This is the canonical per-row hash `h(row)`: every column type produces a finalized
+/// CRC32C-based 32-bit hash, and wrappers combine these finalized hashes uniformly via
+/// `combineWeakHash32`, so SQL-equal keys hash identically across representations.
+///   - floats: normalise -0.0 to +0.0 before hashing (so the two zero encodings, which
+///     compare equal in SQL, hash identically)
+///   - everything else: hashed via `hashCRC32` over its raw bytes (one `_mm_crc32_u64`
+///     per 64-bit word; no hi/lo split)
 template <typename T>
-[[gnu::always_inline]] static inline uint32_t hashValueRaw32(T v) noexcept
+[[gnu::always_inline]] static inline uint32_t weakHashValue32(T v) noexcept
 {
     if constexpr (std::is_same_v<T, BFloat16>)
     {
-        // `BFloat16` is a 16-bit float but is NOT a `std::is_floating_point` type, so without
-        // this branch it would fall into the `sizeof(T) <= 4` integer case below, where
-        // `static_cast<uint32_t>(v)` routes through `Float32` and truncates to an integer —
-        // collapsing e.g. `0.1` and `0.2` to `0` and invoking UB for negative/NaN/Inf inputs.
-        // Hash the raw 16 bits instead, normalising `-0.0` (`0x8000`) to `+0.0` so the two zero
-        // encodings (which compare equal) hash identically, matching the floating-point branch.
+        // `BFloat16` is a 16-bit float but is NOT a `std::is_floating_point` type. Hash its
+        // raw 16 bits, normalising `-0.0` (`0x8000`) to `+0.0` so the two zero encodings
+        // (which compare equal) hash identically, matching the floating-point branch.
         UInt16 bits = v.raw();
         if (bits == 0x8000)
             bits = 0;
-        return static_cast<uint32_t>(bits);
+        return static_cast<uint32_t>(hashCRC32(bits, WEAK_HASH32_INITIAL_VALUE));
     }
     else if constexpr (std::is_floating_point_v<T>)
     {
-        if constexpr (sizeof(T) == sizeof(uint32_t))
-        {
-            uint32_t bits = 0;
-            if (v != T{0})
-                __builtin_memcpy(&bits, &v, sizeof(bits));
-            return bits;
-        }
-        else
-        {
-            static_assert(sizeof(T) == sizeof(uint64_t));
-            uint64_t bits = 0;
-            if (v != T{0})
-                __builtin_memcpy(&bits, &v, sizeof(bits));
-            return static_cast<uint32_t>(bits) ^ fmix32(static_cast<uint32_t>(bits >> 32));
-        }
-    }
-    else if constexpr (sizeof(T) <= sizeof(uint32_t))
-    {
-        return static_cast<uint32_t>(v);
-    }
-    else if constexpr (sizeof(T) == sizeof(uint64_t))
-    {
-        const auto bits = static_cast<uint64_t>(v);
-        return static_cast<uint32_t>(bits) ^ fmix32(static_cast<uint32_t>(bits >> 32));
+        if (v == T{0})
+            v = T{0}; // normalise -0.0 to +0.0
+        return static_cast<uint32_t>(hashCRC32(v, WEAK_HASH32_INITIAL_VALUE));
     }
     else
     {
-        // 128-bit and wider: fold four bytes at a time with inner fmix32 steps.
-        // No outer fmix32 is applied here; fmix32/fmix32Combined at the call site
-        // provides the final avalanche.
-        uint32_t acc = 0;
-        const auto * p = reinterpret_cast<const uint8_t *>(&v);
-        for (size_t off = 0; off < sizeof(T); off += 4)
-        {
-            uint32_t word = 0;
-            __builtin_memcpy(&word, p + off, 4);
-            acc = fmix32(acc ^ word);
-        }
-        return acc;
+        return static_cast<uint32_t>(hashCRC32(v, WEAK_HASH32_INITIAL_VALUE));
     }
 }
 
@@ -152,18 +118,17 @@ MULTITARGET_FUNCTION_X86_V4(
                               {
                                   if (initial)
                                   {
-                                      // No prior — zero cost for the combine path.
                                       for (size_t i = 0; i < n; ++i)
-                                          out[i] = fmix32(hashValueRaw32(src[i]));
+                                          out[i] = weakHashValue32(src[i]);
                                   }
                                   else
                                   {
-                                      // Combine the finalized per-row hash fmix32(raw), the same value the
-                                      // initial path produces, so a materialized column and a transparent
-                                      // wrapper (Const/LowCardinality/Sparse) of the same value compose
-                                      // identically across chunks. See IColumn::computeHashInto.
+                                      // Combine the finalized per-row hash, the same value the initial path
+                                      // produces, so a materialized column and a transparent wrapper
+                                      // (Const/LowCardinality/Sparse) of the same value compose identically
+                                      // across chunks. See IColumn::computeHashInto.
                                       for (size_t i = 0; i < n; ++i)
-                                          out[i] = fmix32Combined(fmix32(hashValueRaw32(src[i])), out[i]);
+                                          out[i] = combineWeakHash32(weakHashValue32(src[i]), out[i]);
                                   }
                               }))
 

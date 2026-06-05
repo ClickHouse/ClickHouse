@@ -5,7 +5,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
-#include <Common/HashCombine32.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -1202,7 +1202,7 @@ void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, uint32_t * 
     PaddedPODArray<UInt32> object_hash(n);
     computeFinalizedInto(object_hash.data());
     for (size_t i = 0; i < n; ++i)
-        hash_out[i] = fmix32Combined(object_hash[i], hash_out[i]);
+        hash_out[i] = combineWeakHash32(object_hash[i], hash_out[i]);
 }
 
 void ColumnObject::updateHashFast(SipHash & hash) const

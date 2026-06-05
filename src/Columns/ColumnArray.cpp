@@ -13,7 +13,6 @@
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/HashCombine32.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/Operators.h>
 #include <cstring> // memcpy
@@ -327,19 +326,19 @@ void ColumnArray::computeHashInto(size_t row_begin, size_t row_end, uint32_t * h
     Offset prev_offset = elem_begin;
     for (size_t i = row_begin; i < row_end; ++i)
     {
-        /// Seed the accumulator with the array length so it is mixed explicitly. Folding
-        /// alone does not encode the length: fmix32(0) == 0 and fmix32Combined(0, 0) == 0,
-        /// so without this seed all-zero arrays like [], [0], [0, 0], ... would hash to the
-        /// same value and route to shard 0.
-        uint32_t acc = static_cast<uint32_t>(offsets_data[i] - prev_offset);
-        for (Offset row = prev_offset; row < offsets_data[i]; ++row)
-            acc = fmix32Combined(elem_hash[row - elem_begin], acc);
-
-        /// Combine the finalized per-row hash (the same value the initial path writes), so a
+        /// Fold all element hashes of this row through a CRC32C chain seeded with
+        /// WEAK_HASH32_INITIAL_VALUE. Each element extends the chain, so the array length is
+        /// implicitly mixed in and arrays like [], [0], [0, 0], ... do not collide. The
+        /// resulting `acc` is the finalized per-row hash (the same value the initial path
+        /// writes), combined with the prior accumulator via the uniform combineWeakHash32 so a
         /// materialized Array and a ColumnConst(Array) of the same value compose identically.
-        const uint32_t value = fmix32(acc);
+        /// See IColumn::computeHashInto.
+        uint32_t acc = WEAK_HASH32_INITIAL_VALUE;
+        for (Offset row = prev_offset; row < offsets_data[i]; ++row)
+            acc = combineWeakHash32(elem_hash[row - elem_begin], acc);
+
         uint32_t & out = hash_out[i - row_begin];
-        out = initial ? value : fmix32Combined(value, out);
+        out = initial ? acc : combineWeakHash32(acc, out);
 
         prev_offset = offsets_data[i];
     }

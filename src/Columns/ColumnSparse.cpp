@@ -7,7 +7,6 @@
 #include <Columns/ColumnReplicated.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
-#include <Common/HashCombine32.h>
 #include <Common/iota.h>
 
 #include <algorithm>
@@ -788,7 +787,7 @@ void ColumnSparse::computeHashInto(size_t row_begin, size_t row_end, uint32_t * 
     {
         const uint32_t value = values_hash[offset_it.getValueIndex()];
         uint32_t & out = hash_out[i - row_begin];
-        out = initial ? value : fmix32Combined(value, out);
+        out = initial ? value : combineWeakHash32(value, out);
     }
 }
 
