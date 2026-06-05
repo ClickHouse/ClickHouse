@@ -706,6 +706,8 @@ getColumnsForNewDataPart(
     }
 
     SerializationInfo::Settings settings;
+    const double ratio_of_defaults_for_sparse_serialization = static_cast<double>(
+        (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]);
     /// If mutations doesn't affect all columns we must use serialization info settings from source part,
     /// because data files of some columns might be copied without actual serialization, so changes in serialization
     /// settings will not be applied for them (for example, new serialization versions for data types).
@@ -713,7 +715,7 @@ getColumnsForNewDataPart(
     {
         settings = SerializationInfo::Settings
         {
-            static_cast<double>((*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
+            ratio_of_defaults_for_sparse_serialization,
             false,
             serialization_infos.getSettings().version,
             serialization_infos.getSettings().string_serialization_version,
@@ -727,7 +729,7 @@ getColumnsForNewDataPart(
     {
         settings = SerializationInfo::Settings
         {
-            static_cast<double>((*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
+            ratio_of_defaults_for_sparse_serialization,
             false,
             (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
