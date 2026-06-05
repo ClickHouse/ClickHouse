@@ -37,7 +37,7 @@ struct IcebergHistoryRecord
     Int64 parent_id{};
     bool is_current_ancestor{};
     Iceberg::IcebergPathFromMetadata manifest_list_path;
-    Iceberg::SnapshotSummary snapshot_summary;
+    std::optional<Iceberg::SnapshotSummary> snapshot_summary;
 };
 
 using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
