@@ -26,6 +26,17 @@ SET optimize_move_to_prewhere = 0;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
+-- QCC population for the TopK plan is best-effort: a granule is recorded as
+-- skippable only when a chunk that physically covers it is reduced to zero rows
+-- and that buffer is flushed before the query ends. With several reading threads
+-- working on several parts the running `__topKFilter` threshold each thread sees
+-- (and therefore which chunks empty out, and whether their buffer is flushed
+-- before the `LIMIT` cancels the pipeline) depends on timing, so `count() > 0`
+-- after the first run is not a deterministic invariant under random settings.
+-- Read with a single thread over a single part so the threshold trajectory and
+-- the flush are deterministic; the salt / correctness assertions below are what
+-- this test is really about, and they need the cache to be reliably populated.
+SET max_threads = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -42,6 +53,12 @@ SETTINGS index_granularity = 64,
          add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO tab SELECT rand(), number, number % 1000 FROM numbers(1_000_000);
+
+-- A parallel insert (`max_insert_threads` is randomized in CI) leaves several
+-- parts, and which part a reading thread happens to hold changes the running
+-- threshold it sees. Merge into a single part so granule-skip decisions, and thus
+-- the QCC population, are deterministic.
+OPTIMIZE TABLE tab FINAL;
 
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
