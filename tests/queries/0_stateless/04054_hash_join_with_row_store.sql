@@ -79,6 +79,9 @@ SELECT * FROM left l ASOF JOIN right_asof r ON l.k = r.k AND l.t >= r.t ORDER BY
 SELECT '--- Parallel hash JOIN ---';
 SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'parallel_hash';
 
+SELECT '--- Parallel hash FULL JOIN (join_use_nulls) ---';
+SELECT * FROM left l FULL JOIN right r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'parallel_hash', join_use_nulls = 1;
+
 SELECT '--- Row-list JOIN output ---';
 SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL SETTINGS join_output_by_rowlist_perkey_rows_threshold = 0;
 
