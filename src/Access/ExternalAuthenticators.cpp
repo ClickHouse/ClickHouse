@@ -147,6 +147,27 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         if (!params.user_dn_detection)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "'lookup_bind_dn' requires 'user_dn_detection' to be configured");
+
+        /// `user_dn_detection` must depend on the requested user name; otherwise a static
+        /// query (e.g. `search_filter=(cn=janedoe)`) returning a single entry would let
+        /// `EXECUTE AS some_other_name` resolve to that entry's DN.
+        const auto contains = [](const String & s, const std::string_view needle)
+        {
+            return s.find(needle) != String::npos;
+        };
+        const String & udd_base_dn = params.user_dn_detection->base_dn;
+        const String & udd_search_filter = params.user_dn_detection->search_filter;
+        const bool depends_on_user_name =
+            contains(udd_base_dn, "{user_name}") || contains(udd_search_filter, "{user_name}");
+        const bool bind_dn_carries_user_name = contains(params.bind_dn, "{user_name}");
+        const bool depends_via_bind_dn = bind_dn_carries_user_name &&
+            (contains(udd_base_dn, "{bind_dn}") || contains(udd_search_filter, "{bind_dn}") ||
+             contains(udd_base_dn, "{user_dn}") || contains(udd_search_filter, "{user_dn}"));
+        if (!depends_on_user_name && !depends_via_bind_dn)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'lookup_bind_dn' requires 'user_dn_detection' to depend on the requested user name; "
+                "use '{{user_name}}' in 'user_dn_detection.base_dn' or '.search_filter', "
+                "or use '{{bind_dn}}'/'{{user_dn}}' with a 'bind_dn' template that contains '{{user_name}}'");
     }
 
     if (has_verification_cooldown)

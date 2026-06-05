@@ -20,9 +20,10 @@ module, leaving the LDAP storage's in-memory cache empty, so the first test exer
 the not-yet-logged-in path before any subsequent test materializes those users. The
 tests on `node_with_role_mapping`, `node_bad_lookup_password`,
 `node_with_local_user_precedence`, `node_misconfigured_lookup`,
-`node_with_role_mapping_user_dn`, `shard1_node`, `shard2_node`, and
-`node_with_two_ldap_directories` exercise the role-mapping, misconfiguration,
-local-vs-LDAP precedence, surfaced-config-error, AD-style `{user_dn}` mapping,
+`node_with_role_mapping_user_dn`, `node_static_user_dn_detection`, `shard1_node`,
+`shard2_node`, and `node_with_two_ldap_directories` exercise the role-mapping,
+misconfiguration, local-vs-LDAP precedence, surfaced-config-error, AD-style
+`{user_dn}` mapping, target-independent `user_dn_detection`,
 distributed-cache-poisoning, and two-LDAP-directory cache-refresh variants on
 instances that no other test in this module logs into outside of its dedicated
 test, so each instance's LDAP cache state is controlled by exactly one test.
@@ -98,6 +99,19 @@ node_misconfigured_lookup = cluster.add_instance(
 node_with_role_mapping_user_dn = cluster.add_instance(
     "node_with_role_mapping_user_dn",
     main_configs=["configs/ldap_with_role_mapping_user_dn.xml"],
+    user_configs=["configs/users.xml"],
+    stay_alive=True,
+)
+
+# Instance whose `user_dn_detection` is target-independent: a static `search_filter`
+# (`(cn=janedoe)`) and a static `base_dn`, with `lookup_bind_dn` configured. The
+# search would always return the same single entry, so without target-specificity
+# `EXECUTE AS not_in_ldap` would resolve `final_user_dn` from the matching entry
+# and materialize a phantom user. `parseLDAPServer` rejects this shape, the saved
+# parse error surfaces at query time.
+node_static_user_dn_detection = cluster.add_instance(
+    "node_static_user_dn_detection",
+    main_configs=["configs/ldap_static_user_dn_detection.xml"],
     user_configs=["configs/users.xml"],
     stay_alive=True,
 )
@@ -688,4 +702,36 @@ def test_execute_as_wrong_lookup_password_throws_ldap_error(started_cluster):
     # The exception should mention the LDAP service-bind problem and must NOT
     # collapse to `UNKNOWN_USER`. The exact text comes from `LDAPClient::openConnection`.
     assert "LDAP_ERROR" in error or "lookup" in error.lower(), error
+    assert "UNKNOWN_USER" not in error, error
+
+
+def test_execute_as_static_user_dn_detection_is_rejected(started_cluster):
+    """`clickhouse-gh[bot]` blocker on `src/Access/ExternalAuthenticators.cpp`:
+    `lookup_bind_dn` requires `user_dn_detection` to confirm the user exists, but
+    that requirement was satisfied as soon as the section was *present*. A
+    target-independent search (e.g. a static `search_filter` like `(cn=janedoe)`
+    over a static `base_dn`) returns the same single entry for every requested
+    name, so `final_user_dn` would be set from that entry and `LDAPAccessStorage`
+    would materialize a phantom user under the requested name regardless of which
+    name was being impersonated.
+
+    After the fix `parseLDAPServer` requires `user_dn_detection.base_dn` or
+    `user_dn_detection.search_filter` to depend on the requested user via
+    `{user_name}` (or `{bind_dn}`/`{user_dn}` when `bind_dn` itself depends on
+    `{user_name}`). The saved `BAD_ARGUMENTS` is rethrown by `findLDAPUser` so
+    `EXECUTE AS` surfaces the configuration error rather than silently
+    materializing the entry.
+    """
+    error = node_static_user_dn_detection.query_and_get_error(
+        # Pick a name that genuinely is not in the directory; with the bug the
+        # static `(cn=janedoe)` filter would still return the `janedoe` entry,
+        # set `final_user_dn` to its DN, and `findImpl` would materialize a
+        # `definitely_not_in_ldap` user mapped to `janedoe`'s DN.
+        "EXECUTE AS definitely_not_in_ldap SELECT 1",
+        user="admin",
+        password="qwerty",
+    )
+    assert "openldap" in error, error
+    assert "user_dn_detection" in error, error
+    assert "{user_name}" in error or "user_name" in error, error
     assert "UNKNOWN_USER" not in error, error
