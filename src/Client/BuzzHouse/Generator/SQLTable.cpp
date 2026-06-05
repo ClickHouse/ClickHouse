@@ -156,7 +156,7 @@ void collectColumnPaths(
         static const std::unordered_map<uint32_t, DB::Strings> qentries
             = {{16, {"1", "8", "16"}}, {32, {"1", "16", "32"}}, {64, {"1", "16", "32", "64"}}};
 
-        /// Only setring a subset of the values to not add too many entries
+        /// Only setting a subset of the values to not add too many entries
         for (const auto & entry : qentries.at(fp->size))
         {
             next.path.emplace_back(ColumnPathChainEntry(entry, &(*string_tp)));
