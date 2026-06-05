@@ -6,30 +6,28 @@
 # Avoid overlaps with previous runs
 dmesg --clear
 
-set -ex
+set -x
 
 # we mount tests folder from repo to /usr/share
-ln -s /repo/ci/jobs/scripts/stress/stress.py /usr/bin/stress
+ln -s /repo/tests/ci/stress.py /usr/bin/stress
 ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 ln -s /repo/tests/ci/download_release_packages.py /usr/bin/download_release_packages
 ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
+# shellcheck source=../stateless/attach_gdb.lib
+source /repo/tests/docker_scripts/attach_gdb.lib
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
+azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
 
 echo "Get previous release tag"
-PACKAGES_DIR=/repo/ci/tmp
+PACKAGES_DIR=/repo/tests/ci/tmp/packages
 # shellcheck disable=SC2016
 previous_release_tag=$(dpkg-deb --showformat='${Version}' --show $PACKAGES_DIR/clickhouse-client*.deb | get_previous_release_tag)
-if [ $? -ne 0 ]; then
-    echo "Failed to get previous release tag"
-    exit 1
-fi
 echo $previous_release_tag
 
 echo "Clone previous release repository"
@@ -45,11 +43,11 @@ echo $previous_release_tag | download_release_packages && echo -e "Download scri
 if ! [ "$(ls -A previous_release_repository/tests/queries)" ]
 then
     echo -e 'failure\tFailed to clone previous release tests' > /test_output/check_status.tsv
-    exit 1
+    exit
 elif ! [ "$(ls -A previous_release_package_folder/clickhouse-common-static_*.deb && ls -A previous_release_package_folder/clickhouse-server_*.deb)" ]
 then
     echo -e 'failure\tFailed to download previous release packages' > /test_output/check_status.tsv
-    exit 1
+    exit
 fi
 
 echo -e "Successfully cloned previous release tests$OK" >> /test_output/test_results.tsv
@@ -87,18 +85,23 @@ function save_major_version()
 save_settings_clean 'old_settings.native'
 save_mergetree_settings_clean 'old_merge_tree_settings.native'
 save_major_version 'old_version.native'
-old_major_version=$(clickhouse-local -q "select a[1] || '.' || a[2] from (select splitByChar('.', version()) as a)")
 
-configure_opts=(
-    # Let's enable S3 storage by default
-    --s3-storage
-)
-if [ $((RANDOM % 2)) -eq 0 ]; then
-    configure_opts+=(--encrypted-storage)
-fi
+# Initial run without S3 to create system.*_log on local file system to make it
+# available for dump via clickhouse-local
+configure
+
+start_server || (echo "Failed to start server" && exit 1)
+stop_server || (echo "Failed to stop server" && exit 1)
+mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
 
 # Start server from previous release
-configure "${configure_opts[@]}"
+# Let's enable S3 storage by default
+export USE_S3_STORAGE_FOR_MERGE_TREE=1
+export USE_ENCRYPTED_STORAGE=$((RANDOM % 2))
+
+# Previous version may not be ready for fault injections
+export ZOOKEEPER_FAULT_INJECTION=0
+configure
 
 # But we still need default disk because some tables loaded only into it
 sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
@@ -131,7 +134,8 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 
 # Install and start new server
 install_packages $PACKAGES_DIR
-configure "${configure_opts[@]}"
+export ZOOKEEPER_FAULT_INJECTION=1
+configure
 
 # Check that all new/changed setting were added in settings changes history.
 # Some settings can be different for builds with sanitizers, so we check
@@ -255,44 +259,17 @@ then
 fi
 
 # Just in case previous version left some garbage in zk
-sudo sed -i "s|>1<|>0<|g" /etc/clickhouse-server/config.d/lost_forever_check.xml
-rm -f /etc/clickhouse-server/config.d/filesystem_caches_path.xml
+sudo sed -i "s|>1<|>0<|g" /etc/clickhouse-server/config.d/lost_forever_check.xml \
+rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 
-# Set compatibility setting to previous version, so we won't fail due to known backward incompatible changes.
-echo "<clickhouse>
-    <profiles>
-        <default>
-            <compatibility>$old_major_version</compatibility>
-            <!-- Allow loading projections with positional arguments (e.g., GROUP BY 1, 2) created by the old server. -->
-            <enable_positional_arguments_for_projections>1</enable_positional_arguments_for_projections>
-        </default>
-    </profiles>
-</clickhouse>" > /etc/clickhouse-server/users.d/compatibility.xml
-
-cat /etc/clickhouse-server/users.d/compatibility.xml
-
-# List of allowed reasons why the server cannot start up
-# ADD ENTRIES HERE ONLY IF YOU ARE CERTAIN THEY DO NOT INTRODUCE BACKWARD-INCOMPATIBLE CHANGES
-# 1. Lazy database engine has been removed in a backward-incompatible manner
-check_allow_list() {
-    local log="/var/log/clickhouse-server/clickhouse-server.log"
-    if [ -f "$log" ] && rg -q "Unknown database engine: Lazy" "$log"; then
-        # cleanup errors
-        echo -e "Found allow-listed error in logs. Suppressing failure"$OK > /test_output/test_results.tsv
-        # Finishing tests because following checks would fail
-        exit 0
-    fi
-}
-
-start_server || check_allow_list || (echo "Failed to start server" && exit 1)
-
+start_server 500 || (echo "Failed to start server" && exit 1)
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
     && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
     >> /test_output/test_results.tsv)
 
 # Remove file application_errors.txt if it's empty
-[ -s /test_output/application_errors.txt ] || rm -f /test_output/application_errors.txt
+[ -s /test_output/application_errors.txt ] || rm /test_output/application_errors.txt
 
 clickhouse-client --query="SELECT 'Server version: ', version()"
 
@@ -301,71 +278,14 @@ sleep 60
 
 stop_server || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.upgrade.log
-cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickhouse-server.upgrade.log
 
 # Error messages (we should ignore some errors)
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/38643 ("Unknown index: idx.")
+# FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 ("Cannot parse string 'Hello' as UInt64")
 # FIXME Not sure if it's expected, but some tests from stress test may not be finished yet when we restarting server.
 #       Let's just ignore all errors from queries ("} <Error> TCPHandler: Code:", "} <Error> executeQuery: Code:")
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39197 ("Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'")
-# FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility:
-#       stress tests may leave behind intentionally-broken mutations that retry after upgrade.
-#       `CANNOT_PARSE_TEXT` errors come from:
-#       - 00834_kill_mutation{,_replicated_zookeeper}: `DELETE WHERE toUInt32(s) = 1` on String data ('a', 'b')
-#       - 01414_mutations_and_errors_zookeeper: `MODIFY COLUMN value UInt64` on String data ('Hello')
-#       `MutateFromLogEntryTask` is also excluded for the same reason, but only catches the first log line;
-#       the wrapping `MergeTreeBackgroundExecutor` line also needs to be excluded.
-# `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
-# from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
-# `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
-#       (with `unicodeWord` as a transitional alias). Tables from old versions using `unicode_word` trigger this
-#       on attach. Narrowed to the exact legacy name so genuinely unsupported tokenizer names are not masked.
-# `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
-#       for `openbucketforpublicci.blob.core.windows.net`. Filtered via regex in the secondary pipe below to match
-#       both the Azure SDK exception type AND the DNS error together, so non-Azure DNS errors are not masked.
-# `SystemLogQueue` + `Queue had been full` overflow happens under heavy stress test load and is not a
-#       compatibility bug. Filtered via regex in the secondary pipe below to require both the component name
-#       AND the specific overflow phrase together (the log format is `SystemLogQueue (system.<table>): Queue
-#       had been full ...`), so other SystemLogQueue errors are not masked.
-# `TraceCollector` + `CANNOT_READ_FROM_FILE_DESCRIPTOR` is a transient pipe close error during server shutdown,
-#       unrelated to upgrade compatibility. Filtered via regex in the secondary pipe below to require both
-#       the component name AND the specific error code together, so non-pipe TraceCollector errors are not masked.
-# `This engine is deprecated and is not supported in transactions` appears for Ordinary engine tables from old versions.
-# `Prevent converting Nullable type to non-Nullable type inside mutation` is from stricter validation in new versions
-#       applied to old mutations that were created before the validation existed.
-# `e.what() = failed to parse response body` is a transient Azure blob storage batch-parsing error from
-#       `Azure::Storage::Blobs`. Narrowed with the `e.what() = ` prefix to only match caught C++ exceptions of this
-#       type (stable ClickHouse exception formatting), so arbitrary log lines containing the phrase are not masked.
-# `while loading statistics` + `ILLEGAL_STATISTICS` appears when the statistics file format version changes between
-#       releases. The new binary cannot deserialize old statistics files and throws ILLEGAL_STATISTICS (Code: 708).
-#       Filtered via regex in the secondary pipe below to require both the loading context AND the error code together.
-# `rdk:FAIL` + `Connect to` + `Connection refused` is a librdkafka broker connection error when the Kafka
-#       broker is unavailable during upgrade (no broker is running in the upgrade test environment). Filtered
-#       via regex in the secondary pipe below to require the `rdk:FAIL` tag AND the specific connection-refused
-#       message together, so real Kafka regressions (auth, protocol, config) that also emit `rdk:FAIL` are
-#       not masked.
-# `No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed` is the unique signature of
-#       issue #102259 (`getFileNameForRenamedColumnStream` uses `substr(0, N)` instead of `substr(N)`, producing
-#       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until it lands, the
-#       upgraded server detaches the renamed-column parts of `02538_alter_rename_sequence`'s `wrong_metadata_wide`
-#       table. Matched via the exact corrupted filename + column name, which is unique to that test and that bug.
-# `No stream (ba1.bin) file checksum for column b` is the same bug observed on
-#       `02555_davengers_rename_chain`'s `wrong_metadata` table. The test chains `a -> a1` and then
-#       `a1 -> b`, so the corrupted file name is `<new=b><old=a1>.bin = ba1.bin` for column `b`. The
-#       `<column><stream>` combination is unique to this chained-rename test.
-# `wrong_metadata` + `Detaching broken part` + `backward incompatibility` is the follow-up cleanup line for
-#       the same issue: a "Detaching broken part" notice that does not contain the corrupted filename.
-#       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
-#       broken-part detach messages are not masked. The regex matches both `wrong_metadata` (from
-#       `02555_davengers_rename_chain`) and `wrong_metadata_wide` (from `02538_alter_rename_sequence`).
-# `RaftInstance: session` + `failed to read rpc header from socket` + `due to error` is a benign NuRaft
-#       shutdown-time message emitted by `rpc_session::start` in `contrib/NuRaft/src/asio_service.cxx` when
-#       the peer side of an accepted RPC connection (in single-node Keeper this is a loopback `::1` client)
-#       closes its socket before the acceptor cancels its pending header read. The already-allow-listed sibling
-#       `RaftInstance: failed to accept a rpc connection due to error 125` is the inverse race (acceptor wins);
-#       this regex covers the other variant (peer wins, read returns EOF or another transient socket error).
-#       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
-#       RaftInstance errors are not masked.
+# FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -383,10 +303,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "DistributedInsertQueue" \
            -e "TABLE_IS_READ_ONLY" \
            -e "Code: 1000, e.code() = 111, Connection refused" \
-           -e "[rdk:FAIL]" \
-           -e "[rdk:ERROR]" \
-           -e "Error during draining" \
-           -e "Timeout during draining" \
            -e "UNFINISHED" \
            -e "NETLINK_ERROR" \
            -e "Renaming unexpected part" \
@@ -396,13 +312,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "is lost forever." \
            -e "Unknown index: idx." \
            -e "Cannot parse string 'Hello' as UInt64" \
-           -e "Cannot parse string 'Hello' as UInt32" \
-           -e "Cannot parse string \'Hello\' as UInt32" \
-           -e "Cannot parse string \\'Hello\\' as UInt32" \
-           -e "Cannot parse string \'a\' as UInt32" \
-           -e "Cannot parse string \'b\' as UInt32" \
-           -e "Cannot parse string 'a' as UInt32" \
-           -e "Cannot parse string 'b' as UInt32" \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \
            -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
@@ -418,45 +327,15 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot flush" \
            -e "Container already exists" \
            -e "doesn't have metadata version on disk" \
-           -e "Unknown codec family: ZSTD_QAT" \
-           -e "Unknown codec family: DEFLATE_QPL" \
-           -e "Bad get: has String, requested UInt64. (BAD_GET" \
-           -e "Disk does not support stat. (NOT_IMPLEMENTED" \
-           -e "QUALIFY clause is not supported in the old analyzer" \
-           -e "Cannot attach table \`test_7\`" \
-           -e "Cannot open file /var/lib/clickhouse/access/" \
-           -e "NO_SUCH_INTERSERVER_IO_ENDPOINT" \
-           -e "Mapping for table with UUID=1f474183-1403-4282-9309-21f6e3518dab already exists" \
-           -e "Cannot parse projection test_projection" \
-           -e "Key expressions cannot contain subqueries" \
-           -e "Expression must be deterministic but it contains non-deterministic part" \
-           -e "Unknown tokenizer: 'unicode_word'" \
-           -e "This engine is deprecated and is not supported in transactions" \
-           -e "Prevent converting Nullable type to non-Nullable type inside mutation" \
-           -e "e.what() = failed to parse response body" \
-           -e "Tuple element name 'null' is reserved" \
-           -e "No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed" \
-           -e "No stream (ba1.bin) file checksum for column b" \
-           -e "Exception during get topic partitions from Kafka: Local: Broker transport failure" \
-    /test_output/clickhouse-server.upgrade.log \
+    clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
-    | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
-    | grep -av -e "SystemLogQueue.*Queue had been full" \
-    | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
-    | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
-    | grep -av -e "rdk:FAIL.*Connect to.*failed: Connection refused" \
-    | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
-    | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
-    | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
-
-if [ -s /test_output/upgrade_error_messages.txt ]; then
-    echo -e "Error message in clickhouse-server.log (see upgrade_error_messages.txt)$FAIL$(head_escaped /test_output/upgrade_error_messages.txt)" >> /test_output/test_results.tsv
-else
-    echo -e "No Error messages after server upgrade$OK" >> /test_output/test_results.tsv
-fi
+    | zgrep -Fa "<Error>" > /test_output/upgrade_error_messages.txt \
+    && echo -e "Error message in clickhouse-server.log (see upgrade_error_messages.txt)$FAIL$(head_escaped /test_output/upgrade_error_messages.txt)" \
+        >> /test_output/test_results.tsv \
+    || echo -e "No Error messages after server upgrade$OK" >> /test_output/test_results.tsv
 
 # Remove file upgrade_error_messages.txt if it's empty
-[ -s /test_output/upgrade_error_messages.txt ] || rm -f /test_output/upgrade_error_messages.txt
+[ -s /test_output/upgrade_error_messages.txt ] || rm /test_output/upgrade_error_messages.txt
 
 # Grep logs for sanitizer asserts, crashes and other critical errors
 check_logs_for_critical_errors
@@ -466,3 +345,31 @@ tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 collect_query_and_trace_logs
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
+
+# Write check result into check_status.tsv
+# Try to choose most specific error for the whole check status
+clickhouse-local --structure "test String, res String, time Nullable(Float32), desc String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by
+(test like '%Sanitizer%') DESC,
+(test like '%Killed by signal%') DESC,
+(test like '%gdb.log%') DESC,
+(test ilike '%possible deadlock%') DESC,
+(test like '%start%') DESC,
+(test like '%dmesg%') DESC,
+(test like '%OOM%') DESC,
+(test like '%Signal 9%') DESC,
+(test like '%Fatal message%') DESC,
+(test like '%Error message%') DESC,
+(test like '%previous release%') DESC,
+(test like '%Changed settings%') DESC,
+(test like '%New settings%') DESC,
+rowNumberInAllBlocks()
+LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo -e "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
+[ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
+
+# But OOMs in stress test are allowed
+if rg 'OOM in dmesg|Signal 9' /test_output/check_status.tsv
+then
+    sed -i 's/failure/success/' /test_output/check_status.tsv
+fi
+
+collect_core_dumps

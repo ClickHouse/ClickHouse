@@ -1,14 +1,13 @@
-#include <base/StringViewHash.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
-#include <Examples/clickhouse_examples.h>
+#include <base/StringRef.h>
 
 
-/** Calculates StringViewHash from stdin. For debugging.
+/** Calculates StringRefHash from stdin. For debugging.
   */
 
-int mainEntryExampleStringRefHash(int, char **)
+int main(int, char **)
 {
     using namespace DB;
 
@@ -17,7 +16,7 @@ int mainEntryExampleStringRefHash(int, char **)
 
     String s;
     readStringUntilEOF(s, in);
-    out << StringViewHash()(s) << '\n';
+    out << StringRefHash()(s) << '\n';
     out.finalize();
 
     return 0;

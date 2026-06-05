@@ -148,7 +148,7 @@ TTLTransform::TTLTransform(
             TTLUpdateField::RECOMPRESSION_TTL, recompression_ttl.result_column, old_ttl_infos.recompression_ttl[recompression_ttl.result_column], current_time_, force_));
 }
 
-static Block reorderColumns(Block block, const Block & header)
+Block reorderColumns(Block block, const Block & header)
 {
     Block res;
     for (const auto & col : header)
@@ -165,7 +165,7 @@ void TTLTransform::consume(Chunk chunk)
         return;
     }
 
-    removeSpecialColumnRepresentations(chunk);
+    convertToFullIfSparse(chunk);
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     /// Fill expired columns with default values which will later be handled in TTLColumnAlgorithm

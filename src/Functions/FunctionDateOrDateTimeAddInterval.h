@@ -21,6 +21,7 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 
 
@@ -339,7 +340,7 @@ struct AddDaysImpl
     }
     static NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<UInt16>(d + delta);
+        return d + delta;
     }
     static NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
@@ -604,7 +605,7 @@ struct Processor
 
             for (size_t i = 0 ; i < input_rows_count; ++i)
             {
-                std::string_view from = col_from.getDataAt(i);
+                std::string_view from = col_from.getDataAt(i).toView();
                 vec_to[i] = transform.execute(from, checkOverflow(delta), time_zone, utc_time_zone, scale);
             }
         }
@@ -656,7 +657,7 @@ private:
     template <typename Value>
     static Int64 checkOverflow(Value val)
     {
-        Int64 result = 0;
+        Int64 result;
         if (accurate::convertNumeric<Value, Int64, false>(val, result))
             return result;
         throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
@@ -679,7 +680,7 @@ private:
 
             for (size_t i = 0 ; i < input_rows_count; ++i)
             {
-                std::string_view from = col_from.getDataAt(i);
+                std::string_view from = col_from.getDataAt(i).toView();
                 vec_to[i] = transform.execute(from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale);
             }
         }
@@ -784,7 +785,7 @@ template <> struct ResultDataTypeMap<Int8>             { using ResultDataType = 
 }
 
 template <typename Transform>
-class FunctionDateOrDateTimeAddInterval final : public IFunction
+class FunctionDateOrDateTimeAddInterval : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
@@ -900,7 +901,7 @@ public:
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDate32>)
             return std::make_shared<DataTypeDate32>();
         else if constexpr (std::is_same_v<ResultDataType, DataTypeTime>)
-            return std::make_shared<DataTypeTime>();
+            return std::make_shared<DataTypeTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
         else if constexpr (std::is_same_v<ResultDataType, DataTypeTime64>)
@@ -918,13 +919,14 @@ public:
                     return {};
                 });
 
+            auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
             if (const auto* time64_type = typeid_cast<const DataTypeTime64 *>(arguments[0].type.get()))
             {
                 const auto from_scale = time64_type->getScale();
-                return std::make_shared<DataTypeTime64>(std::max(from_scale, target_scale.value_or(from_scale)));
+                return std::make_shared<DataTypeTime64>(std::max(from_scale, target_scale.value_or(from_scale)), std::move(timezone));
             }
 
-            return std::make_shared<DataTypeTime64>(target_scale.value_or(DataTypeTime64::default_scale));
+            return std::make_shared<DataTypeTime64>(target_scale.value_or(DataTypeTime64::default_scale), std::move(timezone));
         }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
         {
@@ -977,7 +979,7 @@ public:
             const auto * datetime64_type = assert_cast<const DataTypeTime64 *>(from_type);
             auto from_scale = datetime64_type->getScale();
             return DateTimeAddIntervalImpl<DataTypeTime64, TransformResultDataType<DataTypeTime64>, Transform>::execute(
-                Transform{}, arguments, result_type, static_cast<UInt16>(from_scale), input_rows_count);
+                Transform{}, arguments, result_type, from_scale, input_rows_count);
         }
         if (which.isDateTime())
             return DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(
@@ -987,7 +989,7 @@ public:
             const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(from_type);
             auto from_scale = datetime64_type->getScale();
             return DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(
-                Transform{}, arguments, result_type, static_cast<UInt16>(from_scale), input_rows_count);
+                Transform{}, arguments, result_type, from_scale, input_rows_count);
         }
         if (which.isString())
             return DateTimeAddIntervalImpl<DataTypeString, DataTypeDateTime64, Transform>::execute(

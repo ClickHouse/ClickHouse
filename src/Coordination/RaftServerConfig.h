@@ -15,10 +15,10 @@ namespace DB
 // default- and copy-constructible version of nuraft::srv_config
 struct RaftServerConfig
 {
-    int id{};
+    int id;
     String endpoint;
-    bool learner{};
-    int priority{1};
+    bool learner;
+    int priority;
 
     constexpr RaftServerConfig() = default;
     constexpr RaftServerConfig(int id_, std::string_view endpoint_, bool learner_ = false, int priority_ = 1)
@@ -54,12 +54,7 @@ struct UpdateRaftServerPriority
     int priority;
 };
 
-struct TransferLeadership
-{
-    int target_server_id;
-};
-
-using ClusterUpdateAction = std::variant<AddRaftServer, RemoveRaftServer, UpdateRaftServerPriority, TransferLeadership>;
+using ClusterUpdateAction = std::variant<AddRaftServer, RemoveRaftServer, UpdateRaftServerPriority>;
 using ClusterUpdateActions = std::vector<ClusterUpdateAction>;
 }
 
@@ -84,8 +79,6 @@ struct fmt::formatter<DB::ClusterUpdateAction> : fmt::formatter<string_view>
             return fmt::format_to(ctx.out(), "(Remove server {})", remove->id);
         if (const auto * update = std::get_if<DB::UpdateRaftServerPriority>(&action))
             return fmt::format_to(ctx.out(), "(Change server {} priority to {})", update->id, update->priority);
-        if (const auto * transfer = std::get_if<DB::TransferLeadership>(&action))
-            return fmt::format_to(ctx.out(), "(Transfer leadership to server {})", transfer->target_server_id);
         UNREACHABLE();
     }
 };

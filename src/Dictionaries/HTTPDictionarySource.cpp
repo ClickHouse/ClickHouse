@@ -26,21 +26,6 @@ namespace ErrorCodes
 
 static const UInt64 max_block_size = 8192;
 
-static const std::unordered_set<std::string_view> optional_configuration_keys = { // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    "url",
-    "endpoint",
-    "user",
-    "credentials.user",
-    "password",
-    "credentials.password",
-    "format",
-    "compression_method",
-    "structure",
-    "name",
-    "headers.header.name",
-    "headers.header.value",
-};
-
 
 HTTPDictionarySource::HTTPDictionarySource(
     const DictionaryStructure & dict_struct_,
@@ -101,7 +86,7 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
     }
 }
 
-BlockIO HTTPDictionarySource::loadAll()
+QueryPipeline HTTPDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
 
@@ -114,12 +99,11 @@ BlockIO HTTPDictionarySource::loadAll()
                    .withHeaders(configuration.header_entries)
                    .withDelayInit(false)
                    .create(credentials);
-    BlockIO io;
-    io.pipeline = createWrappedBuffer(std::move(buf));
-    return io;
+
+    return createWrappedBuffer(std::move(buf));
 }
 
-BlockIO HTTPDictionarySource::loadUpdatedAll()
+QueryPipeline HTTPDictionarySource::loadUpdatedAll()
 {
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
@@ -133,12 +117,10 @@ BlockIO HTTPDictionarySource::loadUpdatedAll()
                    .withDelayInit(false)
                    .create(credentials);
 
-    BlockIO io;
-    io.pipeline = createWrappedBuffer(std::move(buf));
-    return io;
+    return createWrappedBuffer(std::move(buf));
 }
 
-BlockIO HTTPDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
+QueryPipeline HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -164,12 +146,10 @@ BlockIO HTTPDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & i
                    .withDelayInit(false)
                    .create(credentials);
 
-    BlockIO io;
-    io.pipeline = createWrappedBuffer(std::move(buf));
-    return io;
+    return createWrappedBuffer(std::move(buf));
 }
 
-BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
+QueryPipeline HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
@@ -195,9 +175,7 @@ BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const Vector
                    .withDelayInit(false)
                    .create(credentials);
 
-    BlockIO io;
-    io.pipeline = createWrappedBuffer(std::move(buf));
-    return io;
+    return createWrappedBuffer(std::move(buf));
 }
 
 bool HTTPDictionarySource::isModified() const
@@ -226,7 +204,6 @@ std::string HTTPDictionarySource::toString() const
     return uri.toString();
 }
 
-void registerDictionarySourceHTTP(DictionarySourceFactory & factory);
 void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -250,19 +227,11 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, global_context) : nullptr;
         if (named_collection)
         {
-            /// Headers in config file will have structure "headers.header.name" and "headers.header.value".
-            /// But Poco::AbstractConfiguration converts them into "header", "header[1]", "header[2]".
-            static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys // STYLE_CHECK_ALLOW_STD_CONTAINERS
-            {
-                std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].name)"),
-                std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
-            };
-
             validateNamedCollection(
                 *named_collection,
-                /* required_keys */ {},
-                /* optional_keys */ optional_configuration_keys,
-                optional_regex_keys);
+                /* required_keys */{},
+                /* optional_keys */ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>{
+                "url", "endpoint", "user", "credentials.user", "password", "credentials.password", "format", "compression_method", "structure", "name"});
 
             url = named_collection->getOrDefault<String>("url", "");
             endpoint = named_collection->getOrDefault<String>("endpoint", "");
