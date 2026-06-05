@@ -19,6 +19,7 @@ class RunnerLabels:
     FUNC_TESTER_ARM = ["self-hosted", "arm-medium"]
     AMD_LARGE = ["self-hosted", "amd-large"]
     ARM_LARGE = ["self-hosted", "arm-large"]
+    ARM_LARGE_STORAGE = ["self-hosted", "arm-large-storage"]
     AMD_MEDIUM = ["self-hosted", "amd-medium"]
     ARM_MEDIUM = ["self-hosted", "arm-medium"]
     AMD_MEDIUM_CPU = ["self-hosted", "amd-medium-cpu"]
@@ -78,10 +79,17 @@ SECRETS = [
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
     ),
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-key",
         type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
+    ),
+    Secret.Config(
+        name="woolenwolf_gh_app.installation_id",
+        type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
     ),
 ]
 
@@ -307,6 +315,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_MSAN = "arm_msan"
     ARM_UBSAN = "arm_ubsan"
     LLVM_COVERAGE_BUILD = "llvm_coverage_build"
+    PER_TEST_COVERAGE = "amd_llvm_coverage_per_test"
     AMD_COVERAGE = "amd_coverage"
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
@@ -328,9 +337,7 @@ class JobNames:
     DOCKER_BUILDS_ARM = "Dockers build (arm)"
     DOCKER_BUILDS_AMD = "Dockers build (amd)"
     STYLE_CHECK = "Style check"
-    PR_BODY = "PR formatter"
     CODE_REVIEW = "Code Review"
-    CI_RESULTS_REVIEW = "CI Results Review"
     FAST_TEST = "Fast test"
     SMOKE_TEST_MACOS = "Smoke test (amd_darwin)"
     BUILD = "Build"
@@ -363,6 +370,8 @@ class JobNames:
     LIBFUZZER_TEST = "libFuzzer tests"
     BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
+    COLLECT_CLICKHOUSE_PROFILES = "Collect ClickHouse Profiles (PGO, BOLT)"
+    CI_TESTS = "CI Tests"
 
 
 class ToolSet:
@@ -377,6 +386,9 @@ class ArtifactNames:
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
     CH_AMD_LLVM_COVERAGE_BUILD = (
         "CH_AMD_LLVM_COVERAGE_BUILD"  # build with LLVM coverage enabled
+    )
+    CH_AMD_PER_TEST_COVERAGE_BUILD = (
+        "CH_AMD_PER_TEST_COVERAGE_BUILD"  # build with LLVM coverage + per-test depth instrumentation
     )
     LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # .profdata file
     LLVM_COVERAGE_INFO_FILE = "LLVM_COVERAGE_INFO_FILE"  # .info file generated from .profdata, used for debugging coverage results
@@ -432,10 +444,14 @@ class ArtifactNames:
 
     ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
-    PARSER_MEMORY_PROFILER = "PARSER_MEMORY_PROFILER"
 
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
+
+    CLICKHOUSE_PGO_PROFILE_AMD = "CLICKHOUSE_PGO_PROFILE_AMD"
+    CLICKHOUSE_PGO_PROFILE_ARM = "CLICKHOUSE_PGO_PROFILE_ARM"
+    CLICKHOUSE_BOLT_PROFILE_AMD = "CLICKHOUSE_BOLT_PROFILE_AMD"
+    CLICKHOUSE_BOLT_PROFILE_ARM = "CLICKHOUSE_BOLT_PROFILE_ARM"
 
 
 LLVM_FT_NUM_BATCHES = 3
@@ -493,6 +509,7 @@ class ArtifactConfigs:
         names=[
             ArtifactNames.CH_AMD_DEBUG,
             ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
+            ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD,
             ArtifactNames.CH_AMD_RELEASE,
             ArtifactNames.CH_AMD_ASAN_UBSAN,
             ArtifactNames.CH_AMD_TSAN,
@@ -598,11 +615,6 @@ class ArtifactConfigs:
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
     )
-    parser_memory_profiler = Artifact.Config(
-        name=ArtifactNames.PARSER_MEMORY_PROFILER,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/src/Parsers/examples/parser_memory_profiler",
-    )
     toolchain_pgo_bolt_amd = Artifact.Config(
         name=ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD,
         type=Artifact.Type.S3,
@@ -612,4 +624,24 @@ class ArtifactConfigs:
         name=ArtifactNames.TOOLCHAIN_PGO_BOLT_ARM,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/clang-pgo-bolt.tar.zst",
+    )
+    clickhouse_pgo_profile_amd = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_PGO_PROFILE_AMD,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-pgo.profdata.zst",
+    )
+    clickhouse_pgo_profile_arm = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_PGO_PROFILE_ARM,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-pgo.profdata.zst",
+    )
+    clickhouse_bolt_profile_amd = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_BOLT_PROFILE_AMD,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-bolt.fdata.zst",
+    )
+    clickhouse_bolt_profile_arm = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_BOLT_PROFILE_ARM,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-bolt.fdata.zst",
     )

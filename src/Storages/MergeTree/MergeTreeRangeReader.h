@@ -62,6 +62,7 @@ struct PrewhereExprInfo
 struct ReadStepPerformanceCounters
 {
     std::atomic<UInt64> rows_read = 0;
+    std::atomic<UInt64> rows_passed_filter = 0;
 };
 
 using ReadStepPerformanceCountersPtr = std::shared_ptr<ReadStepPerformanceCounters>;
@@ -290,6 +291,14 @@ public:
         /// The number of bytes read from disk.
         size_t numBytesRead() const { return num_bytes_read; }
 
+        /// Compute mark ranges for granules where all rows were filtered out by PREWHERE.
+        /// Provides fine-grained QueryConditionCache updates: captures individual filtered-out
+        /// granules even when other granules in the same batch pass the filter.
+        /// Safe to call only when use_query_condition_cache is enabled, because that flag
+        /// forces complete-granule reads (via ceilRowsToCompleteGranules), ensuring that
+        /// rows_per_granule[i] == 0 reliably means the full granule was read and filtered.
+        MarkRanges computeUnmatchedMarkRanges() const;
+
     private:
         friend class MergeTreeRangeReader;
         friend class MergeTreeReadersChain;
@@ -365,6 +374,13 @@ public:
         /// Track newly initiated granule ranges during startReadingChain. Does not contain the range started in previous read.
         /// Used to compute _part_offset and align continueReadingChain streams accordingly.
         RangesInfo started_ranges;
+
+        /// When startReadingChain begins with an unfinished stream (a continued read), this holds
+        /// the stream's current mark at that point. The first
+        /// started_ranges[0].num_granules_read_before_start entries in rows_per_granule come
+        /// from that in-progress range; their marks are in_progress_start_mark + i. Set only
+        /// when the stream was unfinished at entry; absent when the stream was already done.
+        std::optional<size_t> in_progress_start_mark;
 
         /// Number of rows intended to be read per granule during the reading chain.
         ///
@@ -454,7 +470,7 @@ private:
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
-    const PrewhereExprStep * prewhere_info;
+    const PrewhereExprStep * prewhere_info{};
 
     Stream stream;
 

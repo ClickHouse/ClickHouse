@@ -546,6 +546,7 @@ bool ColumnObject::tryInsert(const Field & x)
         for (const auto & path : new_dynamic_paths)
         {
             dynamic_paths_ptrs.erase(path);
+            sorted_dynamic_paths.erase(path);
             dynamic_paths.erase(path);
         }
 
@@ -581,6 +582,7 @@ bool ColumnObject::tryInsert(const Field & x)
         }
         else if (auto * dynamic_path_column = tryToAddNewDynamicPath(path))
         {
+            new_dynamic_paths.insert(String(path));
             if (!dynamic_path_column->tryInsert(value_field))
             {
                 restore_sizes();
@@ -1016,13 +1018,13 @@ void ColumnObject::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
 void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in)
 {
     size_t current_size = size();
-    size_t num_paths;
+    size_t num_paths = 0;
     readBinaryLittleEndian<size_t>(num_paths, in);
 
     const auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
     for (size_t i = 0; i != num_paths; ++i)
     {
-        size_t path_size;
+        size_t path_size = 0;
         readBinaryLittleEndian<size_t>(path_size, in);
 
         if (in.available() < path_size)
@@ -1035,7 +1037,7 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
         in.ignore(path_size);
 
         /// Deserialize binary value and try to insert it to dynamic paths or shared data.
-        size_t value_size;
+        size_t value_size = 0;
         readBinaryLittleEndian<size_t>(value_size, in);
 
         /// Check if we have this path in dynamic paths.
@@ -1082,16 +1084,16 @@ void ColumnObject::skipSerializedInArena(ReadBuffer & in) const
         typed_paths.find(path)->second->skipSerializedInArena(in);
 
     /// Second, skip all other paths and values.
-    size_t num_paths;
+    size_t num_paths = 0;
     readBinaryLittleEndian<size_t>(num_paths, in);
 
     for (size_t i = 0; i != num_paths; ++i)
     {
-        size_t path_size;
+        size_t path_size = 0;
         readBinaryLittleEndian<size_t>(path_size, in);
         in.ignore(path_size);
 
-        size_t value_size;
+        size_t value_size = 0;
         readBinaryLittleEndian<size_t>(value_size, in);
         in.ignore(value_size);
     }
@@ -1144,6 +1146,17 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
             dynamic_column->updateHashWithValue(n, hash);
         }
     }
+}
+
+void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    for (const auto & path : sorted_typed_paths)
+        typed_paths.find(path)->second->updateHashWithValueRange(begin, end, hash);
+
+    for (const auto & path : sorted_dynamic_paths)
+        dynamic_paths.find(path)->second->updateHashWithValueRange(begin, end, hash);
+
+    shared_data->updateHashWithValueRange(begin, end, hash);
 }
 
 WeakHash32 ColumnObject::getWeakHash32() const
@@ -1546,18 +1559,27 @@ bool ColumnObject::isFinalized() const
     return finalized;
 }
 
-void ColumnObject::getExtremes(DB::Field & min, DB::Field & max, size_t, size_t) const
+void ColumnObject::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
-    if (empty())
+    min = Object();
+    max = Object();
+
+    if (start >= end)
+        return;
+
+    size_t min_idx = start;
+    size_t max_idx = start;
+
+    for (size_t i = start + 1; i < end; ++i)
     {
-        min = Object();
-        max = Object();
+        if (compareAt(i, min_idx, *this, /* nan_direction_hint = */ 1) < 0)
+            min_idx = i;
+        else if (compareAt(i, max_idx, *this, /* nan_direction_hint = */ -1) > 0)
+            max_idx = i;
     }
-    else
-    {
-        get(0, min);
-        get(0, max);
-    }
+
+    get(min_idx, min);
+    get(max_idx, max);
 }
 
 void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
@@ -2307,7 +2329,38 @@ void ColumnObject::validateDynamicPathsSizes() const
         if (column->size() != expected_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
     }
+}
 
+bool ColumnObject::isEmptyAt(size_t n) const
+{
+    /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
+    if (!typed_paths.empty())
+        return false;
+
+    /// Check if all dynamic paths have NULL at this row
+    for (const auto & [path, column] : dynamic_paths_ptrs)
+    {
+        if (!column->isNullAt(n))
+            return false;
+    }
+
+    /// Check if there is no paths in shared data.
+    return shared_data->isDefaultAt(n);
+}
+
+bool ColumnObject::hasNonEmptyRows() const
+{
+    /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
+    if (!typed_paths.empty())
+        return true;
+
+    for (size_t i = 0; i != size(); ++i)
+    {
+        if (!isEmptyAt(i))
+            return true;
+    }
+
+    return false;
 }
 
 }

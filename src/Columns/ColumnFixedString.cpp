@@ -64,7 +64,7 @@ void ColumnFixedString::getValueNameImpl(WriteBufferFromOwnString & name_buf, si
 
 bool ColumnFixedString::isDefaultAt(size_t index) const
 {
-    assert(index < size());
+    chassert(index < size());
     return memoryIsZero(chars.data() + index * n, 0, n);
 }
 
@@ -145,6 +145,11 @@ void ColumnFixedString::skipSerializedInArena(ReadBuffer & in) const
 void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const
 {
     hash.update(reinterpret_cast<const char *>(&chars[n * index]), n);
+}
+
+void ColumnFixedString::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(&chars[n * begin]), n * (end - begin));
 }
 
 WeakHash32 ColumnFixedString::getWeakHash32() const
@@ -455,7 +460,7 @@ ColumnPtr ColumnFixedString::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
+    chassert(limit <= indexes.size());
     if (limit == 0)
         return ColumnFixedString::create(n);
 

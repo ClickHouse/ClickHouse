@@ -9,7 +9,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-#include <IO/ReadHelpers.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ISource.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -25,6 +24,8 @@ using ShellCommandHolderPtr = std::unique_ptr<ShellCommandHolder>;
 
 using ProcessPool = BorrowedObjectPool<ShellCommandHolderPtr>;
 
+class UDFProcessSubtreeSampler;
+
 struct ShellCommandSourceConfiguration
 {
     /// Read fixed number of rows from command output
@@ -35,6 +36,9 @@ struct ShellCommandSourceConfiguration
     size_t number_of_rows_to_read = 0;
     /// Max block size
     size_t max_block_size = DEFAULT_BLOCK_SIZE;
+    /// Optional accumulator for executable_pool UDF resource accounting.
+    /// Only set by the executable_pool UDF factory; other consumers leave it null.
+    std::shared_ptr<UDFProcessSubtreeSampler> sampler;
 };
 
 class ShellCommandSourceCoordinator

@@ -266,7 +266,10 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
 #undef M
     }
 
-    return limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    bool within_limits = limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    if (!within_limits)
+        is_truncated = true;
+    return within_limits;
 }
 
 void Set::appendSetElements(SetKeyColumns & holder)
@@ -304,7 +307,7 @@ Columns Set::getSetElements() const
     return result;
 }
 
-ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_cast)
+static ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_cast)
 {
     // Handle nullable columns
     const ColumnNullable * original_nullable_column = typeid_cast<const ColumnNullable *>(column_to_cast.column.get());
@@ -344,7 +347,7 @@ ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_
     return precision_null_map_column;
 }
 
-ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnUInt8::Ptr & null_map_column2)
+static ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnUInt8::Ptr & null_map_column2)
 {
     if (!null_map_column1)
         return null_map_column2;
@@ -888,6 +891,9 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     ranges.reserve(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
     {
+        if (indexes_mapping[i].key_index >= key_ranges.size())
+            return {true, true};
+
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             key_ranges[indexes_mapping[i].key_index],
             indexes_mapping[i].functions,
