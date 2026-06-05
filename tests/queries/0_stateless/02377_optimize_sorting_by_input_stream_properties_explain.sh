@@ -4,7 +4,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 DISABLE_OPTIMIZATION="set optimize_sorting_by_input_stream_properties=0;set query_plan_read_in_order=0;set max_threads=3"
 ENABLE_OPTIMIZATION="set optimize_sorting_by_input_stream_properties=1;set query_plan_read_in_order=1;set optimize_read_in_order=1;set max_threads=3"

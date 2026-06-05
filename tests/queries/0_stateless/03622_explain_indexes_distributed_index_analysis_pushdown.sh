@@ -9,7 +9,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 # Generate many parts (partitions) to ensure that all replicas will be chosen for distributed index analysis
 # even failed replica (that is included into parallel_replicas), and ensure that the SELECT wont fail (parts should be analyzed locally).

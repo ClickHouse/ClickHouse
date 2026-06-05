@@ -7,7 +7,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 MY_CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --use_skip_indexes_on_data_read 1 --query_plan_text_index_add_hint 1 --use_query_condition_cache 0 --enable_analyzer 1 --query_plan_optimize_prewhere 1 --optimize_move_to_prewhere 1"
 

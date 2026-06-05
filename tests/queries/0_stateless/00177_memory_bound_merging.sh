@@ -7,8 +7,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-
-
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 check_replicas_read_in_order() {
     # NOTE: lack of "current_database = '$CLICKHOUSE_DATABASE'" filter is made on purpose
