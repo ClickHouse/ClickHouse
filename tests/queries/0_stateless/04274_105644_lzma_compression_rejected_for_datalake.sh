@@ -26,6 +26,7 @@ TABLES=(
     "${TABLE_PREFIX}_none_mixed"
     "${TABLE_PREFIX}_attach_lzma"
     "${TABLE_PREFIX}_attach_gzip"
+    "${TABLE_PREFIX}_attach_full_def_lzma"
     "${TABLE_PREFIX}_kv_compression"
     "${TABLE_PREFIX}_kv_compression_method"
     "${TABLE_PREFIX}_kv_compression_named"
@@ -114,6 +115,22 @@ for forbidden in lzma gzip; do
         | grep -c "not supported by data lake engines" || true
     ${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${ATTACH_TABLE}"
 done
+
+# 9b. Full-definition `ATTACH TABLE name FROM 'path' (cols) ENGINE = ...` must
+#     still be rejected: the user is supplying a fresh definition (engine args
+#     carry the forbidden value), so the CREATE-time validation applies. Only
+#     the short-syntax `ATTACH TABLE name` (which replays saved metadata) and
+#     server-startup metadata-replay paths skip the validation. The plain
+#     `ATTACH TABLE name (cols) ENGINE = ...` form is rejected up-front by
+#     the Atomic database engine, but `ATTACH TABLE ... FROM '<path>' ...`
+#     reaches the storage factory and must hit the data lake gate.
+mkdir -p "${USER_FILES_PATH:?}/${TABLE_PREFIX}_attach_full_def_lzma"
+${CLICKHOUSE_CLIENT} --query "
+    ATTACH TABLE ${TABLE_PREFIX}_attach_full_def_lzma
+    FROM '${USER_FILES_PATH}/${TABLE_PREFIX}_attach_full_def_lzma'
+    (c0 Int)
+    ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_attach_full_def_lzma', 'Parquet', 'lzma')
+" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
 
 # 10. Table-function path: data lake table functions also call `initialize`
 #     with the default `CREATE` mode through

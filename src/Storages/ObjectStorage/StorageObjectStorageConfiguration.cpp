@@ -102,7 +102,8 @@ void StorageObjectStorageConfiguration::initialize(
     bool with_table_structure,
     const StorageID * table_id,
     LoadingStrictnessLevel mode,
-    bool is_restore_from_backup)
+    bool is_restore_from_backup,
+    bool is_attach_short_syntax)
 {
     std::string disk_name;
     if (configuration_to_initialize.isDataLakeConfiguration())
@@ -130,19 +131,12 @@ void StorageObjectStorageConfiguration::initialize(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
         }
 
-        /// Data lake engines write data files in their own format (`Parquet`/`ORC`/`Avro`)
-        /// which already has an internal compression codec. Any user-supplied
-        /// `compression_method` is therefore at best redundant and at worst silently
-        /// dropped on the Iceberg write path while still applied on read, yielding
-        /// files the engine cannot read back. See issue #105644.
-        ///
-        /// Gate the rejection on `mode < ATTACH` so existing tables created before this
-        /// validation landed can still attach after upgrade, and skip on
-        /// `is_restore_from_backup` so a backup taken before this PR can still restore
-        /// (`RESTORE TABLE` arrives with `mode == SECONDARY_CREATE`, identical to a
-        /// fresh secondary create). The check fires only when the argument was actually
-        /// supplied by the user, so the default and synthesised placeholders pass through.
-        if (mode < LoadingStrictnessLevel::ATTACH
+        /// Reject only when the user is supplying a fresh definition. Skip metadata-replay
+        /// paths (short `ATTACH`, `FORCE_ATTACH` / `FORCE_RESTORE`, `RESTORE TABLE`) so pre-fix
+        /// metadata still loads after upgrade. Full-definition `ATTACH TABLE name FROM '<path>'
+        /// (cols) ENGINE = ...` still rejects, because the user is supplying a fresh definition.
+        if (!is_attach_short_syntax
+            && !isLoadingFromExistingMetadata(mode)
             && !is_restore_from_backup
             && configuration_to_initialize.compression_method_user_provided)
         {

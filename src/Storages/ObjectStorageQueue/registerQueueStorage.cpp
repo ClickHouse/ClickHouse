@@ -50,7 +50,14 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 
     auto configuration = std::make_shared<Configuration>();
     StorageObjectStorageConfiguration::initialize(
-        *configuration, args.engine_args, args.getContext(), false, &args.table_id, args.mode, args.is_restore_from_backup);
+        *configuration,
+        args.engine_args,
+        args.getContext(),
+        false,
+        &args.table_id,
+        args.mode,
+        args.is_restore_from_backup,
+        args.query.attach_short_syntax);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current

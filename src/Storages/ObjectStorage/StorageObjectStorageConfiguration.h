@@ -88,11 +88,12 @@ public:
 
     /// Initialize configuration from either AST or NamedCollection.
     /// `mode` distinguishes a fresh `CREATE TABLE` from `ATTACH`/server-startup paths; some
-    /// validations (for example the data lake `compression_method` rejection) only apply at
-    /// CREATE TIME so that pre-existing metadata can still be attached after upgrade.
-    /// `is_restore_from_backup` is true when the call is part of `RESTORE TABLE` replay;
-    /// in that case `mode == SECONDARY_CREATE` (same as a fresh secondary create) but the
-    /// CREATE-time validations must be skipped to load pre-existing metadata from backup.
+    /// validations (for example the data lake `compression_method` rejection) only apply
+    /// when the user supplies a fresh definition (`CREATE TABLE` or full-definition
+    /// `ATTACH TABLE name (cols) ENGINE = ...`). Pre-existing metadata replay paths
+    /// (`isLoadingFromExistingMetadata(mode)` for `FORCE_ATTACH` / `FORCE_RESTORE`,
+    /// short-syntax `ATTACH TABLE name`, and `RESTORE TABLE` via `is_restore_from_backup`)
+    /// must skip the validation so old persisted metadata can still be loaded after upgrade.
     static void initialize(
         StorageObjectStorageConfiguration & configuration_to_initialize,
         ASTs & engine_args,
@@ -100,7 +101,8 @@ public:
         bool with_table_structure,
         const StorageID * table_id = nullptr,
         LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE,
-        bool is_restore_from_backup = false);
+        bool is_restore_from_backup = false,
+        bool is_attach_short_syntax = false);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
