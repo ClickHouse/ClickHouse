@@ -10,7 +10,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/validateColumnType.h>
-#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/materialize.h>
@@ -1004,7 +1003,7 @@ EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
 
     EquivalenceClasses ec;
     std::unordered_map<ConstantKey, const Node *, ConstantKeyHash, ConstantKeyEqual> constants;
-    std::unordered_map<std::string, std::vector<FunctionCandidate>> functions_by_name;
+    std::unordered_map<const FunctionCreator *, std::vector<FunctionCandidate>> functions_by_creator;
 
     for (const auto & node : dag.getNodes())
     {
@@ -1039,7 +1038,12 @@ EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
         if (node.type != ActionType::FUNCTION || !node.function_base)
             continue;
 
-        // for name-sensitive functions keep raw children so siblings already merged by ec don't drag the parent in
+        const auto * factory_handle = node.function_base->getFactoryHandle();
+        if (!factory_handle)
+            continue;
+
+        /// for name-sensitive functions keep raw children so siblings already merged by ec
+        /// do not drag the parent into the same class
         const bool look_through_aliases = node.function_base->isNameInsensitive();
         std::vector<const Node *> arg_classes;
         arg_classes.reserve(node.children.size());
@@ -1051,17 +1055,12 @@ EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
                 arg_classes.push_back(c);
         }
 
-        auto & candidates = functions_by_name[getFunctionCanonicalName(node.function_base->getName())];
+        auto & candidates = functions_by_creator[factory_handle];
 
         bool merged = false;
         for (const auto & cand : candidates)
         {
             if (!cand.representative->result_type->equals(*node.result_type))
-                continue;
-            /// same canonical name, different creator pointers -> name collision between distinct functions
-            const auto * ha = node.function_base->getFactoryHandle();
-            const auto * hb = cand.representative->function_base->getFactoryHandle();
-            if (ha && hb && ha != hb)
                 continue;
             if (cand.arg_classes != arg_classes)
                 continue;

@@ -11,11 +11,7 @@ Union
              INPUT : 0 -> x UInt32 : 1
              ALIAS y :: 0 -> __table1.y UInt32 : 2
              ALIAS x :: 1 -> __table1.x UInt32 : 0
-             ALIAS __table1.y :: 2 -> y UInt32 : 1
-             ALIAS __table1.x :: 0 -> x UInt32 : 2
-             ALIAS y :: 1 -> __table1.y UInt32 : 0
-             ALIAS x :: 2 -> __table1.x UInt32 : 1
-    Positions: 1 0
+    Positions: 0 2
       ReadFromMergeTree (default.tab0)
       ReadType: Default
       Parts: 1
@@ -110,8 +106,6 @@ Positions: 1
         Expression ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
         Actions: INPUT : 0 -> y UInt32 : 0
                  ALIAS y :: 0 -> __table1.y UInt32 : 1
-                 ALIAS __table1.y :: 1 -> y UInt32 : 0
-                 ALIAS y :: 0 -> __table1.y UInt32 : 1
         Positions: 1
           ReadFromMergeTree (default.tab0)
           ReadType: Default
@@ -182,13 +176,11 @@ Positions: 1
 Expression ((Project names + (Projection + (WHERE + (Change column names to column identifiers + (Project names + Projection))))))
 Actions: INPUT : 0 -> sum(__table2.y) UInt64 : 0
          INPUT : 1 -> __table2.x UInt32 : 1
-         ALIAS sum(__table2.y) :: 0 -> sum(y) UInt64 : 2
-         ALIAS __table2.x :: 1 -> x UInt32 : 0
-         ALIAS sum(y) :: 2 -> __table1.`sum(y)` UInt64 : 1
-         ALIAS x :: 0 -> __table1.x UInt32 : 2
-         ALIAS __table1.`sum(y)` :: 1 -> sum(y) UInt64 : 0
-         ALIAS __table1.x :: 2 -> x UInt32 : 1
-Positions: 1 0
+         ALIAS sum(__table2.y) :: 0 -> __table1.`sum(y)` UInt64 : 2
+         ALIAS __table2.x :: 1 -> __table1.x UInt32 : 0
+         ALIAS __table1.`sum(y)` :: 2 -> sum(y) UInt64 : 1
+         ALIAS __table1.x :: 0 -> x UInt32 : 2
+Positions: 2 1
   MergingAggregated
   Keys: __table2.x
   Aggregates:
@@ -545,10 +537,9 @@ Union
     Actions: INPUT : 0 -> n UInt64 : 0
              COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 1
              FUNCTION materialize(n :: 0) -> materialize(n) UInt64 : 2
-             ALIAS materialize(n) : 2 -> n UInt64 : 0
-             FUNCTION equals(materialize(n) :: 2, 100_UInt8 :: 1) -> equals(__table1.n, 100_UInt8) UInt8 : 3
-             ALIAS n :: 0 -> __table1.n UInt64 : 1
-    Positions: 3 1
+             FUNCTION equals(materialize(n) : 2, 100_UInt8 :: 1) -> equals(__table1.n, 100_UInt8) UInt8 : 0
+             ALIAS materialize(n) :: 2 -> __table1.n UInt64 : 1
+    Positions: 0 1
       ReadFromMergeTree (default.tab2)
       ReadType: Default
       Parts: 1
@@ -571,10 +562,9 @@ Union
     Actions: INPUT : 0 -> n UInt64 : 0
              COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 1
              FUNCTION materialize(n :: 0) -> materialize(n) UInt64 : 2
-             ALIAS materialize(n) : 2 -> n UInt64 : 0
-             FUNCTION equals(materialize(n) :: 2, 100_UInt8 :: 1) -> equals(__table1.n, 100_UInt8) UInt8 : 3
-             ALIAS n :: 0 -> __table1.n UInt64 : 1
-    Positions: 3 1
+             FUNCTION equals(materialize(n) : 2, 100_UInt8 :: 1) -> equals(__table1.n, 100_UInt8) UInt8 : 0
+             ALIAS materialize(n) :: 2 -> __table1.n UInt64 : 1
+    Positions: 0 1
       ReadFromRemote (Read from remote replica)
         Expression ((Project names + Projection))
         Actions: INPUT : 0 -> __table1.n UInt64 : 0
@@ -584,10 +574,10 @@ Union
           Filter column: equals(materialize(__table1.n), _CAST(100_UInt8, \'UInt8\'_String)) (removed)
           Actions: INPUT : 0 -> n UInt64 : 0
                    COLUMN Const(UInt8) -> _CAST(100_UInt8, \'UInt8\'_String) UInt8 : 1
-                   ALIAS n : 0 -> __table1.n UInt64 : 2
-                   FUNCTION materialize(n :: 0) -> materialize(__table1.n) UInt64 : 3
-                   FUNCTION equals(materialize(__table1.n) :: 3, _CAST(100_UInt8, \'UInt8\'_String) :: 1) -> equals(materialize(__table1.n), _CAST(100_UInt8, \'UInt8\'_String)) UInt8 : 0
-          Positions: 0 2
+                   FUNCTION materialize(n : 0) -> materialize(__table1.n) UInt64 : 2
+                   ALIAS n :: 0 -> __table1.n UInt64 : 3
+                   FUNCTION equals(materialize(__table1.n) :: 2, _CAST(100_UInt8, \'UInt8\'_String) :: 1) -> equals(materialize(__table1.n), _CAST(100_UInt8, \'UInt8\'_String)) UInt8 : 0
+          Positions: 0 3
             ReadFromMergeTree (default.tab2)
             ReadType: Default
             Parts: 1

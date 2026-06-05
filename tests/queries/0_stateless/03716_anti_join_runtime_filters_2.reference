@@ -26,15 +26,13 @@ Positions: 0
                    FUNCTION equals(n_nationkey : 0, n_nationkey : 0) -> equals(__table1.c_nationkey, __table4.n_nationkey) UInt8 : 1
           Positions: 1 0 1
           Filter column: and(equals(__table1.c_nationkey, __table4.n_nationkey), __applyFilter(_runtime_filter_UNIQ_ID_0, exists(__table2).__table1.c_nationkey)) (removed)
-          Actions: INPUT : 1 -> n_nationkey Int32 : 0
-                   COLUMN Const(String) -> _runtime_filter_UNIQ_ID_0 String : 1
+          Actions: COLUMN Const(String) -> _runtime_filter_UNIQ_ID_0 String : 0
+                   INPUT : 1 -> n_nationkey Int32 : 1
                    INPUT : 0 -> equals(__table1.c_nationkey, __table4.n_nationkey) UInt8 : 2
-                   ALIAS n_nationkey : 0 -> __table4.n_nationkey Int32 : 3
-                   FUNCTION __applyFilter(_runtime_filter_UNIQ_ID_0 :: 1, n_nationkey :: 0) -> __applyFilter(_runtime_filter_UNIQ_ID_0, exists(__table2).__table1.c_nationkey) UInt8 : 4
-                   ALIAS __table4.n_nationkey :: 3 -> __table1.c_nationkey Int32 : 0
-                   FUNCTION and(equals(__table1.c_nationkey, __table4.n_nationkey) :: 2, __applyFilter(_runtime_filter_UNIQ_ID_0, exists(__table2).__table1.c_nationkey) :: 4) -> and(equals(__table1.c_nationkey, __table4.n_nationkey), __applyFilter(_runtime_filter_UNIQ_ID... UInt8 : 3
-                   ALIAS __table1.c_nationkey :: 0 -> exists(__table2).__table1.c_nationkey Int32 : 4
-          Positions: 3 4
+                   FUNCTION __applyFilter(_runtime_filter_UNIQ_ID_0 :: 0, n_nationkey : 1) -> __applyFilter(_runtime_filter_UNIQ_ID_0, exists(__table2).__table1.c_nationkey) UInt8 : 3
+                   ALIAS n_nationkey :: 1 -> exists(__table2).__table1.c_nationkey Int32 : 0
+                   FUNCTION and(equals(__table1.c_nationkey, __table4.n_nationkey) :: 2, __applyFilter(_runtime_filter_UNIQ_ID_0, exists(__table2).__table1.c_nationkey) :: 3) -> and(equals(__table1.c_nationkey, __table4.n_nationkey), __applyFilter(_runtime_filter_UNIQ_ID... UInt8 : 1
+          Positions: 1 0
             ReadFromMergeTree (default.nation)
             ReadType: Default
             Parts: 1
@@ -100,10 +98,9 @@ Positions: 0
               Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
               Filter column: equals(__table1.c_nationkey, __table4.n_nationkey) (removed)
               Actions: INPUT : 0 -> n_nationkey Int32 : 0
-                       ALIAS n_nationkey : 0 -> __table4.n_nationkey Int32 : 1
-                       FUNCTION equals(n_nationkey : 0, n_nationkey :: 0) -> equals(__table1.c_nationkey, __table4.n_nationkey) UInt8 : 2
-                       ALIAS __table4.n_nationkey :: 1 -> __table1.c_nationkey Int32 : 0
-              Positions: 2 0
+                       FUNCTION equals(n_nationkey : 0, n_nationkey : 0) -> equals(__table1.c_nationkey, __table4.n_nationkey) UInt8 : 1
+                       ALIAS n_nationkey :: 0 -> __table1.c_nationkey Int32 : 2
+              Positions: 1 2
                 ReadFromMergeTree (default.nation)
                 ReadType: Default
                 Parts: 1

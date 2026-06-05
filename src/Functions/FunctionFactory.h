@@ -88,7 +88,4 @@ private:
 
 const String & getFunctionCanonicalNameIfAny(const String & name);
 
-/// resolves a function name through aliases and case-insensitive registrations
-const String & getFunctionCanonicalName(const String & name);
-
 }

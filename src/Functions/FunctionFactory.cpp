@@ -36,14 +36,6 @@ const String & getFunctionCanonicalNameIfAny(const String & name)
     return FunctionFactory::instance().getCanonicalNameIfAny(name);
 }
 
-const String & getFunctionCanonicalName(const String & name)
-{
-    auto & factory = FunctionFactory::instance();
-    if (factory.isAlias(name))
-        return getFunctionCanonicalNameIfAny(factory.aliasTo(name));
-    return getFunctionCanonicalNameIfAny(name);
-}
-
 void FunctionFactory::registerFunction(
     const std::string & name,
     FunctionCreator creator,
