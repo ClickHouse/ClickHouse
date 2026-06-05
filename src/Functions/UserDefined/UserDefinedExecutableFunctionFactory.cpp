@@ -282,17 +282,24 @@ public:
                 if (sampler->poolWaitDone())
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionPoolWaitMicroseconds, sampler->getPoolWaitMicroseconds());
 
-                /// The remaining counters depend on the child actually having run:
-                ///   pool path      → borrowAcquired (procfs snapshot taken)
-                ///   executable path → executableFinished (wait4 rusage captured)
+                /// Byte counters are recorded by the pipe buffers as data streams through
+                /// (`recordInputBytes` / `recordOutputBytes`) and are valid for any call
+                /// that performed I/O, independent of whether the child was reaped.
+                ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInputBytes, sampler->getInputBytes());
+                ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionOutputBytes, sampler->getOutputBytes());
+
+                /// The time and memory counters come from the resource snapshot taken when
+                /// the child was observed: on the pool path a procfs snapshot is taken at
+                /// `borrowAcquired`; on the executable path wait4 rusage is captured at
+                /// `executableFinished`. A `check_exit_code=false` child that closes stdout
+                /// and then lingers is never reaped by `tryReapWithoutStatusCheck`, so
+                /// `executableFinished` stays false and these counters remain unset.
                 if (sampler->borrowAcquired() || sampler->executableFinished())
                 {
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionElapsedMicroseconds, sampler->getElapsedMicroseconds());
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionUserTimeMicroseconds, sampler->getUserTimeMicroseconds());
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionSystemTimeMicroseconds, sampler->getSystemTimeMicroseconds());
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionPeakMemoryByteSeconds, sampler->getPeakMemoryByteSeconds());
-                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInputBytes, sampler->getInputBytes());
-                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionOutputBytes, sampler->getOutputBytes());
                 }
 
                 /// If any of the three procfs reads silently failed during
