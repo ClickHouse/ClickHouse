@@ -80,12 +80,14 @@ Note, that you can define multiple LDAP servers inside the `ldap_servers` sectio
 | `tls_ca_cert_dir` | — | Path to the directory containing CA certificates. |
 | `tls_cipher_suite` | — | Allowed cipher suite (in OpenSSL notation). |
 | `search_limit` | `256` | Maximum number of entries that can be returned by LDAP search queries performed by this server definition (for user DN detection and role mapping). |
-| `lookup_bind_dn` | — | Optional. DN of a service account used to resolve user names without the user's own password. Required by `EXECUTE AS` so an LDAP-backed user can be impersonated before they have authenticated against this server. Requires `user_dn_detection` to also be configured. Must be provided together with `lookup_password`. |
-| `lookup_password` | — | Password for `lookup_bind_dn`. |
+| `lookup_bind_dn` | — | Optional. DN of a service account used to resolve user names without the user's own password. Required by `EXECUTE AS` so an LDAP-backed user can be impersonated before they have authenticated against this server. Requires `user_dn_detection` to also be configured, and the `user_dn_detection` query must be target-specific — its `base_dn` or `search_filter` must depend on the requested user, either directly via `{user_name}`, or transitively via `{bind_dn}` / `{user_dn}` when the `bind_dn` template itself contains `{user_name}`. A static `user_dn_detection` query that returns the same DN for every requested user is rejected at parse time with `BAD_ARGUMENTS`. Must be provided together with `lookup_password`. |
+| `lookup_password` | — | Password for `lookup_bind_dn`. Cannot be empty when `lookup_bind_dn` is set; an empty value is rejected with `BAD_ARGUMENTS` to avoid issuing an LDAP unauthenticated (anonymous) simple bind. |
 
 **`user_dn_detection` sub-parameters**
 
 Section with LDAP search parameters for detecting the actual user DN of the bound user. This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `{user_dn}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated to the actual detected user DN value.
+
+When `user_dn_detection` is used together with `lookup_bind_dn`, the search must be target-specific: `base_dn` or `search_filter` must depend on the requested user via `{user_name}`, or via `{bind_dn}` / `{user_dn}` whose underlying `bind_dn` template contains `{user_name}`. A static query that returns the same single entry for every requested user is rejected at parse time, because it would let the service-bind path resolve `EXECUTE AS some_other_name` to an unrelated entry's DN.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
