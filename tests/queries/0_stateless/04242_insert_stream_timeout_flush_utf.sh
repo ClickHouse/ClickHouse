@@ -9,6 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_insert_timeout_utf"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_timeout_utf (id UInt64, data String) ENGINE MergeTree ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES test_insert_timeout_utf"
 
 # We feed UTF-16LE data with BOM.
 # The python helper will generate batches of JSONEachRow, encode to UTF-16LE with BOM, and stream with a sleep.
