@@ -16,9 +16,8 @@
 ///   2. Array(String) encoder: verify correct wire bytes written by buildColDescriptor+writeColData
 ///   3. Array(UInt64) encoder: verify correct wire bytes
 ///   4. COL_COMPLEX decoder: Array(Tuple(UInt64, Float64)) with manually-crafted WASM-output bytes
-///   5. COL_IS_REPEAT string: encode a periodic string column, check wire layout
-///   6. COL_IS_REPEAT fixed: encode a periodic UInt64 column, check wire layout
-///   7. COL_IS_REPEAT no-repeat: column with no period stays as plain COL_BYTES
+///   5. Non-periodic string column encodes as plain COL_BYTES
+///   6. Nullable string/fixed64 encode with COL_IS_NULLABLE and a valid null_offset
 
 #include <gtest/gtest.h>
 #include <cstring>
@@ -99,10 +98,10 @@ TEST(ColumnarV1Wire, StringEncodeDecodeRoundTrip)
 // ── Array(String) encoder: verify CH→WASM wire bytes ─────────────────────────
 //
 // Input: 2 rows — row 0 = ["foo", "bar"], row 1 = ["baz"]
-// Expected layout:
-//   offsets_offset → uint64[3] = {0, 2, 3}   (outer row→element boundaries)
-//   data_offset →   uint64[4] = {0, 3, 6, 9}  (inner per-string offsets, no null terminators)
-//                   chars     = "foobarbaz"
+// Sequential layout at data_offset:
+//   uint64[3] outer = {0, 2, 3}         (24 bytes)
+//   uint64[4] inner = {0, 3, 6, 9}      (32 bytes, no null terminators)
+//   chars = "foobarbaz"                  (9 bytes)
 
 TEST(ColumnarV1Wire, ArrayStringEncoderLayout)
 {
@@ -121,25 +120,24 @@ TEST(ColumnarV1Wire, ArrayStringEncoderLayout)
     ColDescriptor desc = readDesc(buf);
 
     EXPECT_EQ(desc.type, COL_COMPLEX);
-    EXPECT_NE(desc.offsets_offset, 0u);
+    EXPECT_EQ(desc.offsets_offset, 0u);  // unused for Array
     EXPECT_NE(desc.data_offset, 0u);
-    EXPECT_GT(desc.data_offset, desc.offsets_offset);
 
-    // Outer offsets (at offsets_offset): {0, 2, 3}
-    const uint64_t * outer = reinterpret_cast<const uint64_t *>(buf.data() + desc.offsets_offset);
+    // Outer offsets at data_offset: {0, 2, 3}
+    const uint64_t * outer = reinterpret_cast<const uint64_t *>(buf.data() + desc.data_offset);
     EXPECT_EQ(outer[0], 0u);
     EXPECT_EQ(outer[1], 2u);  // row 0 has 2 elements
     EXPECT_EQ(outer[2], 3u);  // row 1 has 1 element
 
-    // Inner offsets (at data_offset): {0, 3, 6, 9} (no null terminators)
-    const uint64_t * inner = reinterpret_cast<const uint64_t *>(buf.data() + desc.data_offset);
+    // Inner offsets immediately after outer: {0, 3, 6, 9}
+    const uint64_t * inner = outer + 3;
     EXPECT_EQ(inner[0], 0u);
     EXPECT_EQ(inner[1], 3u);  // "foo"
     EXPECT_EQ(inner[2], 6u);  // "bar"
     EXPECT_EQ(inner[3], 9u);  // "baz"
 
-    // Chars (right after inner offsets)
-    const uint8_t * chars = buf.data() + desc.data_offset + sizeof(uint64_t) * 4;
+    // Chars after inner offsets
+    const uint8_t * chars = reinterpret_cast<const uint8_t *>(inner + 4);
     EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(chars), 3), "foo");
     EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(chars + 3), 3), "bar");
     EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(chars + 6), 3), "baz");
@@ -148,9 +146,9 @@ TEST(ColumnarV1Wire, ArrayStringEncoderLayout)
 // ── Array(UInt64) encoder: verify CH→WASM wire bytes ─────────────────────────
 //
 // Input: 3 rows — row 0 = [10, 20], row 1 = [], row 2 = [30]
-// Expected:
-//   offsets_offset → uint64[4] = {0, 2, 2, 3}  (outer)
-//   data_offset    → uint64[3] = {10, 20, 30}  (packed)
+// Sequential layout at data_offset:
+//   uint64[4] outer = {0, 2, 2, 3}   (32 bytes)
+//   uint64[3] elems = {10, 20, 30}   (24 bytes)
 
 TEST(ColumnarV1Wire, ArrayUInt64EncoderLayout)
 {
@@ -170,17 +168,18 @@ TEST(ColumnarV1Wire, ArrayUInt64EncoderLayout)
     ColDescriptor desc = readDesc(buf);
 
     EXPECT_EQ(desc.type, COL_COMPLEX);
+    EXPECT_EQ(desc.offsets_offset, 0u);  // unused for Array
 
-    // Outer offsets (at offsets_offset): {0, 2, 2, 3}
-    const uint64_t * outer = reinterpret_cast<const uint64_t *>(buf.data() + desc.offsets_offset);
+    // Outer offsets at data_offset: {0, 2, 2, 3}
+    const uint64_t * outer = reinterpret_cast<const uint64_t *>(buf.data() + desc.data_offset);
     EXPECT_EQ(outer[0], 0u);
     EXPECT_EQ(outer[1], 2u);
     EXPECT_EQ(outer[2], 2u);
     EXPECT_EQ(outer[3], 3u);
 
-    // Elements (at data_offset): 3 × uint64
-    EXPECT_EQ(desc.data_size, 3u * sizeof(uint64_t));
-    const uint64_t * elems = reinterpret_cast<const uint64_t *>(buf.data() + desc.data_offset);
+    // Elements immediately after outer offsets: 3 × uint64
+    EXPECT_EQ(desc.data_size, 4u * sizeof(uint64_t) + 3u * sizeof(uint64_t));
+    const uint64_t * elems = outer + 4;
     EXPECT_EQ(elems[0], 10u);
     EXPECT_EQ(elems[1], 20u);
     EXPECT_EQ(elems[2], 30u);
@@ -200,12 +199,12 @@ TEST(ColumnarV1Wire, ArrayUInt64EncoderLayout)
 TEST(ColumnarV1Wire, DecodeArrayOfTupleUInt64Float64)
 {
     const uint32_t num_rows = 2;
-    const uint32_t M        = 3;
+    const uint32_t num_elems = 3;
 
     constexpr uint32_t data_off       = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
-    constexpr uint32_t outer_bytes    = (num_rows + 1u) * 8u;  // 24 (uint64 offsets)
-    constexpr uint32_t u64_bytes      = M * 8u;                // 24
-    constexpr uint32_t f64_bytes      = M * 8u;                // 24
+    constexpr uint32_t outer_bytes    = (num_rows + 1u) * 8u;       // 24 (uint64 offsets)
+    constexpr uint32_t u64_bytes      = num_elems * 8u;             // 24
+    constexpr uint32_t f64_bytes      = num_elems * 8u;             // 24
     constexpr uint32_t data_size      = outer_bytes + u64_bytes + f64_bytes;
     constexpr uint32_t total          = data_off + data_size;
 
@@ -263,74 +262,11 @@ TEST(ColumnarV1Wire, DecodeArrayOfTupleUInt64Float64)
     EXPECT_DOUBLE_EQ(col_f64.getData()[2], 3.5);
 }
 
-// ── COL_IS_REPEAT: periodic String column ────────────────────────────────────
+// ── String column encodes as COL_BYTES ───────────────────────────────────────
 //
-// 6 rows, pattern ["foo", "bar", "foo", "bar", "foo", "bar"] — period = 2.
-// Wire should carry only 2 strings, with:
-//   desc.type           = COL_BYTES | COL_IS_REPEAT
-//   desc.offsets_offset = 2   (period, not a byte offset)
-//   data block          = uint32[3]{0,4,8} + "foo\0bar\0"  (R+1 offsets + R strings)
+// 4 unique strings — wire must use normal COL_BYTES encoding.
 
-TEST(ColumnarV1Wire, RepeatStringEncoding)
-{
-    auto col = ColumnString::create();
-    for (int i = 0; i < 6; ++i)
-        col->insertData(i % 2 == 0 ? "foo" : "bar", 3);
-
-    auto buf = encodeCHColumn(col.get(), 6);
-    ColDescriptor desc = readDesc(buf);
-
-    EXPECT_EQ(desc.type & ~COL_IS_REPEAT, COL_BYTES);
-    EXPECT_EQ(desc.type & COL_IS_REPEAT,  COL_IS_REPEAT);
-    EXPECT_EQ(desc.offsets_offset, 2u);      // period = 2
-
-    // Data block: 3 uint32 offsets + 8 bytes of strings
-    const uint32_t * wire_offs = reinterpret_cast<const uint32_t *>(buf.data() + desc.data_offset);
-    EXPECT_EQ(wire_offs[0], 0u);
-    EXPECT_EQ(wire_offs[1], 4u);   // "foo\0"
-    EXPECT_EQ(wire_offs[2], 8u);   // "bar\0"
-
-    const uint8_t * chars = buf.data() + desc.data_offset + 3 * sizeof(uint32_t);
-    EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(chars), 3), "foo");
-    EXPECT_EQ(chars[3], '\0');
-    EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(chars + 4), 3), "bar");
-    EXPECT_EQ(chars[7], '\0');
-
-    // Total data_size = 3*4 + 8 = 20 bytes (not 6*4 + 24 = 48 that normal would need)
-    EXPECT_EQ(desc.data_size, 3u * sizeof(uint32_t) + 8u);
-}
-
-// ── COL_IS_REPEAT: periodic UInt64 column ────────────────────────────────────
-//
-// 9 rows, pattern [10, 20, 30, 10, 20, 30, 10, 20, 30] — period = 3.
-// Wire carries only 3 uint64 values.
-
-TEST(ColumnarV1Wire, RepeatFixed64Encoding)
-{
-    auto col = ColumnUInt64::create();
-    for (int rep = 0; rep < 3; ++rep)
-        for (uint64_t v : {10ULL, 20ULL, 30ULL})
-            col->getData().push_back(v);
-
-    auto buf = encodeCHColumn(col.get(), 9);
-    ColDescriptor desc = readDesc(buf);
-
-    EXPECT_EQ(desc.type & ~COL_IS_REPEAT, COL_FIXED64);
-    EXPECT_EQ(desc.type & COL_IS_REPEAT,  COL_IS_REPEAT);
-    EXPECT_EQ(desc.offsets_offset, 3u);          // period = 3
-    EXPECT_EQ(desc.data_size, 3u * sizeof(uint64_t));  // only 3 values stored
-
-    const uint64_t * data = reinterpret_cast<const uint64_t *>(buf.data() + desc.data_offset);
-    EXPECT_EQ(data[0], 10u);
-    EXPECT_EQ(data[1], 20u);
-    EXPECT_EQ(data[2], 30u);
-}
-
-// ── COL_IS_REPEAT: non-periodic column stays as COL_BYTES ────────────────────
-//
-// 4 unique strings — no period → wire must use normal COL_BYTES encoding.
-
-TEST(ColumnarV1Wire, RepeatStringNoRepeat)
+TEST(ColumnarV1Wire, StringEncodesAsColBytes)
 {
     auto col = ColumnString::create();
     col->insertData("a", 1);
@@ -341,8 +277,6 @@ TEST(ColumnarV1Wire, RepeatStringNoRepeat)
     auto buf = encodeCHColumn(col.get(), 4);
     ColDescriptor desc = readDesc(buf);
 
-    // Must NOT have COL_IS_REPEAT set.
-    EXPECT_EQ(desc.type & COL_IS_REPEAT, 0u);
     EXPECT_EQ(desc.type, COL_BYTES);
 }
 
@@ -385,7 +319,10 @@ TEST(ColumnarV1Wire, TupleFloat64EncoderLayout)
 // ── Array(Tuple(Float64,Float64)) encoder → COL_COMPLEX ──────────────────────
 //
 // 2 rows: row0=[(1.0,2.0),(3.0,4.0)], row1=[(5.0,6.0)]
-// Wire: outer_offsets{0,2,3} + field0[3] + field1[3]
+// Sequential layout at data_offset:
+//   uint64[3] outer = {0, 2, 3}   (24 bytes)
+//   float64[3] field0             (24 bytes)
+//   float64[3] field1             (24 bytes)
 
 TEST(ColumnarV1Wire, ArrayOfTupleFloat64EncoderLayout)
 {
@@ -409,15 +346,16 @@ TEST(ColumnarV1Wire, ArrayOfTupleFloat64EncoderLayout)
     ColDescriptor desc = readDesc(buf);
 
     EXPECT_EQ(desc.type, COL_COMPLEX);
+    EXPECT_EQ(desc.offsets_offset, 0u);  // unused for Array
 
-    // Outer offsets {0, 2, 3}
-    const uint64_t * outer = reinterpret_cast<const uint64_t *>(buf.data() + desc.offsets_offset);
+    // Outer offsets at data_offset: {0, 2, 3}
+    const uint64_t * outer = reinterpret_cast<const uint64_t *>(buf.data() + desc.data_offset);
     EXPECT_EQ(outer[0], 0u);
     EXPECT_EQ(outer[1], 2u);
     EXPECT_EQ(outer[2], 3u);
 
-    // Nested data: field0 then field1 (3 doubles each)
-    const double * fd0 = reinterpret_cast<const double *>(buf.data() + desc.data_offset);
+    // Nested Tuple data immediately after outer offsets: field0 then field1
+    const double * fd0 = reinterpret_cast<const double *>(outer + 3);
     EXPECT_DOUBLE_EQ(fd0[0], 1.0);
     EXPECT_DOUBLE_EQ(fd0[1], 3.0);
     EXPECT_DOUBLE_EQ(fd0[2], 5.0);
@@ -485,7 +423,7 @@ TEST(ColumnarV1Wire, VariantUInt64String)
 
     // Variant header
     const uint8_t * block = buf.data() + desc.data_offset;
-    uint32_t k;
+    uint32_t k = 0;
     std::memcpy(&k, block, 4);
     EXPECT_EQ(k, 2u);
 
@@ -518,13 +456,9 @@ TEST(ColumnarV1Wire, VariantUInt64String)
     EXPECT_EQ(std::string_view(str_chars, 2), "hi");
 }
 
-// ── Nullable periodic string: must NOT use COL_IS_REPEAT ──────────────────────
-//
-// A Nullable(String) column whose inner strings are periodic should fall through
-// to the normal COL_NULL_BYTES path.  Before the fix, COL_IS_REPEAT was applied
-// and null_offset was set to 0, silently dropping the null map.
+// ── Nullable string encodes with COL_IS_NULLABLE and a valid null_offset ──────
 
-TEST(ColumnarV1Wire, NullablePeriodicStringNotRepeatEncoded)
+TEST(ColumnarV1Wire, NullableStringEncoding)
 {
     auto str = ColumnString::create();
     for (int i = 0; i < 6; ++i)
@@ -533,14 +467,13 @@ TEST(ColumnarV1Wire, NullablePeriodicStringNotRepeatEncoded)
     ColDescriptor desc{};
     buildColDescriptor(str.get(), /*is_const=*/false, /*is_nullable=*/true, 6, COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES, desc);
 
-    EXPECT_EQ(desc.type & COL_IS_REPEAT, 0u);   // repeat must be suppressed
-    EXPECT_EQ(desc.type, COL_NULL_BYTES);
-    EXPECT_NE(desc.null_offset, 0u);             // null_offset must be allocated
+    EXPECT_EQ(desc.type, COL_BYTES | COL_IS_NULLABLE);
+    EXPECT_NE(desc.null_offset, 0u);
 }
 
-// ── Nullable periodic UInt64: must NOT use COL_IS_REPEAT ─────────────────────
+// ── Nullable UInt64 encodes with COL_IS_NULLABLE and a valid null_offset ──────
 
-TEST(ColumnarV1Wire, NullablePeriodicFixed64NotRepeatEncoded)
+TEST(ColumnarV1Wire, NullableFixed64Encoding)
 {
     auto col = ColumnUInt64::create();
     for (int rep = 0; rep < 3; ++rep)
@@ -550,8 +483,7 @@ TEST(ColumnarV1Wire, NullablePeriodicFixed64NotRepeatEncoded)
     ColDescriptor desc{};
     buildColDescriptor(col.get(), /*is_const=*/false, /*is_nullable=*/true, 9, COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES, desc);
 
-    EXPECT_EQ(desc.type & COL_IS_REPEAT, 0u);
-    EXPECT_EQ(desc.type, COL_NULL_FIXED64);
+    EXPECT_EQ(desc.type, COL_FIXED64 | COL_IS_NULLABLE);
     EXPECT_NE(desc.null_offset, 0u);
 }
 
@@ -677,17 +609,15 @@ TEST(ColumnarV1Wire, BoundsCheckComplexArrayOffsetsOverflow)
 // ── COL_COMPLEX bounds: string chars overflow buffer ─────────────────────────
 //
 // COL_COMPLEX describing Array(String) for 1 row with 1 element.
-// Outer offsets claim total_elems = 1; string offsets are valid but
-// wire_offs[1] reports more chars than what remain in the buffer.
+// Outer uint64 offsets {0,1} claim 1 element; inner string offsets {0,9999}
+// claim 9999 chars that don't exist in the buffer → must throw.
 
 TEST(ColumnarV1Wire, BoundsCheckComplexStringCharsOverflow)
 {
-    // Layout: outer_offsets[2] + inner_offsets[2] + (truncated chars)
-    // outer: {0, 1} — 1 string element in row 0
-    // inner: {0, 9999} — claims 9999 chars, but buffer has none
-    const uint32_t num_rows   = 1;
-    const uint32_t data_off   = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
-    const uint32_t data_size  = 2u * 4u + 2u * 4u;  // outer[2] + inner[2], no char bytes
+    // Sequential layout: outer uint64[2] + inner uint64[2], no char bytes
+    const uint32_t num_rows  = 1;
+    const uint32_t data_off  = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_size = 2u * 8u + 2u * 8u;  // outer[2] + inner[2], uint64 each
 
     std::vector<uint8_t> buf(data_off + data_size, 0);
     uint32_t one = 1;
@@ -700,13 +630,13 @@ TEST(ColumnarV1Wire, BoundsCheckComplexStringCharsOverflow)
     desc.data_size   = data_size;
     std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
 
-    // outer offsets: {0, 1}
-    uint32_t outer[2] = {0, 1};
-    std::memcpy(buf.data() + data_off, outer, 8);
+    // outer uint64 offsets: {0, 1} — 1 string element in row 0
+    uint64_t outer[2] = {0, 1};
+    std::memcpy(buf.data() + data_off, outer, 16);
 
-    // inner offsets: {0, 9999} — chars claim 9999 bytes that don't exist
-    uint32_t inner[2] = {0, 9999};
-    std::memcpy(buf.data() + data_off + 8, inner, 8);
+    // inner uint64 offsets: {0, 9999} — claims 9999 chars, none exist
+    uint64_t inner[2] = {0, 9999};
+    std::memcpy(buf.data() + data_off + 16, inner, 16);
 
     auto result_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows),

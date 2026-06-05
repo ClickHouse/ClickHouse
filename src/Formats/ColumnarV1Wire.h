@@ -259,19 +259,19 @@ inline uint64_t buildColDescriptor(
     // ── Array column → COL_COMPLEX ────────────────────────────────────────────
     if (const auto * arr_col = typeid_cast<const ColumnArray *>(col))
     {
-        desc.type        = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u);
-        desc.null_offset = 0;
+        desc.type           = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u);
+        desc.null_offset    = 0;
+        desc.offsets_offset = 0;  // unused for Array; outer offsets are at data_offset
 
         write_cursor = (write_cursor + 7ull) & ~7ull;
-        desc.offsets_offset = write_cursor;
-        write_cursor += (num_rows + 1u) * sizeof(uint64_t);
+        desc.data_offset = write_cursor;
 
         const IColumn & nested = arr_col->getData();
         uint32_t total_elems = static_cast<uint32_t>(nested.size());
 
-        desc.data_offset = write_cursor;
-        desc.data_size   = complexDataSize(nested, total_elems);
-        write_cursor    += desc.data_size;
+        // Sequential layout: uint64 offsets[num_rows+1] followed by nested complexData.
+        desc.data_size = (num_rows + 1u) * sizeof(uint64_t) + complexDataSize(nested, total_elems);
+        write_cursor  += desc.data_size;
         return write_cursor;
     }
 
@@ -325,7 +325,7 @@ inline uint64_t buildColDescriptor(
     const IColumn * inner_col = null_col ? &null_col->getNestedColumn() : col;
     uint32_t elem_size = static_cast<uint32_t>(inner_col->sizeOfValueIfFixed());
     uint32_t wire_elem_size = elem_size;
-    uint32_t base_type;
+    uint32_t base_type = 0;
     if      (wire_elem_size == 1) base_type = COL_FIXED8  | (is_nullable ? COL_IS_NULLABLE : 0u);
     else if (wire_elem_size == 2) base_type = COL_FIXED16 | (is_nullable ? COL_IS_NULLABLE : 0u);
     else if (wire_elem_size == 4) base_type = COL_FIXED32 | (is_nullable ? COL_IS_NULLABLE : 0u);
@@ -418,12 +418,13 @@ inline void writeColData(
         const IColumn & nested  = arr_col->getData();
         uint32_t total_elems = static_cast<uint32_t>(nested.size());
 
-        uint64_t * wire_outer = reinterpret_cast<uint64_t *>(buf.data() + desc.offsets_offset);
+        // Sequential layout: outer offsets at data_offset, nested data immediately after.
+        uint64_t * wire_outer = reinterpret_cast<uint64_t *>(buf.data() + desc.data_offset);
         wire_outer[0] = 0ull;
         for (uint32_t i = 0; i < num_rows; ++i)
             wire_outer[i + 1u] = static_cast<uint64_t>(ch_offsets[i]);
 
-        writeComplexData(nested, total_elems, buf.data() + desc.data_offset);
+        writeComplexData(nested, total_elems, buf.data() + desc.data_offset + (num_rows + 1u) * sizeof(uint64_t));
         return;
     }
 
@@ -496,14 +497,20 @@ inline MutableColumnPtr readColumnFromDesc(
         ? dynamic_cast<const DataTypeNullable &>(*result_type).getNestedType()
         : result_type;
 
+    const uint8_t * const data_end = buf.data() + desc.data_offset + desc.data_size;
+
     // Recursive decoder for COL_COMPLEX (Array / Tuple / nested scalars).
     std::function<MutableColumnPtr(const uint8_t *&, const DataTypePtr &, uint32_t)> decode;
     decode = [&](const uint8_t *& p, const DataTypePtr & type, uint32_t n) -> MutableColumnPtr
     {
         if (const auto * arr_type = typeid_cast<const DataTypeArray *>(type.get()))
         {
+            uint64_t outer_bytes = (n + 1u) * sizeof(uint64_t);
+            if (p + outer_bytes > data_end)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_COMPLEX nested Array outer offsets out of bounds");
             const uint64_t * outer_offs = reinterpret_cast<const uint64_t *>(p);
-            p += (n + 1u) * sizeof(uint64_t);
+            p += outer_bytes;
             uint32_t total_elems = static_cast<uint32_t>(outer_offs[n]);
             auto nested_col = decode(p, arr_type->getNestedType(), total_elems);
             auto offsets_col = ColumnUInt64::create(n);
@@ -522,10 +529,17 @@ inline MutableColumnPtr readColumnFromDesc(
         }
         if (typeid_cast<const DataTypeString *>(type.get()))
         {
+            uint64_t off_bytes = (n + 1u) * sizeof(uint64_t);
+            if (p + off_bytes > data_end)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_COMPLEX String offsets out of bounds");
             const uint64_t * wire_offs = reinterpret_cast<const uint64_t *>(p);
-            p += (n + 1u) * sizeof(uint64_t);
-            const uint8_t * chars_src = p;
+            p += off_bytes;
             uint64_t total_chars = wire_offs[n];
+            if (p + total_chars > data_end)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_COMPLEX String chars out of bounds");
+            const uint8_t * chars_src = p;
             p += total_chars;
             auto col_str = ColumnString::create();
             auto & chars   = col_str->getChars();
@@ -544,9 +558,12 @@ inline MutableColumnPtr readColumnFromDesc(
             }
             return col_str;
         }
+        uint32_t elem_bytes = static_cast<uint32_t>(type->getSizeOfValueInMemory());
+        if (p + static_cast<uint64_t>(n) * elem_bytes > data_end)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_COMPLEX fixed data out of bounds");
         auto col = type->createColumn();
         col->insertManyDefaults(n);
-        uint32_t elem_bytes = static_cast<uint32_t>(type->getSizeOfValueInMemory());
         std::memcpy(const_cast<char *>(col->getRawData().data()), p, n * elem_bytes);
         p += n * elem_bytes;
         return col;
@@ -614,6 +631,10 @@ inline MutableColumnPtr readColumnFromDesc(
     }
     else if (raw_type == COL_FIXED64)
     {
+        if (desc.data_offset + rows_to_dec * 8u > buf.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_FIXED64 data out of bounds: offset={}, rows={}, buf={}",
+                desc.data_offset, rows_to_dec, buf.size());
         auto inner = base_type->createColumn();
         inner->insertManyDefaults(rows_to_dec);
         std::memcpy(const_cast<char *>(inner->getRawData().data()),
@@ -624,13 +645,18 @@ inline MutableColumnPtr readColumnFromDesc(
     {
         if (const auto * arr_type = typeid_cast<const DataTypeArray *>(base_type.get()))
         {
-            // Top-level Array: encoder stores outer offsets at offsets_offset and
-            // nested complex data (writeComplexData format) at data_offset.
-            const uint64_t * outer_offs =
-                reinterpret_cast<const uint64_t *>(buf.data() + desc.offsets_offset);
+            // WASM→CH sequential layout: outer uint64 offsets[rows+1] at data_offset,
+            // followed immediately by nested writeComplexData-format data.
+            const uint64_t outer_offset_bytes = (rows_to_dec + 1u) * sizeof(uint64_t);
+            if (outer_offset_bytes > desc.data_size)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_COMPLEX outer offsets exceed data_size: need={}, data_size={}",
+                    outer_offset_bytes, desc.data_size);
+            const uint8_t * p = buf.data() + desc.data_offset;
+            const uint64_t * outer_offs = reinterpret_cast<const uint64_t *>(p);
+            p += outer_offset_bytes;
             uint32_t total_elems = static_cast<uint32_t>(outer_offs[rows_to_dec]);
-            const uint8_t * nested_ptr = buf.data() + desc.data_offset;
-            auto nested_col = decode(nested_ptr, arr_type->getNestedType(), total_elems);
+            auto nested_col = decode(p, arr_type->getNestedType(), total_elems);
             auto offsets_col = ColumnUInt64::create(rows_to_dec);
             for (uint32_t i = 0; i < rows_to_dec; ++i)
                 offsets_col->getData()[i] = outer_offs[i + 1u];
@@ -665,7 +691,8 @@ inline MutableColumnPtr readColumnarOutput(
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "COLUMNAR_V1 output buffer too small: {} bytes", buf.size());
 
-    uint32_t num_rows, num_cols;
+    uint32_t num_rows = 0;
+    uint32_t num_cols = 0;
     std::memcpy(&num_rows, buf.data(),     4);
     std::memcpy(&num_cols, buf.data() + 4, 4);
 
@@ -676,10 +703,10 @@ inline MutableColumnPtr readColumnarOutput(
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "COLUMNAR_V1 output must have exactly 1 column, got {}", num_cols);
 
-    ColDescriptor desc;
+    ColDescriptor desc{};
     std::memcpy(&desc, buf.data() + COLUMNAR_HEADER_BYTES, sizeof(desc));
     return readColumnFromDesc(buf, desc, num_rows, result_type);
 }
 
-} // namespace ColumnarV1
-} // namespace DB
+}
+}

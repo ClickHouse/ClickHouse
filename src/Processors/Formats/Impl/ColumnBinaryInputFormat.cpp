@@ -1,4 +1,4 @@
-#include "ColumnBinaryInputFormat.h"
+#include <Processors/Formats/Impl/ColumnBinaryInputFormat.h>
 
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
@@ -36,7 +36,8 @@ Chunk ColumnBinaryInputFormat::read()
 
     std::span<const uint8_t> buf{reinterpret_cast<const uint8_t *>(in->position()), avail};
 
-    uint32_t num_rows = 0, num_cols = 0;
+    uint32_t num_rows = 0;
+    uint32_t num_cols = 0;
     std::memcpy(&num_rows, buf.data(),     4);
     std::memcpy(&num_cols, buf.data() + 4, 4);
 

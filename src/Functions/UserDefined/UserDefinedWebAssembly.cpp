@@ -257,7 +257,7 @@ public:
     WasmPtr reallocBuffer(WasmPtr handle, WasmSizeT new_size) const override
     {
         return compartment->invoke<WasmPtr>(
-            "clickhouse_reallocate_buffer", {handle, static_cast<WasmSizeT>(new_size)}, stop_token);
+            "clickhouse_reallocate_buffer", {handle, new_size}, stop_token);
     }
 
 private:
@@ -464,11 +464,11 @@ public:
         const uint32_t num_cols = static_cast<uint32_t>(cols.size());
         uint64_t cursor = COLUMNAR_HEADER_BYTES + num_cols * COLUMNAR_DESC_BYTES;
 
-        std::vector<ColDescriptor> descs(num_cols);
-        std::vector<const IColumn *> inner_cols(num_cols);
-        std::vector<bool> is_const_flags(num_cols);
-        std::vector<bool> is_nullable_flags(num_cols);
-        std::vector<uint32_t> row_counts(num_cols);
+        std::vector<ColDescriptor> descs(num_cols); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<const IColumn *> inner_cols(num_cols); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<bool> is_const_flags(num_cols); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<bool> is_nullable_flags(num_cols); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<uint32_t> row_counts(num_cols); // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
         for (uint32_t ci = 0; ci < num_cols; ++ci)
         {

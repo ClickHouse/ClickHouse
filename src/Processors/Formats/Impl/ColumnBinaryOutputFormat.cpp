@@ -1,4 +1,4 @@
-#include "ColumnBinaryOutputFormat.h"
+#include <Processors/Formats/Impl/ColumnBinaryOutputFormat.h>
 
 #include <Core/Block.h>
 #include <Processors/Port.h>
@@ -75,7 +75,7 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
     // pre-allocate via precomputeSerializedSize, such as in tests or the legacy
     // IOutputFormat::write() compatibility path).
     std::vector<uint8_t> tmp_buf;
-    uint8_t * buf;
+    uint8_t * buf = nullptr;
     bool use_prealloc = !disable_preallocation_ && out.available() >= cursor;
     if (!use_prealloc)
     {
