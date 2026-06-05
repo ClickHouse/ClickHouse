@@ -1,6 +1,8 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/101838
 -- read-in-order must treat LowCardinality(Float) sorting keys like plain Float keys,
 -- so NaN (which sorts like NULL) is placed correctly under every NULLS direction.
+-- Both the query-plan optimization (optimizeReadInOrder) and the legacy
+-- ReadInOrderOptimizer path (old analyzer, query_plan_read_in_order = 0) must agree.
 
 -- { echo }
 SET optimize_read_in_order = 1;
@@ -9,6 +11,15 @@ SET allow_suspicious_low_cardinality_types = 1;
 DROP TABLE IF EXISTS test_lc_float_nan;
 CREATE TABLE test_lc_float_nan (c0 LowCardinality(Float64)) ENGINE = MergeTree() ORDER BY c0;
 INSERT INTO test_lc_float_nan VALUES (0), (nan), (1);
+DROP TABLE IF EXISTS test_lc_float32_nan;
+CREATE TABLE test_lc_float32_nan (c0 LowCardinality(Float32)) ENGINE = MergeTree() ORDER BY c0;
+INSERT INTO test_lc_float32_nan VALUES (0), (nan), (1);
+DROP TABLE IF EXISTS test_lc_bfloat16_nan;
+CREATE TABLE test_lc_bfloat16_nan (c0 LowCardinality(BFloat16)) ENGINE = MergeTree() ORDER BY c0;
+INSERT INTO test_lc_bfloat16_nan VALUES (0), (nan), (1);
+-- Query-plan read-in-order path (new analyzer).
+SET enable_analyzer = 1;
+SET query_plan_read_in_order = 1;
 SELECT * FROM test_lc_float_nan ORDER BY c0 ASC NULLS FIRST;
 nan
 0
@@ -25,9 +36,6 @@ SELECT * FROM test_lc_float_nan ORDER BY c0 DESC NULLS LAST;
 1
 0
 nan
-DROP TABLE IF EXISTS test_lc_float32_nan;
-CREATE TABLE test_lc_float32_nan (c0 LowCardinality(Float32)) ENGINE = MergeTree() ORDER BY c0;
-INSERT INTO test_lc_float32_nan VALUES (0), (nan), (1);
 SELECT * FROM test_lc_float32_nan ORDER BY c0 ASC NULLS FIRST;
 nan
 0
@@ -44,9 +52,57 @@ SELECT * FROM test_lc_float32_nan ORDER BY c0 DESC NULLS LAST;
 1
 0
 nan
-DROP TABLE IF EXISTS test_lc_bfloat16_nan;
-CREATE TABLE test_lc_bfloat16_nan (c0 LowCardinality(BFloat16)) ENGINE = MergeTree() ORDER BY c0;
-INSERT INTO test_lc_bfloat16_nan VALUES (0), (nan), (1);
+SELECT * FROM test_lc_bfloat16_nan ORDER BY c0 ASC NULLS FIRST;
+nan
+0
+1
+SELECT * FROM test_lc_bfloat16_nan ORDER BY c0 ASC NULLS LAST;
+0
+1
+nan
+SELECT * FROM test_lc_bfloat16_nan ORDER BY c0 DESC NULLS FIRST;
+nan
+1
+0
+SELECT * FROM test_lc_bfloat16_nan ORDER BY c0 DESC NULLS LAST;
+1
+0
+nan
+-- Legacy ReadInOrderOptimizer path (old analyzer, query plan read-in-order disabled).
+SET enable_analyzer = 0;
+SET query_plan_read_in_order = 0;
+SELECT * FROM test_lc_float_nan ORDER BY c0 ASC NULLS FIRST;
+nan
+0
+1
+SELECT * FROM test_lc_float_nan ORDER BY c0 ASC NULLS LAST;
+0
+1
+nan
+SELECT * FROM test_lc_float_nan ORDER BY c0 DESC NULLS FIRST;
+nan
+1
+0
+SELECT * FROM test_lc_float_nan ORDER BY c0 DESC NULLS LAST;
+1
+0
+nan
+SELECT * FROM test_lc_float32_nan ORDER BY c0 ASC NULLS FIRST;
+nan
+0
+1
+SELECT * FROM test_lc_float32_nan ORDER BY c0 ASC NULLS LAST;
+0
+1
+nan
+SELECT * FROM test_lc_float32_nan ORDER BY c0 DESC NULLS FIRST;
+nan
+1
+0
+SELECT * FROM test_lc_float32_nan ORDER BY c0 DESC NULLS LAST;
+1
+0
+nan
 SELECT * FROM test_lc_bfloat16_nan ORDER BY c0 ASC NULLS FIRST;
 nan
 0

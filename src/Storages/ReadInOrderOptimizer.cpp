@@ -1,6 +1,8 @@
 #include <Storages/ReadInOrderOptimizer.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -207,7 +209,8 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
     const ContextPtr & context,
     UInt64 limit) const
 {
-    const Names & sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
+    const auto & sorting_key = metadata_snapshot->getSortingKey();
+    const Names & sorting_key_columns = sorting_key.column_names;
     /// read_direction will be set from the first non-constant ORDER BY column
     int read_direction = 0;
 
@@ -222,6 +225,15 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
     while (desc_pos < description.size() && key_pos < sorting_key_columns.size())
     {
         if (forbidden_columns.contains(description[desc_pos].column_name))
+            break;
+
+        /// Physical storage is ASC NULLS LAST (or DESC NULLS FIRST). NULLs (and NaNs)
+        /// sort as the largest value. When opposite ordering is requested - we cannot
+        /// read in storage order - reject.
+        const auto & sort_key_type = sorting_key.data_types[key_pos];
+        const bool key_has_special_nulls = isNullableOrLowCardinalityNullable(sort_key_type)
+            || isFloat(*removeLowCardinality(sort_key_type));
+        if (key_has_special_nulls && description[desc_pos].nulls_direction == -1)
             break;
 
         auto match = matchSortDescriptionAndKey(actions[desc_pos]->getActions(), description[desc_pos], sorting_key_columns[key_pos]);
