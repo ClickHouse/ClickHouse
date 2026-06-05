@@ -36,7 +36,7 @@ SQLitePtr openSQLiteDatabaseForOutput(WriteBuffer & out, bool & write_serialized
     if (auto * file_out = dynamic_cast<WriteBufferFromFile *>(&out))
     {
         const auto file_name = file_out->getFileName();
-        struct stat statbuf;
+        struct stat statbuf{};
         if (fstat(file_out->getFD(), &statbuf) == 0 && S_ISREG(statbuf.st_mode) && !file_name.empty() && !file_name.starts_with("(fd = "))
         {
             write_serialized_database_to_output = false;
