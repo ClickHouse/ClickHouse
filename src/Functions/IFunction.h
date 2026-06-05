@@ -7,9 +7,11 @@
 #include <Core/ValuesWithType.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <DataTypes/IDataType_fwd.h>
+#include <Interpreters/Context_fwd.h>
 
 #include "config.h"
 
+#include <functional>
 #include <memory>
 
 /// This file contains user interface for functions.
@@ -29,6 +31,10 @@ namespace DB
 class Field;
 struct FieldInterval;
 using FieldIntervalPtr = std::shared_ptr<FieldInterval>;
+
+class IFunctionOverloadResolver;
+using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
+using FunctionCreator = std::function<FunctionOverloadResolverPtr(ContextPtr)>;
 
 /// The simplest executable object.
 /// Motivation:
@@ -334,6 +340,14 @@ public:
       * nullptr might be returned if the point (a single value) is invalid for this function.
       */
     virtual FieldIntervalPtr getPreimage(const IDataType & /*type*/, const Field & /*point*/) const;
+
+    /// has same address for all aliases / case variants of a function 
+    /// nullptr when the function is constructed outside the factory
+    const FunctionCreator * getFactoryHandle() const { return factory_handle; }
+    void setFactoryHandle(const FunctionCreator * h) const { factory_handle = h; }
+
+private:
+    mutable const FunctionCreator * factory_handle = nullptr;
 };
 
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
@@ -403,6 +417,9 @@ public:
     virtual bool allowsOmittingParentheses() const { return false; }
 
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
+
+    const FunctionCreator * getFactoryHandle() const { return factory_handle; }
+    void setFactoryHandle(const FunctionCreator * h) const { factory_handle = h; }
 
 protected:
 
@@ -478,9 +495,10 @@ protected:
 private:
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
-};
 
-using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
+    /// mutable beacuse it's set after construction by FunctionFactory, resolvers themselves are otherwise immutable
+    mutable const FunctionCreator * factory_handle = nullptr;
+};
 
 /// Old function interface. Check documentation in IFunction.h.
 /// If client do not need stateful properties it can implement this interface.

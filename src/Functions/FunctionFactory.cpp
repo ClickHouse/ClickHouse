@@ -36,6 +36,14 @@ const String & getFunctionCanonicalNameIfAny(const String & name)
     return FunctionFactory::instance().getCanonicalNameIfAny(name);
 }
 
+const String & getFunctionCanonicalName(const String & name)
+{
+    auto & factory = FunctionFactory::instance();
+    if (factory.isAlias(name))
+        return getFunctionCanonicalNameIfAny(factory.aliasTo(name));
+    return getFunctionCanonicalNameIfAny(name);
+}
+
 void FunctionFactory::registerFunction(
     const std::string & name,
     FunctionCreator creator,
@@ -123,16 +131,29 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
 {
     String name = getAliasToOrName(name_param);
     FunctionOverloadResolverPtr res;
+    const FunctionCreator * canonical_creator = nullptr;
 
     auto it = functions.find(name);
     if (functions.end() != it)
+    {
         res = it->second.first(context);
+        canonical_creator = &it->second.first;
+    }
     else
     {
         name = Poco::toLower(name);
         it = case_insensitive_functions.find(name);
         if (case_insensitive_functions.end() != it)
+        {
             res = it->second.first(context);
+            auto cn_it = case_insensitive_name_mapping.find(name);
+            if (cn_it != case_insensitive_name_mapping.end())
+            {
+                auto fn_it = functions.find(cn_it->second);
+                if (fn_it != functions.end())
+                    canonical_creator = &fn_it->second.first;
+            }
+        }
     }
 
     if (!res)
@@ -150,9 +171,15 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
         {
             it = functions.find(ToTimeWithFixedDateImpl::name);
             if (functions.end() != it)
+            {
                 res = it->second.first(context);
+                canonical_creator = &it->second.first;
+            }
         }
     }
+
+    if (canonical_creator)
+        res->setFactoryHandle(canonical_creator);
 
     return res;
 }
