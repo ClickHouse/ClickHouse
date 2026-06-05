@@ -31,16 +31,16 @@ SELECT explain LIKE '%"Node Type": "NegativeLimitBy"%' AND explain LIKE '%"Negat
 
 SELECT explain LIKE '%"Node Type": "NegativeLimitBy"%' AND explain LIKE '%"Negative Length": 2%' FROM (EXPLAIN json=1, actions=1 SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT -2 BY g);
 
-SELECT DISTINCT trim(BOTH ' ' FROM explain) FROM (EXPLAIN PIPELINE SELECT g, x FROM test ORDER BY g, x LIMIT -2 BY g) WHERE explain ILIKE '%NegativeLimitBy%' OR explain ILIKE '%LimitByTransform%';
+SELECT DISTINCT trim(BOTH ' ' FROM explain) FROM (EXPLAIN PIPELINE SELECT g, x FROM test ORDER BY g, x LIMIT -2 BY g) WHERE explain ILIKE '%NegativeLimitBy%' OR explain ILIKE '%LimitBy%Transform%';
 
-SELECT DISTINCT trim(BOTH ' ' FROM explain) FROM (EXPLAIN PIPELINE SELECT g, x FROM test ORDER BY g DESC, x DESC LIMIT -2 BY g) WHERE explain ILIKE '%NegativeLimitBy%' OR explain ILIKE '%LimitByTransform%';
+SELECT DISTINCT trim(BOTH ' ' FROM explain) FROM (EXPLAIN PIPELINE SELECT g, x FROM test ORDER BY g DESC, x DESC LIMIT -2 BY g) WHERE explain ILIKE '%NegativeLimitBy%' OR explain ILIKE '%LimitBy%Transform%';
 
-SELECT DISTINCT trim(BOTH ' ' FROM explain) FROM (EXPLAIN PIPELINE SELECT g, x FROM test ORDER BY x LIMIT -2 BY g) WHERE explain ILIKE '%NegativeLimitBy%' OR explain ILIKE '%LimitByTransform%';
+SELECT DISTINCT trim(BOTH ' ' FROM explain) FROM (EXPLAIN PIPELINE SELECT g, x FROM test ORDER BY x LIMIT -2 BY g) WHERE explain ILIKE '%NegativeLimitBy%' OR explain ILIKE '%LimitBy%Transform%';
 
-SELECT DISTINCT trim(BOTH ' ' FROM explain) FROM (EXPLAIN PIPELINE SELECT g, x FROM test LIMIT -2 BY g) WHERE explain ILIKE '%NegativeLimitBy%' OR explain ILIKE '%LimitByTransform%';
+SELECT DISTINCT trim(BOTH ' ' FROM explain) FROM (EXPLAIN PIPELINE SELECT g, x FROM test LIMIT -2 BY g) WHERE explain ILIKE '%NegativeLimitBy%' OR explain ILIKE '%LimitBy%Transform%';
 
-SELECT DISTINCT trim(BOTH ' ' FROM explain) FROM (EXPLAIN PIPELINE SELECT g, x FROM test ORDER BY g, x LIMIT 2 OFFSET -3 BY g) WHERE explain ILIKE '%NegativeLimitBy%' OR explain ILIKE '%LimitByTransform%';
+SELECT DISTINCT trim(BOTH ' ' FROM explain) FROM (EXPLAIN PIPELINE SELECT g, x FROM test ORDER BY g, x LIMIT 2 OFFSET -3 BY g) WHERE explain ILIKE '%NegativeLimitBy%' OR explain ILIKE '%LimitBy%Transform%';
 
-SELECT DISTINCT trim(BOTH ' ' FROM explain) FROM (EXPLAIN PIPELINE SELECT g, x FROM test ORDER BY x LIMIT 2 OFFSET -3 BY g) WHERE explain ILIKE '%NegativeLimitBy%' OR explain ILIKE '%LimitByTransform%';
+SELECT DISTINCT trim(BOTH ' ' FROM explain) FROM (EXPLAIN PIPELINE SELECT g, x FROM test ORDER BY x LIMIT 2 OFFSET -3 BY g) WHERE explain ILIKE '%NegativeLimitBy%' OR explain ILIKE '%LimitBy%Transform%';
 
 DROP TABLE test;

@@ -58,14 +58,24 @@ private:
 
     /// Returns combined postings per column for the given mark, clipped to `slice_range`
     /// (the actual read window, which may be narrower than the mark on partial-mark reads).
-    std::vector<PostingList> buildPostingsForMark(size_t mark, const RowsRange & slice_range);
+    std::vector<PostingList> buildPostingsForMark(size_t mark, const RowsRange & slice_range, PostingList & range_posting);
     /// Returns combined posting list for a single query by taking the prebuilt
     /// postings from the analyzer and reading large postings blocks as needed.
-    PostingList buildPostingsForQuery(const TextSearchQuery & query, const TextIndexAnalyzer & analyzer, const RowsRange & range);
+    PostingList buildPostingsForQuery(const TextSearchQuery & query, const TextIndexAnalyzer & analyzer, const RowsRange & range, PostingList & range_posting);
     /// Reads and unions all posting list blocks for a large-posting token within the given range.
     std::vector<PostingListPtr> readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range);
     /// Removes blocks with max value less than the given range.
     void cleanupPostingsBlocks(const RowsRange & range);
+
+    std::optional<RowsRange> getRowsRangeForMark(size_t mark) const;
+    MergeTreeDataPartPtr getDataPart() const;
+
+    void readGranule();
+    /// Sets per-column flags from the analyzer's verdict and collects tokens to materialize.
+    void classifyVirtualColumns();
+    void initializePostingStreams();
+    void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
+    void fillColumnLazy(IColumn & column, const String & column_name, size_t row_offset, size_t num_rows, PostingList & range_posting);
 
     /// Fills a virtual column for an abandoned pattern query by evaluating the virtual column's
     /// default expression (the original search predicate) on the physical columns.
@@ -77,15 +87,6 @@ private:
         size_t offset,
         size_t num_rows) const;
 
-    std::optional<RowsRange> getRowsRangeForMark(size_t mark) const;
-    MergeTreeDataPartPtr getDataPart() const;
-
-    void readGranule();
-    /// Sets per-column flags from the analyzer's verdict and collects tokens to materialize.
-    void classifyVirtualColumns();
-    void initializePostingStreams();
-    void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
-    void fillColumnLazy(IColumn & column, const String & column_name, size_t row_offset, size_t num_rows);
     PostingListCursorPtr makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info);
 
     using TextIndexGranulePtr = std::shared_ptr<const MergeTreeIndexGranuleText>;

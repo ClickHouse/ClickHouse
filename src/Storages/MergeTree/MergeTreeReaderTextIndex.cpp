@@ -308,14 +308,18 @@ PostingListCursorPtr MergeTreeReaderTextIndex::makeLazyCursor(std::string_view t
     if (!(token_info.header & PostingsSerialization::Flags::IsCompressed))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected token for lazy mode: {}. Multi-block postings must be compressed", token);
 
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    auto * postings_cache = condition_text.postingsCache().get();
+    const auto & index_id_for_cache = granule->getIndexIdForCaches();
+
     auto stream_it = large_postings_streams.find(token);
     if (stream_it != large_postings_streams.end())
-        return std::make_shared<PostingListCursor>(*stream_it->second, token_info);
+        return std::make_shared<PostingListCursor>(*stream_it->second, token_info, postings_cache, index_id_for_cache);
 
     if (!small_postings_stream)
         small_postings_stream = makeTextIndexStream(index.index->getSubstreams()[2]);
 
-    return std::make_shared<PostingListCursor>(*small_postings_stream, token_info);
+    return std::make_shared<PostingListCursor>(*small_postings_stream, token_info, postings_cache, index_id_for_cache);
 }
 
 size_t MergeTreeReaderTextIndex::readRows(
@@ -403,9 +407,11 @@ size_t MergeTreeReaderTextIndex::readRows(
         size_t rows_to_read = std::min(index_granularity.getMarkRows(from_mark), max_rows_to_read - read_rows);
 
         /// In lazy mode skip per-mark Roaring Bitmap materialization — cursors decode on demand.
+        PostingList range_posting;
         std::vector<PostingList> mark_postings;
+
         if (!use_lazy_mode)
-            mark_postings = buildPostingsForMark(from_mark, RowsRange(from_row, from_row + rows_to_read - 1));
+            mark_postings = buildPostingsForMark(from_mark, RowsRange(from_row, from_row + rows_to_read - 1), range_posting);
 
         for (size_t i = 0; i < res_columns.size(); ++i)
         {
@@ -427,7 +433,7 @@ size_t MergeTreeReaderTextIndex::readRows(
             }
             else if (use_lazy_mode)
             {
-                fillColumnLazy(column_mutable, columns_to_read[i].name, from_row, rows_to_read);
+                fillColumnLazy(column_mutable, columns_to_read[i].name, from_row, rows_to_read, range_posting);
             }
             else
             {
@@ -482,7 +488,7 @@ std::optional<RowsRange> MergeTreeReaderTextIndex::getRowsRangeForMark(size_t ma
     return RowsRange(row_begin, row_end - 1);
 }
 
-std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t mark, const RowsRange & slice_range)
+std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t mark, const RowsRange & slice_range, PostingList & range_posting)
 {
     std::vector<PostingList> result(columns_to_read.size());
     auto mark_range = getRowsRangeForMark(mark);
@@ -498,6 +504,7 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
 
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
     const auto & analyzer = granule->getAnalyzer();
+    range_posting.addRangeClosed(static_cast<UInt32>(effective_range->begin), static_cast<UInt32>(effective_range->end));
 
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
@@ -508,7 +515,7 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
         if (search_query->tokens.empty() && search_query->patterns.empty())
             continue;
 
-        result[i] = buildPostingsForQuery(*search_query, analyzer, *effective_range);
+        result[i] = buildPostingsForQuery(*search_query, analyzer, *effective_range, range_posting);
     }
 
     return result;
@@ -517,16 +524,14 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
 PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
     const TextSearchQuery & query,
     const TextIndexAnalyzer & analyzer,
-    const RowsRange & range)
+    const RowsRange & range,
+    PostingList & range_posting)
 {
     const auto & query_builder = analyzer.getQueryBuilder(query);
     if (query_builder.is_failed)
         return {};
 
     std::optional<PostingList> result;
-    PostingList range_posting;
-    range_posting.addRangeClosed(static_cast<UInt32>(range.begin), static_cast<UInt32>(range.end));
-
     if (query_builder.postings)
         result = *query_builder.postings & range_posting;
 
@@ -641,11 +646,10 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const PostingList & 
     }
 }
 
-void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & column_name, size_t row_offset, size_t num_rows)
+void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & column_name, size_t row_offset, size_t num_rows, PostingList & range_posting)
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     size_t old_size = column_data.size();
-    column_data.resize_fill(old_size + num_rows, 0);
 
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
     auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
@@ -658,29 +662,13 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
     const auto & query_builder = analyzer.getQueryBuilder(*search_query);
 
     if (query_builder.is_failed)
+    {
+        column_data.resize_fill(old_size + num_rows, 0);
         return;
+    }
 
     std::vector<PostingListCursorPtr> cursors;
     cursors.reserve(query_builder.tokens.size());
-
-    if (query_builder.postings && query_builder.postings->cardinality() > 0)
-    {
-        auto [it, inserted] = prebuilt_cursors.try_emplace(column_name);
-
-        if (inserted)
-        {
-            TokenPostingsInfo prebuilt_info;
-            prebuilt_info.header = PostingsSerialization::Flags::EmbeddedPostings;
-            prebuilt_info.cardinality = static_cast<UInt32>(query_builder.postings->cardinality());
-            prebuilt_info.offsets = {0};
-            prebuilt_info.ranges = {{query_builder.postings->minimum(), query_builder.postings->maximum()}};
-            prebuilt_info.embedded_postings = std::make_shared<PostingList>(*query_builder.postings);
-
-            it->second = std::make_shared<PostingListCursor>(prebuilt_info);
-        }
-
-        cursors.push_back(it->second);
-    }
 
     if (query_builder.needReadPostings())
     {
@@ -699,6 +687,50 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
             cursors.push_back(it->second);
         }
     }
+
+    if (query_builder.postings)
+    {
+        /// Check the per-column cache first: the prebuilt cursor is built once and reused across marks.
+        auto it = prebuilt_cursors.find(column_name);
+
+        if (it != prebuilt_cursors.end())
+        {
+            cursors.push_back(it->second);
+        }
+        else if (query_builder.postings->cardinality() > 0)
+        {
+            /// If there are no cursors for large postings, fill the column directly from the postings.
+            if (cursors.empty())
+            {
+                if (range_posting.cardinality() == 0)
+                {
+                    requireRowOffsetRepresentable(row_offset);
+                    auto range_end = static_cast<UInt32>(std::min<size_t>(row_offset + num_rows - 1, std::numeric_limits<UInt32>::max()));
+                    range_posting.addRangeClosed(static_cast<UInt32>(row_offset), range_end);
+                }
+
+                PostingList clipped = *query_builder.postings & range_posting;
+                fillColumn(column, clipped, row_offset, num_rows);
+                return;
+            }
+
+            /// Convert postings to a sorted array and build a cursor from it.
+            auto key = TextIndexPostingsCache::hash(granule->getIndexIdForCaches(), column_name, static_cast<UInt8>(TextIndexPostingsCacheKind::Flat));
+
+            auto cell = condition_text.postingsCache()->getOrSet(key, [&]
+            {
+                auto flat = std::make_shared<PaddedPODArray<UInt32>>(query_builder.postings->cardinality());
+                query_builder.postings->toUint32Array(flat->data());
+                return std::make_shared<TextIndexPostingsCacheCell>(std::move(flat));
+            });
+
+            auto cursor = std::make_shared<PostingListCursor>(std::get<FlatPostingsPtr>(cell->value));
+            prebuilt_cursors.emplace(column_name, cursor);
+            cursors.push_back(cursor);
+        }
+    }
+
+    column_data.resize_fill(old_size + num_rows, 0);
 
     if (cursors.empty())
         return;

@@ -1,8 +1,13 @@
--- Verifies that the eleven TextIndexLazy* ProfileEvents fire when the corresponding
+-- Verifies that the nine TextIndexLazy* ProfileEvents fire when the corresponding
 -- code paths in MergeTreeIndexTextPostingListCursor are exercised. Without this guard,
 -- a regression that silently disables a skip optimisation (or never reaches the lazy
 -- cursor path) would not be caught: the query results would stay correct because the
 -- materialize path is functionally equivalent.
+--
+-- The skip counters are shared between the OR and AND paths: `SegmentsSkippedDense`
+-- (dense segment padded whole), `SegmentsSkippedResolved` and `BlocksSkippedResolved`
+-- (region already resolved: all-ones for OR, all-zeros for AND). The OR and AND queries
+-- below still exercise both sides of each counter.
 
 SET enable_full_text_index = 1;
 SET allow_experimental_text_index_lazy_apply = 1;
@@ -17,12 +22,12 @@ DROP TABLE IF EXISTS tab_lazy_pe;
 -- 2 packed blocks of 128. Tokens with cardinality <= 256 are stored with `SingleBlock`
 -- flag and preloaded as rare-token postings (embedded path); tokens with cardinality
 -- > 256 take the lazy cursor's multi-segment / multi-block path. The data below
--- mixes both so we exercise all eleven profile events.
+-- mixes both so we exercise all eight profile events.
 -- `index_granularity_bytes = 0` disables adaptive granularity so the 2000 rows stay in a
 -- single granule regardless of the CI's randomized `index_granularity_bytes`. With multiple
 -- granules, queries whose tokens occupy disjoint row ranges (Q6: csubset & eright) short-
--- circuit per-granule before `lazyIntersectPostingLists` runs, leaving `AndSegmentsSkippedZero`
--- unfired.
+-- circuit per-granule before `lazyIntersectPostingLists` runs, leaving the AND side of
+-- `SegmentsSkippedResolved` unfired.
 CREATE TABLE tab_lazy_pe(
     k UInt64,
     s String,
@@ -84,27 +89,27 @@ SELECT count() FROM tab_lazy_pe WHERE hasToken(s, 'adense')
 -- Q3: hasAnyTokens(['adense', 'csubset']) -> 'adense' (density 1.0) sorts before
 --     'csubset' (density 1.0, stable sort by tokens kept it second). 'adense' fills
 --     bits 0..1999; csubset's two segments [0..255] and [256..299] are then fully
---     covered. Triggers: SegmentsSkippedCovered.
+--     covered. Triggers: SegmentsSkippedResolved (OR side).
 SELECT count() FROM tab_lazy_pe WHERE hasAnyTokens(s, ['adense', 'csubset'])
     SETTINGS log_comment = '04257_pe_or_seg_covered';
 
 -- Q4: hasAnyTokens(['bnarrow', 'dwide']) -> bnarrow (embedded, density 1.0) sorts
 --     before dwide (density 0.57). bnarrow fills bits 0..127; dwide's segment
 --     [0..383] is not fully covered, but its packed block 0 (doc range 0..127) IS.
---     Triggers: BlocksSkippedCovered.
+--     Triggers: BlocksSkippedResolved (OR side).
 SELECT count() FROM tab_lazy_pe WHERE hasAnyTokens(s, ['bnarrow', 'dwide'])
     SETTINGS log_comment = '04257_pe_or_block_covered';
 
 -- Q5: brute-force AND ['adense', 'csubset'] (min_density = 1.0 >= threshold 0.0).
 --     c0='adense'->linearOr fills via Level-1 dense; c1='csubset'->linearAnd hits
---     its two dense segments. Triggers: AndSegmentsSkippedDense, BruteForceIntersections.
+--     its two dense segments. Triggers: SegmentsSkippedDense (AND side), BruteForceIntersections.
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['adense', 'csubset'])
     SETTINGS text_index_density_threshold = 0.0,
              log_comment = '04257_pe_and_seg_dense';
 
 -- Q6: brute-force AND ['csubset', 'eright'] - disjoint ranges.
 --     c0='csubset' fills 0..299; c1='eright''s segments [1700..1955] and [1956..1999]
---     are all-zero in the output. Triggers: AndSegmentsSkippedZero.
+--     are all-zero in the output. Triggers: SegmentsSkippedResolved (AND side).
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['csubset', 'eright'])
     SETTINGS text_index_density_threshold = 0.0,
              log_comment = '04257_pe_and_seg_zero';
@@ -114,7 +119,7 @@ SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['csubset', 'eright'])
 --       - segment not fully zero (block 0 has bits) so Level-2a doesn't fire,
 --       - segment not dense so Level-1 doesn't fire,
 --       - block 0 [0..127] not zero -> decode normally,
---       - block 1 [128..383] all-zero in output -> AndBlocksSkippedZero fires.
+--       - block 1 [128..383] all-zero in output -> BlocksSkippedResolved (AND side) fires.
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['bnarrow', 'dwide'])
     SETTINGS text_index_density_threshold = 0.0,
              log_comment = '04257_pe_and_block_zero';
@@ -135,17 +140,15 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT 'all events fired across tagged queries:';
 SELECT
-    sum(ProfileEvents['TextIndexLazyPackedBlocksDecoded'])     > 0 AS blocks_decoded,
-    sum(ProfileEvents['TextIndexLazySegmentsPrepared'])        > 0 AS segs_prepared,
-    sum(ProfileEvents['TextIndexLazySegmentsSkippedDense'])    > 0 AS or_seg_dense,
-    sum(ProfileEvents['TextIndexLazySegmentsSkippedCovered'])  > 0 AS or_seg_covered,
-    sum(ProfileEvents['TextIndexLazyBlocksSkippedCovered'])    > 0 AS or_block_covered,
-    sum(ProfileEvents['TextIndexLazyAndSegmentsSkippedDense']) > 0 AS and_seg_dense,
-    sum(ProfileEvents['TextIndexLazyAndSegmentsSkippedZero'])  > 0 AS and_seg_zero,
-    sum(ProfileEvents['TextIndexLazyAndBlocksSkippedZero'])    > 0 AS and_block_zero,
-    sum(ProfileEvents['TextIndexLazyBruteForceIntersections']) > 0 AS brute_force,
-    sum(ProfileEvents['TextIndexLazyLeapfrogIntersections'])   > 0 AS leapfrog,
-    sum(ProfileEvents['TextIndexLazyAdvanceCount'])            > 0 AS advance_called
+    sum(ProfileEvents['TextIndexLazyPackedBlocksDecoded'])      > 0 AS blocks_decoded,
+    sum(ProfileEvents['TextIndexLazySegmentsPrepared'])         > 0 AS segs_prepared,
+    sum(ProfileEvents['TextIndexLazySegmentsBuilt'])            > 0 AS segs_built,
+    sum(ProfileEvents['TextIndexLazySegmentsSkippedDense'])     > 0 AS seg_dense,
+    sum(ProfileEvents['TextIndexLazySegmentsSkippedResolved'])  > 0 AS seg_resolved,
+    sum(ProfileEvents['TextIndexLazyBlocksSkippedResolved'])    > 0 AS block_resolved,
+    sum(ProfileEvents['TextIndexLazyBruteForceIntersections'])  > 0 AS brute_force,
+    sum(ProfileEvents['TextIndexLazyLeapfrogIntersections'])    > 0 AS leapfrog,
+    sum(ProfileEvents['TextIndexLazyAdvanceCount'])             > 0 AS advance_called
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND current_database = currentDatabase()

@@ -78,7 +78,8 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
     if (dict.end() != it)
         return it->second;
     auto hints = this->getHints(name);
-    throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}. Maybe you meant: {}", name, toString(hints));
+    auto hint_string = hints.empty() ? "" : fmt::format(". Maybe you meant: {}", toString(hints));
+    throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}{}", name, hint_string);
 }
 
 FormatFactory::Creators & FormatFactory::getOrCreateCreators(const String & name)

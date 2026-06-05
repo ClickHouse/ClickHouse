@@ -24,7 +24,8 @@ SETTINGS
     [ connection_wait_timeout=5, ]
     [ connection_auto_close=true, ]
     [ connect_timeout=10, ]
-    [ read_write_timeout=300 ]
+    [ read_write_timeout=300, ]
+    [ enable_compression=false ]
 ;
 ```
 
@@ -190,6 +191,35 @@ Possible values:
 - Positive integer.
 
 Default value: `300`.
+
+### `enable_compression` {#enable-compression}
+
+Enables compression for the MySQL protocol connection.
+
+Default value: `false`.
+
+This setting applies to:
+
+- the `MySQL` table engine;
+- the `MySQL` database engine;
+- the `mysql` table function;
+- named collections used by MySQL integrations.
+
+When enabled, ClickHouse requests compression for the connection.
+
+Example:
+
+```sql
+CREATE TABLE mysql_engine_compression
+(
+    id UInt32,
+    name String,
+    age UInt32,
+    money UInt32
+)
+ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
+SETTINGS enable_compression = 1;
+```
 
 ## See also {#see-also}
 
