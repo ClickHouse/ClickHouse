@@ -114,7 +114,7 @@ MetadataStoragePtr MetadataStorageFactory::create(
     return it->second(name, config, config_prefix, cluster, object_storages);
 }
 
-static void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
+void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("local", [](
         const std::string & name,
@@ -142,7 +142,7 @@ static void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
 }
 
 #if CLICKHOUSE_CLOUD
-static void registerMetadataStorageFromKeeper(MetadataStorageFactory & factory)
+void registerMetadataStorageFromKeeper(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("keeper", [](
         const std::string & name,
@@ -168,7 +168,7 @@ static void registerMetadataStorageFromKeeper(MetadataStorageFactory & factory)
 }
 #endif
 
-static void registerPlainMetadataStorage(MetadataStorageFactory & factory)
+void registerPlainMetadataStorage(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("plain", [](
         const std::string & /* name */,
@@ -187,7 +187,7 @@ static void registerPlainMetadataStorage(MetadataStorageFactory & factory)
     });
 }
 
-static void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
+void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("plain_rewritable", [](
         const std::string & /* name */,
@@ -205,7 +205,7 @@ static void registerPlainRewritableMetadataStorage(MetadataStorageFactory & fact
     });
 }
 
-static void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & factory)
+void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("web", [](
         const std::string & /* name */,
@@ -221,8 +221,6 @@ static void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFacto
         return std::make_shared<MetadataStorageFromStaticFilesWebServer>(assert_cast<const WebObjectStorage &>(*local_object_storage));
     });
 }
-
-void registerMetadataStorages();
 
 void registerMetadataStorages()
 {

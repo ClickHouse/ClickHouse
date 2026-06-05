@@ -1,5 +1,4 @@
 #include <numeric>
-#include <thread>
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -328,7 +327,7 @@ namespace
         }
     }
 
-    class AddingAggregatedChunkInfoTransform final : public ISimpleTransform
+    class AddingAggregatedChunkInfoTransform : public ISimpleTransform
     {
     public:
         explicit AddingAggregatedChunkInfoTransform(SharedHeader header) : ISimpleTransform(header, header, false) { }
@@ -814,8 +813,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
     Aliases aliases;
     QueryAliasesVisitor(aliases).visit(inner_query);
     auto inner_query_normalized = inner_query->clone();
-    NameSet source_columns;
-    QueryNormalizer::Data normalizer_data(aliases, source_columns, false, QueryNormalizer::ExtractedSettings(getContext()->getSettingsRef()), false);
+    QueryNormalizer::Data normalizer_data(aliases, {}, false, QueryNormalizer::ExtractedSettings(getContext()->getSettingsRef()), false);
     QueryNormalizer(normalizer_data).visit(inner_query_normalized);
 
     auto inner_select_query = boost::static_pointer_cast<ASTSelectQuery>(inner_query_normalized);
@@ -1021,7 +1019,7 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
 
     std::lock_guard lock(fire_signal_mutex);
 
-    bool updated = false;
+    bool updated;
     if (is_watermark_strictly_ascending)
     {
         updated = max_watermark < watermark;
@@ -1803,7 +1801,6 @@ void StorageWindowView::throwIfWindowViewIsDisabled(ContextPtr local_context) co
                         "in the current infrastructure for query analysis (the setting 'allow_experimental_analyzer')");
 }
 
-void registerStorageWindowView(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory)
 {
     factory.registerStorage(

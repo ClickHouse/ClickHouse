@@ -43,7 +43,7 @@ private:
     UInt64 max_message_size;
 };
 
-class CapnProtoSchemaReader final : public IExternalSchemaReader
+class CapnProtoSchemaReader : public IExternalSchemaReader
 {
 public:
     explicit CapnProtoSchemaReader(const FormatSettings & format_settings_);
