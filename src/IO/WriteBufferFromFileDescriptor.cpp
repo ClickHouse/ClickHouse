@@ -42,6 +42,24 @@ namespace ErrorCodes
 }
 
 
+void WriteBufferFromFileDescriptor::setCancellationHook(std::function<bool()> cancellation_hook_)
+{
+    cancellation_hook = std::move(cancellation_hook_);
+
+    /// Decide whether the responsive bounded-chunk write path is needed. A write to a regular file
+    /// never blocks, so such a descriptor keeps using a single large write for throughput. For a
+    /// pipe, socket or terminal a write can block when the sink is slow or stuck, so while the hook
+    /// is installed we wait for writability and write in small chunks to stay responsive. If fstat
+    /// fails, assume the descriptor can block and use the safe (responsive) path.
+    cancellation_fd_can_block = false;
+    if (cancellation_hook)
+    {
+        struct stat stat_buf{};
+        cancellation_fd_can_block = (0 != ::fstat(fd, &stat_buf)) || !S_ISREG(stat_buf.st_mode);
+    }
+}
+
+
 void WriteBufferFromFileDescriptor::nextImpl()
 {
     if (!offset())
@@ -67,7 +85,7 @@ void WriteBufferFromFileDescriptor::nextImpl()
         /// steps, checking for cancellation in between, write only a bounded chunk at a time so a
         /// single write() cannot block for long, and discard the rest of the buffer once
         /// cancellation is requested.
-        if (cancellation_hook)
+        if (cancellation_hook && cancellation_fd_can_block)
         {
             if (cancellation_hook())
                 return;
@@ -86,8 +104,13 @@ void WriteBufferFromFileDescriptor::nextImpl()
             if (poll_res <= 0)
                 continue;
 
-            static constexpr size_t cancellable_write_chunk = 64 * 1024;
-            bytes_to_write = std::min(bytes_to_write, cancellable_write_chunk);
+            /// After poll() reports the descriptor is writable, writing at most PIPE_BUF bytes is
+            /// guaranteed not to block on a pipe (and such a small write does not block on a socket
+            /// or terminal either). Bounding the chunk this way ensures a single write() cannot
+            /// sleep for long even if the sink stops draining right after becoming writable, so the
+            /// cancellation hook is consulted promptly. (A larger chunk could still block: poll()
+            /// only promises that some space is available, not space for the whole chunk.)
+            bytes_to_write = std::min(bytes_to_write, static_cast<size_t>(PIPE_BUF));
         }
 
         ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWrite);

@@ -794,8 +794,17 @@ try
                 if (query_with_output->isIntoOutfileWithStdout())
                 {
                     select_into_file_and_stdout = true;
-                    out_file_buf = std::make_unique<ForkWriteBuffer>(ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf),
-                        std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd)});
+
+                    /// In `INTO OUTFILE ... AND STDOUT` mode the result is written to this separate
+                    /// stdout buffer rather than through `std_out`, so install the same cancellation
+                    /// hook here. Otherwise Ctrl+C would not promptly abort the output when the
+                    /// stdout sink (e.g. a slow terminal) is blocked. This buffer is recreated per
+                    /// query, so the hook does not need to be removed afterwards.
+                    auto stdout_buf = std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd);
+                    stdout_buf->setCancellationHook([this]() { return query_interrupt_handler.cancelled(); });
+
+                    out_file_buf = std::make_unique<ForkWriteBuffer>(
+                        ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf), std::move(stdout_buf)});
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
