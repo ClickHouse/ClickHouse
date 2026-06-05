@@ -2562,14 +2562,15 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
                 ++token_iterator;
             this_query_begin = token_iterator->end;
 
-            /// `parseQuery` (the local method) catches parser exceptions on the `is_interactive ||
-            /// ignore_error` branch, sets `client_exception`, and returns nullptr. Without clearing
-            /// it here, a parse-time exception during a fuzzer/ignore-error run remains pinned and
-            /// surfaces as the process exit code in `Client::main`, even though the loop already
-            /// elected to skip past the failing query and continue. Reset it so the skip is honest
-            /// and the exit code reflects the rest of the run.
+            /// Mirror the per-query reset at the top of `processParsedSingleQuery` so the skip
+            /// matches the state a successful query would leave behind. Otherwise stale
+            /// exceptions from a prior statement (executed under `ignore_error`) survive and
+            /// `Client::main` returns their code as the process exit, even though the loop
+            /// elected to skip past the failing query and continue.
             have_error = false;
+            error_code = 0;
             client_exception.reset();
+            server_exception.reset();
 
             return MultiQueryProcessingStage::CONTINUE_PARSING;
         }

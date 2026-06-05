@@ -21,10 +21,22 @@ SELECT 1;
 CREATE TABLE t (a Int32 PRIMARY KEY, b Int32) PRIMARY KEY a ORDER BY a;
 SQL
 
-# Pre-fix: client exits with code 36 (BAD_ARGUMENTS) because the parse failure on the
-# CREATE TABLE leaves `client_exception` pinned across the fuzzer's CONTINUE_PARSING skip.
-# Post-fix: client exits 0; the parse error is reported to stderr but does not propagate.
+# Scenario A: pure parse failure under `--query-fuzzer-runs` (which auto-enables
+# `ignore-error`). Pre-fix: exits with `BAD_ARGUMENTS` because `client_exception`
+# remained pinned across the fuzzer's `CONTINUE_PARSING` skip.
 # Stdout output is non-deterministic in fuzzer mode (per-iteration "Dump of fuzzed AST:"),
 # so the regression assertion is on the exit code only.
 ${CLICKHOUSE_CLIENT} --query-fuzzer-runs=2 --create-query-fuzzer-runs=2 --queries-file "$QUERIES_FILE" > /dev/null 2>&1
+echo "exit: $?"
+
+# Scenario B: a server-error statement followed by a parse-error statement under
+# `--ignore-error`. Pre-fix the parse-skip cleared only `client_exception`, leaving the
+# `server_exception` from statement 1 pinned. `Client::main` prefers `server_exception`
+# over `client_exception` for the exit code, so the process exited with the stale server
+# error code (e.g. UNKNOWN_TABLE / UNKNOWN_FUNCTION) even though `--ignore-error` had
+# elected to continue. Post-fix: the skip mirrors the per-query reset and clears all four
+# error fields, so the exit code reflects only the rest of the run (clean here).
+${CLICKHOUSE_CLIENT} --multiquery --ignore-error --query \
+"SELECT * FROM nonexistent_table_for_04318; CREATE TABLE t (a Int32 PRIMARY KEY, b Int32) PRIMARY KEY a ORDER BY a;" \
+> /dev/null 2>&1
 echo "exit: $?"
