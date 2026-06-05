@@ -153,7 +153,6 @@ AggregateFunctionPtr createAggregateFunctionDeltaSum(
 }
 }
 
-void registerAggregateFunctionDeltaSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDeltaSum(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

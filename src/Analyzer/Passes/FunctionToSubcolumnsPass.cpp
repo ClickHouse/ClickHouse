@@ -274,7 +274,7 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
 
 std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeQBit & data_type_qbit)
 {
-    size_t index = 0;
+    size_t index;
 
     if (value.getType() == Field::Types::UInt64)
         index = value.safeGet<UInt64>();

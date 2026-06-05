@@ -1,7 +1,6 @@
 #include <cstddef>
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
@@ -602,6 +601,12 @@ MergeTreeReaderPtr createMergeTreeReader(
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown part type");
 }
+
+MergeTreeReaderPtr createMergeTreeReaderTextIndex(
+    const IMergeTreeReader * main_reader,
+    const MergeTreeIndexWithCondition & index,
+    const NamesAndTypesList & columns_to_read,
+    MergeTreeIndexGranulePtr index_granule);
 
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
