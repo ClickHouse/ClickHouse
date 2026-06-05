@@ -122,7 +122,7 @@ void ProtobufWriter::endNestedMessage(int field_number, bool is_group, bool skip
         num_bytes_skipped = num_bytes_skipped_at_start;
         return;
     }
-    size_t num_bytes_inserted = 0;
+    size_t num_bytes_inserted;
     if (is_group)
     {
         writeFieldNumber(field_number, GROUP_END, buffer);

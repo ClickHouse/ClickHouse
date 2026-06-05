@@ -2,7 +2,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/JSONBuilder.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -94,36 +93,6 @@ void AggregateDescription::explain(WriteBuffer & out, const std::string & prefix
     }
 }
 
-void AggregateDescription::explainPretty(ExplainFormatSettings & settings) const
-{
-    auto & out = settings.out;
-
-    if (function)
-        out << function->getName();
-
-    const Array & aggregate_parameters = function ? function->getParameters() : parameters;
-    bool first_param = true;
-    for (const auto & param : aggregate_parameters)
-    {
-        out << (first_param ? "(" : ", ");
-        first_param = false;
-        out << applyVisitor(FieldVisitorToString(), param);
-    }
-    if (!aggregate_parameters.empty())
-        out << ')';
-
-    out << '(';
-    bool first = true;
-    for (const auto & arg : argument_names)
-    {
-        if (!first)
-            out << ", ";
-        first = false;
-        out << QueryPlanFormat::formatColumnPretty(arg, settings.pretty_names);
-    }
-    out << ')';
-}
-
 void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
 {
     map.add("Name", column_name);
@@ -197,14 +166,14 @@ void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, Wr
 
 void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in)
 {
-    UInt64 num_aggregates = 0;
+    UInt64 num_aggregates;
     readVarUInt(num_aggregates, in);
     aggregates.resize(num_aggregates);
     for (auto & aggregate : aggregates)
     {
         readStringBinary(aggregate.column_name, in);
 
-        UInt64 num_args = 0;
+        UInt64 num_args;
         readVarUInt(num_args, in);
         aggregate.argument_names.resize(num_args);
 
@@ -220,7 +189,7 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
         String function_name;
         readStringBinary(function_name, in);
 
-        UInt64 num_params = 0;
+        UInt64 num_params;
         readVarUInt(num_params, in);
         aggregate.parameters.resize(num_params);
         for (auto & param : aggregate.parameters)

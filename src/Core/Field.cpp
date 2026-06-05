@@ -204,7 +204,7 @@ bool Field::operator== (const Field & rhs) const
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
 }
 
-static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
+Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
     switch (static_cast<Field::Types::Which>(type))
     {
@@ -214,7 +214,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::UInt64:
         {
-            UInt64 value = 0;
+            UInt64 value;
             readVarUInt(value, buf);
             return value;
         }
@@ -250,7 +250,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::Int64:
         {
-            Int64 value = 0;
+            Int64 value;
             readVarInt(value, buf);
             return value;
         }
@@ -268,7 +268,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::Float64:
         {
-            Float64 value = 0;
+            Float64 value;
             readFloatBinary(value, buf);
             return value;
         }
@@ -311,13 +311,13 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::Bool:
         {
-            UInt8 value = 0;
+            UInt8 value;
             readBinary(value, buf);
             return bool(value);
         }
         case Field::Types::Decimal32:
         {
-            Decimal<Int32> value{};
+            Decimal<Int32> value;
             readBinary(value, buf);
             UInt32 scale = 0 ;
             readBinary(scale, buf);
@@ -325,7 +325,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::Decimal64:
         {
-            Decimal<Int64> value{};
+            Decimal<Int64> value;
             readBinary(value, buf);
             UInt32 scale = 0;
             readBinary(scale, buf);
@@ -333,7 +333,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::Decimal128:
         {
-            Decimal<Int128> value{};
+            Decimal<Int128> value;
             readBinary(value, buf);
             UInt32 scale = 0;
             readBinary(scale, buf);
@@ -341,7 +341,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::Decimal256:
         {
-            Decimal<Int256> value{};
+            Decimal<Int256> value;
             readBinary(value, buf);
             UInt32 scale = 0;
             readBinary(scale, buf);
@@ -355,7 +355,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 
 void readBinaryArray(Array & x, ReadBuffer & buf)
 {
-    size_t size = 0;
+    size_t size;
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
@@ -379,7 +379,7 @@ void writeText(const Array & x, WriteBuffer & buf)
 
 void readBinary(Tuple & x, ReadBuffer & buf)
 {
-    size_t size = 0;
+    size_t size;
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
@@ -402,7 +402,7 @@ void writeText(const Tuple & x, WriteBuffer & buf)
 
 void readBinary(Map & x, ReadBuffer & buf)
 {
-    size_t size = 0;
+    size_t size;
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
@@ -425,12 +425,12 @@ void writeText(const Map & x, WriteBuffer & buf)
 
 void readBinary(Object & x, ReadBuffer & buf)
 {
-    size_t size = 0;
+    size_t size;
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
     {
-        UInt8 type = 0;
+        UInt8 type;
         String key;
         readBinary(type, buf);
         readBinary(key, buf);
@@ -472,9 +472,9 @@ template <typename T>
 void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
 {
     assertChar('\'', buf);
-    T value{};
-    UInt32 scale = 0;
-    int32_t exponent = 0;
+    T value;
+    UInt32 scale;
+    int32_t exponent;
     uint32_t max_digits = static_cast<uint32_t>(-1);
     readDigits<true>(buf, value, max_digits, exponent, true);
     if (exponent > 0)
@@ -529,7 +529,7 @@ void writeFieldBinary(const Field & x, WriteBuffer & buf)
 
 Field readFieldBinary(ReadBuffer & buf)
 {
-    UInt8 type = 0;
+    UInt8 type;
     readBinary(type, buf);
     return getBinaryValue(type, buf);
 }
@@ -796,7 +796,7 @@ template bool decimalLessOrEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 
 template bool decimalLessOrEqual<Time64>(Time64 x, Time64 y, UInt32 x_scale, UInt32 y_scale);
 
 
-static void writeText(const Null & x, WriteBuffer & buf)
+void writeText(const Null & x, WriteBuffer & buf)
 {
     if (x.isNegativeInfinity())
         writeText("-Inf", buf);

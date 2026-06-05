@@ -8,7 +8,6 @@
 #include <Interpreters/Context.h>
 #include <Common/randomSeed.h>
 #include <Common/FunctionDocumentation.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
@@ -139,7 +138,7 @@ namespace
     {
         constexpr size_t complex_types_size = complex_types.size() * allow_complex_types;
         constexpr size_t result_size = simple_types.size() + complex_types_size;
-        std::array<TypeIndex, result_size> result{};
+        std::array<TypeIndex, result_size> result;
         size_t index = 0;
 
         for (size_t i = 0; i != simple_types.size(); ++i, ++index)
@@ -190,7 +189,7 @@ namespace
         /// and slowness of this function, and it can lead to `Max query size exceeded`
         /// while using this function with generateRandom.
         size_t num_values = rng() % 16 + 1;
-        VectorWithMemoryTracking<Int16> values(num_values);
+        std::vector<Int16> values(num_values);
 
         /// Generate random numbers from range [-(max_value + 1), max_value - num_values + 1].
         for (Int16 & x : values)
@@ -431,17 +430,6 @@ String FunctionGenerateRandomStructure::generateRandomStructure(size_t seed, con
     size_t number_of_columns = generateNumberOfColumns(rng);
     WriteBufferFromOwnString buf;
     writeRandomStructure(rng, number_of_columns, buf, context->getSettingsRef()[Setting::allow_suspicious_low_cardinality_types]);
-    return buf.str();
-}
-
-String FunctionGenerateRandomStructure::generateRandomDataType(pcg64 & rng, bool allow_suspicious_lc_types, bool allow_complex_types)
-{
-    WriteBufferFromOwnString buf;
-    String column_name = "c";
-    if (allow_complex_types)
-        writeRandomType<true>(column_name, rng, buf, allow_suspicious_lc_types);
-    else
-        writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types);
     return buf.str();
 }
 
