@@ -7,6 +7,7 @@
 namespace Poco::Util
 {
 class AbstractConfiguration;
+class OptionSet;
 }
 
 namespace DB
@@ -56,6 +57,8 @@ struct ServerSettings
     SERVER_SETTINGS_SUPPORTED_TYPES(ServerSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     void dumpToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const;
+
+    static void addToProgramOptions(Poco::Util::OptionSet & options);
 
 private:
     std::unique_ptr<ServerSettingsImpl> impl;
