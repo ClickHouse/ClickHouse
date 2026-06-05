@@ -1131,14 +1131,14 @@ struct CollectTablesData
     }
 };
 
-/// Walk the AST and collect tables, tracking CTE/`WITH`-alias scope so that an inner CTE name does not
-/// shadow an outer table with the same name. `active_ctes` is passed by value so each `ASTSelectQuery`'s
-/// WITH names propagate only to its descendants, not to siblings or ancestors.
+/// Walk the AST and collect tables, tracking CTE scope so that an in-scope CTE name does not cause us to
+/// treat an unqualified table reference of the same name as a real table. `active_ctes` is passed by value
+/// so each `ASTSelectQuery`'s WITH names propagate only to its descendants, not to siblings or ancestors.
 ///
-/// Handles both forms of WITH:
-///   `WITH name AS (subquery)` — parsed as `ASTWithElement` with `name` field;
-///   `WITH expr AS alias`      — parsed as an expression node (e.g. `ASTSubquery`) with `alias` set
-///                               via the `ASTWithAlias` base class.
+/// Only the `WITH name AS (subquery)` form (`ASTWithElement`) shadows a table identifier in FROM. A scalar
+/// `WITH expr AS alias` binding (e.g. `WITH 1 AS t`) does not: `WITH 1 AS t SELECT * FROM t` reads the table
+/// `t`. A CTE's own name is also not active while walking its own definition body, because the analyzer hides
+/// only the CTE currently being resolved (`WITH t AS (SELECT * FROM t) ...` reads the real table `t` inside).
 void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::unordered_set<String> active_ctes)
 {
     if (!ast)
@@ -1146,22 +1146,35 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
 
     if (const auto * select = ast->as<ASTSelectQuery>())
     {
-        /// This select's WITH names shadow outer names for all descendants of this select (including its
-        /// own FROM tables, since a CTE with the same name as a table is referenced first).
-        if (auto with = select->with())
+        const ASTPtr with = select->with();
+
+        /// Collect only the real CTE names declared in this select's WITH clause. Only the
+        /// `WITH name AS (subquery)` form (`ASTWithElement`) introduces a name that shadows a table
+        /// identifier in FROM. A scalar `WITH expr AS alias` binding does not: `WITH 1 AS t SELECT * FROM t`
+        /// still reads the table `t`, so such aliases must not be treated as shadowing CTE names.
+        std::unordered_set<String> this_level_ctes;
+        if (with)
         {
             for (const auto & with_child : with->children)
-            {
                 if (const auto * with_element = with_child->as<ASTWithElement>())
-                    active_ctes.insert(with_element->name);
-                else
-                {
-                    const String alias = with_child->tryGetAlias();
-                    if (!alias.empty())
-                        active_ctes.insert(alias);
-                }
+                    this_level_ctes.insert(with_element->name);
+
+            /// Walk each WITH child (CTE definitions and scalar aliases). The analyzer hides only the CTE
+            /// currently being resolved, so a CTE body may still reference a real table with the same name:
+            /// `WITH t AS (SELECT * FROM t) SELECT * FROM t` reads the real table `t` inside the definition.
+            /// Therefore the element's own name is not active while walking its own body, but its siblings are.
+            for (const auto & with_child : with->children)
+            {
+                auto body_ctes = active_ctes;
+                body_ctes.insert(this_level_ctes.begin(), this_level_ctes.end());
+                if (const auto * with_element = with_child->as<ASTWithElement>())
+                    body_ctes.erase(with_element->name);
+                collectTablesInQuery(with_child, data, body_ctes);
             }
         }
+
+        /// For the rest of the query (FROM and below) all of this select's CTE names shadow table identifiers.
+        active_ctes.insert(this_level_ctes.begin(), this_level_ctes.end());
 
         /// Walk the FROM table expressions directly so the original (un-resolved) database name is
         /// preserved. `getDatabaseAndTables` would substitute the current database for unqualified
@@ -1173,6 +1186,16 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             if (const auto * id = table_expression->database_and_table_name->as<ASTTableIdentifier>())
                 data.addTableIfNotEmpty(id->getDatabaseName(), id->shortName(), active_ctes);
         }
+
+        /// Recurse into the remaining children with the CTE names active. The WITH subtree was already
+        /// walked above with per-element scope, so skip it here to avoid re-adding the element's own name.
+        for (const auto & child : ast->children)
+        {
+            if (child == with)
+                continue;
+            collectTablesInQuery(child, data, active_ctes);
+        }
+        return;
     }
     else if (const auto * insert = ast->as<ASTInsertQuery>())
     {
