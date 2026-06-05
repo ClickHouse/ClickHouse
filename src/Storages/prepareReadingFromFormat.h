@@ -55,9 +55,8 @@ namespace DB
         const PrewhereInfoPtr & prewhere_info,
         const FilterDAGInfoPtr & row_level_filter);
 
-    /// Eagerly materialise IN-subquery sets for Parquet/ORC KeyCondition pushdown.
+    /// Eagerly materialise IN-subquery sets that a format-level KeyCondition can consume.
     void prepareEagerKeyConditionSets(
-        const String & format_name,
         const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
         const StorageSnapshotPtr & storage_snapshot,
         const Block & source_header,

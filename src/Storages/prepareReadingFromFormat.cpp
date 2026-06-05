@@ -3,7 +3,6 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
-#include <boost/algorithm/string/predicate.hpp>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -411,7 +410,6 @@ Block buildAllowedFilterInputs(
 }
 
 void prepareEagerKeyConditionSets(
-    const String & format_name,
     const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
     const StorageSnapshotPtr & storage_snapshot,
     const Block & source_header,
@@ -420,10 +418,6 @@ void prepareEagerKeyConditionSets(
     const ContextPtr & context)
 {
     if (!filter_actions_dag)
-        return;
-    /// Only Parquet/ORC readers build a KeyCondition that consumes the set;
-    /// for other formats CreatingSetsStep materialises sets at WHERE-time.
-    if (!boost::iequals(format_name, "Parquet") && !boost::iequals(format_name, "ORC"))
         return;
 
     auto allowed_inputs = buildAllowedFilterInputs(
