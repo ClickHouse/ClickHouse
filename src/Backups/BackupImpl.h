@@ -165,7 +165,7 @@ private:
     UInt64 compressed_size = 0;
     mutable size_t num_read_files = 0;
     mutable UInt64 num_read_bytes = 0;
-    int version;
+    int version{};
     mutable std::optional<BackupInfo> base_backup_info;
     mutable std::shared_ptr<const IBackup> base_backup;
     mutable std::optional<UUID> base_backup_uuid;

@@ -210,6 +210,7 @@ StorageFuzzQuery::Configuration StorageFuzzQuery::getConfiguration(ASTs & engine
     return configuration;
 }
 
+void registerStorageFuzzQuery(StorageFactory & factory);
 void registerStorageFuzzQuery(StorageFactory & factory)
 {
     factory.registerStorage(
