@@ -2187,11 +2187,6 @@ void registerStorageRemote(StorageFactory & factory)
         if (args.storage_def->settings)
             distributed_settings.loadFromQuery(*args.storage_def);
 
-        /// If the cluster contains a local shard, a query against this table can be routed back to
-        /// this server under the credentials supplied to the engine (e.g. with `prefer_localhost_replica = 0`),
-        /// bypassing the caller's access rights on the local target. `TableFunctionRemote::executeImpl`
-        /// guards against this with a local-shard `SELECT`/`INSERT` check; mirror it here under the user's
-        /// context. A persistent table can be used for both reading and writing, so require both privileges.
         bool has_local_shard = false;
         for (const auto & shard_info : parsed.cluster->getShardsInfo())
         {
@@ -2201,24 +2196,47 @@ void registerStorageRemote(StorageFactory & factory)
                 break;
             }
         }
-        if (has_local_shard)
-        {
-            args.getLocalContext()->checkAccess(AccessType::SELECT, parsed.remote_table_id);
-            args.getLocalContext()->checkAccess(AccessType::INSERT, parsed.remote_table_id);
-        }
 
         /// When the structure is not specified, infer it from the remote table under the user's
         /// context. `StorageDistributed` stores only the global context and would otherwise infer
         /// the structure under it, bypassing the `SHOW_COLUMNS` access check in
         /// `getStructureOfRemoteTableInShard` for a local shard — that would let a user who can
         /// create a `Remote` table read the schema of a local table they are not allowed to describe.
+        ///
+        /// When the target is a table function (e.g. `view(...)`, `numbers(...)`) and the cluster
+        /// contains a local shard, the function must be analyzed under the user's context even when
+        /// the columns are given explicitly: otherwise a persisted
+        /// `Remote('127.0.0.1', view(SELECT ... FROM secret), ...)` could later route the query back
+        /// to this server under the engine credentials, while `CREATE` never validated the creator's
+        /// access to the function's underlying tables. For a local shard,
+        /// `getStructureOfRemoteTableInShard` runs the table function through
+        /// `getActualTableStructureWithAccess`, which performs exactly that check.
         ColumnsDescription columns = args.columns;
-        if (columns.empty())
-            columns = getStructureOfRemoteTable(
+        if (columns.empty() || (has_local_shard && parsed.remote_table_function_ptr))
+        {
+            ColumnsDescription inferred = getStructureOfRemoteTable(
                 *parsed.cluster,
                 parsed.remote_table_id,
                 args.getLocalContext(),
                 parsed.remote_table_function_ptr);
+            if (columns.empty())
+                columns = std::move(inferred);
+        }
+
+        /// If the cluster contains a local shard, a query against this table can be routed back to
+        /// this server under the credentials supplied to the engine (e.g. with `prefer_localhost_replica = 0`),
+        /// bypassing the caller's access rights on the local target. `TableFunctionRemote::executeImpl`
+        /// guards against this with a local-shard `SELECT`/`INSERT` check; mirror it here under the user's
+        /// context. A persistent table can be used for both reading and writing, so require both privileges.
+        /// For a table-function target, `parsed.remote_table_id` is the meaningless parser default
+        /// (`system.one`), so checking it would be both wrong and a spurious rejection of harmless
+        /// targets like `numbers(...)`; the equivalent validation is performed above by analyzing the
+        /// function itself.
+        if (has_local_shard && !parsed.remote_table_function_ptr)
+        {
+            args.getLocalContext()->checkAccess(AccessType::SELECT, parsed.remote_table_id);
+            args.getLocalContext()->checkAccess(AccessType::INSERT, parsed.remote_table_id);
+        }
 
         return std::make_shared<StorageDistributed>(
             args.table_id,
