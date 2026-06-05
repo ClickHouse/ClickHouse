@@ -296,7 +296,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
     };
 
     factory.registerSource("executable", create_table_source, Documentation{
-        .description = "Obtains dictionary data by running an executable script that writes the data to its standard output in one of the supported formats.",
+        .description = "Obtains dictionary data by running an executable script that writes the data to its standard output in one of the supported formats. For security reasons, dictionaries with this source cannot be created from a DDL query; they are only allowed when configured in a server configuration file.",
         .syntax = "SOURCE(EXECUTABLE(command 'script.sh' format 'TabSeparated'))",
         .related = {"executable_pool", "file"}});
 }

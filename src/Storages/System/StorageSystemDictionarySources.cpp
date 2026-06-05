@@ -15,7 +15,7 @@ ColumnsDescription StorageSystemDictionarySources::getColumnsDescription()
     {
         {"name", std::make_shared<DataTypeString>(), "The name of the dictionary source, as specified in the SOURCE clause."},
         {"description", std::make_shared<DataTypeString>(), "A high-level description of what the dictionary source does."},
-        {"syntax", std::make_shared<DataTypeString>(), "How the source is specified in the SOURCE clause of a CREATE DICTIONARY query."},
+        {"syntax", std::make_shared<DataTypeString>(), "The structure of the SOURCE clause used to specify the source. Note that some sources are subject to access control when a dictionary is created from a DDL query (as opposed to a server configuration file); see the `description` of the individual source for details."},
         {"examples", std::make_shared<DataTypeString>(), "Usage examples."},
         {"introduced_in", std::make_shared<DataTypeString>(), "The ClickHouse version in which the source was first introduced, in the form major.minor."},
         {"related", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The names of related dictionary sources."},

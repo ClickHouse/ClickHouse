@@ -208,7 +208,7 @@ void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
     };
 
     factory.registerSource("library", create_table_source, Documentation{
-        .description = "Obtains dictionary data from an external shared library that implements the dictionary library bridge interface.",
+        .description = "Obtains dictionary data from an external shared library that implements the dictionary library bridge interface. When created from a DDL query, the library path must be inside the configured dictionaries library directory.",
         .syntax = "SOURCE(LIBRARY(path '/path/to/lib.so'))",
         .related = {}});
 }
