@@ -188,9 +188,14 @@ find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py'
 # Tests with SYSTEM DROP should have no-parallel tag, because SYSTEM DROP commands
 # (like SYSTEM DROP ... CACHE, SYSTEM DROP REPLICA, etc.) affect server-wide shared state
 # and interfere with other tests running concurrently.
+#
+# Known exceptions where the command is not actually executed:
+# - 04307: the SYSTEM DROP text appears only inside SQL string literals passed to
+#   parseQueryToJSON/formatQueryFromJSON for AST round-trip testing; nothing is executed.
 tests_with_system_drop=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         xargs grep -liP 'system\s+drop' |
+        grep -vP '04307_ast_json_roundtrip_lossless' |
         sort -u
 ) )
 for test_case in "${tests_with_system_drop[@]}"; do
