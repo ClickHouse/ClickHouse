@@ -1,6 +1,4 @@
--- Tags: no-parallel-replicas, no-random-merge-tree-settings
--- The bug requires `index_granularity = 1` plus `read_in_order_use_virtual_row*` to fire,
--- so we pin the MergeTree settings (CREATE TABLE) and the query settings (SETTINGS clause).
+-- Tags: no-parallel-replicas
 
 DROP TABLE IF EXISTS t_99495;
 
@@ -26,7 +24,8 @@ LIMIT 1 WITH TIES
 SETTINGS
     optimize_read_in_order = 1,
     read_in_order_use_virtual_row = 1,
-    read_in_order_use_virtual_row_per_block = 1;
+    read_in_order_use_virtual_row_per_block = 1,
+    use_skip_indexes_on_data_read = 0;
 
 SELECT id
 FROM t_99495
@@ -36,6 +35,7 @@ LIMIT 0, 1 WITH TIES
 SETTINGS
     optimize_read_in_order = 1,
     read_in_order_use_virtual_row = 1,
-    read_in_order_use_virtual_row_per_block = 1;
+    read_in_order_use_virtual_row_per_block = 1,
+    use_skip_indexes_on_data_read = 0;
 
 DROP TABLE t_99495;
