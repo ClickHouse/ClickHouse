@@ -96,7 +96,7 @@ def main():
         test_results.append(
             Result.from_commands_run(
                 name="select 1",
-                command=f"{temp_dir}/clickhouse-client --query 'select 1'",
+                command=f"{temp_dir}/clickhouse-client --receive_timeout=5 --query 'select 1'",
             )
         )  # success if exit code is 0
         test_results.append(Result(name="test 2", status=Result.Status.OK))
