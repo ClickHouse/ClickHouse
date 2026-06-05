@@ -71,7 +71,7 @@ public:
     union {
         size_t idx; // see FairPolicy
         void * ptr; // see TimeSharedScheduler
-    } parent_data;
+    } parent_data{};
 
     /// Introspection
     std::atomic<UInt64> dequeued_requests{0};
