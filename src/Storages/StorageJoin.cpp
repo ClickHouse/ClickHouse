@@ -374,7 +374,6 @@ void StorageJoin::convertRightBlock(Block & block) const
         JoinCommon::convertColumnToNullable(col);
 }
 
-void registerStorageJoin(StorageFactory & factory);
 void registerStorageJoin(StorageFactory & factory)
 {
     auto has_builtin_fn = [](std::string_view name)
@@ -560,7 +559,7 @@ size_t rawSize(const std::string_view & t)
 
 }
 
-class JoinSource final : public ISource
+class JoinSource : public ISource
 {
 public:
     JoinSource(HashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, SharedHeader sample_block_)

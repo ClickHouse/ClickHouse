@@ -176,7 +176,6 @@ void RegexpSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr 
 }
 
 
-void registerInputFormatRegexp(FormatFactory & factory);
 void registerInputFormatRegexp(FormatFactory & factory)
 {
     factory.registerInputFormat("Regexp", [](
@@ -226,13 +225,11 @@ static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> 
     return {loadAtPosition(in, memory, pos), number_of_rows};
 }
 
-void registerFileSegmentationEngineRegexp(FormatFactory & factory);
 void registerFileSegmentationEngineRegexp(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("Regexp", &segmentationEngine);
 }
 
-void registerRegexpSchemaReader(FormatFactory & factory);
 void registerRegexpSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Regexp", [](ReadBuffer & buf, const FormatSettings & settings)
