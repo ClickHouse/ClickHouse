@@ -726,10 +726,6 @@ String StatementGenerator::getNextHTTPURL(RandomGenerator & rg, const bool secur
     }
     if (rg.nextSmallNumber() < 4)
     {
-        ret += "decompress=1&";
-    }
-    if (rg.nextSmallNumber() < 4)
-    {
         /// Small buffer sizes stress intermediate flushes in WriteBufferDecorator
         ret += "buffer_size=" + std::to_string(UINT32_C(1) << (rg.nextSmallNumber() % 14)) + "&";
     }
@@ -1500,7 +1496,7 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, JoinConstr
         for (uint32_t i = 0; i < nclauses; i++)
         {
             /// Determine the target node for this individual clause, advancing expr to the rhs for the next iteration
-            Expr * clause_target;
+            Expr * clause_target = nullptr;
 
             if (i == nclauses - 1)
             {
@@ -1673,14 +1669,16 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
         }
         break;
         case PredOp::UnaryExpr: {
-            /// Is null expr
+            /// truth expr
             Expr * isexpr = nullptr;
 
             if (rg.nextSmallNumber() < 8)
             {
-                ExprNullTests * enull = expr->mutable_comp_expr()->mutable_expr_null_tests();
+                ExprTruthTests * enull = expr->mutable_comp_expr()->mutable_expr_truth_tests();
 
                 enull->set_not_(rg.nextBool());
+                if (rg.nextSmallNumber() < 3)
+                    enull->set_truth_value(static_cast<ExprTruthTests_TruthValueTest>(rg.nextSmallNumber() % 4));
                 isexpr = enull->mutable_expr();
             }
             else
@@ -1823,7 +1821,7 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
         {
             /// Establish clause_target for this iteration: do AND/OR split first,
             /// then apply NOT only to the current clause (not the entire remaining chain).
-            Expr * clause_target;
+            Expr * clause_target = nullptr;
             if (i == nclauses - 1)
             {
                 clause_target = expr;

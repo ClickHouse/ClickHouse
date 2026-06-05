@@ -68,7 +68,7 @@ TEST(HashTable, Emplace)
 
     Cont cont;
 
-    Cont::LookupResult it;
+    Cont::LookupResult it = {};
     bool inserted = false;
     cont.emplace(1, it, inserted);
     ASSERT_EQ(it->getKey(), 1);
