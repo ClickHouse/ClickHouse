@@ -91,7 +91,11 @@ const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToSca
     {"f16", unum::usearch::scalar_kind_t::f16_k},
     {"bf16", unum::usearch::scalar_kind_t::bf16_k},
     {"i8", unum::usearch::scalar_kind_t::i8_k},
-    {"b1", unum::usearch::scalar_kind_t::b1x8_k}};
+    {"b1", unum::usearch::scalar_kind_t::b1x8_k},
+    /// 'b1_projected' (fastknn only): same 1-bit packed storage and Hamming scan as 'b1', but each vector is
+    /// multiplied by a fixed random projection before sign-binarizing. The projection makes the sign bits behave as
+    /// random hyperplane hashes, so Hamming becomes an (unbiased) estimate of the angle between vectors.
+    {"b1_projected", unum::usearch::scalar_kind_t::b1x8_k}};
 /// Usearch provides more quantizations but ^^ above ones seem the only ones comprehensively supported across all distance functions.
 
 template<typename T>
@@ -638,17 +642,92 @@ void MergeTreeIndexGranuleVectorSimilarityFlat::deserializeBinary(ReadBuffer & i
         istr.readStrict(reinterpret_cast<char *>(codes.data()), codes.size());
 }
 
+namespace
+{
+
+/// Fixed seed for the random projection. The projection must be identical at index-build time and at query
+/// time, so it is regenerated deterministically from this seed rather than stored. If this generator ever changes,
+/// the flat granule FILE_FORMAT_VERSION must be bumped and existing indexes rebuilt.
+constexpr UInt64 RANDOM_PROJECTION_SEED = 0x9E3779B97F4A7C15ULL;
+constexpr double RANDOM_PROJECTION_PI = 3.14159265358979323846;
+
+/// Deterministic standard-normal generator (splitmix64 + Box-Muller), independent of the standard library so the
+/// projection is reproducible across platforms and build versions.
+class DeterministicGaussian
+{
+public:
+    explicit DeterministicGaussian(UInt64 seed) : state(seed) {}
+
+    double next()
+    {
+        if (has_cached)
+        {
+            has_cached = false;
+            return cached;
+        }
+        const double u1 = std::max(nextUniform(), 1e-300);
+        const double u2 = nextUniform();
+        const double radius = std::sqrt(-2.0 * std::log(u1));
+        const double angle = 2.0 * RANDOM_PROJECTION_PI * u2;
+        cached = radius * std::sin(angle);
+        has_cached = true;
+        return radius * std::cos(angle);
+    }
+
+private:
+    UInt64 nextU64()
+    {
+        UInt64 z = (state += 0x9E3779B97F4A7C15ULL);
+        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+        z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+        return z ^ (z >> 31);
+    }
+    double nextUniform() { return static_cast<double>(nextU64() >> 11) * (1.0 / 9007199254740992.0); }
+
+    UInt64 state;
+    bool has_cached = false;
+    double cached = 0.0;
+};
+
+/// Generates the d*d random projection matrix (row-major, Gaussian entries = random hyperplanes).
+std::vector<float> generateRandomProjection(size_t dimensions)
+{
+    std::vector<float> projection(dimensions * dimensions);
+    DeterministicGaussian gaussian(RANDOM_PROJECTION_SEED);
+    for (auto & value : projection)
+        value = static_cast<float>(gaussian.next());
+    return projection;
+}
+
+/// out = projection * x  (`out` and `x` have `dimensions` elements; `projection` is row-major d*d).
+template <typename T>
+void applyRandomProjection(const float * projection, const T * x, size_t dimensions, float * out)
+{
+    for (size_t i = 0; i < dimensions; ++i)
+    {
+        const float * row = projection + i * dimensions;
+        float acc = 0.0f;
+        for (size_t j = 0; j < dimensions; ++j)
+            acc += row[j] * static_cast<float>(x[j]);
+        out[i] = acc;
+    }
+}
+
+}
+
 MergeTreeIndexAggregatorVectorSimilarityFlat::MergeTreeIndexAggregatorVectorSimilarityFlat(
     const String & index_name_,
     const Block & index_sample_block_,
     UInt64 dimensions_,
     unum::usearch::metric_kind_t metric_kind_,
-    unum::usearch::scalar_kind_t scalar_kind_)
+    unum::usearch::scalar_kind_t scalar_kind_,
+    bool projected_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , dimensions(dimensions_)
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
+    , projected(projected_)
     , bytes_per_vector(dimensions_ / 8)
 {
 }
@@ -668,10 +747,12 @@ namespace
 {
 
 /// Sign-binarize `rows` vectors from `column_array` into packed bit-codes appended to `codes`.
+/// If `projection` is non-empty ('b1_projected'), each vector is randomly projected before sign-binarizing.
 template <typename Column>
 void quantizeRowsToBinary(
     const ColumnArray * column_array, const ColumnArray::Offsets & offsets,
-    size_t dimensions, size_t bytes_per_vector, std::vector<UInt8> & codes, size_t & num_vectors, size_t rows)
+    size_t dimensions, size_t bytes_per_vector, std::vector<UInt8> & codes, size_t & num_vectors, size_t rows,
+    const std::vector<float> & projection)
 {
     const auto & data = typeid_cast<const Column &>(column_array->getData()).getData();
 
@@ -681,6 +762,10 @@ void quantizeRowsToBinary(
 
     codes.resize((num_vectors + rows) * bytes_per_vector);
 
+    std::vector<float> projected_vec;
+    if (!projection.empty())
+        projected_vec.resize(dimensions);
+
     for (size_t row = 0; row < rows; ++row)
     {
         const size_t start = (row == 0) ? 0 : offsets[row - 1];
@@ -688,7 +773,13 @@ void quantizeRowsToBinary(
         checkVectorIsSane(src, dimensions, unum::usearch::scalar_kind_t::b1x8_k, ErrorCodes::INCORRECT_DATA, "indexed vector");
 
         char * dst = reinterpret_cast<char *>(codes.data() + num_vectors * bytes_per_vector);
-        if constexpr (std::is_same_v<Column, ColumnBFloat16>)
+        if (!projection.empty())
+        {
+            /// 'b1_projected': project, then sign-binarize the projected (Float32) vector.
+            applyRandomProjection(projection.data(), src, dimensions, projected_vec.data());
+            unum::usearch::cast_gt<unum::usearch::f32_t, unum::usearch::b1x8_t>::try_(reinterpret_cast<const char *>(projected_vec.data()), dimensions, dst);
+        }
+        else if constexpr (std::is_same_v<Column, ColumnBFloat16>)
             unum::usearch::cast_gt<unum::usearch::bf16_bits_t, unum::usearch::b1x8_t>::try_(reinterpret_cast<const char *>(src), dimensions, dst);
         else if constexpr (std::is_same_v<Column, ColumnFloat32>)
             unum::usearch::cast_gt<unum::usearch::f32_t, unum::usearch::b1x8_t>::try_(reinterpret_cast<const char *>(src), dimensions, dst);
@@ -736,14 +827,18 @@ void MergeTreeIndexAggregatorVectorSimilarityFlat::update(const Block & block, s
     if (!data_type_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float32|Float64|BFloat16)");
 
+    /// For 'b1_projected', build the (deterministic) random projection once and reuse it across all blocks/rows.
+    if (projected && projection.empty())
+        projection = generateRandomProjection(dimensions);
+
     const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
     WhichDataType which(nested_type_index);
     if (which.isFloat32())
-        quantizeRowsToBinary<ColumnFloat32>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows);
+        quantizeRowsToBinary<ColumnFloat32>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection);
     else if (which.isFloat64())
-        quantizeRowsToBinary<ColumnFloat64>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows);
+        quantizeRowsToBinary<ColumnFloat64>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection);
     else if (which.isBFloat16())
-        quantizeRowsToBinary<ColumnBFloat16>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows);
+        quantizeRowsToBinary<ColumnBFloat16>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
 
@@ -754,10 +849,12 @@ MergeTreeIndexConditionVectorSimilarityFlat::MergeTreeIndexConditionVectorSimila
     const std::optional<VectorSearchParameters> & parameters_,
     const String & index_column_,
     unum::usearch::metric_kind_t metric_kind_,
+    bool projected_,
     ContextPtr context)
     : parameters(parameters_)
     , index_column(index_column_)
     , metric_kind(metric_kind_)
+    , projected(projected_)
     , index_fetch_multiplier(context->getSettingsRef()[Setting::vector_search_index_fetch_multiplier])
     , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
     , is_rescoring(context->getSettingsRef()[Setting::vector_search_with_rescoring])
@@ -811,9 +908,21 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
     limit = std::min(limit, num_vectors);
 
     /// Quantize the (full-precision) reference vector to the same packed-bit representation as the index.
+    /// For 'b1_projected', project the query with the same fixed-seed matrix used at build time before sign-binarizing.
     std::vector<UInt8> query_code(bytes_per_vector);
-    unum::usearch::cast_gt<unum::usearch::f64_t, unum::usearch::b1x8_t>::try_(
-        reinterpret_cast<const char *>(parameters->reference_vector.data()), granule->dimensions, reinterpret_cast<char *>(query_code.data()));
+    if (projected)
+    {
+        const std::vector<float> projection = generateRandomProjection(granule->dimensions);
+        std::vector<float> projected_query(granule->dimensions);
+        applyRandomProjection(projection.data(), parameters->reference_vector.data(), granule->dimensions, projected_query.data());
+        unum::usearch::cast_gt<unum::usearch::f32_t, unum::usearch::b1x8_t>::try_(
+            reinterpret_cast<const char *>(projected_query.data()), granule->dimensions, reinterpret_cast<char *>(query_code.data()));
+    }
+    else
+    {
+        unum::usearch::cast_gt<unum::usearch::f64_t, unum::usearch::b1x8_t>::try_(
+            reinterpret_cast<const char *>(parameters->reference_vector.data()), granule->dimensions, reinterpret_cast<char *>(query_code.data()));
+    }
 
     if (limit == 0 || num_vectors == 0)
         return {};
@@ -901,12 +1010,14 @@ MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
     UInt64 dimensions_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
+    bool projected_,
     UsearchHnswParams usearch_hnsw_params_)
     : IMergeTreeIndex(index_)
     , method(method_)
     , dimensions(dimensions_)
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
+    , projected(projected_)
     , usearch_hnsw_params(usearch_hnsw_params_)
 {
 }
@@ -921,7 +1032,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexVectorSimilarity::createIndexGranule() co
 MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator() const
 {
     if (method == "fastknn")
-        return std::make_shared<MergeTreeIndexAggregatorVectorSimilarityFlat>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind);
+        return std::make_shared<MergeTreeIndexAggregatorVectorSimilarityFlat>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, projected);
     return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 }
 
@@ -934,7 +1045,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
 {
     const String & index_column = index.column_names[0];
     if (method == "fastknn")
-        return std::make_shared<MergeTreeIndexConditionVectorSimilarityFlat>(parameters, index_column, metric_kind, context);
+        return std::make_shared<MergeTreeIndexConditionVectorSimilarityFlat>(parameters, index_column, metric_kind, projected, context);
     return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(parameters, index_column, metric_kind, context);
 }
 
@@ -949,20 +1060,26 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
     unum::usearch::scalar_kind_t scalar_kind = unum::usearch::scalar_kind_t::bf16_k;
     UsearchHnswParams usearch_hnsw_params;
 
+    bool projected = false;
+
     /// Optional parameters:
     const bool has_six_args = (args.size() == 6);
     if (has_six_args)
     {
-        scalar_kind = quantizationToScalarKind.at(args[3].safeGet<String>());
+        const String quantization = args[3].safeGet<String>();
+        scalar_kind = quantizationToScalarKind.at(quantization);
         usearch_hnsw_params = {.connectivity  = args[4].safeGet<UInt64>(),
                                .expansion_add = args[5].safeGet<UInt64>()};
 
         /// Special handling for binary quantization:
         if (scalar_kind == unum::usearch::scalar_kind_t::b1x8_k)
             metric_kind = unum::usearch::metric_kind_t::hamming_k;
+
+        /// 'b1_projected' shares 'b1' storage and the Hamming metric, but additionally projects vectors before signing.
+        projected = (quantization == "b1_projected");
     }
 
-    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, method, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, method, dimensions, metric_kind, scalar_kind, projected, usearch_hnsw_params);
 }
 
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */)
@@ -1009,7 +1126,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
             throw Exception(ErrorCodes::INCORRECT_DATA, "Fourth argument (quantization) of vector similarity index is not supported. Supported quantizations are: {}", joinByComma(quantizationToScalarKind));
 
         if (is_fastknn && quantizationToScalarKind.at(args[3].safeGet<String>()) != unum::usearch::scalar_kind_t::b1x8_k)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "The 'fastknn' method currently supports only 'b1' (binary) quantization");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "The 'fastknn' method currently supports only 'b1' (binary) and 'projected' quantization");
 
         /// More checks for binary quantization
         if (quantizationToScalarKind.at(args[3].safeGet<String>()) == unum::usearch::scalar_kind_t::b1x8_k)

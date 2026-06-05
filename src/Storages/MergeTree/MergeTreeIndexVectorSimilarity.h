@@ -215,7 +215,8 @@ struct MergeTreeIndexAggregatorVectorSimilarityFlat final : IMergeTreeIndexAggre
         const Block & index_sample_block_,
         UInt64 dimensions_,
         unum::usearch::metric_kind_t metric_kind_,
-        unum::usearch::scalar_kind_t scalar_kind_);
+        unum::usearch::scalar_kind_t scalar_kind_,
+        bool projected_);
 
     ~MergeTreeIndexAggregatorVectorSimilarityFlat() override = default;
 
@@ -228,9 +229,11 @@ struct MergeTreeIndexAggregatorVectorSimilarityFlat final : IMergeTreeIndexAggre
     const UInt64 dimensions;
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
+    const bool projected;          /// 'b1_projected' quantization: random-project before sign-binarizing
     size_t bytes_per_vector = 0;
     size_t num_vectors = 0;
     std::vector<UInt8> codes;
+    std::vector<float> projection; /// d*d random projection matrix (generated lazily from a fixed seed), only for 'b1_projected'
 };
 
 
@@ -241,6 +244,7 @@ public:
         const std::optional<VectorSearchParameters> & parameters_,
         const String & index_column_,
         unum::usearch::metric_kind_t metric_kind_,
+        bool projected_,
         ContextPtr context);
 
     ~MergeTreeIndexConditionVectorSimilarityFlat() override = default;
@@ -254,6 +258,7 @@ private:
     std::optional<VectorSearchParameters> parameters;
     const String index_column;
     const unum::usearch::metric_kind_t metric_kind;
+    const bool projected;          /// 'b1_projected' quantization: random-project the query before sign-binarizing
     const float index_fetch_multiplier;
     const size_t max_limit;
     const bool is_rescoring;
@@ -269,6 +274,7 @@ public:
         UInt64 dimensions_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
+        bool projected_,
         UsearchHnswParams usearch_hnsw_params_);
 
     ~MergeTreeIndexVectorSimilarity() override = default;
@@ -284,6 +290,7 @@ private:
     const UInt64 dimensions;
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
+    const bool projected;        /// fastknn + 'b1_projected' quantization (random projection before sign)
     const UsearchHnswParams usearch_hnsw_params;
 };
 
