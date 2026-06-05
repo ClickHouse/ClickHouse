@@ -76,6 +76,7 @@ namespace ErrorCodes
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 }
@@ -1812,12 +1813,19 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
+    /// TOTALS/BY combinators are not yet supported in distributed merge path
+    /// (MergingAggregatedTransform / ConvertingAggregatedToChunksWithMergingSource).
+    /// The current implementation requires the complete data variant before any
+    /// bucket conversion, which does not fit the bucket-by-bucket merge architecture
+    /// used here. See PR #103540 for discussion.
+    if (final && !post_aggregation.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "TOTALS/BY aggregate function combinators are not yet supported "
+            "in distributed merge path. This is a known limitation.");
+
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
     AggregatedChunk agg_chunk;
-
-    if (final)
-        computePostAggregationStates(merged_data);
 
     if (false) {} // NOLINT
 #define M(NAME) \
