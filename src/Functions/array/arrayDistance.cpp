@@ -28,7 +28,8 @@ namespace ErrorCodes
 #if USE_MULTITARGET_CODE
 /// Widen 16 packed `BFloat16` to `Float32` without AVX512-BF16: a `BFloat16` is the upper 16 bits of the
 /// corresponding `Float32`, so zero-extend each 16-bit value to 32 bits and shift it into the high half.
-/// Uses only AVX-512F/BW, so it is available at `x86-64-v4` (unlike the native `_mm512_cvtpbh_ps` path).
+/// Uses only AVX-512F/BW, so it is available at `x86-64-v4` (not just AVX512-BF16 CPUs), and it is faster
+/// than the native AVX512-BF16 convert / `dpbf16` instructions, which are throughput-limited.
 X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static inline __m512 loadBFloat16AsFloat32(const BFloat16 * p)
 {
     const __m256i raw = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(p));
@@ -212,36 +213,9 @@ struct L2Distance
             state.sum = _mm512_reduce_add_pd(sums);
     }
 
-    X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
-        const BFloat16 * __restrict data_x,
-        const BFloat16 * __restrict data_y,
-        size_t i_max,
-        size_t & i_x,
-        size_t & i_y,
-        State<Float32> & state)
-    {
-        __m512 sums = _mm512_setzero_ps();
-
-        constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
-
-        for (; i_x + n < i_max; i_x += n, i_y += n)
-        {
-            __m512 x1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x)));
-            __m512 x2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x + n / 2)));
-            __m512 y1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y)));
-            __m512 y2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y + n / 2)));
-
-            __m512 differences1 = _mm512_sub_ps(x1, y1);
-            __m512 differences2 = _mm512_sub_ps(x2, y2);
-            sums = _mm512_fmadd_ps(differences1, differences1, sums);
-            sums = _mm512_fmadd_ps(differences2, differences2, sums);
-        }
-
-        state.sum = _mm512_reduce_add_ps(sums);
-    }
-
-    /// `BFloat16` inputs widened to `Float32` on the fly (see `loadBFloat16AsFloat32`). Used on `x86-64-v4`
-    /// CPUs that lack AVX512-BF16 (so cannot use the native `accumulateCombineBF16` above), e.g. AMD Zen4/5.
+    /// `BFloat16` inputs widened to `Float32` on the fly (see `loadBFloat16AsFloat32`), then the usual
+    /// `Float32` FMA path. Used on all `x86-64-v4` CPUs: it is faster than the native AVX512-BF16
+    /// instructions (which are throughput-limited) even on `sapphirerapids` where those are available.
     X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16V4(
         const BFloat16 * __restrict data_x,
         const BFloat16 * __restrict data_y,
@@ -516,36 +490,9 @@ struct CosineDistance
         }
     }
 
-    X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
-        const BFloat16 * __restrict data_x,
-        const BFloat16 * __restrict data_y,
-        size_t i_max,
-        size_t & i_x,
-        size_t & i_y,
-        State<Float32> & state)
-    {
-        __m512 dot_products = _mm512_setzero_ps();
-        __m512 x_squareds = _mm512_setzero_ps();
-        __m512 y_squareds = _mm512_setzero_ps();
-
-        constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
-
-        for (; i_x + n < i_max; i_x += n, i_y += n)
-        {
-            __m512 x = _mm512_loadu_ps(data_x + i_x);
-            __m512 y = _mm512_loadu_ps(data_y + i_y);
-            dot_products = _mm512_dpbf16_ps(dot_products, x, y);
-            x_squareds = _mm512_dpbf16_ps(x_squareds, x, x);
-            y_squareds = _mm512_dpbf16_ps(y_squareds, y, y);
-        }
-
-        state.dot_prod = _mm512_reduce_add_ps(dot_products);
-        state.x_squared = _mm512_reduce_add_ps(x_squareds);
-        state.y_squared = _mm512_reduce_add_ps(y_squareds);
-    }
-
-    /// `BFloat16` inputs widened to `Float32` on the fly (see `loadBFloat16AsFloat32`). Used on `x86-64-v4`
-    /// CPUs that lack AVX512-BF16 (so cannot use the native `accumulateCombineBF16` above), e.g. AMD Zen4/5.
+    /// `BFloat16` inputs widened to `Float32` on the fly (see `loadBFloat16AsFloat32`), then the usual
+    /// `Float32` FMA path. Used on all `x86-64-v4` CPUs: it is faster than the native AVX512-BF16
+    /// `dpbf16` instruction (which is throughput-limited) even on `sapphirerapids` where it is available.
     X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16V4(
         const BFloat16 * __restrict data_x,
         const BFloat16 * __restrict data_y,
@@ -832,30 +779,14 @@ private:
                 }
                 else if constexpr (std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, BFloat16> && std::is_same_v<RightType, BFloat16>)
                 {
-                    if constexpr (std::is_same_v<Kernel, L2Distance> || std::is_same_v<Kernel, CosineDistance>)
+                    /// All `BFloat16` metrics widen to `Float32` in a `v4` kernel and use the normal FMA path.
+                    /// This beats the native AVX512-BF16 instructions (`vdpbf16ps` for `Cosine`, the BF16->
+                    /// `Float32` up-convert for `L2`), which are throughput-limited, even on `sapphirerapids`
+                    /// where they are available; plain AVX-512 CPUs (AMD Zen4/5, Skylake-X, Ice Lake) too.
+                    if (isArchSupported(TargetArch::x86_64_v4))
                     {
-                        /// `L2`/`Cosine`: native AVX512-BF16 dot-product on `sapphirerapids`; otherwise widen
-                        /// to `Float32` in a `v4` kernel (so plain AVX-512 CPUs without AVX512-BF16 - AMD
-                        /// Zen4/5, Skylake-X, Ice Lake - are still vectorized instead of falling back to scalar).
-                        if (isArchSupported(TargetArch::x86_64_sapphirerapids))
-                        {
-                            Kernel::accumulateCombineBF16(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state);
-                            processed_with_simd = true;
-                        }
-                        else if (isArchSupported(TargetArch::x86_64_v4))
-                        {
-                            Kernel::accumulateCombineBF16V4(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state);
-                            processed_with_simd = true;
-                        }
-                    }
-                    else
-                    {
-                        /// `L1`/`Linf` have no native BFloat16 instruction; widen to `Float32` in a `v4` kernel.
-                        if (isArchSupported(TargetArch::x86_64_v4))
-                        {
-                            Kernel::accumulateCombineBF16V4(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state);
-                            processed_with_simd = true;
-                        }
+                        Kernel::accumulateCombineBF16V4(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state);
+                        processed_with_simd = true;
                     }
                 }
             }
