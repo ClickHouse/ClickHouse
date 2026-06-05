@@ -7,3 +7,6 @@ TabSeparated	1
 NDJSON	['JSONEachRow']
 TSV	['TabSeparated']
 0
+JSONL	1	0
+JSONStrings	0	1
+JSONStringsEachRow	1	1

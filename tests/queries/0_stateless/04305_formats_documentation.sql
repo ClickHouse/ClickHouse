@@ -24,3 +24,11 @@ ORDER BY name;
 -- that the current build cannot use. A row carrying a description but usable for neither input
 -- nor output would mean documentation registration created a phantom format entry.
 SELECT count() FROM system.formats WHERE length(description) > 0 AND NOT is_input AND NOT is_output;
+
+-- The embedded documentation must agree with the actual input/output capabilities of the format.
+-- `JSONL` is registered for input only, `JSONStrings` for output only, and `JSONStringsEachRow`
+-- for both; the descriptions were corrected to match these flags.
+SELECT name, is_input, is_output
+FROM system.formats
+WHERE name IN ('JSONL', 'JSONStrings', 'JSONStringsEachRow')
+ORDER BY name;

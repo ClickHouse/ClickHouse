@@ -7,15 +7,15 @@ title: 'JSONLines'
 doc_type: 'reference'
 ---
 
-| Input | Output | Alias                                        |
-|-------|--------|----------------------------------------------|
-| ✔     | ✔      | `JSONEachRow`, `JSONLines`, `NDJSON`, `JSONL` |
+| Input | Output | Alias                                                     |
+|-------|--------|-----------------------------------------------------------|
+| ✔     | ✔      | `JSONEachRow`, `JSONLines`, `NDJSON`, `JSONL` (input only) |
 
 ## Description {#description}
 
 In this format, ClickHouse outputs each row as a separated, newline-delimited JSON Object.
 
-This format is also known as `JSONEachRow`, `NDJSON` (Newline Delimited JSON), or `JSONL` (`JSONLines`). All these names are aliases for the same format and can be used interchangeably.
+This format is also known as `JSONEachRow`, `JSONLines`, or `NDJSON` (Newline Delimited JSON). These names are aliases for the same format and can be used interchangeably for both input and output. The name `JSONL` is an additional alias, but it is registered for input only, so `SELECT ... FORMAT JSONL` is not supported.
 
 ## Example usage {#example-usage}
 

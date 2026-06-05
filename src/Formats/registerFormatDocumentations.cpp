@@ -1,7 +1,8 @@
-/// This file is auto-generated from the Markdown documentation pages under
-/// docs/en/interfaces/formats/ by tmp/gen_format_docs.py. The complete documentation
-/// of every format is embedded here so that the standalone Markdown files can later be
-/// dropped and regenerated from the embedded documentation.
+/// This file embeds the documentation of every input/output format, derived from the
+/// Markdown documentation pages under docs/en/interfaces/formats/. The embedded text is
+/// the authoritative copy exposed at runtime through system.formats.description, so that
+/// the standalone Markdown files can later be dropped and regenerated from it. Keep this
+/// file in sync with the corresponding Markdown pages when either is edited.
 #include <Formats/FormatFactory.h>
 
 namespace DB
@@ -117,8 +118,6 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filenam
 
     factory.setDocumentation("Avro", Documentation{
         .description = R"DOCS_MD(
-import DataTypeMapping from './_snippets/data-types-matching.md'
-
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
@@ -129,7 +128,45 @@ import DataTypeMapping from './_snippets/data-types-matching.md'
 
 ## Data type mapping {#data-type-mapping}
 
-<DataTypeMapping/>
+The table below shows all data types supported by the Apache Avro format, and their corresponding ClickHouse [data types](/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
+
+| Avro data type `INSERT`                     | ClickHouse data type                                                                                                          | Avro data type `SELECT`         |
+|---------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|---------------------------------|
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8\16\32)](/sql-reference/data-types/int-uint.md), [UInt(8\16\32)](/sql-reference/data-types/int-uint.md) | `int`                           |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](/sql-reference/data-types/int-uint.md), [UInt64](/sql-reference/data-types/int-uint.md)               | `long`                          |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](/sql-reference/data-types/float.md)                                                                         | `float`                         |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](/sql-reference/data-types/float.md)                                                                         | `double`                        |
+| `bytes`, `string`, `fixed`, `enum`          | [String](/sql-reference/data-types/string.md)                                                                         | `bytes` or `string` \*          |
+| `bytes`, `string`, `fixed`                  | [FixedString(N)](/sql-reference/data-types/fixedstring.md)                                                            | `fixed(N)`                      |
+| `enum`                                      | [Enum(8\16)](/sql-reference/data-types/enum.md)                                                                       | `enum`                          |
+| `array(T)`                                  | [Array(T)](/sql-reference/data-types/array.md)                                                                        | `array(T)`                      |
+| `map(V, K)`                                 | [Map(V, K)](/sql-reference/data-types/map.md)                                                                         | `map(string, K)`                |
+| `union(null, T)`, `union(T, null)`          | [Nullable(T)](/sql-reference/data-types/date.md)                                                                      | `union(null, T)`                |
+| `union(T1, T2, …)` \**                      | [Variant(T1, T2, …)](/sql-reference/data-types/variant.md)                                                            | `union(T1, T2, …)` \**          |
+| `null`                                      | [Nullable(Nothing)](/sql-reference/data-types/special-data-types/nothing.md)                                          | `null`                          |
+| `int (date)` \**\*                          | [Date](/sql-reference/data-types/date.md), [Date32](/sql-reference/data-types/date32.md)                       | `int (date)` \**\*              |
+| `long (timestamp-millis)` \**\*             | [DateTime64(3)](/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-millis)` \**\* |
+| `long (timestamp-micros)` \**\*             | [DateTime64(6)](/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-micros)` \**\* |
+| `bytes (decimal)`  \**\*                    | [DateTime64(N)](/sql-reference/data-types/datetime.md)                                                                | `bytes (decimal)`  \**\*        |
+| `int`                                       | [IPv4](/sql-reference/data-types/ipv4.md)                                                                             | `int`                           |
+| `fixed(16)`                                 | [IPv6](/sql-reference/data-types/ipv6.md)                                                                             | `fixed(16)`                     |
+| `bytes (decimal)` \**\*                     | [Decimal(P, S)](/sql-reference/data-types/decimal.md)                                                                 | `bytes (decimal)` \**\*         |
+| `string (uuid)` \**\*                       | [UUID](/sql-reference/data-types/uuid.md)                                                                             | `string (uuid)` \**\*           |
+| `fixed(16)`                                 | [Int128/UInt128](/sql-reference/data-types/int-uint.md)                                                               | `fixed(16)`                     |
+| `fixed(32)`                                 | [Int256/UInt256](/sql-reference/data-types/int-uint.md)                                                               | `fixed(32)`                     |
+| `record`                                    | [Tuple](/sql-reference/data-types/tuple.md)                                                                           | `record`                        |
+
+\* `bytes` is default, controlled by setting [`output_format_avro_string_column_pattern`](/operations/settings/settings-formats.md/#output_format_avro_string_column_pattern)
+
+\**  The [Variant type](/sql-reference/data-types/variant) implicitly accepts `null` as a field value, so for example the Avro `union(T1, T2, null)` will be converted to `Variant(T1, T2)`.
+As a result, when producing Avro from ClickHouse, we have to always include the `null` type to the Avro `union` type set as we don't know if any value is actually `null` during the schema inference.
+
+\**\* [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+
+Unsupported Avro logical data types:
+- `time-millis`
+- `time-micros`
+- `duration`
 
 ## Format settings {#format-settings}
 
@@ -205,8 +242,6 @@ DESCRIBE url('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/h
 
     factory.setDocumentation("AvroConfluent", Documentation{
         .description = R"DOCS_MD(
-import DataTypesMatching from './_snippets/data-types-matching.md'
-
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
@@ -220,7 +255,45 @@ Each message uses the Confluent wire format: a magic byte (`0x00`) followed by a
 <a id="data-types-matching"></a>
 ## Data type mapping {#data-type-mapping}
 
-<DataTypesMatching/>
+The table below shows all data types supported by the Apache Avro format, and their corresponding ClickHouse [data types](/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
+
+| Avro data type `INSERT`                     | ClickHouse data type                                                                                                          | Avro data type `SELECT`         |
+|---------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|---------------------------------|
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8\16\32)](/sql-reference/data-types/int-uint.md), [UInt(8\16\32)](/sql-reference/data-types/int-uint.md) | `int`                           |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](/sql-reference/data-types/int-uint.md), [UInt64](/sql-reference/data-types/int-uint.md)               | `long`                          |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](/sql-reference/data-types/float.md)                                                                         | `float`                         |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](/sql-reference/data-types/float.md)                                                                         | `double`                        |
+| `bytes`, `string`, `fixed`, `enum`          | [String](/sql-reference/data-types/string.md)                                                                         | `bytes` or `string` \*          |
+| `bytes`, `string`, `fixed`                  | [FixedString(N)](/sql-reference/data-types/fixedstring.md)                                                            | `fixed(N)`                      |
+| `enum`                                      | [Enum(8\16)](/sql-reference/data-types/enum.md)                                                                       | `enum`                          |
+| `array(T)`                                  | [Array(T)](/sql-reference/data-types/array.md)                                                                        | `array(T)`                      |
+| `map(V, K)`                                 | [Map(V, K)](/sql-reference/data-types/map.md)                                                                         | `map(string, K)`                |
+| `union(null, T)`, `union(T, null)`          | [Nullable(T)](/sql-reference/data-types/date.md)                                                                      | `union(null, T)`                |
+| `union(T1, T2, …)` \**                      | [Variant(T1, T2, …)](/sql-reference/data-types/variant.md)                                                            | `union(T1, T2, …)` \**          |
+| `null`                                      | [Nullable(Nothing)](/sql-reference/data-types/special-data-types/nothing.md)                                          | `null`                          |
+| `int (date)` \**\*                          | [Date](/sql-reference/data-types/date.md), [Date32](/sql-reference/data-types/date32.md)                       | `int (date)` \**\*              |
+| `long (timestamp-millis)` \**\*             | [DateTime64(3)](/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-millis)` \**\* |
+| `long (timestamp-micros)` \**\*             | [DateTime64(6)](/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-micros)` \**\* |
+| `bytes (decimal)`  \**\*                    | [DateTime64(N)](/sql-reference/data-types/datetime.md)                                                                | `bytes (decimal)`  \**\*        |
+| `int`                                       | [IPv4](/sql-reference/data-types/ipv4.md)                                                                             | `int`                           |
+| `fixed(16)`                                 | [IPv6](/sql-reference/data-types/ipv6.md)                                                                             | `fixed(16)`                     |
+| `bytes (decimal)` \**\*                     | [Decimal(P, S)](/sql-reference/data-types/decimal.md)                                                                 | `bytes (decimal)` \**\*         |
+| `string (uuid)` \**\*                       | [UUID](/sql-reference/data-types/uuid.md)                                                                             | `string (uuid)` \**\*           |
+| `fixed(16)`                                 | [Int128/UInt128](/sql-reference/data-types/int-uint.md)                                                               | `fixed(16)`                     |
+| `fixed(32)`                                 | [Int256/UInt256](/sql-reference/data-types/int-uint.md)                                                               | `fixed(32)`                     |
+| `record`                                    | [Tuple](/sql-reference/data-types/tuple.md)                                                                           | `record`                        |
+
+\* `bytes` is default, controlled by setting [`output_format_avro_string_column_pattern`](/operations/settings/settings-formats.md/#output_format_avro_string_column_pattern)
+
+\**  The [Variant type](/sql-reference/data-types/variant) implicitly accepts `null` as a field value, so for example the Avro `union(T1, T2, null)` will be converted to `Variant(T1, T2)`.
+As a result, when producing Avro from ClickHouse, we have to always include the `null` type to the Avro `union` type set as we don't know if any value is actually `null` during the schema inference.
+
+\**\* [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+
+Unsupported Avro logical data types:
+- `time-millis`
+- `time-micros`
+- `duration`
 
 ## Format settings {#format-settings}
 
@@ -830,9 +903,9 @@ the types from input data will be compared with the types of the corresponding c
 
     factory.setDocumentation("CapnProto", Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-<CloudNotSupportedBadge/>
+:::note
+This format is not supported in ClickHouse Cloud.
+:::
 
 | Input | Output | Alias |
 |-------|--------|-------|
@@ -2811,20 +2884,20 @@ Differs from [`JSONEachRow`](./JSONEachRow.md)/[`JSONStringsEachRow`](./JSONStri
 )DOCS_MD"});
 
     factory.setDocumentation("JSONL", Documentation{
-        .description = "An alias for the `JSONEachRow` format. See the `JSONEachRow` entry for the full documentation.",
+        .description = "An input-only alias for the `JSONEachRow` format (it is not registered for output; use `JSONEachRow`, `JSONLines`, or `NDJSON` for output). See the `JSONEachRow` entry for the full documentation.",
         .related = {"JSONEachRow"}});
 
     factory.setDocumentation("JSONLines", Documentation{
         .description = R"DOCS_MD(
-| Input | Output | Alias                                        |
-|-------|--------|----------------------------------------------|
-| ✔     | ✔      | `JSONEachRow`, `JSONLines`, `NDJSON`, `JSONL` |
+| Input | Output | Alias                                                     |
+|-------|--------|-----------------------------------------------------------|
+| ✔     | ✔      | `JSONEachRow`, `JSONLines`, `NDJSON`, `JSONL` (input only) |
 
 ## Description {#description}
 
 In this format, ClickHouse outputs each row as a separated, newline-delimited JSON Object.
 
-This format is also known as `JSONEachRow`, `NDJSON` (Newline Delimited JSON), or `JSONL` (`JSONLines`). All these names are aliases for the same format and can be used interchangeably.
+This format is also known as `JSONEachRow`, `JSONLines`, or `NDJSON` (Newline Delimited JSON). These names are aliases for the same format and can be used interchangeably for both input and output. The name `JSONL` is an additional alias, but it is registered for input only, so `SELECT ... FORMAT JSONL` is not supported.
 
 ## Example usage {#example-usage}
 
@@ -3129,194 +3202,13 @@ SELECT * FROM json_each_row_nested
         .description = R"DOCS_MD(
 | Input | Output | Alias |
 |-------|--------|-------|
-| ✔     | ✔      |       |
+| ✗     | ✔      |       |
 
 ## Description {#description}
 
-Differs from the [JSON](./JSON.md) format only in that data fields are output as strings, not as typed JSON values.
+Differs from the [JSON](./JSON.md) format only in that data fields are output as strings, not as typed JSON values. This is an output-only format.
 
 ## Example usage {#example-usage}
-
-### Inserting data {#inserting-data}
-
-Using a JSON file with the following data, named as `football.json`:
-
-```json
-{
-    "meta":
-    [
-            {
-                    "name": "date",
-                    "type": "Date"
-            },
-            {
-                    "name": "season",
-                    "type": "Int16"
-            },
-            {
-                    "name": "home_team",
-                    "type": "LowCardinality(String)"
-            },
-            {
-                    "name": "away_team",
-                    "type": "LowCardinality(String)"
-            },
-            {
-                    "name": "home_team_goals",
-                    "type": "Int8"
-            },
-            {
-                    "name": "away_team_goals",
-                    "type": "Int8"
-            }
-    ],
-    "data":
-    [
-            {
-                    "date": "2022-04-30",
-                    "season": "2021",
-                    "home_team": "Sutton United",
-                    "away_team": "Bradford City",
-                    "home_team_goals": "1",
-                    "away_team_goals": "4"
-            },
-            {
-                    "date": "2022-04-30",
-                    "season": "2021",
-                    "home_team": "Swindon Town",
-                    "away_team": "Barrow",
-                    "home_team_goals": "2",
-                    "away_team_goals": "1"
-            },
-            {
-                    "date": "2022-04-30",
-                    "season": "2021",
-                    "home_team": "Tranmere Rovers",
-                    "away_team": "Oldham Athletic",
-                    "home_team_goals": "2",
-                    "away_team_goals": "0"
-            },
-            {
-                    "date": "2022-05-02",
-                    "season": "2021",
-                    "home_team": "Port Vale",
-                    "away_team": "Newport County",
-                    "home_team_goals": "1",
-                    "away_team_goals": "2"
-            },
-            {
-                    "date": "2022-05-02",
-                    "season": "2021",
-                    "home_team": "Salford City",
-                    "away_team": "Mansfield Town",
-                    "home_team_goals": "2",
-                    "away_team_goals": "2"
-            },
-            {
-                    "date": "2022-05-07",
-                    "season": "2021",
-                    "home_team": "Barrow",
-                    "away_team": "Northampton Town",
-                    "home_team_goals": "1",
-                    "away_team_goals": "3"
-            },
-            {
-                    "date": "2022-05-07",
-                    "season": "2021",
-                    "home_team": "Bradford City",
-                    "away_team": "Carlisle United",
-                    "home_team_goals": "2",
-                    "away_team_goals": "0"
-            },
-            {
-                    "date": "2022-05-07",
-                    "season": "2021",
-                    "home_team": "Bristol Rovers",
-                    "away_team": "Scunthorpe United",
-                    "home_team_goals": "7",
-                    "away_team_goals": "0"
-            },
-            {
-                    "date": "2022-05-07",
-                    "season": "2021",
-                    "home_team": "Exeter City",
-                    "away_team": "Port Vale",
-                    "home_team_goals": "0",
-                    "away_team_goals": "1"
-            },
-            {
-                    "date": "2022-05-07",
-                    "season": "2021",
-                    "home_team": "Harrogate Town A.F.C.",
-                    "away_team": "Sutton United",
-                    "home_team_goals": "0",
-                    "away_team_goals": "2"
-            },
-            {
-                    "date": "2022-05-07",
-                    "season": "2021",
-                    "home_team": "Hartlepool United",
-                    "away_team": "Colchester United",
-                    "home_team_goals": "0",
-                    "away_team_goals": "2"
-            },
-            {
-                    "date": "2022-05-07",
-                    "season": "2021",
-                    "home_team": "Leyton Orient",
-                    "away_team": "Tranmere Rovers",
-                    "home_team_goals": "0",
-                    "away_team_goals": "1"
-            },
-            {
-                    "date": "2022-05-07",
-                    "season": "2021",
-                    "home_team": "Mansfield Town",
-                    "away_team": "Forest Green Rovers",
-                    "home_team_goals": "2",
-                    "away_team_goals": "2"
-            },
-            {
-                    "date": "2022-05-07",
-                    "season": "2021",
-                    "home_team": "Newport County",
-                    "away_team": "Rochdale",
-                    "home_team_goals": "0",
-                    "away_team_goals": "2"
-            },
-            {
-                    "date": "2022-05-07",
-                    "season": "2021",
-                    "home_team": "Oldham Athletic",
-                    "away_team": "Crawley Town",
-                    "home_team_goals": "3",
-                    "away_team_goals": "3"
-            },
-            {
-                    "date": "2022-05-07",
-                    "season": "2021",
-                    "home_team": "Stevenage Borough",
-                    "away_team": "Salford City",
-                    "home_team_goals": "4",
-                    "away_team_goals": "2"
-            },
-            {
-                    "date": "2022-05-07",
-                    "season": "2021",
-                    "home_team": "Walsall",
-                    "away_team": "Swindon Town",
-                    "home_team_goals": "0",
-                    "away_team_goals": "3"
-            }
-    ]
-}
-```
-
-Insert the data:
-
-```sql
-INSERT INTO football FROM INFILE 'football.json' FORMAT JSONStrings;
-```
 
 ### Reading data {#reading-data}
 
@@ -3518,7 +3410,7 @@ The output will be in JSON format:
         .description = R"DOCS_MD(
 | Input | Output | Alias |
 |-------|--------|-------|
-| ✗     | ✔      |       |
+| ✔     | ✔      |       |
 
 ## Description {#description}
 
@@ -4917,8 +4809,6 @@ FORMAT PrettyJSONEachRow
 
     factory.setDocumentation("Pretty", Documentation{
         .description = R"DOCS_MD(
-import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
-
 | Input | Output  | Alias |
 |-------|---------|-------|
 | ✗     | ✔       |       |
@@ -5004,13 +4894,22 @@ Extremes:
 
 ## Format settings {#format-settings}
 
-<PrettyFormatSettings/>
+The following settings are common to all `Pretty` formats:
+
+| Setting                                                                                                                                                                     | Description                                                                                                                                                                                                                                 | Default |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`output_format_pretty_max_rows`](/operations/settings/settings-formats.md/#output_format_pretty_max_rows)                                                          | Row limit for Pretty formats.                                                                                                                                                                                                               | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_column_pad_width)                                  | Maximum width to pad all values in a column in Pretty formats.                                                                                                                                                                              | `250`   |
+| [`output_format_pretty_max_value_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_value_width)                                            | Maximum width of value to display in Pretty formats. If greater - it will be cut.                                                                                                                                                           | `10000` |                                                                                                                                                 
+| [`output_format_pretty_color`](/operations/settings/settings-formats.md/#output_format_pretty_color)                                                                | Use ANSI escape sequences to paint colors in Pretty formats.                                                                                                                                                                                | `true`  |
+| [`output_format_pretty_grid_charset`](/operations/settings/settings-formats.md/#output_format_pretty_grid_charset)                                                  | Charset for printing grid borders. Available charsets: ASCII, UTF-8.                                                                                                                                                                        | `UTF-8` |                                                                                                                                                           
+| [`output_format_pretty_row_numbers`](/operations/settings/settings-formats.md/#output_format_pretty_row_numbers)                                                    | Add row numbers before each row for pretty output format.                                                                                                                                                                                   | `true`  |                                                                                                                                                                          
+| [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names)                    | Display column names in the footer if table contains many rows.                                                                                                                                                                             | `true`  |                                                                                                                                                                    
+| [`output_format_pretty_display_footer_column_names_min_rows`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows)  | Sets the minimum number of rows for which a footer will be displayed if [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) is enabled.  | `50`    |
 )DOCS_MD"});
 
     factory.setDocumentation("PrettyCompact", Documentation{
         .description = R"DOCS_MD(
-import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
-
 | Input | Output  | Alias |
 |-------|---------|-------|
 | ✗     | ✔       |       |
@@ -5028,13 +4927,22 @@ This format is used by default in the command-line client in interactive mode.
 
 ## Format settings {#format-settings}
 
-<PrettyFormatSettings />
+The following settings are common to all `Pretty` formats:
+
+| Setting                                                                                                                                                                     | Description                                                                                                                                                                                                                                 | Default |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`output_format_pretty_max_rows`](/operations/settings/settings-formats.md/#output_format_pretty_max_rows)                                                          | Row limit for Pretty formats.                                                                                                                                                                                                               | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_column_pad_width)                                  | Maximum width to pad all values in a column in Pretty formats.                                                                                                                                                                              | `250`   |
+| [`output_format_pretty_max_value_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_value_width)                                            | Maximum width of value to display in Pretty formats. If greater - it will be cut.                                                                                                                                                           | `10000` |                                                                                                                                                 
+| [`output_format_pretty_color`](/operations/settings/settings-formats.md/#output_format_pretty_color)                                                                | Use ANSI escape sequences to paint colors in Pretty formats.                                                                                                                                                                                | `true`  |
+| [`output_format_pretty_grid_charset`](/operations/settings/settings-formats.md/#output_format_pretty_grid_charset)                                                  | Charset for printing grid borders. Available charsets: ASCII, UTF-8.                                                                                                                                                                        | `UTF-8` |                                                                                                                                                           
+| [`output_format_pretty_row_numbers`](/operations/settings/settings-formats.md/#output_format_pretty_row_numbers)                                                    | Add row numbers before each row for pretty output format.                                                                                                                                                                                   | `true`  |                                                                                                                                                                          
+| [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names)                    | Display column names in the footer if table contains many rows.                                                                                                                                                                             | `true`  |                                                                                                                                                                    
+| [`output_format_pretty_display_footer_column_names_min_rows`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows)  | Sets the minimum number of rows for which a footer will be displayed if [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) is enabled.  | `50`    |
 )DOCS_MD"});
 
     factory.setDocumentation("PrettyCompactMonoBlock", Documentation{
         .description = R"DOCS_MD(
-import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
-
 | Input | Output  | Alias |
 |-------|---------|-------|
 | ✗     | ✔       |       |
@@ -5048,13 +4956,22 @@ and then output as a single table, and not by [blocks](/development/architecture
 
 ## Format settings {#format-settings}
 
-<PrettyFormatSettings/>
+The following settings are common to all `Pretty` formats:
+
+| Setting                                                                                                                                                                     | Description                                                                                                                                                                                                                                 | Default |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`output_format_pretty_max_rows`](/operations/settings/settings-formats.md/#output_format_pretty_max_rows)                                                          | Row limit for Pretty formats.                                                                                                                                                                                                               | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_column_pad_width)                                  | Maximum width to pad all values in a column in Pretty formats.                                                                                                                                                                              | `250`   |
+| [`output_format_pretty_max_value_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_value_width)                                            | Maximum width of value to display in Pretty formats. If greater - it will be cut.                                                                                                                                                           | `10000` |                                                                                                                                                 
+| [`output_format_pretty_color`](/operations/settings/settings-formats.md/#output_format_pretty_color)                                                                | Use ANSI escape sequences to paint colors in Pretty formats.                                                                                                                                                                                | `true`  |
+| [`output_format_pretty_grid_charset`](/operations/settings/settings-formats.md/#output_format_pretty_grid_charset)                                                  | Charset for printing grid borders. Available charsets: ASCII, UTF-8.                                                                                                                                                                        | `UTF-8` |                                                                                                                                                           
+| [`output_format_pretty_row_numbers`](/operations/settings/settings-formats.md/#output_format_pretty_row_numbers)                                                    | Add row numbers before each row for pretty output format.                                                                                                                                                                                   | `true`  |                                                                                                                                                                          
+| [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names)                    | Display column names in the footer if table contains many rows.                                                                                                                                                                             | `true`  |                                                                                                                                                                    
+| [`output_format_pretty_display_footer_column_names_min_rows`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows)  | Sets the minimum number of rows for which a footer will be displayed if [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) is enabled.  | `50`    |
 )DOCS_MD"});
 
     factory.setDocumentation("PrettyCompactNoEscapes", Documentation{
         .description = R"DOCS_MD(
-import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
-
 | Input | Output  | Alias |
 |-------|---------|-------|
 | ✗     | ✔       |       |
@@ -5068,13 +4985,22 @@ This is necessary for displaying the format in a browser, as well as for using t
 
 ## Format settings {#format-settings}
 
-<PrettyFormatSettings/>
+The following settings are common to all `Pretty` formats:
+
+| Setting                                                                                                                                                                     | Description                                                                                                                                                                                                                                 | Default |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`output_format_pretty_max_rows`](/operations/settings/settings-formats.md/#output_format_pretty_max_rows)                                                          | Row limit for Pretty formats.                                                                                                                                                                                                               | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_column_pad_width)                                  | Maximum width to pad all values in a column in Pretty formats.                                                                                                                                                                              | `250`   |
+| [`output_format_pretty_max_value_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_value_width)                                            | Maximum width of value to display in Pretty formats. If greater - it will be cut.                                                                                                                                                           | `10000` |                                                                                                                                                 
+| [`output_format_pretty_color`](/operations/settings/settings-formats.md/#output_format_pretty_color)                                                                | Use ANSI escape sequences to paint colors in Pretty formats.                                                                                                                                                                                | `true`  |
+| [`output_format_pretty_grid_charset`](/operations/settings/settings-formats.md/#output_format_pretty_grid_charset)                                                  | Charset for printing grid borders. Available charsets: ASCII, UTF-8.                                                                                                                                                                        | `UTF-8` |                                                                                                                                                           
+| [`output_format_pretty_row_numbers`](/operations/settings/settings-formats.md/#output_format_pretty_row_numbers)                                                    | Add row numbers before each row for pretty output format.                                                                                                                                                                                   | `true`  |                                                                                                                                                                          
+| [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names)                    | Display column names in the footer if table contains many rows.                                                                                                                                                                             | `true`  |                                                                                                                                                                    
+| [`output_format_pretty_display_footer_column_names_min_rows`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows)  | Sets the minimum number of rows for which a footer will be displayed if [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) is enabled.  | `50`    |
 )DOCS_MD"});
 
     factory.setDocumentation("PrettyCompactNoEscapesMonoBlock", Documentation{
         .description = R"DOCS_MD(
-import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
-
 | Input | Output  | Alias |
 |-------|---------|-------|
 | ✗     | ✔       |       |
@@ -5088,7 +5014,18 @@ and then output as a single table, and not by [blocks](/development/architecture
 
 ## Format settings {#format-settings}
 
-<PrettyFormatSettings/>
+The following settings are common to all `Pretty` formats:
+
+| Setting                                                                                                                                                                     | Description                                                                                                                                                                                                                                 | Default |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`output_format_pretty_max_rows`](/operations/settings/settings-formats.md/#output_format_pretty_max_rows)                                                          | Row limit for Pretty formats.                                                                                                                                                                                                               | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_column_pad_width)                                  | Maximum width to pad all values in a column in Pretty formats.                                                                                                                                                                              | `250`   |
+| [`output_format_pretty_max_value_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_value_width)                                            | Maximum width of value to display in Pretty formats. If greater - it will be cut.                                                                                                                                                           | `10000` |                                                                                                                                                 
+| [`output_format_pretty_color`](/operations/settings/settings-formats.md/#output_format_pretty_color)                                                                | Use ANSI escape sequences to paint colors in Pretty formats.                                                                                                                                                                                | `true`  |
+| [`output_format_pretty_grid_charset`](/operations/settings/settings-formats.md/#output_format_pretty_grid_charset)                                                  | Charset for printing grid borders. Available charsets: ASCII, UTF-8.                                                                                                                                                                        | `UTF-8` |                                                                                                                                                           
+| [`output_format_pretty_row_numbers`](/operations/settings/settings-formats.md/#output_format_pretty_row_numbers)                                                    | Add row numbers before each row for pretty output format.                                                                                                                                                                                   | `true`  |                                                                                                                                                                          
+| [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names)                    | Display column names in the footer if table contains many rows.                                                                                                                                                                             | `true`  |                                                                                                                                                                    
+| [`output_format_pretty_display_footer_column_names_min_rows`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows)  | Sets the minimum number of rows for which a footer will be displayed if [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) is enabled.  | `50`    |
 )DOCS_MD"});
 
     factory.setDocumentation("PrettyJSONEachRow", Documentation{
@@ -5411,8 +5348,6 @@ The output will be in JSON format:
 
     factory.setDocumentation("PrettyMonoBlock", Documentation{
         .description = R"DOCS_MD(
-import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
-
 | Input | Output  | Alias |
 |-------|---------|-------|
 | ✗     | ✔       |       |
@@ -5426,7 +5361,18 @@ and then output as a single table, and not by [blocks](/development/architecture
 
 ## Format settings {#format-settings}
 
-<PrettyFormatSettings/>
+The following settings are common to all `Pretty` formats:
+
+| Setting                                                                                                                                                                     | Description                                                                                                                                                                                                                                 | Default |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`output_format_pretty_max_rows`](/operations/settings/settings-formats.md/#output_format_pretty_max_rows)                                                          | Row limit for Pretty formats.                                                                                                                                                                                                               | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_column_pad_width)                                  | Maximum width to pad all values in a column in Pretty formats.                                                                                                                                                                              | `250`   |
+| [`output_format_pretty_max_value_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_value_width)                                            | Maximum width of value to display in Pretty formats. If greater - it will be cut.                                                                                                                                                           | `10000` |                                                                                                                                                 
+| [`output_format_pretty_color`](/operations/settings/settings-formats.md/#output_format_pretty_color)                                                                | Use ANSI escape sequences to paint colors in Pretty formats.                                                                                                                                                                                | `true`  |
+| [`output_format_pretty_grid_charset`](/operations/settings/settings-formats.md/#output_format_pretty_grid_charset)                                                  | Charset for printing grid borders. Available charsets: ASCII, UTF-8.                                                                                                                                                                        | `UTF-8` |                                                                                                                                                           
+| [`output_format_pretty_row_numbers`](/operations/settings/settings-formats.md/#output_format_pretty_row_numbers)                                                    | Add row numbers before each row for pretty output format.                                                                                                                                                                                   | `true`  |                                                                                                                                                                          
+| [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names)                    | Display column names in the footer if table contains many rows.                                                                                                                                                                             | `true`  |                                                                                                                                                                    
+| [`output_format_pretty_display_footer_column_names_min_rows`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows)  | Sets the minimum number of rows for which a footer will be displayed if [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) is enabled.  | `50`    |
 )DOCS_MD"});
 
     factory.setDocumentation("PrettyNDJSON", Documentation{
@@ -5435,8 +5381,6 @@ and then output as a single table, and not by [blocks](/development/architecture
 
     factory.setDocumentation("PrettyNoEscapes", Documentation{
         .description = R"DOCS_MD(
-import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
-
 | Input | Output  | Alias |
 |-------|---------|-------|
 | ✗     | ✔       |       |
@@ -5460,13 +5404,22 @@ The [HTTP interface](/interfaces/http) can be used for displaying this format in
 
 ## Format settings {#format-settings}
 
-<PrettyFormatSettings/>
+The following settings are common to all `Pretty` formats:
+
+| Setting                                                                                                                                                                     | Description                                                                                                                                                                                                                                 | Default |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`output_format_pretty_max_rows`](/operations/settings/settings-formats.md/#output_format_pretty_max_rows)                                                          | Row limit for Pretty formats.                                                                                                                                                                                                               | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_column_pad_width)                                  | Maximum width to pad all values in a column in Pretty formats.                                                                                                                                                                              | `250`   |
+| [`output_format_pretty_max_value_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_value_width)                                            | Maximum width of value to display in Pretty formats. If greater - it will be cut.                                                                                                                                                           | `10000` |                                                                                                                                                 
+| [`output_format_pretty_color`](/operations/settings/settings-formats.md/#output_format_pretty_color)                                                                | Use ANSI escape sequences to paint colors in Pretty formats.                                                                                                                                                                                | `true`  |
+| [`output_format_pretty_grid_charset`](/operations/settings/settings-formats.md/#output_format_pretty_grid_charset)                                                  | Charset for printing grid borders. Available charsets: ASCII, UTF-8.                                                                                                                                                                        | `UTF-8` |                                                                                                                                                           
+| [`output_format_pretty_row_numbers`](/operations/settings/settings-formats.md/#output_format_pretty_row_numbers)                                                    | Add row numbers before each row for pretty output format.                                                                                                                                                                                   | `true`  |                                                                                                                                                                          
+| [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names)                    | Display column names in the footer if table contains many rows.                                                                                                                                                                             | `true`  |                                                                                                                                                                    
+| [`output_format_pretty_display_footer_column_names_min_rows`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows)  | Sets the minimum number of rows for which a footer will be displayed if [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) is enabled.  | `50`    |
 )DOCS_MD"});
 
     factory.setDocumentation("PrettyNoEscapesMonoBlock", Documentation{
         .description = R"DOCS_MD(
-import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
-
 | Input | Output  | Alias |
 |-------|---------|-------|
 | ✗     | ✔       |       |
@@ -5480,13 +5433,22 @@ and then output as a single table, and not by blocks.
 
 ## Format settings {#format-settings}
 
-<PrettyFormatSettings/>
+The following settings are common to all `Pretty` formats:
+
+| Setting                                                                                                                                                                     | Description                                                                                                                                                                                                                                 | Default |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`output_format_pretty_max_rows`](/operations/settings/settings-formats.md/#output_format_pretty_max_rows)                                                          | Row limit for Pretty formats.                                                                                                                                                                                                               | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_column_pad_width)                                  | Maximum width to pad all values in a column in Pretty formats.                                                                                                                                                                              | `250`   |
+| [`output_format_pretty_max_value_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_value_width)                                            | Maximum width of value to display in Pretty formats. If greater - it will be cut.                                                                                                                                                           | `10000` |                                                                                                                                                 
+| [`output_format_pretty_color`](/operations/settings/settings-formats.md/#output_format_pretty_color)                                                                | Use ANSI escape sequences to paint colors in Pretty formats.                                                                                                                                                                                | `true`  |
+| [`output_format_pretty_grid_charset`](/operations/settings/settings-formats.md/#output_format_pretty_grid_charset)                                                  | Charset for printing grid borders. Available charsets: ASCII, UTF-8.                                                                                                                                                                        | `UTF-8` |                                                                                                                                                           
+| [`output_format_pretty_row_numbers`](/operations/settings/settings-formats.md/#output_format_pretty_row_numbers)                                                    | Add row numbers before each row for pretty output format.                                                                                                                                                                                   | `true`  |                                                                                                                                                                          
+| [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names)                    | Display column names in the footer if table contains many rows.                                                                                                                                                                             | `true`  |                                                                                                                                                                    
+| [`output_format_pretty_display_footer_column_names_min_rows`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows)  | Sets the minimum number of rows for which a footer will be displayed if [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) is enabled.  | `50`    |
 )DOCS_MD"});
 
     factory.setDocumentation("PrettySpace", Documentation{
         .description = R"DOCS_MD(
-import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
-
 | Input | Output  | Alias |
 |-------|---------|-------|
 | ✗     | ✔       |       |
@@ -5500,13 +5462,22 @@ Differs from the [`PrettyCompact`](./PrettyCompact.md) format in that whitespace
 
 ## Format settings {#format-settings}
 
-<PrettyFormatSettings/>
+The following settings are common to all `Pretty` formats:
+
+| Setting                                                                                                                                                                     | Description                                                                                                                                                                                                                                 | Default |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`output_format_pretty_max_rows`](/operations/settings/settings-formats.md/#output_format_pretty_max_rows)                                                          | Row limit for Pretty formats.                                                                                                                                                                                                               | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_column_pad_width)                                  | Maximum width to pad all values in a column in Pretty formats.                                                                                                                                                                              | `250`   |
+| [`output_format_pretty_max_value_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_value_width)                                            | Maximum width of value to display in Pretty formats. If greater - it will be cut.                                                                                                                                                           | `10000` |                                                                                                                                                 
+| [`output_format_pretty_color`](/operations/settings/settings-formats.md/#output_format_pretty_color)                                                                | Use ANSI escape sequences to paint colors in Pretty formats.                                                                                                                                                                                | `true`  |
+| [`output_format_pretty_grid_charset`](/operations/settings/settings-formats.md/#output_format_pretty_grid_charset)                                                  | Charset for printing grid borders. Available charsets: ASCII, UTF-8.                                                                                                                                                                        | `UTF-8` |                                                                                                                                                           
+| [`output_format_pretty_row_numbers`](/operations/settings/settings-formats.md/#output_format_pretty_row_numbers)                                                    | Add row numbers before each row for pretty output format.                                                                                                                                                                                   | `true`  |                                                                                                                                                                          
+| [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names)                    | Display column names in the footer if table contains many rows.                                                                                                                                                                             | `true`  |                                                                                                                                                                    
+| [`output_format_pretty_display_footer_column_names_min_rows`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows)  | Sets the minimum number of rows for which a footer will be displayed if [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) is enabled.  | `50`    |
 )DOCS_MD"});
 
     factory.setDocumentation("PrettySpaceMonoBlock", Documentation{
         .description = R"DOCS_MD(
-import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
-
 | Input | Output  | Alias |
 |-------|---------|-------|
 | ✗     | ✔       |       |
@@ -5520,13 +5491,22 @@ and then output as a single table, and not by [blocks](/development/architecture
 
 ## Format settings {#format-settings}
 
-<PrettyFormatSettings/>
+The following settings are common to all `Pretty` formats:
+
+| Setting                                                                                                                                                                     | Description                                                                                                                                                                                                                                 | Default |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`output_format_pretty_max_rows`](/operations/settings/settings-formats.md/#output_format_pretty_max_rows)                                                          | Row limit for Pretty formats.                                                                                                                                                                                                               | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_column_pad_width)                                  | Maximum width to pad all values in a column in Pretty formats.                                                                                                                                                                              | `250`   |
+| [`output_format_pretty_max_value_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_value_width)                                            | Maximum width of value to display in Pretty formats. If greater - it will be cut.                                                                                                                                                           | `10000` |                                                                                                                                                 
+| [`output_format_pretty_color`](/operations/settings/settings-formats.md/#output_format_pretty_color)                                                                | Use ANSI escape sequences to paint colors in Pretty formats.                                                                                                                                                                                | `true`  |
+| [`output_format_pretty_grid_charset`](/operations/settings/settings-formats.md/#output_format_pretty_grid_charset)                                                  | Charset for printing grid borders. Available charsets: ASCII, UTF-8.                                                                                                                                                                        | `UTF-8` |                                                                                                                                                           
+| [`output_format_pretty_row_numbers`](/operations/settings/settings-formats.md/#output_format_pretty_row_numbers)                                                    | Add row numbers before each row for pretty output format.                                                                                                                                                                                   | `true`  |                                                                                                                                                                          
+| [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names)                    | Display column names in the footer if table contains many rows.                                                                                                                                                                             | `true`  |                                                                                                                                                                    
+| [`output_format_pretty_display_footer_column_names_min_rows`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows)  | Sets the minimum number of rows for which a footer will be displayed if [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) is enabled.  | `50`    |
 )DOCS_MD"});
 
     factory.setDocumentation("PrettySpaceNoEscapes", Documentation{
         .description = R"DOCS_MD(
-import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
-
 | Input | Output  | Alias |
 |-------|---------|-------|
 | ✗     | ✔       |       |
@@ -5540,13 +5520,22 @@ This is necessary for displaying this format in a browser, as well as for using 
 
 ## Format settings {#format-settings}
 
-<PrettyFormatSettings/>
+The following settings are common to all `Pretty` formats:
+
+| Setting                                                                                                                                                                     | Description                                                                                                                                                                                                                                 | Default |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`output_format_pretty_max_rows`](/operations/settings/settings-formats.md/#output_format_pretty_max_rows)                                                          | Row limit for Pretty formats.                                                                                                                                                                                                               | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_column_pad_width)                                  | Maximum width to pad all values in a column in Pretty formats.                                                                                                                                                                              | `250`   |
+| [`output_format_pretty_max_value_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_value_width)                                            | Maximum width of value to display in Pretty formats. If greater - it will be cut.                                                                                                                                                           | `10000` |                                                                                                                                                 
+| [`output_format_pretty_color`](/operations/settings/settings-formats.md/#output_format_pretty_color)                                                                | Use ANSI escape sequences to paint colors in Pretty formats.                                                                                                                                                                                | `true`  |
+| [`output_format_pretty_grid_charset`](/operations/settings/settings-formats.md/#output_format_pretty_grid_charset)                                                  | Charset for printing grid borders. Available charsets: ASCII, UTF-8.                                                                                                                                                                        | `UTF-8` |                                                                                                                                                           
+| [`output_format_pretty_row_numbers`](/operations/settings/settings-formats.md/#output_format_pretty_row_numbers)                                                    | Add row numbers before each row for pretty output format.                                                                                                                                                                                   | `true`  |                                                                                                                                                                          
+| [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names)                    | Display column names in the footer if table contains many rows.                                                                                                                                                                             | `true`  |                                                                                                                                                                    
+| [`output_format_pretty_display_footer_column_names_min_rows`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows)  | Sets the minimum number of rows for which a footer will be displayed if [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) is enabled.  | `50`    |
 )DOCS_MD"});
 
     factory.setDocumentation("PrettySpaceNoEscapesMonoBlock", Documentation{
         .description = R"DOCS_MD(
-import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
-
 | Input | Output  | Alias |
 |-------|---------|-------|
 | ✗     | ✔       |       |
@@ -5560,7 +5549,18 @@ and then output as a single table, and not by [blocks](/development/architecture
 
 ## Format settings {#format-settings}
 
-<PrettyFormatSettings/>
+The following settings are common to all `Pretty` formats:
+
+| Setting                                                                                                                                                                     | Description                                                                                                                                                                                                                                 | Default |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`output_format_pretty_max_rows`](/operations/settings/settings-formats.md/#output_format_pretty_max_rows)                                                          | Row limit for Pretty formats.                                                                                                                                                                                                               | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_column_pad_width)                                  | Maximum width to pad all values in a column in Pretty formats.                                                                                                                                                                              | `250`   |
+| [`output_format_pretty_max_value_width`](/operations/settings/settings-formats.md/#output_format_pretty_max_value_width)                                            | Maximum width of value to display in Pretty formats. If greater - it will be cut.                                                                                                                                                           | `10000` |                                                                                                                                                 
+| [`output_format_pretty_color`](/operations/settings/settings-formats.md/#output_format_pretty_color)                                                                | Use ANSI escape sequences to paint colors in Pretty formats.                                                                                                                                                                                | `true`  |
+| [`output_format_pretty_grid_charset`](/operations/settings/settings-formats.md/#output_format_pretty_grid_charset)                                                  | Charset for printing grid borders. Available charsets: ASCII, UTF-8.                                                                                                                                                                        | `UTF-8` |                                                                                                                                                           
+| [`output_format_pretty_row_numbers`](/operations/settings/settings-formats.md/#output_format_pretty_row_numbers)                                                    | Add row numbers before each row for pretty output format.                                                                                                                                                                                   | `true`  |                                                                                                                                                                          
+| [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names)                    | Display column names in the footer if table contains many rows.                                                                                                                                                                             | `true`  |                                                                                                                                                                    
+| [`output_format_pretty_display_footer_column_names_min_rows`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows)  | Sets the minimum number of rows for which a footer will be displayed if [`output_format_pretty_display_footer_column_names`](/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) is enabled.  | `50`    |
 )DOCS_MD"});
 
     factory.setDocumentation("Prometheus", Documentation{
@@ -6024,9 +6024,9 @@ SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
 
     factory.setDocumentation("ProtobufList", Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-<CloudNotSupportedBadge/>
+:::note
+This format is not supported in ClickHouse Cloud.
+:::
 
 | Input | Output | Alias |
 |-------|--------|-------|
@@ -6070,9 +6070,9 @@ The message type specified in `format_schema` is resolved by first looking for i
 
     factory.setDocumentation("ProtobufSingle", Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-<CloudNotSupportedBadge/>
+:::note
+This format is not supported in ClickHouse Cloud.
+:::
 
 | Input | Output | Alias |
 |-------|--------|-------|
@@ -6222,8 +6222,6 @@ When working with the `Regexp` format, you can use the following settings:
 
     factory.setDocumentation("RowBinary", Documentation{
         .description = R"DOCS_MD(
-import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'
-
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
@@ -7462,13 +7460,19 @@ SELECT [1.0, 2.0, 3.0, 4.0]::QBit(Float32, 4)
 
 ## Format settings {#format-settings}
 
-<RowBinaryFormatSettings/>
+The following settings are common to all `RowBinary` type formats.
+
+| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
+|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`format_binary_max_string_size`](/operations/settings/settings-formats.md/#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
+| [`output_format_binary_encode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) output format.  | `false` |
+| [`input_format_binary_decode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) input format.    | `false` |
+| [`output_format_binary_write_json_as_string`](/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) output format.                            | `false` |
+| [`input_format_binary_read_json_as_string`](/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) input format.                              | `false` |
 )DOCS_MD"});
 
     factory.setDocumentation("RowBinaryWithDefaults", Documentation{
         .description = R"DOCS_MD(
-import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'
-
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✗      |       |
@@ -7495,13 +7499,19 @@ SELECT * FROM FORMAT('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x
 
 ## Format settings {#format-settings}
 
-<RowBinaryFormatSettings/>
+The following settings are common to all `RowBinary` type formats.
+
+| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
+|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`format_binary_max_string_size`](/operations/settings/settings-formats.md/#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
+| [`output_format_binary_encode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) output format.  | `false` |
+| [`input_format_binary_decode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) input format.    | `false` |
+| [`output_format_binary_write_json_as_string`](/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) output format.                            | `false` |
+| [`input_format_binary_read_json_as_string`](/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) input format.                              | `false` |
 )DOCS_MD"});
 
     factory.setDocumentation("RowBinaryWithNames", Documentation{
         .description = R"DOCS_MD(
-import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'
-
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
@@ -7517,7 +7527,15 @@ Similar to the [`RowBinary`](./RowBinary.md) format, but with added header:
 
 ## Format settings {#format-settings}
 
-<RowBinaryFormatSettings/>
+The following settings are common to all `RowBinary` type formats.
+
+| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
+|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`format_binary_max_string_size`](/operations/settings/settings-formats.md/#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
+| [`output_format_binary_encode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) output format.  | `false` |
+| [`input_format_binary_decode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) input format.    | `false` |
+| [`output_format_binary_write_json_as_string`](/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) output format.                            | `false` |
+| [`input_format_binary_read_json_as_string`](/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) input format.                              | `false` |
 
 :::note
 - If setting [`input_format_with_names_use_header`](/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to `1`,
@@ -7529,8 +7547,6 @@ Otherwise, the first row will be skipped.
 
     factory.setDocumentation("RowBinaryWithNamesAndTypes", Documentation{
         .description = R"DOCS_MD(
-import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'
-
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
@@ -7547,7 +7563,15 @@ Similar to the [RowBinary](./RowBinary.md) format, but with added header:
 
 ## Format settings {#format-settings}
 
-<RowBinaryFormatSettings/>
+The following settings are common to all `RowBinary` type formats.
+
+| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
+|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`format_binary_max_string_size`](/operations/settings/settings-formats.md/#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
+| [`output_format_binary_encode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) output format.  | `false` |
+| [`input_format_binary_decode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) input format.    | `false` |
+| [`output_format_binary_write_json_as_string`](/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) output format.                            | `false` |
+| [`input_format_binary_read_json_as_string`](/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) input format.                              | `false` |
 
 :::note
 If setting [`input_format_with_names_use_header`](/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
@@ -8084,7 +8108,7 @@ date    season  home_team       away_team       home_team_goals away_team_goals
         .description = R"DOCS_MD(
 | Input | Output | Alias                                             |
 |-------|--------|---------------------------------------------------|
-| ✔     | ✔      | `TSVRawWithNamesAndNames`, `RawWithNamesAndNames` |
+| ✔     | ✔      | `TSVRawWithNamesAndTypes`, `RawWithNamesAndTypes` |
 
 ## Description {#description}
 
@@ -8170,7 +8194,7 @@ Date    Int16   LowCardinality(String)  LowCardinality(String)  Int8    Int8
         .description = R"DOCS_MD(
 | Input | Output | Alias                          |
 |-------|--------|--------------------------------|
-|     ✔    |     ✔     | `TSVWithNames`, `RawWithNames` |
+|     ✔    |     ✔     | `TSVWithNames` |
 
 ## Description {#description}
 
@@ -8257,7 +8281,7 @@ date    season  home_team       away_team       home_team_goals away_team_goals
         .description = R"DOCS_MD(
 | Input | Output | Alias                                          |
 |-------|--------|------------------------------------------------|
-|     ✔    |     ✔     | `TSVWithNamesAndTypes`, `RawWithNamesAndTypes` |
+|     ✔    |     ✔     | `TSVWithNamesAndTypes` |
 
 ## Description {#description}
 
