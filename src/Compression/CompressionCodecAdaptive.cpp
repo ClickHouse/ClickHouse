@@ -6,6 +6,7 @@
 #include <Core/TypeId.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
@@ -107,10 +108,8 @@ CompressionCodecPtr AdaptiveCodec::select(const Codecs & pool, const char * sour
     return pool[best_idx];
 }
 
-CompressionCodecAdaptive::CompressionCodecAdaptive(
-    const IDataType & type, const CompressionCodecPtr & deployment_default, UInt32 skip_threshold_)
+CompressionCodecAdaptive::CompressionCodecAdaptive(const IDataType & type, const CompressionCodecPtr & deployment_default)
     : pool(AdaptiveCodec::poolForType(type, deployment_default))
-    , skip_threshold(skip_threshold_)
 {
     chassert(!pool.empty());
     setCodecDescription("Adaptive");
@@ -118,10 +117,7 @@ CompressionCodecAdaptive::CompressionCodecAdaptive(
 
 UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_size, char * dest) const
 {
-    /// Below the threshold, selection is not worth its cost → write the deployment default.
-    /// TODO: at tiny blocks, maybe we don't want to compress at all? We're not saving much space, but adding some cost.
-    /// Also, selection might be worth it as smaller block is faster to select from.
-    CompressionCodecPtr winner = (source_size < skip_threshold) ? pool.front() : AdaptiveCodec::select(pool, source, source_size);
+    CompressionCodecPtr winner = AdaptiveCodec::select(pool, source, source_size);
     return winner->compress(source, source_size, dest);
 }
 
@@ -135,9 +131,9 @@ UInt32 CompressionCodecAdaptive::getMaxCompressedDataSize(UInt32 uncompressed_si
 
 void CompressionCodecAdaptive::updateHash(SipHash & hash) const
 {
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/true);
     for (const auto & codec : pool)
         codec->updateHash(hash);
-    hash.update(skip_threshold);
 }
 
 uint8_t CompressionCodecAdaptive::getMethodByte() const

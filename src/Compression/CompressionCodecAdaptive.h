@@ -33,12 +33,13 @@ VectorWithMemoryTracking<TypeIndex> candidateTypeIndexes();
 class CompressionCodecAdaptive final : public ICompressionCodec
 {
 public:
-    CompressionCodecAdaptive(const IDataType & type, const CompressionCodecPtr & deployment_default, UInt32 skip_threshold_);
+    CompressionCodecAdaptive(const IDataType & type, const CompressionCodecPtr & deployment_default);
 
     uint8_t getMethodByte() const override;
     void updateHash(SipHash & hash) const override;
 
     /// Selects the best codec for this block and delegates to it. The result carries the winner's method byte.
+    /// Runs on every block regardless of size. Selection cost scales with the block, so there is no small-block skip.
     UInt32 compress(const char * source, UInt32 source_size, char * dest) const override;
 
     bool isCompression() const override { return true; }
@@ -59,7 +60,6 @@ protected:
 private:
     /// pool[0] is the deployment default
     Codecs pool;
-    UInt32 skip_threshold;
 };
 
 }

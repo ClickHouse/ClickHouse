@@ -2,6 +2,7 @@
 
 #include <Compression/CompressedSizeCalculator.h>
 #include <Compression/CompressionCodecAdaptive.h>
+#include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/ICompressionCodec.h>
@@ -191,7 +192,7 @@ TEST(CompressionCodecAdaptive, CompressRoundTripsViaWinnerByte)
     auto bytes = bytesOf(values);
     const UInt32 size = static_cast<UInt32>(bytes.size());
 
-    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec(), /*skip_threshold=*/0);
+    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
 
     PODArray<char> encoded(adaptive.getCompressedReserveSize(size));
     const UInt32 encoded_size = adaptive.compress(bytes.data(), size, encoded.data());
@@ -207,7 +208,7 @@ TEST(CompressionCodecAdaptive, CompressRoundTripsViaWinnerByte)
     EXPECT_EQ(0, memcmp(decoded.data(), bytes.data(), size));
 }
 
-TEST(CompressionCodecAdaptive, BelowThresholdUsesDefault)
+TEST(CompressionCodecAdaptive, TinyBlockSelectsDefault)
 {
     std::vector<UInt32> values(4);
     for (size_t i = 0; i < values.size(); ++i)
@@ -215,23 +216,40 @@ TEST(CompressionCodecAdaptive, BelowThresholdUsesDefault)
     auto bytes = bytesOf(values);
     const UInt32 size = static_cast<UInt32>(bytes.size());
 
-    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec(), /*skip_threshold=*/4096);
+    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
 
     PODArray<char> encoded(adaptive.getCompressedReserveSize(size));
     adaptive.compress(bytes.data(), size, encoded.data());
-    EXPECT_EQ(ICompressionCodec::readMethod(encoded.data()), LZ4); /// below threshold -> deployment default
+    EXPECT_EQ(ICompressionCodec::readMethod(encoded.data()), LZ4);
+}
+
+TEST(CompressionCodecAdaptive, HashHasOwnNamespace)
+{
+    /// getHash() identifies the codec when the Compact writer groups column streams. CompressionCodecAdaptive and CompressionCodecMultiple
+    /// fold their children's hashes the same way, so the leading "Adaptive" descriptor is what keeps the two distinct.
+    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
+    auto pool = AdaptiveCodec::poolForType(*type("UInt32"), defaultCodec());
+    ASSERT_EQ(pool.size(), 2u);
+    CompressionCodecMultiple multiple(pool);
+    EXPECT_NE(adaptive.getHash(), multiple.getHash());
+
+    CompressionCodecAdaptive adaptive_string(*type("String"), defaultCodec());
+    EXPECT_NE(adaptive_string.getHash(), defaultCodec()->getHash());
+
+    CompressionCodecAdaptive adaptive_int64(*type("Int64"), defaultCodec());
+    EXPECT_NE(adaptive.getHash(), adaptive_int64.getHash());
 }
 
 TEST(CompressionCodecAdaptive, DirectInvocationThrows)
 {
-    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec(), /*skip_threshold=*/0);
+    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
     /// Adaptive never appears on disk, so the public method byte accessor must reject direct use.
     EXPECT_ANY_THROW(adaptive.getMethodByte());
 }
 
 TEST(CompressionCodecAdaptive, ConcurrentCompressIsThreadSafe)
 {
-    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec(), /*skip_threshold=*/0);
+    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
 
     constexpr size_t num_threads = 8;
     std::vector<std::thread> threads;
