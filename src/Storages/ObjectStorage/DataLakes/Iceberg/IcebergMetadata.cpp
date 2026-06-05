@@ -166,38 +166,26 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     ContextPtr context_,
     LoggerPtr log)
 {
-    /// UUID may be known ahead of time (e.g. from REST catalog inline response); use it to hit the metadata cache.
-    std::optional<String> known_uuid;
-    if (!configuration->catalog_uuid_hint.empty())
-    {
-        /// Hint from catalog: cache key only — does not trigger O(N) UUID-based file selection.
-        known_uuid = normalizeUuid(configuration->catalog_uuid_hint);
-    }
-    else
-    {
-        const auto & settings_uuid = configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_metadata_table_uuid];
-        if (settings_uuid.changed && !settings_uuid.value.empty())
-            known_uuid = normalizeUuid(settings_uuid.value);
-    }
-
-    /// Don't pass `known_uuid` (the catalog hint) to the latest-metadata cache path —
-    /// the hint UUID hasn't been validated against the selected metadata file yet.
-    /// Passing it would poison the global cache if the REST inline response is stale
-    /// or inconsistent. The hint is still safe for the content probe below.
+    /// Probe content cache with std::nullopt — we never use the catalog
+    /// hint UUID for content cache operations because an unvalidated hint
+    /// could poison the global cache (a stale hint stored under hint_uuid:
+    /// metadata_file_path would be read by a later table with that stale hint
+    /// as its real UUID). Content caching is handled entirely by the
+    /// retroactive insert under the validated parsed `table_uuid` below.
     const auto [metadata_version, metadata_file_path, compression_method]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, true);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     String raw_metadata_json;
     auto metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, known_uuid, raw_metadata_json);
+        = getMetadataJSONObject(metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, std::nullopt, raw_metadata_json);
     Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
     String table_location = metadata_object->getValue<String>(f_location);
     std::optional<String> table_uuid = std::nullopt;
     if (metadata_object->has(Iceberg::f_table_uuid))
     {
         table_uuid = normalizeUuid(metadata_object->getValue<String>(f_table_uuid));
-        /// Retroactively populate the cache when getMetadataJSONObject did not already insert this key.
-        if (cache_ptr && known_uuid != table_uuid)
+        /// Retroactively populate the cache with the validated parsed UUID.
+        if (cache_ptr)
         {
             auto cache_key = IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path);
             cache_ptr->getOrSetTableMetadata(cache_key, [json = std::move(raw_metadata_json)]() mutable { return std::move(json); });
