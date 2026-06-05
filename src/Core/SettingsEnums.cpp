@@ -499,4 +499,10 @@ IMPLEMENT_SETTING_ENUM(S3UriStyle, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(ExplainQueryPlanDefault, ErrorCodes::BAD_ARGUMENTS,
     {{"legacy", ExplainQueryPlanDefault::LEGACY},
      {"pretty", ExplainQueryPlanDefault::PRETTY}})
+
+IMPLEMENT_SETTING_ENUM(
+    FileLikeEngineDefaultPartitionStrategy,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"wildcard", FileLikeEngineDefaultPartitionStrategy::WILDCARD},
+     {"hive", FileLikeEngineDefaultPartitionStrategy::HIVE}})
 }
