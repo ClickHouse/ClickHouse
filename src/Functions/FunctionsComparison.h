@@ -759,6 +759,7 @@ public:
 
     bool ALWAYS_INLINE  useDefaultImplementationForNulls() const override { return is_null_safe_cmp_mode ? false : true; }
     bool ALWAYS_INLINE  useDefaultImplementationForVariant() const override { return is_null_safe_cmp_mode ? false : params.use_variant_default_implementation; }
+    bool isNameInsensitive() const override { return true; }
 private:
     const ComparisonParams params;
 

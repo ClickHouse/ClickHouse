@@ -2012,6 +2012,8 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    bool isNameInsensitive() const override { return true; }
+
     bool useDefaultImplementationForNulls() const override
     {
         /// We shouldn't use default implementation for nulls for the case when operation is divide,
