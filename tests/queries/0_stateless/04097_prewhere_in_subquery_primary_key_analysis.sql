@@ -66,7 +66,10 @@ WITH
         ORDER BY event_time_microseconds DESC
         LIMIT 1
     ) AS prewhere_marks
-SELECT if(prewhere_marks <= where_marks,
+-- ParallelReplicas's PartsSplitter intersecting/non-intersecting injection
+-- can attribute one boundary granule to PREWHERE that WHERE consolidates;
+-- without the fix the difference is hundreds of marks, so +1 still catches it.
+SELECT if(prewhere_marks <= where_marks + 1,
           'ok',
           format('error: PREWHERE selected {} marks, WHERE selected {} marks',
                  toString(prewhere_marks), toString(where_marks)));
