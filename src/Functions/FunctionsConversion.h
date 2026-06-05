@@ -83,6 +83,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
+    extern const SettingsBool cast_float_to_decimal_uses_rounding;
     extern const SettingsBool cast_keep_nullable;
     extern const SettingsBool cast_string_to_dynamic_use_inference;
     extern const SettingsBool cast_string_to_variant_use_inference;
@@ -131,6 +132,8 @@ struct FunctionConvertSettings
     const bool check_conversion_from_numbers_to_enum;
     const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     const bool cast_keep_nullable;
+    /// Defaults to true (round) when there is no context, matching the current-version behavior.
+    const bool cast_float_to_decimal_uses_rounding;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
 
@@ -147,6 +150,7 @@ struct FunctionConvertSettings
         , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
+        , cast_float_to_decimal_uses_rounding(!context || context->getSettingsRef()[Setting::cast_float_to_decimal_uses_rounding])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
     {
@@ -1651,8 +1655,9 @@ static void NO_SANITIZE_UNDEFINED convertToUnixTimestampFromDate(ColVecToData & 
 }
 
 template <typename Additions, typename FromDataType, typename ToDataType, typename ColTo, typename ColFrom>
-static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom & col_from, size_t input_rows_count)
+static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom & col_from, size_t input_rows_count, bool round)
 {
+    /// `round` only affects `Float` -> `Decimal`; it is ignored by the integer/decimal paths below.
     const auto & vec_from = col_from->getData();
     auto & vec_to = col_to->getData();
 
@@ -1692,7 +1697,7 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom &
             convertToDecimalBatch<FromDataType, ToDataType, UInt8>(
                 vec_from.data(), vec_to.data(), input_rows_count,
                 col_to->getScale(),
-                vec_null_map_to.data());
+                vec_null_map_to.data(), round);
             return ColumnNullable::create(std::forward<ColTo>(col_to), std::move(col_null_map_to));
         }
         else
@@ -1700,7 +1705,7 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom &
             convertToDecimalBatch<FromDataType, ToDataType, void>(
                 vec_from.data(), vec_to.data(), input_rows_count,
                 col_to->getScale(),
-                nullptr);
+                nullptr, round);
             return std::forward<ColTo>(col_to);
         }
     }
@@ -1721,7 +1726,7 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom &
             else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
                 convert_result = tryConvertFromDecimal<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), result);
             else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                convert_result = tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale(), result);
+                convert_result = tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale(), result, round);
 
             if (convert_result)
                 vec_to[i] = result;
@@ -1743,7 +1748,7 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom &
             else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
                 vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], col_from->getScale());
             else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale());
+                vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale(), round);
             else
                 throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unsupported data type in conversion function");
         }
@@ -2754,7 +2759,7 @@ struct ConvertImpl
             /// All decimal conversions (decimal-to-decimal, number-to-decimal, decimal-to-number)
             /// Batch path for eligible types is handled inside convertDecimal.
             else if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
-                return convertDecimal<Additions, FromDataType, ToDataType>(std::move(col_to), col_from, input_rows_count);
+                return convertDecimal<Additions, FromDataType, ToDataType>(std::move(col_to), col_from, input_rows_count, settings.cast_float_to_decimal_uses_rounding);
 
             /// General numeric conversion
             else

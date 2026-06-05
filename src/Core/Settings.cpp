@@ -4952,6 +4952,16 @@ Result:
 
 - [CAST](/sql-reference/functions/type-conversion-functions#CAST) function
 )", 0) \
+    DECLARE(Bool, cast_float_to_decimal_uses_rounding, true, R"(
+Controls how casting a floating-point value (`Float32`/`Float64`) to a `Decimal` type handles the fractional part.
+
+When enabled, the value is rounded to the nearest representable `Decimal` (ties are rounded half away from zero), matching the behavior of PostgreSQL and MySQL. When disabled, the fractional part is truncated toward zero, which was the behavior before this setting was introduced.
+
+Possible values:
+
+- 1 — Round to nearest (ties away from zero).
+- 0 — Truncate toward zero.
+)", 0) \
     DECLARE(Bool, cast_ipv4_ipv6_default_on_conversion_error, false, R"(
 CAST operator into IPv4, CAST operator into IPV6 type, toIPv4, toIPv6 functions will return default value instead of throwing exception on conversion error.
 )", 0) \

@@ -394,7 +394,7 @@ FOR_EACH_ARITHMETIC_TYPE(INVOKE);
 
 template <typename FromDataType, typename ToDataType, typename ReturnType>
 requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
-ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType & result)
+ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType & result, bool round)
 {
     using FromFieldType = typename FromDataType::FieldType;
     using ToFieldType = typename ToDataType::FieldType;
@@ -428,7 +428,12 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
         /// Round first, then check bounds against the rounded value: a value just past the
         /// `ToNativeType` limit (e.g. `2147483647.4` for `Decimal(9,0)`) rounds to a
         /// representable integer and must not be rejected as overflow.
-        auto out = std::round(value * static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale)));
+        /// When `round` is false (e.g. legacy `compatibility` mode), the fractional part is
+        /// truncated toward zero by the `static_cast<ToNativeType>` below, preserving the
+        /// behavior from before `cast_float_to_decimal_uses_rounding` was introduced.
+        FromFieldType out = value * static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale));
+        if (round)
+            out = std::round(out);
 
         /// Bound at `2^(width - 1)` (i.e. `ToNativeType::max + 1`) rather than `max` itself:
         /// for signed `ToNativeType` the valid range is `[-2^(width-1), 2^(width-1) - 1]`, and
@@ -470,7 +475,8 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
     typename ToDataType::FieldType * __restrict to,
     size_t size,
     UInt32 scale,
-    ReturnType * __restrict nullmap)
+    ReturnType * __restrict nullmap,
+    bool round)
 {
     using FromFieldType = typename FromDataType::FieldType;
     using ToNativeType = typename ToDataType::FieldType::NativeType;
@@ -495,8 +501,11 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
             /// branch as a false-positive overflow (mirrors the scalar path).
             bool is_zero = from[i] == FromFieldType{};
             /// Round first so the bounds check accepts values that would round to a representable
-            /// integer (matches the scalar path in `convertToDecimalImpl`).
-            FromFieldType out = is_zero ? FromFieldType{} : std::round(from[i] * multiplier);
+            /// integer (matches the scalar path in `convertToDecimalImpl`). When `round` is false
+            /// (legacy `compatibility` mode), keep the raw product so the `static_cast` below
+            /// truncates toward zero.
+            FromFieldType scaled = is_zero ? FromFieldType{} : from[i] * multiplier;
+            FromFieldType out = round ? std::round(scaled) : scaled;
 
             /// `!isFinite(out)` catches `inf` products from finite inputs (e.g. `Float32` ×
             /// scale-76 multiplier for `Decimal256`), where the bound itself may also be `inf`.
@@ -594,16 +603,16 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
 }
 
 #define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
-    template void convertToDecimalImpl<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType & result);  \
-    template bool convertToDecimalImpl<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType & result);
+    template void convertToDecimalImpl<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType & result, bool round);  \
+    template bool convertToDecimalImpl<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType & result, bool round);
 #define INVOKE(X) FOR_EACH_ARITHMETIC_TYPE_PASS(DISPATCH, X)
 FOR_EACH_DECIMAL_TYPE(INVOKE);
 #undef INVOKE
 #undef DISPATCH
 
 #define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
-    template void convertToDecimalBatch<FROM_DATA_TYPE, TO_DATA_TYPE, void>(const typename FROM_DATA_TYPE::FieldType * __restrict, typename TO_DATA_TYPE::FieldType * __restrict, size_t, UInt32, void *); \
-    template void convertToDecimalBatch<FROM_DATA_TYPE, TO_DATA_TYPE, UInt8>(const typename FROM_DATA_TYPE::FieldType * __restrict, typename TO_DATA_TYPE::FieldType * __restrict, size_t, UInt32, UInt8 *);
+    template void convertToDecimalBatch<FROM_DATA_TYPE, TO_DATA_TYPE, void>(const typename FROM_DATA_TYPE::FieldType * __restrict, typename TO_DATA_TYPE::FieldType * __restrict, size_t, UInt32, void *, bool); \
+    template void convertToDecimalBatch<FROM_DATA_TYPE, TO_DATA_TYPE, UInt8>(const typename FROM_DATA_TYPE::FieldType * __restrict, typename TO_DATA_TYPE::FieldType * __restrict, size_t, UInt32, UInt8 *, bool);
 #define INVOKE(X) FOR_EACH_ARITHMETIC_TYPE_PASS(DISPATCH, X)
 FOR_EACH_DECIMAL_TYPE(INVOKE);
 #undef INVOKE
@@ -612,15 +621,15 @@ FOR_EACH_DECIMAL_TYPE(INVOKE);
 
 template <typename FromDataType, typename ToDataType>
 requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
-inline typename ToDataType::FieldType convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
+inline typename ToDataType::FieldType convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale, bool round)
 {
     typename ToDataType::FieldType result;
-    convertToDecimalImpl<FromDataType, ToDataType, void>(value, scale, result);
+    convertToDecimalImpl<FromDataType, ToDataType, void>(value, scale, result, round);
     return result;
 }
 
 #define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
-    template typename TO_DATA_TYPE::FieldType convertToDecimal<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale);
+    template typename TO_DATA_TYPE::FieldType convertToDecimal<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, bool round);
 #define INVOKE(X) FOR_EACH_ARITHMETIC_TYPE_PASS(DISPATCH, X)
 FOR_EACH_DECIMAL_TYPE(INVOKE);
 #undef INVOKE
@@ -629,13 +638,13 @@ FOR_EACH_DECIMAL_TYPE(INVOKE);
 
 template <typename FromDataType, typename ToDataType>
 requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
-inline bool tryConvertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
+inline bool tryConvertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result, bool round)
 {
-    return convertToDecimalImpl<FromDataType, ToDataType, bool>(value, scale, result);
+    return convertToDecimalImpl<FromDataType, ToDataType, bool>(value, scale, result, round);
 }
 
 #define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
-    template bool tryConvertToDecimal<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType& result);
+    template bool tryConvertToDecimal<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType& result, bool round);
 #define INVOKE(X) FOR_EACH_ARITHMETIC_TYPE_PASS(DISPATCH, X)
 FOR_EACH_DECIMAL_TYPE(INVOKE);
 #undef INVOKE

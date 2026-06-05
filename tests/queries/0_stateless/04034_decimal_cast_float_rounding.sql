@@ -69,3 +69,14 @@ SELECT CAST(materialize(toFloat32(1)), 'Decimal256(76)'); -- { serverError DECIM
 SELECT 'Zero is representable for every Decimal scale:';
 SELECT CAST(toFloat32(0), 'Decimal256(76)') AS d_scalar, CAST(materialize(toFloat32(0)), 'Decimal256(76)') AS d_batch;
 SELECT CAST(toFloat32(-0.0), 'Decimal256(76)') AS d_scalar, CAST(materialize(toFloat32(-0.0)), 'Decimal256(76)') AS d_batch;
+
+-- Compatibility: `cast_float_to_decimal_uses_rounding = 0` restores the old truncate-toward-zero
+-- behavior, both in the scalar and the vectorized (batch) paths.
+SELECT 'Truncation when rounding is disabled (scalar):';
+SET cast_float_to_decimal_uses_rounding = 0;
+SELECT CAST(toFloat64(0.5), 'Decimal(9, 0)') AS d1, CAST(toFloat64(-0.5), 'Decimal(9, 0)') AS d2;
+SELECT CAST(toFloat64(2.7), 'Decimal(9, 0)') AS d1, CAST(toFloat64(-2.7), 'Decimal(9, 0)') AS d2;
+SELECT 'Truncation when rounding is disabled (batch):';
+WITH arrayJoin([0.5, 1.5, -0.5, -1.5, 2.7, -2.7]) AS x
+SELECT toFloat64(x) AS f, CAST(f, 'Decimal(9, 0)') AS d;
+SET cast_float_to_decimal_uses_rounding = 1;
