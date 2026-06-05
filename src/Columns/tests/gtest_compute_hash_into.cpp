@@ -4,12 +4,16 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Common/HashCombine32.h>
 #include <Common/thread_local_rng.h>
 
@@ -833,6 +837,56 @@ TEST(ComputeHashInto, ReprIndependenceSparseUInt64)
 
     EXPECT_EQ(composeKey(*prefix, *materialized), composeKey(*prefix, *sparse))
         << "Materialized UInt64 and ColumnSparse(UInt64) with equal logical values must compose identically";
+}
+
+// ColumnLowCardinality and ColumnReplicated both gather a finalized per-dictionary hash through a
+// ColumnIndex. Their comment in the block above advertised them, but only Const and Sparse were
+// actually built; these two tests close that gap with per-row varying logical values (a small pool
+// with repeats so the dictionary/index mapping is non-trivial).
+TEST(ComputeHashInto, ReprIndependenceLowCardinalityUInt64)
+{
+    const size_t n = 1000;
+    auto prefix = makeUInt32Column(randomUInts(n));
+
+    const std::vector<UInt64> pool = {7, 7, 8, 123456789ULL, 42, 0xFFFFFFFFFFFFFFFFULL, 0, 1000000};
+    auto materialized = ColumnUInt64::create();
+    for (size_t i = 0; i < n; ++i)
+        materialized->insert(pool[i % pool.size()]);
+
+    auto lc_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
+    auto low_cardinality = lc_type->createColumn();
+    for (size_t i = 0; i < n; ++i)
+        low_cardinality->insert(pool[i % pool.size()]);
+
+    EXPECT_EQ(composeKey(*prefix, *materialized), composeKey(*prefix, *low_cardinality))
+        << "Materialized UInt64 and ColumnLowCardinality(UInt64) with equal logical values must compose identically";
+
+    expectRangeSplitConsistent(*low_cardinality);
+}
+
+TEST(ComputeHashInto, ReprIndependenceReplicatedUInt64)
+{
+    const size_t n = 1000;
+    auto prefix = makeUInt32Column(randomUInts(n));
+
+    // Distinct dictionary; per-row indexes select entries with repeats.
+    const std::vector<UInt64> dict = {7, 8, 123456789ULL, 42, 0xFFFFFFFFFFFFFFFFULL, 0, 1000000, 999};
+    auto materialized = ColumnUInt64::create();
+    for (size_t i = 0; i < n; ++i)
+        materialized->insert(dict[i % dict.size()]);
+
+    MutableColumnPtr nested = ColumnUInt64::create();
+    for (auto v : dict)
+        nested->insert(v);
+    MutableColumnPtr indexes = ColumnUInt64::create();
+    for (size_t i = 0; i < n; ++i)
+        indexes->insert(static_cast<UInt64>(i % dict.size()));
+    auto replicated = ColumnReplicated::create(std::move(nested), std::move(indexes));
+
+    EXPECT_EQ(composeKey(*prefix, *materialized), composeKey(*prefix, *replicated))
+        << "Materialized UInt64 and ColumnReplicated(UInt64) with equal logical values must compose identically";
+
+    expectRangeSplitConsistent(*replicated);
 }
 
 
