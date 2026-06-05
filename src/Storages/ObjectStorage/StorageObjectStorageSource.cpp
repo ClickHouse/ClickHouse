@@ -281,7 +281,9 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     else if (configuration->supportsFileIterator())
     {
         auto iter = configuration->iterate(
-            filter_actions_dag, file_progress_callback, query_settings.list_object_keys_size, storage_metadata, local_context);
+            filter_actions_dag,
+            filter_actions_dag ? std::function<void(FileProgress)>{} : file_progress_callback,
+            query_settings.list_object_keys_size, storage_metadata, local_context);
 
         if (filter_actions_dag)
         {
@@ -291,7 +293,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 virtual_columns,
                 hive_columns,
                 configuration->getNamespace(),
-                local_context);
+                local_context,
+                file_progress_callback);
         }
         return iter;
     }
@@ -759,7 +762,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     {
         ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
 
-        CompressionMethod compression_method;
+        CompressionMethod compression_method = {};
         if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
         {
             compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);

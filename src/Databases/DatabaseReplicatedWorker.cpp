@@ -203,9 +203,9 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr", &max_log_ptr_stat));
     logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
 
-    UInt64 digest;
+    UInt64 digest = 0;
     String digest_str;
-    UInt64 local_digest;
+    UInt64 local_digest = 0;
     if (zookeeper->tryGet(database->replica_path + "/digest", digest_str))
     {
         digest = parse<UInt64>(digest_str);

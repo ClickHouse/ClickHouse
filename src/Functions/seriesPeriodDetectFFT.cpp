@@ -78,7 +78,7 @@ public:
 
         ColumnArray::Offset prev_src_offset = 0;
 
-        Float64 period;
+        Float64 period = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ColumnArray::Offset curr_offset = offsets[i];

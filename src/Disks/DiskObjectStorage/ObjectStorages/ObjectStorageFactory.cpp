@@ -253,7 +253,7 @@ static void registerLocalObjectStorage(ObjectStorageFactory & factory)
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
         String object_key_prefix;
-        UInt64 keep_free_space_bytes;
+        UInt64 keep_free_space_bytes = 0;
         loadDiskLocalConfig(name, config, config_prefix, context, object_key_prefix, keep_free_space_bytes);
 
         /// keys are mapped to the fs, object_key_prefix is a directory also

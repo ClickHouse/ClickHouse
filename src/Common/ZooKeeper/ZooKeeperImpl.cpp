@@ -34,6 +34,7 @@
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 
@@ -76,6 +77,8 @@ namespace ProfileEvents
     extern const Event ZooKeeperBytesSent;
     extern const Event ZooKeeperBytesReceived;
     extern const Event ZooKeeperWatchResponse;
+    extern const Event ZooKeeperWatchCallbackDurationMicroseconds;
+    extern const Event ZooKeeperWatchCallbackErrors;
 }
 
 namespace CurrentMetrics
@@ -336,6 +339,29 @@ namespace Coordination
 {
 
 using namespace DB;
+
+namespace
+{
+
+void triggerWatchCallback(
+    const WatchCallbackPtrOrEventPtr & event_or_callback,
+    const WatchResponse & response)
+{
+    ProfileEvents::increment(event_or_callback.getTriggeredEvent());
+
+    DB::ProfileEventTimeIncrement<DB::Microseconds> watch_callback_duration(ProfileEvents::ZooKeeperWatchCallbackDurationMicroseconds);
+    try
+    {
+        event_or_callback.invoke(response);
+    }
+    catch (...)
+    {
+        ProfileEvents::increment(ProfileEvents::ZooKeeperWatchCallbackErrors);
+        throw;
+    }
+}
+
+}
 
 template <typename T>
 void ZooKeeper::write(const T & x)
@@ -702,11 +728,11 @@ void ZooKeeper::sendHandshake()
 
 void ZooKeeper::receiveHandshake()
 {
-    int32_t handshake_length;
-    int32_t protocol_version_read;
-    int32_t timeout;
-    std::array<char, PASSWORD_LENGTH> passwd;
-    bool read_only;
+    int32_t handshake_length = 0;
+    int32_t protocol_version_read = 0;
+    int32_t timeout = 0;
+    std::array<char, PASSWORD_LENGTH> passwd{};
+    bool read_only = false;
 
     read(handshake_length);
     if (handshake_length != SERVER_HANDSHAKE_LENGTH && handshake_length != SERVER_HANDSHAKE_LENGTH_WITH_READONLY)
@@ -761,10 +787,10 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     request.write(getWriteBuffer(), use_xid_64, pass_opentelemetry_tracing_context);
     flushWriteBuffer();
 
-    int32_t length;
-    XID read_xid;
-    int64_t zxid;
-    Error err;
+    int32_t length = 0;
+    XID read_xid = 0;
+    int64_t zxid = 0;
+    Error err = {};
 
     read(length);
     size_t count_before_event = in->count();
@@ -999,10 +1025,10 @@ void ZooKeeper::receiveThread()
 
 void ZooKeeper::receiveEvent()
 {
-    int32_t length;
-    XID xid;
-    int64_t zxid;
-    Error err;
+    int32_t length = 0;
+    XID xid = 0;
+    int64_t zxid = 0;
+    Error err = {};
 
     read(length);
     size_t count_before_event = in->count();
@@ -1069,7 +1095,7 @@ void ZooKeeper::receiveEvent()
                 for (const auto & [event_or_callback, _] : it->second)
                 {
                     if (event_or_callback)
-                        event_or_callback(watch_response);
+                        triggerWatchCallback(event_or_callback, watch_response);
                 }
 
                 CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, it->second.size());
@@ -1423,10 +1449,11 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                         {
                             try
                             {
-                                event_or_callback(response);
+                                triggerWatchCallback(event_or_callback, response);
                             }
                             catch (...)
                             {
+                                /// We must continue to all other callbacks, because the user is waiting for them.
                                 tryLogCurrentException(log);
                             }
                         }
@@ -1477,8 +1504,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                 response.error = Error::ZSESSIONEXPIRED;
                 try
                 {
-                    const WatchCallbackPtrOrEventPtr & event_or_callback = info.watch;
-                    event_or_callback(response);
+                    triggerWatchCallback(info.watch, response);
                 }
                 catch (...)
                 {

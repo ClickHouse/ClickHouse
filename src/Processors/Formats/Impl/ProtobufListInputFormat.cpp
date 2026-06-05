@@ -105,7 +105,7 @@ size_t ProtobufListInputFormat::countRows(size_t max_block_size)
     size_t num_rows = 0;
     while (!reader->eof() && num_rows < max_block_size)
     {
-        int tag;
+        int tag = 0;
         reader->readFieldNumber(tag);
         reader->startNestedMessage();
         reader->endNestedMessage();

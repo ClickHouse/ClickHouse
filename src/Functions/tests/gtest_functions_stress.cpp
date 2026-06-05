@@ -1159,7 +1159,7 @@ thread_local FunctionsStressTestThread constinit * current_stress_thread = nullp
 
 struct FunctionsStressTestThread
 {
-    size_t thread_idx;
+    size_t thread_idx{};
     std::thread thread;
     std::condition_variable thread_stop_cv;
     std::atomic<bool> thread_should_stop {false};

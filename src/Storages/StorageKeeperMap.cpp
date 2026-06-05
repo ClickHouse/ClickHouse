@@ -1654,7 +1654,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
                     settings[Setting::keeper_retry_max_backoff_ms],
                     local_context->getProcessListElement()}};
 
-            Coordination::Error status;
+            Coordination::Error status = {};
             zk_retry.retryLoop([&]
             {
                 auto client = getClient();

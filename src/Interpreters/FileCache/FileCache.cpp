@@ -651,7 +651,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
     size_t processed_count = 0;
     auto segment_range = (*it)->range();
 
-    size_t current_pos;
+    size_t current_pos = 0;
     if (segment_range.left < range.left)
     {
         ///    [_______     -- requested range
@@ -1276,9 +1276,9 @@ bool FileCache::doTryReserve(
     file_segment.reserved_size += size;
     chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
 
-    if (!file_segment.getKeyMetadata()->createBaseDirectory())
+    if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
     {
-        failure_reason = "not enough space on device";
+        failure_reason = "Failed to create base directory for key, error: " + ec.message();
         return false;
     }
 
@@ -1924,7 +1924,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
     for (fs::directory_iterator offset_it{key_directory}; offset_it != fs::directory_iterator(); ++offset_it)
     {
         auto offset_with_suffix = offset_it->path().filename().string();
-        bool parsed;
+        bool parsed = false;
         UInt64 offset = 0;
 
         auto delim_pos = offset_with_suffix.find('_');

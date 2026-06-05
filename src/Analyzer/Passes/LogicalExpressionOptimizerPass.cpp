@@ -108,7 +108,7 @@ static bool isBooleanConstant(const QueryTreeNodePtr & node, bool expected_value
     if (!constant_node || !constant_node->getResultType()->equals(DataTypeUInt8()))
         return false;
 
-    UInt64 constant_value;
+    UInt64 constant_value = 0;
     return (constant_node->getValue().tryGet<UInt64>(constant_value) && constant_value == expected_value);
 }
 
@@ -1429,8 +1429,8 @@ private:
         const auto & lhs = function_arguments[0];
         const auto & rhs = function_arguments[1];
 
-        UInt64 constant_value;
-        bool is_lhs_const;
+        UInt64 constant_value = 0;
+        bool is_lhs_const = false;
         if (const auto * lhs_constant = lhs->as<ConstantNode>())
         {
             if (!lhs_constant->getValue().tryGet<UInt64>(constant_value) || constant_value > 1

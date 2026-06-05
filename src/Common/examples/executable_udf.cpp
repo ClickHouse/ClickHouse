@@ -23,7 +23,7 @@ int mainEntryExampleExecutableUdf(int argc, char **argv)
     ReadBufferFromFileDescriptor read_buffer(0);
     WriteBufferFromFileDescriptor write_buffer(1);
     size_t rows = 0;
-    char dummy;
+    char dummy = {};
 
     while (!read_buffer.eof())
     {
