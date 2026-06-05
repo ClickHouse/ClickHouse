@@ -30,7 +30,8 @@ DiskCacheHandle::DiskCacheHandle(
     ByteRange requested,
     const FilesystemCacheSettings & cache_settings_,
     ThrottlerPtr local_throttler_,
-    String source_file_path_)
+    String source_file_path_,
+    RetainedCacheReader * retained_reader_)
     : cache(std::move(cache_))
     , cache_key(cache_key_)
     , origin(std::move(origin_))
@@ -39,6 +40,7 @@ DiskCacheHandle::DiskCacheHandle(
     , cache_settings(cache_settings_)
     , local_throttler(std::move(local_throttler_))
     , source_file_path(std::move(source_file_path_))
+    , retained_reader(retained_reader_)
     , requested_range(requested)
 {
     /// `FileCache` keys segments by object-local offset (the cache key is
@@ -275,21 +277,43 @@ Rope DiskCacheHandle::get(ByteRange range)
 
         auto buf = std::make_shared<OwnedRopeBuffer>(overlap_size);
 
-        /// `ReadSettings` for the cache-file read are fully fixed except for
-        /// the throttler. See `CachedOnDiskReadBufferFromFile::getCacheReadBuffer`
-        /// for the canonical explanation of which fields are deliberately
-        /// NOT propagated from the caller's settings and why.
-        ReadSettings cache_file_read_settings;
-        cache_file_read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-        cache_file_read_settings.local_fs_settings.buffer_size = 0;
-        cache_file_read_settings.local_throttler = local_throttler;
+        /// Reuse the retained reader when this overlap lands in the same segment
+        /// file as the previous `get` (the common sequential case) — saves an
+        /// `open`/`stat` per window. Otherwise open and retain it, dropping the
+        /// previous one. See `RetainedCacheReader`.
+        std::shared_ptr<ReadBufferFromFileBase> reader;
+        if (retained_reader && retained_reader->reader && retained_reader->path == path)
+        {
+            reader = retained_reader->reader;
+        }
+        else
+        {
+            /// `ReadSettings` for the cache-file read are fully fixed except for
+            /// the throttler. See `CachedOnDiskReadBufferFromFile::getCacheReadBuffer`
+            /// for which fields are deliberately NOT propagated from the caller's
+            /// settings and why.
+            ReadSettings cache_file_read_settings;
+            cache_file_read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+            cache_file_read_settings.local_fs_settings.buffer_size = 0;
+            cache_file_read_settings.local_throttler = local_throttler;
 
-        auto reader = createReadBufferFromFileBase(
-            path, cache_file_read_settings,
-            /*read_hint=*/std::nullopt,
-            /*file_size=*/std::nullopt,
-            segment->getFlagsForLocalRead());
+            reader = createReadBufferFromFileBase(
+                path, cache_file_read_settings,
+                /*read_hint=*/std::nullopt,
+                /*file_size=*/std::nullopt,
+                segment->getFlagsForLocalRead());
 
+            if (retained_reader)
+            {
+                retained_reader->path = path;
+                retained_reader->reader = reader;
+            }
+        }
+
+        /// Always reposition: a reused reader is left at the previous overlap's
+        /// end, and `pread` is positional so this only resets the buffer's
+        /// logical offset (no fd cost). `set()` below re-arms the external buffer
+        /// before any read, so the prior call's stale buffer pointer is unused.
         reader->seek(static_cast<off_t>(offset_in_file), SEEK_SET);
 
         size_t copied = 0;
@@ -563,7 +587,8 @@ std::unique_ptr<ICacheHandle> DiskCacheProvider::lookup(
         range_in_file,
         cache_settings,
         local_throttler,
-        object.remote_path);
+        object.remote_path,
+        &retained_reader);
 }
 
 }
