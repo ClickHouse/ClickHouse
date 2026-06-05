@@ -31,9 +31,19 @@ public:
     String getSignatureString() const override
     {
         /// Nullable(String) prompt -> Nullable(String) return; otherwise String.
+        ///
+        /// `temperature` is only valid once `system_prompt` is present, so the
+        /// optional positions are spelled as explicit prefix alternatives rather
+        /// than two independent optionals — otherwise `aiGenerate(c, p, 0.5)` would
+        /// type-check as a temperature-only call while execution treats argument 3
+        /// as `system_prompt`.
         return
-            "(const String, Nullable(String), [const String], [const Number]) -> Nullable(String)"
-            " OR (const String, String, [const String], [const Number]) -> String";
+            "(const String, Nullable(String)) -> Nullable(String)"
+            " OR (const String, Nullable(String), const String) -> Nullable(String)"
+            " OR (const String, Nullable(String), const String, const Number) -> Nullable(String)"
+            " OR (const String, String) -> String"
+            " OR (const String, String, const String) -> String"
+            " OR (const String, String, const String, const Number) -> String";
     }
 
 private:

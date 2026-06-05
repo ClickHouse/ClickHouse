@@ -22,6 +22,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/Field.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
 
@@ -43,6 +44,16 @@ namespace ErrorCodes
 
 namespace FunctionSignatures
 {
+
+/// Read a numeric constant field as `UInt64`, regardless of whether the matcher
+/// captured it from a signed (`Int8`/`Int32`/…) or unsigned type. `Field::safeGet<UInt64>`
+/// throws `Bad get` when the field is stored as `Int64`, but matchers such as `Integer`
+/// and `Number` accept signed constants, so a positive signed scale (e.g. for `DateTime64`)
+/// must be coerced the way the legacy `extractPrecision` did via `getInt`/`get64`.
+static UInt64 fieldToUInt64(const Field & field)
+{
+    return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), field);
+}
 
 class TypeFunctionLeastSupertype : public ITypeFunction
 {
@@ -195,7 +206,7 @@ public:
     {
         if (args.empty() || args.size() > 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function DateTime64");
-        const UInt64 scale = args[0].field().safeGet<UInt64>();
+        const UInt64 scale = fieldToUInt64(args[0].field());
         if (args.size() == 1)
             return Value(DataTypePtr(std::make_shared<DataTypeDateTime64>(scale)));
         return Value(DataTypePtr(std::make_shared<DataTypeDateTime64>(scale, args[1].field().safeGet<String>())));
@@ -212,7 +223,7 @@ public:
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function Time64");
-        return Value(DataTypePtr(std::make_shared<DataTypeTime64>(args.front().field().safeGet<UInt64>())));
+        return Value(DataTypePtr(std::make_shared<DataTypeTime64>(fieldToUInt64(args.front().field()))));
     }
 
     std::string name() const override { return "Time64"; }

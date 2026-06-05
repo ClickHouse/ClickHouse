@@ -27,9 +27,17 @@ public:
 
     String getSignatureString() const override
     {
+        /// `instructions` and `temperature` are optional, but `temperature` is only
+        /// valid once `instructions` is present, so the optional positions are spelled
+        /// as explicit prefix alternatives rather than two independent optionals (see
+        /// the note in `aiGenerate.cpp`).
         return
-            "(const String, Nullable(String), const String, [const String], [const Number]) -> Nullable(String)"
-            " OR (const String, String, const String, [const String], [const Number]) -> String";
+            "(const String, Nullable(String), const String) -> Nullable(String)"
+            " OR (const String, Nullable(String), const String, const String) -> Nullable(String)"
+            " OR (const String, Nullable(String), const String, const String, const Number) -> Nullable(String)"
+            " OR (const String, String, const String) -> String"
+            " OR (const String, String, const String, const String) -> String"
+            " OR (const String, String, const String, const String, const Number) -> String";
     }
 
 private:
