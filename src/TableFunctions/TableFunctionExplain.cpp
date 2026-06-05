@@ -1,4 +1,5 @@
 #include <Analyzer/TableFunctionNode.h>
+#include <Core/Block_fwd.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterExplainQuery.h>
@@ -52,7 +53,7 @@ private:
         return "";
     }
 
-    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -63,7 +64,7 @@ private:
     ASTPtr query = nullptr;
 };
 
-std::vector<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr /*context*/) const
+VectorWithMemoryTracking<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr /*context*/) const
 {
     const auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     const auto & table_function_node_arguments = table_function_node.getArguments().getNodes();
@@ -161,7 +162,7 @@ Block executeMonoBlock(QueryPipeline & pipeline)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected pulling pipeline");
 
     PullingPipelineExecutor pulling_executor(pipeline);
-    std::vector<Block> blocks;
+    Blocks blocks;
     while (true)
     {
         Block block;
