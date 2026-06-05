@@ -1213,9 +1213,9 @@ void JoinOrderOptimizer::enumerateCmpRec(const BitSet & csg, const BitSet & comp
 }
 
 /// Generate all complement seeds for a given connected subgraph S1.
-/// Seeds are single neighbor nodes, processed in descending index order so that
-/// `enumerateCmpRec` only extends complements toward higher-indexed nodes,
-/// ensuring each (S1, S2) pair is enumerated exactly once.
+/// Seeds are single neighbor nodes, processed in descending index order. Each processed seed is
+/// added to the exclusion passed to later seeds, so a complement spanning several neighbors is grown
+/// from only one of them and each (S1, S2) pair is enumerated exactly once.
 ///
 /// `exclusion` (paper: X) = S1 | B_min(S1), where B_min(S1) = {v : v < min(S1)}.
 /// B_min excludes all relations ordered before the smallest relation in S1.
@@ -1240,6 +1240,10 @@ void JoinOrderOptimizer::emitCsg(const BitSet & csg)
     for (size_t n : csg_neighborhood)
         neighbor_nodes.push_back(n);
 
+    /// Process seeds in descending index order, excluding each already-processed seed from the
+    /// complements grown by later seeds. Without this, the same complement (e.g. {1,2}) would be
+    /// reached from both the {2} seed and the {1} seed, enumerating the (S1, S2) pair twice.
+    BitSet seed_exclusion = exclusion;
     for (auto it = neighbor_nodes.rbegin(); it != neighbor_nodes.rend(); ++it)
     {
         if (!continueEnumeration())
@@ -1247,7 +1251,8 @@ void JoinOrderOptimizer::emitCsg(const BitSet & csg)
         BitSet single_node;
         single_node.set(*it);
         emitCsgCmp(csg, single_node);
-        enumerateCmpRec(csg, single_node, exclusion);
+        enumerateCmpRec(csg, single_node, seed_exclusion);
+        seed_exclusion.set(*it);
     }
 }
 
