@@ -2,6 +2,7 @@
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/validateColumnType.h>
+#include <Common/HashCombine32.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
@@ -318,20 +319,47 @@ void ColumnFunction::updateHashWithValue(size_t n, SipHash & hash) const
 
 void ColumnFunction::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
 {
+    const size_t n = row_end - row_begin;
+
     if (captured_columns.empty())
     {
+        /// No captures: a fixed per-row value (0), independent of representation.
         if (initial)
-            for (size_t i = 0, n = row_end - row_begin; i < n; ++i)
+            for (size_t i = 0; i < n; ++i)
                 hash_out[i] = 0;
+        else
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = fmix32Combined(0, hash_out[i]);
         return;
     }
 
-    bool first = initial;
+    if (initial)
+    {
+        /// First capture seeds the buffer, the rest combine into it, producing the
+        /// finalized per-row function hash directly.
+        bool first = true;
+        for (const auto & column : captured_columns)
+        {
+            column.column->computeHashInto(row_begin, row_end, hash_out, first);
+            first = false;
+        }
+        return;
+    }
+
+    /// Non-initial: build the finalized function row hash in a scratch buffer, then combine that
+    /// single value into the prior key columns' hash. Combining the finalized hash (rather than
+    /// streaming captures straight into `hash_out`) keeps composition representation-independent:
+    /// a materialized `ColumnFunction` and a `ColumnConst(ColumnFunction)` of the same value
+    /// compose identically. See IColumn::computeHashInto and ColumnTuple::computeHashInto.
+    PaddedPODArray<UInt32> function_hash(n);
+    bool first = true;
     for (const auto & column : captured_columns)
     {
-        column.column->computeHashInto(row_begin, row_end, hash_out, first);
+        column.column->computeHashInto(row_begin, row_end, function_hash.data(), first);
         first = false;
     }
+    for (size_t i = 0; i < n; ++i)
+        hash_out[i] = fmix32Combined(function_hash[i], hash_out[i]);
 }
 
 void ColumnFunction::updateHashFast(SipHash & hash) const

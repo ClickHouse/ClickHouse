@@ -834,3 +834,140 @@ TEST(ComputeHashInto, ReprIndependenceSparseUInt64)
     EXPECT_EQ(composeKey(*prefix, *materialized), composeKey(*prefix, *sparse))
         << "Materialized UInt64 and ColumnSparse(UInt64) with equal logical values must compose identically";
 }
+
+
+// ──────────────────────────────────────────────────────────────────────
+// 17. Wide (128/256-bit) numeric types exercise the >8-byte folding path in
+//     hashValueRaw32 (ColumnVector) and hashDecimalRaw32 (ColumnDecimal),
+//     which the smaller types never reach. A bug in that fold would silently
+//     change routing for wide keys while passing the rest of the suite, so
+//     each type is checked for distinct hashes, row-range split independence,
+//     and initial=false (Const) composition.
+// ──────────────────────────────────────────────────────────────────────
+namespace
+{
+size_t countUnique(std::vector<uint32_t> v)
+{
+    std::sort(v.begin(), v.end());
+    return static_cast<size_t>(std::unique(v.begin(), v.end()) - v.begin());
+}
+
+/// Populate all 16 bytes of a UInt128 from `i` so the 4-byte folding loop matters
+/// (a fold that ignored the high word would collapse many of these to one hash).
+UInt128 makeWide128(size_t i)
+{
+    UInt128 v = 0;
+    v |= UInt128(0x1111111111111111ULL + i);
+    v |= UInt128(0x9E3779B97F4A7C15ULL ^ i) << 64;
+    return v;
+}
+
+/// Populate all 32 bytes of a UInt256 from `i`.
+UInt256 makeWide256(size_t i)
+{
+    UInt256 v = 0;
+    v |= UInt256(0x1111111111111111ULL + i);
+    v |= UInt256(0x2222222222222222ULL ^ i) << 64;
+    v |= UInt256(0x3333333333333333ULL + i) << 128;
+    v |= UInt256(0x9E3779B97F4A7C15ULL ^ i) << 192;
+    return v;
+}
+}
+
+TEST(ComputeHashInto, ColumnVectorUInt128WideFold)
+{
+    const size_t n = 1024;
+    auto col = ColumnUInt128::create();
+    for (size_t i = 0; i < n; ++i)
+        col->insertValue(makeWide128(i));
+
+    std::vector<uint32_t> out(n);
+    col->computeHashInto(0, n, out.data(), true);
+    EXPECT_GT(countUnique(out), n * 99 / 100) << "UInt128: too many hash collisions (folding bug?)";
+
+    expectRangeSplitConsistent(*col);
+
+    auto prefix = makeUInt32Column(randomUInts(n));
+    auto materialized = ColumnUInt128::create();
+    for (size_t i = 0; i < n; ++i)
+        materialized->insertValue(makeWide128(42));
+    auto one = ColumnUInt128::create();
+    one->insertValue(makeWide128(42));
+    auto as_const = makeConst(std::move(one), n);
+    EXPECT_EQ(composeKey(*prefix, *materialized), composeKey(*prefix, *as_const))
+        << "Materialized UInt128 and ColumnConst(UInt128) of the same value must compose identically";
+}
+
+TEST(ComputeHashInto, ColumnVectorUInt256WideFold)
+{
+    const size_t n = 1024;
+    auto col = ColumnUInt256::create();
+    for (size_t i = 0; i < n; ++i)
+        col->insertValue(makeWide256(i));
+
+    std::vector<uint32_t> out(n);
+    col->computeHashInto(0, n, out.data(), true);
+    EXPECT_GT(countUnique(out), n * 99 / 100) << "UInt256: too many hash collisions (folding bug?)";
+
+    expectRangeSplitConsistent(*col);
+
+    auto prefix = makeUInt32Column(randomUInts(n));
+    auto materialized = ColumnUInt256::create();
+    for (size_t i = 0; i < n; ++i)
+        materialized->insertValue(makeWide256(42));
+    auto one = ColumnUInt256::create();
+    one->insertValue(makeWide256(42));
+    auto as_const = makeConst(std::move(one), n);
+    EXPECT_EQ(composeKey(*prefix, *materialized), composeKey(*prefix, *as_const))
+        << "Materialized UInt256 and ColumnConst(UInt256) of the same value must compose identically";
+}
+
+TEST(ComputeHashInto, ColumnDecimal128WideFold)
+{
+    const size_t n = 1024;
+    auto col = ColumnDecimal<Decimal128>::create(0, 4);
+    for (size_t i = 0; i < n; ++i)
+        col->insert(DecimalField<Decimal128>(Decimal128(static_cast<Int128>(makeWide128(i))), 4));
+
+    std::vector<uint32_t> out(n);
+    col->computeHashInto(0, n, out.data(), true);
+    EXPECT_GT(countUnique(out), n * 99 / 100) << "Decimal128: too many hash collisions (folding bug?)";
+
+    expectRangeSplitConsistent(*col);
+
+    auto prefix = makeUInt32Column(randomUInts(n));
+    const auto repr = Decimal128(static_cast<Int128>(makeWide128(42)));
+    auto materialized = ColumnDecimal<Decimal128>::create(0, 4);
+    for (size_t i = 0; i < n; ++i)
+        materialized->insert(DecimalField<Decimal128>(repr, 4));
+    auto one = ColumnDecimal<Decimal128>::create(0, 4);
+    one->insert(DecimalField<Decimal128>(repr, 4));
+    auto as_const = makeConst(std::move(one), n);
+    EXPECT_EQ(composeKey(*prefix, *materialized), composeKey(*prefix, *as_const))
+        << "Materialized Decimal128 and ColumnConst(Decimal128) of the same value must compose identically";
+}
+
+TEST(ComputeHashInto, ColumnDecimal256WideFold)
+{
+    const size_t n = 1024;
+    auto col = ColumnDecimal<Decimal256>::create(0, 4);
+    for (size_t i = 0; i < n; ++i)
+        col->insert(DecimalField<Decimal256>(Decimal256(static_cast<Int256>(makeWide256(i))), 4));
+
+    std::vector<uint32_t> out(n);
+    col->computeHashInto(0, n, out.data(), true);
+    EXPECT_GT(countUnique(out), n * 99 / 100) << "Decimal256: too many hash collisions (folding bug?)";
+
+    expectRangeSplitConsistent(*col);
+
+    auto prefix = makeUInt32Column(randomUInts(n));
+    const auto repr = Decimal256(static_cast<Int256>(makeWide256(42)));
+    auto materialized = ColumnDecimal<Decimal256>::create(0, 4);
+    for (size_t i = 0; i < n; ++i)
+        materialized->insert(DecimalField<Decimal256>(repr, 4));
+    auto one = ColumnDecimal<Decimal256>::create(0, 4);
+    one->insert(DecimalField<Decimal256>(repr, 4));
+    auto as_const = makeConst(std::move(one), n);
+    EXPECT_EQ(composeKey(*prefix, *materialized), composeKey(*prefix, *as_const))
+        << "Materialized Decimal256 and ColumnConst(Decimal256) of the same value must compose identically";
+}
