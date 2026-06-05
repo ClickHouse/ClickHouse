@@ -122,6 +122,13 @@ public:
     /// If process terminated, then handle return code.
     bool waitIfProccesTerminated();
 
+    /// Reap the child if it has already terminated and capture its `rusage`,
+    /// WITHOUT validating the exit status. For callers that must not treat a
+    /// non-zero child exit as an error — e.g. `executable` UDFs configured with
+    /// `check_exit_code=false`, where status validation is deliberately skipped.
+    /// Non-blocking; returns whether the child was reaped.
+    bool tryReapWithoutStatusCheck();
+
     WriteBufferFromFile in;        /// If the command reads from stdin, do not forget to call in.close() after writing all the data there.
     ReadBufferFromFile out;
     ReadBufferFromFile err;
@@ -141,7 +148,7 @@ private:
     bool tryWaitProcessWithTimeout(size_t timeout_in_seconds);
     struct tryWaitResult;
 
-    tryWaitResult tryWaitImpl(bool blocking);
+    tryWaitResult tryWaitImpl(bool blocking, bool check_exit_status = true);
 
     void handleProcessRetcode(int retcode) const;
 

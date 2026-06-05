@@ -336,7 +336,7 @@ int ShellCommand::tryWait()
     return tryWaitImpl(true).retcode;
 }
 
-ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking)
+ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking, bool check_exit_status)
 {
     LOG_TRACE(getLogger(), "Will wait for shell command pid {}", pid);
 
@@ -387,6 +387,12 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking)
     for (auto & [_, fd] : read_fds)
         fd.close();
 
+    /// Callers that opted out of exit-status checks (e.g. `check_exit_code=false`)
+    /// only want the reaped `rusage`; skip decoding/validating the status so a
+    /// non-zero or signalled child is not reported as an error.
+    if (!check_exit_status)
+        return result;
+
     if (WIFEXITED(status))
     {
         result.retcode = WEXITSTATUS(status);
@@ -435,6 +441,12 @@ bool ShellCommand::waitIfProccesTerminated()
         handleProcessRetcode(proc_status.retcode);
     }
     return proc_status.is_process_terminated;
+}
+
+
+bool ShellCommand::tryReapWithoutStatusCheck()
+{
+    return tryWaitImpl(/*blocking=*/false, /*check_exit_status=*/false).is_process_terminated;
 }
 
 

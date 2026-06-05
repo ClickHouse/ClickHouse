@@ -571,16 +571,17 @@ namespace
             /// command_termination_timeout + SIGTERM teardown. Blocking here would turn a
             /// bounded cleanup into a query hang for a UDF that closes stdout but lingers.
             ///
-            /// `tryWaitImpl` sets `last_resource_usage` on the `wait4` success branch BEFORE
-            /// any throw for `WIFSIGNALED`/`WIFSTOPPED`/non-zero exit, so `wasChildReaped`
-            /// is reliable regardless of whether the inner call threw.
+            /// Exit-status validation is intentionally skipped here: a `check_exit_code=false`
+            /// UDF that exits non-zero must not produce a spurious `CHILD_WAS_NOT_EXITED_NORMALLY`
+            /// log entry. The surrounding `try/catch` now only guards a genuine `wait4` or
+            /// allocation failure, not exit-status decoding.
             if (configuration.sampler && command && !process_pool)
             {
                 if (!command->isWaitCalled())
                 {
                     try
                     {
-                        command->waitIfProccesTerminated();
+                        command->tryReapWithoutStatusCheck();
                     }
                     catch (...)
                     {
