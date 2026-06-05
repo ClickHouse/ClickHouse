@@ -177,48 +177,114 @@ void QueryOracle::backupRestoreSteps(
 }
 
 /// Correctness query oracle
-/// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
-/// (GROUP BY / HAVING variant is TODO — see `combination` below)
+/// WHERE_ONLY:       SELECT count() FROM T WHERE pred = TRUE
+/// HAVING_ONLY:      SELECT ifNull(SUM(cnt),0) FROM (SELECT count() AS cnt FROM T GROUP BY g HAVING pred(g)) sub
+/// WHERE_AND_HAVING: SELECT ifNull(SUM(cnt),0) FROM (SELECT count() AS cnt FROM T WHERE pred1 = TRUE GROUP BY g HAVING pred2(g)) sub
 void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1)
 {
     TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     Select * sel = ts->mutable_sel();
     SelectStatementCore * ssc = sel->mutable_select_core();
-    /// TODO fix this 0 WHERE, 1 HAVING, 2 WHERE + HAVING
-    const uint32_t combination = 0;
+    FromStatement temp_from;
 
+    oracle_combination = static_cast<OracleCombination>(rg.randomInt<uint32_t>(0, 2));
     can_test_oracle_result = fc.compare_success_results && rg.nextBool();
     gen.setAllowEngineUDF(!can_test_oracle_result);
     gen.setAllowNotDetermistic(false);
     gen.enforceFinal(true);
     gen.resetAliasCounter();
     gen.levels[gen.current_level] = QueryLevel(gen.current_level);
-    const auto u = gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
+    gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), &temp_from);
 
-    UNUSED(u);
     const bool prev_allow_aggregates = gen.levels[gen.current_level].allow_aggregates;
     const bool prev_allow_window_funcs = gen.levels[gen.current_level].allow_window_funcs;
     gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;
-    if (combination != 1)
-    {
-        BinaryExpr * bexpr = ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
 
+    if (oracle_combination != OracleCombination::WHERE_ONLY)
+    {
+        bool has_available_cols = false;
+        for (const auto & entry : gen.levels[gen.current_level].rels)
+        {
+            if (!entry.cols.empty())
+            {
+                has_available_cols = true;
+                break;
+            }
+        }
+        if (!has_available_cols)
+            oracle_combination = OracleCombination::WHERE_ONLY;
+    }
+
+    if (oracle_combination == OracleCombination::WHERE_ONLY)
+    {
+        /// WHERE-only path: SELECT count() AS s0 FROM T WHERE pred = TRUE
+        ssc->mutable_from()->Swap(&temp_from);
+
+        BinaryExpr * bexpr = ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
         bexpr->set_op(BinaryOperator::BINOP_EQ);
         bexpr->mutable_rhs()->mutable_lit_val()->mutable_special_val()->set_val(
             SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
         gen.generateWherePredicate(rg, bexpr->mutable_lhs());
+
+        ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+        eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
+        eca->mutable_col_alias()->set_column("s0");
     }
-    if (combination != 0)
+    else
     {
-        gen.generateGroupBy(rg, 1, true, true, ssc);
+        /// GROUP BY HAVING path: wrap inner SELECT in a subquery
+        JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+        Select * inner_sel = jtf->mutable_tof()->mutable_select()->mutable_inner_query()->mutable_select()->mutable_sel();
+        SelectStatementCore * inner_ssc = inner_sel->mutable_select_core();
+        jtf->mutable_table_alias()->set_value("sub");
+
+        inner_ssc->mutable_from()->Swap(&temp_from);
+
+        if (oracle_combination == OracleCombination::WHERE_AND_HAVING)
+        {
+            BinaryExpr * bexpr = inner_ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
+            bexpr->set_op(BinaryOperator::BINOP_EQ);
+            bexpr->mutable_rhs()->mutable_lit_val()->mutable_special_val()->set_val(
+                SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
+            gen.generateWherePredicate(rg, bexpr->mutable_lhs());
+        }
+
+        /// GROUP BY without auto-generated HAVING (allow_settings=false disables it)
+        gen.generateGroupBy(rg, 1, true, false, inner_ssc);
+
+        /// HAVING predicate restricted to GROUP BY key columns
+        const auto & gcols = gen.levels[gen.current_level].gcols;
+        if (!gcols.empty())
+        {
+            gen.addWhereFilter(rg, gcols, inner_ssc->mutable_groupby()->mutable_having_expr()->mutable_expr()->mutable_expr());
+        }
+
+        /// Inner result: count() AS cnt
+        ExprColAlias * inner_eca = inner_ssc->add_result_columns()->mutable_eca();
+        inner_eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
+        inner_eca->mutable_col_alias()->set_column("cnt");
+
+        /// Outer result: ifNull(SUM(cnt), 0) AS s0
+        ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+        SQLFuncCall * ifnull_func = eca->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+        ifnull_func->mutable_func()->set_catalog_func("ifNull");
+        SQLFuncCall * sum_func = ifnull_func->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+        sum_func->mutable_func()->set_catalog_func("sum");
+        sum_func->add_args()
+            ->mutable_expr()
+            ->mutable_comp_expr()
+            ->mutable_expr_stc()
+            ->mutable_col()
+            ->mutable_path()
+            ->mutable_col()
+            ->set_column("cnt");
+        ifnull_func->add_args()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
+            SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO);
+        eca->mutable_col_alias()->set_column("s0");
     }
     gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
     gen.levels[gen.current_level].allow_window_funcs = prev_allow_window_funcs;
-
-    ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
-    eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
-    eca->mutable_col_alias()->set_column("s0");
     gen.levels.clear();
     gen.ctes.clear();
     gen.setAllowNotDetermistic(true);
@@ -227,22 +293,19 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
 
     finishSettings(sel->mutable_setting_values());
     ts->set_format(OutFormat::OUT_CSV);
-    /// If the file fails to be removed due to a legitimate way, the oracle will fail anyway
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
-/// SELECT ifNull(SUM(PRED),0) FROM <FROM_CLAUSE>;
-/// (or ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY … when sq1 has a GROUP BY,
-///  but that path is currently unreachable because combination=0 in generateCorrectnessTestFirstQuery)
+/// WHERE_ONLY:       SELECT ifNull(SUM(pred), 0) FROM T
+/// HAVING_ONLY:      SELECT ifNull(SUM(having_pred), 0) FROM T
+/// WHERE_AND_HAVING: SELECT ifNull(SUM(having_pred), 0) FROM T WHERE where_pred
 void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2)
 {
     TopSelect * ts = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
-    Select & sel1 = *sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel();
-    SelectStatementCore & ssc1 = *sel1.mutable_select_core();
     Select * sel2 = ts->mutable_sel();
     SelectStatementCore * ssc2 = sel2->mutable_select_core();
     ExprColAlias * eca = ssc2->add_result_columns()->mutable_eca();
@@ -255,23 +318,44 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
         SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO);
     sfc2->mutable_func()->set_catalog_func("sum");
 
-    ssc2->set_allocated_from(ssc1.release_from());
-    if (ssc1.has_groupby())
+    if (oracle_combination == OracleCombination::WHERE_ONLY)
     {
-        ExprComparisonHighProbability & expr = *ssc1.mutable_groupby()->mutable_having_expr()->mutable_expr();
+        /// WHERE-only: extract pred and FROM from sq1's SSC
+        Select & sel1 = *sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel();
+        SelectStatementCore & ssc1 = *sel1.mutable_select_core();
 
-        sfc2->add_args()->set_allocated_expr(expr.release_expr());
-        ssc2->set_allocated_groupby(ssc1.release_groupby());
-        ssc2->set_allocated_where(ssc1.release_where());
-        ssc2->set_allocated_pre_where(ssc1.release_pre_where());
+        ssc2->set_allocated_from(ssc1.release_from());
+        sfc2->add_args()->set_allocated_expr(ssc1.mutable_where()->mutable_expr()->release_expr());
+        sel2->set_allocated_setting_values(sel1.release_setting_values());
     }
     else
     {
-        ExprComparisonHighProbability & expr = *ssc1.mutable_where()->mutable_expr();
+        /// GROUP BY HAVING: extract FROM, WHERE, and HAVING pred from the inner subquery
+        SelectStatementCore & inner_ssc = *sq1.mutable_single_query()
+                                               ->mutable_explain()
+                                               ->mutable_inner_query()
+                                               ->mutable_select()
+                                               ->mutable_sel()
+                                               ->mutable_select_core()
+                                               ->mutable_from()
+                                               ->mutable_tos()
+                                               ->mutable_join_clause()
+                                               ->mutable_tos()
+                                               ->mutable_joined_table()
+                                               ->mutable_tof()
+                                               ->mutable_select()
+                                               ->mutable_inner_query()
+                                               ->mutable_select()
+                                               ->mutable_sel()
+                                               ->mutable_select_core();
+        ssc2->set_allocated_from(inner_ssc.release_from());
+        sfc2->add_args()->set_allocated_expr(inner_ssc.mutable_groupby()->mutable_having_expr()->mutable_expr()->release_expr());
+        if (inner_ssc.has_where())
+            ssc2->set_allocated_where(inner_ssc.release_where());
 
-        sfc2->add_args()->set_allocated_expr(expr.release_expr());
+        Select & sel1 = *sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel();
+        sel2->set_allocated_setting_values(sel1.release_setting_values());
     }
-    sel2->set_allocated_setting_values(sel1.release_setting_values());
     ts->set_format(sq1.single_query().explain().inner_query().select().format());
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
@@ -1806,6 +1890,7 @@ void QueryOracle::resetOracleValues()
     measure_performance = false;
     first_errcode = 0;
     other_steps_success = true;
+    oracle_combination = OracleCombination::WHERE_ONLY;
     can_test_oracle_result = can_test_success = fc.compare_success_results;
     nrows = 0;
     res1 = PerformanceResult();

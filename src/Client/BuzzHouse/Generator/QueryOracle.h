@@ -24,6 +24,13 @@ enum class DumpOracleStrategy
     TRUNCATE_COUNT = 13
 };
 
+enum class OracleCombination
+{
+    WHERE_ONLY = 0,
+    HAVING_ONLY = 1,
+    WHERE_AND_HAVING = 2
+};
+
 struct MatchHandler
 {
     /// predicate: returns true if this message should be handled
@@ -54,6 +61,7 @@ private:
     uint64_t nrows = 0;
     std::uniform_int_distribution<uint64_t> rows_dist;
     bool other_steps_success = true;
+    OracleCombination oracle_combination = OracleCombination::WHERE_ONLY;
     bool can_test_oracle_result;
     bool can_test_success;
     bool measure_performance;
