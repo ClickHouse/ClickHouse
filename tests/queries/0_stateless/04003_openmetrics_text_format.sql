@@ -342,6 +342,18 @@ FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h_sum{le="0.5"} 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h{sum="",le="0.5"} 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 
+-- Histogram/summary rows must represent exactly one sample kind (bucket/quantile, `_sum`, or `_count`).
+SELECT 'h' AS name, 1.0 AS value, '' AS help, 'histogram' AS type, map('sum', '', 'count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 's' AS name, 2.0 AS value, '' AS help, 'summary' AS type, map('sum', '', 'quantile', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h_sum{count=""} 3', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, concat('# TYPE s summary', char(10), 's_sum{quantile="0.5"} 4', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+
+-- Overflowing timestamp tokens are rejected even when the `timestamp` column is not projected.
+SELECT name
+FROM format(OpenMetrics, concat('m 1 1e20', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+
 -- Histogram `+Inf` / `_count` synthesis preserves non-marker labels per series.
 SELECT 'req' AS name, 10.0 AS value, '' AS help, 'histogram' AS type, map('job', 'api', 'count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
 FORMAT OpenMetrics;

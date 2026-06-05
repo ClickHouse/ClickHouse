@@ -541,6 +541,10 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
         if (pos < sv.size())
             throwIncorrect("Unexpected trailing data", line);
 
+        std::optional<Int64> parsed_timestamp_ms;
+        if (has_ts)
+            parsed_timestamp_ms = secondsTokenToMillis(ts_token, ts_value, line);
+
         /// Resolve logical metric name by folding `_bucket`/`_sum`/`_count` siblings into the
         /// `# TYPE` family they belong to. The rules are type-specific because the OpenMetrics /
         /// Prometheus exposition contracts differ:
@@ -596,17 +600,31 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
         const auto meta_it = family_meta.find(logical_name);
         const FamilyMeta & fm = (meta_it == family_meta.end()) ? empty_meta : meta_it->second;
 
-        if (fm.type == "histogram" && labels.contains("le"))
+        if (fm.type == "histogram" || fm.type == "summary")
         {
+            size_t sample_kinds = 0;
+            if (fm.type == "histogram")
+            {
+                if (labels.contains("le"))
+                    ++sample_kinds;
+            }
+            else if (labels.contains("quantile"))
+            {
+                ++sample_kinds;
+            }
+
             for (const char * marker : {"sum", "count"})
             {
                 if (auto it = labels.find(marker); it != labels.end() && it->second.empty())
-                    throwIncorrect(
-                        fmt::format(
-                            "Histogram sample for family '{}' cannot combine 'le' with empty '{}' marker label",
-                            logical_name, marker),
-                        line);
+                    ++sample_kinds;
             }
+
+            if (sample_kinds > 1)
+                throwIncorrect(
+                    fmt::format(
+                        "Sample for family '{}' with type '{}' cannot combine multiple histogram/summary sample kinds in labels",
+                        logical_name, fm.type),
+                    line);
         }
 
         ext.read_columns.assign(columns.size(), 0);
@@ -647,7 +665,7 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
             }
             else
             {
-                const Int64 t = secondsTokenToMillis(ts_token, ts_value, line);
+                const Int64 t = *parsed_timestamp_ms;
                 if (col.isNullable())
                 {
                     auto & nc = assert_cast<ColumnNullable &>(col);

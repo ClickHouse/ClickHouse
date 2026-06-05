@@ -167,24 +167,42 @@ void validateOpenMetricsLabelName(const String & name)
             name, FORMAT_NAME);
 }
 
-/// A histogram row is either a bucket (`le`) or a `_sum`/`_count` sample (empty marker
-/// labels), not both. Reject the internal representation that would emit two suffixes.
-void validateHistogramRowLabels(const String & metric_type, const std::map<String, String> & labels)
+/// Empty `sum`/`count` label values are internal suffix markers for histogram/summary rows.
+bool isEmptyMarkerLabel(const std::map<String, String> & labels, const char * key)
 {
-    if (metric_type != "histogram")
+    if (auto it = labels.find(key); it != labels.end() && it->second.empty())
+        return true;
+    return false;
+}
+
+/// Histogram/summary rows must represent exactly one sample kind: bucket (`le`) or quantile
+/// (`quantile`), or `_sum` / `_count` (empty marker labels) — not a combination.
+void validateBucketFamilyRowLabels(const String & metric_type, const std::map<String, String> & labels)
+{
+    if (metric_type != "histogram" && metric_type != "summary")
         return;
 
-    if (!labels.contains("le"))
-        return;
-
-    for (const char * marker : {"sum", "count"})
+    size_t sample_kinds = 0;
+    if (metric_type == "histogram")
     {
-        if (auto it = labels.find(marker); it != labels.end() && it->second.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Histogram row for output format '{}' cannot combine 'le' with empty '{}' marker label",
-                FORMAT_NAME, marker);
+        if (labels.contains("le"))
+            ++sample_kinds;
     }
+    else if (labels.contains("quantile"))
+    {
+        ++sample_kinds;
+    }
+
+    if (isEmptyMarkerLabel(labels, "sum"))
+        ++sample_kinds;
+    if (isEmptyMarkerLabel(labels, "count"))
+        ++sample_kinds;
+
+    if (sample_kinds > 1)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Row for output format '{}' cannot combine multiple histogram/summary sample kinds in labels",
+            FORMAT_NAME);
 }
 
 /// OpenMetrics label values only permit `\\`, `\"`, and `\n` escapes (matching the input
@@ -424,9 +442,6 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
     write_attribute("# TYPE ", current_metric.type);
     write_attribute("# UNIT ", current_metric.unit);
 
-    for (const auto & val : current_metric.values)
-        validateHistogramRowLabels(current_metric.type, val.labels);
-
     bool use_buckets = current_metric.type == "histogram" || current_metric.type == "summary";
     if (use_buckets)
         fixupBucketLabels(current_metric);
@@ -537,12 +552,6 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
     if (pos.type.has_value() && !columns[*pos.type]->isNullAt(row_num) && current_metric.type.empty())
         current_metric.type = getString(columns, row_num, *pos.type);
 
-    if (pos.unit.has_value() && !columns[*pos.unit]->isNullAt(row_num) && current_metric.unit.empty())
-    {
-        current_metric.unit = getString(columns, row_num, *pos.unit);
-        std::replace(current_metric.unit.begin(), current_metric.unit.end(), '\n', ' ');
-    }
-
     std::optional<std::map<String, String>> labels;
     if (pos.labels.has_value())
     {
@@ -551,6 +560,15 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
             labels.emplace();
             columnMapToContainer(col_map, row_num, *labels);
         }
+    }
+
+    if (!current_metric.type.empty())
+        validateBucketFamilyRowLabels(current_metric.type, labels.value_or(std::map<String, String>{}));
+
+    if (pos.unit.has_value() && !columns[*pos.unit]->isNullAt(row_num) && current_metric.unit.empty())
+    {
+        current_metric.unit = getString(columns, row_num, *pos.unit);
+        std::replace(current_metric.unit.begin(), current_metric.unit.end(), '\n', ' ');
     }
 
     auto & row = current_metric.values.emplace_back();
@@ -575,9 +593,11 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
 
 void OpenMetricsTextOutputFormat::finalizeImpl()
 {
-    flushCurrentMetric();
     if (!row_write_in_progress)
+    {
+        flushCurrentMetric();
         writeCString("# EOF\n", out);
+    }
 }
 
 void registerOutputFormatOpenMetrics(FormatFactory & factory);
