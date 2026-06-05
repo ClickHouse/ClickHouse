@@ -43,9 +43,20 @@ CREATE VIEW v_where AS SELECT a, b FROM t_where WHERE a > 0;
 INSERT INTO v_where SETTINGS async_insert = 0 VALUES (1, 'ok'), (-5, 'bad'); -- { serverError VIOLATED_CONSTRAINT }
 SELECT 'where_rows:', count() FROM t_where;
 
+-- 4. A view that declares an output type different from the mapped target column is rejected:
+--    the read path would CAST the value while the write path would not, so reads and writes would
+--    disagree and defaults could be stored under the wrong type.
+DROP TABLE IF EXISTS t_type;
+DROP VIEW IF EXISTS v_type;
+CREATE TABLE t_type (a UInt8, b Float64 DEFAULT 0.5) ENGINE = MergeTree ORDER BY a;
+CREATE VIEW v_type (a UInt8, b UInt8) AS SELECT a, b FROM t_type;
+INSERT INTO v_type (a) VALUES (1); -- { serverError NOT_IMPLEMENTED }
+
+DROP VIEW v_type;
 DROP VIEW v_where;
 DROP VIEW v_swap;
 DROP VIEW v_sample;
+DROP TABLE t_type;
 DROP TABLE t_where;
 DROP TABLE t_swap;
 DROP TABLE t_sample;
