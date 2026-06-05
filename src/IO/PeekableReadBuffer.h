@@ -1,15 +1,15 @@
 #pragma once
 
-#include <IO/ReadBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
 #include <stack>
+#include <IO/BufferWithOwnMemory.h>
+#include <IO/ReadBuffer.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 /// Also allows to set checkpoint at some position in stream and come back to this position later.
@@ -21,6 +21,7 @@ namespace ErrorCodes
 class PeekableReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
     friend class PeekableReadBufferCheckpoint;
+
 public:
     explicit PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ = 0);
 
@@ -83,6 +84,8 @@ public:
     /// This data will be lost after destruction of peekable buffer.
     bool hasUnreadData() const;
 
+    bool poll(size_t timeout_microseconds) override;
+
     const ReadBuffer & getSubBuffer() const { return *sub_buf; }
 
 private:
@@ -118,7 +121,8 @@ private:
     /// creation (for example if PeekableReadBuffer is often created or if we need to remember small amount of
     /// data after checkpoint), at the beginning we will use small amount of memory on stack and allocate
     /// larger buffer only if reserved memory is not enough.
-    char stack_memory[PADDING_FOR_SIMD]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - scratch buffer, written before read
+    char stack_memory
+        [PADDING_FOR_SIMD]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - scratch buffer, written before read
     bool use_stack_memory = true;
 
     std::stack<size_t> recursive_checkpoints_offsets;
@@ -129,9 +133,14 @@ class PeekableReadBufferCheckpoint : boost::noncopyable
 {
     PeekableReadBuffer & buf;
     bool auto_rollback;
+
 public:
     explicit PeekableReadBufferCheckpoint(PeekableReadBuffer & buf_, bool auto_rollback_ = false)
-                : buf(buf_), auto_rollback(auto_rollback_) { buf.setCheckpoint(); }
+        : buf(buf_)
+        , auto_rollback(auto_rollback_)
+    {
+        buf.setCheckpoint();
+    }
     ~PeekableReadBufferCheckpoint()
     {
         if (!buf.checkpoint)
@@ -140,7 +149,6 @@ public:
             buf.rollbackToCheckpoint();
         buf.dropCheckpoint();
     }
-
 };
 
 }

@@ -46,23 +46,7 @@ sleep 1
 record_count=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM test_insert_timeout_utf")
 echo "Total records inserted: ${record_count}"
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, part_log;"
-
-parts_count=$(${CLICKHOUSE_CLIENT} --query "
-SELECT count(*) 
-FROM system.part_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600
-  AND table = 'test_insert_timeout_utf'
-  AND event_type = 'NewPart'
-  AND query_id = (
-        SELECT argMax(query_id, event_time)
-        FROM system.query_log
-        WHERE event_date >= yesterday() AND event_time >= now() - 600
-          AND query LIKE '%INSERT INTO test_insert_timeout_utf%'
-          AND current_database = currentDatabase()
-    )
-")
-
-echo "Number of parts created: ${parts_count}"
+# Verify row placement per part to ensure timeout flush occurred correctly
+${CLICKHOUSE_CLIENT} --query "SELECT min(id), max(id), count() FROM test_insert_timeout_utf GROUP BY _part ORDER BY min(id)"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_insert_timeout_utf"

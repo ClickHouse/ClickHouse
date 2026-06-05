@@ -6,11 +6,15 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
-PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= 0*/) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `stack_memory` is scratch space, written before read
-        : BufferWithOwnMemory(start_size_), sub_buf(&sub_buf_)
+PeekableReadBuffer::PeekableReadBuffer(
+    ReadBuffer & sub_buf_,
+    size_t
+        start_size_ /*= 0*/) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `stack_memory` is scratch space, written before read
+    : BufferWithOwnMemory(start_size_)
+    , sub_buf(&sub_buf_)
 {
     padded &= sub_buf->isPadded();
     /// Read from sub-buffer
@@ -308,7 +312,7 @@ void PeekableReadBuffer::makeContinuousMemoryFromCheckpointToPos()
     checkStateCorrect();
 
     if (!checkpointInOwnMemory() || currentlyReadFromOwnMemory())
-        return;     /// it's already continuous
+        return; /// it's already continuous
 
     size_t bytes_to_append = pos - sub_buf->position();
     resizeOwnMemoryIfNecessary(bytes_to_append);
@@ -348,6 +352,21 @@ size_t PeekableReadBuffer::offsetFromCheckpoint() const
 
     /// Checkpoint is in own memory, position is in sub buffer.
     return offset() + offsetFromCheckpointInOwnMemory();
+}
+
+bool PeekableReadBuffer::poll(size_t timeout_microseconds)
+{
+    if (hasPendingData())
+    {
+        return true;
+    }
+
+    if (!currentlyReadFromOwnMemory())
+    {
+        sub_buf->position() = pos;
+    }
+
+    return sub_buf->poll(timeout_microseconds);
 }
 
 }
