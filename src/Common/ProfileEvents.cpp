@@ -117,7 +117,7 @@
     M(TextIndexHeaderCacheHits, "Number of times a header has been found in the cache.", ValueType::Number) \
     M(TextIndexHeaderCacheMisses, "Number of times a header has not been found in the cache.", ValueType::Number) \
     M(TextIndexPostingsCacheHits, "Number of times a text index posting list has been found in the cache.", ValueType::Number) \
-    M(TextIndexPostingsCacheMisses, "Number of times a a text index posting list has not been found in the cache.", ValueType::Number) \
+    M(TextIndexPostingsCacheMisses, "Number of times a text index posting list has not been found in the cache.", ValueType::Number) \
     M(TextIndexReadSparseIndexBlocks, "Number of times a sparse index block has been read from the text index.", ValueType::Number) \
     M(TextIndexReaderTotalMicroseconds, "Total time spent reading the text index.", ValueType::Microseconds) \
     M(TextIndexReadGranulesMicroseconds, "Total time spent reading and analyzing granules of the text index.", ValueType::Microseconds) \
@@ -332,6 +332,21 @@
     M(ZooKeeperClose, "Number of times connection with ZooKeeper has been closed voluntary.", ValueType::Number) \
     M(ZooKeeperGetACL, "Number of 'getACL' requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperWatchResponse, "Number of times watch notification has been received from ZooKeeper.", ValueType::Number) \
+    M(ZooKeeperWatchCallbackDurationMicroseconds, "Total time spent inside ZooKeeper watch callbacks (network thread).", ValueType::Microseconds) \
+    M(ZooKeeperWatchCallbackErrors, "Number of exceptions thrown from ZooKeeper watch callbacks.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredOther, "Number of watch notifications dispatched to uncategorized callbacks.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredReplicatedMergeTreeLog, "Number of watch notifications dispatched to ReplicatedMergeTree log entries.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredReplicatedMergeTreeMutations, "Number of watch notifications dispatched to ReplicatedMergeTree mutations.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection, "Number of watch notifications dispatched to ReplicatedMergeTree leader election / replica locks.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync, "Number of watch notifications dispatched while waiting for replicas to process log entries (SYNC REPLICA, ALTER, mutations).", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredDistributedDDL, "Number of watch notifications dispatched to DDLWorker queue.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredReplicatedAccessControl, "Number of watch notifications dispatched to ReplicatedAccessStorage.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredUserDefinedSQLObjects, "Number of watch notifications dispatched to UserDefinedSQLObjectsZooKeeperStorage.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredWorkloadEntity, "Number of watch notifications dispatched to WorkloadEntityKeeperStorage.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredBackupCoordination, "Number of watch notifications dispatched to backup / restore coordination.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredObjectStorageQueue, "Number of watch notifications dispatched to ObjectStorageQueue / S3Queue.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredClusterDiscovery, "Number of watch notifications dispatched to ClusterDiscovery.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredMaterializedViewRefresh, "Number of watch notifications dispatched to MaterializedView refresh coordination.", ValueType::Number) \
     M(ZooKeeperUserExceptions, "Number of exceptions while working with ZooKeeper related to the data (no node, bad version or similar).", ValueType::Number) \
     M(ZooKeeperHardwareExceptions, "Number of exceptions while working with ZooKeeper related to network (connection loss or similar).", ValueType::Number) \
     M(ZooKeeperOtherExceptions, "Number of exceptions while working with ZooKeeper other than ZooKeeperUserExceptions and ZooKeeperHardwareExceptions.", ValueType::Number) \
@@ -1058,6 +1073,11 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount, "Number requests that have been rejected due to soft memory limit exceeded", ValueType::Number) \
     M(KeeperStaleRequestsSkipped, "Number of Keeper requests skipped because the session is no longer live", ValueType::Number) \
     M(KeeperLiveSessionsLockWaitMicroseconds, "Time spent waiting to acquire Keeper live sessions lock", ValueType::Microseconds) \
+    M(KeeperWatchesTriggered, "Number of watch triggers", ValueType::Number) \
+    M(KeeperWatchTriggeredNodeCreated, "Number of watch triggers by `CREATE` operation", ValueType::Number) \
+    M(KeeperWatchTriggeredNodeDeleted, "Number of watch triggers by `DELETE` operation", ValueType::Number) \
+    M(KeeperWatchTriggeredNodeDataChanged, "Number of watch triggers by change operations", ValueType::Number) \
+    M(KeeperWatchTriggeredNodeChildrenChanged, "Number of watch triggers by children change operations", ValueType::Number) \
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.", ValueType::Number) \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.", ValueType::Number) \

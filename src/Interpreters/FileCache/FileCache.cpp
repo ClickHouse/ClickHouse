@@ -1278,9 +1278,9 @@ bool FileCache::doTryReserve(
     /// return, so the segment is left `EMPTY` with no dangling `queue_iterator`
     /// (the invariant `assertCorrectnessUnlocked` relies on). Both the main and the
     /// per-query queue entries are rolled back so neither leaks an orphan.
-    if (!file_segment.getKeyMetadata()->createBaseDirectory())
+    if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
     {
-        failure_reason = "not enough space on device";
+        failure_reason = "Failed to create base directory for key, error: " + ec.message();
         if (added_new_main_entry)
         {
             if (main_priority_iterator)
