@@ -191,6 +191,7 @@ def test_cluster_discovery_macros(start_cluster):
     # single read can flake. Retry (tolerating transient errors) until it converges.
     expected = str(total_nodes)
     res = None
+    last_exception = None
     for _ in range(30):
         try:
             res = nodes["node_observer"].query(
@@ -198,7 +199,9 @@ def test_cluster_discovery_macros(start_cluster):
             ).strip()
             if res == expected:
                 break
-        except Exception:
-            pass
+        except Exception as e:
+            last_exception = e
         time.sleep(2)
-    assert res == expected, f"Wrong macro result: {res}, expected {expected}"
+    assert res == expected, (
+        f"Wrong macro result: {res}, expected {expected}, last exception: {last_exception!r}"
+    )
