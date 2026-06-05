@@ -218,7 +218,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
 
     ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
     eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
-    eca->mutable_col_alias()->set_column("c0");
+    eca->mutable_col_alias()->set_column("s0");
     gen.levels.clear();
     gen.ctes.clear();
     gen.setAllowNotDetermistic(true);
@@ -249,7 +249,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     SQLFuncCall * sfc1 = eca->mutable_expr()->mutable_comp_expr()->mutable_func_call();
     SQLFuncCall * sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
-    eca->mutable_col_alias()->set_column("c0");
+    eca->mutable_col_alias()->set_column("s0");
     sfc1->mutable_func()->set_catalog_func("ifNull");
     sfc1->add_args()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
         SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO);
@@ -426,7 +426,7 @@ void QueryOracle::generateRoundtripOracleQueries(RandomGenerator & rg, Statement
     /// Build sq1: SELECT count() AS c0 FROM <from_clause> WHERE col IS NOT NULL  (baseline)
     ExprColAlias * eca = ssc1->add_result_columns()->mutable_eca();
     eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
-    eca->mutable_col_alias()->set_column("c0");
+    eca->mutable_col_alias()->set_column("s0");
     ssc1->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->set_no_quote_str(fmt::format("{} IS NOT NULL", col_ref));
     finishSettings(sel1->mutable_setting_values());
     ts1->set_format(OutFormat::OUT_CSV);
@@ -502,7 +502,7 @@ void QueryOracle::generateRowPolicyOracleQueries(RandomGenerator & rg, Statement
     // count() result column
     ExprColAlias * eca = ssc2->add_result_columns()->mutable_eca();
     eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
-    eca->mutable_col_alias()->set_column("c0");
+    eca->mutable_col_alias()->set_column("s0");
     // WHERE pred — copied from the stored USING predicate of the catalog policy.
     // In the fallback path (table gone, querying system.one) we cannot reuse column references
     // from the original table; use a constant TRUE predicate instead so the result is always 1.
@@ -561,7 +561,7 @@ void QueryOracle::generateCountDistinctFirstQuery(RandomGenerator & rg, Statemen
     ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
     SQLFuncCall * sfc1 = eca->mutable_expr()->mutable_comp_expr()->mutable_func_call();
     SQLFuncCall * sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
-    eca->mutable_col_alias()->set_column("c0");
+    eca->mutable_col_alias()->set_column("s0");
     sfc1->mutable_func()->set_catalog_func("ifNull");
     sfc1->add_args()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
         SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO);
@@ -608,7 +608,7 @@ void QueryOracle::generateCountDistinctSecondQuery(SQLQuery & sq1, SQLQuery & sq
     ExprColAlias * eca = outer_ssc->add_result_columns()->mutable_eca();
 
     eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
-    eca->mutable_col_alias()->set_column("c0");
+    eca->mutable_col_alias()->set_column("s0");
     JoinedTableOrFunction * outer_jtf
         = outer_ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
@@ -730,7 +730,7 @@ void QueryOracle::dumpTableContent(
             /// Just match the count
             ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
             eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
-            eca->mutable_col_alias()->set_column("c0");
+            eca->mutable_col_alias()->set_column("s0");
         }
         break;
         case DumpOracleStrategy::INSERT_COUNT: {
@@ -742,7 +742,7 @@ void QueryOracle::dumpTableContent(
             bexpr->set_op(BinaryOperator::BINOP_PLUS);
             bexpr->mutable_lhs()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
             bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(nrows);
-            eca->mutable_col_alias()->set_column("c0");
+            eca->mutable_col_alias()->set_column("s0");
         }
         break;
     }
@@ -778,7 +778,7 @@ void QueryOracle::dumpTableContent(
             scc.clear_result_columns();
             ExprColAlias * eca2 = scc.add_result_columns()->mutable_eca();
             eca2->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
-            eca2->mutable_col_alias()->set_column("c0");
+            eca2->mutable_col_alias()->set_column("s0");
         }
         break;
     }
