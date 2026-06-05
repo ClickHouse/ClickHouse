@@ -11,8 +11,8 @@ SELECT sleep(0.5), ignore('test real time query profiler');
 SET log_queries = 0;
 SYSTEM FLUSH LOGS trace_log, query_log;
 
--- Force enough threads and rows so the query runs well beyond the 100ms profiler period,
--- even when stress tests override max_threads to 1.
+-- Force enough threads so the query runs well beyond the 100ms profiler period,
+-- even when stress tests randomize max_threads to 1.
 SET max_threads = 16;
 WITH addressToLine(arrayJoin(trace) AS addr) || '#' || demangle(addressToSymbol(addr)) AS symbol
 SELECT count() > 0 FROM system.trace_log t WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%test real time query profiler%' AND query NOT LIKE '%system%' ORDER BY event_time DESC LIMIT 1) AND symbol LIKE '%FunctionSleep%';
