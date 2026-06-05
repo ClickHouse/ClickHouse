@@ -235,6 +235,44 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type):
         )
 
 
+@pytest.mark.parametrize("storage_type", ["local", "s3"])
+def test_iceberg_trivial_count_optimization(started_cluster, storage_type):
+    # Regression guard for `StorageObjectStorage::supportsTrivialCountOptimization`. Iceberg's
+    # `IcebergMetadata::supportsTotalRows` is true, so `StorageObjectStorage::totalRows` serves the
+    # row count from manifest metadata and the planner short-circuits `SELECT count()` with a
+    # `ReadFromPreparedSource (Optimized trivial count)` step. That override was nearly lost the
+    # same way `supportsOptimizationToSubcolumns` was dropped in the storage unification (#59767,
+    # fixed in #106443). Removing it makes the marker disappear and this test fail.
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = f"test_iceberg_trivial_count_{get_uuid_str()}"
+
+    write_iceberg_from_df(spark, generate_data(spark, 0, 100), TABLE_NAME)
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    storage_path = (
+        f"{TABLE_NAME}"
+        if storage_type != "azure"
+        else f"var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    )
+    ch_table = f"{TABLE_NAME}_{storage_type}_count"
+    instance.query(
+        f"CREATE TABLE {ch_table} ENGINE=Iceberg('{storage_path}', 'Parquet') SETTINGS disk = 'disk_{storage_type}_common'"
+    )
+
+    explain = instance.query(
+        f"EXPLAIN SELECT count() FROM {ch_table} SETTINGS optimize_trivial_count_query = 1"
+    )
+    assert "ReadFromPreparedSource (Optimized trivial count)" in explain, explain
+
+    assert instance.query(f"SELECT count() FROM {ch_table}").strip() == "100"
+
+
 @pytest.mark.parametrize("format_version", ["2"])
 @pytest.mark.parametrize("storage_type", ["local", "s3", "azure"])
 def test_many_tables(started_cluster, format_version, storage_type):
