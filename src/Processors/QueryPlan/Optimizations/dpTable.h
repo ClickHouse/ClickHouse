@@ -8,7 +8,7 @@
 namespace DB
 {
 
-template<std::unsigned_integral Tuint, class Tentry>
+template<class Tentry, std::unsigned_integral Tuint>
 class DpTable {
   public:
     struct DPEntry : Tentry
@@ -35,8 +35,8 @@ class DpTable {
     UInt64   nr_reordered;
 };
 
-template<std::unsigned_integral Tuint, class Tentry>
-DpTable<Tuint, Tentry>::DpTable(size_t nrRelations)
+template<class Tentry, std::unsigned_integral Tuint>
+DpTable<Tentry, Tuint>::DpTable(size_t nrRelations)
     : nr_relations(nrRelations)
     , nr_ccp(0)
     , nr_reordered(0)
@@ -47,8 +47,8 @@ DpTable<Tuint, Tentry>::DpTable(size_t nrRelations)
         dp_tab[(static_cast<Tuint>(1) << i)].count = 1;
 }
 
-template<std::unsigned_integral Tuint, class Tentry>
-void DpTable<Tuint, Tentry>::insert(Tuint S, Tuint S1, Tuint S2)
+template<class Tentry, std::unsigned_integral Tuint>
+void DpTable<Tentry, Tuint>::insert(Tuint S, Tuint S1, Tuint S2)
 {
     chassert(0 == (S1 & S2));
     chassert(S == (S1 | S2));
@@ -69,8 +69,8 @@ void DpTable<Tuint, Tentry>::insert(Tuint S, Tuint S1, Tuint S2)
   ++nr_ccp;
 }
 
-template<std::unsigned_integral Tuint, class Tentry>
-void DpTable<Tuint, Tentry>::printStatistics() const
+template<class Tentry, std::unsigned_integral Tuint>
+void DpTable<Tentry, Tuint>::printStatistics() const
 {
     auto logger = &Poco::Logger::get("JoinOrderOptimizer");
     LOG_INFO(logger, "DP Table Statistics:");

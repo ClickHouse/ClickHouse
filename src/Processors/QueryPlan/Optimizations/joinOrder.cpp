@@ -24,6 +24,7 @@
 #include <unordered_map>
 #include <vector>
 #include "dpTable.h"
+#include "joinChecker.h"
 
 
 namespace ProfileEvents
@@ -319,11 +320,13 @@ public:
 private:
     void buildQueryGraph();
 
+    template <typename DPTable, std::unsigned_integral Tuint>
+    std::shared_ptr<DPJoinEntry> buildPhysicalPlan(const DPTable & dptable, const Tuint & S) const;
     std::shared_ptr<DPJoinEntry> solveDPsub();
     std::shared_ptr<DPJoinEntry> solveDPsize();
     std::shared_ptr<DPJoinEntry> solveGreedy();
 
-    template <class Tuint, class Tdptable>
+    template <class Tuint, class Tdptable, std::unsigned_integral Tunit>
     friend class EnumeratorCheckerWithCosts;
 
     std::optional<JoinKind> isValidJoinOrder(const BitSet & left_mask, const BitSet & right_mask) const;
@@ -535,9 +538,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
             break;
     }
 
-    // TODO remove it 
-    LOG_TRACE(log, "Optimized join order in {:.2f} ms", static_cast<double>(watch.elapsed()) / 1000.0);
-
     if (!best_plan)
         throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
             "Failed to find a valid join order, try adding 'greedy' algorithm as fallback to query_plan_optimize_join_order_algorithm setting.");
@@ -714,113 +714,45 @@ static bool connects(const JoinActionRef * predicate, const BitSet & left, const
     return (participating & left) && (participating & right);
 }
 
-template <class Tuint, class Tdptable>
-class EnumeratorChecker
+template <typename DPTable, std::unsigned_integral Tuint>
+std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable & dptable, const Tuint & S) const
 {
-    using dptable_t = Tdptable;
-    using consumser_t = EnumeratorChecker;
-public:
-    using acceptor_fn = void (EnumeratorChecker::*)(Tuint, Tuint, Tuint);
-    EnumeratorChecker(const size_t nr_relations_) : nr_relations(nr_relations_), dptab(nr_relations_) {}
-    void accept(Tuint S, Tuint S1, Tuint S2) { dptab.insert(S, S1, S2); }
-    inline size_t n() const { return nr_relations; }
-    inline dptable_t & dptable() { return dptab; }
-    inline const dptable_t & dptable() const { return dptab; }
-    inline dptable_t * dptablePtr() { return (&dptab); }
-private:
-    const size_t nr_relations;
-    dptable_t dptab;
-};
+    auto entry = dptable[S];
 
-template <class Tuint, class Tdptable>
-class EnumeratorCheckerWithCosts
-{
-    using dptable_t = Tdptable;
-    using consumser_t = EnumeratorCheckerWithCosts;
-public:
-    using acceptor_fn = void (EnumeratorCheckerWithCosts::*)(Tuint, Tuint, Tuint);
-    EnumeratorCheckerWithCosts(const size_t nr_relations_, JoinOrderOptimizer & optimizer_)
-        : nr_relations(nr_relations_), dptab(nr_relations_), optimizer(optimizer_) {}
-    double computeJoinCost(Tuint S1, Tuint S2, double selectivity)
-    {
-        return dptab[S1].cost + dptab[S2].cost + selectivity *
-            static_cast<double>(dptab[S1].estimated_rows.value_or(1)) * static_cast<double>(dptab[S2].estimated_rows.value_or(1));
+    JoinOperator join_operator(
+        JoinKind::Inner,
+        JoinStrictness::All,
+        JoinLocality::Unspecified,
+        std::ranges::to<std::vector>(entry.edges | std::views::transform([](const auto * e) { return *e; })));
+
+    if (!entry.left && !entry.right) {
+        LOG_TEST(log, "Both sides are leaf nodes!"); // TODO remove it
+        return std::make_shared<DPJoinEntry>(BitSet::fromUint(S), entry.estimated_rows, entry.column_stats);
     }
 
-    double computeCardinality(const Tuint S1, const Tuint S2, const double selectivity) const
-    {
-        return std::max(
-            selectivity * static_cast<double>(dptab[S1].estimated_rows.value_or(1)) * static_cast<double>(dptab[S2].estimated_rows.value_or(1)),
-            1.0);
-    }
-    void accept(Tuint S, Tuint S1, Tuint S2)
-    {
-        auto logger = optimizer.log;
-        auto lhs = BitSet::fromUint(S1);
-        auto rhs = BitSet::fromUint(S2);
-        auto applicable_edge = optimizer.getApplicableExpressions(lhs, rhs);
-        /// Keep the edges that connect left and right
-        /// The following loop is unnecessary, since we already have connectedness information in the DP table
-        /// FIXME: we need a more efficient way to get the edges that connect left and right
-        std::vector<JoinActionRef *> edge;
-        for (auto & edge_it : applicable_edge)
-        {
-            LOG_TEST(logger, "Bitset Rep. left: {}, right: {}, edge: {}", toString(lhs),
-                                                                       toString(rhs),
-                                                                       toString(edge_it->getSourceRelations()));
 
-            if (connects(edge_it, lhs, rhs))
-            {
-                edge.push_back(edge_it);
-            }
-            else if ((edge_it->fromLeft() || edge_it->fromRight() || edge_it->fromNone()) && std::popcount(S) == 2)
-            {
-                /// If a predicate does not connect tables we add it at the earliest stage - when joining just 2 tables
-                edge.push_back(edge_it);
-            }
-            else
-            {
-                LOG_TEST(logger, "Skipping non-connecting predicate for {} and {} : {}", toString(lhs), toString(rhs), edge_it->dump());
-            }
-        }
-
-        auto selectivity = optimizer.computeSelectivity(edge, lhs, rhs);
-
-        // LOG_TEST(logger, "Selectivity for {} and {}: [{}, {}]", toString(lhs), toString(rhs), selectivity, dptab[S1].sel * dptab[S2].sel);
-
-        auto plan_cost = computeJoinCost(S1, S2, selectivity);
-
-        // LOG_TEST(logger, "Selectivity for {} and {}: [{}, {}], plan cost: {}", toString(lhs), toString(rhs), selectivity, dptab[S1].sel * dptab[S2].sel, plan_cost);
-
-        if (!dptab.map().contains(S) || plan_cost < dptab[S].cost)
-        {
-            dptab.insert(S, S1, S2);
-            dptab[S].cost = plan_cost;
-            dptab[S].sel = selectivity; 
-            dptab[S].estimated_rows = computeCardinality(S1, S2, selectivity);
-        }
-    }
-    inline size_t n() const { return nr_relations; }
-    inline dptable_t & dptable() { return dptab; }
-    inline const dptable_t & dptable() const { return dptab; }
-    inline dptable_t * dptablePtr() { return (&dptab); }
-private:
-    const size_t nr_relations;
-    dptable_t dptab;
-    JoinOrderOptimizer & optimizer;
-};
+    // This is a join node - create using the join constructor
+    auto left = buildPhysicalPlan(dptable, entry.left);
+    auto right = buildPhysicalPlan(dptable, entry.right);
+    auto new_best_plan = std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.estimated_rows, std::move(join_operator));
+    return new_best_plan;
+}
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
 {
     using bitvec_t = UInt32;
     struct DPEntry {
         bitvec_t neighbor{0};
+        bitvec_t left{0};
+        bitvec_t right{0};
         std::optional<UInt64> estimated_rows = {};
+        std::unordered_map<String, ColumnStats> column_stats = {};
         double cost{.0};
-        double sel{.0}; // sel for base tables is 
+        double sel{.0}; 
+        std::vector<JoinActionRef*> edges; // required for physical plan generation
     };
-    using dptable_t = DpTable<bitvec_t, DPEntry>;
-    using checker_t = EnumeratorCheckerWithCosts<bitvec_t, dptable_t>;
+    using dptable_t = DpTable<DPEntry, bitvec_t>;
+    using checker_t = EnumeratorCheckerWithCosts<dptable_t, JoinOrderOptimizer, bitvec_t>;
     using enumerator_t = EnumCcpSub<checker_t, dptable_t, QueryGraph, bitvec_t>;
 
     const size_t n = query_graph.relation_stats.size();
@@ -828,9 +760,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
     enumerator_t enumerator(n, log);
     enumerator.enumerate(checker, &checker_t::accept, query_graph);
 
-    LOG_TEST(log, "Plan costs: {}", checker.dptable()[(static_cast<bitvec_t>(1) << n) - 1].cost);
-
-    return nullptr; /// FIXME: return proper plan after implementing the algorithm
+    return buildPhysicalPlan(checker.dptable(), (static_cast<bitvec_t>(1) << n) - 1);
 }
 
 

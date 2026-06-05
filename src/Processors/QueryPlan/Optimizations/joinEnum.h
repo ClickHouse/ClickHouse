@@ -53,24 +53,25 @@ void EnumCcpSub<TConsumer, TDptable, TQueryGraph, Tuint>::initDPTable(TDptable &
 
         LOG_TEST(log, "Edge contains relations: {}", toString(edge_sources));
 
-        std::vector<UInt32> relations;
+        std::vector<Tuint> relations;
         // Fill relations with bit positions set in edge_sources
         for (auto relation : edge_sources)
-            relations.push_back(static_cast<UInt32>(relation));
+            relations.push_back(static_cast<Tuint>(relation));
 
-        UInt32 left_mask = (1u << relations[0]);
-        UInt32 right_mask = (1u << relations[1]);
+        Tuint left_mask = (static_cast<Tuint>(1) << relations[0]);
+        Tuint right_mask = (static_cast<Tuint>(1) << relations[1]);
 
         LOG_TEST(log, "Initializing DP table with edge between relations {} and {}", toBinaryString(left_mask), toBinaryString(right_mask));
 
         dp_table[left_mask].neighbor |= right_mask;
         dp_table[left_mask].estimated_rows = query_graph.relation_stats[relations[0]].estimated_rows.value_or(1);
-        // dp_table[left_mask].cost = static_cast<double>(dp_table[left_mask].estimated_rows.value());
         dp_table[left_mask].sel = 1.0; // selectivity of a base relation is trivially 1.0
+        dp_table[left_mask].column_stats = query_graph.relation_stats[relations[0]].column_stats;
+
         dp_table[right_mask].neighbor |= left_mask;
         dp_table[right_mask].estimated_rows = query_graph.relation_stats[relations[1]].estimated_rows.value_or(1);
-        // dp_table[right_mask].cost = static_cast<double>(dp_table[right_mask].estimated_rows.value());
         dp_table[right_mask].sel = 1.0; // selectivity of a base relation is trivially 1.0
+        dp_table[right_mask].column_stats = query_graph.relation_stats[relations[1]].column_stats;
     }
 }
 
