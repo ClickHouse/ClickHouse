@@ -419,8 +419,9 @@ void UDFProcessSubtreeSampler::recordExecutableFinished(
     if (executable_finished)
         return;
 
-    /// Wall time from sampler construction to child exit. The executable path spawns
-    /// a fresh child per invocation, so there is no pool-wait interval to subtract.
+    /// Wall time from sampler construction to `ShellCommandSource` cleanup (includes
+    /// spawn, output parsing and IO). The executable path spawns a fresh child per
+    /// invocation, so there is no pool-wait interval to subtract.
     elapsed_us = entry_watch.elapsedMicroseconds();
 
     user_time_us = user_time_us_;

@@ -392,9 +392,9 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking, bool check_
     for (auto & [_, fd] : read_fds)
         fd.close();
 
-    /// Callers that opted out of exit-status checks (e.g. `check_exit_code=false`)
-    /// only want the reaped `rusage`; skip decoding/validating the status so a
-    /// non-zero or signalled child is not reported as an error.
+    /// When `check_exit_status` is false the caller only wants the reaped `rusage`;
+    /// skip decoding/validating the status so a non-zero or signalled child is not
+    /// reported as an error.
     if (!check_exit_status)
         return result;
 

@@ -90,11 +90,12 @@ def test_invocations(started_cluster):
     qid = "exec-invocations-1"
     rows = 5000
     # `sum` (not `count`) keeps the UDF column live so the optimizer can't prune it.
+    # Plain `numbers` is a single stream and `max_threads = 1` keeps it that way, so
     # max_block_size=1000 over 5000 rows yields exactly 5 blocks → 5 executeImpl calls,
     # so Invocations is deterministically 5 — this catches both double-counting and
     # missing-increment regressions, unlike a loose `>= 1`.
     _run(
-        f"SELECT sum(test_udf_echo(number)) FROM numbers({rows}) SETTINGS max_block_size = 1000",
+        f"SELECT sum(test_udf_echo(number)) FROM numbers({rows}) SETTINGS max_block_size = 1000, max_threads = 1",
         qid,
     )
     invocations = _profile_event_value(qid, "ExecutableUserDefinedFunctionInvocations")
@@ -154,10 +155,11 @@ def test_peak_memory_uses_rusage_units(started_cluster):
     )
     mem = _profile_event_value(qid, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds")
     # 32 MiB peak RSS. Even a sub-millisecond run: 32 * 1024^2 * 0.001 s ≈ 33_554.
-    # 100_000 is 3x below that floor — a value this small could only arise if
-    # wait4 ru_maxrss were misread (e.g. treated as KiB on a Linux platform
-    # where it is already in bytes, which would deflate the result by 1024).
-    # The bound is intentionally loose to avoid flaking on fast machines.
+    # The 100_000 floor sits ~3x above that single-millisecond minimum and is
+    # cleared once elapsed exceeds ~3 ms, which a real fork/exec/page-touch over
+    # numbers(4) always does. A value this small could only arise if wait4
+    # ru_maxrss were misread (e.g. treated as KiB on a Linux platform where it is
+    # already in bytes, which would deflate the result by 1024).
     assert mem >= 100_000, f"Expected PeakMemoryByteSeconds >= 100_000, got {mem}"
 
 
@@ -209,9 +211,9 @@ def test_pool_wait_is_zero_on_executable_path(started_cluster):
 def test_shell_launch_collects_usage(started_cluster):
     _skip_msan()
     qid = "exec-shell-launch-1"
-    # execute_direct=false routes the command through `/bin/sh -c`; for a
-    # simple single-token command bash exec-optimises the fork, so wait4 still
-    # reaps the actual script process and its rusage rolls up normally.
+    # execute_direct=false routes the command through `/bin/sh -c`; for a single
+    # simple command the shell exec-optimises the fork, so wait4 still reaps the
+    # actual script process and its rusage rolls up normally.
     _run(
         "SELECT sum(test_udf_cpu_shell(number)) FROM numbers(2000)",
         qid,
@@ -364,6 +366,10 @@ def test_check_exit_code_false_no_spurious_log(started_cluster):
         "SELECT sum(test_udf_nonzero_exit(number)) FROM numbers(10)",
         qid,
     )
+    # Guard against a vacuous pass: if the UDF never ran, the grep below finds
+    # nothing and the assertion would protect nothing.
+    invocations = _profile_event_value(qid, "ExecutableUserDefinedFunctionInvocations")
+    assert invocations >= 1, f"UDF did not run (Invocations={invocations}); log-absence check is meaningless"
     count_raw = node.exec_in_container(
         [
             "bash",

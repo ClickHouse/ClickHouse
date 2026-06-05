@@ -567,10 +567,11 @@ namespace
                 else if (command)
                 {
                     /// Executable (non-pool) path: account the child's `rusage`, which
-                    /// `ShellCommand::tryWaitImpl` captures via `wait4`. Under `check_exit_code=true`
-                    /// `prepare` has already reaped the child (`isWaitCalled()`), so the usage is
-                    /// just read back. Under `check_exit_code=false` the source does not wait for
-                    /// the child, so it is reaped here — non-blocking and without status validation:
+                    /// `ShellCommand::tryWaitImpl` captures via `wait4`. When `prepare` already
+                    /// reaped the child via its blocking `wait` (`check_exit_code=true`, normal
+                    /// completion), `isWaitCalled()` is true and the usage is just read back.
+                    /// Otherwise — `check_exit_code=false`, or an early-exit/cancellation path —
+                    /// the child is reaped here, non-blocking and without status validation:
                     ///   * non-blocking: a child that closed stdout but keeps running is left to
                     ///     `~ShellCommand`'s bounded `command_termination_timeout` + SIGTERM
                     ///     teardown, so enabling profiling cannot turn cleanup into a query hang;
