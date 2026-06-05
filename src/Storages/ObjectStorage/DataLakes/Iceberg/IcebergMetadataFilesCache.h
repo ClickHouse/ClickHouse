@@ -145,7 +145,11 @@ public:
     {
         auto cell = Base::get(data_path);
         if (cell)
+        {
+            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
             return std::get<String>(cell->cached_element);
+        }
+        ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
         return {};
     }
 

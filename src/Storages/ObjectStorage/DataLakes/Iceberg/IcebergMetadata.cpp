@@ -204,8 +204,20 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     /// Fetch and parse the metadata file if the cache probe did not succeed.
     if (!metadata_object)
     {
-        metadata_object = getMetadataJSONObject(
-            metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, std::nullopt, raw_metadata_json);
+        ObjectInfo object_info(metadata_file_path);
+        auto read_settings = context_->getReadSettings();
+        if (cache_ptr)
+            read_settings.enable_filesystem_cache = false;
+        auto source_buf = createReadBuffer(object_info.relative_path_with_metadata, object_storage, context_, log, read_settings);
+        std::unique_ptr<ReadBuffer> buf;
+        if (compression_method != CompressionMethod::None)
+            buf = wrapReadBufferWithCompressionMethod(std::move(source_buf), compression_method);
+        else
+            buf = std::move(source_buf);
+        readJSONObjectPossiblyInvalid(raw_metadata_json, *buf);
+
+        Poco::JSON::Parser parser;
+        metadata_object = parser.parse(raw_metadata_json).extract<Poco::JSON::Object::Ptr>();
         if (metadata_object->has(f_table_uuid))
         {
             table_uuid = normalizeUuid(metadata_object->getValue<String>(f_table_uuid));
@@ -215,6 +227,16 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
     String table_location = metadata_object->getValue<String>(f_location);
 
+    /// Format v2 requires `table-uuid`, independent of cache availability.
+    if (!table_uuid && format_version >= 2)
+    {
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg table metadata file '{}' doesn't contain required field '{}'",
+            metadata_file_path,
+            Iceberg::f_table_uuid);
+    }
+
     /// Insert under validated parsed UUID. Use setTableMetadata to avoid the
     /// return-value copy that getOrSetTableMetadata would incur when the key
     /// was already cached (e.g. from a prior init where `table_uuid` matched).
@@ -222,17 +244,6 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     {
         auto cache_key = IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path);
         cache_ptr->setTableMetadata(cache_key, std::move(raw_metadata_json));
-    }
-    else if (table_uuid && !cache_ptr)
-    {
-        if (format_version >= 2)
-        {
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Iceberg table metadata file '{}' doesn't contain required field '{}'",
-                metadata_file_path,
-                Iceberg::f_table_uuid);
-        }
     }
     auto table_path = configuration->getPathForRead().path;
     return PersistentTableComponents{
