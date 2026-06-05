@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
