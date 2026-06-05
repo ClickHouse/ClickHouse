@@ -2049,6 +2049,10 @@ namespace ErrorCodes
     Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
     Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
     )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_adaptive_codec_selection, false, R"(
+    When enabled, `CODEC(Default)` columns are resolved at merge time to the codec that produces the smallest output per block,
+    chosen from a per-data-type pool, instead of always using the deployment's default codec. Experimental.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
     Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
     )", EXPERIMENTAL) \
