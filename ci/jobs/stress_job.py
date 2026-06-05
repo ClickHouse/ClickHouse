@@ -307,9 +307,11 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
     # Check for OOM (signal 9) in server logs, excluding intentional kills
     # from the RandomServerRestarter chaos thread.
-    # stress_runner.sh renames clickhouse-server.log to .stress.log and .final.log
-    # before this code runs, so scan the renamed logs (not .err.log).
-    # Intentional kills only happen during the stress phase.
+    # stress_runner.sh renames clickhouse-server.log: .initial.log (dataset setup),
+    # .stress.log (stress phase), .final.log (post-stress restart).
+    # Shared-catalog replicas log to clickhouse-server-sc{1,2}.log.
+    # Intentional kills only happen during the stress phase (.stress.log);
+    # signal-9 in any other log is always an unintentional OOM.
     if server_log_path.exists():
         signal9_pattern = " <Fatal> Application: Child process was terminated by signal 9"
         stress_signal9_count = int(
@@ -320,10 +322,12 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             .strip()
             or "0"
         )
-        final_signal9_count = int(
+        other_signal9_count = int(
             Shell.get_output(
                 f"rg -Fa '{signal9_pattern}' "
-                f"{server_log_path}/clickhouse-server.final.log 2>/dev/null | wc -l"
+                f"{server_log_path}/clickhouse-server.initial.log "
+                f"{server_log_path}/clickhouse-server.final.log "
+                f"{server_log_path}/clickhouse-server-sc*.log 2>/dev/null | wc -l"
             )
             .strip()
             or "0"
@@ -335,7 +339,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 1 for line in intentional_kills_file.read_text().splitlines() if line.strip()
             )
         server_log_oom = (
-            stress_signal9_count > intentional_kill_count or final_signal9_count > 0
+            stress_signal9_count > intentional_kill_count or other_signal9_count > 0
         )
         is_oom = is_oom or server_log_oom
 
