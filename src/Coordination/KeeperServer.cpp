@@ -1461,15 +1461,15 @@ int64_t KeeperServer::getLeaderID() const
 
 std::vector<KeeperClusterMemberInfo> KeeperServer::getClusterMembersInfo() const
 {
-    std::vector<nuraft::ptr<nuraft::srv_config>> configs;
-    raft_instance->get_srv_config_all(configs);
+    const auto cluster_config = state_manager->getClusterConfig();
+    const auto & servers = cluster_config->get_servers();
 
     const int32_t leader_id = static_cast<int32_t>(raft_instance->get_leader());
     const uint64_t self_log_idx = raft_instance->get_last_log_idx();
 
     std::vector<KeeperClusterMemberInfo> result;
-    result.reserve(configs.size());
-    for (const auto & cfg : configs)
+    result.reserve(servers.size());
+    for (const auto & cfg : servers)
     {
         KeeperClusterMemberInfo info;
         info.server_id = cfg->get_id();
