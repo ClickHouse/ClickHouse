@@ -4,6 +4,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyDateTimeFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionScalar.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyLabelFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionVector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyLabelManipulationFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentMathFunction.h>
@@ -47,6 +48,9 @@ SQLQueryPiece applyFunction(const PQT::Function * function_node, std::vector<SQL
 
     if (isFunctionOverRange(function_name))
         return applyFunctionOverRange(function_node, std::move(arguments), context);
+
+    if (isLabelFunction(function_name))
+        return applyLabelFunction(function_node, std::move(arguments), context);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented", function_name);
 }

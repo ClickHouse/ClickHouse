@@ -3,13 +3,16 @@
 #include <Columns/ColumnString.h>
 #include <Common/Exception.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/re2.h>
 #include <Common/quoteString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
 #include <algorithm>
+#include <cctype>
+
+#include <Poco/Unicode.h>
 #include <boost/container_hash/hash.hpp>
 #include <city.h>
 
@@ -549,36 +552,72 @@ namespace
             {
                 if (replacement_[pos] != '$')
                 {
-                    addTextFragment(replacement_[pos]);
-                    ++pos;
+                    size_t next_dollar = replacement_.find('$', pos);
+                    if (next_dollar == String::npos)
+                        next_dollar = replacement_.length();
+
+                    addTextFragment(replacement_.substr(pos, next_dollar - pos));
+                    pos = next_dollar;
                     continue;
                 }
 
-                if ((pos + 1 < replacement_.length()) && (replacement_[pos + 1] == '$'))
+                if ((pos + 1 != replacement_.length()) && (replacement_[pos + 1] == '$'))
                 {
                     addTextFragment('$');
                     pos += 2;
                     continue;
                 }
 
-                bool brace = (pos + 1 < replacement_.length()) && (replacement_[pos + 1] == '{');
-                size_t name_start = pos + 1 + (brace ? 1 : 0);
-                size_t name_end = name_start;
-                while ((name_end < replacement_.length())
-                       && (std::isalnum(static_cast<unsigned char>(replacement_[name_end])) || replacement_[name_end] == '_'))
-                    ++name_end;
+                size_t reference_begin = pos + 1;
+                bool braced = (reference_begin != replacement_.length()) && (replacement_[reference_begin] == '{');
+                if (braced)
+                    ++reference_begin;
 
-                /// `$` with no name, or `${...` without a closing `}` — treat the `$` as literal.
-                if ((name_end == name_start) || (brace && (name_end >= replacement_.length() || replacement_[name_end] != '}')))
+                size_t reference_end = reference_begin;
+                while ((reference_end != replacement_.length()) && tryReadReplacementReferenceChar(replacement_, reference_end))
                 {
-                    addTextFragment('$');
-                    ++pos;
+                }
+
+                bool malformed = (reference_end == reference_begin);
+                if (braced && (!malformed && ((reference_end == replacement_.length()) || (replacement_[reference_end] != '}'))))
+                    malformed = true;
+
+                if (malformed)
+                {
+                    addTextFragment(replacement_[pos++]);
                     continue;
                 }
 
-                addCapturingGroupFragment(replacement_.substr(name_start, name_end - name_start));
-                pos = name_end + (brace ? 1 : 0);
+                addCapturingGroupFragment(replacement_.substr(reference_begin, reference_end - reference_begin));
+                pos = braced ? (reference_end + 1) : reference_end;
             }
+        }
+
+        static bool tryReadReplacementReferenceChar(std::string_view replacement, size_t & pos)
+        {
+            UInt8 first_octet = static_cast<UInt8>(replacement[pos]);
+            if (first_octet < 0x80)
+            {
+                char c = replacement[pos];
+                if (!std::isalnum(static_cast<unsigned char>(c)) && (c != '_'))
+                    return false;
+                ++pos;
+                return true;
+            }
+
+            size_t sequence_length = UTF8::seqLength(first_octet);
+            if (sequence_length > replacement.size() - pos)
+                return false;
+
+            auto code_point = UTF8::convertUTF8ToCodePoint(replacement.data() + pos, sequence_length);
+            if (!code_point)
+                return false;
+
+            if (!Poco::Unicode::isAlpha(*code_point) && !Poco::Unicode::isDigit(*code_point))
+                return false;
+
+            pos += sequence_length;
+            return true;
         }
 
         void addTextFragment(std::string_view text)
@@ -599,27 +638,28 @@ namespace
         /// Adds a fragment for a `$name` / `${name}` reference.
         /// A name made entirely of decimal digits with no leading zero (single "0" is fine) is treated
         /// as a numeric group, otherwise it's a named-group.
-        void addCapturingGroupFragment(std::string_view name)
+        void addCapturingGroupFragment(std::string_view capturing_group)
         {
-            chassert(!name.empty());
-
-            /// At most 9 digits: longer all-digit names fall through to a named-group lookup.
-            bool numeric = (name.size() <= 9)
-                && std::all_of(name.begin(), name.end(), [](char c) { return std::isdigit(static_cast<unsigned char>(c)); });
-
-            /// A multi-digit name with a leading zero (e.g. "01") is treated as a named-group reference,
-            /// and not a numeric one.
-            if (numeric && (name.size() > 1) && (name.front() == '0'))
-                numeric = false;
-
-            if (numeric)
+            int numeric_group = 0;
+            bool is_numeric_group = !capturing_group.empty() && ((capturing_group.size() == 1) || (capturing_group.front() != '0'));
+            for (char c : capturing_group)
             {
-                addCapturingGroupFragment(parseFromString<int>(name));
+                if (!std::isdigit(static_cast<unsigned char>(c)) || (numeric_group >= 100000000))
+                {
+                    is_numeric_group = false;
+                    break;
+                }
+                numeric_group = numeric_group * 10 + (c - '0');
+            }
+
+            if (is_numeric_group)
+            {
+                addCapturingGroupFragment(numeric_group);
                 return;
             }
 
             const auto & groups = regex.NamedCapturingGroups();
-            auto it = groups.find(String{name});
+            auto it = groups.find(String{capturing_group});
             if (it != groups.end())
                 addCapturingGroupFragment(it->second);
         }
