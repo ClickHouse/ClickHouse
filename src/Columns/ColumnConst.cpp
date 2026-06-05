@@ -198,5 +198,14 @@ ColumnConst::Ptr createColumnConstWithDefaultValue(const ColumnPtr & column)
     return ColumnConst::create(std::move(data), 1);
 }
 
+void intrusive_ptr_add_ref(const ColumnConst * c)
+{
+    intrusive_ptr_add_ref(static_cast<const IColumn *>(c));
+}
+
+void intrusive_ptr_release(const ColumnConst * c)
+{
+    intrusive_ptr_release(static_cast<const IColumn *>(c));
+}
 
 }

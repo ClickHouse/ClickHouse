@@ -259,7 +259,12 @@ public:
         }
     }
 
-    virtual void alter(ObjectStoragePtr /*object_storage*/, const AlterCommands & /*params*/, ContextPtr /*context*/) {}
+    virtual void alter(
+        ObjectStoragePtr /*object_storage*/,
+        const AlterCommands & /*params*/,
+        ContextPtr /*context*/,
+        const StorageID & /*storage_id*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/) {}
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
