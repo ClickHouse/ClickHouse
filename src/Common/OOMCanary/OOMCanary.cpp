@@ -200,6 +200,7 @@ bool OOMCanary::oomKilled(std::optional<OOMKillCounter> before, std::optional<OO
 }
 
 void OOMCanary::monitorThread()
+try
 {
     LOG_INFO(log, "OOM canary monitor thread started");
 
@@ -345,6 +346,14 @@ void OOMCanary::monitorThread()
     }
 
     LOG_INFO(log, "OOM canary monitor thread exiting");
+}
+catch (...)
+{
+    /// Setup before the per-child loop (e.g. `Epoll` construction or adding
+    /// `shutdown_fd`) can throw with `EMFILE` / `ENOMEM`. Catch here so the
+    /// exception is not recorded by `ThreadFromGlobalPool` and later surfaced
+    /// as an unrelated scheduling failure; the canary just disables cleanly.
+    tryLogCurrentException(log, "OOM canary monitor thread failed, disabling the canary");
 }
 
 void OOMCanary::onCanaryOOM()
