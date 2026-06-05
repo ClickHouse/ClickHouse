@@ -59,6 +59,59 @@ MULTITARGET_FUNCTION_X86_V4(
         return sum;
     }))
 
+/// Batched dot-product kernels: each processes every row in a single call so the load stream over the
+/// input column(s) stays continuous. A per-row NO_INLINE call boundary stalls the hardware prefetcher
+/// (which regressed Float64 array distances on Zen5); one call over the whole column keeps it streaming.
+MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(template <typename ResultType, typename ArgumentType> static void NO_SANITIZE_UNDEFINED NO_INLINE),
+    dotProductBatchImpl,
+    MULTITARGET_FUNCTION_BODY((const ArgumentType * __restrict data_x, const ArgumentType * __restrict data_y, const ColumnArray::Offset * __restrict offsets, ResultType * __restrict result, size_t rows) {
+        constexpr size_t unroll_count = 16;
+        ColumnArray::Offset prev = 0;
+        for (size_t row = 0; row < rows; ++row)
+        {
+            const ColumnArray::Offset off = offsets[row];
+            const size_t array_size = off - prev;
+            ResultType partial_sums[unroll_count]{};
+            size_t i = 0;
+            const size_t unrolled_end = array_size / unroll_count * unroll_count;
+            for (; i < unrolled_end; i += unroll_count)
+                for (size_t s = 0; s < unroll_count; ++s)
+                    partial_sums[s] += static_cast<ResultType>(data_x[prev + i + s]) * static_cast<ResultType>(data_y[prev + i + s]);
+            ResultType sum = 0;
+            for (auto & partial_sum : partial_sums)
+                sum += partial_sum;
+            for (; i < array_size; ++i)
+                sum += static_cast<ResultType>(data_x[prev + i]) * static_cast<ResultType>(data_y[prev + i]);
+            result[row] = sum;
+            prev = off;
+        }
+    }))
+
+/// Const-left-argument variant: the left vector `a` is fixed across rows, only the right column advances.
+MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(template <typename ResultType, typename ArgumentType> static void NO_SANITIZE_UNDEFINED NO_INLINE),
+    dotProductConstBatchImpl,
+    MULTITARGET_FUNCTION_BODY((const ArgumentType * __restrict a, const ArgumentType * __restrict data_y, size_t array_size, ResultType * __restrict result, size_t rows) {
+        constexpr size_t unroll_count = 16;
+        for (size_t row = 0; row < rows; ++row)
+        {
+            const ArgumentType * __restrict y = data_y + row * array_size;
+            ResultType partial_sums[unroll_count]{};
+            size_t i = 0;
+            const size_t unrolled_end = array_size / unroll_count * unroll_count;
+            for (; i < unrolled_end; i += unroll_count)
+                for (size_t s = 0; s < unroll_count; ++s)
+                    partial_sums[s] += static_cast<ResultType>(a[i + s]) * static_cast<ResultType>(y[i + s]);
+            ResultType sum = 0;
+            for (auto & partial_sum : partial_sums)
+                sum += partial_sum;
+            for (; i < array_size; ++i)
+                sum += static_cast<ResultType>(a[i]) * static_cast<ResultType>(y[i]);
+            result[row] = sum;
+        }
+    }))
+
 
 struct DotProduct
 {
@@ -281,28 +334,27 @@ private:
         auto col_res = ColumnVector<ResultType>::create(input_rows_count);
         auto & result_data = col_res->getData();
 
-        ColumnArray::Offset current_offset = 0;
-        for (size_t row = 0; row < input_rows_count; ++row)
+        if constexpr (
+            std::is_same_v<LeftType, RightType>
+            && ((std::is_same_v<ResultType, LeftType> && (std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>))
+                || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<ResultType, Float32>)))
         {
-            const size_t array_size = offsets_x[row] - current_offset;
-
-            if constexpr (
-                std::is_same_v<LeftType, RightType>
-                && ((std::is_same_v<ResultType, LeftType> && (std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>))
-                    || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<ResultType, Float32>)))
-            {
-                /// SIMD-optimized path for same-type floating point
+            /// SIMD-optimized path: one batched call over all rows keeps the load stream continuous.
 #if USE_MULTITARGET_CODE
-                if (isArchSupported(TargetArch::x86_64_v4))
-                    result_data[row] = dotProductImpl_x86_64_v4<ResultType, LeftType>(data_x.data() + current_offset, data_y.data() + current_offset, array_size);
-                else
-#endif
-                    result_data[row] = dotProductImpl<ResultType, LeftType>(data_x.data() + current_offset, data_y.data() + current_offset, array_size);
-            }
+            if (isArchSupported(TargetArch::x86_64_v4))
+                dotProductBatchImpl_x86_64_v4<ResultType, LeftType>(data_x.data(), data_y.data(), offsets_x.data(), result_data.data(), input_rows_count);
             else
+#endif
+                dotProductBatchImpl<ResultType, LeftType>(data_x.data(), data_y.data(), offsets_x.data(), result_data.data(), input_rows_count);
+        }
+        else
+        {
+            /// Scalar path for non-same-type-float inputs (mixed types or same-type
+            /// integers whose ResultType is widened, e.g. Int32 x Int32 -> Int64).
+            ColumnArray::Offset current_offset = 0;
+            for (size_t row = 0; row < input_rows_count; ++row)
             {
-                /// Scalar path for non-same-type-float inputs (mixed types or same-type
-                /// integers whose ResultType is widened, e.g. Int32 × Int32 → Int64).
+                const size_t array_size = offsets_x[row] - current_offset;
                 size_t i = 0;
 
                 static constexpr size_t VEC_SIZE = 4;
@@ -326,9 +378,9 @@ private:
                         state, static_cast<ResultType>(data_x[current_offset + i]), static_cast<ResultType>(data_y[current_offset + i]));
 
                 result_data[row] = Kernel::template finalize<ResultType>(state);
-            }
 
-            current_offset = offsets_x[row];
+                current_offset = offsets_x[row];
+            }
         }
 
         return col_res;
@@ -367,30 +419,27 @@ private:
         auto col_res = ColumnVector<ResultType>::create(input_rows_count);
         auto & result = col_res->getData();
 
-        ColumnArray::Offset current_offset = 0;
-        for (size_t row = 0; row < input_rows_count; ++row)
+        const size_t array_size = offsets_x[0];
+        if constexpr (
+            std::is_same_v<LeftType, RightType>
+            && ((std::is_same_v<ResultType, LeftType> && (std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>))
+                || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<ResultType, Float32>)))
         {
-            const size_t array_size = offsets_x[0];
-
-            if constexpr (
-                std::is_same_v<LeftType, RightType>
-                && ((std::is_same_v<ResultType, LeftType> && (std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>))
-                    || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<ResultType, Float32>)))
-            {
-                /// SIMD-optimized path for same-type floating point
+            /// SIMD-optimized path: one batched call over all rows keeps the column load stream continuous.
 #if USE_MULTITARGET_CODE
-                if (isArchSupported(TargetArch::x86_64_v4))
-                    result[row] = dotProductImpl_x86_64_v4<ResultType, LeftType>(data_x.data(), data_y.data() + current_offset, array_size);
-                else
-#endif
-                    result[row] = dotProductImpl<ResultType, LeftType>(data_x.data(), data_y.data() + current_offset, array_size);
-            }
+            if (isArchSupported(TargetArch::x86_64_v4))
+                dotProductConstBatchImpl_x86_64_v4<ResultType, LeftType>(data_x.data(), data_y.data(), array_size, result.data(), input_rows_count);
             else
+#endif
+                dotProductConstBatchImpl<ResultType, LeftType>(data_x.data(), data_y.data(), array_size, result.data(), input_rows_count);
+        }
+        else
+        {
+            /// Scalar path for non-same-type-float inputs (mixed types or same-type
+            /// integers whose ResultType is widened, e.g. Int32 x Int32 -> Int64).
+            ColumnArray::Offset current_offset = 0;
+            for (size_t row = 0; row < input_rows_count; ++row)
             {
-                /// Scalar path for non-same-type-float inputs (mixed types or same-type
-                /// integers whose ResultType is widened, e.g. Int32 × Int32 → Int64).
-                /// Not a hot path, but we keep the same multi-accumulator structure
-                /// as the non-const path for consistency.
                 size_t i = 0;
 
                 static constexpr size_t VEC_SIZE = 4;
@@ -414,9 +463,9 @@ private:
                         state, static_cast<ResultType>(data_x[i]), static_cast<ResultType>(data_y[current_offset + i]));
 
                 result[row] = Kernel::template finalize<ResultType>(state);
-            }
 
-            current_offset = offsets_y[row];
+                current_offset = offsets_y[row];
+            }
         }
 
         return col_res;
