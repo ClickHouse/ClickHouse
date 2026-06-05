@@ -659,7 +659,9 @@ void ReadFromRemote::addLazyPipe(
             use_delayed_remote_source = true;
         });
 
-        if (!use_delayed_remote_source)
+        // The stale-local-replica logic below applies only to real replicated tables. A table function
+        // has no local storage and reaches a lazy shard only via the failpoint, so it always reads remotely.
+        if (!use_delayed_remote_source && !my_table_func_ptr)
         {
             const auto replicated_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(my_storage);
             if (!replicated_storage)
