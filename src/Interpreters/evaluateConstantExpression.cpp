@@ -545,7 +545,11 @@ namespace
         {
             if (const auto * node = findMatch(key, matches))
             {
-                ColumnPtr column = col->getPtr();
+                /// ActionsDAG::addColumn normalizes ColumnConst to size 0; expand to size 1
+                /// because the conjunction map is consumed by evaluatePartialResult with
+                /// input_rows_count == 1, and downstream consumers (e.g. createBlockSelector)
+                /// rely on the column's row count.
+                ColumnPtr column = ColumnConst::create(col->getDataColumnPtr(), 1);
                 if (!value->result_type->equals(*node->result_type))
                 {
                     auto inner = tryCastColumn(col->getDataColumnPtr(), value->result_type, node->result_type);
@@ -574,10 +578,7 @@ namespace
         if (value->type != ActionsDAG::ActionType::COLUMN)
             return {};
 
-        auto col = value->column;
-        if (const auto * col_const = typeid_cast<const ColumnConst *>(col.get()))
-            col = col_const->getDataColumnPtr();
-
+        const auto & col = value->column->getDataColumnPtr();
         const auto * col_set = typeid_cast<const ColumnSet *>(col.get());
         if (!col_set || !col_set->getData())
             return {};
@@ -633,7 +634,7 @@ namespace
         if (node->result_type->isNullable() && set->hasNull())
         {
             auto col_null = node->result_type->createColumnConst(1, Field());
-            res.push_back({ConjunctionMap{{node, {col_null, node->result_type, node->result_name}}}});
+            res.push_back({ConjunctionMap{{node, {std::move(col_null), node->result_type, node->result_name}}}});
         }
 
         size_t num_rows = column->size();
@@ -733,7 +734,7 @@ namespace
         }
         else if (node->type == ActionsDAG::ActionType::COLUMN)
         {
-            if (isColumnConst(*node->column) && node->result_type->canBeUsedInBooleanContext())
+            if (node->result_type->canBeUsedInBooleanContext())
             {
                 if (!node->column->getBool(0))
                     return DisjunctionList{};

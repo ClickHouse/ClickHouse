@@ -216,9 +216,9 @@ ActionsDAG AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
     ActionsDAG::NodeRawConstPtrs outputs;
     outputs.reserve(out_header.columns() + 1);
 
-    auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, group), 0);
+    ColumnConst::Ptr grouping_col = ColumnConst::create(ColumnUInt64::create(1, group), 0);
     const auto * grouping_node = &dag.addColumn(
-        {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
+        std::move(grouping_col), std::make_shared<DataTypeUInt64>(), "__grouping_set");
 
     grouping_node = &dag.materializeNode(*grouping_node);
     outputs.push_back(grouping_node);
@@ -240,8 +240,8 @@ ActionsDAG AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
             col.type->insertDefaultInto(*column_with_default);
             column_with_default->finalize();
 
-            auto column = ColumnConst::create(std::move(column_with_default), 0);
-            const auto * node = &dag.addColumn({ColumnPtr(std::move(column)), col.type, col.name});
+            ColumnConst::Ptr column = ColumnConst::create(std::move(column_with_default), 0);
+            const auto * node = &dag.addColumn(std::move(column), col.type, col.name);
             node = &dag.materializeNode(*node);
             outputs.push_back(node);
         }

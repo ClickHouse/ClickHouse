@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/JSONAsStringRowInputFormat.h>
 #include <Formats/JSONUtils.h>

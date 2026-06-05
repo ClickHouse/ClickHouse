@@ -2,6 +2,7 @@
 
 #include <boost/algorithm/string/join.hpp>
 
+#include <Columns/ColumnConst.h>
 #include <DataTypes/IDataType.h>
 
 #include <IO/WriteBuffer.h>

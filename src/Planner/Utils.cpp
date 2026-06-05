@@ -637,10 +637,7 @@ void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets)
     {
         if (node.column)
         {
-            const IColumn * column = node.column.get();
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-                column = &column_const->getDataColumn();
-
+            const IColumn * column = &node.column->getDataColumn();
             if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
                 useful_sets.insert(column_set->getData());
         }

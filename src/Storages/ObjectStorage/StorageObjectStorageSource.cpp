@@ -1,6 +1,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_set>
+#include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>

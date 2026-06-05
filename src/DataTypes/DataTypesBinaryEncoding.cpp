@@ -694,6 +694,8 @@ static DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
         {
             UInt8 kind = 0;
             readBinary(kind, buf);
+            if (kind > static_cast<UInt8>(IntervalKind::Kind::Year))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown IntervalKind during Interval type decoding: {0:#04x}", UInt64(kind));
             return std::make_shared<DataTypeInterval>(IntervalKind(IntervalKind::Kind(kind)));
         }
         case BinaryTypeIndex::Nullable:

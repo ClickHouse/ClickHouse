@@ -399,7 +399,7 @@ private:
 
         /// Add dimension and reference vector as last two arguments
         auto dimension_column = DataTypeUInt64().createColumnConst(1, qbit_dimension);
-        converted_arguments.emplace_back(dimension_column, std::make_shared<DataTypeUInt64>(), "dimension");
+        converted_arguments.emplace_back(std::move(dimension_column), std::make_shared<DataTypeUInt64>(), "dimension");
 
         /// Cast reference vector to match QBit element type to ensure correct dispatch
         auto ref_vec_type = arguments[1].type;

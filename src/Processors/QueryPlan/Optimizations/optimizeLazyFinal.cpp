@@ -90,8 +90,9 @@ static void addIsDeletedFilter(QueryPlan & plan, const String & is_deleted_colum
             "This is a bug in `createNonIntersectingPlan`.",
             is_deleted_column);
 
-    const auto * zero_node = &dag.addColumn(
-        ColumnWithTypeAndName(DataTypeUInt8().createColumnConst(1, Field(UInt8(0))), std::make_shared<DataTypeUInt8>(), "__is_deleted_zero"));
+    auto zero_type = std::make_shared<DataTypeUInt8>();
+    auto zero_column = zero_type->createColumnConst(0, Field(UInt8(0)));
+    const auto * zero_node = &dag.addColumn(std::move(zero_column), std::move(zero_type), "__is_deleted_zero");
 
     auto equals_func = FunctionFactory::instance().get("equals", context);
     const auto * filter_node = &dag.addFunction(equals_func, {col_node, zero_node}, "__is_deleted_filter");
