@@ -1111,12 +1111,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         /// `RemoteFSReadMethod::threadpool`): attach the prefetch pool only when
         /// the read method is threadpool AND prefetch is enabled, so
         /// `remote_filesystem_read_method='read'` keeps reads synchronous instead
-        /// of the executor scheduling background reads. The buffer limit
-        /// (connection reuse) is independent of prefetch and stays unconditional.
+        /// of the executor scheduling background reads.
         if (effective_read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool
             && effective_read_settings.remote_fs_settings.prefetch)
             pipeline.needPrefetchPool(context_->getPrefetchThreadPool());
-        pipeline.needBufferLimit(context_->getSourceBufferLimit());
+        /// Without a buffer limit the executor takes the stateless (one-shot per
+        /// window) path; `reader_executor_use_live_connections=0` selects it. Gate
+        /// it like `DiskObjectStorage::prepareRead` so the setting is honored on the
+        /// object-storage table-engine path too.
+        if (effective_read_settings.reader_executor_use_live_connections)
+            pipeline.needBufferLimit(context_->getSourceBufferLimit());
     }
 
     LOG_TRACE(
