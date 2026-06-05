@@ -1,18 +1,21 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 
-#include <Core/ColumnWithTypeAndName.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
-#include <Columns/IColumn_fwd.h>
 #include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
+#include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -20,8 +23,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
 
 namespace DB
 {
@@ -141,6 +142,30 @@ ActionsDAG createActionsDAGForPreprocessor(
 
     if (!which_data_type.isString() && !which_data_type.isFixedString())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression should return a column of type with base type of String or FixedString, got: {}", output_type->getName());
+
+    auto nested_source_type = MergeTreeIndexText::getNestedDataType(source_type);
+    auto nested_output_type = MergeTreeIndexText::getNestedDataType(output_type);
+
+    const auto * output_fixed_string = typeid_cast<const DataTypeFixedString *>(nested_output_type.get());
+    if (output_fixed_string)
+    {
+        if (WhichDataType(nested_source_type).isString())
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Text index preprocessor must not convert variable-length String values to FixedString({})",
+                output_fixed_string->getN());
+
+        const auto * source_fixed_string = typeid_cast<const DataTypeFixedString *>(nested_source_type.get());
+        if (source_fixed_string)
+        {
+            if (source_fixed_string->getN() > output_fixed_string->getN())
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Text index preprocessor must not narrow FixedString({}) to FixedString({})",
+                    source_fixed_string->getN(),
+                    output_fixed_string->getN());
+        }
+    }
 
     auto get_array_dimensions = [](const DataTypePtr & type) -> size_t
     {
