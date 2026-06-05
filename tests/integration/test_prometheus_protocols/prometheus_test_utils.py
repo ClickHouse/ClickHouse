@@ -202,9 +202,9 @@ def get_response_to_http_api_range_query(
     return get_response_to_http_api(url)
 
 
-def get_response_to_http_api(url):
+def get_response_to_http_api(url, headers=None):
     print(f"Requesting {url}")
-    response = requests.get(url)
+    response = requests.get(url, headers=headers or {})
     print(
         f"Status code: {response.status_code} {http.HTTPStatus(response.status_code).phrase}"
     )
