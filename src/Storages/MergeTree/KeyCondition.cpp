@@ -763,6 +763,39 @@ static ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_i
     return need_inversion ? makeASTOperator("not", cloned_node) : cloned_node;
 }
 
+/// Comparison ops whose `not(op)` rewrite via `inverse_relations` is invalid when an operand can be NaN.
+/// IEEE-754 makes all of `<`, `>`, `<=`, `>=`, `=`, `!=` evaluate to `false` when either side is NaN, so
+/// `not(NaN > c) = true` while the candidate inverse `NaN <= c = false`. Without this guard, partition
+/// and primary-key pruning translate `not(sqrt(c0) > 10)` into `sqrt(c0) <= 10` and incorrectly drop the
+/// `c0 = -1` partition where `sqrt(c0)` is NaN (issue #106533).
+///
+/// A constant float operand whose value is finite is safe; only a floating-point column or a NaN-valued
+/// constant blocks the rewrite, so plain literal comparisons like `c <= 5.5` (Int column vs Float literal)
+/// still get inverted normally.
+static bool isFloatComparison(const String & name, const ActionsDAG::NodeRawConstPtrs & children)
+{
+    if (name != "equals" && name != "notEquals"
+        && name != "less" && name != "greater"
+        && name != "lessOrEquals" && name != "greaterOrEquals")
+        return false;
+
+    for (const auto * child : children)
+    {
+        if (!WhichDataType(removeLowCardinalityAndNullable(child->result_type)).isFloat())
+            continue;
+
+        /// Non-constant float: could be NaN at runtime, must not invert.
+        if (child->type != ActionsDAG::ActionType::COLUMN || !child->column || !isColumnConst(*child->column))
+            return true;
+
+        /// Constant float: only NaN blocks the rewrite.
+        const Field field = (*child->column)[0];
+        if (field.isNaN())
+            return true;
+    }
+    return false;
+}
+
 static bool isTrivialCast(const ActionsDAG::Node & node)
 {
     /// Recognize both the user-facing `CAST` and the analyzer-internal `_CAST` here; they
@@ -1081,7 +1114,8 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false);
 
                 auto it = inverse_relations.find(name);
-                if (it != inverse_relations.end())
+                if (it != inverse_relations.end()
+                    && !(need_inversion && isFloatComparison(name, children)))
                 {
                     const auto & func_name = need_inversion ? it->second : it->first;
                     auto function_builder = FunctionFactory::instance().get(func_name, context);
