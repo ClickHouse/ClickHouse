@@ -2,6 +2,8 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Common/getMultipleKeysFromConfig.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -123,6 +125,7 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int INVALID_SETTING_VALUE;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
@@ -299,5 +302,25 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
             if (auto nodes = cluster->getAnyShardInfo().getAllNodeCount())
                 max_parallel_replicas = std::min<size_t>(nodes, max_parallel_replicas);
     }
+
+#ifdef OS_LINUX
+    /// Streaming exchanges need a streaming exchange listener on the producing nodes, which starts
+    /// only when both `distributed_query.streaming_exchange_port` and `streaming_exchange_listen_host`
+    /// are configured (see programs/server/Server.cpp). Resolve the default exchange kind to Streaming
+    /// only when the listener is available, otherwise use Persisted. Reject an explicit Streaming
+    /// request without a listener so the misconfiguration surfaces instead of producing a plan whose
+    /// fragments connect to a listener that does not exist.
+    const auto & config = from->getConfigRef();
+    const bool streaming_listener_configured =
+        config.getUInt("distributed_query.streaming_exchange_port", 0) != 0
+        && !getMultipleValuesFromConfig(config, "distributed_query", "streaming_exchange_listen_host").empty();
+
+    if (distributed_plan_force_exchange_kind.empty())
+        distributed_plan_force_exchange_kind = streaming_listener_configured ? "Streaming" : "Persisted";
+    else if (distributed_plan_force_exchange_kind == "Streaming" && !streaming_listener_configured)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Streaming exchange is requested but the streaming exchange listener is not configured "
+            "(set `distributed_query.streaming_exchange_port` and `streaming_exchange_listen_host`)");
+#endif
 }
 }
