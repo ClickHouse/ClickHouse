@@ -407,7 +407,10 @@ private:
         {
             size_t pos = start_pos + i;
             size_t lb = 0;
-            if (lookbacks[i] <= static_cast<uint32_t>(window_n))
+            /// The encoder only produces distances in [1, window_n]. A distance of 0 would read
+            /// `delta_state[pos]` — the slot being written — so reject it as corrupt alongside
+            /// distances past the window (using 1 as a safe placeholder until we throw below).
+            if (lookbacks[i] >= 1 && lookbacks[i] <= static_cast<uint32_t>(window_n))
                 lb = lookbacks[i];
             else
             {

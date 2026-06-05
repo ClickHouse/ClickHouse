@@ -246,10 +246,10 @@ inline uint8_t readWrappedFormatVersion(BitReader & reader)
 {
     uint8_t major = reader.readAlignedBytes(1)[0];
     uint8_t minor = major >= 4 ? reader.readAlignedBytes(1)[0] : 0;
-    // can_be_decompressed: max supported is 4.1. We can read major <= 4.
-    if (major > 4)
-        throw PcodecError("pcodec: file format major version is too new to decompress");
-    (void)minor;
+    // can_be_decompressed: the highest format we know how to decode is 4.1. A newer 4.x minor may
+    // change metadata semantics, so reject it instead of risking a wrong (but exception-free) decode.
+    if (major > 4 || (major == 4 && minor > 1))
+        throw PcodecError("pcodec: file format version is too new to decompress");
     return major;
 }
 
@@ -336,7 +336,13 @@ inline size_t decodeChunkByType(BitReader & reader, uint8_t type_byte, uint8_t f
 
 /// Decodes a whole standalone `.pco` stream into `out`. Returns the number of bytes written.
 /// `src` must have OVERSHOOT_PADDING readable slack after `src_len`.
-inline size_t decodeStandalone(const uint8_t * src, size_t src_len, uint8_t * out, size_t out_capacity_bytes)
+///
+/// `expected_width` (in bytes, 0 = unconstrained) is the element width the caller is going to store
+/// through. Every chunk's number-type width must match it: the caller picks the direct/aligned output
+/// path from this same width, so a malformed stream whose inner type is wider (e.g. an outer width of
+/// 4 wrapping an `F64`/`U64` chunk) would otherwise write 8-byte stores through a only-4-byte-aligned
+/// pointer.
+inline size_t decodeStandalone(const uint8_t * src, size_t src_len, uint8_t * out, size_t out_capacity_bytes, size_t expected_width = 0)
 {
     BitReader reader(src, src_len, 0);
     const uint8_t * magic = reader.readAlignedBytes(MAGIC_HEADER.size());
@@ -374,8 +380,12 @@ inline size_t decodeStandalone(const uint8_t * src, size_t src_len, uint8_t * ou
 
         size_t n = reader.readU64(BITS_TO_ENCODE_N_ENTRIES) + 1;
 
+        size_t chunk_width = widthForType(type_byte);
+        if (expected_width != 0 && chunk_width != expected_width)
+            throw PcodecError("pcodec: chunk number type width does not match the codec element width");
+
         // Bounds-check before decoding into out.
-        size_t bytes = n * widthForType(type_byte);
+        size_t bytes = n * chunk_width;
         if (out_pos + bytes > out_capacity_bytes)
             throw PcodecError("pcodec: decoded data exceeds expected size");
         decodeChunkByType(reader, type_byte, format_major, n, out + out_pos);

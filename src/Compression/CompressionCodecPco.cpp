@@ -9,11 +9,13 @@
 #include <Compression/Pcodec/PcodecError.h>
 #include <Compression/Pcodec/StandaloneDecoder.h>
 #include <Compression/Pcodec/StandaloneEncoder.h>
+#include <Common/SipHash.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 
 #include <cstring>
+#include <limits>
 #include <vector>
 
 
@@ -172,6 +174,12 @@ uint8_t CompressionCodecPco::getMethodByte() const
 void CompressionCodecPco::updateHash(SipHash & hash) const
 {
     getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/true);
+    /// `PCO` is type-dependent: the element width and the pcodec number-type byte (which also
+    /// distinguishes signed/unsigned/float at the same width) determine the produced stream. Compact
+    /// parts group substreams by `getHash`, so without these a `UInt32`, `Int64` and `Float64` column
+    /// all sharing `CODEC(PCO)` could reuse a single codec object and encode with the wrong type/width.
+    hash.update(data_bytes_size);
+    hash.update(pco_type_byte);
 }
 
 UInt32 CompressionCodecPco::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -183,10 +191,23 @@ UInt32 CompressionCodecPco::getMaxCompressedDataSize(UInt32 uncompressed_size) c
     /// header and the raw partial-value tail. The encoder splits blocks larger than MAX_ENTRIES
     /// values into several chunks, each adding a small fixed framing cost.
     UInt8 width = data_bytes_size == 0 ? 1 : data_bytes_size;
-    UInt32 n = uncompressed_size / width + 1;
-    UInt32 num_chunks = static_cast<UInt32>((n + Pcodec::MAX_ENTRIES - 1) / Pcodec::MAX_ENTRIES);
-    return 2 + width + 256 + 2 * n * (static_cast<UInt32>(width) + static_cast<UInt32>(Pcodec::MAX_ANS_BYTES) + 2) + (1u << 17) + 64
-        + num_chunks * 256;
+    /// Computed in 64-bit: for wide (1-byte) blocks the intermediate product can exceed `UInt32`, and
+    /// a wraparound here would under-reserve the destination buffer and let the encoder write past it.
+    UInt64 n = static_cast<UInt64>(uncompressed_size) / width + 1;
+    UInt64 num_chunks = (n + Pcodec::MAX_ENTRIES - 1) / Pcodec::MAX_ENTRIES;
+    UInt64 bound = UInt64{2} + width + 256
+        + 2 * n * (static_cast<UInt64>(width) + Pcodec::MAX_ANS_BYTES + 2) + (UInt64{1} << 17) + 64 + num_chunks * 256;
+
+    /// The result (and `CompressedWriteBuffer`'s reserve) is a `UInt32`, so a genuinely larger bound
+    /// cannot be represented. Fail closed rather than silently truncating to a too-small reservation.
+    if (bound > std::numeric_limits<UInt32>::max())
+        throw Exception(
+            ErrorCodes::CANNOT_COMPRESS,
+            "Codec 'PCO' cannot reserve a compression buffer for {} bytes: the required upper bound {} exceeds 4 GiB",
+            uncompressed_size,
+            bound);
+
+    return static_cast<UInt32>(bound);
 }
 
 UInt32 CompressionCodecPco::doCompressData(const char * source, UInt32 source_size, char * dest) const
@@ -255,13 +276,13 @@ UInt32 CompressionCodecPco::doDecompressData(const char * source, UInt32 source_
         bool aligned = (reinterpret_cast<uintptr_t>(out) % bytes_size) == 0;
         if (aligned)
         {
-            written = Pcodec::decodeStandalone(padded.data(), comp_len, out, expected);
+            written = Pcodec::decodeStandalone(padded.data(), comp_len, out, expected, bytes_size);
         }
         else
         {
             Pcodec::PcoArray<uint64_t> aligned_scratch(expected / sizeof(uint64_t) + 2);
             auto * scratch = reinterpret_cast<uint8_t *>(aligned_scratch.data());
-            written = Pcodec::decodeStandalone(padded.data(), comp_len, scratch, expected);
+            written = Pcodec::decodeStandalone(padded.data(), comp_len, scratch, expected, bytes_size);
             memcpy(out, scratch, std::min(written, expected));
         }
     }

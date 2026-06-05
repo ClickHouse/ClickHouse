@@ -284,6 +284,16 @@ inline ChunkLatentVarMeta readChunkLatentVarMeta(BitReader & reader, Bitlen late
             reader.checkInBounds();
             throw PcodecError("pcodec: bin offset bits exceeds latent type width");
         }
+        /// The decoded latent is `lower + offset` with `offset` in `[0, 2^offset_bits)`. The encoder
+        /// keeps that within the latent type, so a bin whose top value would overflow `latent_bits`
+        /// is corrupt; rejecting it here stops the offset add in `pcoReadOffsetsImpl` from wrapping.
+        UInt64 max_value = latent_bits >= 64 ? ~UInt64{0} : ((UInt64{1} << latent_bits) - 1);
+        UInt64 max_offset = bin.offset_bits >= 64 ? ~UInt64{0} : ((UInt64{1} << bin.offset_bits) - 1);
+        if (bin.lower > max_value - max_offset)
+        {
+            reader.checkInBounds();
+            throw PcodecError("pcodec: bin range exceeds latent type width");
+        }
     }
     return var;
 }
