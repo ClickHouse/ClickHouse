@@ -319,6 +319,16 @@ bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & 
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
 }
 
+bool ICatalog::updateSchema(
+    const String & /*namespace_name*/,
+    const String & /*table_name*/,
+    const String & /*new_metadata_path*/,
+    Poco::JSON::Object::Ptr /*new_schema*/,
+    Int32 /*previous_schema_id*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateSchema is not implemented");
+}
+
 void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropTable is not implemented");

@@ -22,6 +22,8 @@ source /repo/tests/docker_scripts/stress_tests.lib
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
 
+bash /repo/ci/jobs/scripts/functional_tests/setup_kafka.sh || { echo "Failed to start Kafka (Redpanda)"; exit 1; }
+
 echo "Get previous release tag"
 PACKAGES_DIR=/repo/ci/tmp
 # shellcheck disable=SC2016
@@ -107,7 +109,7 @@ sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_defau
 
 start_server || (echo "Failed to start server" && exit 1)
 
-clickhouse-client --query="SELECT 'Server version: ', version()"
+clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', version()"
 
 mkdir tmp_stress_output
 
@@ -286,7 +288,7 @@ check_allow_list() {
 
 start_server || check_allow_list || (echo "Failed to start server" && exit 1)
 
-clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
+clickhouse-client --receive_timeout 30 --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
     && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
     >> /test_output/test_results.tsv)
@@ -294,7 +296,7 @@ clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''"
 # Remove file application_errors.txt if it's empty
 [ -s /test_output/application_errors.txt ] || rm -f /test_output/application_errors.txt
 
-clickhouse-client --query="SELECT 'Server version: ', version()"
+clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', version()"
 
 # Let the server run for a while before checking log.
 sleep 60
@@ -437,6 +439,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Tuple element name 'null' is reserved" \
            -e "No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed" \
            -e "No stream (ba1.bin) file checksum for column b" \
+           -e "Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
