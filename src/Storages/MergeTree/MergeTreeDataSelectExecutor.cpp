@@ -36,6 +36,7 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -1809,12 +1810,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                 ++steps;
 
-                auto result = check_in_range(
-                    range, exact_ranges && range.end == range.begin + 1 ? BoolMask() : BoolMask::consider_only_can_be_true);
+                auto result = check_in_range(range, BoolMask());
                 if (!result.can_be_true)
                     continue;
 
-                if (range.end == range.begin + 1)
+                if (!result.can_be_false || range.end == range.begin + 1)
                 {
                     /// We saw a useful gap between neighboring marks. Either add it to the last range, or start a new range.
                     if (res.empty() || range.begin - res.back().end > min_marks_for_seek)
@@ -1834,7 +1834,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 {
                     /// Break the segment and put the result on the stack from right to left.
                     size_t step = (range.end - range.begin - 1) / settings[Setting::merge_tree_coarse_index_granularity] + 1;
-                    size_t end;
+                    size_t end = 0;
 
                     for (end = range.end; end > range.begin + step; end -= step)
                         ranges_stack.emplace_back(end - step, end);
@@ -1867,7 +1867,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         for (const auto & part_range : part_with_ranges.ranges)
         {
-            MarkRange result_range;
+            MarkRange result_range{};
 
             /// Invariant: !check_in_range(part_range.begin..searched_left).can_be_true
             ///             check_in_range(part_range.begin..searched_right).can_be_true

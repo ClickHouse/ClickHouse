@@ -1,5 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 
+#include <Columns/ColumnConst.h>
+#include <Common/assert_cast.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -112,7 +114,7 @@ void QueryDAG::appendExpression(const ActionsDAG & expression)
         dag = std::move(cloned);
 }
 
-const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
+static const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
 {
     auto & outputs = dag.getOutputs();
     for (auto it = outputs.begin(); it != outputs.end(); ++it)
@@ -137,11 +139,8 @@ const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & nam
             }
             else
             {
-                ColumnWithTypeAndName col;
-                col.name = node->result_name;
-                col.type = node->result_type;
-                col.column = col.type->createColumnConst(1, 1);
-                *it = &dag.addColumn(std::move(col));
+                auto column = node->result_type->createColumnConst(0, 1);
+                *it = &dag.addColumn(std::move(column), node->result_type, node->result_name);
             }
 
             return node;

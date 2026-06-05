@@ -308,6 +308,14 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CachedReadBufferCreateBufferMicroseconds);
 
+    auto create_remote_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        auto impl = info.implementation_buffer_creator();
+        if (impl->supportsRightBoundedReads())
+            return impl;
+        return std::make_unique<BoundedReadBuffer>(std::move(impl));
+    };
+
     switch (read_type)
     {
         case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
@@ -332,12 +340,7 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
 
             if (!remote_fs_segment_reader)
             {
-                auto impl = info.implementation_buffer_creator();
-                if (impl->supportsRightBoundedReads())
-                    remote_fs_segment_reader = std::move(impl);
-                else
-                    remote_fs_segment_reader = std::make_unique<BoundedReadBuffer>(std::move(impl));
-
+                remote_fs_segment_reader = create_remote_read_buffer();
                 file_segment.setRemoteFileReader(remote_fs_segment_reader);
             }
             else
@@ -356,9 +359,13 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
             /// We cannot directly check info.remote_file_reader because of a possible race with background downloader.
             auto reader = file_segment.extractRemoteFileReader();
             if (reader && offset == reader->getFileOffsetOfBufferEnd())
+            {
                 info.remote_file_reader = reader;
+            }
             else
-                info.remote_file_reader = info.implementation_buffer_creator();
+            {
+                info.remote_file_reader = create_remote_read_buffer();
+            }
 
             return info.remote_file_reader;
         }
@@ -745,8 +752,8 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
         size_t initial_buffer_size = state.buf->internalBuffer().size();
         chassert(initial_buffer && initial_buffer_size);
 
-        char *  predownload_buffer;
-        size_t predownload_buffer_size;
+        char *  predownload_buffer = nullptr;
+        size_t predownload_buffer_size = 0;
         if (initial_buffer_size < DBMS_DEFAULT_BUFFER_SIZE)
         {
             state.predownload_memory.resize(std::min<size_t>(state.bytes_to_predownload, DBMS_DEFAULT_BUFFER_SIZE));

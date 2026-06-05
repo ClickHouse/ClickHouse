@@ -675,6 +675,12 @@ Pipe ReadFromMergeTree::readInOrder(
     const bool has_hard_limit_below_one_block = read_type != ReadType::Default && read_limit && read_limit < block_size.max_block_size_rows;
     const bool has_soft_limit_below_one_block = read_type != ReadType::Default && query_task_size_limit && query_task_size_limit < block_size.max_block_size_rows;
 
+    const bool use_virtual_row = virtual_row_conversion && (read_type == ReadType::InOrder || read_type == ReadType::InReverseOrder);
+    const bool use_virtual_row_per_block = use_virtual_row && context->getSettingsRef()[Setting::read_in_order_use_virtual_row_per_block];
+
+    if (use_virtual_row_per_block && read_type == ReadType::InReverseOrder)
+        reader_settings.force_read_complete_granules = true;
+
     MergeTreeReadPoolPtr pool;
 
     if (is_parallel_reading_from_replicas)
@@ -772,9 +778,6 @@ Pipe ReadFromMergeTree::readInOrder(
             lazy_materializing_rows);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
-
-        bool use_virtual_row = virtual_row_conversion && (read_type == ReadType::InOrder || read_type == ReadType::InReverseOrder);
-        bool use_virtual_row_per_block = use_virtual_row && context->getSettingsRef()[Setting::read_in_order_use_virtual_row_per_block];
 
         Block pk_header;
         if (use_virtual_row)
@@ -933,8 +936,8 @@ struct PartRangesReadInfo
 
         auto all_parts_on_remote_disk = checkAllPartsOnRemoteFS(parts);
 
-        size_t min_rows_for_concurrent_read;
-        size_t min_bytes_for_concurrent_read;
+        size_t min_rows_for_concurrent_read = 0;
+        size_t min_bytes_for_concurrent_read = 0;
         if (all_parts_on_remote_disk)
         {
             min_rows_for_concurrent_read = settings[Setting::merge_tree_min_rows_for_concurrent_read_for_remote_filesystem];
@@ -1129,7 +1132,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;
 
     double read_split_ranges_into_intersecting_and_non_intersecting_injection_probability
-        = settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability];
+        = static_cast<double>(settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability]);
     std::bernoulli_distribution fault(read_split_ranges_into_intersecting_and_non_intersecting_injection_probability);
 
     if (read_type != ReadType::ParallelReplicas &&
@@ -2354,6 +2357,25 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
                 deferred_prewhere_info != nullptr);
         }
 
+        /// Build indexes before PREWHERE sets. KeyCondition (inside buildIndexes) calls
+        /// buildOrderedSetInplace only for IN sets whose left argument maps to key columns,
+        /// so ordered sets are built only when actually needed for primary key analysis.
+        /// Building indexes first is important because the set is shared between the PREWHERE
+        /// DAG and the index filter DAG via ColumnSet: if we built non-ordered sets for
+        /// PREWHERE first, the set would be created without elements and KeyCondition would
+        /// not be able to use it for index analysis.
+        buildIndexes(
+            indexes,
+            index_filter_dag,
+            data,
+            getParts(),
+            vector_search_parameters,
+            top_k_filter_info,
+            context,
+            query_info,
+            storage_snapshot->metadata,
+            skip_partition_pruning);
+
         /// Build sets for PREWHERE and row_level_filter synchronously during applyFilters.
         /// PREWHERE is evaluated at the storage level during data reading, before the
         /// pipeline-level CreatingSetsStep has a chance to execute. Although CreatingSetsStep
@@ -2366,18 +2388,6 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             VirtualColumnUtils::buildSetsForDAG(query_info.prewhere_info->prewhere_actions, context);
         if (query_info.row_level_filter)
             VirtualColumnUtils::buildSetsForDAG(query_info.row_level_filter->actions, context);
-
-        buildIndexes(
-            indexes,
-            index_filter_dag,
-            data,
-            getParts(),
-            vector_search_parameters,
-            top_k_filter_info,
-            context,
-            query_info,
-            storage_snapshot->metadata,
-            skip_partition_pruning);
     }
 }
 
