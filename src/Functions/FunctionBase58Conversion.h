@@ -11,8 +11,13 @@ namespace DB
 
 /// The generic (variable-length) base58 conversion is quadratic in the input length, so it can be
 /// extremely slow on large values. base58 is meant for short data (keys, hashes, addresses), so we
-/// reject oversized inputs (the limit is enforced by FunctionBaseXXConversion via Traits::max_input_size)
-/// instead of letting a single value run for minutes. 10 KB allows e.g. 32/64-byte keys with plenty of margin.
+/// reject oversized inputs instead of letting a single value run for minutes. 10 KB allows e.g.
+/// 32/64-byte keys with plenty of margin.
+///
+/// This is only the compile-time default that marks base58 as size-limited; the effective limit is the
+/// runtime setting `function_base58_max_input_size` (default 10 KB, `0` disables it). It is enforced by
+/// FunctionBaseXXConversion, which is gated on `Traits::max_input_size != 0` (so the linear base32/base64,
+/// whose `max_input_size` is 0, are never limited).
 static constexpr size_t MAX_BASE58_INPUT_SIZE = 10000;
 
 struct Base58EncodeTraits
