@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/ProcessList.h>
 
@@ -47,6 +48,8 @@ void PostgreSQLOutputFormat::writePrefix()
 
 void PostgreSQLOutputFormat::consume(Chunk chunk)
 {
+    LOG_TEST(getLogger("PostgreSQLOutputFormat"), "Consume a chunk");
+
     for (size_t i = 0; i != chunk.getNumRows(); ++i)
     {
         /// Check for cancellation periodically, use throw instead of return.
