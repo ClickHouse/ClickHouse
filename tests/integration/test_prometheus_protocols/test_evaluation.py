@@ -1,3 +1,6 @@
+import math
+import struct
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -6,6 +9,8 @@ from .prometheus_test_utils import *
 
 
 cluster = ClickHouseCluster(__file__)
+
+STALE_NAN = struct.unpack(">d", bytes.fromhex("7ff0000000000002"))[0]
 
 node = cluster.add_instance(
     "node",
@@ -187,6 +192,46 @@ def send_test_data():
     send_data(
         [
             (
+                {"__name__": "counter_values", "job": "counter"},
+                {
+                    100: 0,
+                    110: 1,
+                    120: 3,
+                    130: 2,
+                    140: 4,
+                    190: 5,
+                    200: 1,
+                    210: 2,
+                },
+            ),
+            (
+                {"__name__": "special_counter_values", "case": "nan-inf"},
+                {
+                    100: 1,
+                    110: math.nan,
+                    120: math.nan,
+                    130: math.inf,
+                    140: math.inf,
+                    150: -math.inf,
+                },
+            ),
+            (
+                {"__name__": "stale_counter_values", "case": "stale-nan"},
+                {
+                    100: 2,
+                    110: STALE_NAN,
+                    120: 1,
+                    130: math.nan,
+                    140: math.nan,
+                    150: 3,
+                },
+            ),
+        ]
+    )
+
+    send_data(
+        [
+            (
                 {"__name__": "http_errors", "http_code": "401"},
                 {
                     150: 0,
@@ -265,7 +310,12 @@ def do_query_test(
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
 ):
-    assert execute_query_in_prometheus(query, timestamp) == result
+    actual_prometheus_result = execute_query_in_prometheus(query, timestamp)
+    assert http_api_response_close_to(
+        actual_prometheus_result, result, eps=eps
+    ), (
+        f"actual_prometheus_result: {actual_prometheus_result}, expected: {result}"
+    )
 
     actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
     assert tsv_close_to(
@@ -274,9 +324,14 @@ def do_query_test(
 
     actual_result_from_http_api = execute_query_in_clickhouse_http_api(query, timestamp)
     assert (
-        http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
+        http_api_response_close_to(
+            actual_result_from_http_api, actual_prometheus_result, eps=eps
+        )
         == clickhouse_http_api_result_is_same_as_prometheus
-    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+    ), (
+        f"actual_result_from_http_api: {actual_result_from_http_api}, "
+        f"prometheus_result: {actual_prometheus_result}"
+    )
 
 
 def do_query_test_expect_error(
@@ -310,8 +365,13 @@ def do_range_query_test(
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
 ):
-    assert (
-        execute_range_query_in_prometheus(query, start_time, end_time, step) == result
+    actual_prometheus_result = execute_range_query_in_prometheus(
+        query, start_time, end_time, step
+    )
+    assert http_api_response_close_to(
+        actual_prometheus_result, result, eps=eps
+    ), (
+        f"actual_prometheus_result: {actual_prometheus_result}, expected: {result}"
     )
 
     actual_chresult = execute_range_query_in_clickhouse_sql(
@@ -325,9 +385,14 @@ def do_range_query_test(
         query, start_time, end_time, step
     )
     assert (
-        http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
+        http_api_response_close_to(
+            actual_result_from_http_api, actual_prometheus_result, eps=eps
+        )
         == clickhouse_http_api_result_is_same_as_prometheus
-    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+    ), (
+        f"actual_result_from_http_api: {actual_result_from_http_api}, "
+        f"prometheus_result: {actual_prometheus_result}"
+    )
 
 
 # Evaluates a query in ClickHouse only (no comparison with Prometheus) and checks the result.
@@ -349,6 +414,29 @@ def do_clickhouse_only_query_test(
     assert http_api_response_close_to(
         actual_result_from_http_api, result, eps=eps
     ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+
+
+def do_clickhouse_only_query_test_expect_error(query, timestamp, expected_cherror):
+    assert expected_cherror in execute_query_in_clickhouse_sql(
+        query, timestamp, expect_error=True
+    )
+    assert expected_cherror in execute_query_in_clickhouse_http_api(
+        query, timestamp, expect_error=True
+    )
+
+
+def test_native_promql_error_paths():
+    do_clickhouse_only_query_test_expect_error(
+        "sort(test)",
+        130,
+        "Function sort is not implemented",
+    )
+
+    do_clickhouse_only_query_test_expect_error(
+        "day_of_week(test, test)",
+        130,
+        "Function 'day_of_week' expects 1 arguments, but was called with 2 arguments",
+    )
 
 
 def test_up():
@@ -475,6 +563,35 @@ def test_instant_selectors():
     )
 
 
+def test_timestamp_modifier_fixed_evaluation_time():
+    do_query_test(
+        "test @ 130",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "test"}, "value": [250, "3"]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "1970-01-01 00:04:10.000",
+                "3",
+            ]
+        ],
+    )
+
+    do_range_query_test(
+        "last_over_time(test[45s] @ 130)",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "3"], [190, "3"], [250, "3"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:02:10.000',3),('1970-01-01 00:03:10.000',3),('1970-01-01 00:04:10.000',3)]",
+            ]
+        ],
+    )
+
+
 def test_function_over_time():
     do_query_test(
         "last_over_time(test[45s])[120s:15s]",
@@ -484,6 +601,140 @@ def test_function_over_time():
             [
                 "[('__name__','test')]",
                 "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',3),('1970-01-01 00:02:30.000',4),('1970-01-01 00:02:45.000',4),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',8)]",
+            ]
+        ],
+    )
+
+    # Behavior: Prometheus counts adjacent value transitions per evaluation step over a left-open, right-closed range window and emits no metric name.
+    do_query_test(
+        "changes(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "1"], [150, "2"], [165, "1"], [180, "0"], [195, "0"], [210, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',2),('1970-01-01 00:02:45.000',1),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',1)]",
+            ]
+        ],
+    )
+
+    # Behavior: Prometheus counts strict counter decreases per step and returns `0` for windows with one usable sample.
+    do_query_test(
+        "resets(counter_values[45s])[105s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "counter"}, "values": [[120, "0"], [135, "1"], [150, "1"], [165, "0"], [180, "0"], [195, "0"], [210, "1"]]}]}',
+        [
+            [
+                "[('job','counter')]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',0),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',1)]",
+            ]
+        ],
+    )
+
+    # Behavior: Prometheus returns `0` when reset detection sees exactly one usable sample in the range.
+    do_query_test(
+        "resets(counter_values[45s])",
+        105,
+        '{"resultType": "vector", "result": [{"metric": {"job": "counter"}, "value": [105, "0"]}]}',
+        [["[('job','counter')]", "1970-01-01 00:01:45.000", 0]],
+    )
+
+    # Behavior: Prometheus omits output when a fixed-time range window has no usable samples.
+    do_query_test(
+        "changes(test[5s] @ 180)",
+        210,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    # Behavior: Prometheus treats consecutive regular `NaN` samples as unchanged but counts transitions into/out of `NaN` and infinities.
+    do_query_test(
+        "changes(special_counter_values[60s])",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"case": "nan-inf"}, "value": [150, "3"]}]}',
+        [["[('case','nan-inf')]", "1970-01-01 00:02:30.000", 3]],
+    )
+
+    # Behavior: Prometheus reset detection for floats is strict `current < previous`, so `+Inf -> -Inf` counts and `NaN` comparisons do not.
+    do_query_test(
+        "resets(special_counter_values[60s])",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"case": "nan-inf"}, "value": [150, "1"]}]}',
+        [["[('case','nan-inf')]", "1970-01-01 00:02:30.000", 1]],
+    )
+
+    # Behavior: Prometheus matrix selectors skip stale markers while regular `NaN` samples remain visible to `changes`.
+    do_query_test(
+        "changes(stale_counter_values[60s])",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"case": "stale-nan"}, "value": [150, "3"]}]}',
+        [["[('case','stale-nan')]", "1970-01-01 00:02:30.000", 3]],
+    )
+
+    # Behavior: Prometheus skips stale markers before reset detection, so decreases across a stale marker still count.
+    do_query_test(
+        "resets(stale_counter_values[60s])",
+        150,
+        '{"resultType": "vector", "result": [{"metric": {"case": "stale-nan"}, "value": [150, "1"]}]}',
+        [["[('case','stale-nan')]", "1970-01-01 00:02:30.000", 1]],
+    )
+
+    # Behavior: Prometheus returns an empty vector for absent fixed-time input series, not a `{}` series with `0`.
+    do_query_test(
+        "resets(no_such_metric[45s] @ 210)",
+        210,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    # Behavior: Prometheus applies positive `offset` to the selector range before counting changes.
+    do_query_test(
+        "changes(test[45s] offset 70s)",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "2"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 2]],
+    )
+
+    # Behavior: Prometheus allows negative `offset`, selecting samples after the evaluation timestamp.
+    do_query_test(
+        "changes(test[45s] offset -20s)",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "3"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 3]],
+    )
+
+    # Behavior: Prometheus applies offset before reset detection and still uses strict decrease semantics.
+    do_query_test(
+        "resets(counter_values[45s] offset 70s)",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"job": "counter"}, "value": [210, "1"]}]}',
+        [["[('job','counter')]", "1970-01-01 00:03:30.000", 1]],
+    )
+
+    do_range_query_test(
+        "changes(test[45s])",
+        120,
+        210,
+        15,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "1"], [150, "2"], [165, "1"], [180, "0"], [195, "0"], [210, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',2),('1970-01-01 00:02:45.000',1),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',1)]",
+            ]
+        ],
+    )
+
+    do_range_query_test(
+        "resets(counter_values[45s])",
+        120,
+        210,
+        15,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "counter"}, "values": [[120, "0"], [135, "1"], [150, "1"], [165, "0"], [180, "0"], [195, "0"], [210, "1"]]}]}',
+        [
+            [
+                "[('job','counter')]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',0),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',1)]",
             ]
         ],
     )

@@ -47,9 +47,9 @@ public:
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,
-        const Array & params) const override
+        const Array &) const override
     {
-        return std::make_shared<AggregateFunctionArray>(nested_function, arguments, params);
+        return std::make_shared<AggregateFunctionArray>(nested_function, arguments, nested_function->getParameters());
     }
 };
 

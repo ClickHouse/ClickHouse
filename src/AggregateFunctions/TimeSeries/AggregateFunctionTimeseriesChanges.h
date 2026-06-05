@@ -1,7 +1,10 @@
 #pragma once
 
+#include <bit>
+#include <cmath>
 #include <cstddef>
 #include <cstring>
+#include <type_traits>
 
 
 #include <DataTypes/DataTypesDecimal.h>
@@ -76,6 +79,13 @@ public:
 
     using Bucket = typename Base::Bucket;
 
+    static bool isPrometheusStaleNaN(ValueType value)
+    {
+        if constexpr (std::is_same_v<ValueType, Float64>)
+            return std::bit_cast<UInt64>(value) == 0x7ff0000000000002ULL;
+        return false;
+    }
+
     static void serializeBucket(const Bucket & bucket, WriteBuffer & buf)
     {
         writeBinaryLittleEndian(bucket.samples.size(), buf);
@@ -117,9 +127,20 @@ private:
         }
 
         UInt64 count = 0;
-        ValueType prev_sample_value = samples_in_window.front().second;
-        for (const auto& sample : samples_in_window)
+        bool has_prev_sample = false;
+        ValueType prev_sample_value{};
+        for (const auto & sample : samples_in_window)
         {
+            if (isPrometheusStaleNaN(sample.second))
+                continue;
+
+            if (!has_prev_sample)
+            {
+                prev_sample_value = sample.second;
+                has_prev_sample = true;
+                continue;
+            }
+
             if constexpr (is_resets)
             {
                 bool is_reset = (sample.second < prev_sample_value);
@@ -128,11 +149,20 @@ private:
             }
             else
             {
-                bool is_change = (sample.second != prev_sample_value);
+                /// PromQL changes() treats consecutive regular NaN samples as the same value.
+                bool is_change = (sample.second != prev_sample_value)
+                    && !(std::isnan(sample.second) && std::isnan(prev_sample_value));
                 if (is_change)
                     count++;
             }
             prev_sample_value = sample.second;
+        }
+
+        if (!has_prev_sample)
+        {
+            result = 0;
+            null = 1;
+            return;
         }
 
         result = static_cast<ValueType>(count);
