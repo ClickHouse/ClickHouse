@@ -20,7 +20,7 @@ SELECT count() > 0 FROM system.trace_log t WHERE event_date >= yesterday() AND e
 -- Also test the real time profiler with CPU-bound work (numbers_mt).
 SET max_rows_to_read = 0;
 SET log_queries = 1;
-SELECT count(), ignore('test real time query profiler numbers_mt') FROM numbers_mt(5e9);
+SELECT count(), ignore('test real time query profiler numbers_mt') FROM numbers_mt(1e9);
 SET log_queries = 0;
 SYSTEM FLUSH LOGS trace_log, query_log;
 
@@ -31,7 +31,7 @@ SET query_profiler_real_time_period_ns = 0;
 SET query_profiler_cpu_time_period_ns = 1000000;
 SET log_queries = 1;
 SET max_rows_to_read = 0;
-SELECT count(), ignore('test cpu time query profiler') FROM numbers_mt(5e9);
+SELECT count(), ignore('test cpu time query profiler') FROM numbers_mt(1e9);
 SET log_queries = 0;
 SYSTEM FLUSH LOGS trace_log, query_log;
 
