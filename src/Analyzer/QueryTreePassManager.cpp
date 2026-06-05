@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <Common/Exception.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -60,6 +61,11 @@
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/UniqToCountPass.h>
 #include <Analyzer/Utils.h>
+
+namespace ProfileEvents
+{
+    extern const Event QueryTreeOptimizeMicroseconds;
+}
 
 namespace DB
 {
@@ -191,16 +197,7 @@ void QueryTreePassManager::addPass(QueryTreePassPtr pass)
 
 void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node)
 {
-    auto current_context = getContext();
-    size_t passes_size = passes.size();
-
-    for (size_t i = 0; i < passes_size; ++i)
-    {
-        passes[i]->run(query_tree_node, current_context);
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-        ValidationChecker(passes[i]->getName()).visit(query_tree_node);
-#endif
-    }
+    run(query_tree_node, passes.size());
 }
 
 void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr & query_tree_node)
@@ -221,6 +218,10 @@ void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node, size_t up_to_
             "Requested to run passes up to {} pass. There are only {} passes",
             up_to_pass_index,
             passes_size);
+
+    /// Measures the whole pass loop: analysis plus all query-tree-level optimizations.
+    /// QueryAnalysisMicroseconds is measured separately inside QueryAnalysisPass.
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryTreeOptimizeMicroseconds);
 
     auto current_context = getContext();
     for (size_t i = 0; i < up_to_pass_index; ++i)

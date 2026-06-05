@@ -1,6 +1,12 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+
+namespace ProfileEvents
+{
+    extern const Event QueryAnalysisMicroseconds;
+}
 
 namespace DB
 {
@@ -14,6 +20,8 @@ QueryAnalysisPass::QueryAnalysisPass(bool only_analyze_) : only_analyze(only_ana
 
 void QueryAnalysisPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryAnalysisMicroseconds);
+
     QueryAnalyzer analyzer(only_analyze);
     analyzer.resolve(query_tree_node, table_expression, context);
     createUniqueAliasesIfNecessary(query_tree_node, context);
