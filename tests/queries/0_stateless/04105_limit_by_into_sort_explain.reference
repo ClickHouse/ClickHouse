@@ -89,12 +89,12 @@ ORDER BY k, v LIMIT 2, 3 BY k;
 (Expression)
 ExpressionTransform
   (LimitBy)
-  LimitByTransform (InOrder)
+  LimitBySortedStreamTransform
     (Expression)
     ExpressionTransform
       (Sorting)
       MergingSortedTransform 12 → 1
-        LimitByTransform (InOrder) × 12
+        LimitBySortedStreamTransform × 12
           MergeSortingTransform × 12
             LimitsCheckingTransform × 12
               PartialSortingTransform × 12
@@ -133,13 +133,13 @@ SELECT a, b FROM test_mt ORDER BY a, b LIMIT 2, 3 BY a;
 (Expression)
 ExpressionTransform
   (LimitBy)
-  LimitByTransform (InOrder)
+  LimitBySortedStreamTransform
     (Expression)
     ExpressionTransform
       (Sorting)
       MergingSortedTransform 2 → 1
         BufferChunks × 2
-          LimitByTransform (InOrder) × 2
+          LimitBySortedStreamTransform × 2
             (Expression)
             ExpressionTransform × 2
               (ReadFromMergeTree)
@@ -151,7 +151,7 @@ SELECT a, b FROM test_mt ORDER BY a, b, b + 1 LIMIT 2, 3 BY a;
 (Expression)
 ExpressionTransform
   (LimitBy)
-  LimitByTransform (InOrder)
+  LimitBySortedStreamTransform
     (Expression)
     ExpressionTransform
       (Sorting)
@@ -184,7 +184,7 @@ SETTINGS query_plan_push_limit_by_into_sort = 0;
 (Expression)
 ExpressionTransform
   (LimitBy)
-  LimitByTransform (InOrder)
+  LimitBySortedStreamTransform
     (Expression)
     ExpressionTransform
       (Sorting)
@@ -203,7 +203,7 @@ ORDER BY k LIMIT 18446744073709551615, 10 BY k;
 (Expression)
 ExpressionTransform
   (LimitBy)
-  LimitByTransform (InOrder)
+  LimitBySortedStreamTransform
     (Expression)
     ExpressionTransform
       (Sorting)
@@ -226,12 +226,12 @@ ORDER BY k, v LIMIT 2, 3 BY k;
 (Expression)
 ExpressionTransform
   (LimitBy)
-  LimitByTransform (InOrder)
+  LimitBySortedStreamTransform
     (Expression)
     ExpressionTransform
       (Sorting)
       MergingSortedTransform 24 → 1
-        LimitByTransform (InOrder) × 24
+        LimitBySortedStreamTransform × 24
           MergeSortingTransform × 24
             LimitsCheckingTransform × 24
               PartialSortingTransform × 24
@@ -256,12 +256,12 @@ SELECT k, v FROM (
   (Expression)
   ExpressionTransform
     (LimitBy)
-    LimitByTransform (InOrder)
+    LimitBySortedStreamTransform
       (Expression)
       ExpressionTransform
         (Sorting)
         MergingSortedTransform 12 → 1
-          LimitByTransform (InOrder) × 12
+          LimitBySortedStreamTransform × 12
             MergeSortingTransform × 12
               LimitsCheckingTransform × 12
                 PartialSortingTransform × 12
@@ -289,12 +289,12 @@ ORDER BY k, v LIMIT 2, 3 BY k;
 (Expression)
 ExpressionTransform
   (LimitBy)
-  LimitByTransform (InOrder)
+  LimitBySortedStreamTransform
     (Expression)
     ExpressionTransform
       (Sorting)
       MergingSortedTransform 2 → 1
-        LimitByTransform (InOrder) × 2
+        LimitBySortedStreamTransform × 2
           MergeSortingTransform × 2
             LimitsCheckingTransform × 2
               PartialSortingTransform × 2
@@ -335,12 +335,12 @@ SETTINGS join_algorithm = 'full_sorting_merge';
 (Expression)
 ExpressionTransform
   (LimitBy)
-  LimitByTransform (InOrder)
+  LimitBySortedStreamTransform
     (Expression)
     ExpressionTransform
       (Sorting)
       MergingSortedTransform 12 → 1
-        LimitByTransform (InOrder) × 12
+        LimitBySortedStreamTransform × 12
           MergeSortingTransform × 12
             LimitsCheckingTransform × 12
               PartialSortingTransform × 12
