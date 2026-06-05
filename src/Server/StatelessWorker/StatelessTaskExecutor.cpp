@@ -51,7 +51,9 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     }
 
     /// Apply the initiator's settings so the worker honors query limits and execution-affecting
-    /// settings. Force make_distributed_plan off: the worker runs an already-split local fragment.
+    /// settings. Limits (e.g. max_rows_to_read, max_rows_in_join) are enforced per task, so each
+    /// fragment stays under the limit but the whole query may exceed it by up to the bucket count.
+    /// Force make_distributed_plan off: the worker runs an already-split local fragment.
     query_context->applySettingsChanges(task_description.settings_changes);
     query_context->setSetting("make_distributed_plan", false);
 
