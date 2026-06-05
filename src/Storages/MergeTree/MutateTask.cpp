@@ -1350,6 +1350,7 @@ static void finalizeMutatedPart(
         written_files.push_back(std::move(out_comp));
     }
 
+    if (!new_data_part->storage.storesMetadataVersionInPartAttributes())
     {
         auto out_metadata = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, context->getWriteSettings());
         DB::writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
