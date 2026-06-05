@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
+#include <Core/SortCursor.h>
 #include <DataTypes/IDataType.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
@@ -306,16 +307,6 @@ bool LimitBySortedStreamTransform::firstRowContinuesPreviousChunkGroup(const Col
     return true;
 }
 
-bool LimitBySortedStreamTransform::hasSameGroupingKeyAsPreviousRow(const Columns & chunk_columns, UInt64 row_idx) const
-{
-    for (const auto & column : chunk_columns)
-    {
-        if (column->compareAt(row_idx, row_idx - 1, *column, 1) != 0)
-            return false;
-    }
-    return true;
-}
-
 void LimitBySortedStreamTransform::rememberLastGroupingKey(const Columns & chunk_columns, UInt64 row_idx)
 {
     for (size_t key_idx = 0; key_idx < chunk_columns.size(); ++key_idx)
@@ -363,21 +354,19 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     if (have_previous_chunk_key && !firstRowContinuesPreviousChunkGroup(normalized_grouping_key_columns))
         current_group_rows_seen = 0;
 
+    /// Segment the sorted chunk into maximal runs of rows that share one grouping key. Each run is
+    /// one group.
     UInt64 current_run_start_row = 0;
-    for (UInt64 row_idx = 1; row_idx < row_count; ++row_idx)
+    while (current_run_start_row < row_count)
     {
-        if (hasSameGroupingKeyAsPreviousRow(normalized_grouping_key_columns, row_idx))
-            continue;
+        const UInt64 run_end = getEqualRangeEndAssumeSorted(normalized_grouping_key_columns, current_run_start_row, row_count, 1);
+        processRun(current_run_start_row, run_end - current_run_start_row);
 
-        /// The grouping key changed within the chunk, so finish the current run
-        /// and reset the counter before starting the next group's run.
-        processRun(current_run_start_row, row_idx - current_run_start_row);
-        current_group_rows_seen = 0;
-        current_run_start_row = row_idx;
+        /// A group boundary inside the chunk resets the per-group counter before the next run.
+        if (run_end != row_count)
+            current_group_rows_seen = 0;
+        current_run_start_row = run_end;
     }
-
-    /// Flush the final run, which extends to the end of the chunk.
-    processRun(current_run_start_row, row_count - current_run_start_row);
 
     /// Save the last grouping key so the next chunk can detect whether its first
     /// row continues the same group or starts a new one. With no non-constant grouping

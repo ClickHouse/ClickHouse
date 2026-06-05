@@ -107,9 +107,6 @@ private:
     /// chunk's last row.
     bool firstRowContinuesPreviousChunkGroup(const Columns & chunk_columns) const;
 
-    /// Return whether `row_idx` has the same grouping key as `row_idx - 1`.
-    bool hasSameGroupingKeyAsPreviousRow(const Columns & chunk_columns, UInt64 row_idx) const;
-
     void rememberLastGroupingKey(const Columns & chunk_columns, UInt64 row_idx);
 
     void processRun(UInt64 run_start_row, UInt64 run_row_count);
