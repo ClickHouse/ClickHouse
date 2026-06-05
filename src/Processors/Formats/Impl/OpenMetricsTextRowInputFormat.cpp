@@ -563,10 +563,17 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
             else if (line.starts_with("# TYPE "))
             {
                 parseMetadataLine(line, sizeof("# TYPE ") - 1, name, rest);
-                /// Type is a single token (counter/gauge/histogram/summary/unknown); strip anything after first whitespace.
+                /// Type is a single token (counter/gauge/histogram/summary/untyped).
                 size_t end = 0;
                 while (end < rest.size() && rest[end] != ' ' && rest[end] != '\t')
                     ++end;
+                if (end == 0)
+                    throwIncorrect("Missing type in # TYPE descriptor", line);
+                for (size_t i = end; i < rest.size(); ++i)
+                {
+                    if (rest[i] != ' ' && rest[i] != '\t')
+                        throwIncorrect("Unexpected trailing data in # TYPE descriptor", line);
+                }
                 rest.resize(end);
                 family_meta[name].type = std::move(rest);
             }

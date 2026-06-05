@@ -206,6 +206,8 @@ FROM format(
     concat('# HELP rpc_duration_seconds help\n', '# TYPE rpc_duration_seconds histogram   \n', 'rpc_duration_seconds_bucket{le="0.5"} 3\n', '# EOF\n')
 )
 FORMAT TSV;
+-- Reject non-whitespace after the `# TYPE` type token (do not silently truncate metadata).
+SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram garbage', char(10), 'h_bucket{le="1"} 2', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 
 -- Range guards (token is seconds, stored as `seconds * 1000` ms):
 -- Largest in-range integer seconds (INT64_MAX / 1000) is accepted; +1 second overflows Int64 ms.
