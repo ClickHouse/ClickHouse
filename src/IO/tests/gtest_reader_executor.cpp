@@ -1977,6 +1977,43 @@ TEST(ReaderExecutor, UnknownSizeReaderWithExtentBoundsAndReleasesConnection)
         << "the live buffer + slot must be released once the extent is reached, not pinned";
 }
 
+TEST(ReaderExecutor, UnknownSizeStatelessReaderBoundsOneShotToExtent)
+{
+    /// The no-slot one-shot branch: an unknown-size source with a finite advertised
+    /// extent but no available SourceBufferLimit slot must still bound each one-shot
+    /// connection (to what it reads), so it drains and is returned to the pool
+    /// reusable instead of an open-ended GET abandoned after the clamped read.
+    /// Before the fix the bound was skipped whenever the size was unknown, even with
+    /// a concrete extent, leaving these connections open-ended under slot pressure.
+    const size_t data_size = 1u << 20;   // 1 MiB available at the source
+    const size_t extent = 200u << 10;    // consumer reads only 200 KiB
+
+    BoundLog log;
+    auto source = std::make_shared<BoundRecordingSource>(
+        std::unordered_map<String, String>{{"obj", String(data_size, 'z')}}, log);
+    StoredObjects objects;
+    objects.emplace_back("obj", "", StoredObject::UnknownSize);
+
+    /// No setBufferLimit -> no slot -> the stateless one-shot path.
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/64u << 10, /*min_bytes_for_seek=*/0);
+    executor.setReadExtent(extent);
+
+    size_t total = 0;
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (rope.empty())
+            break;
+        total += rope.range().size;
+    }
+
+    EXPECT_EQ(total, extent) << "the unknown-size stateless reader stops at the advertised extent";
+    ASSERT_FALSE(log.read_until.empty());
+    for (size_t i = 0; i < log.read_until.size(); ++i)
+        EXPECT_TRUE(log.read_until[i].has_value())
+            << "one-shot open #" << i << " must be right-bounded (finite extent advertised), not open-ended";
+}
+
 TEST(ReaderExecutor, ReadBigAtTransientStatsRollUpToParent)
 {
     /// A `readBigAt` transient must not emit its own ProfileEvents /

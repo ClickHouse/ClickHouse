@@ -1351,8 +1351,13 @@ Rope ReaderExecutor::readFromSource(
         opened->seek(offset, SEEK_SET);
 
     /// No slot kept: bound the one-shot read so its connection is fully consumed
-    /// and reusable by the pool, rather than abandoning an open-ended GET.
-    const bool stateless_bounded = !hasUnknownSize() && opened->supportsRightBoundedReads() && want > 0;
+    /// and reusable by the pool, rather than abandoning an open-ended GET. The read
+    /// consumes exactly `want` bytes, so bound to `offset + want` whenever the end is
+    /// concrete — a known object size, or a finite advertised extent
+    /// (`read_extent_end`) even when the size is unknown. Only a truly unbounded
+    /// source (unknown size AND no advertised extent) is left open-ended.
+    const bool stateless_bounded = opened->supportsRightBoundedReads() && want > 0
+        && (!hasUnknownSize() || read_extent_end.has_value());
     if (stateless_bounded)
         opened->setReadUntilPosition(offset + want);
 
@@ -1382,8 +1387,9 @@ Rope ReaderExecutor::readFromSource(
         total_read += got;
     }
 
-    /// An unbounded one-shot GET (unknown-size source: the bound above was
-    /// skipped) that did not reach EOF is dropped mid-response — not reusable.
+    /// An unbounded one-shot GET (unknown size AND no advertised extent, so the
+    /// bound above was skipped) that did not reach EOF is dropped mid-response —
+    /// not reusable.
     if (!stateless_bounded && !hit_eof)
         ++stats.incomplete_connections;
 
