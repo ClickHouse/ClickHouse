@@ -229,16 +229,22 @@ def test_format_version_upgrade_concurrent_reads(
     with ThreadPoolExecutor(max_workers=num_readers + 1) as executor:
         reader_futures = [executor.submit(reader_loop) for _ in range(num_readers)]
 
-        # Let readers warm up against the v1 metadata, then flip to v2 from another thread.
-        time.sleep(0.5)
-        meta, prev_path = _read_iceberg_metadata(instance, table_name)
-        assert meta["format-version"] == 1
-        meta["format-version"] = 2
-        _write_iceberg_metadata(instance, table_name, meta, prev_path)
+        try:
+            # Let readers warm up against the v1 metadata, then flip to v2 from another thread.
+            time.sleep(0.5)
+            meta, prev_path = _read_iceberg_metadata(instance, table_name)
+            assert meta["format-version"] == 1
+            meta["format-version"] = 2
+            _write_iceberg_metadata(instance, table_name, meta, prev_path)
 
-        # Keep readers running long enough to interleave with the upgraded metadata.
-        time.sleep(1.5)
-        stop["flag"] = True
+            # Keep readers running long enough to interleave with the upgraded metadata.
+            time.sleep(1.5)
+        finally:
+            # Always stop the readers, even if the upgrade path above raises. Otherwise the
+            # `ThreadPoolExecutor` shutdown on leaving the `with` block waits forever on the
+            # infinite reader loops and the test hangs until the global CI timeout instead of
+            # failing fast.
+            stop["flag"] = True
 
         for fut in as_completed(reader_futures):
             iterations = fut.result()
