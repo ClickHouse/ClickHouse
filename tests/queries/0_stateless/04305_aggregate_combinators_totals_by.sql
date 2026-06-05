@@ -16,6 +16,11 @@ INSERT INTO test_combinators VALUES
     ('NL', 'Amsterdam', 'Engineering', 95000),
     ('NL', 'Amsterdam', 'Sales', 80000);
 
+-- Disable two-level aggregation; it is not yet supported by TOTALS/BY combinators
+-- (see PR discussion). Two-level rejection is verified explicitly at the end of the test.
+SET group_by_two_level_threshold = 0;
+SET group_by_two_level_threshold_bytes = 0;
+
 SELECT '--- T1: TOTALS basic ---';
 SELECT country, round(avg(salary)) AS a, round(avg(salary TOTALS)) AS t
 FROM test_combinators GROUP BY country ORDER BY country;
@@ -66,5 +71,10 @@ SELECT avg(salary BY country BY city) FROM test_combinators GROUP BY country, ci
 
 SELECT '--- T12: Validation - TOTALS + BY in same call ---';
 SELECT avg(salary TOTALS BY country) FROM test_combinators GROUP BY country; -- { clientError SYNTAX_ERROR }
+
+SELECT '--- T13: two-level aggregation is rejected with NOT_IMPLEMENTED ---';
+SET group_by_two_level_threshold = 1;
+SET group_by_two_level_threshold_bytes = 1;
+SELECT country, avg(salary TOTALS) FROM test_combinators GROUP BY country FORMAT Null; -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE test_combinators;

@@ -29,3 +29,4 @@ RU	SPb	110000	110000
 --- T10: Validation - duplicate TOTALS ---
 --- T11: Validation - duplicate BY ---
 --- T12: Validation - TOTALS + BY in same call ---
+--- T13: two-level aggregation is rejected with NOT_IMPLEMENTED ---
