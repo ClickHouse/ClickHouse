@@ -1,0 +1,14 @@
+-- bot repro: arrayJoin with empty-array prefix
+3
+4
+5
+-- bot repro, old analyzer
+3
+4
+5
+-- multi-element arrayJoin
+0	0
+0	10
+1	1
+-- MergeTree, no ORDER BY, LIMIT 3
+3

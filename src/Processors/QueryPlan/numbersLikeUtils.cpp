@@ -4,6 +4,7 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -61,6 +62,19 @@ void addNullSource(Pipe & pipe, SharedHeader header)
 namespace
 {
 
+bool astContainsArrayJoinFunction(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * function = ast->as<ASTFunction>())
+        if (function->name == "arrayJoin")
+            return true;
+    for (const auto & child : ast->children)
+        if (!child->as<ASTSelectQuery>() && astContainsArrayJoinFunction(child))
+            return true;
+    return false;
+}
+
 bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSelectQuery::LimitInfo & lim_info)
 {
     /// Reject negative, fractional, and zero limits for pushdown
@@ -73,6 +87,15 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
     chassert(query_info.query);
 
     const auto & query = query_info.query->as<ASTSelectQuery &>();
+
+    /// `arrayJoin` in the SELECT clause changes row cardinality after the source has run.
+    /// Pushing the outer `LIMIT` into the source would truncate input rows BEFORE expansion,
+    /// silently dropping output rows when arrays are empty or producing wrong rows when
+    /// arrays expand. See issue #82279 and the sibling guards in the query-plan optimizer
+    /// passes (`liftUpFunctions`, `optimizeLazyMaterialization`, `optimizeTopK`,
+    /// `topKThroughJoin`, `pushLimitByIntoSort`, `optimizePrimaryKeyConditionAndLimit`).
+    if (astContainsArrayJoinFunction(query.select()))
+        return false;
 
     /// Just ignore some minor cases, such as:
     ///     select * from system.numbers order by number asc limit 10
