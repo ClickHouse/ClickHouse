@@ -1,0 +1,31 @@
+--- T1: TOTALS basic ---
+NL	87500	101000
+RU	110000	101000
+--- T2: TOTALS multi-aggregate (FuseFunctionsPass test) ---
+NL	505000	101000
+RU	505000	101000
+--- T3: BY single column ---
+NL	Amsterdam	87500	87500
+RU	Moscow	110000	110000
+RU	SPb	110000	110000
+--- T4: BY multiple columns ---
+NL	Amsterdam	Engineering	95000	95000
+NL	Amsterdam	Sales	80000	80000
+RU	Moscow	Engineering	120000	115000
+RU	Moscow	Sales	100000	100000
+RU	SPb	Engineering	110000	115000
+--- T5: Mixed TOTALS and BY ---
+NL	Amsterdam	87500	87500	101000
+RU	Moscow	110000	110000	101000
+RU	SPb	110000	110000	101000
+--- T6: BY equals GROUP BY (degenerate) ---
+NL	Amsterdam	87500	87500
+RU	Moscow	110000	110000
+RU	SPb	110000	110000
+--- T7: Identifier with name "totals" (backward compatibility) ---
+3	6
+--- T8: Validation - BY column not in GROUP BY ---
+--- T9: Validation - unknown column in BY ---
+--- T10: Validation - duplicate TOTALS ---
+--- T11: Validation - duplicate BY ---
+--- T12: Validation - TOTALS + BY in same call ---
