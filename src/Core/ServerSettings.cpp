@@ -1525,8 +1525,10 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     OOM-kill evidence.
     )", 0) \
     DECLARE(UInt64, oom_canary_max_rapid_relaunches, 10, R"(
-    Maximum number of consecutive OOM canary relaunches that can happen before automatic relaunch
-    is disabled to avoid thrashing under sustained memory pressure.
+    Maximum number of consecutive rapid OOM canary relaunches before automatic relaunch is disabled
+    to avoid thrashing under sustained memory pressure. The counter and the relaunch backoff reset
+    once a canary survives longer than `oom_canary_max_backoff_seconds`, so a canary that dies only
+    sporadically over a long uptime is not eventually disabled.
     Applies only when `oom_canary_relaunch` is true.
     )", 0) \
     DECLARE(UInt64, oom_canary_initial_backoff_seconds, 1, R"(

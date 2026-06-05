@@ -14,6 +14,7 @@
 #include <Common/FramePointers.h>
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
+#include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <base/errnoToString.h>
 #include <base/cgroupsv2.h>
@@ -233,6 +234,12 @@ try
             break;
         }
 
+        /// Measure how long this canary stays alive. A canary that survives
+        /// well past the maximum backoff window was not part of a rapid
+        /// relaunch burst, so its eventual death must not count toward the
+        /// thrash guard (see the reset in the throttling section below).
+        Stopwatch canary_lifetime;
+
         /// From here the canary child and its `pidfd` are live and must be
         /// reaped and closed on every path. `Epoll::add` / `getManyReady` /
         /// `remove` can throw (e.g. `ENOMEM` under memory pressure); without
@@ -324,9 +331,20 @@ try
         if (confirmed_oom)
             onCanaryOOM();
 
-        /// Backoff and attempt are accumulated for every relaunch — including confirmed
-        /// OOMs — so `oom_canary_max_rapid_relaunches` and the doubling backoff actually
-        /// throttle thrashing under sustained memory pressure.
+        /// `oom_canary_max_rapid_relaunches` and the doubling backoff throttle
+        /// *rapid* relaunches under sustained memory pressure. If instead the
+        /// canary ran stably for longer than the maximum backoff window before
+        /// dying, the earlier deaths were unrelated sporadic events, not a
+        /// thrash burst — reset the throttle so a long-lived canary that dies
+        /// only occasionally over the server's lifetime is never permanently
+        /// disabled and does not carry a stale maxed-out backoff.
+        if (canary_lifetime.elapsedMilliseconds() > max_backoff_milliseconds)
+        {
+            attempt = 0;
+            backoff_milliseconds = 0;
+        }
+
+        /// Backoff and attempt accumulate across consecutive rapid relaunches.
         backoff_milliseconds = std::clamp(backoff_milliseconds * 2,
             initial_backoff_milliseconds, max_backoff_milliseconds);
 
