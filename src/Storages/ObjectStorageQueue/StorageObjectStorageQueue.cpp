@@ -70,6 +70,7 @@ namespace Setting
 {
     extern const SettingsString s3queue_default_zookeeper_path;
     extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
+    extern const SettingsBool s3queue_allow_unsafe_alter;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
@@ -1177,7 +1178,6 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "min_insert_block_size_bytes_for_materialized_views",
     "cleanup_interval_max_ms",
     "cleanup_interval_min_ms",
-    "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
     "after_processing_retries",
     "after_processing_move_uri",
@@ -1211,7 +1211,6 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "min_insert_block_size_bytes_for_materialized_views",
     "cleanup_interval_max_ms",
     "cleanup_interval_min_ms",
-    "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
     "after_processing_retries",
     "after_processing_move_uri",
@@ -1332,6 +1331,19 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "Changing setting {} is not allowed for {} mode of {}",
                     setting.name, magic_enum::enum_name(mode), getName());
+            }
+
+            /// Changing `deduplication_v2` switches the deduplication token scheme, so files
+            /// processed before and after the change use incompatible tokens and duplicates
+            /// can slip through around the switch. Guard it behind an explicit opt-in.
+            if (setting.name == "deduplication_v2"
+                && !local_context->getSettingsRef()[Setting::s3queue_allow_unsafe_alter])
+            {
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Changing `deduplication_v2` on an existing table can break deduplication "
+                    "and produce duplicate rows. Set `s3queue_allow_unsafe_alter = 1` if you "
+                    "understand the consequences");
             }
 
             /// Some settings affect the work of background processing thread,

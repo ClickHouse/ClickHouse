@@ -22,6 +22,11 @@ public:
         std::string bucket_lock_path;
         std::string processor_info;
         std::string zookeeper_name;
+        /// `czxid` of the bucket lock node, captured at acquisition. It uniquely identifies the
+        /// znode and changes if the lock is deleted and recreated (e.g. cleaned up by the TTL cleanup
+        /// and re-acquired by another processor). Used for an atomic ownership check at commit.
+        /// `-1` means "unknown" (ownership check disabled, e.g. on Keeper without `CheckStat`).
+        int64_t lock_czxid = -1;
         std::string toString() const;
     };
     using BucketInfoPtr = std::shared_ptr<const BucketInfo>;
@@ -158,6 +163,18 @@ private:
         bool ignore_if_exists,
         LastProcessedFileInfoMapPtr created_nodes = nullptr);
 
+    /// Append to the commit multi an atomic assertion that this processor still owns the bucket
+    /// lock (via its `czxid`) together with a `Set` that refreshes the lock's mtime (a heartbeat,
+    /// so the TTL cleanup does not clean up a lock that is actively committing). No-op when buckets are
+    /// not used, when the lock `czxid` is unknown, or when Keeper has no `CheckStat` support.
+    /// Returns true if the assertion was added (so the caller can map a failed op back to it).
+    bool prepareBucketOwnershipCheckRequests(Coordination::Requests & requests);
+
+    /// Whether this processor still owns its bucket lock (the lock node still exists with the
+    /// same `czxid` as at acquisition). Returns true when buckets are not used or ownership is
+    /// not trackable, so callers treat "cannot tell" as "still owned".
+    bool stillOwnsBucket() const;
+
     void preparePartitionProcessedMap(PartitionLastProcessedFileInfoMap & last_processed_file_per_partition) override;
 };
 
@@ -167,6 +184,7 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
         const Bucket & bucket_,
         const std::string & bucket_lock_path_,
         const std::string & processor_info_,
+        int64_t lock_czxid_,
         LoggerPtr log_,
         const std::string & zookeeper_name_);
 
