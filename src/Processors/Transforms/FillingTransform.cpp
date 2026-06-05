@@ -212,7 +212,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     return true;
 }
 
-static SortDescription deduplicateSortDescription(const SortDescription & sort_description, const Block & header)
+SortDescription deduplicateSortDescription(const SortDescription & sort_description, const Block & header)
 {
     SortDescription result;
     std::unordered_set<std::string> unique_columns;

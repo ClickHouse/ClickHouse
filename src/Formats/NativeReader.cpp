@@ -214,7 +214,7 @@ Block NativeReader::read()
             /// in-memory state, it should be able to handle all possible serialization variants.
             auto info = column.type->createSerializationInfo(SerializationInfoSettings::enableAllSupportedSerializations());
 
-            UInt8 has_custom = 0;
+            UInt8 has_custom;
             readBinary(has_custom, istr);
             if (has_custom)
                 info->deserializeFromKindsBinary(istr);
@@ -262,16 +262,7 @@ Block NativeReader::read()
 
                 if (!header_column.type->equals(*column.type))
                 {
-                    /// In the event of the same aggregate function but of a different variant (e.g. Window vs Aggregate),
-                    /// we should try to convert and read, since the difference in `Window` vs `Aggregate` is not a
-                    /// user-facing type difference but rather an internal implementation detail.
-                    /// This can happen when external sort spills blocks to disk: the header carries the Window variant from the query plan,
-                    /// but `NativeReader` deserializes the type name and resolves it via `AggregateFunctionFactory`, which always produces the
-                    /// Aggregation variant.
-                    const auto * header_agg_type = typeid_cast<const DataTypeAggregateFunction *>(header_column.type.get());
-                    bool convertible_agg_variant = header_agg_type && header_agg_type->equalsIgnoringVariant(*column.type);
-
-                    if ((format_settings && format_settings->native.allow_types_conversion) || convertible_agg_variant)
+                    if (format_settings && format_settings->native.allow_types_conversion)
                     {
                         try
                         {
