@@ -25,7 +25,7 @@ def load_hive_catalog(started_cluster):
         **{
             "uri": f"thrift://{started_cluster.get_instance_ip('hive')}:9083",
             "type": "hive",
-            "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
+            "s3.endpoint": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
             "s3.access-key-id": minio_access_key,
             "s3.secret-access-key": minio_secret_key,
         },
