@@ -44,6 +44,16 @@ namespace Setting
 
 ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
 {
+    auto operation_column_description = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
+        {"UNKNOWN", static_cast<Int8>(-1)},
+#if USE_AVRO
+        {"APPEND", static_cast<Int8>(Iceberg::SnapshotSummaryOperation::APPEND)},
+        {"OVERWRITE", static_cast<Int8>(Iceberg::SnapshotSummaryOperation::OVERWRITE)},
+        {"REPLACE", static_cast<Int8>(Iceberg::SnapshotSummaryOperation::REPLACE)},
+        {"DELETE", static_cast<Int8>(Iceberg::SnapshotSummaryOperation::DELETE)},
+#endif
+    });
+
     return ColumnsDescription{
         {"database", std::make_shared<DataTypeString>(), "Database name."},
         {"table", std::make_shared<DataTypeString>(), "Table name."},
@@ -56,13 +66,7 @@ ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
          std::make_shared<DataTypeUInt8>(),
          "Flag that indicates if this snapshot is an ancestor of the current snapshot."},
         {"operation",
-         std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
-             {"UNKNOWN", static_cast<Int8>(-1)},
-             {"APPEND", static_cast<Int8>(Iceberg::SnapshotSummaryOperation::APPEND)},
-             {"OVERWRITE", static_cast<Int8>(Iceberg::SnapshotSummaryOperation::OVERWRITE)},
-             {"REPLACE", static_cast<Int8>(Iceberg::SnapshotSummaryOperation::REPLACE)},
-             {"DELETE", static_cast<Int8>(Iceberg::SnapshotSummaryOperation::DELETE)},
-         }),
+         std::move(operation_column_description),
          "Snapshot operation (APPEND, OVERWRITE, DELETE, REPLACE and UNKNOWN). The UNKNOWN status means either that we were unable to read "
          "the summary or that it is empty (it's optional for v1). The correct 'operation' field is required"},
         {"summary",
