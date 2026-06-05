@@ -417,10 +417,13 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         new_part->setColumnsSubstreams(columns_substreams);
     }
 
-    write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
+    if (!new_part->storage.storesMetadataVersionInPartAttributes())
     {
-        writeIntText(new_part->getMetadataVersion(), buffer);
-    });
+        write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
+        {
+            writeIntText(new_part->getMetadataVersion(), buffer);
+        });
+    }
 
     if (default_codec != nullptr)
     {
