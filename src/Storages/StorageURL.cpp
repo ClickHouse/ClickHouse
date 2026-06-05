@@ -2184,13 +2184,9 @@ public:
     /// data or throw (e.g. `StorageFile::rename` rejects renaming a user-defined-file table).
     void rename(const String & /*new_path_to_table_data*/, const StorageID & new_table_id) override
     {
+        /// `StorageProxy::renameInMemory` already does the right thing here: it renames the delegate
+        /// in memory and updates this storage's own id, without touching the external resource.
         renameInMemory(new_table_id);
-    }
-
-    void renameInMemory(const StorageID & new_table_id) override
-    {
-        nested->renameInMemory(new_table_id);
-        IStorage::renameInMemory(new_table_id);
     }
 
     /// Preserve the `URL` engine semantics: a plain `URL` table does not support `TRUNCATE`.
@@ -2204,7 +2200,9 @@ public:
         ContextPtr context,
         TableExclusiveLockHolder & lock) override
     {
-        IStorage::truncate(query, metadata_snapshot, context, lock);
+        /// Deliberately bypass `StorageProxy::truncate` (which forwards to the delegate and would
+        /// truncate the backing file/object) and use the `IStorage` default, which throws.
+        IStorage::truncate(query, metadata_snapshot, context, lock); // NOLINT(bugprone-parent-virtual-call)
     }
 
 private:
