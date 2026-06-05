@@ -322,11 +322,8 @@ public:
       */
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
-    /** Whether the function's result depends only on argument *values* (not on their
-      * column names). Most operators are name-insensitive (`equals`, `plus`, `and`).
-      * Counter-examples: `formatRowNoNewline` puts column names into the result,
-      * `toTypeName` returns names. Default is conservative (`false`)
-      */
+    /// True if the result depends only on argument values, not column names. formatRowNoNewline
+    /// and toTypeName are counter examples. Default is conservative
     virtual bool isNameInsensitive() const { return false; }
 
     /// The property of monotonicity for a certain range.
@@ -348,7 +345,7 @@ public:
       */
     virtual FieldIntervalPtr getPreimage(const IDataType & /*type*/, const Field & /*point*/) const;
 
-    /// has same address for all aliases / case variants of a function 
+    /// has same address for all aliases / case variants of a function
     /// nullptr when the function is constructed outside the factory
     const FunctionCreator * getFactoryHandle() const { return factory_handle; }
     void setFactoryHandle(const FunctionCreator * h) const { factory_handle = h; }

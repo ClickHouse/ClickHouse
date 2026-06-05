@@ -1039,10 +1039,17 @@ EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
         if (node.type != ActionType::FUNCTION || !node.function_base)
             continue;
 
+        /// for name-sensitive functions keep alias identity so f(a) and f(b) over the same value stay distinct
+        const bool look_through_aliases = node.function_base->isNameInsensitive();
         std::vector<const Node *> arg_classes;
         arg_classes.reserve(node.children.size());
         for (const auto * c : node.children)
-            arg_classes.push_back(ec.find(c));
+        {
+            if (!look_through_aliases && c->type == ActionType::ALIAS)
+                arg_classes.push_back(c);
+            else
+                arg_classes.push_back(ec.find(c));
+        }
 
         auto & candidates = functions_by_name[getFunctionCanonicalName(node.function_base->getName())];
 
@@ -1076,8 +1083,20 @@ void ActionsDAG::deduplicateSubtrees()
     auto ec = buildStructuralEquivalenceClasses(*this);
 
     for (auto & node : nodes)
+    {
+        /// don't rewrite alias children of name-sensitive functions
+        const bool preserve_alias_args =
+            node.type == ActionType::FUNCTION
+            && node.function_base
+            && !node.function_base->isNameInsensitive();
+
         for (auto & child : node.children)
+        {
+            if (preserve_alias_args && child->type == ActionType::ALIAS)
+                continue;
             child = ec.find(child);
+        }
+    }
 
     /// preserve output names with alias when canonical representative has a different name
     for (auto & out : outputs)
