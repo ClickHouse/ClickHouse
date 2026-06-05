@@ -41,4 +41,18 @@ SETTINGS disk = disk(
 );
 
 DROP TABLE tmp_borrowed;
+
+-- The inverse direction: in-memory metadata is lost on restart, so it must not be combined with a
+-- durable object storage; otherwise a restart would orphan the blobs with no metadata path to clean them up.
+DROP TABLE IF EXISTS tmp_durable_memory;
+CREATE TABLE tmp_durable_memory (key UInt64)
+ENGINE = MergeTree() ORDER BY key
+SETTINGS disk = disk(
+    type = object_storage,
+    object_storage_type = 'local_blob_storage',
+    metadata_type = 'memory',
+    path = '04141_durable_memory/',
+    name = '04141_durable_memory_disk'
+); -- { serverError INVALID_CONFIG_PARAMETER }
+
 DROP TABLE tmp_cache_creator;

@@ -118,6 +118,17 @@ MetadataStoragePtr MetadataStorageFactory::create(
                         "Object storage type `borrow_from_cache` requires metadata_type='memory', got '{}'", type);
     }
 
+    /// The inverse direction: in-memory metadata is lost on restart, so it is only sound with an
+    /// object storage that is also non-durable. With a durable backend (`s3`, `azure_blob_storage`,
+    /// `local_blob_storage`, etc.) a restart would make the data inaccessible while leaking the
+    /// underlying blobs, which have no remaining metadata path for cleanup. Fail close instead.
+    if (type == "memory" && object_storage_type != ObjectStorageType::BorrowFromCache)
+    {
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                        "Metadata type `memory` requires object_storage_type='borrow_from_cache', "
+                        "because in-memory metadata is lost on restart and would orphan blobs in durable object storage");
+    }
+
     const auto it = registry.find(type);
 
     if (it == registry.end())
