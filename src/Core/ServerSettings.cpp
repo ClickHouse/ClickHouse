@@ -30,8 +30,12 @@
 #include <Common/MemoryTracker.h>
 
 #include <Common/DNSResolver.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
+
+#include <fmt/ranges.h>
 
 
 namespace CurrentMetrics
@@ -1908,6 +1912,16 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"parquet_metadata_cache_size",
              {std::to_string(context->getParquetMetadataCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
 #endif
+
+    /// `keeper_hosts` is not a regular config setting; it is derived from the `<zookeeper>` config and follows
+    /// it on config reload, so the live value diverges from the empty default stored in `ServerSettings`.
+    const auto & config = context->getConfigRef();
+    if (zkutil::hasZooKeeperConfig(config))
+    {
+        zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
+        changeable_settings.insert(
+            {"keeper_hosts", {fmt::format("{}", fmt::join(args.hosts, ",")), ChangeableWithoutRestart::Yes}});
+    }
 
     return changeable_settings;
 }

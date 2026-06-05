@@ -20,3 +20,9 @@ SELECT toUInt64(getServerSetting('mark_cache_size'))
 SELECT toString(getServerSetting('mark_cache_policy'))
      = (SELECT value FROM system.server_settings WHERE name = 'mark_cache_policy')
      AS mark_cache_policy_matches;
+
+-- keeper_hosts is not stored in the config; it is derived from the <zookeeper> config at query time.
+-- system.server_settings reports the live endpoints; getServerSetting should report the same value.
+SELECT toString(getServerSetting('keeper_hosts'))
+     = (SELECT value FROM system.server_settings WHERE name = 'keeper_hosts')
+     AS keeper_hosts_matches;
