@@ -142,6 +142,7 @@ bool canNativelyEncodeBlock(const Block & header, const FormatSettings & /*forma
 }
 }
 
+void registerOutputFormatArrow(FormatFactory & factory);
 void registerOutputFormatArrow(FormatFactory & factory)
 {
     factory.registerOutputFormat(
@@ -185,6 +186,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerOutputFormatArrow(FormatFactory &);
 void registerOutputFormatArrow(FormatFactory &)
 {
 }
