@@ -1,0 +1,12 @@
+-- ARRAY JOIN clause: empty-array prefix
+3
+4
+5
+-- ARRAY JOIN clause, old analyzer
+3
+4
+5
+-- ARRAY JOIN clause, optimizer disabled
+3
+4
+5
