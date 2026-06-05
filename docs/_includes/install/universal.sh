@@ -71,19 +71,18 @@ fi
 clickhouse_download_filename_prefix="clickhouse"
 clickhouse="$clickhouse_download_filename_prefix"
 
-# If a binary already exists, pick a non-clashing name (clickhouse.0, clickhouse.1, ...).
+# If something already exists at this path, pick a non-clashing name (clickhouse.0, clickhouse.1, ...).
 # Do not prompt interactively here: this script is commonly run as `curl https://clickhouse.com/ | sh`,
 # where the script itself is delivered on stdin. A `read` would consume bytes from that same pipe,
 # desyncing the shell parser and producing spurious syntax errors.
-if [ -f "$clickhouse" ]
-then
-    i=0
-    while [ -f "$clickhouse" ]
-    do
-        clickhouse="${clickhouse_download_filename_prefix}.${i}"
-        i=$(($i+1))
-    done
-fi
+# Use `-e` together with `-L` so that directories and broken symlinks are also treated as occupied
+# (a dangling symlink is invisible to `-e` alone, and `curl -o` would then fail on it).
+i=0
+while [ -e "$clickhouse" ] || [ -L "$clickhouse" ]
+do
+    clickhouse="${clickhouse_download_filename_prefix}.${i}"
+    i=$(($i+1))
+done
 
 URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
 echo
