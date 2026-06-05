@@ -56,20 +56,22 @@ void StreamingExchangeSink::extractSocket()
 
     /// Prepare initial in-memory buffer for serializing chunks
     out = std::make_shared<WriteBufferFromOwnString>();
-    in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
-
 }
 
 /// Send data to socket until the buffer is empty or until socket would block.
 void StreamingExchangeSink::sendToSocket()
 {
+    /// Drain any inbound NoMoreDataNeeded / peer half-close before attempting to send.
+    tryReceiveControlPacket();
+    if (no_more_data_needed)
+        return;
+
     while (current_send_position_in_buffer < current_send_buffer.size())
     {
         try
         {
-            /// If we have already received NoMoreDataNeeded packet then we should not try to send anything to socket.
-            if (no_more_data_needed)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "No more data needed packet was not received");
+            /// `markNoMoreDataNeeded` clears `current_send_buffer`, so we can't be in this loop.
+            chassert(!no_more_data_needed);
 
             size_t bytes_to_send = current_send_buffer.size() - current_send_position_in_buffer;
             /// Saturate at INT_MAX: a plain cast would wrap negative for buffers > 2 GiB, after
@@ -100,12 +102,14 @@ void StreamingExchangeSink::sendToSocket()
             current_send_position_in_buffer += sent;
             total_bytes_sent += sent;
         }
-        catch (const Poco::IOException &)
+        catch (const Poco::IOException & e)
         {
-            /// If socket was closed by remote side this might be due to no more data needed.
-            /// In this case the remote side should have sent a packet with PacketType::NoMoreDataNeeded.
-            /// Check if we have received this packet and if so then this is not an error but we should drop all remaining data.
-            receiveNoMoDataNeeded();
+            /// Peer may have sent NoMoreDataNeeded or half-closed; only swallow the exception
+            /// in those cases, otherwise it's a real network error.
+            LOG_TRACE(log, "Send to exchange stream {} hit IO exception: {}; checking for peer close", stream_name, e.displayText());
+            tryReceiveControlPacket();
+            if (!no_more_data_needed)
+                throw;
             return;
         }
     }
@@ -117,7 +121,8 @@ void StreamingExchangeSink::sendToSocket()
 
 bool StreamingExchangeSink::canAddChunk() const
 {
-    return out->count() < 2 * FLUSH_BUFFER_TO_SOCKET_THRESHOLD;
+    const size_t unsent = current_send_buffer.size() - current_send_position_in_buffer;
+    return (unsent + out->count()) < MAX_PENDING_BYTES;
 }
 
 void StreamingExchangeSink::tryToSwitchSendBuffer()
@@ -149,11 +154,13 @@ ISink::Status StreamingExchangeSink::prepare()
     {
         if (!final_chunk_added)
         {
-            /// Input is finished, so we need to send one empty chunk to signal that we are done.
+            if (!canAddChunk())
+                return Status::Async;
+            /// Input is finished, send an empty chunk to signal end-of-stream.
             input_is_finished = true;
             current_chunk = {};
             has_input = true;
-            return canAddChunk() ? Status::Ready : Status::Async;
+            return Status::Ready;
         }
 
         /// Need ot flush all remaining data
@@ -166,13 +173,17 @@ ISink::Status StreamingExchangeSink::prepare()
         return Status::Finished;
     }
 
+    /// Propagate back-pressure upstream: don't pull until there's room.
+    if (!canAddChunk())
+        return Status::Async;
+
     input.setNeeded();
     if (!input.hasData())
         return Status::NeedData;
 
     current_chunk = input.pull(true);
     has_input = true;
-    return canAddChunk() ? Status::Ready : Status::Async;
+    return Status::Ready;
 }
 
 void StreamingExchangeSink::work()
@@ -183,6 +194,9 @@ void StreamingExchangeSink::work()
         extractSocket();
         return;
     }
+
+    /// React to EPOLLIN / EPOLLRDHUP wakeups (see scheduleForEvent).
+    tryReceiveControlPacket();
 
     if (has_input)
     {
@@ -237,7 +251,10 @@ std::pair<int, uint32_t> StreamingExchangeSink::scheduleForEvent()
     if (socket)
     {
         LOG_TEST(log, "Schedule exchange stream sink {}, socket is ready, fd: {}", stream_name, socket->sockfd());
-        return {socket->sockfd(), EPOLLOUT | EPOLLERR};
+        /// EPOLLIN | EPOLLRDHUP wake us on peer-initiated NoMoreDataNeeded / half-close.
+        return {
+            socket->sockfd(),
+            EPOLLOUT | EPOLLIN | EPOLLRDHUP | EPOLLERR};
     }
 
     int fd = future_connection->getEventFd();
@@ -348,18 +365,80 @@ void StreamingExchangeSink::onFinish()
         stream_name, rows_written, total_bytes_sent);
 }
 
-void StreamingExchangeSink::receiveNoMoDataNeeded()
+bool StreamingExchangeSink::tryReadFromSocketNonBlocking(char * buffer, size_t buffer_size, size_t & position)
 {
-    UInt64 packet_type = 0;
-    readIntBinary(packet_type, *in);
-    if (packet_type != StreamingExchangeProtocol::PacketType::NoMoreDataNeeded)
-        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet type {}", packet_type);
+    while (position < buffer_size)
+    {
+        const size_t remaining = buffer_size - position;
+        ssize_t received = socket->receiveBytes(
+            buffer + position,
+            static_cast<int>(std::min<size_t>(remaining, std::numeric_limits<int>::max())));
+        if (received < 0)
+        {
+            auto last_error = errno;
+            if (last_error == EINTR)
+                continue;
+            if (last_error == EAGAIN || last_error == EWOULDBLOCK)
+                return true; /// No data right now, try later.
+            throw Poco::Net::NetException(fmt::format(
+                "Failed to receive control packet on exchange stream {}, error {}", stream_name, last_error));
+        }
+        if (received == 0)
+            return false; /// Peer half-closed.
+        position += received;
+    }
+    return true;
+}
 
-    LOG_TRACE(log, "No more data needed from exchange stream {}", stream_name);
+void StreamingExchangeSink::tryReceiveControlPacket()
+{
+    if (no_more_data_needed)
+        return;
+    if (!socket)
+        return;
 
+    const bool not_eof = tryReadFromSocketNonBlocking(
+        reinterpret_cast<char *>(&incoming_packet_type),
+        sizeof(incoming_packet_type),
+        incoming_packet_bytes_filled);
+
+    if (incoming_packet_bytes_filled == sizeof(incoming_packet_type))
+    {
+        if (incoming_packet_type != StreamingExchangeProtocol::PacketType::NoMoreDataNeeded)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                "Unexpected packet type {} from peer on exchange stream {}",
+                incoming_packet_type, stream_name);
+
+        LOG_TRACE(log, "Received NoMoreDataNeeded for exchange stream {}", stream_name);
+        markNoMoreDataNeeded();
+        return;
+    }
+
+    if (!not_eof)
+    {
+        if (incoming_packet_bytes_filled > 0)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                "Peer half-closed exchange stream {} after {} of {} control bytes; truncated control message",
+                stream_name, incoming_packet_bytes_filled, sizeof(incoming_packet_type));
+
+        /// Normal end-of-stream: after the sink sent the final empty chunk, the source consumes it
+        /// and closes without sending NoMoreDataNeeded. Treat EOF as benign only with nothing left to send.
+        const size_t unsent = current_send_buffer.size() - current_send_position_in_buffer;
+        if (!final_chunk_added || unsent > 0 || out->count() > 0)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                "Peer half-closed exchange stream {} without sending NoMoreDataNeeded "
+                "(final_chunk_added={}, unsent={}, out={})",
+                stream_name, final_chunk_added, unsent, out->count());
+
+        LOG_TRACE(log, "Peer closed exchange stream {} after consuming the final chunk", stream_name);
+        markNoMoreDataNeeded();
+    }
+}
+
+void StreamingExchangeSink::markNoMoreDataNeeded()
+{
     no_more_data_needed = true;
-
-    /// Clear current_send_buffer and new out buffer
+    /// Drop pending output: consume() drops new chunks too, no more sends will happen.
     current_send_buffer.clear();
     current_send_position_in_buffer = 0;
     out = std::make_shared<WriteBufferFromOwnString>();

@@ -3,10 +3,10 @@
 #ifdef OS_LINUX
 
 #include <Common/Logger.h>
+#include <Core/Types.h>
 #include <Processors/ISink.h>
 #include <Processors/Port.h>
 #include <Poco/Net/StreamSocket.h>
-#include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromString.h>
 #include <Server/DistributedQuery/FutureConnection.h>
 
@@ -35,7 +35,15 @@ private:
     void onFinish() override;
     void work() override;
 
-    void receiveNoMoDataNeeded();
+    /// Drain any inbound NoMoreDataNeeded packet or peer half-close. Safe to call at any time.
+    void tryReceiveControlPacket();
+
+    /// Non-blocking read into `buffer[position .. buffer_size]`, advancing `position`.
+    /// Returns true on progress (including EAGAIN), false on peer half-close. Throws on hard errors.
+    bool tryReadFromSocketNonBlocking(char * buffer, size_t buffer_size, size_t & position);
+
+    /// Set `no_more_data_needed` and drop pending output buffers.
+    void markNoMoreDataNeeded();
 
     /// Send data in current_send_buffer to socket in non-blocking mode.
     void sendToSocket();
@@ -54,8 +62,6 @@ private:
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     const String stream_name;
 
-    std::shared_ptr<ReadBufferFromPocoSocket> in;
-
     /// In-memory buffer to which the chunks are serialized.
     /// Once it becomes big enough we move it to current_send_buffer.
     std::shared_ptr<WriteBufferFromOwnString> out;
@@ -69,9 +75,15 @@ private:
     size_t total_bytes_sent = 0;
 
     const size_t FLUSH_BUFFER_TO_SOCKET_THRESHOLD = 128 * 1024;
+    /// Cap on total unsent bytes (`current_send_buffer` + `out`); back-pressure trips here.
+    static constexpr size_t MAX_PENDING_BYTES = 16 * 1024 * 1024;
     bool input_is_finished = false;     /// We have read all the data from input port.
     bool final_chunk_added = false;     /// Final empty chunk was added to signal the exchange stream receiver that we are done.
     bool no_more_data_needed = false;   /// Set to true when exchange stream receiver has sent us NoMoreDataNeeded.
+
+    /// Accumulator for the inbound NoMoreDataNeeded packet (single UInt64, no body).
+    UInt64 incoming_packet_type = 0;
+    size_t incoming_packet_bytes_filled = 0;
 
     LoggerPtr log = getLogger("StreamingExchangeSink");
 };
