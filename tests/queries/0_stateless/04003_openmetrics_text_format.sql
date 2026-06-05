@@ -87,6 +87,12 @@ SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 2 ex
 -- Reject `#` tails that are not a valid exemplar (`# {labels} <value>`).
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 # not_an_exemplar', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 # {broken', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 #{trace_id="x"} 0.5', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 # {trace_id="x"}0.5', char(10))); -- { serverError INCORRECT_DATA }
+
+-- Reject malformed `number` / `realnumber` tokens (`tryReadFloatText` alone accepts `.` and `1e+`).
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m . 1', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 1e+', char(10))); -- { serverError INCORRECT_DATA }
 
 -- Valid exemplar suffix is accepted (labels are not ingested into the row schema).
 SELECT *
@@ -349,6 +355,16 @@ SELECT 's' AS name, 2.0 AS value, '' AS help, 'summary' AS type, map('sum', '', 
 FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 SELECT * FROM format(OpenMetrics, concat('# TYPE h histogram', char(10), 'h_sum{count=""} 3', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, concat('# TYPE s summary', char(10), 's_sum{quantile="0.5"} 4', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+
+-- Output validates every buffered row once the family `type` is known (not only the current row).
+SELECT *
+FROM (
+    SELECT 'h' AS name, 1.0 AS value, '' AS help, '' AS type, map('sum', '', 'count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+    UNION ALL
+    SELECT 'h', 2.0, '', 'histogram', map('le', '0.5'), CAST(NULL AS Nullable(Int64)), ''
+)
+ORDER BY value
+FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 
 -- Overflowing timestamp tokens are rejected even when the `timestamp` column is not projected.
 SELECT name

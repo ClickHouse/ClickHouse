@@ -171,10 +171,72 @@ void parseMetricDescriptor(std::string_view s, size_t & pos, String & stem, std:
         throwIncorrect("Whitespace between metric name and label set is not allowed", line);
 }
 
+/// `tryReadFloatText` accepts tokens like `.` and `1e+` that OpenMetrics `realnumber` forbids.
+bool isStrictOpenMetricsRealNumberToken(std::string_view token)
+{
+    if (token.empty())
+        return false;
+
+    size_t i = 0;
+    if (token[i] == '+' || token[i] == '-')
+    {
+        ++i;
+        if (i >= token.size())
+            return false;
+    }
+
+    bool has_digit = false;
+    if (token[i] >= '0' && token[i] <= '9')
+    {
+        has_digit = true;
+        while (i < token.size() && token[i] >= '0' && token[i] <= '9')
+            ++i;
+    }
+
+    if (i < token.size() && token[i] == '.')
+    {
+        ++i;
+        while (i < token.size() && token[i] >= '0' && token[i] <= '9')
+        {
+            has_digit = true;
+            ++i;
+        }
+    }
+
+    if (!has_digit)
+        return false;
+
+    if (i < token.size() && (token[i] == 'e' || token[i] == 'E'))
+    {
+        ++i;
+        if (i >= token.size())
+            return false;
+        if (token[i] == '+' || token[i] == '-')
+        {
+            ++i;
+            if (i >= token.size())
+                return false;
+        }
+        bool exp_digit = false;
+        while (i < token.size() && token[i] >= '0' && token[i] <= '9')
+        {
+            exp_digit = true;
+            ++i;
+        }
+        if (!exp_digit)
+            return false;
+    }
+
+    return i == token.size();
+}
+
 /// `realnumber` per OpenMetrics ABNF: optional sign + digits + optional fractional / exponent; rejects NaN/Inf.
 Float64 parseRealNumber(std::string_view token, const String & line)
 {
     if (token == "NaN" || token == "+Inf" || token == "Inf" || token == "-Inf")
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid timestamp token '{}' in OpenMetrics line: {}", token, line);
+
+    if (!isStrictOpenMetricsRealNumberToken(token))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid timestamp token '{}' in OpenMetrics line: {}", token, line);
 
     Float64 v = 0;
@@ -283,6 +345,9 @@ Float64 parseSampleValue(std::string_view token)
     if (token == "+Inf" || token == "Inf") return std::numeric_limits<double>::infinity();
     if (token == "-Inf")                   return -std::numeric_limits<double>::infinity();
 
+    if (!isStrictOpenMetricsRealNumberToken(token))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse float value '{}' in OpenMetrics format", token);
+
     Float64 v = 0;
     ReadBufferFromString buf(token);
     if (!tryReadFloatText(v, buf) || !buf.eof())
@@ -298,6 +363,8 @@ void parseExemplarSuffix(std::string_view s, size_t & pos, const String & line)
     if (pos >= s.size() || s[pos] != '#')
         return;
     ++pos;
+    if (pos >= s.size() || (s[pos] != ' ' && s[pos] != '\t'))
+        throwIncorrect("Invalid exemplar", line);
     skipAsciiSpaces(s, pos);
     if (pos >= s.size() || s[pos] != '{')
         throwIncorrect("Invalid exemplar", line);
@@ -305,6 +372,8 @@ void parseExemplarSuffix(std::string_view s, size_t & pos, const String & line)
     std::map<String, String> exemplar_labels;
     parseLabelSet(s, pos, exemplar_labels, line);
 
+    if (pos >= s.size() || (s[pos] != ' ' && s[pos] != '\t'))
+        throwIncorrect("Invalid exemplar", line);
     skipAsciiSpaces(s, pos);
     const std::string_view value_tok = readToken(s, pos);
     if (value_tok.empty())

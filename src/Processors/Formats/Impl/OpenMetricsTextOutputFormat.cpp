@@ -427,6 +427,12 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
         return;
     }
 
+    if (current_metric.type == "histogram" || current_metric.type == "summary")
+    {
+        for (const auto & val : current_metric.values)
+            validateBucketFamilyRowLabels(current_metric.type, val.labels);
+    }
+
     auto write_attribute = [this](const char * marker, const String & value)
     {
         if (value.empty())
@@ -561,9 +567,6 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
             columnMapToContainer(col_map, row_num, *labels);
         }
     }
-
-    if (!current_metric.type.empty())
-        validateBucketFamilyRowLabels(current_metric.type, labels.value_or(std::map<String, String>{}));
 
     if (pos.unit.has_value() && !columns[*pos.unit]->isNullAt(row_num) && current_metric.unit.empty())
     {
