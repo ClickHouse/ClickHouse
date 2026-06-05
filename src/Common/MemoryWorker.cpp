@@ -465,23 +465,24 @@ void MemoryWorker::updateResidentMemoryThread()
                 /// `MemoryTracker::allocImpl`. Clamp `tracked` to `0` first.
                 Int64 tracked = std::max<Int64>(0, total_memory_tracker.get());
                 Int64 delta = resident - tracked;
-                if (delta > 0)
+                /// Speculate only while real `resident` is still below the hard limit.
+                /// Once `resident >= current_hard_limit`, any positive allocation already
+                /// trips the `will_be_rss > current_hard_limit` branch in
+                /// `MemoryTracker::allocImpl`, so there is nothing left to reserve.
+                if (delta > 0 && resident < current_hard_limit)
                 {
-                    /// Clamp the reservation to the hard limit so the float multiplication
-                    /// cannot overflow even if the configured ratio is very large.
+                    /// The reservation can be at most `current_hard_limit - resident`:
+                    /// reserving beyond the hard limit gains no early-throw power (any
+                    /// positive allocation already trips the limit once the published RSS
+                    /// reaches it). Capping the reservation *before* adding it to `resident`
+                    /// also guarantees the signed `Int64` addition cannot overflow, even
+                    /// with a very large configured ratio.
+                    const Int64 headroom = current_hard_limit - resident;
                     double reserve_double = static_cast<double>(delta) * rss_speculative_reserve_ratio;
-                    Int64 reserve = (reserve_double >= static_cast<double>(current_hard_limit))
-                        ? current_hard_limit
+                    Int64 reserve = (reserve_double >= static_cast<double>(headroom))
+                        ? headroom
                         : static_cast<Int64>(reserve_double);
                     speculative_rss += reserve;
-                    /// Cap the published RSS at the hard limit (but never below the real
-                    /// `resident`). Once `speculative_rss` reaches the hard limit, the next
-                    /// allocation of any positive size already trips the
-                    /// `will_be_rss > current_hard_limit` branch and throws
-                    /// `MEMORY_LIMIT_EXCEEDED`, so reserving beyond the limit gains nothing
-                    /// while risking an `Int64` overflow in the `size + rss.fetch_add(size)`
-                    /// computation in `MemoryTracker::allocImpl` when the ratio is very large.
-                    speculative_rss = std::min(speculative_rss, std::max(resident, current_hard_limit));
                 }
             }
             MemoryTracker::updateRSS(speculative_rss);

@@ -112,7 +112,6 @@ namespace ServerSetting
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsBool memory_worker_use_cgroup;
     extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
-    extern const ServerSettingsDouble memory_worker_rss_speculative_reserve_ratio;
 }
 
 Poco::Net::SocketAddress Keeper::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
@@ -400,7 +399,12 @@ try
         .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
         .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
         .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
-        .rss_speculative_reserve_ratio = server_settings[ServerSetting::memory_worker_rss_speculative_reserve_ratio],
+        /// `memory_worker_rss_speculative_reserve_ratio` is intentionally not wired here:
+        /// speculation only influences the global `will_be_rss > current_hard_limit`
+        /// branch in `MemoryTracker::allocImpl`, but `clickhouse-keeper` never sets the
+        /// global hard limit (it enforces `keeper_server.max_memory_usage_soft_limit`
+        /// separately in `KeeperServer::isExceedingMemorySoftLimit`), so the speculation
+        /// would have no effect and is left disabled (`ratio = 0`).
     };
 
     MemoryWorker memory_worker(memory_worker_config, /*page_cache_=*/nullptr);
