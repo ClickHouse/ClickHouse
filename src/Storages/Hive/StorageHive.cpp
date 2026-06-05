@@ -10,6 +10,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/RemoteHostFilter.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
@@ -1057,6 +1058,7 @@ StorageHive::totalRowsImpl(const Settings & settings, const ActionsDAG * filter_
     return total_rows;
 }
 
+void registerStorageHive(StorageFactory & factory);
 void registerStorageHive(StorageFactory & factory)
 {
     factory.registerStorage(

@@ -1676,9 +1676,10 @@ std::optional<String> StatementGenerator::alterSingleTable(
         const String tname_idx = t.getBaseName();
         const uint32_t nidxs = is_mt ? fc.tableCountIndexes(dname_idx, tname_idx) : 0;
         const uint32_t nprojs = is_mt ? fc.tableCountProjections(dname_idx, tname_idx) : 0;
+        const uint32_t nconstrs = fc.tableCountConstraints(dname_idx, tname_idx);
         const bool has_idxs = nidxs > 0;
         const bool has_projs = nprojs > 0;
-        const bool has_constrs = !t.constrs.empty();
+        const bool has_constrs = nconstrs > 0;
         const bool has_col_settings = !allColumnSettings.at(t.teng).empty();
 
         rg.pickWeighted({
@@ -2030,10 +2031,9 @@ std::optional<String> StatementGenerator::alterSingleTable(
                          rg, 0, rg.nextSmallNumber() < 3, false, t, pip->mutable_single_partition()->mutable_partition());
              }},
             /// Constraints
-            {2 * static_cast<uint32_t>(no_oracle && t.constrs.size() < 4),
-             [&] { addTableConstraint(rg, t, true, ati->mutable_add_constraint()); }},
+            {2 * static_cast<uint32_t>(no_oracle && nconstrs < 4), [&] { addTableConstraint(rg, t, ati->mutable_add_constraint()); }},
             {2 * static_cast<uint32_t>(no_oracle && has_constrs),
-             [&] { ati->mutable_remove_constraint()->set_value(rg.pickRandomly(t.constrs)); }},
+             [&] { ati->mutable_remove_constraint()->set_value(fc.tableGetRandomConstraint(rg.nextInFullRange(), dname_idx, tname_idx)); }},
             /// Partition operations
             {5 * static_cast<uint32_t>(no_oracle && is_mt),
              [&]
@@ -3935,7 +3935,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     else
                     {
                         SQLColumn & col = t.cols.at(cname);
-                        NestedType * ntp;
+                        NestedType * ntp = nullptr;
 
                         chassert(path.sub_cols_size() == 1);
                         if ((ntp = dynamic_cast<NestedType *>(col.tp.get())) && ntp->subtypes.size() > 1)
@@ -3977,7 +3977,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     else
                     {
                         SQLColumn & col = t.cols.at(old_cname);
-                        NestedType * ntp;
+                        NestedType * ntp = nullptr;
 
                         chassert(path.sub_cols_size() == 1);
                         if ((ntp = dynamic_cast<NestedType *>(col.tp.get())))
@@ -4045,20 +4045,6 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     {
                         t.cols.at(cname).dmod = std::nullopt;
                     }
-                }
-                else if (ati.has_add_constraint())
-                {
-                    const String & pname = ati.add_constraint().constr().value();
-
-                    if (success)
-                    {
-                        t.constrs.insert(pname);
-                    }
-                    t.staged_constrs.erase(pname);
-                }
-                else if (ati.has_remove_constraint() && success)
-                {
-                    t.constrs.erase(ati.remove_constraint().value());
                 }
                 else if (ati.has_freeze_partition() && success)
                 {

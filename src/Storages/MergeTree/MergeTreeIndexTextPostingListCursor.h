@@ -1,14 +1,10 @@
 #pragma once
 
 #include <absl/container/flat_hash_map.h>
-#include <absl/container/inlined_vector.h>
-
 #include <base/defines.h>
 #include <base/types.h>
-
-#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
-
+#include <Storages/MergeTree/PostingListSegment.h>
 #include <memory>
 #include <vector>
 
@@ -16,11 +12,12 @@ namespace DB
 {
 
 struct TokenPostingsInfo;
+class TextIndexPostingsCache;
 class IColumn;
 class MergeTreeReaderStream;
 
-/// Inline capacity for the embedded posting list buffer.
-constexpr size_t MAX_EMBEDDED_POSTING_LIST_ROWS = 6;
+/// Operation type for padding the column with the posting list.
+enum class PadOp { Or, And };
 
 /// Lazy cursor over a compressed posting list (sorted row IDs for a token).
 ///
@@ -45,12 +42,13 @@ constexpr size_t MAX_EMBEDDED_POSTING_LIST_ROWS = 6;
 class PostingListCursor
 {
 public:
-    /// Compressed posting list: state lives in `.pst` and is decoded lazily.
-    PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_);
+    /// Compressed posting list, decoded lazily from `.pst`. With a `postings_cache_`, decoded segments are
+    /// memoized (keyed by `index_id_for_cache_` + byte offset) and shared; pass `nullptr` to skip caching.
+    PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_, TextIndexPostingsCache * postings_cache_ = nullptr, const String & index_id_for_cache_ = {});
 
-    /// Embedded posting list (small inline postings, or a materialized rare-token bitmap).
-    /// The cursor owns a copy of `info_` and pre-decodes the postings into `embedded_values`.
-    explicit PostingListCursor(const TokenPostingsInfo & info_);
+    /// Fully-materialized posting list over a pre-flattened, shared, immutable sorted array (analyzer-folded
+    /// or already-decoded postings). Cardinality, density and the row-id range derive from the array itself.
+    explicit PostingListCursor(FlatPostingsPtr shared_values_);
 
     /// Flushes batched ProfileEvents counters to the global counters.
     ~PostingListCursor();
@@ -82,11 +80,13 @@ public:
     UInt32 cardinality() const;
 
 private:
-    /// Load metadata for `segment_idx`-th segment.
-    /// For compressed postings: reads the Index Section from .pst (packed block index),
-    /// but does NOT decode any packed block data yet.
-    /// For embedded postings: no-op — `embedded_values` already holds the decoded array.
+    /// Point `current_segment` at the `segment_idx`-th segment (from the cache or `buildPostingSegment`)
+    /// without decoding block data yet. No-op for shared-array cursors, which already hold the array.
     void prepareSegment(size_t segment_idx);
+
+    /// Reads and parses one compressed segment from `stream` into an immutable `PostingListSegment`.
+    /// Invoked on a cache miss (or directly when no posting cache is available).
+    PostingListSegment buildPostingSegment(size_t segment_idx);
 
     /// Advance to the first doc_id >= target within the current segment.
     /// Uses binary search on `block_last_row_ids` for O(log N) access.
@@ -96,50 +96,48 @@ private:
     /// Decode the packed block at `block_idx` into `decoded_values`.
     void decodeBlock(size_t block_idx);
 
-    /// On-disk description of the posting list. For compressed postings this is a
-    /// non-owning pointer into the granule's token map (which outlives the cursor);
-    /// for embedded/rare postings the info is owned via `owned_info` to keep the
-    /// materialized bitmap alive.
+    /// Linear scan over an embedded (fully materialized) posting list.
+    template <PadOp op>
+    void linearEmbedded(UInt8 * data, size_t row_offset, size_t num_rows);
+
+    /// Linear scan over a compressed posting list: iterates segments and packed blocks, with
+    /// segment- and block-level skips for regions already resolved by `op` (see `canSkipRegion`).
+    template <PadOp op>
+    void linearSegments(UInt8 * data, size_t row_offset, size_t num_rows);
+
     MergeTreeReaderStream * stream = nullptr;
-    std::shared_ptr<TokenPostingsInfo> owned_info;
     const TokenPostingsInfo * info = nullptr;
+
+    /// Bounded cache used to memoize decoded segments across per-task cursors.
+    TextIndexPostingsCache * postings_cache = nullptr;
+    /// Per-part index identifier, mixed into the segment cache key alongside the segment byte offset.
+    String index_id_for_cache;
 
     size_t total_segments = 0;
     bool is_embedded = false;
     double density_val = 0;
 
-    /// Pre-decoded embedded postings.
-    /// Inline buffer for small embedded posting lists; spills to the heap when the
-    /// materialized list (e.g. a rare-token roaring bitmap) exceeds the inline capacity.
-    absl::InlinedVector<uint32_t, MAX_EMBEDDED_POSTING_LIST_ROWS> embedded_values;
+    /// Set for the shared-array cursor: the postings are read from this shared, immutable, sorted array.
+    FlatPostingsPtr shared_values;
 
     /// Decoded doc_ids of the current packed block. Used as a scratch buffer when
     /// iterating compressed posting lists; `decoded_values_ptr` is then redirected to
-    /// point at this buffer. For embedded posting lists, `decoded_values_ptr` instead
-    /// points directly at `embedded_values`, avoiding a copy and supporting embedded
-    /// lists larger than BLOCK_SIZE.
+    /// point at this buffer.
+    /// For shared-array cursors, `decoded_values_ptr` instead points directly
+    /// into `shared_values`, avoiding a copy and supporting arrays larger than BLOCK_SIZE.
     alignas(16) uint32_t decoded_values[BLOCK_SIZE]{};
     const uint32_t * decoded_values_ptr = decoded_values;
+
     size_t decoded_count = 0;    /// Number of valid entries reachable via `decoded_values_ptr`.
     size_t index = 0;            /// Read position within `decoded_values_ptr`.
 
-    /// Per-segment packed block layout (recomputed in `prepareSegment`).
-    size_t block_count = 0;              /// Total packed blocks, including the tail block.
+    /// Packed-block iteration state within the current segment.
     size_t current_block = 0;            /// Index of the packed block being iterated.
-    size_t tail_size = 0;                /// Element count of the tail block (< BLOCK_SIZE), 0 if aligned.
-    UInt32 segment_doc_count = 0;        /// Total doc count in the current segment.
     UInt32 last_decoded_doc_id = 0;      /// Last doc_id decoded (delta base for next block).
-    UInt32 segment_first_row_id = 0;     /// First row_id of the current segment (for delta base).
 
-    /// Packed block index loaded from Index Section in `prepareSegment`.
-    /// Enables O(log N) advance within a segment.
-    std::vector<UInt32> block_last_row_ids;
-    std::vector<UInt64> block_offsets;
-
-    /// Bulk-loaded segment payload buffer. `prepareSegment` reads the entire
-    /// payload [header_end, index_section_start) into this buffer.
-    /// `decodeBlock` then works from memory instead of seeking the stream per block.
-    std::vector<uint8_t> payload_buffer;
+    /// Decoded data of the current segment, read directly wherever the segment layout is needed.
+    /// Held by shared_ptr so it stays alive for the cursor's lifetime even after the cache evicts it.
+    PostingListSegmentPtr current_segment;
 
     /// Segment iteration state.
     size_t current_segment_idx = 0;
@@ -154,11 +152,8 @@ private:
         size_t advance_count = 0;
         size_t segments_prepared = 0;
         size_t segments_skipped_dense = 0;
-        size_t segments_skipped_covered = 0;
-        size_t blocks_skipped_covered = 0;
-        size_t and_segments_skipped_dense = 0;
-        size_t and_segments_skipped_zero = 0;
-        size_t and_blocks_skipped_zero = 0;
+        size_t segments_skipped_resolved = 0;
+        size_t blocks_skipped_resolved = 0;
     };
 
     EventsCounters counters;
@@ -167,16 +162,23 @@ private:
 using PostingListCursorPtr = std::shared_ptr<PostingListCursor>;
 using PostingListCursorMap = absl::flat_hash_map<std::string_view, PostingListCursorPtr>;
 
+/// Posting-list doc IDs are 32-bit, so `row_offset > UInt32::max` cannot legitimately occur.
+/// Throw a `LOGICAL_ERROR` rather than wrap the offset and corrupt the output column.
+void requireRowOffsetRepresentable(size_t row_offset);
+
 /// Union (OR) of posting lists: set output[row] = 1 if the row appears in ANY posting list.
+/// The caller is responsible for preparing the cursor vector (resolving search tokens
+/// to cursors and deduplicating if necessary).
 void lazyUnionPostingLists(
     IColumn & column,
-    const PostingListCursorMap & postings,
-    const VectorWithMemoryTracking<String> & search_tokens,
+    const std::vector<PostingListCursorPtr> & cursors,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows);
 
 /// Intersection (AND) of posting lists: set output[row] = 1 only if the row appears in ALL posting lists.
+/// The caller is responsible for preparing the cursor vector (resolving search tokens
+/// to cursors and deduplicating if necessary).
 ///
 /// Adaptive algorithm selection based on posting list density:
 ///   - n == 1:  direct linear scan (degenerate case, same as union).
@@ -187,8 +189,7 @@ void lazyUnionPostingLists(
 ///     cursor leads and others advance forward.
 void lazyIntersectPostingLists(
     IColumn & column,
-    const PostingListCursorMap & postings,
-    const VectorWithMemoryTracking<String> & search_tokens,
+    const std::vector<PostingListCursorPtr> & cursors,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows,

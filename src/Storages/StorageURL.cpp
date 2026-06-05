@@ -1,4 +1,5 @@
 #include <Storages/StorageURL.h>
+#include <Columns/ColumnConst.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -1996,6 +1997,7 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
 }
 
 
+void registerStorageURL(StorageFactory & factory);
 void registerStorageURL(StorageFactory & factory)
 {
     factory.registerStorage(
