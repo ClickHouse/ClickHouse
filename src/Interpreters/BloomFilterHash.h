@@ -129,28 +129,40 @@ struct BloomFilterHash
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
     }
 
+    /// Shared by [hashWithColumn] and [hashWithColumnDistinct] so they treat arrays
+    /// identically. For an Array column, rewrites the per-row [pos, limit) into the
+    /// flattened element range its rows span, and rejects Array(Nullable(...)). Only one
+    /// array level is unwrapped because the bloom filter forbids nested arrays. Returns a
+    /// non-null column when the slice is all empty arrays: the single sentinel hash 0 that
+    /// the caller should return directly.
+    static ColumnPtr unwrapArraySlice(const DataTypePtr & data_type, const ColumnPtr & column, size_t & pos, size_t & limit)
+    {
+        if (!WhichDataType(data_type).isArray())
+            return nullptr;
+
+        const auto & array_col = typeid_cast<const ColumnArray &>(*column);
+        if (checkAndGetColumn<ColumnNullable>(&array_col.getData()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
+
+        /// Offsets are a prefix sum, so row r's elements are [offsets[r-1], offsets[r]).
+        /// offsets[-1] reads as 0 (PaddedPODArray left padding), giving the correct start
+        /// for pos == 0.
+        const auto & offsets = array_col.getOffsets();
+        limit = offsets[pos + limit - 1] - offsets[pos - 1];
+        pos = offsets[pos - 1];
+
+        if (limit != 0)
+            return nullptr;
+
+        auto sentinel = ColumnUInt64::create(1);
+        sentinel->getData()[0] = 0;
+        return sentinel;
+    }
+
     static ColumnPtr hashWithColumn(const DataTypePtr & data_type, const ColumnPtr & column, size_t pos, size_t limit)
     {
-        WhichDataType which(data_type);
-        if (which.isArray())
-        {
-            const auto * array_col = typeid_cast<const ColumnArray *>(column.get());
-
-            if (checkAndGetColumn<ColumnNullable>(&array_col->getData()))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
-
-            const auto & offsets = array_col->getOffsets();
-            limit = offsets[pos + limit - 1] - offsets[pos - 1];    /// PaddedPODArray allows access on index -1.
-            pos = offsets[pos - 1];
-
-            if (limit == 0)
-            {
-                auto index_column = ColumnUInt64::create(1);
-                ColumnUInt64::Container & index_column_vec = index_column->getData();
-                index_column_vec[0] = 0;
-                return index_column;
-            }
-        }
+        if (ColumnPtr empty_slice = unwrapArraySlice(data_type, column, pos, limit))
+            return empty_slice;
 
         const ColumnPtr actual_col = BloomFilter::getPrimitiveColumn(column);
         const DataTypePtr actual_type = BloomFilter::getPrimitiveType(data_type);
@@ -162,8 +174,9 @@ struct BloomFilterHash
     }
 
     /// Like [hashWithColumn], but for a LowCardinality column returns only the distinct
-    /// hashes for the slice (a subset of [hashWithColumn]'s output, so the bloom filter
-    /// is byte-identical). Other columns fall back to [hashWithColumn].
+    /// hashes for the slice. A bloom filter only cares about the distinct set of hashes,
+    /// so the resulting filter is byte-identical. Other columns fall back to
+    /// [hashWithColumn].
     static ColumnPtr hashWithColumnDistinct(
         const DataTypePtr & data_type, const ColumnPtr & column, size_t pos, size_t limit)
     {
@@ -171,39 +184,15 @@ struct BloomFilterHash
         if (!low_cardinality_col)
             return hashWithColumn(data_type, column, pos, limit);
 
-        /// Rewrite [pos, limit) from rows to flattened array elements (as [hashWithColumn]).
-        /// Only one array level: the bloom filter rejects nested arrays, so supporting
-        /// Array(Array(...)) would mean unwrapping repeatedly here.
-        if (WhichDataType(data_type).isArray())
-        {
-            const auto & array_col = typeid_cast<const ColumnArray &>(*column);
-
-            /// Reject Array(Nullable(...)), as [hashWithColumn] does.
-            if (checkAndGetColumn<ColumnNullable>(&array_col.getData()))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
-
-            /// Offsets are a prefix sum, so row r's elements are [offsets[r-1], offsets[r]).
-            /// offsets[-1] reads as 0 (PaddedPODArray left padding), giving the right
-            /// start for pos == 0.
-            const auto & offsets = array_col.getOffsets();
-            limit = offsets[pos + limit - 1] - offsets[pos - 1];
-            pos = offsets[pos - 1];
-
-            /// Slice is all empty arrays: emit the sentinel hash 0, as [hashWithColumn] does.
-            if (limit == 0)
-            {
-                auto index_column = ColumnUInt64::create(1);
-                index_column->getData()[0] = 0;
-                return index_column;
-            }
-        }
+        if (ColumnPtr empty_slice = unwrapArraySlice(data_type, column, pos, limit))
+            return empty_slice;
 
         const DataTypePtr actual_type = BloomFilter::getPrimitiveType(data_type);
         return hashLowCardinalityColumnDistinct(actual_type.get(), *low_cardinality_col, pos, limit);
     }
 
-    /// Must unwrap the same wrappers as [BloomFilter::getPrimitiveColumn], or the LC fast
-    /// path and the fallback would disagree on what counts as LowCardinality.
+    /// Must unwrap the same wrapping types as [BloomFilter::getPrimitiveColumn], or the LC
+    /// fast path and the fallback would disagree on what counts as LowCardinality.
     static const ColumnLowCardinality * findLowCardinalityColumn(const ColumnPtr & column)
     {
         const IColumn * current = column.get();
@@ -221,9 +210,11 @@ struct BloomFilterHash
         return nullptr;
     }
 
-    /// Distinct hashes for the slice: hash only the dictionary entries it uses. The
-    /// not-nullable nested column matches [actual_type] and handles nulls as
-    /// [hashWithColumn] does (a null hashes the value in its dictionary slot).
+    /// Hash only the distinct dictionary entries the slice uses, rather than every row.
+    ///
+    /// Hashes the not-nullable nested column, which is what [actual_type] describes (it
+    /// has Nullable stripped). This matches [hashWithColumn]: a null row hashes whatever
+    /// value sits in its dictionary slot.
     static ColumnPtr hashLowCardinalityColumnDistinct(
         const IDataType * actual_type,
         const ColumnLowCardinality & low_cardinality_col,

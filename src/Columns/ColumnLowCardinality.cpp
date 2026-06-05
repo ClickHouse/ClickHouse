@@ -634,8 +634,9 @@ ColumnLowCardinality::getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 li
 
 PaddedPODArray<UInt64> ColumnLowCardinality::getDistinctIndexes(size_t offset, size_t limit) const
 {
-    /// Work and memory are O(limit), not O(dictionary): the bloom aggregator calls this
-    /// once per granule over the same (large) block dictionary. Result order is arbitrary.
+    /// Work and memory are O(limit), not O(dictionary): MergeTreeIndexAggregatorBloomFilter
+    /// calls this once per granule over the same (possibly large) block dictionary. Result
+    /// order is arbitrary.
     HashSet<UInt64> seen;
 
     const IColumn & indexes = getIndexes();
