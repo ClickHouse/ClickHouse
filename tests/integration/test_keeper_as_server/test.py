@@ -136,3 +136,49 @@ def test_keeper_cluster_invariants(start_cluster):
             observer_by_id.setdefault(r.server_id, set()).add(r.is_observer)
             assert len(observer_by_id[r.server_id]) == 1
     assert observer_by_id == {1: {False}, 2: {False}, 3: {True}}, "expected only node 3 to be observer"
+
+
+def test_system_keeper_changelogs(start_cluster):
+    keeper_utils.wait_until_connected(cluster, node)
+
+    # Force one entry into the active changelog so its size/last_entry_index are more deterministic.
+    zk = keeper_utils.get_fake_zk(cluster, "node")
+    try:
+        zk.create("/test_system_keeper_changelogs", b"data")
+    finally:
+        zk.stop()
+        zk.close()
+
+    assert_eq_with_retry(
+        node,
+        "SELECT count() FROM system.keeper_changelogs WHERE active",
+        "1",
+    )
+
+    row = node.query(
+        "SELECT from_log_index, to_log_index, last_entry_index, entries, path, disk_name, "
+        "size_bytes, toUnixTimestamp(modification_time), is_compressed, is_broken "
+        "FROM system.keeper_changelogs WHERE active LIMIT 1 FORMAT TSV"
+    ).strip().split("\t")
+
+    (
+        from_log_index,
+        to_log_index,
+        last_entry_index,
+        entries,
+        path,
+        disk_name,
+        size_bytes,
+        modification_time,
+        is_compressed,
+        is_broken,
+    ) = row
+
+    assert int(from_log_index) >= 1
+    assert int(entries) >= 1
+    assert int(last_entry_index) == int(from_log_index) + int(entries) - 1
+    assert path.startswith("changelog_") and "bin" in path
+    assert disk_name != ""
+    assert int(size_bytes) > 0
+    assert int(modification_time) > 0
+    assert is_broken == "false"

@@ -112,6 +112,17 @@ CREATE TABLE system.current_roles
 )
 ENGINE = SystemCurrentRoles
 COMMENT 'Contains active roles of a current user. SET ROLE changes the contents of this table.'
+CREATE TABLE system.data_skipping_index_types
+(
+    `name` String,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
+)
+ENGINE = SystemDataSkippingIndexTypes
+COMMENT 'Contains a list of all available data skipping index types along with their embedded documentation.'
 CREATE TABLE system.data_skipping_indices
 (
     `database` String,
@@ -398,7 +409,13 @@ CREATE TABLE system.merges
     `memory_usage` UInt64,
     `thread_id` UInt64,
     `merge_type` String,
-    `merge_algorithm` String
+    `merge_algorithm` String,
+    `current_projection` String,
+    `current_projection_progress` Float64,
+    `current_projection_parts_merging` UInt64,
+    `current_projection_parts_remaining` UInt64,
+    `projections_completed` Array(String),
+    `projections_remaining` Array(String)
 )
 ENGINE = SystemMerges
 COMMENT 'Contains a list of merges currently executing merges of MergeTree tables and their progress. Each merge operation is represented by a single row.'

@@ -358,6 +358,14 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
 #       broken-part detach messages are not masked. The regex matches both `wrong_metadata` (from
 #       `02555_davengers_rename_chain`) and `wrong_metadata_wide` (from `02538_alter_rename_sequence`).
+# `RaftInstance: session` + `failed to read rpc header from socket` + `due to error` is a benign NuRaft
+#       shutdown-time message emitted by `rpc_session::start` in `contrib/NuRaft/src/asio_service.cxx` when
+#       the peer side of an accepted RPC connection (in single-node Keeper this is a loopback `::1` client)
+#       closes its socket before the acceptor cancels its pending header read. The already-allow-listed sibling
+#       `RaftInstance: failed to accept a rpc connection due to error 125` is the inverse race (acceptor wins);
+#       this regex covers the other variant (peer wins, read returns EOF or another transient socket error).
+#       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
+#       RaftInstance errors are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -429,6 +437,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Tuple element name 'null' is reserved" \
            -e "No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed" \
            -e "No stream (ba1.bin) file checksum for column b" \
+           -e "Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
@@ -437,6 +446,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
     | grep -av -e "rdk:FAIL.*Connect to.*failed: Connection refused" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
+    | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then

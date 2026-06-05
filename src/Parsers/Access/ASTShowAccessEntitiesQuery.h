@@ -17,7 +17,7 @@ namespace DB
 class ASTShowAccessEntitiesQuery : public ASTQueryWithOutput
 {
 public:
-    AccessEntityType type;
+    AccessEntityType type{};
 
     bool all = false;
     bool current_quota = false;
