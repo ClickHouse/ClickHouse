@@ -14,6 +14,9 @@ ${CLICKHOUSE_CURL} -sS -I -o /dev/null -w "%{http_code}\n" \
     "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/webterminal"
 
 # The served body is the web terminal HTML page.
-${CLICKHOUSE_CURL} -sS \
-    "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/webterminal" \
-    | grep -o -m1 'Web Terminal'
+# Capture the whole response first: piping curl directly into `grep -m1` makes
+# grep close the pipe on the first match, which can make curl fail writing the
+# rest of the body ("curl: (23) Failed writing body") and trip the test.
+BODY=$(${CLICKHOUSE_CURL} -sS \
+    "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/webterminal")
+echo "$BODY" | grep -o -m1 'Web Terminal'
