@@ -11,6 +11,7 @@
 #include <Common/FieldVisitors.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
 
 #include <Processors/QueryPlan/FractionalLimitStep.h>
@@ -97,6 +98,7 @@ namespace ProfileEvents
 {
     extern const Event SelectQueriesWithSubqueries;
     extern const Event QueriesWithSubqueries;
+    extern const Event QueryPlanningMicroseconds;
 }
 
 namespace DB
@@ -1916,6 +1918,9 @@ void Planner::buildQueryPlanIfNeeded()
 {
     if (query_plan.isInitialized())
         return;
+
+    /// Placed after the early-return guard so repeated calls do not record near-zero noise.
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryPlanningMicroseconds);
 
     LOG_TRACE(
         log,
