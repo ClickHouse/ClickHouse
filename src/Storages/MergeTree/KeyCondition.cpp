@@ -2112,7 +2112,14 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     if (!constant_transformed)
         return false;
 
-    out_value = (*transformed_const_column)[0];
+    Field transformed_value = (*transformed_const_column)[0];
+
+    /// If the key transform produces NaN for the constant, the index cannot answer this predicate;
+    /// fall back so the caller scans the granules.
+    if (transformed_value.isNaN())
+        return false;
+
+    out_value = transformed_value;
     out_type = transformed_const_type;
     return true;
 }
