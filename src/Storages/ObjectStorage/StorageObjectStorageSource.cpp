@@ -98,7 +98,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
+static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
 {
 #if USE_AVRO
     if (auto iceberg_object = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info))
@@ -281,7 +281,9 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     else if (configuration->supportsFileIterator())
     {
         auto iter = configuration->iterate(
-            filter_actions_dag, file_progress_callback, query_settings.list_object_keys_size, storage_metadata, local_context);
+            filter_actions_dag,
+            filter_actions_dag ? std::function<void(FileProgress)>{} : file_progress_callback,
+            query_settings.list_object_keys_size, storage_metadata, local_context);
 
         if (filter_actions_dag)
         {
@@ -291,7 +293,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 virtual_columns,
                 hive_columns,
                 configuration->getNamespace(),
-                local_context);
+                local_context,
+                file_progress_callback);
         }
         return iter;
     }
@@ -580,7 +583,7 @@ Chunk StorageObjectStorageSource::generate()
 
         total_rows_in_file = 0;
 
-        assert(reader_future.valid());
+        chassert(reader_future.valid());
         reader = reader_future.get();
 
         if (!reader)
@@ -759,7 +762,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     {
         ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
 
-        CompressionMethod compression_method;
+        CompressionMethod compression_method = {};
         if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
         {
             compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
@@ -958,7 +961,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     }
 
     bool use_page_cache = !use_distributed_cache && !use_filesystem_cache
-        && effective_read_settings.page_cache && effective_read_settings.use_page_cache_for_object_storage;
+        && effective_read_settings.page_cache_settings.cache && effective_read_settings.use_page_cache_for_object_storage;
 
 
     /// We need object metadata for a few use cases:
@@ -989,10 +992,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         ? effective_read_settings.adjustBufferSize(object_size)
         : effective_read_settings;
     /// FIXME: Changing this setting to default value breaks something around parquet reading
-    modified_read_settings.remote_read_min_bytes_for_seek = modified_read_settings.remote_fs_buffer_size;
+    modified_read_settings.remote_fs_settings.min_bytes_for_seek = modified_read_settings.remote_fs_settings.buffer_size;
     /// User's object may change, don't cache it.
     modified_read_settings.use_page_cache_for_disks_without_file_cache = false;
-    modified_read_settings.filesystem_cache_boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
+    modified_read_settings.filesystem_cache_settings.boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
 
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
@@ -1000,8 +1003,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const bool object_too_small = is_size_known
         && object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
     const bool use_prefetch = object_too_small
-        && modified_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
-        && modified_read_settings.remote_fs_prefetch;
+        && modified_read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool
+        && modified_read_settings.remote_fs_settings.prefetch;
 
     /// FIXME: Use async buffer if use_cache,
     /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
@@ -1012,10 +1015,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// so we gate on `use_filesystem_cache` rather than a runtime `isCached()` check.
     /// This means the bigger buffer may be used even when the cache stage is later
     /// skipped (e.g. missing etag) — slightly wasteful but not incorrect.
-    if (modified_read_settings.filesystem_cache_prefer_bigger_buffer_size && use_filesystem_cache)
-        modified_read_settings.remote_fs_buffer_size = std::max<size_t>(
-            modified_read_settings.remote_fs_buffer_size,
-            modified_read_settings.prefetch_buffer_size);
+    if (modified_read_settings.filesystem_cache_settings.prefer_bigger_buffer_size && use_filesystem_cache)
+        modified_read_settings.remote_fs_settings.buffer_size = std::max<size_t>(
+            modified_read_settings.remote_fs_settings.buffer_size,
+            modified_read_settings.remote_fs_settings.large_buffer_size);
 
     /// Ensure the disk-level DC flag is consistent with the table-engine decision.
     /// `table_engine_read_through_distributed_cache` is a separate setting that enables DC
@@ -1054,7 +1057,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
                 cache,
                 cache_key,
                 FileCache::getCommonOrigin(),
-                modified_read_settings.getFilesystemCacheSettings(),
+                modified_read_settings.filesystem_cache_settings,
                 context_->getFilesystemCacheLog());
 
             LOG_TRACE(
@@ -1079,10 +1082,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (use_page_cache)
     {
         pipeline.needMemoryCache(
-            effective_read_settings.page_cache,
             "s3:" + object_info.getPath(),
             "etag:" + object_info.metadata->etag,
-            modified_read_settings.getPageCacheSettings());
+            modified_read_settings.page_cache_settings);
     }
 
     /// Async prefetch

@@ -219,7 +219,7 @@ String removeEscapedSlashes(const String & json_str)
     return result;
 }
 
-void extendSchemaForPartitions(
+static void extendSchemaForPartitions(
     String & schema,
     const std::vector<String> & partition_columns,
     const std::vector<DataTypePtr> & partition_types)
@@ -308,7 +308,7 @@ void generateManifestFile(
         {
             if (version > 1)
             {
-                size_t field_index;
+                size_t field_index = 0;
                 if (!schema.root()->nameIndex(field_name, field_index))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", field_name);
 
@@ -388,43 +388,69 @@ void generateManifestFile(
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {
-            switch (partition_values[i].getType())
+            /// Build the Avro datum that holds the actual partition value (without
+            /// the surrounding union). Throws on an unsupported value type.
+            auto make_value_datum = [&]() -> avro::GenericDatum
             {
-                case Field::Types::Int64:
-                case Field::Types::UInt64:
-                    partition_record.field(partition_columns[i]) =
-                        avro::GenericDatum(partition_values[i].safeGet<Int64>());
-                    break;
+                switch (partition_values[i].getType())
+                {
+                    case Field::Types::Int64:
+                    case Field::Types::UInt64:
+                        return avro::GenericDatum(partition_values[i].safeGet<Int64>());
+                    case Field::Types::String:
+                        return avro::GenericDatum(partition_values[i].safeGet<String>());
+                    case Field::Types::Float64:
+                        return avro::GenericDatum(partition_values[i].safeGet<Float64>());
+                    case Field::Types::Decimal32:
+                        return avro::GenericDatum(partition_values[i].safeGet<Decimal32>().getValue());
+                    case Field::Types::Decimal64:
+                        return avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
+                    default:
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Unsupported type to write into avro file {}",
+                            partition_values[i].getType());
+                }
+            };
 
-                case Field::Types::String:
-                    partition_record.field(partition_columns[i]) =
-                        avro::GenericDatum(partition_values[i].safeGet<String>());
-                    break;
+            const bool is_nullable_partition = partition_types[i]->isNullable();
+            const bool is_null_value = partition_values[i].getType() == Field::Types::Null;
 
-                case Field::Types::Float64:
-                    partition_record.field(partition_columns[i]) =
-                        avro::GenericDatum(partition_values[i].safeGet<Float64>());
-                    break;
-
-                case Field::Types::Decimal32:
-                    partition_record.field(partition_columns[i]) =
-                        avro::GenericDatum(partition_values[i].safeGet<Decimal32>().getValue());
-                    break;
-
-                case Field::Types::Decimal64:
-                    partition_record.field(partition_columns[i]) =
-                        avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
-                    break;
-
-                case Field::Types::Null:
-                    break;
-
-                default:
+            if (is_nullable_partition)
+            {
+                /// Nullable partition columns are encoded as Avro `["null", T]`
+                /// unions. NULL selects branch 0; a concrete value selects branch 1.
+                /// See issue #105852: before this change, NULL partition values were
+                /// silently written as 0 because the schema was non-nullable.
+                size_t field_index = 0;
+                if (!partition_record.schema()->nameIndex(partition_columns[i], field_index))
                     throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Unsupported type to write into avro file {}",
-                        partition_values[i].getType()
-                    );
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Partition field {} not found in manifest schema",
+                        partition_columns[i]);
+
+                const avro::NodePtr & union_schema = partition_record.schema()->leafAt(static_cast<UInt32>(field_index));
+
+                avro::GenericUnion union_field(union_schema);
+                if (is_null_value)
+                {
+                    union_field.selectBranch(0);
+                }
+                else
+                {
+                    union_field.selectBranch(1);
+                    union_field.datum() = make_value_datum();
+                }
+                partition_record.field(partition_columns[i]) = avro::GenericDatum(union_schema, union_field);
+            }
+            else
+            {
+                if (is_null_value)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Got NULL partition value for non-nullable partition column {}",
+                        partition_columns[i]);
+                partition_record.field(partition_columns[i]) = make_value_datum();
             }
         }
 
@@ -476,7 +502,7 @@ void generateManifestList(
         {
             if (version == 1)
             {
-                size_t field_index;
+                size_t field_index = 0;
                 if (!schema.root()->nameIndex(field_name, field_index))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", field_name);
 

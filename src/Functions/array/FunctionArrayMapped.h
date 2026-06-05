@@ -313,7 +313,7 @@ public:
             && tuple_argument_size > 1
             && tuple_argument_size == num_function_arguments)
         {
-            assert(nested_types.size() == 1);
+            chassert(nested_types.size() == 1);
 
             auto argument_type = nested_types[0];
             const auto & tuple_type = assert_cast<const DataTypeTuple &>(*argument_type);

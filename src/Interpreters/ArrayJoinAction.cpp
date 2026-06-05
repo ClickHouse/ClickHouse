@@ -40,7 +40,7 @@ std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type)
     return nullptr;
 }
 
-ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
+static ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
 {
     ColumnPtr unwrapped_column = column;
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(unwrapped_column.get()))
