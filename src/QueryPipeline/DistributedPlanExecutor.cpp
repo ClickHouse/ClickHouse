@@ -1026,9 +1026,20 @@ protected:
                 {
                     tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
-                /// Release worker-side bookkeeping for the task. The worker tolerates
-                /// UnknownTaskId if the start request never reached it.
-                tryForgetTask(task);
+            }
+
+            /// Forget a task only after the worker reports it terminal. `cancel` merely requests
+            /// termination, so the fragment may still be writing exchange or temporary outputs;
+            /// `forget` drops the worker's only handle to it, which would orphan that fragment. Poll
+            /// for the terminal state with a bounded wait and leave a task that does not settle for
+            /// the worker to reclaim on shutdown rather than orphaning it.
+            for (auto & task : tasks_to_cancel)
+            {
+                if (waitForTaskTerminal(task))
+                    tryForgetTask(task);
+                else
+                    LOG_WARNING(logger, "Task {} on {} did not reach a terminal state after cancellation; "
+                        "leaving it for the worker to reclaim", task.task_id, task.endpoint_uri);
             }
         }
 
@@ -1090,6 +1101,30 @@ protected:
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("forgetTask {} on {}", task.task_id, task.endpoint_uri));
             }
+        }
+
+        /// Polls the worker until the task leaves the "Running" state or a bounded time budget elapses.
+        /// Returns true when the task is known to be terminal (or already gone from the worker), false
+        /// on timeout or a status-request error.
+        bool waitForTaskTerminal(const RunningTaskInfo & task) noexcept
+        {
+            constexpr UInt32 poll_wait_ms = 300;
+            constexpr size_t max_polls = 10;
+            for (size_t poll = 0; poll < max_polls; ++poll)
+            {
+                try
+                {
+                    auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, poll_wait_ms, context);
+                    if (task_status.status != "Running")
+                        return true;
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("waitForTaskTerminal {} on {}", task.task_id, task.endpoint_uri));
+                    return false;
+                }
+            }
+            return false;
         }
 
         void addTaskToCheckQueue(const String & stage_name, const String & task_name)
