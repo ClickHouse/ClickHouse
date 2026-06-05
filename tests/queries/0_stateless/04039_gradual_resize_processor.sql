@@ -38,6 +38,22 @@ FROM
 )
 WHERE explain LIKE '%GradualResize%';
 
+-- Verify the bytes-threshold path also inserts GradualResize (rows threshold disabled).
+-- `numbers(...)` reports `hasEvenlyDistributedRead = true` and bypasses the pre-aggregation
+-- resize entirely, so the bytes path must be exercised over a MergeTree source.
+SET min_rows_per_stream_for_gradual_resize = 0;
+SET min_bytes_per_stream_for_gradual_resize = 1000;
+
+SELECT count() > 0
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT k, count()
+    FROM test_gradual_resize
+    GROUP BY k
+)
+WHERE explain LIKE '%GradualResize%';
+
 DROP TABLE test_gradual_resize;
 
 -- Verify GradualResize works correctly together with `min_outstreams_per_resize_after_split`.

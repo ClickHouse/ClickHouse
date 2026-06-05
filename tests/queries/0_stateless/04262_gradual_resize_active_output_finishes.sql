@@ -13,6 +13,16 @@
 -- the threshold-driven promotion has not run, so the deadlock-avoidance branch in
 -- `GradualResizeProcessor::prepare` must promote a waiting inactive output for the
 -- pipeline to continue.
+--
+-- The pre-aggregation `resizeGradual` is only inserted when the source is not evenly
+-- distributed (`AggregatingStep`: `!storage_has_evenly_distributed_read`). `numbers(...)`
+-- reports `hasEvenlyDistributedRead = true` and bypasses `GradualResizeProcessor`
+-- entirely, so this regression must read from a multi-stream `MergeTree` source.
+
+DROP TABLE IF EXISTS test_gradual_resize_active;
+CREATE TABLE test_gradual_resize_active (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 256;
+INSERT INTO test_gradual_resize_active SELECT number % 1000, number FROM numbers(1000000);
 
 SET enable_analyzer = 1;
 SET min_rows_per_stream_for_gradual_resize = 100000000;
@@ -27,7 +37,7 @@ SET group_by_overflow_mode = 'break';
 SELECT count() > 0 FROM
 (
     SELECT k, count() AS c
-    FROM (SELECT number % 1000 AS k FROM numbers(1000000))
+    FROM test_gradual_resize_active
     GROUP BY k
 );
 
@@ -39,6 +49,8 @@ SET max_threads = 16;
 SELECT count() > 0 FROM
 (
     SELECT k, count() AS c
-    FROM (SELECT number % 1000 AS k FROM numbers(1000000))
+    FROM test_gradual_resize_active
     GROUP BY k
 );
+
+DROP TABLE test_gradual_resize_active;
