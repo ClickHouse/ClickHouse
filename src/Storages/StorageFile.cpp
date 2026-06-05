@@ -1635,8 +1635,15 @@ Chunk StorageFileSource::generate()
             /// (sub-second mtime + inode + size) so an in-place rewrite invalidates
             /// the cache even when the new file has the same length and is written
             /// within the same wall-clock second.
+            ///
+            /// Gated on `use_parquet_metadata_cache`: when it is disabled we leave the
+            /// metadata empty so `getInputWithMetadata` is not used, the plain input
+            /// creator is taken instead, and `ParquetV3BlockInputFormat` receives a null
+            /// cache — neither reading from nor populating `ParquetMetadataCache`. This
+            /// matches `StorageObjectStorageSource`.
             std::optional<RelativePathWithMetadata> object_with_metadata;
-            if (!storage->use_table_fd && !storage->archive_info && !current_path.empty()
+            if (getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache]
+                && !storage->use_table_fd && !storage->archive_info && !current_path.empty()
                 && current_file_size.has_value() && current_file_last_modified.has_value()
                 && current_file_cache_version.has_value())
             {
