@@ -342,6 +342,8 @@ namespace
     {
         case SnapshotSummaryOperation::APPEND:
             return summary->getUpdate<SnapshotSummaryUpdateAppend>();
+        case SnapshotSummaryOperation::DELETE:
+            return std::nullopt;
         case SnapshotSummaryOperation::OVERWRITE: {
             const auto & update = summary->getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>();
             /// current compaction (OPTIME TABLE my_iceberg) supports only overwrites wich has only position delete files
@@ -349,7 +351,6 @@ namespace
                 return std::nullopt;
             [[fallthrough]];
         }
-        case SnapshotSummaryOperation::DELETE:
         case SnapshotSummaryOperation::REPLACE:
             throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported snapshot's operation type {}", summary->getOperation());
     }
@@ -363,7 +364,7 @@ void checkIfIcebergHistorySupported(const IcebergHistory & history)
     for (const auto & history_record : history)
     {
         auto append = tryGetAppendUpdate(history_record);
-        if (append->added_files == 0)
+        if (append && append->added_files == 0)
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS, "Found an append with 0 added_files, snapshot={}", history_record.snapshot_id);
     }
