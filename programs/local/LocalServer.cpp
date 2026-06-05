@@ -209,6 +209,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt32 listen_backlog;
     extern const ServerSettingsBool listen_try;
     extern const ServerSettingsInt32 max_connections;
+    extern const ServerSettingsUInt64 max_concurrent_queries;
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsSeconds keep_alive_timeout;
@@ -665,7 +666,13 @@ void LocalServer::startServers(const ServerType & server_type)
     /// particular, a TCP port still accepting connections after the command was rejected). Only
     /// the listeners appended by this call are rolled back; listeners from earlier successful
     /// `SYSTEM START LISTEN` calls are left untouched.
+    ///
+    /// `Context::server_ports` (read by the `getServerPort` SQL function and the `tcp_port` /
+    /// `http_port` lookups) must stay consistent with the all-or-nothing listener state, so port
+    /// registration is deferred until after the per-protocol verification passes. Otherwise a
+    /// rolled-back bind would leave the registry pointing at a port whose listener was just closed.
     const size_t servers_started_before = servers.size();
+    std::vector<std::pair<const char *, UInt16>> ports_to_register;
     try
     {
         for (const auto & listen_host : listen_hosts)
@@ -694,7 +701,7 @@ void LocalServer::startServers(const ServerType & server_type)
                             socket,
                             params));
                 }, &logger()))
-                    global_context->registerServerPort(port_name, servers.back().portNumber());
+                    ports_to_register.emplace_back(port_name, servers.back().portNumber());
             }
 
             if (server_type.shouldStart(ServerType::Type::HTTP))
@@ -721,7 +728,7 @@ void LocalServer::startServers(const ServerType & server_type)
                             ProfileEvents::InterfaceHTTPReceiveBytes,
                             ProfileEvents::InterfaceHTTPSendBytes));
                 }, &logger()))
-                    global_context->registerServerPort(port_name, servers.back().portNumber());
+                    ports_to_register.emplace_back(port_name, servers.back().portNumber());
             }
         }
 
@@ -745,6 +752,11 @@ void LocalServer::startServers(const ServerType & server_type)
         servers.erase(servers.begin() + servers_started_before, servers.end());
         throw;
     }
+
+    /// All requested listeners started and passed verification — publish their ports now, so the
+    /// registry is only ever updated for a fully successful (and therefore non-rolled-back) start.
+    for (const auto & [port_name, port] : ports_to_register)
+        global_context->registerServerPort(port_name, port);
 }
 
 
@@ -1211,8 +1223,11 @@ void LocalServer::processConfig()
     setupUsers();
 
     /// Limit on total number of concurrently executing queries.
-    /// There is no need for concurrent queries, override max_concurrent_queries.
-    global_context->getProcessList().setMaxSize(0);
+    /// Plain `clickhouse-local` runs a single query at a time, but once it is turned into a server
+    /// via `SYSTEM START LISTEN` it accepts external connections and must honor the configured
+    /// limit just like `clickhouse-server`. Take it from `max_concurrent_queries`, whose default
+    /// of 0 preserves the historical "no limit" behavior for ordinary local usage.
+    global_context->getProcessList().setMaxSize(server_settings[ServerSetting::max_concurrent_queries]);
 
     size_t max_server_memory_usage = server_settings[ServerSetting::max_server_memory_usage];
     const double max_server_memory_usage_to_ram_ratio = server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
