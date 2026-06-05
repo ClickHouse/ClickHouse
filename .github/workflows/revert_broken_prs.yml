@@ -82,8 +82,10 @@ jobs:
               continue
             fi
 
-            # Check merge commit for failures (check-runs)
-            merge_failed_checks=$(gh api "repos/$GH_REPO/commits/$sha/check-runs?per_page=100" \
+            # Check merge commit for failures (check-runs). A failed API/jq query must not
+            # look like "no failures" — that would let a broken merge be silently skipped —
+            # so on error we log and skip only this candidate (it is retried on the next run).
+            if ! merge_failed_checks=$(gh api "repos/$GH_REPO/commits/$sha/check-runs?per_page=100" \
               --paginate --jq '
               .check_runs[] |
               select(.conclusion == "failure") |
@@ -93,10 +95,15 @@ jobs:
               select((.name | startswith("ClickBench")) | not) |
               select(.name != "Config Workflow" and .name != "Finish Workflow" and .name != "Mergeable Check" and .name != "MasterCI" and .name != "SQLTest" and .name != "VectorSearchStress" and .name != "ClickHouse Keeper Jepsen") |
               .name
-            ' 2>/dev/null || true)
+            '); then
+              echo "  WARNING: could not query check-runs for merge commit $sha, skipping candidate."
+              echo ""
+              continue
+            fi
 
-            # Check merge commit for failures (commit statuses)
-            merge_failed_statuses=$(gh api "repos/$GH_REPO/commits/$sha/status" --jq '
+            # Check merge commit for failures (commit statuses). Same as above: a failed query
+            # must not be mistaken for "no failures".
+            if ! merge_failed_statuses=$(gh api "repos/$GH_REPO/commits/$sha/status" --jq '
               .statuses[] |
               select(.state == "failure") |
               select((.context | startswith("Performance Comparison")) | not) |
@@ -105,7 +112,11 @@ jobs:
               select((.context | startswith("ClickBench")) | not) |
               select(.context != "Config Workflow" and .context != "Finish Workflow" and .context != "Mergeable Check" and .context != "PR" and .context != "MasterCI" and .context != "SQLTest" and .context != "VectorSearchStress" and .context != "ClickHouse Keeper Jepsen") |
               .context
-            ' 2>/dev/null || true)
+            '); then
+              echo "  WARNING: could not query commit statuses for merge commit $sha, skipping candidate."
+              echo ""
+              continue
+            fi
 
             merge_failures=""
             if [ -n "$merge_failed_checks" ]; then
@@ -128,12 +139,18 @@ jobs:
             echo "  Failures on merge commit:"
             echo "$merge_failures" | sed 's/^/    - /'
 
-            # Now check the original PR's head commit for failures or incomplete checks
-            pr_head_sha=$(echo "$pr_json" | jq -r '.head.sha')
-            echo "  Checking PR head commit $pr_head_sha..."
+            # Now check the original PR's head commit for failures or incomplete checks.
+            # Use the commit that was actually merged — the merge commit's second parent —
+            # rather than the PR object's current `.head.sha`, which can move after merge if
+            # the source branch advances, and would attribute the master failure to the wrong
+            # commit.
+            pr_head_sha=$(echo "$commits_json" | jq -r --arg sha "$sha" '.[] | select(.sha == $sha) | .parents[1].sha')
+            echo "  Checking merged head commit $pr_head_sha..."
 
-            # Check PR head for failed check-runs
-            pr_failed_checks=$(gh api "repos/$GH_REPO/commits/$pr_head_sha/check-runs?per_page=100" \
+            # Check PR head for failed check-runs. A failed query must not look like a clean
+            # head (which would be misread as "master failure is flaky" and skip the revert);
+            # surface it and skip this candidate.
+            if ! pr_failed_checks=$(gh api "repos/$GH_REPO/commits/$pr_head_sha/check-runs?per_page=100" \
               --paginate --jq '
               .check_runs[] |
               select((.name | startswith("Performance Comparison")) | not) |
@@ -145,10 +162,14 @@ jobs:
               (if .conclusion == "failure" then .name + " (failed)"
                elif .status != "completed" then .name + " (incomplete)"
                else empty end)
-            ' 2>/dev/null || true)
+            '); then
+              echo "  WARNING: could not query check-runs for merged head $pr_head_sha, skipping candidate."
+              echo ""
+              continue
+            fi
 
-            # Check PR head for failed or pending commit statuses
-            pr_failed_statuses=$(gh api "repos/$GH_REPO/commits/$pr_head_sha/status" --jq '
+            # Check PR head for failed or pending commit statuses. Same as above.
+            if ! pr_failed_statuses=$(gh api "repos/$GH_REPO/commits/$pr_head_sha/status" --jq '
               .statuses[] |
               select((.context | startswith("Performance Comparison")) | not) |
               select((.context | startswith("libFuzzer")) | not) |
@@ -159,7 +180,11 @@ jobs:
               (if .state == "failure" then .context + " (failed)"
                elif .state == "pending" then .context + " (pending)"
                else empty end)
-            ' 2>/dev/null || true)
+            '); then
+              echo "  WARNING: could not query commit statuses for merged head $pr_head_sha, skipping candidate."
+              echo ""
+              continue
+            fi
 
             pr_issues=""
             if [ -n "$pr_failed_checks" ]; then
