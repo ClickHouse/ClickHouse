@@ -287,15 +287,23 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
 
     LOG_TEST(getLogger("MergeTreeDataPartWide"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
 
+    /// Resolve stream names via the NameAndTypePair carrying the column ID so
+    /// that on a column-IDs-active table the disk-side keys (e.g. "1.cmrk2")
+    /// are looked up instead of the logical-name-derived stream names.
+    const auto & part_columns = getColumns();
     for (const auto & column_name : column_names)
     {
         auto serialization = tryGetSerialization(column_name);
         if (!serialization)
             continue;
 
+        auto column = part_columns.tryGetByName(column_name);
+
         serialization->enumerateStreams([&](const auto & subpath)
         {
-            auto stream_name = getStreamNameForColumn(column_name, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+            auto stream_name = column
+                ? getStreamNameForColumn(*column, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings())
+                : getStreamNameForColumn(column_name, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
             if (!stream_name)
                 return;
 
@@ -323,12 +331,19 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
     if (!mark_cache)
         return;
 
-    const auto & serializations = getSerializations();
-    for (const auto & [column_name, serialization] : serializations)
+    /// Same column-ID-aware resolution as loadMarksToCache: walk the part's
+    /// columns (which carry `column_id` populated by loadColumns remap) so
+    /// the cache keys we evict match the keys insertion produced.
+    const auto & part_columns = getColumns();
+    for (const auto & column : part_columns)
     {
+        auto serialization = tryGetSerialization(column.name);
+        if (!serialization)
+            continue;
+
         serialization->enumerateStreams([&](const auto & subpath)
         {
-            auto stream_name = getStreamNameForColumn(column_name, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+            auto stream_name = getStreamNameForColumn(column, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
             if (!stream_name)
                 return;
 

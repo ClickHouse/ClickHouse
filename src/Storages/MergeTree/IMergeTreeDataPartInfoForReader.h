@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
@@ -13,6 +14,9 @@ namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
 }
+
+class ColumnIdMapping;
+using ColumnIdMappingPtr = std::shared_ptr<const ColumnIdMapping>;
 
 class IDataPartStorage;
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
@@ -109,6 +113,8 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReadHints not implemented for this reader");
     }
+
+    virtual ColumnIdMappingPtr getColumnIdMapping() const { return nullptr; }
 };
 
 using MergeTreeDataPartInfoForReaderPtr = std::shared_ptr<IMergeTreeDataPartInfoForReader>;

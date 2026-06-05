@@ -61,6 +61,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_json_lazy_type_hints;
+    extern const SettingsBool allow_experimental_column_ids;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -1190,13 +1191,19 @@ bool AlterCommand::isSettingsAlter() const
     return type == MODIFY_SETTING || type == RESET_SETTING;
 }
 
-bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const
+bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context, bool column_ids_active) const
 {
     if (ignore)
         return false;
 
     /// We remove properties on metadata level
     if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
+        return false;
+
+    if (column_ids_active && type == RENAME_COLUMN)
+        return false;
+
+    if (column_ids_active && type == DROP_COLUMN && !clear && !partition)
         return false;
 
     if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN || type == DROP_STATISTICS)
@@ -1271,9 +1278,9 @@ bool AlterCommand::isDropOrRename() const
         || type == Type::RENAME_COLUMN;
 }
 
-std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
+std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool column_ids_active) const
 {
-    if (!isRequireMutationStage(metadata, context))
+    if (!isRequireMutationStage(metadata, context, column_ids_active))
     {
         /// Even though this command doesn't require a mutation, we still need to apply it
         /// to the metadata so that subsequent commands see the updated state. For example,
@@ -1834,7 +1841,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             /// When share_nested_offsets is disabled, dotted-name columns are independent
             /// and not part of a Nested group, so they can be freely renamed.
-            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+            auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get());
+            if (merge_tree)
             {
                 if (!(*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets])
                 {
@@ -1845,7 +1853,17 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (from_nested && to_nested)
             {
-                if (from_nested_table_name != to_nested_table_name)
+                /// Cross-parent Nested rename (n.x -> m.x) is only safe when the
+                /// table actively uses column IDs: the column-ID planning path
+                /// in `StorageMergeTree::prepareColumnIdMappingForAlter` handles
+                /// the shared Nested offsets stream, while the legacy mutation
+                /// rename path does not rename `n.size0` and would leave reads
+                /// looking for `m.size0` files that do not exist.  A `with_size`
+                /// session setting alone is not enough: the table must already
+                /// have an active mapping.  Activate column IDs in a separate
+                /// ALTER first.
+                if (from_nested_table_name != to_nested_table_name
+                    && !(merge_tree && merge_tree->hasColumnIdMapping()))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
                 all_columns.rename(command.column_name, command.rename_to);
             }
@@ -1948,7 +1966,7 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters) const
+MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters, bool column_ids_active) const
 {
     /// Save a copy of the original metadata before applying commands.
     /// We need it for isTTLAlter check below, because apply() updates TTL in metadata,
@@ -1968,7 +1986,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
-        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context); mutation_cmd)
+        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context, column_ids_active); mutation_cmd)
         {
             result.push_back(*mutation_cmd);
         }

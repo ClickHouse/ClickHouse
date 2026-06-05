@@ -1,0 +1,6 @@
+Test: rename non-identity column after insert
+1	dflt
+2	hello
+1	dflt
+2	hello
+3	world

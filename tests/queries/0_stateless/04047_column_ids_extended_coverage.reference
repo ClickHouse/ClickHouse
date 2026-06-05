@@ -1,0 +1,59 @@
+Test 1: serialization.json is keyed by column ID
+c	1
+Test 2: columns.txt uses logical names
+b
+Test 3: setting disabled prevents activation
+1
+Test 4: first activating RENAME is metadata-only
+0
+1	one
+a	a
+b	b
+Test 5: first activating DROP is metadata-only
+0
+1	one
+Test 6: RENAME non-key column on partitioned table
+1	one
+2	two
+3	three
+2	two
+3	three
+4	four
+Test 7: mutation on compact physical-name table
+1	10	UInt64	x
+2	20	UInt64	x
+3	30	UInt64	y
+Test 8: projection merge across rename boundary
+a	a
+c	c
+d	b
+1	30
+2	70
+Test 9: system.parts_columns exposes column_id
+a	a
+b	b
+c	1
+a	a
+b	b
+c	1
+Test 10: merge compact and wide parts
+a	a
+b	b
+c	1
+52	42
+Test 11: RENAME column used in skip index
+1	hello world
+2	foo bar
+a	a
+d	b
+1	hello world
+2	foo bar
+3	baz qux
+Test 12: system.projection_parts_columns exposes column_id
+a	a
+sum(c)	sum(c)
+Test 13: CHECK TABLE after rename with SerializationInfo
+1
+0	0
+10	10
+20	20

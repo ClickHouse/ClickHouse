@@ -20,6 +20,7 @@ class ReadBuffer;
 class WriteBuffer;
 class NamesAndTypesList;
 class Block;
+class ColumnIdMapping;
 
 /** Contains information about kind of serialization of column and its subcolumns.
  *  Also contains information about content of columns,
@@ -123,6 +124,7 @@ public:
     void replaceData(const SerializationInfoByName & other);
 
     void writeJSON(WriteBuffer & out) const;
+    void writeJSONWithColumnIds(WriteBuffer & out, const ColumnIdMapping & column_id_mapping) const;
 
     SerializationInfoByName clone() const;
 
@@ -133,6 +135,7 @@ public:
     bool needsPersistence() const;
 
     static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in);
+    static SerializationInfoByName readJSONWithColumnIds(const NamesAndTypesList & columns, const ColumnIdMapping & column_id_mapping, ReadBuffer & in);
 
     static SerializationInfoByName readJSONFromString(const NamesAndTypesList & columns, const std::string & str);
 

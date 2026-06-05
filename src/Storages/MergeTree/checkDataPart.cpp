@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -175,9 +176,73 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         assertEOF(*buf);
     }
 
-    if (columns_txt != columns_list)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Columns doesn't match in part {}. Expected: {}. Found: {}",
-            data_part_storage.getFullPath(), columns_list.toString(), columns_txt.toString());
+    auto pn_mapping = data_part->storage.getActiveColumnIdMapping();
+    bool column_ids_active = pn_mapping != nullptr;
+
+    if (!column_ids_active)
+    {
+        if (columns_txt != columns_list)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Columns doesn't match in part {}. Expected: {}. Found: {}",
+                data_part_storage.getFullPath(), columns_list.toString(), columns_txt.toString());
+    }
+    else
+    {
+        /// With column IDs, old parts have pre-rename column names in
+        /// `columns.txt`, so exact equality is impossible. Perform a weaker
+        /// check: for every column found in both the expected list and the
+        /// part (matched by column ID), verify the types agree.
+        std::unordered_map<String, DataTypePtr> expected_types;
+        for (const auto & col : columns_list)
+        {
+            auto phys = pn_mapping->getColumnIdOrDefault(col.name);
+            expected_types[phys] = col.type;
+        }
+        for (const auto & col : columns_txt)
+        {
+            String phys;
+            /// Prefer column-ID resolution first: `columns.txt` for parts
+            /// written with column-IDs active stores the column_id form,
+            /// and after a `RENAME COLUMN b TO d` followed by reuse of the
+            /// name `b` for a new column, the on-disk token `b` is the
+            /// column_id for logical `d` (id_to_logical), NOT the logical
+            /// name for the new `b` (logical_to_id `b -> 1`).  Treating
+            /// `b` as a logical name first would compare the old part's
+            /// stream against the new `b` column's type and falsely report
+            /// `CORRUPTED_DATA`.  Mirrors `SerializationInfoByName::readJSONWithColumnIds`
+            /// and `remapColumnsWithPhysicalNames`.
+            if (pn_mapping->hasColumnId(col.name))
+                phys = col.name;
+            else if (pn_mapping->hasLogicalName(col.name))
+                phys = pn_mapping->getColumnId(col.name);
+            else
+                continue;
+
+            auto it = expected_types.find(phys);
+            if (it != expected_types.end() && !col.type->equals(*it->second))
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Column type mismatch in part {} for column ID '{}': "
+                    "expected {}, found {}",
+                    data_part_storage.getFullPath(), phys,
+                    it->second->getName(), col.type->getName());
+        }
+
+        /// Compact parts use ordinal positions to seek into the single data
+        /// file -- the compact reader resolves substream offsets from
+        /// `columns_substreams.txt` by `column_position`.  An earlier
+        /// version of this check called `ColumnsSubstreams::validateColumns`
+        /// to catch reordered `columns.txt`, but `columns.txt` is written
+        /// in the column-id name domain while `columns_substreams.txt`
+        /// retains the LOGICAL name used at write time -- with column-ID
+        /// rename history these two domains can disagree by design (e.g.
+        /// `RENAME COLUMN b TO d` leaves the part with `columns.txt = b`
+        /// resolved by the current mapping to `d`, while
+        /// `columns_substreams.txt` still has `b`).  No clean per-slot
+        /// name comparison survives without a per-part write-time
+        /// snapshot we do not keep, so we rely on the membership/type
+        /// loop above to catch corruption that matters for the reader
+        /// (the reader uses column-id substream names which the per-slot
+        /// substream entries already verify on read).
+    }
 
     /// Real checksums based on contents of data. Must correspond to checksums.txt. If not - it means the data is broken.
     IMergeTreeDataPart::Checksums checksums_data;
@@ -204,7 +269,10 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         try
         {
             auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
-            serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
+            if (column_ids_active)
+                serialization_infos = SerializationInfoByName::readJSONWithColumnIds(columns_list, *pn_mapping, *serialization_file);
+            else
+                serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
         }
         catch (...)
         {

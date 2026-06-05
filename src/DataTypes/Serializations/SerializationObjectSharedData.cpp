@@ -1033,7 +1033,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                     EnumerateStreamsSettings enumerate_settings;
                     enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
                     enumerate_settings.use_specialized_prefixes_and_suffixes_substreams = true;
-                    order = getSubcolumnsDeserializationOrder("", subcolumns_substream_data, path_info.substreams, enumerate_settings, stream_file_name_settings);
+                    order = getSubcolumnsDeserializationOrder("", "", subcolumns_substream_data, path_info.substreams, enumerate_settings, stream_file_name_settings);
                 }
 
                 /// Finally, deserialize data of subcolumns in determined order.

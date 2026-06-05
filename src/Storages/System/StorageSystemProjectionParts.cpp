@@ -105,7 +105,9 @@ void StorageSystemProjectionParts::processNextStorage(
 
         auto part_state = all_parts_state[part_number];
 
-        ColumnSize columns_size = part->getTotalColumnsSize();
+        ColumnSize columns_size;
+        if (!part->is_broken)
+            columns_size = part->getTotalColumnsSize();
         ColumnSize parent_columns_size = parent_part->getTotalColumnsSize();
 
         size_t src_index = 0;

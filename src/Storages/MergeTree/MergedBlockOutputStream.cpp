@@ -330,7 +330,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
             if (new_part->getMinMaxIndex()->initialized)
             {
-                auto files = new_part->getMinMaxIndex()->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings);
+                auto files = new_part->getMinMaxIndex()->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings, new_part->storage.getActiveColumnIdMapping());
                 for (auto & file : files)
                     written_files.emplace_back(std::move(file));
             }
@@ -369,7 +369,10 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
         {
-            serialization_infos.writeJSON(buffer);
+            if (auto pn_mapping = new_part->storage.getActiveColumnIdMapping())
+                serialization_infos.writeJSONWithColumnIds(buffer, *pn_mapping);
+            else
+                serialization_infos.writeJSON(buffer);
         });
     }
 
@@ -393,7 +396,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
     write_plain_file("columns.txt", [&](auto & buffer)
     {
-        new_part->getColumns().writeText(buffer);
+        new_part->getColumns().writeText(buffer, /*use_column_ids=*/true);
     });
 
     /// Merge columns substreams from current writer and additional columns substreams

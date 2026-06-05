@@ -1,0 +1,44 @@
+Test 1: instant RENAME -- no mutation produced
+a	a
+b	b
+0
+1	one
+2	two
+1	one
+2	two
+3	three
+1	one
+2	two
+3	three
+a	a
+e	b
+1	one
+2	two
+3	three
+Test 2: instant DROP -- no mutation
+a	a
+b	b
+c	c
+0
+1	one
+a	a
+b	b
+1	one
+2	two
+Test 3: DROP + re-ADD same name -- old data invisible
+a	a
+b	1
+b	b
+1	new_default
+2	new_value
+Test 4: lazy activation for existing tables
+a	a
+b	b
+c	1
+0
+1	one	0
+2	two	22
+Test 5: MODIFY COLUMN still creates mutation
+a	a
+b	b
+10	UInt64

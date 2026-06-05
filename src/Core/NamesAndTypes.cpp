@@ -41,6 +41,14 @@ String NameAndTypePair::getNameInStorage() const
     return name.substr(0, *subcolumn_delimiter_position);
 }
 
+String NameAndTypePair::getColumnIdInStorage() const
+{
+    if (column_id.empty())
+        return getNameInStorage();
+
+    return column_id;
+}
+
 bool NameAndTypePair::operator<(const NameAndTypePair & rhs) const
 {
     return std::forward_as_tuple(name, type->getName()) < std::forward_as_tuple(rhs.name, rhs.type->getName());
@@ -65,6 +73,7 @@ String NameAndTypePair::dump() const
     out << "name: " << name << "\n"
         << "type: " << type->getName() << "\n"
         << "name in storage: " << getNameInStorage() << "\n"
+        << "column ID in storage: " << getColumnIdInStorage() << "\n"
         << "type in storage: " << getTypeInStorage()->getName();
 
     return out.str();
@@ -112,14 +121,15 @@ void NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
         assertEOF(buf);
 }
 
-void NamesAndTypesList::writeText(WriteBuffer & buf) const
+void NamesAndTypesList::writeText(WriteBuffer & buf, bool use_column_ids) const
 {
     writeString("columns format version: 1\n", buf);
     DB::writeText(size(), buf);
     writeString(" columns:\n", buf);
     for (const auto & it : *this)
     {
-        writeBackQuotedString(it.name, buf);
+        const auto & col_name = (use_column_ids && !it.column_id.empty()) ? it.column_id : it.name;
+        writeBackQuotedString(col_name, buf);
         writeChar(' ', buf);
         writeString(it.type->getName(), buf);
         writeChar('\n', buf);

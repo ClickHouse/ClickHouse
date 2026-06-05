@@ -47,6 +47,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
@@ -587,6 +588,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
+    if (auto pn_mapping = global_ctx->data->getActiveColumnIdMapping())
+        populateColumnIds(global_ctx->storage_columns, *pn_mapping);
     global_ctx->virtual_columns = global_ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
     global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(global_ctx->metadata_snapshot->getPartitionKey(), global_ctx->data_settings);
 
@@ -633,11 +636,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         NameSet columns_present_in_parts;
         columns_present_in_parts.reserve(global_ctx->storage_columns.size());
 
-        /// Collect all column names that actually exist in the source parts
+        /// Collect all column names that actually exist in the source parts.
+        /// With column IDs, a column may appear under old logical names (before rename)
+        /// or under its column ID, so we add both to recognize the column as present.
         for (const auto & part : global_ctx->future_part->parts)
         {
             for (const auto & col : part->getColumns())
+            {
                 columns_present_in_parts.emplace(col.name);
+                if (!col.column_id.empty())
+                    columns_present_in_parts.emplace(col.getColumnIdInStorage());
+            }
         }
 
         const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
@@ -645,7 +654,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// Any storage column not present in any part and without a default expression is considered expired
         for (const auto & storage_column : global_ctx->storage_columns)
         {
-            if (!columns_present_in_parts.contains(storage_column.name) && !columns_desc.getDefault(storage_column.name))
+            bool present = columns_present_in_parts.contains(storage_column.name);
+            if (!present && !storage_column.column_id.empty())
+                present = columns_present_in_parts.contains(storage_column.getColumnIdInStorage());
+
+            if (!present && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
         }
     }

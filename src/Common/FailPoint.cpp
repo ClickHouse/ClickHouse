@@ -184,6 +184,9 @@ static struct InitFiu
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     REGULAR(patch_parts_reverse_column_order) \
+    PAUSEABLE_ONCE(column_ids_pause_after_metadata_alter) \
+    ONCE(column_ids_throw_before_mapping_persist) \
+    ONCE(column_ids_throw_after_mapping_persist) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
     REGULAR(transaction_force_unknown_state_after_commit) \

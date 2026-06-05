@@ -408,6 +408,14 @@ String ISerialization::getFileNameForStream(const NameAndTypePair & column, cons
     return getFileNameForStream(column.getNameInStorage(), path, settings);
 }
 
+String ISerialization::getFileNameForStreamByColumnId(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings)
+{
+    if (column.column_id.empty())
+        return getFileNameForStream(column, path, settings);
+
+    return getFileNameForStreamByColumnId(column.getColumnIdInStorage(), column.getNameInStorage(), path, settings);
+}
+
 static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path)
 {
     /// Arrays of Nested cannot be inside other types.
@@ -443,6 +451,45 @@ String ISerialization::getFileNameForStream(const String & name_in_storage, cons
     {
         stream_name = escapeForFileName(name_in_storage);
     }
+
+    return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false, settings.escape_variant_substreams);
+}
+
+String ISerialization::getFileNameForStreamByColumnId(
+    const String & column_id_in_storage,
+    const String & logical_name_in_storage,
+    const SubstreamPath & path,
+    const StreamFileNameSettings & settings)
+{
+    String stream_name;
+
+    /// Mirror `getFileNameForStream`: only fold offset streams onto the
+    /// Nested parent prefix when sibling offsets are actually shared
+    /// (`share_nested_offsets = 1`).  When sharing is off, each flattened
+    /// Nested sibling keeps its own offset stream under the full column ID.
+    if (settings.share_nested_offsets && isPossibleOffsetsOfNested(path))
+    {
+        /// For flattened Nested siblings (e.g. n.x, n.y), the array offset
+        /// stream is shared under the Nested parent prefix.  Prefer the
+        /// column-ID name's prefix because it is stable across metadata-only
+        /// renames.  For identity-mapped columns (column ID = "n.x") this
+        /// gives "n"; for counter-allocated columns (column ID = "5.x")
+        /// this gives "5".  Fall back to the logical name for columns
+        /// whose column ID has no dot (plain counter like "5").
+        auto nested_from_physical = Nested::extractTableName(column_id_in_storage);
+        auto nested_from_logical = Nested::extractTableName(logical_name_in_storage);
+        bool physical_is_nested = (column_id_in_storage != nested_from_physical);
+        bool logical_is_nested = (logical_name_in_storage != nested_from_logical);
+
+        if (physical_is_nested)
+            stream_name = escapeForFileName(nested_from_physical);
+        else if (logical_is_nested)
+            stream_name = escapeForFileName(nested_from_logical);
+        else
+            stream_name = escapeForFileName(column_id_in_storage);
+    }
+    else
+        stream_name = escapeForFileName(column_id_in_storage);
 
     return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false, settings.escape_variant_substreams);
 }

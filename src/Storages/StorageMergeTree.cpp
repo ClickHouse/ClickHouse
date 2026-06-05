@@ -5,6 +5,7 @@
 #include <thread>
 
 #include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupEntryFromMemory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
@@ -25,8 +26,10 @@
 #include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -61,6 +64,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
+#include <DataTypes/NestedUtils.h>
 
 
 namespace ProfileEvents
@@ -81,11 +85,16 @@ namespace FailPoints
     extern const char mt_select_parts_to_mutate_max_part_size[];
     extern const char storage_shared_merge_tree_mutate_pause_before_wait[];
     extern const char storage_merge_tree_background_schedule_merge_fail[];
+    extern const char column_ids_pause_after_metadata_alter[];
+    extern const char column_ids_throw_before_mapping_persist[];
+    extern const char column_ids_throw_after_mapping_persist[];
 }
 
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_column_ids;
+    extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsUInt64 alter_sync;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -120,6 +129,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool table_readonly;
+    extern const MergeTreeSettingsBool activate_column_ids_for_existing_tables;
+    extern const MergeTreeSettingsBool share_nested_offsets;
+    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
 }
 
 namespace ErrorCodes
@@ -139,6 +151,8 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTS;
     extern const int PART_IS_LOCKED;
     extern const int PART_IS_TEMPORARILY_LOCKED;
+    extern const int FAULT_INJECTED;
+    extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
 namespace ActionLocks
@@ -202,6 +216,8 @@ StorageMergeTree::StorageMergeTree(
     , support_transaction(supportTransaction(getDisks(), log.load()))
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
+    loadColumnIdMappingFromDisk();
+    reconcileColumnIdMappingWithMetadata();
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
 
@@ -426,6 +442,441 @@ void StorageMergeTree::drop()
     dropAllData();
 }
 
+StorageMergeTree::ColumnIdAlterPlan StorageMergeTree::prepareColumnIdMappingForAlter(
+    const AlterCommands & commands,
+    const StorageInMemoryMetadata & old_metadata,
+    const StorageInMemoryMetadata & new_metadata) const
+{
+    ColumnIdAlterPlan plan;
+
+    /// Evaluate activation against the post-MODIFY-SETTING state so that a
+    /// single ALTER mixing `MODIFY SETTING ... , RENAME COLUMN ...` activates
+    /// column IDs and takes the metadata-only path in one shot.
+    MergeTreeSettings effective_new_settings(*getSettings());
+    if (new_metadata.settings_changes)
+        effective_new_settings.applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
+
+    bool settings_enable_column_ids =
+        effective_new_settings[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
+        && effective_new_settings[MergeTreeSetting::activate_column_ids_for_existing_tables];
+
+    bool has_compatible_alter = std::any_of(commands.begin(), commands.end(), [](const auto & c)
+    {
+        return c.type == AlterCommand::RENAME_COLUMN
+            || c.type == AlterCommand::DROP_COLUMN
+            || c.type == AlterCommand::ADD_COLUMN;
+    });
+
+    bool should_activate = !hasColumnIdMapping() && settings_enable_column_ids && has_compatible_alter;
+    plan.column_ids_active = hasColumnIdMapping() || should_activate;
+
+    if (!plan.column_ids_active)
+        return plan;
+
+    ColumnIdMapping local_mapping;
+    if (should_activate)
+        local_mapping = ColumnIdMapping::createForExistingTable(old_metadata.getColumns().getAllPhysical());
+    else if (auto current = getColumnIdMapping())
+        local_mapping = *current;
+
+    /// Pre-pass: detect rename / drop chains where the rename target is the
+    /// source of another rename or a drop in the same ALTER (e.g.
+    /// `RENAME b TO tmp, RENAME c TO b` or `DROP COLUMN b, RENAME COLUMN c TO b`).
+    /// Two-phase rename keeps the old name in the mapping during phase 1,
+    /// so the second command would trip the duplicate-logical-name check
+    /// in `beginRename` and throw `LOGICAL_ERROR`.  Reject these patterns
+    /// explicitly so the user gets a clear message; the workaround is to
+    /// split into two ALTERs.
+    {
+        std::set<String> sources_freed_in_this_alter;
+        for (const auto & c : commands)
+        {
+            if (c.ignore)
+                continue;
+            if (c.type == AlterCommand::RENAME_COLUMN || c.type == AlterCommand::DROP_COLUMN)
+                sources_freed_in_this_alter.insert(c.column_name);
+        }
+        for (const auto & c : commands)
+        {
+            if (c.ignore || c.type != AlterCommand::RENAME_COLUMN)
+                continue;
+            if (sources_freed_in_this_alter.contains(c.rename_to))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "ALTER on column-IDs table: cannot rename '{}' to '{}' in the "
+                    "same ALTER that frees '{}' (via another RENAME or DROP).  "
+                    "Two-phase rename cannot represent this safely; split into "
+                    "two ALTER statements.",
+                    c.column_name, c.rename_to, c.rename_to);
+        }
+    }
+
+    /// Two-phase rename: `beginRename` keeps both old and new logical names
+    /// in the mapping so the persisted state is crash-safe.  After metadata
+    /// commit, `finishRename` removes the old entry.
+    for (const auto & command : commands)
+    {
+        if (command.ignore)
+            continue;
+        if (command.type == AlterCommand::RENAME_COLUMN)
+        {
+            if (local_mapping.hasLogicalName(command.column_name))
+            {
+                /// For flattened Nested siblings, the shared offset stream
+                /// name is derived from the Nested prefix of the physical
+                /// name.  Metadata-only rename is safe only when the physical
+                /// prefix is a counter-allocated name (e.g. "5.x") that is
+                /// independent of the logical Nested parent.
+                ///
+                /// Force mutation when:
+                ///  - the column ID has no dot (plain counter "5") — the
+                ///    offset stream name would change;
+                ///  - the column ID is an identity mapping ("n.x" where
+                ///    physical == logical) — renaming the Nested parent
+                ///    changes the logical prefix but the physical prefix
+                ///    "n" is baked into existing parts, and code paths that
+                ///    derive the offset stream from the logical name would
+                ///    look for the wrong file.
+                auto physical = local_mapping.getColumnId(command.column_name);
+                auto [phys_parent, phys_child] = Nested::splitName(physical);
+                auto [old_parent, old_child] = Nested::splitName(command.column_name);
+                auto [new_parent, new_child] = Nested::splitName(command.rename_to);
+                bool is_nested = !old_child.empty();
+                bool changes_prefix = (old_parent != new_parent);
+                bool physical_has_dot = !phys_child.empty();
+
+                /// When `share_nested_offsets` is off, dotted columns are
+                /// independent and don't share an offsets stream, so the
+                /// flattened-Nested rename restrictions don't apply.
+                /// `AlterCommands::validate` already disables the cross-parent
+                /// Nested rule in that mode; mirror that here.
+                bool nested_offsets_shared =
+                    effective_new_settings[MergeTreeSetting::share_nested_offsets];
+
+                if (nested_offsets_shared && is_nested && changes_prefix && !physical_has_dot)
+                {
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Renaming flattened Nested column '{}' across parent "
+                        "boundaries ('{}' -> '{}') is not supported when the "
+                        "column has a plain-counter column ID '{}'. "
+                        "As a workaround, add a new column with the desired "
+                        "name and copy data via ALTER TABLE ... UPDATE",
+                        command.column_name,
+                        old_parent,
+                        new_parent,
+                        physical);
+                }
+
+                /// Partial cross-parent Nested move is unsafe: the writer
+                /// folds the offset stream by the physical Nested prefix
+                /// (either the compound counter "5" in "5.x"/"5.y" or the
+                /// identity prefix "n" in "n.x"/"n.y"), so leaving any
+                /// sibling behind under the old logical parent makes two
+                /// logical parents read/write through one offsets stream.
+                /// Require all siblings sharing this physical prefix to be
+                /// renamed to the same new parent in the same ALTER.
+                if (nested_offsets_shared && is_nested && changes_prefix && physical_has_dot)
+                {
+                    const String old_logical_prefix = old_parent + ".";
+                    const String new_logical_prefix = new_parent + ".";
+                    for (const auto & [other_logical, other_physical] : local_mapping.getLogicalToId())
+                    {
+                        if (other_logical == command.column_name)
+                            continue;
+                        if (!other_logical.starts_with(old_logical_prefix))
+                            continue;
+                        auto [other_phys_parent, other_phys_child] = Nested::splitName(other_physical);
+                        if (other_phys_parent != phys_parent)
+                            continue;
+                        bool other_renamed = false;
+                        for (const auto & other_cmd : commands)
+                        {
+                            if (other_cmd.ignore || other_cmd.type != AlterCommand::RENAME_COLUMN)
+                                continue;
+                            if (other_cmd.column_name == other_logical
+                                && other_cmd.rename_to.starts_with(new_logical_prefix))
+                            {
+                                other_renamed = true;
+                                break;
+                            }
+                        }
+                        if (!other_renamed)
+                            throw Exception(
+                                ErrorCodes::NOT_IMPLEMENTED,
+                                "Cross-parent Nested rename of '{}' to '{}' requires "
+                                "sibling column '{}' (sharing physical prefix '{}') "
+                                "to also be renamed to a child of '{}' in the same "
+                                "ALTER. Partial cross-parent moves are unsafe "
+                                "because the shared offset stream cannot be split.",
+                                command.column_name, command.rename_to,
+                                other_logical, phys_parent, new_parent);
+                    }
+                }
+
+                local_mapping.beginRename(command.column_name, command.rename_to);
+                plan.rename_old_names.push_back(command.column_name);
+            }
+        }
+    }
+
+    /// Use the actual metadata diff to handle flattened Nested correctly:
+    /// `commands.apply` expands `ADD COLUMN n Nested(...)` into `n.x`, `n.y`, etc.
+    std::set<String> old_col_names;
+    for (const auto & col : old_metadata.getColumns().getAllPhysical())
+        old_col_names.insert(col.name);
+    std::set<String> new_col_names;
+    for (const auto & col : new_metadata.getColumns().getAllPhysical())
+        new_col_names.insert(col.name);
+
+    /// Detect DROP + re-ADD of the same column in a single ALTER.
+    /// Cannot be made crash-safe as metadata-only: even with a force-mutation
+    /// queue entry, the metadata commit and the mutation start are not
+    /// atomic.  Between them, the on-disk part still has the dropped
+    /// column's bytes under the old physical name, and the mapping still
+    /// resolves the (re-added) logical name to that same name -- so a
+    /// reader after a crash in that window would expose the old data as
+    /// the newly-added column.  Reject the combination explicitly; the
+    /// caller can split it into two separate ALTERs, each fully durable.
+    ///
+    /// For Nested columns the detection must be parent-aware:
+    /// `DROP COLUMN n` removes the parent, but after `commands.apply`
+    /// the re-added `ADD COLUMN n Nested(x UInt64, y String)` is
+    /// expanded into `n.x`, `n.y` in `new_col_names`.  The dropped
+    /// name "n" itself won't appear in `new_col_names` -- we must also
+    /// check for children with the "n." prefix.
+    /// Whole-column DROPs only: skip `CLEAR COLUMN` and partition-scoped
+    /// `DROP COLUMN ... IN PARTITION` since they don't remove the column from
+    /// metadata and shouldn't trip the DROP+re-ADD rejection below.
+    std::set<String> explicitly_dropped;
+    for (const auto & command : commands)
+    {
+        if (command.ignore)
+            continue;
+        if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !command.partition)
+            explicitly_dropped.insert(command.column_name);
+    }
+    for (const auto & dropped_name : explicitly_dropped)
+    {
+        if (new_col_names.contains(dropped_name))
+        {
+            plan.force_mutation_columns.insert(dropped_name);
+        }
+        else
+        {
+            String prefix = dropped_name + ".";
+            for (const auto & new_name : new_col_names)
+            {
+                if (new_name.starts_with(prefix))
+                    plan.force_mutation_columns.insert(new_name);
+            }
+        }
+    }
+
+    /// Same crash-safety hole arises when a RENAME frees the target name and
+    /// an ADD COLUMN re-uses it in the same ALTER:
+    ///   RENAME COLUMN b TO old_b, ADD COLUMN b ...
+    /// `AlterCommands::validate` accepts this because validation is
+    /// order-aware (after the rename, `b` is free).  The column-ID planner
+    /// would otherwise leave the new `b` without a fresh ID -- once
+    /// `finalizeColumnIdRenames` removes the old `b -> b` entry, the mapping
+    /// has no entry for the new `b` and reads fall back to physical name `b`,
+    /// which is the dropped column's bytes.
+    ///
+    /// For flattened Nested columns the detection must be parent-aware:
+    /// `RENAME COLUMN n.x TO m.x, RENAME COLUMN n.y TO m.y, ADD COLUMN n
+    /// Nested(x UInt64, y String)` frees `n.x`/`n.y` and the re-added
+    /// `ADD COLUMN n Nested(...)` is expanded by `commands.apply` into
+    /// `n.x`/`n.y` in `new_col_names`.  Mirror the DROP+re-ADD logic
+    /// above and walk the children of any added Nested parent.
+    std::set<String> rename_target_freed;
+    for (const auto & command : commands)
+    {
+        if (command.ignore || command.type != AlterCommand::RENAME_COLUMN)
+            continue;
+        rename_target_freed.insert(command.column_name);
+    }
+    for (const auto & command : commands)
+    {
+        if (command.ignore || command.type != AlterCommand::ADD_COLUMN)
+            continue;
+        if (rename_target_freed.contains(command.column_name))
+            plan.force_mutation_columns.insert(command.column_name);
+        else
+        {
+            String prefix = command.column_name + ".";
+            for (const auto & new_name : new_col_names)
+            {
+                if (new_name.starts_with(prefix) && rename_target_freed.contains(new_name))
+                    plan.force_mutation_columns.insert(new_name);
+            }
+        }
+    }
+
+    if (!plan.force_mutation_columns.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "ALTER on column-IDs table: DROP/RENAME of '{}' followed by ADD COLUMN "
+            "of the same name in a single ALTER cannot be made crash-safe.  Split "
+            "into two separate ALTER statements (the destructive op first, then "
+            "the ADD); each is fully durable.",
+            fmt::join(plan.force_mutation_columns, "', '"));
+
+    /// Group newly added columns by Nested parent so flattened siblings
+    /// (e.g. n.x, n.y from `ADD COLUMN n Nested(...)`) share a compound
+    /// column ID prefix: "{counter}.x", "{counter}.y".  This keeps the
+    /// shared offset stream (e.g. "5.size0") stable across renames while
+    /// giving each sibling its own data stream.
+    ///
+    /// Incremental child additions to an existing flattened Nested
+    /// group must reuse the existing siblings' physical prefix.  Without
+    /// this, `ADD COLUMN n.z ...` after `ADD COLUMN n Nested(x UInt64, y
+    /// String)` would allocate `n.z` a plain counter-only ID like `2`,
+    /// splitting the shared offset stream: existing `n.x`/`n.y` write
+    /// offsets to `1.size0` while the new `n.z` would write to `n.size0`
+    /// (or its own column-id-derived stream), and reads of older parts
+    /// would fail to find the shared offset slot.  Inspect every added
+    /// dotted column and, if its logical parent already has siblings with
+    /// a shared physical prefix in the mapping, allocate the new child
+    /// under that same prefix instead of a fresh counter.
+    std::map<String, std::vector<std::pair<String, String>>> nested_groups;
+    std::map<String, String> incremental_child_prefix; // logical -> phys parent
+    std::vector<String> plain_new_columns;
+
+    for (const auto & col : new_metadata.getColumns().getAllPhysical())
+    {
+        if (old_col_names.contains(col.name) || local_mapping.hasLogicalName(col.name)
+            || plan.force_mutation_columns.contains(col.name))
+            continue;
+
+        auto [parent, child] = Nested::splitName(col.name);
+        if (!child.empty())
+        {
+            String existing_prefix;
+            for (const auto & other : new_metadata.getColumns().getAllPhysical())
+            {
+                if (other.name == col.name)
+                    continue;
+                auto [other_parent, other_child] = Nested::splitName(other.name);
+                if (other_child.empty() || other_parent != parent)
+                    continue;
+                if (!old_col_names.contains(other.name))
+                    continue;
+                if (!local_mapping.hasLogicalName(other.name))
+                    continue;
+                const String & sibling_id = local_mapping.getColumnId(other.name);
+                auto [sib_phys_parent, sib_phys_child] = Nested::splitName(sibling_id);
+                if (!sib_phys_child.empty())
+                {
+                    existing_prefix = sib_phys_parent;
+                    break;
+                }
+            }
+            if (!existing_prefix.empty())
+            {
+                incremental_child_prefix[col.name] = existing_prefix;
+                continue;
+            }
+
+            bool has_new_sibling = false;
+            for (const auto & other : new_metadata.getColumns().getAllPhysical())
+            {
+                if (other.name == col.name)
+                    continue;
+                auto [other_parent, other_child] = Nested::splitName(other.name);
+                if (!other_child.empty() && other_parent == parent
+                    && !old_col_names.contains(other.name))
+                {
+                    has_new_sibling = true;
+                    break;
+                }
+            }
+            if (has_new_sibling)
+            {
+                nested_groups[parent].emplace_back(col.name, child);
+                continue;
+            }
+        }
+        plain_new_columns.push_back(col.name);
+    }
+
+    /// Allocate compound column IDs for flattened Nested groups (initial
+    /// `ADD COLUMN n Nested(...)`).
+    for (const auto & [parent, siblings] : nested_groups)
+    {
+        auto base = local_mapping.allocateColumnId();
+        for (const auto & [logical_name, child_name] : siblings)
+            local_mapping.addColumn(logical_name, base + "." + child_name);
+    }
+
+    /// Incremental child additions inherit the existing siblings' physical
+    /// prefix so the shared offset stream stays coherent.
+    for (const auto & [logical_name, phys_parent] : incremental_child_prefix)
+    {
+        auto [_, child_name] = Nested::splitName(logical_name);
+        local_mapping.addColumn(logical_name, phys_parent + "." + child_name);
+    }
+
+    /// Allocate plain counter-based column IDs for non-Nested columns.
+    for (const auto & col_name : plain_new_columns)
+    {
+        auto new_physical = local_mapping.allocateColumnId();
+        local_mapping.addColumn(col_name, new_physical);
+    }
+
+        /// Two-phase drop for crash safety: do NOT remove dropped columns
+        /// from the mapping before metadata commit.  Collect them for
+        /// removal in the post-commit phase (`finalizeColumnIdDrops`).
+        /// On crash before commit the mapping still has the entry, so reads
+        /// find the correct physical files.  On crash after commit,
+        /// `reconcileColumnIdMappingWithMetadata` removes the stale
+        /// entry because the column is no longer in metadata.
+        std::set<String> rename_old_set(plan.rename_old_names.begin(), plan.rename_old_names.end());
+        for (const auto & col : old_metadata.getColumns().getAllPhysical())
+        {
+            if (!new_col_names.contains(col.name) && local_mapping.hasLogicalName(col.name)
+                && !rename_old_set.contains(col.name))
+                plan.drop_names.push_back(col.name);
+        }
+
+    plan.new_mapping.emplace(std::move(local_mapping));
+    return plan;
+}
+
+void StorageMergeTree::finalizeColumnIdRenames(const std::vector<String> & old_names)
+{
+    if (old_names.empty())
+        return;
+
+    auto current = getColumnIdMapping();
+    if (!current)
+        return;
+
+    ColumnIdMapping finalized = *current;
+    for (const auto & old_name : old_names)
+        finalized.finishRename(old_name);
+    setColumnIdMapping(std::move(finalized));
+    writeColumnIdMappingToDisk();
+}
+
+void StorageMergeTree::finalizeColumnIdDrops(const std::vector<String> & drop_names)
+{
+    if (drop_names.empty())
+        return;
+
+    auto current = getColumnIdMapping();
+    if (!current)
+        return;
+
+    ColumnIdMapping finalized = *current;
+    for (const auto & name : drop_names)
+    {
+        if (finalized.hasLogicalName(name))
+            finalized.removeColumn(name);
+    }
+    setColumnIdMapping(std::move(finalized));
+    writeColumnIdMappingToDisk();
+}
+
 void StorageMergeTree::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
@@ -450,14 +901,73 @@ void StorageMergeTree::alter(
     StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(local_context, false);
 
-    auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context);
-    if (!maybe_mutation_commands.empty())
-        delayMutationOrThrowIfNeeded(nullptr, local_context);
-
     Int64 mutation_version = -1;
 
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
+
+    auto pn_plan = prepareColumnIdMappingForAlter(commands, old_metadata, new_metadata);
+
+    /// Gate on the experimental flag in two cases:
+    ///   (a) this ALTER activates the mapping (has add/drop/rename commands),
+    ///   (b) settings-only ALTER persists the column-IDs serialization knobs
+    ///       without other commands -- a later INSERT would then bring the
+    ///       mapping live without the user ever opting into the experimental
+    ///       flag.  Validate both at the time of the settings change.
+    if (!hasColumnIdMapping()
+        && !local_context->getSettingsRef()[Setting::allow_experimental_column_ids])
+    {
+        bool activates_now = pn_plan.column_ids_active;
+
+        MergeTreeSettings effective_after_alter(*getSettings());
+        if (new_metadata.settings_changes)
+            effective_after_alter.applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
+        bool persists_column_id_settings =
+            effective_after_alter[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
+            && effective_after_alter[MergeTreeSetting::activate_column_ids_for_existing_tables];
+
+        if (activates_now || persists_column_id_settings)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Column IDs require setting `allow_experimental_column_ids = 1`");
+    }
+
+    auto maybe_mutation_commands = commands.getMutationCommands(
+        old_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context,
+        /*with_alters=*/false, /*column_ids_active=*/pn_plan.column_ids_active);
+
+    /// `checkAlterIsPossible` already gates `allow_non_metadata_alters = 0`
+    /// against `getMutationCommands`'s output, but the forced DROP+re-ADD
+    /// mutation we append below was synthesized AFTER that gate ran.  Re-check
+    /// here so a user with the setting disabled cannot smuggle a data-rewrite
+    /// through the column-IDs planning path.
+    if (!pn_plan.force_mutation_columns.empty()
+        && !query_settings[Setting::allow_non_metadata_alters])
+        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "ALTER on column IDs: forced DROP+re-ADD for column(s) '{}' would "
+            "rewrite data, but setting `allow_non_metadata_alters` is disabled",
+            fmt::join(pn_plan.force_mutation_columns, ", "));
+
+    /// DROP + re-ADD same column cannot be made crash-safe as metadata-only,
+    /// so force a DROP mutation for those columns even when column IDs
+    /// are active.  The mutation rewrites parts without the old column data,
+    /// and the re-ADD side provides defaults via the normal ADD path.
+    for (const auto & col_name : pn_plan.force_mutation_columns)
+    {
+        MutationCommand cmd;
+        cmd.type = MutationCommand::Type::DROP_COLUMN;
+        cmd.column_name = col_name;
+
+        auto ast_cmd = make_intrusive<ASTAlterCommand>();
+        ast_cmd->type = ASTAlterCommand::DROP_COLUMN;
+        ast_cmd->column = ast_cmd->children.emplace_back(make_intrusive<ASTIdentifier>(col_name)).get();
+        cmd.ast_text = ast_cmd->formatWithSecretsOneLine();
+
+        maybe_mutation_commands.push_back(std::move(cmd));
+    }
+
+    if (!maybe_mutation_commands.empty())
+        delayMutationOrThrowIfNeeded(nullptr, local_context);
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
@@ -511,8 +1021,37 @@ void StorageMergeTree::alter(
             /// Reinitialize primary key because primary key column types might have changed.
             setProperties(new_metadata, old_metadata, false, local_context);
 
+            /// Persist column ID mapping to disk BEFORE publishing in-memory
+            /// and BEFORE metadata commit.  This ensures any mapping visible to
+            /// concurrent readers (via MultiVersion) is already durable.  If we
+            /// crash between persist and metadata commit, the mapping on disk is
+            /// "ahead" of metadata — stale entries are harmless and
+            /// `reconcileColumnIdMappingWithMetadata` cleans them up.
+            bool mapping_was_changed = false;
+            std::shared_ptr<const ColumnIdMapping> old_published_mapping;
+
             try
             {
+                if (pn_plan.new_mapping)
+                {
+                    old_published_mapping = getColumnIdMapping();
+
+                    fiu_do_on(FailPoints::column_ids_throw_before_mapping_persist,
+                    {
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before column ID mapping persist");
+                    });
+
+                    writeColumnIdMappingToDisk(*pn_plan.new_mapping);
+
+                    fiu_do_on(FailPoints::column_ids_throw_after_mapping_persist,
+                    {
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after column ID mapping persist");
+                    });
+
+                    setColumnIdMapping(std::move(*pn_plan.new_mapping));
+                    mapping_was_changed = true;
+                }
+
                 DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
             }
             catch (...)
@@ -520,8 +1059,50 @@ void StorageMergeTree::alter(
                 LOG_ERROR(log, "Failed to alter table in database, reverting changes");
                 changeSettings(old_metadata.settings_changes, table_lock_holder);
                 setProperties(old_metadata, new_metadata, false, local_context);
+                if (mapping_was_changed)
+                {
+                    try
+                    {
+                        if (old_published_mapping)
+                            setColumnIdMapping(*old_published_mapping);
+                        else
+                            setColumnIdMapping(ColumnIdMapping{});
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log,
+                            "Failed to revert column ID mapping in-memory");
+                    }
+                }
+                try
+                {
+                    if (old_published_mapping)
+                        writeColumnIdMappingToDisk(*old_published_mapping);
+                    else if (pn_plan.new_mapping)
+                        writeColumnIdMappingToDisk(ColumnIdMapping{});
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log,
+                        "Failed to revert column ID mapping to disk; "
+                        "reconciliation at next startup will fix it");
+                }
                 throw;
             }
+
+            try
+            {
+                finalizeColumnIdRenames(pn_plan.rename_old_names);
+                finalizeColumnIdDrops(pn_plan.drop_names);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log,
+                    "Failed to finalize column ID mapping after metadata commit; "
+                    "reconciliation at next startup will fix it");
+            }
+
+            FailPointInjection::pauseFailPoint(FailPoints::column_ids_pause_after_metadata_alter);
 
             {
                 auto parts_lock = lockParts();
@@ -2606,6 +3187,18 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     ProfileEventsScope profile_events_scope;
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
+
+    /// `checkStructureAndGetMergeTreeData` snapshots both column-ID mappings
+    /// once for the structure compatibility check, but the transfer below
+    /// runs under `lockForShare` on both tables.  Column-ID ALTERs use
+    /// `lockForAlter`, so either side could publish a new mapping between
+    /// the check and the commit.  Pin both mapping pointers now; re-check
+    /// just before the transaction commit to keep the cloned parts and the
+    /// destination's mapping coherent (`MultiVersion::set` installs a fresh
+    /// `unique_ptr` per publish, so a different pointer == mapping changed).
+    auto my_mapping_pinned = getColumnIdMapping();
+    auto src_mapping_pinned = src_data.getColumnIdMapping();
+
     DataPartsVector src_parts;
 
     if (is_all)
@@ -2701,6 +3294,23 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 block_holders.emplace_back(fillNewPartName(part, data_parts_lock));
                 renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ false);
             }
+
+            /// Final coherence gate immediately before commit: a concurrent
+            /// column-ID ALTER does not block on `lockForShare` or `lockParts`
+            /// and calls `setColumnIdMapping` via MultiVersion's atomic swap,
+            /// so it can publish anywhere between the pre-clone pin and here.
+            /// Place the recheck right before `transaction.commit` to minimize
+            /// the remaining window (only the if-check-to-commit instructions).
+            /// The transaction has not yet been committed, so throwing here
+            /// rolls back the dst-parts staging via Transaction RAII.
+            if (getColumnIdMapping().get() != my_mapping_pinned.get()
+                || src_data.getColumnIdMapping().get() != src_mapping_pinned.get())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Column ID mapping changed concurrently with REPLACE/ATTACH PARTITION FROM; "
+                    "transferred parts may resolve through stale physical IDs on the destination. "
+                    "Retry the partition operation without a concurrent column-ID ALTER on either table.");
+
             /// Populate transaction
             transaction.commit(data_parts_lock);
 
@@ -2769,6 +3379,16 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     ProfileEventsScope profile_events_scope;
 
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
+
+    /// Same race window as REPLACE/ATTACH PARTITION FROM: the structure
+    /// check above snapshots both column-ID mappings once, but transfer
+    /// runs under `lockForShare` while column-ID ALTERs use `lockForAlter`.
+    /// Pin both pointers; re-check before committing the destination
+    /// transaction below.  Note `src_data` is the SOURCE table here (the
+    /// `dest_table_storage->checkStructure(*this, ...)` flips perspective).
+    auto src_mapping_pinned = src_data.getColumnIdMapping();
+    auto dest_mapping_pinned = dest_table_storage->getColumnIdMapping();
+
     String partition_id = getPartitionIDFromQuery(partition, local_context);
 
     DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
@@ -2855,6 +3475,25 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         }
 
         dest_transaction.renameParts();
+
+        /// Final coherence gate immediately before destination publish.
+        /// `renameParts` above does per-part `renameTo` I/O, so it yields
+        /// long enough for a concurrent column-ID ALTER (which republishes
+        /// via MultiVersion's atomic swap without `lockForShare`/`lockParts`)
+        /// to slip in.  Placing the recheck after `renameParts` and right
+        /// before `commit` minimizes the residual window to the if-check
+        /// instructions.  Source-mapping change after the destination
+        /// commits is not a transferred-data hazard (the source side only
+        /// publishes empty covering parts), but check both to keep the
+        /// failure-mode clear and symmetric with `replacePartitionFrom`.
+        if (src_data.getColumnIdMapping().get() != src_mapping_pinned.get()
+            || dest_table_storage->getColumnIdMapping().get() != dest_mapping_pinned.get())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Column ID mapping changed concurrently with MOVE PARTITION TO TABLE; "
+                "transferred parts may resolve through stale physical IDs on the destination. "
+                "Retry the partition operation without a concurrent column-ID ALTER on either table.");
+
         dest_transaction.commit();
 
         src_transaction.renameParts();
@@ -2984,6 +3623,14 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
+    /// `BackupEntriesCollector` only holds `tryLockForShare`; column-ID
+    /// `ALTER`s use the separate `lockForAlter`, so the parts vector above
+    /// and the mapping below are two independent snapshots.  Pin the
+    /// mapping pointer now and re-check after collecting entries -- if it
+    /// changed, the backup would pair the old parts with a newer mapping
+    /// and `RESTORE` would resolve columns through the wrong IDs.
+    auto column_ids_mapping_snapshot = getColumnIdMapping();
+
     Int64 min_data_version = std::numeric_limits<Int64>::max();
     for (const auto & data_part : data_parts)
         min_data_version = std::min(min_data_version, data_part->info.getDataVersion() + 1);
@@ -2993,6 +3640,27 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
         backup_entries_collector.addBackupEntries(std::move(part_backup_entries.backup_entries));
 
     backup_entries_collector.addBackupEntries(backupMutations(min_data_version, data_path_in_backup));
+
+    /// Pointer equality is the column-ID mapping version check: `MultiVersion::set`
+    /// always installs a fresh unique_ptr, so a different pointer here means
+    /// a column-ID ALTER ran during the BACKUP collection.  Fail closed so
+    /// the user retries -- a silent partial snapshot would resolve restored
+    /// columns through the wrong IDs.
+    if (getColumnIdMapping().get() != column_ids_mapping_snapshot.get())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Column ID mapping changed concurrently with BACKUP collection; "
+            "the snapshot would pair the captured parts with a newer mapping. "
+            "Retry the BACKUP without a concurrent column-ID ALTER.");
+
+    /// Without the mapping, restored parts cannot resolve any non-identity
+    /// column ID (DROP+ADD or RENAME).
+    if (column_ids_mapping_snapshot)
+    {
+        backup_entries_collector.addBackupEntry(
+            fs::path(data_path_in_backup) / COLUMN_IDS_FILE_NAME,
+            std::make_shared<BackupEntryFromMemory>(column_ids_mapping_snapshot->toString()));
+    }
 }
 
 

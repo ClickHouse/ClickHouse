@@ -1,0 +1,7 @@
+before_mutation	c	0
+before_mutation	c	1
+after_restart	1	0
+after_restart	2	99.9
+after_merge	price	1
+final	1	0
+final	2	99.9

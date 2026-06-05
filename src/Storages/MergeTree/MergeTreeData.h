@@ -26,6 +26,7 @@
 #include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/Streaming/CursorPromoter.h>
 #include <Storages/Streaming/SubscriptionManager.h>
@@ -217,6 +218,7 @@ public:
     using PartitionIdToMinBlockPtr = std::shared_ptr<const PartitionIdToMinBlock>;
 
     constexpr static auto FORMAT_VERSION_FILE_NAME = "format_version.txt";
+    constexpr static auto COLUMN_IDS_FILE_NAME = "column_ids.json";
     constexpr static auto DETACHED_DIR_NAME = "detached";
     constexpr static auto MOVING_DIR_NAME = "moving";
 
@@ -640,6 +642,53 @@ public:
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
+
+    bool hasColumnIdMapping() const
+    {
+        return getActiveColumnIdMapping() != nullptr;
+    }
+
+    /// Returns the column ID mapping only if it is active (i.e. physical
+    /// names have been activated for this table). Returns nullptr otherwise.
+    ColumnIdMappingPtr getActiveColumnIdMapping() const
+    {
+        auto mapping = column_id_mapping.get();
+        if (mapping && mapping->isActive())
+            return mapping;
+        return nullptr;
+    }
+
+    /// Returns the raw column ID mapping pointer regardless of activation
+    /// state. Needed during ALTER when transitioning from inactive to active.
+    ColumnIdMappingPtr getColumnIdMapping() const
+    {
+        return column_id_mapping.get();
+    }
+
+    void setColumnIdMapping(ColumnIdMapping mapping_)
+    {
+        column_id_mapping.set(std::make_unique<const ColumnIdMapping>(std::move(mapping_)));
+    }
+
+    void loadColumnIdMappingFromDisk();
+    void writeColumnIdMappingToDisk() const;
+    void writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) const;
+    /// Variant that targets an explicit storage policy.  Used by `changeSettings`
+    /// to push the mapping onto the NEW policy's disks BEFORE publishing the
+    /// new `storage_settings`, so the disk-write throw path leaves
+    /// `storage_settings`/metadata unchanged.
+    void writeColumnIdMappingToDisk(const ColumnIdMapping & mapping, const StoragePolicyPtr & target_policy) const;
+
+    /// Reconcile the on-disk mapping with table metadata after load.
+    /// Throws `CORRUPTED_DATA` if any column in metadata has no entry in the
+    /// mapping (the mapping-behind-schema window — unrecoverable, because
+    /// DROP + re-ADD of the same column name makes on-disk files
+    /// indistinguishable from their column ID alone). Otherwise removes
+    /// mapping entries whose logical name no longer exists in metadata
+    /// (mapping-ahead-of-schema window from: a crash between mapping
+    /// persist and metadata commit, completed DROPs, or incomplete two-phase
+    /// renames).
+    void reconcileColumnIdMappingWithMetadata();
 
     /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
     /// This method allows read-only replicas of tables on a shared storage.
@@ -1556,6 +1605,8 @@ protected:
     /// It changes only when set of parts is changed and is
     /// protected by @data_parts_mutex.
     SerializationInfoByName serialization_hints{{}};
+
+    MultiVersion<ColumnIdMapping> column_id_mapping;
 
     /// A cache for metadata snapshots for patch parts.
     /// The key is a partition id of patch part.

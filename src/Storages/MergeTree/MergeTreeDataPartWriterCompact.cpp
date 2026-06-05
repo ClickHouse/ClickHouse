@@ -80,7 +80,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
-        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+        String stream_name = ISerialization::getFileNameForStreamByColumnId(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
         /// Shared offsets for Nested type.
         if (compressed_streams.contains(stream_name))
@@ -313,7 +313,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             bool is_first_substream = true;
             auto stream_getter = [&, this](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
             {
-                String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+                String stream_name = ISerialization::getFileNameForStreamByColumnId(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
                 auto stream_it = compressed_streams.find(stream_name);
                 if (stream_it == compressed_streams.end())
@@ -350,7 +350,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
             auto stream_mark_getter = [&](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
             {
-                String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+                String stream_name = ISerialization::getFileNameForStreamByColumnId(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
                 return {plain_hashing.count(), compressed_streams[stream_name]->hashing_buf.offset()};
             };
 

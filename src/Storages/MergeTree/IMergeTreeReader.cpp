@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <Common/escapeForFileName.h>
@@ -66,22 +67,90 @@ IMergeTreeReader::IMergeTreeReader(
         : columns_)
     , virtual_fields(virtual_fields_)
 {
-    /// Check the memory consumption before doing all the heavy-lifting such as
-    /// initializing buffers, reading marks, etc. Maybe that's not needed?
     CurrentMemoryTracker::check();
 
     columns_to_read.reserve(getColumns().size());
     serializations.reserve(getColumns().size());
 
+    const auto physical_mapping = data_part_info_for_read->getColumnIdMapping();
+
     for (const auto & column : getColumns())
     {
-        const auto & column_to_read = columns_to_read.emplace_back(getColumnInPart(column));
-        serializations.emplace_back(getSerializationInPart(column));
+        auto name_in_mapping = column.getNameInStorage();
 
-        if (column.isSubcolumn())
+        /// For flattened Nested subcolumns (e.g. n.x), convertToSubcolumns
+        /// rewrites the column as a subcolumn of the Nested type, making
+        /// getNameInStorage() return the parent ("n"). The physical mapping
+        /// stores the full flattened name ("n.x"), so try it explicitly.
+        bool is_flattened_nested_with_column_id = false;
+        if (physical_mapping && physical_mapping->isActive()
+            && !physical_mapping->hasLogicalName(name_in_mapping)
+            && column.isSubcolumn())
         {
-            NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
-            serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage));
+            auto full_name = Nested::concatenateName(name_in_mapping, column.getSubcolumnName());
+            if (physical_mapping->hasLogicalName(full_name))
+            {
+                name_in_mapping = full_name;
+                is_flattened_nested_with_column_id = true;
+            }
+        }
+
+        if (physical_mapping && physical_mapping->isActive()
+            && physical_mapping->hasLogicalName(name_in_mapping))
+        {
+            String column_id = physical_mapping->getColumnId(name_in_mapping);
+
+            if (is_flattened_nested_with_column_id)
+            {
+                /// Each flattened Nested subcolumn has its own column ID and
+                /// is stored independently, so use the flat Array form with the
+                /// full logical name (e.g. "n.x") for correct stream resolution
+                /// (getFileNameForStreamByColumnId needs the dotted name to detect
+                /// shared Nested offsets).
+                auto part_col = part_columns.tryGetColumn(GetColumnsOptions::AllPhysical, name_in_mapping);
+                auto & column_to_read = part_col
+                    ? columns_to_read.emplace_back(*part_col)
+                    : columns_to_read.emplace_back(NameAndTypePair{name_in_mapping, column.type});
+                column_to_read.setColumnId(column_id);
+                serializations.emplace_back(getSerializationForColumnId(column_to_read));
+            }
+            else
+            {
+                /// Resolve the column type from the part for correctness (MODIFY COLUMN may
+                /// change the type; the part still stores the old type on disk).
+                /// Try the current logical name first, then the column ID.
+                auto resolved = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical,
+                    Nested::concatenateName(column.getNameInStorage(), column.getSubcolumnName()));
+                if (!resolved)
+                    resolved = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical,
+                        Nested::concatenateName(column_id, column.getSubcolumnName()));
+
+                auto & column_to_read = resolved
+                    ? columns_to_read.emplace_back(*resolved)
+                    : columns_to_read.emplace_back(column);
+                column_to_read.setColumnId(column_id);
+
+                serializations.emplace_back(getSerializationForColumnId(column_to_read));
+
+                if (column.isSubcolumn())
+                {
+                    NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
+                    requested_column_in_storage.setColumnId(column_id);
+                    serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationForColumnId(requested_column_in_storage));
+                }
+            }
+        }
+        else
+        {
+            auto & column_to_read = columns_to_read.emplace_back(getColumnInPart(column));
+
+            serializations.emplace_back(getSerializationInPart(column));
+
+            if (column.isSubcolumn())
+            {
+                NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
+                serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage));
+            }
         }
     }
 }
@@ -341,11 +410,18 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
     auto name_in_storage = required_column.getNameInStorage();
     auto subcolumn_name = required_column.getSubcolumnName();
 
+    if (!required_column.column_id.empty())
+    {
+        auto logical_in_part = Nested::concatenateName(name_in_storage, subcolumn_name);
+        if (part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, logical_in_part))
+            return {name_in_storage, subcolumn_name};
+
+        return {required_column.getColumnIdInStorage(), subcolumn_name};
+    }
+
     if (alter_conversions->isColumnRenamed(name_in_storage))
         name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
 
-    /// A special case when we read subcolumn of shared offsets of Nested.
-    /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
     if (isSubcolumnOffsetsOfNested(name_in_storage, subcolumn_name))
         name_in_storage = Nested::splitName(name_in_storage).first;
 
@@ -389,7 +465,26 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
         return IDataType::getSerialization(*column_in_part, *it->second);
 
+    if (column_in_part->getColumnIdInStorage() != column_in_part->getNameInStorage())
+    {
+        if (auto it = infos.find(column_in_part->getColumnIdInStorage()); it != infos.end())
+            return IDataType::getSerialization(*column_in_part, *it->second);
+    }
+
     return IDataType::getSerialization(*column_in_part, infos.getSettings());
+}
+
+SerializationPtr IMergeTreeReader::getSerializationForColumnId(const NameAndTypePair & column) const
+{
+    const auto & infos = data_part_info_for_read->getSerializationInfos();
+
+    if (auto it = infos.find(column.getNameInStorage()); it != infos.end())
+        return IDataType::getSerialization(column, *it->second);
+
+    if (auto it = infos.find(column.getColumnIdInStorage()); it != infos.end())
+        return IDataType::getSerialization(column, *it->second);
+
+    return IDataType::getSerialization(column, infos.getSettings());
 }
 
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const

@@ -172,7 +172,8 @@ struct AlterCommand
     /// executed. For example, cast from Date to UInt16 type can be executed
     /// without any data modifications. But column drop or modify from UInt16 to
     /// UInt32 require data modification.
-    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
+    /// When column_ids_active is true, RENAME and DROP are metadata-only.
+    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context, bool column_ids_active = false) const;
 
     /// Checks that only settings changed by alter
     bool isSettingsAlter() const;
@@ -192,7 +193,7 @@ struct AlterCommand
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
     /// metadata changes.
-    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const;
+    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool column_ids_active = false) const;
 };
 
 class Context;
@@ -234,7 +235,7 @@ public:
     /// alter. If alter can be performed as pure metadata update, than result is
     /// empty. If some TTL changes happened than, depending on materialize_ttl
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
-    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
+    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false, bool column_ids_active=false) const;
 
     /// Check if commands have a text index
     static bool hasTextIndex(const StorageInMemoryMetadata & metadata);

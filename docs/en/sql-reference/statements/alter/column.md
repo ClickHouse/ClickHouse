@@ -78,6 +78,10 @@ Deletes the column with the name `name`. If the `IF EXISTS` clause is specified,
 
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
+:::note
+When [column IDs](/engines/table-engines/mergetree-family/mergetree#physical-column-names) are active, `DROP COLUMN` is a metadata-only operation — no mutation is created and no data files are rewritten. The physical files of the dropped column remain in existing parts until those parts are merged. To reclaim disk space immediately, run `OPTIMIZE TABLE ... FINAL`.
+:::
+
 :::tip
 You can't delete a column if it is referenced by [materialized view](/sql-reference/statements/create/view). Otherwise, it returns an error.
 :::
@@ -94,7 +98,11 @@ ALTER TABLE visits DROP COLUMN browser
 RENAME COLUMN [IF EXISTS] name to new_name
 ```
 
-Renames the column `name` to `new_name`. If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist. Since renaming does not involve the underlying data, the query is completed almost instantly.
+Renames the column `name` to `new_name`. If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist.
+
+:::note
+The cost of `RENAME COLUMN` depends on the table engine. For most engines the operation is metadata-only and completes almost instantly. For `MergeTree`-family tables, by default a mutation is created that rewrites every data part to update file names, which can be expensive for large tables. When [column IDs](/engines/table-engines/mergetree-family/mergetree#physical-column-names) are active, `RENAME COLUMN` becomes a metadata-only operation with no mutation.
+:::
 
 **NOTE**: Columns specified in the key expression of the table (either with `ORDER BY` or `PRIMARY KEY`) cannot be renamed. Trying to change these columns will produce `SQL Error [524]`.
 
@@ -337,7 +345,9 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 
 The `ALTER` query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like `name.nested_name` and the type `Array(T)`. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
 
-Renaming columns with dots in their names is partially supported. Dots are reserved for [Nested](/sql-reference/data-types/nested-data-structures/nested) sub-column access, so the prefix (parent name) must remain the same. Only the suffix (sub-column name) can be changed. For example, `a.b` can be renamed to `a.c`, but renaming `a.b` to `b.d` is not allowed because it changes the Nested parent prefix.
+Renaming columns with dots in their names is partially supported. Dots are reserved for [Nested](/sql-reference/data-types/nested-data-structures/nested) sub-column access, so by default the prefix (parent name) must remain the same. Only the suffix (sub-column name) can be changed. For example, `a.b` can be renamed to `a.c`, but renaming `a.b` to `b.d` is not allowed because it changes the Nested parent prefix.
+
+When [column IDs](/engines/table-engines/mergetree-family/mergetree#physical-column-names) are active, cross-parent rename is supported for multi-child flattened `Nested` columns that have compound column IDs (e.g. `3.x`, `3.y`). Single-child flattened `Nested` columns with a plain-counter column ID cannot be renamed across parents; see the [column IDs limitations](/engines/table-engines/mergetree-family/mergetree#physical-names-limitations) for details.
 
 There is no support for deleting columns in the primary key or the sampling key (columns that are used in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, you are allowed to add values to an Enum or to change a type from `DateTime` to `UInt32`).
 

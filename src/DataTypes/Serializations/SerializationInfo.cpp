@@ -6,6 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Block.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <base/EnumReflection.h>
 
 #include <Poco/JSON/JSON.h>
@@ -307,7 +308,7 @@ void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
 {
     if (!object.has(KEY_KIND) || !object.has(KEY_NUM_DEFAULTS) || !object.has(KEY_NUM_ROWS))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Missed field '{}' or '{}' or '{}' in SerializationInfo of columns",
+            "Missing field '{}' or '{}' or '{}' in SerializationInfo of columns",
             KEY_KIND, KEY_NUM_DEFAULTS, KEY_NUM_ROWS);
 
     data.num_rows = object.getValue<size_t>(KEY_NUM_ROWS);
@@ -422,22 +423,25 @@ bool SerializationInfoByName::needsPersistence() const
     return !empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
 }
 
-void SerializationInfoByName::writeJSON(WriteBuffer & out) const
+template <typename NameMapper>
+static void writeJSONImpl(const SerializationInfoByName & infos, WriteBuffer & out, NameMapper && name_mapper)
 {
-    auto version = getVersion();
+    auto version = infos.getVersion();
+    const auto & settings = infos.getSettings();
 
     writeChar('{', out);
     writeJSONKey(KEY_COLUMNS, out);
     writeChar('[', out);
 
     bool first = true;
-    for (const auto & [name, info] : *this)
+    for (const auto & [name, info] : infos)
     {
         if (!first)
             writeChar(',', out);
         first = false;
 
-        info->writeJSON(out, &name);
+        String mapped_name = name_mapper(name);
+        info->writeJSON(out, &mapped_name);
     }
     writeChar(']', out);
 
@@ -477,6 +481,19 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     writeChar('}', out);
 }
 
+void SerializationInfoByName::writeJSON(WriteBuffer & out) const
+{
+    writeJSONImpl(*this, out, [](const String & name) { return name; });
+}
+
+void SerializationInfoByName::writeJSONWithColumnIds(WriteBuffer & out, const ColumnIdMapping & column_id_mapping) const
+{
+    writeJSONImpl(*this, out, [&](const String & name)
+    {
+        return column_id_mapping.getColumnIdOrDefault(name);
+    });
+}
+
 SerializationInfoByName SerializationInfoByName::clone() const
 {
     SerializationInfoByName res(settings);
@@ -485,7 +502,16 @@ SerializationInfoByName SerializationInfoByName::clone() const
     return res;
 }
 
-SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesAndTypesList & columns, const std::string & json_str)
+namespace
+{
+
+struct ParsedJSON
+{
+    Poco::JSON::Array::Ptr columns_array;
+    SerializationInfoSettings settings;
+};
+
+ParsedJSON parseJSONEnvelope(const std::string & json_str)
 {
     Poco::JSON::Parser parser;
     auto object = parser.parse(json_str).extract<Poco::JSON::Object::Ptr>();
@@ -534,7 +560,6 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     MergeTreeMapSerializationVersion map_serialization_version = MergeTreeMapSerializationVersion::BASIC;
     if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
-        /// types_serialization_versions is mandatory in WITH_TYPES mode
         if (!type_versions_obj)
         {
             throw Exception(
@@ -582,6 +607,15 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         map_serialization_version,
         propagate_types_serialization_versions_to_nested_types);
 
+    return {columns_array, settings};
+}
+
+} /// anonymous namespace
+
+SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesAndTypesList & columns, const std::string & json_str)
+{
+    auto [columns_array, settings] = parseJSONEnvelope(json_str);
+
     SerializationInfoByName infos(settings);
     if (columns_array)
     {
@@ -595,7 +629,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
             if (!elem_object->has(KEY_NAME))
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Missed field '{}' in serialization infos", KEY_NAME);
+                    "Missing field '{}' in serialization infos", KEY_NAME);
 
             auto name = elem_object->getValue<String>(KEY_NAME);
             auto it = column_type_by_name.find(name);
@@ -618,6 +652,52 @@ SerializationInfoByName SerializationInfoByName::readJSON(const NamesAndTypesLis
     String json_str;
     readString(json_str, in);
     return readJSONFromString(columns, json_str);
+}
+
+SerializationInfoByName SerializationInfoByName::readJSONWithColumnIds(
+    const NamesAndTypesList & columns,
+    const ColumnIdMapping & column_id_mapping,
+    ReadBuffer & in)
+{
+    String json_str;
+    readString(json_str, in);
+    auto [columns_array, settings] = parseJSONEnvelope(json_str);
+
+    SerializationInfoByName infos(settings);
+    if (!columns_array)
+        return infos;
+
+    std::unordered_map<std::string_view, const IDataType *> column_type_by_name;
+    for (const auto & [name, type] : columns)
+        column_type_by_name.emplace(name, type.get());
+
+    for (const auto & elem : *columns_array)
+    {
+        const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
+
+        if (!elem_object->has(KEY_NAME))
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing field '{}' in serialization infos", KEY_NAME);
+
+        auto stored_name = elem_object->getValue<String>(KEY_NAME);
+        String logical_name;
+
+        if (column_id_mapping.hasColumnId(stored_name))
+            logical_name = column_id_mapping.getLogicalName(stored_name);
+        else if (column_id_mapping.getColumnIdOrDefault(stored_name) == stored_name && column_type_by_name.contains(stored_name))
+            logical_name = stored_name;
+        else
+            continue;
+
+        auto it = column_type_by_name.find(logical_name);
+        if (it == column_type_by_name.end())
+            continue;
+
+        auto info = it->second->createSerializationInfo(infos.getSettings());
+        info->fromJSON(*elem_object);
+        infos.emplace(logical_name, std::move(info));
+    }
+
+    return infos;
 }
 
 }

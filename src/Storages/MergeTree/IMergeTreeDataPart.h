@@ -43,6 +43,8 @@ class Block;
 struct ColumnSize;
 class DeserializationPrefixesCache;
 class MergeTreeData;
+class ColumnIdMapping;
+using ColumnIdMappingPtr = std::shared_ptr<const ColumnIdMapping>;
 struct FutureMergedMutatedPart;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
@@ -148,6 +150,10 @@ public:
     void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version);
 
     void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_);
+
+    /// True when at least one of this part's columns has a non-empty `column_id`,
+    /// indicating the part was written with the column-IDs feature active.
+    bool hasActiveColumnIds() const;
 
     /// Version of metadata for part (columns, pk and so on)
     int32_t getMetadataVersion() const { return metadata_version; }
@@ -375,7 +381,7 @@ public:
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
+        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings, ColumnIdMappingPtr column_id_mapping = nullptr) const;
         [[nodiscard]] WrittenFiles store(const NamesAndTypesList & columns, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
 
         void update(const Block & block, const NamesAndTypesList & columns);
@@ -522,6 +528,9 @@ public:
         bool & has_broken_projection,
         bool if_not_loaded = false,
         bool only_metadata = false);
+
+    /// If checksums.txt exists, reads file's checksums (and sizes) from it without fallback recovery.
+    void tryPreloadChecksums();
 
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
@@ -775,6 +784,14 @@ private:
 
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require, bool load_metadata_version);
+
+    /// When a column ID mapping is active, the on-disk column list
+    /// (columns.txt) uses physical storage names that differ from the logical
+    /// names in the current table schema. This method translates each entry
+    /// back to its logical name and attaches the column ID as metadata.
+    NamesAndTypesList remapColumnsWithPhysicalNames(
+        const NamesAndTypesList & loaded_columns,
+        const ColumnIdMapping & mapping) const;
 
     /// Reads columns substreams from columns_substreams.txt.
     void loadColumnsSubstreams();

@@ -202,7 +202,7 @@ void SerializationInfoTuple::fromJSON(const Poco::JSON::Object & object)
 
     if (!object.has("subcolumns"))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Missed field 'subcolumns' in SerializationInfo of columns SerializationInfoTuple");
+            "Missing field 'subcolumns' in SerializationInfo of columns SerializationInfoTuple");
 
     auto subcolumns = object.getArray("subcolumns");
     if (elems.size() != subcolumns->size())

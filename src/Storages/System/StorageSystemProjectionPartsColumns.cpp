@@ -59,6 +59,7 @@ StorageSystemProjectionPartsColumns::StorageSystemProjectionPartsColumns(const S
         {"path",                                       std::make_shared<DataTypeString>(), "Absolute path to the folder with data part files."},
 
         {"column",                                     std::make_shared<DataTypeString>(), "Name of the column."},
+        {"column_id",                              std::make_shared<DataTypeString>(), "Column ID of the column on disk, differs from column name when column ID mapping is active."},
         {"type",                                       std::make_shared<DataTypeString>(), "Column type."},
         {"column_position",                            std::make_shared<DataTypeUInt64>(), "Ordinal position of a column in a table starting with 1."},
         {"default_kind",                               std::make_shared<DataTypeString>(), "Expression type (DEFAULT, MATERIALIZED, ALIAS) for the default value, or an empty string if it is not defined."},
@@ -111,7 +112,9 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         chassert(parent_part);
 
         auto part_state = all_parts_state[part_number];
-        auto columns_size = part->getTotalColumnsSize();
+        ColumnSize columns_size;
+        if (!part->is_broken)
+            columns_size = part->getTotalColumnsSize();
         auto parent_columns_size = parent_part->getTotalColumnsSize();
 
         /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
@@ -215,6 +218,8 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column.name);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(column.getColumnIdInStorage());
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column.type->getName());
             if (columns_mask[src_index++])

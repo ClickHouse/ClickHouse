@@ -667,6 +667,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     const auto & global_settings = context->getSettingsRef();
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+    if (auto pn_m = data.getActiveColumnIdMapping())
+        populateColumnIds(columns, *pn_m);
 
     /// Do not write _block_number and _block_offset for 0-level parts: block number is not known on this step.
     const auto minmax_columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
@@ -1035,6 +1037,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+    if (auto pn_m = data.getActiveColumnIdMapping())
+        populateColumnIds(columns, *pn_m);
     SerializationInfo::Settings settings
     {
         static_cast<double>((*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),

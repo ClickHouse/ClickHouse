@@ -173,6 +173,29 @@ size_t MergeTreeReaderWide::readRows(
         prefetchForAllColumns(Priority{}, num_columns, from_mark, current_task_last_mark, continue_reading, /*deserialize_prefixes=*/ true);
         deserializePrefixForAllColumns(num_columns, from_mark, current_task_last_mark);
 
+        /// Pre-build a map from offset-stream-name → list of column indices
+        /// for physically-named flattened Nested siblings. This avoids O(n²)
+        /// repeated `getStreamNameForColumn` calls in the cache-sharing loop.
+        ISerialization::SubstreamPath offsets_path{{ISerialization::Substream::ArraySizes}};
+        std::unordered_map<String, std::vector<size_t>> offset_stream_siblings;
+        std::vector<std::optional<String>> column_offset_stream(num_columns);
+        for (size_t pos = 0; pos < num_columns; ++pos)
+        {
+            if (isColumnDroppedByPendingMutation(pos))
+                continue;
+            const auto & col = columns_to_read[pos];
+            if (col.column_id.empty())
+                continue;
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                col, offsets_path, ".bin",
+                data_part_info_for_read->getChecksums(), storage_settings);
+            if (stream_name)
+            {
+                offset_stream_siblings[*stream_name].push_back(pos);
+                column_offset_stream[pos] = std::move(*stream_name);
+            }
+        }
+
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
             /// Column was dropped by a pending mutation. Don't read stale data; let defaults be used.
@@ -207,6 +230,33 @@ size_t MergeTreeReaderWide::readRows(
                     rows_offset,
                     cache,
                     deserialize_states_cache);
+
+                /// Flattened Nested subcolumns with column IDs (e.g. "n.x", "n.y")
+                /// use separate SubstreamsCaches but share a single on-disk offset stream.
+                /// Without column IDs they would be subcolumns of a common parent "n"
+                /// and share `caches["n"]`, so the first sibling's offsets are reused via
+                /// cache hit. With column IDs the caches diverge, forcing the second
+                /// sibling to re-read the stream whose position was already advanced by the
+                /// first sibling (and possibly not re-seekable due to prefetching on S3).
+                /// Pre-populate upcoming siblings' caches with the offsets we just read.
+                if (column_offset_stream[pos])
+                {
+                    if (auto cached = ISerialization::getColumnWithNumReadRowsFromSubstreamsCache(&cache, offsets_path))
+                    {
+                        auto & [cached_column, num_read_rows] = *cached;
+                        auto siblings_it = offset_stream_siblings.find(*column_offset_stream[pos]);
+                        if (siblings_it != offset_stream_siblings.end())
+                        {
+                            for (size_t j : siblings_it->second)
+                            {
+                                if (j <= pos)
+                                    continue;
+                                ISerialization::addColumnWithNumReadRowsToSubstreamsCache(
+                                    &caches[columns_to_read[j].getNameInStorage()], offsets_path, cached_column, num_read_rows);
+                            }
+                        }
+                    }
+                }
 
                 /// For elements of Nested, column_size_before_reading may be greater than column size
                 ///  if offsets are not empty and were already read, but elements are empty.
@@ -346,7 +396,31 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", checksums, storage_settings);
     if (!stream_name)
     {
-        /// We allow missing streams only for columns/subcolumns that are not present in this part.
+        /// After DROP + re-ADD of the same column, the current mapping assigns a new
+        /// column ID (e.g. b→2) but parts loaded before the ALTER still carry the
+        /// column under the old column ID (b→1, or for pre-activation parts under
+        /// the logical name b with no column_id at all).  The reader resolves to
+        /// the current mapping's column ID, so streams for the new name will not
+        /// be found in the old part.  Detect this mismatch and return nullptr so
+        /// the reader uses default values instead of throwing.
+        if (!name_and_type.column_id.empty()
+            && name_and_type.getColumnIdInStorage() != name_and_type.getNameInStorage())
+        {
+            auto col_pos = data_part_info_for_read->getColumnPosition(name_and_type.getNameInStorage());
+            if (!col_pos)
+                return nullptr;
+
+            auto it = data_part_info_for_read->getColumns().begin();
+            std::advance(it, *col_pos);
+            /// Treat an empty part-side `column_id` as the part's logical name
+            /// (pre-activation parts persist columns under their logical name
+            /// with no explicit column_id).  A non-identity new mapping that
+            /// disagrees with the part's effective ID is a stale slot.
+            const String & part_effective_id = it->column_id.empty() ? it->name : it->column_id;
+            if (part_effective_id != name_and_type.column_id)
+                return nullptr;
+        }
+
         auto column = data_part_info_for_read->getColumnsDescription().tryGetColumn(GetColumnsOptions::AllPhysical, name_and_type.getNameInStorage());
         if (column && (!name_and_type.isSubcolumn() || column->type->hasSubcolumn(name_and_type.getSubcolumnName())))
         {
@@ -379,6 +453,18 @@ ReadBuffer * MergeTreeReaderWide::getStream(
         stream.seekToStart();
     else if (seek_to_mark)
         stream.seekToMark(from_mark);
+    else if (read_without_marks
+        && !name_and_type.column_id.empty()
+        && !substream_path.empty()
+        && substream_path.back().type == ISerialization::Substream::ArraySizes
+        && Nested::extractTableName(name_and_type.getNameInStorage()) != name_and_type.getNameInStorage())
+    {
+        /// Defense-in-depth: normally the cache-sharing logic in `readRows`
+        /// pre-populates siblings' caches so this branch is not reached.
+        /// But if offset caching was skipped (e.g. exception during readData,
+        /// or a code path bypassing readRows), this ensures correct re-read.
+        stream.seekToStart();
+    }
 
     return stream.getDataBuffer();
 }
