@@ -472,6 +472,10 @@ public:
 
     void consume(Chunk & chunk) override
     {
+        /// Preserve any metadata attached to the incoming chunk (e.g. async-insert deduplication
+        /// tokens and offsets stored by `AsynchronousInsertQueue`) so it can be forwarded to the
+        /// inner `INSERT` pipeline below. `detachColumns` only moves the columns out of the chunk.
+        auto chunk_infos = chunk.getChunkInfos().clone();
         auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
         /// For a partial `INSERT INTO view (subset) ...`, columns omitted by the user have been
@@ -531,8 +535,14 @@ public:
         }
         block = std::move(renamed_block);
 
-        /// Push to the inner `INSERT` pipeline which handles constraints and writing.
-        executor_->push(std::move(block));
+        /// Push to the inner `INSERT` pipeline which handles constraints and writing. Forward the
+        /// row data as a `Chunk` carrying the original chunk metadata: pushing a bare `Block` would
+        /// wrap the columns in a fresh `Chunk` and drop the incoming infos, so `async_insert`
+        /// deduplication tokens/offsets would no longer match a direct insert into the target table.
+        /// Mirrors `StorageAlias::AliasSink`.
+        Chunk renamed_chunk(block.getColumns(), block.rows());
+        renamed_chunk.setChunkInfos(std::move(chunk_infos));
+        executor_->push(std::move(renamed_chunk));
     }
 
     void onFinish() override
@@ -929,6 +939,31 @@ SinkToStoragePtr StorageView::write(
         target_columns.insert(col.name);
 
     auto column_mapping = extractColumnMapping(select, getStorageID(), target_columns);
+
+    /// The write path forwards the view-typed values straight into the target table and evaluates
+    /// the view's `WHERE` against them. If the view declares an output type that differs from the
+    /// mapped target column — e.g. `CREATE VIEW v (a String) AS SELECT a FROM t` over `t.a UInt8` —
+    /// the read path would `CAST` the value while this write path would not, so reads and writes
+    /// would disagree and an omitted column's default could be stored under the wrong type. Reject
+    /// such views rather than silently inserting mistyped data.
+    {
+        const auto target_metadata = target_table->getInMemoryMetadataPtr(context, false);
+        const auto & target_cols = target_metadata->getColumns();
+        for (const auto & col : metadata_snapshot->getSampleBlockNonMaterialized())
+        {
+            auto it = column_mapping.find(col.name);
+            const String target_name = (it != column_mapping.end()) ? it->second : col.name;
+            if (!target_cols.has(target_name))
+                continue;
+            const auto & target_type = target_cols.get(target_name).type;
+            if (!target_type->equals(*col.type))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot INSERT into view {} because its column '{}' of type {} differs from "
+                    "the target table column '{}' of type {}",
+                    getStorageID().getFullTableName(), col.name, col.type->getName(),
+                    target_name, target_type->getName());
+        }
+    }
 
     /// Honor an explicit column list in `INSERT INTO view (col1, col2) ...`.
     /// Without this, omitted view columns would receive the *view-schema* default
