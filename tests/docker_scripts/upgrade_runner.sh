@@ -22,6 +22,8 @@ source /repo/tests/docker_scripts/stress_tests.lib
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
 
+bash /repo/ci/jobs/scripts/functional_tests/setup_kafka.sh || { echo "Failed to start Kafka (Redpanda)"; exit 1; }
+
 echo "Get previous release tag"
 PACKAGES_DIR=/repo/ci/tmp
 # shellcheck disable=SC2016
