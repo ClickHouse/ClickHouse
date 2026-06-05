@@ -91,43 +91,6 @@ void generateExistingManifestFile(
     const std::vector<Iceberg::ProcessedManifestFileEntryPtr> & entries,
     WriteBuffer & buf);
 
-/// Writes a manifest list for a snapshot that only removes files (DROP PARTITION).
-/// Entries can be a mix of:
-///   - newly written EXISTING-status manifests (rewrites of partially-matched manifests)
-///   - untouched manifests carried over from the parent snapshot by path
-/// Untouched manifests are copied verbatim from the parent's manifest list (so their
-/// counts, partition summaries, and sequence numbers are preserved); paths in
-/// `skip_manifest_paths` from the parent are dropped entirely.
-struct ManifestListEntryForDelete
-{
-    Iceberg::IcebergPathFromMetadata manifest_path;
-    Int64 manifest_length = 0;
-    /// Smallest sequence number among entries inside this manifest. For a survivor
-    /// rewrite that holds only EXISTING entries, this is the inherited sequence
-    /// number of those entries — not the new DROP snapshot's. The manifest list's
-    /// own `added_snapshot_id` and `sequence_number` (which identify the manifest
-    /// *file*, not its contents) are filled by the writer from the new snapshot.
-    Int64 min_sequence_number = 0;
-    Int32 added_files_count = 0;
-    Int32 existing_files_count = 0;
-    Int32 deleted_files_count = 0;
-    Int32 added_rows_count = 0;
-    Int32 existing_rows_count = 0;
-    Int32 deleted_rows_count = 0;
-    Iceberg::FileContentType content_type = Iceberg::FileContentType::DATA;
-};
-
-void generateManifestListForDelete(
-    const Iceberg::IcebergPathResolver & path_resolver,
-    Poco::JSON::Object::Ptr metadata,
-    ObjectStoragePtr object_storage,
-    ContextPtr context,
-    Poco::JSON::Object::Ptr new_snapshot,
-    const std::vector<ManifestListEntryForDelete> & new_entries,
-    Int64 partition_spec_id,
-    const std::unordered_set<String> & skip_manifest_paths,
-    WriteBuffer & buf);
-
 class IcebergStorageSink final : public SinkToStorage
 {
 public:
