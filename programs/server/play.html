@@ -3741,6 +3741,9 @@ async function tokenize(query) {
     return result;
 }
 
+/// Regression coverage for this function lives in
+/// `src/Parsers/tests/gtest_play_get_query_under_cursor.cpp` (a port of the token-walking
+/// algorithm on top of the same `DB::Lexer`). Keep the two in sync when changing the logic.
 async function getQueryUnderCursor() {
     const all_queries = query_area.value;
 
