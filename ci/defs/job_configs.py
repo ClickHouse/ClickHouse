@@ -157,7 +157,7 @@ common_integration_test_job_config = Job.Config(
             "./ci/jobs/scripts/docker_in_docker.sh",
         ],
     ),
-    run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
+    run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host+--ulimit nofile=262144:262144",
     post_hooks=[
         "python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py",
         "python3 ci/jobs/scripts/job_hooks/promql_compliance_hook.py",
@@ -173,24 +173,11 @@ class JobConfigs:
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
     )
-    pr_body = Job.Config(
-        name=JobNames.PR_BODY,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        command="python3 ./ci/jobs/pr_formatter_job.py",
-        allow_failure=True,
-        enable_gh_auth=True,
-    )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        command="python3 ./ci/jobs/copilot_review_job.py --pre",
-    )
-    ci_results_review = Job.Config(
-        name=JobNames.CI_RESULTS_REVIEW,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        command="python3 ./ci/jobs/copilot_review_job.py --post",
+        command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
-        enable_gh_auth=True,
     )
     ci_tests = Job.Config(
         name=JobNames.CI_TESTS,
@@ -218,6 +205,9 @@ class JobConfigs:
         digest_config=fast_test_digest_config,
         result_name_for_cidb="Tests",
         force_success=True,
+        pre_hooks=[
+            "sudo rm -rf /Library/Logs/DiagnosticReports/*",
+        ],
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
             "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data",
@@ -1365,9 +1355,12 @@ class JobConfigs:
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/docs_job.py",
         digest_config=Job.CacheDigestConfig(
+            # Restrict to the legacy Docusaurus content tree so that PRs which
+            # only touch the new Mintlify site (./docs/docs.json, ./docs/*.mdx,
+            # etc.) do not trigger this job.
             include_paths=[
-                "**/*.md",
-                "./docs",
+                "./docs/en/",
+                "./docs/changelogs/",
                 "./ci/jobs/docs_job.py",
                 "CHANGELOG.md",
                 "./src/Functions",
@@ -1383,11 +1376,21 @@ class JobConfigs:
         command="python3 ./ci/jobs/docs_job_mintlify.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./docs/docs",
+                "./docs",
+                "./ci/jobs/docs_job_mintlify.py",
             ],
+            # Exclude everything currently in ./docs so that this job runs only
+            # on files that are NOT part of the legacy docs tree (i.e. the new
+            # Mintlify site files such as ./docs/docs.json and any new Mintlify
+            # content). Add new excludes here if more non-Mintlify content is
+            # introduced under ./docs.
             exclude_paths=[
+                "./docs/README.md",
+                "./docs/_description_templates/",
+                "./docs/_includes/",
+                "./docs/changelog_entry_guidelines.md",
+                "./docs/changelogs/",
                 "./docs/en/",
-                "./changelogs/"
             ],
         ),
         run_in_docker="clickhouse/docs-builder"
@@ -1480,6 +1483,40 @@ class JobConfigs:
         runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+        ),
+    )
+    collect_clickhouse_profiles_jobs = Job.Config(
+        name=JobNames.COLLECT_CLICKHOUSE_PROFILES,
+        runs_on=[],  # from parametrize()
+        command="python3 ./ci/jobs/collect_clickhouse_profiles.py",
+        run_in_docker=BINARY_DOCKER_COMMAND,
+        timeout=8 * 3600,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/collect_clickhouse_profiles.py",
+                "./cmake/profile_optimization.cmake",
+                "./tests/performance/",
+            ],
+        ),
+    ).parametrize(
+        Job.ParamSet(
+            parameter="amd64",
+            runs_on=RunnerLabels.AMD_LARGE,
+            provides=[
+                ArtifactNames.CLICKHOUSE_PGO_PROFILE_AMD,
+                ArtifactNames.CLICKHOUSE_BOLT_PROFILE_AMD,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="aarch64",
+            runs_on=RunnerLabels.ARM_LARGE,
+            provides=[
+                ArtifactNames.CLICKHOUSE_PGO_PROFILE_ARM,
+                ArtifactNames.CLICKHOUSE_BOLT_PROFILE_ARM,
+            ],
+        ),
     )
     toolchain_build_jobs = Job.Config(
         name=JobNames.BUILD_TOOLCHAIN,

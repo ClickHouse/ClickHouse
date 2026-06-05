@@ -119,6 +119,8 @@ const constexpr uint32_t allow_set = (1 << 0), allow_cte = (1 << 1), allow_disti
 const constexpr uint32_t collect_generated = (1 << 0), flat_tuple = (1 << 1), flat_nested = (1 << 2), flat_json = (1 << 3),
                          skip_tuple_node = (1 << 4), skip_nested_node = (1 << 5), to_table_entries = (1 << 6), to_remote_entries = (1 << 7);
 
+void collectColumnPaths(String cname, SQLType * tp, uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths);
+
 class CatalogBackup
 {
 public:
@@ -164,11 +166,15 @@ private:
     std::vector<TableEngineValues> likeEngsDeterministic;
     std::vector<TableEngineValues> likeEngsNotDeterministic;
     std::vector<TableEngineValues> likeEngsInfinite;
-    std::unordered_map<SQLFunc, uint32_t> dictFuncs;
+    std::unordered_map<std::string, uint32_t> dictFuncs;
     ExternalIntegrations & connections;
     const bool supports_cloud_features;
-    const size_t deterministic_funcs_limit;
-    const size_t deterministic_aggrs_limit;
+    const std::vector<CHFunction> & det_funcs;
+    const std::vector<CHFunction> & nondet_funcs;
+    const std::vector<CHFunction> & common_funcs;
+    const std::vector<CHAggregate> & det_aggrs;
+    const std::vector<CHAggregate> & simple_det_aggrs;
+    const std::vector<CHAggregate> & nondet_aggrs;
     PeerQuery peer_query = PeerQuery::None;
 
     bool in_transaction = false;
@@ -335,7 +341,7 @@ private:
         BetweenExpr,
         InExpr,
         AnyExpr,
-        IsNullExpr,
+        IsTruthExpr,
         ExistsExpr,
         LikeExpr,
         SearchExpr,
@@ -363,7 +369,8 @@ private:
         MergeIndexUDF,
         MergeProjectionUDF,
         MergeTextIndexUDF,
-        MergeIndexAnalyzeUDF
+        MergeIndexAnalyzeUDF,
+        FilesystemUDF
     };
 
     ProbabilityGenerator SQLGen;
@@ -530,7 +537,7 @@ private:
         RandomGenerator & rg, SQLTable & t, uint32_t cname, bool staged, bool modify, bool is_pk, ColumnSpecial special, ColumnDef * cd);
     void addTableIndex(RandomGenerator & rg, SQLTable & t, bool projection, IndexDef * idef);
     void addTableProjection(RandomGenerator & rg, SQLTable & t, ProjectionDef * pdef);
-    void addTableConstraint(RandomGenerator & rg, SQLTable & t, bool staged, ConstraintDef * cdef);
+    void addTableConstraint(RandomGenerator & rg, SQLTable & t, ConstraintDef * cdef);
     void generateTableKey(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, bool allow_asc_desc, TableKey * tkey);
     void setClusterClause(RandomGenerator & rg, const std::optional<String> & cluster, Cluster * clu, bool force = false) const;
     void setClusterInfo(RandomGenerator & rg, SQLBase & b) const;
@@ -717,12 +724,6 @@ private:
     template <typename T>
     void attachOrDetachObject(const String & tkey, DetachStatus status);
 
-    static const constexpr auto funcDeterministicLambda = [](const SQLFunction & f) { return f.is_deterministic; };
-
-    static const constexpr auto funcNotDeterministicIndexLambda = [](const CHFunction & f) { return f.fnum == SQLFunc::FUNCarrayShuffle; };
-
-    static const constexpr auto aggrNotDeterministicIndexLambda = [](const CHAggregate & a) { return a.fnum == SQLFunc::FUNCany; };
-
     template <typename T, typename U>
     void setObjectStoreParams(RandomGenerator & rg, const T & b, U * source)
     {
@@ -887,8 +888,11 @@ public:
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasClickHousePeer(); };
     const std::function<bool(const SQLTable &)> attached_tables_for_external_call
         = [](const SQLTable & t) { return t.isAttached() && t.integration == IntegrationCall::Dolor; };
-    const std::function<bool(const SQLPolicy &)> row_policies_for_oracle
-        = [](const SQLPolicy & p) -> bool { return p.is_row && p.where_expr.has_value() && p.targets_oracle_role; };
+    const std::function<bool(const SQLDictionary &)> attached_dictionaries_to_compare_content
+        = [](const SQLDictionary & d) { return d.isAttached() && d.is_deterministic; };
+    const std::function<bool(const SQLView &)> attached_views_to_compare_content
+        = [](const SQLView & v) { return v.isAttached() && v.is_deterministic; };
+    bool rowPolicyForOracle(const SQLPolicy & p) const;
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> detached_databases
         = [](const std::shared_ptr<SQLDatabase> & d) { return d->isDettached(); };
