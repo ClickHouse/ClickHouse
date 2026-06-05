@@ -51,7 +51,10 @@ CREATE TABLE t_ttl_drop_includes_finished_neighbors
 ENGINE = MergeTree
 ORDER BY (key)
 TTL ts + INTERVAL 1 SECOND GROUP BY key SET value = sum(value)
-SETTINGS min_bytes_for_wide_part = 0, merge_with_ttl_timeout = 0;
+SETTINGS min_bytes_for_wide_part = 0,
+         merge_with_ttl_timeout = 0,
+         max_number_of_merges_with_ttl_in_pool = 100,
+         min_parts_to_merge_at_once = 100;
 "
 
 # Part A: 500 expired keys. `OPTIMIZE FINAL` on a single part drives the
