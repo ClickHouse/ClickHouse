@@ -984,6 +984,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// unreliable to use these features (file might exist and have contents)
     if (!is_size_known)
     {
+        use_distributed_cache = false;
         use_filesystem_cache = false;
         use_page_cache = false;
     }
