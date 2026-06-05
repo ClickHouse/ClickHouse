@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/DateLUTImpl.h>
 #include <IO/SeekableReadBuffer.h>
@@ -280,7 +281,9 @@ int arrowTimeUnitForScale(UInt32 scale)
 }
 
 flatbuffers::Offset<flatbuf::Field>
-buildField(flatbuffers::FlatBufferBuilder & b, const std::string & name, const DataTypePtr & type, const FormatSettings & settings);
+buildField(
+    flatbuffers::FlatBufferBuilder & b, const std::string & name, const DataTypePtr & type, const FormatSettings & settings,
+    flatbuffers::Offset<flatbuf::DictionaryEncoding> dictionary = 0);
 
 flatbuffers::Offset<flatbuf::Field>
 buildMapEntriesField(flatbuffers::FlatBufferBuilder & b, const DataTypeMap & map_type, const FormatSettings & settings)
@@ -296,7 +299,9 @@ buildMapEntriesField(flatbuffers::FlatBufferBuilder & b, const DataTypeMap & map
 }
 
 flatbuffers::Offset<flatbuf::Field>
-buildField(flatbuffers::FlatBufferBuilder & b, const std::string & name, const DataTypePtr & type, const FormatSettings & settings)
+buildField(
+    flatbuffers::FlatBufferBuilder & b, const std::string & name, const DataTypePtr & type, const FormatSettings & settings,
+    flatbuffers::Offset<flatbuf::DictionaryEncoding> dictionary)
 {
     DataTypePtr t = removeLowCardinality(type);
     const bool nullable = t->isNullable();
@@ -459,6 +464,25 @@ buildField(flatbuffers::FlatBufferBuilder & b, const std::string & name, const D
                 }
                 break;
             }
+            case TypeIndex::Variant:
+            {
+                /// Mirror the library writer: a dense union with one child per variant (in global order)
+                /// plus a trailing `null`-typed child that NULL rows refer to.
+                const auto & variant_type = assert_cast<const DataTypeVariant &>(*t);
+                const auto & variants = variant_type.getVariants();
+                for (const auto & variant : variants)
+                    children.push_back(buildField(b, variant->getFamilyName(), variant, settings));
+                children.push_back(flatbuf::CreateField(
+                    b, b.CreateString("NULL"), false, flatbuf::Type_Null, flatbuf::CreateNull(b).Union(), 0, 0));
+
+                std::vector<int32_t> type_id_list(variants.size() + 1);
+                for (size_t i = 0; i < type_id_list.size(); ++i)
+                    type_id_list[i] = static_cast<int32_t>(i);
+                auto type_ids_off = b.CreateVector(type_id_list);
+                type_type = flatbuf::Type_Union;
+                type_offset = flatbuf::CreateUnion(b, flatbuf::UnionMode_Dense, type_ids_off).Union();
+                break;
+            }
             default:
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
@@ -480,16 +504,26 @@ buildField(flatbuffers::FlatBufferBuilder & b, const std::string & name, const D
     flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuf::Field>>> children_off = 0;
     if (!children.empty())
         children_off = b.CreateVector(children);
-    return flatbuf::CreateField(b, name_off, nullable, type_type, type_offset, 0, children_off, custom_metadata_off);
+    return flatbuf::CreateField(b, name_off, nullable, type_type, type_offset, dictionary, children_off, custom_metadata_off);
 }
 
 flatbuffers::Offset<flatbuf::Schema> buildSchemaTable(
     flatbuffers::FlatBufferBuilder & builder, const Names & names, const DataTypes & types, const FormatSettings & settings)
 {
+    const auto dictionaries = assignOutputDictionaries(types, settings);
+
     std::vector<flatbuffers::Offset<flatbuf::Field>> field_offsets;
     field_offsets.reserve(names.size());
     for (size_t i = 0; i < names.size(); ++i)
-        field_offsets.push_back(buildField(builder, names[i], types[i], settings));
+    {
+        flatbuffers::Offset<flatbuf::DictionaryEncoding> dict_off = 0;
+        if (dictionaries[i])
+        {
+            auto index_type = flatbuf::CreateInt(builder, dictionaries[i]->index_bit_width, dictionaries[i]->index_is_signed);
+            dict_off = flatbuf::CreateDictionaryEncoding(builder, dictionaries[i]->id, index_type, /*isOrdered=*/false);
+        }
+        field_offsets.push_back(buildField(builder, names[i], types[i], settings, dict_off));
+    }
     auto fields_vec = builder.CreateVector(field_offsets);
 
     flatbuffers::Offset<flatbuffers::Vector<int64_t>> features = 0;
@@ -511,14 +545,38 @@ void buildSchemaMessage(
     builder.Finish(message);
 }
 
+std::vector<std::optional<OutputDictionary>> assignOutputDictionaries(const DataTypes & types, const FormatSettings & settings)
+{
+    std::vector<std::optional<OutputDictionary>> result(types.size());
+    if (!settings.arrow.low_cardinality_as_dictionary)
+        return result;
+
+    /// Arrow dictionary indexes must be 32- or 64-bit (signed or unsigned).
+    const int bit_width = settings.arrow.use_64_bit_indexes_for_dictionary ? 64 : 32;
+    const bool is_signed = settings.arrow.use_signed_indexes_for_dictionary;
+
+    int64_t next_id = 0;
+    for (size_t i = 0; i < types.size(); ++i)
+        if (types[i]->lowCardinality())
+            result[i] = OutputDictionary{next_id++, bit_width, is_signed};
+    return result;
+}
+
 void buildFooter(
     flatbuffers::FlatBufferBuilder & builder,
     const Names & names,
     const DataTypes & types,
     const FormatSettings & settings,
+    const std::vector<ArrowFileBlock> & dictionary_blocks,
     const std::vector<ArrowFileBlock> & record_blocks)
 {
     auto schema = buildSchemaTable(builder, names, types, settings);
+
+    std::vector<flatbuf::Block> dict_blocks;
+    dict_blocks.reserve(dictionary_blocks.size());
+    for (const auto & b : dictionary_blocks)
+        dict_blocks.emplace_back(b.offset, b.metadata_length, b.body_length);
+    auto dictionaries = builder.CreateVectorOfStructs(dict_blocks);
 
     std::vector<flatbuf::Block> blocks;
     blocks.reserve(record_blocks.size());
@@ -526,7 +584,7 @@ void buildFooter(
         blocks.emplace_back(b.offset, b.metadata_length, b.body_length);
     auto record_batches = builder.CreateVectorOfStructs(blocks);
 
-    auto footer = flatbuf::CreateFooter(builder, flatbuf::MetadataVersion_V5, schema, 0, record_batches, 0);
+    auto footer = flatbuf::CreateFooter(builder, flatbuf::MetadataVersion_V5, schema, dictionaries, record_batches, 0);
     builder.Finish(footer);
 }
 
@@ -714,9 +772,23 @@ DataTypePtr fieldToCHType(const ArrowField & field, [[maybe_unused]] const Forma
                 fieldToCHType(value, settings, value.nullable));
             break;
         }
+        case TypeKind::Union:
+        {
+            /// Map an Arrow union to a ClickHouse Variant. Children of the Arrow `null` type are the
+            /// placeholder used by the ClickHouse writer for NULL rows; they are not Variant elements.
+            DataTypes variants;
+            variants.reserve(type.children.size());
+            for (const ArrowField & child : type.children)
+            {
+                if (child.type.kind == TypeKind::Null)
+                    continue;
+                variants.push_back(removeNullable(fieldToCHType(child, settings, /*make_nullable=*/false)));
+            }
+            result = std::make_shared<DataTypeVariant>(variants);
+            break;
+        }
         case TypeKind::Null:
         case TypeKind::Interval:
-        case TypeKind::Union:
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Native Arrow IPC reader does not support this type yet (field '{}')",

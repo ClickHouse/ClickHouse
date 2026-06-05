@@ -5,6 +5,14 @@
 #include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
 #include <Processors/Port.h>
 #include <Core/Block.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Common/assert_cast.h>
 #include <IO/WriteBuffer.h>
 #include <IO/NetUtils.h>
 
@@ -14,6 +22,43 @@ namespace DB
 namespace
 {
 constexpr std::string_view ARROW_MAGIC = "ARROW1";
+
+/// Builds the integer index column (and its type) for a dictionary-encoded field from global indices.
+std::pair<DataTypePtr, MutableColumnPtr> makeIndexColumn(
+    const PaddedPODArray<Int64> & indexes, const ArrowIPC::OutputDictionary & dict)
+{
+    auto fill = [&](auto * column)
+    {
+        using ColumnType = std::decay_t<decltype(*column)>;
+        using ValueType = typename ColumnType::ValueType;
+        auto & data = column->getData();
+        data.resize(indexes.size());
+        for (size_t i = 0; i < indexes.size(); ++i)
+            data[i] = static_cast<ValueType>(indexes[i]);
+    };
+
+    if (dict.index_bit_width == 64)
+    {
+        if (dict.index_is_signed)
+        {
+            auto col = ColumnInt64::create();
+            fill(col.get());
+            return {std::make_shared<DataTypeInt64>(), std::move(col)};
+        }
+        auto col = ColumnUInt64::create();
+        fill(col.get());
+        return {std::make_shared<DataTypeUInt64>(), std::move(col)};
+    }
+    if (dict.index_is_signed)
+    {
+        auto col = ColumnInt32::create();
+        fill(col.get());
+        return {std::make_shared<DataTypeInt32>(), std::move(col)};
+    }
+    auto col = ColumnUInt32::create();
+    fill(col.get());
+    return {std::make_shared<DataTypeUInt32>(), std::move(col)};
+}
 }
 
 ArrowIPCBlockOutputFormat::ArrowIPCBlockOutputFormat(
@@ -30,6 +75,13 @@ ArrowIPCBlockOutputFormat::ArrowIPCBlockOutputFormat(
     }
     message_writer.emplace(out);
     encoder = std::make_unique<ArrowIPC::RecordBatchEncoder>(format_settings);
+
+    column_dictionaries = ArrowIPC::assignOutputDictionaries(column_types, format_settings);
+    size_t num_dictionaries = 0;
+    for (const auto & dict : column_dictionaries)
+        if (dict)
+            num_dictionaries = std::max(num_dictionaries, static_cast<size_t>(dict->id) + 1);
+    dictionary_states.resize(num_dictionaries);
 }
 
 void ArrowIPCBlockOutputFormat::writeSchemaIfNeeded()
@@ -47,13 +99,9 @@ void ArrowIPCBlockOutputFormat::writeSchemaIfNeeded()
     schema_written = true;
 }
 
-void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
+ArrowIPC::MessageWriter::WrittenMessage ArrowIPCBlockOutputFormat::writeBatchMessage(
+    const ArrowIPC::RecordBatchEncoder::EncodedBatch & batch, std::optional<int64_t> dictionary_id, bool is_delta)
 {
-    writeSchemaIfNeeded();
-
-    const size_t num_rows = chunk.getNumRows();
-    auto batch = encoder->encode(chunk.getColumns(), column_types, num_rows);
-
     flatbuffers::FlatBufferBuilder builder;
     flatbuffers::Offset<ArrowIPC::flatbuf::BodyCompression> compression_off = 0;
     if (batch.codec)
@@ -67,17 +115,114 @@ void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
     auto nodes_vec = builder.CreateVectorOfStructs(batch.nodes.data(), batch.nodes.size());
     auto buffers_vec = builder.CreateVectorOfStructs(batch.buffers.data(), batch.buffers.size());
     auto record_batch = ArrowIPC::flatbuf::CreateRecordBatch(builder, batch.num_rows, nodes_vec, buffers_vec, compression_off);
+
+    flatbuffers::Offset<void> header_off;
+    ArrowIPC::flatbuf::MessageHeader header_type;
+    if (dictionary_id)
+    {
+        header_type = ArrowIPC::flatbuf::MessageHeader_DictionaryBatch;
+        header_off = ArrowIPC::flatbuf::CreateDictionaryBatch(builder, *dictionary_id, record_batch, is_delta).Union();
+    }
+    else
+    {
+        header_type = ArrowIPC::flatbuf::MessageHeader_RecordBatch;
+        header_off = record_batch.Union();
+    }
+
     auto message = ArrowIPC::flatbuf::CreateMessage(
-        builder,
-        ArrowIPC::flatbuf::MetadataVersion_V5,
-        ArrowIPC::flatbuf::MessageHeader_RecordBatch,
-        record_batch.Union(),
+        builder, ArrowIPC::flatbuf::MetadataVersion_V5, header_type, header_off,
         static_cast<int64_t>(batch.body.size()));
     builder.Finish(message);
 
-    auto written = message_writer->writeMessage(
+    return message_writer->writeMessage(
         builder.GetBufferPointer(), builder.GetSize(), batch.body.data(), batch.body.size());
+}
 
+void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
+{
+    writeSchemaIfNeeded();
+
+    const size_t num_rows = chunk.getNumRows();
+    const Columns & columns = chunk.getColumns();
+
+    /// Dictionary-encoded columns are replaced in the record batch by their integer index column; their
+    /// values go into separate DictionaryBatch messages (extended across batches via deltas).
+    Columns record_columns(columns.begin(), columns.end());
+    DataTypes record_types = column_types;
+
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (!column_dictionaries[i])
+            continue;
+        const ArrowIPC::OutputDictionary & dict = *column_dictionaries[i];
+        auto & state = dictionary_states[dict.id];
+
+        const DataTypePtr value_type = removeLowCardinality(column_types[i]);
+        const bool value_nullable = value_type->isNullable();
+        if (!state.values)
+            state.values = value_type->createColumn();
+
+        ColumnPtr full = columns[i]->convertToFullColumnIfLowCardinality();
+        const IColumn * nested = full.get();
+        const ColumnUInt8 * null_map = nullptr;
+        if (value_nullable)
+        {
+            const auto & nullable = assert_cast<const ColumnNullable &>(*full);
+            nested = &nullable.getNestedColumn();
+            null_map = &nullable.getNullMapColumn();
+        }
+
+        const size_t delta_start = state.values->size();
+        PaddedPODArray<Int64> indexes(num_rows);
+        auto index_null_map = value_nullable ? ColumnUInt8::create() : nullptr;
+        if (index_null_map)
+            index_null_map->getData().reserve(num_rows);
+
+        for (size_t row = 0; row < num_rows; ++row)
+        {
+            if (null_map && null_map->getData()[row])
+            {
+                indexes[row] = 0;
+                index_null_map->getData().push_back(UInt8{1});
+                continue;
+            }
+            if (index_null_map)
+                index_null_map->getData().push_back(UInt8{0});
+
+            const std::string key(nested->getDataAt(row));
+            auto [it, inserted] = state.value_to_index.try_emplace(key, static_cast<Int64>(state.values->size()));
+            if (inserted)
+                state.values->insertFrom(*full, row);
+            indexes[row] = it->second;
+        }
+
+        /// Emit the new dictionary values (a delta, except the first batch which registers the id).
+        const size_t delta_size = state.values->size() - delta_start;
+        if (!state.emitted || delta_size > 0)
+        {
+            ColumnPtr delta = state.values->cut(delta_start, delta_size);
+            auto dict_batch = encoder->encode({delta}, {value_type}, delta_size);
+            auto written = writeBatchMessage(dict_batch, dict.id, /*is_delta=*/state.emitted);
+            if (!stream)
+                dictionary_blocks.push_back({written.offset, written.metadata_length, written.body_length});
+            state.emitted = true;
+        }
+
+        auto [index_type, index_column] = makeIndexColumn(indexes, dict);
+        if (value_nullable)
+        {
+            record_columns[i] = ColumnNullable::create(std::move(index_column), std::move(index_null_map));
+            record_types[i] = std::make_shared<DataTypeNullable>(index_type);
+        }
+        else
+        {
+            record_columns[i] = std::move(index_column);
+            record_types[i] = index_type;
+        }
+    }
+
+    auto batch = encoder->encode(record_columns, record_types, num_rows);
+    auto written = writeBatchMessage(batch);
     if (!stream)
         record_blocks.push_back({written.offset, written.metadata_length, written.body_length});
 }
@@ -95,7 +240,7 @@ void ArrowIPCBlockOutputFormat::finalizeImpl()
 
     /// File format trailer: <footer FlatBuffer> <int32 footer length LE> <"ARROW1">.
     flatbuffers::FlatBufferBuilder builder;
-    ArrowIPC::buildFooter(builder, column_names, column_types, format_settings, record_blocks);
+    ArrowIPC::buildFooter(builder, column_names, column_types, format_settings, dictionary_blocks, record_blocks);
     out.write(reinterpret_cast<const char *>(builder.GetBufferPointer()), builder.GetSize());
 
     int32_t footer_length = DB::toLittleEndian(static_cast<int32_t>(builder.GetSize()));
@@ -107,7 +252,10 @@ void ArrowIPCBlockOutputFormat::resetFormatterImpl()
 {
     message_writer.emplace(out);
     schema_written = false;
+    dictionary_blocks.clear();
     record_blocks.clear();
+    for (auto & state : dictionary_states)
+        state = DictionaryColumnState{};
 }
 
 }

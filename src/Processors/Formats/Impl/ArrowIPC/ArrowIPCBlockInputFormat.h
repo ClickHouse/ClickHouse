@@ -9,6 +9,7 @@
 #include <Processors/Formats/Impl/ArrowIPC/MessageReader.h>
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
 #include <Processors/Formats/Impl/ArrowIPC/RecordBatchDecoder.h>
+#include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <Formats/FormatSettings.h>
 
 #include <memory>
@@ -22,8 +23,7 @@ namespace DB
 
 class ReadBuffer;
 class SeekableReadBuffer;
-class PeekableReadBuffer;
-class ArrowBlockInputFormat;
+struct ColumnWithTypeAndName;
 
 /// Native ClickHouse reader for the `Arrow` (file) and `ArrowStream` (stream) IPC formats.
 ///
@@ -54,25 +54,22 @@ private:
     void prepareReader();
     void prepareStreamReader();
     void prepareFileReader();
-    /// True if the parsed schema (and requested header) need features only the library reader has
-    /// (GeoParquet, unions/Variant, Nested flattening via import_nested).
-    bool needsLibraryFallback() const;
     void collectDictionaryFields(const std::vector<ArrowIPC::ArrowField> & fields);
     Chunk buildChunk(std::vector<ArrowIPC::RecordBatchDecoder::DecodedColumn> & decoded, size_t num_rows);
-    static ColumnPtr convertToHeaderType(
-        const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type, const String & name);
+    /// Reinterprets a decoded fixed_size_binary column as UUID / big integer in place when the requested
+    /// header type asks for it (the raw 16/32 bytes are reinterpreted rather than text-parsed by a cast).
+    static void reinterpretFixedSizeBinary(ColumnWithTypeAndName & column, const DataTypePtr & to_type);
+    /// Parses the WKB/WKT binary values of a decoded (possibly Nullable) String column into a geo column.
+    static ColumnPtr decodeGeoColumn(const ColumnPtr & source, const GeoColumnMetadata & geo_metadata);
     Chunk readStream();
     Chunk readFile();
 
     const bool stream;
 
-    /// When the data uses features the native reader does not support, decoding is delegated to the
-    /// Apache Arrow library based reader (`fallback`); `peekable` lets the stream be rewound first.
-    std::unique_ptr<PeekableReadBuffer> peekable;
-    std::unique_ptr<ArrowBlockInputFormat> fallback;
-
     std::optional<ArrowIPC::MessageReader> message_reader;
     std::optional<ArrowIPC::ArrowSchema> arrow_schema;
+    /// GeoParquet geometry columns (by field name), parsed from the schema-level "geo" metadata.
+    std::unordered_map<String, GeoColumnMetadata> geo_columns;
     ArrowIPC::DictionaryRegistry dictionaries;
     /// For each Arrow dictionary id, the field describing its value type (used to decode dictionary batches).
     std::unordered_map<int64_t, ArrowIPC::ArrowField> dictionary_value_fields;

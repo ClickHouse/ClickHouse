@@ -67,6 +67,7 @@ private:
 
     ColumnPtr decodeField(const ArrowField & field);
     ColumnPtr decodeInner(const ArrowField & field, size_t rows);
+    ColumnPtr decodeUnion(const ArrowField & field, size_t rows);
     ColumnPtr decodeDictionary(const ArrowField & field, size_t rows, const Slice & validity, int64_t null_count);
     ColumnPtr buildNullMap(const Slice & validity, size_t rows, int64_t null_count) const;
     ColumnPtr readOffsetsAndChild(const ArrowField & field, size_t rows, bool large);

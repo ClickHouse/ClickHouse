@@ -12,12 +12,16 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/assert_cast.h>
 #include <Common/FloatUtils.h>
 #include <Core/UUID.h>
 
 #include <algorithm>
+#include <unordered_map>
 
 namespace DB
 {
@@ -522,10 +526,125 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(const ArrowField & field, size_t 
     return ColumnNullable::create(full, index_null_map);
 }
 
+ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
+{
+    const ArrowType & type = field.type;
+    const bool dense = type.union_mode == flatbuf::UnionMode_Dense;
+
+    /// A union has no validity buffer: a types buffer (int8), and for dense unions an offsets buffer (int32).
+    const Slice type_ids_slice = nextBuffer();
+    checkBufferSize(type_ids_slice, rows, "union type ids");
+    const auto * type_ids = reinterpret_cast<const int8_t *>(type_ids_slice.ptr);
+
+    const int32_t * value_offsets = nullptr;
+    if (dense)
+    {
+        const Slice offsets_slice = nextBuffer();
+        checkBufferSize(offsets_slice, rows * sizeof(int32_t), "union offsets");
+        value_offsets = reinterpret_cast<const int32_t *>(offsets_slice.ptr);
+    }
+
+    /// Decode children. Arrow `null`-typed children are the ClickHouse NULL placeholder: they carry a
+    /// FieldNode but no buffers and contribute no Variant element. The rest become Variant elements.
+    Columns variant_columns;
+    DataTypes variant_types;
+    /// Maps an Arrow union type id to a local Variant element index, or -1 for the NULL placeholder.
+    std::unordered_map<int, int> type_id_to_local;
+    for (size_t child_idx = 0; child_idx < type.children.size(); ++child_idx)
+    {
+        const ArrowField & child = type.children[child_idx];
+        const int tid = child_idx < type.union_type_ids.size()
+            ? type.union_type_ids[child_idx] : static_cast<int>(child_idx);
+
+        if (child.type.kind == TypeKind::Null)
+        {
+            nextNode(); /// consume the placeholder node; the null type has no buffers
+            type_id_to_local[tid] = -1;
+            continue;
+        }
+
+        ColumnPtr child_column = decodeField(child);
+        DataTypePtr child_type = fieldToCHType(child, settings, /*make_nullable=*/false);
+        /// Variant elements cannot be Nullable; drop any element-level nullability.
+        if (child_column->isNullable())
+            child_column = assert_cast<const ColumnNullable &>(*child_column).getNestedColumnPtr();
+        type_id_to_local[tid] = static_cast<int>(variant_columns.size());
+        variant_columns.push_back(std::move(child_column));
+        variant_types.push_back(removeNullable(child_type));
+    }
+
+    /// The Variant's global discriminator order is defined by sorting element type names; build the
+    /// local (child) -> global mapping accordingly.
+    auto variant_data_type = std::make_shared<DataTypeVariant>(variant_types);
+    std::unordered_map<String, ColumnVariant::Discriminator> name_to_global;
+    for (size_t g = 0; g < variant_data_type->getVariants().size(); ++g)
+        name_to_global[variant_data_type->getVariants()[g]->getName()] = static_cast<ColumnVariant::Discriminator>(g);
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> local_to_global(variant_columns.size());
+    for (size_t l = 0; l < variant_types.size(); ++l)
+        local_to_global[l] = name_to_global[variant_types[l]->getName()];
+
+    auto local_discriminators = ColumnVariant::ColumnDiscriminators::create(rows);
+    auto offsets = ColumnVariant::ColumnOffsets::create(rows);
+    auto & discr_data = local_discriminators->getData();
+    auto & off_data = offsets->getData();
+
+    if (dense)
+    {
+        for (size_t row = 0; row < rows; ++row)
+        {
+            auto local_it = type_id_to_local.find(type_ids[row]);
+            if (local_it == type_id_to_local.end())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow union row references unknown type id {}", type_ids[row]);
+            const int local = local_it->second;
+            if (local < 0)
+            {
+                discr_data[row] = ColumnVariant::NULL_DISCRIMINATOR;
+                off_data[row] = 0;
+                continue;
+            }
+            const int32_t off = value_offsets[row];
+            if (off < 0 || static_cast<size_t>(off) >= variant_columns[local]->size())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow dense union offset {} out of range", off);
+            discr_data[row] = static_cast<ColumnVariant::Discriminator>(local);
+            off_data[row] = static_cast<ColumnVariant::Offset>(off);
+        }
+        return ColumnVariant::create(
+            std::move(local_discriminators), std::move(offsets), Columns(variant_columns), local_to_global);
+    }
+
+    /// Sparse union: every child holds `rows` values; compact each Variant element to only its own rows.
+    MutableColumns compact;
+    compact.reserve(variant_columns.size());
+    for (const auto & col : variant_columns)
+        compact.push_back(col->cloneEmpty());
+    for (size_t row = 0; row < rows; ++row)
+    {
+        auto local_it = type_id_to_local.find(type_ids[row]);
+        if (local_it == type_id_to_local.end())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow union row references unknown type id {}", type_ids[row]);
+        const int local = local_it->second;
+        if (local < 0)
+        {
+            discr_data[row] = ColumnVariant::NULL_DISCRIMINATOR;
+            off_data[row] = 0;
+            continue;
+        }
+        off_data[row] = static_cast<ColumnVariant::Offset>(compact[local]->size());
+        compact[local]->insertFrom(*variant_columns[local], row);
+        discr_data[row] = static_cast<ColumnVariant::Discriminator>(local);
+    }
+    return ColumnVariant::create(
+        std::move(local_discriminators), std::move(offsets), std::move(compact), local_to_global);
+}
+
 ColumnPtr RecordBatchDecoder::decodeField(const ArrowField & field)
 {
     const flatbuf::FieldNode & node = nextNode();
     const size_t rows = static_cast<size_t>(node.length());
+
+    /// Unions have no validity buffer; handle them before consuming one.
+    if (field.type.kind == TypeKind::Union)
+        return decodeUnion(field, rows);
 
     /// Every nullable-capable node carries a validity buffer slot first, then its value buffers.
     const Slice validity = nextBuffer();

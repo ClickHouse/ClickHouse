@@ -44,6 +44,9 @@ public:
 private:
     void encodeField(const IColumn & column, const DataTypePtr & type, size_t num_rows);
     void encodeValues(const IColumn & column, const DataTypePtr & type, size_t num_rows);
+    /// Encodes a Variant column as an Arrow dense union (no validity buffer; a types and an offsets
+    /// buffer, the variant children in global order, and a trailing single-element null child).
+    void encodeVariant(const IColumn & column, const DataTypePtr & type, size_t num_rows);
 
     /// Appends a buffer to the body (8-byte aligned start) and records its {offset, length}.
     void appendBuffer(const void * data, size_t length);

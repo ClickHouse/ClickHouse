@@ -130,18 +130,14 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
 
 namespace
 {
-/// Whether the native Arrow IPC writer can handle every column of the header with the given settings.
-/// Falls back to the library writer for types it does not encode and for dictionary-encoded output of
-/// LowCardinality columns (the native writer always materializes LowCardinality to its full column).
-bool canNativelyEncodeBlock(const Block & header, const FormatSettings & format_settings)
+/// Whether the native Arrow IPC writer can encode every column of the header. The only remaining
+/// reason to use the Apache Arrow library writer is a column type the native encoder does not support
+/// (e.g. `Dynamic`/`JSON`); LowCardinality (incl. dictionary-encoded output) and Variant are native.
+bool canNativelyEncodeBlock(const Block & header, const FormatSettings & /*format_settings*/)
 {
     for (const auto & column : header)
-    {
         if (!ArrowIPC::RecordBatchEncoder::canNativelyEncode(column.type))
             return false;
-        if (format_settings.arrow.low_cardinality_as_dictionary && column.type->lowCardinality())
-            return false;
-    }
     return true;
 }
 }

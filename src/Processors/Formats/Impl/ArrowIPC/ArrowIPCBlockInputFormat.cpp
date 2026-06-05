@@ -3,12 +3,11 @@
 #if USE_ARROW
 
 #include <Processors/Port.h>
-#include <Processors/Formats/Impl/ArrowBlockInputFormat.h>
-#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#include <Processors/Formats/Impl/ArrowGeoTypes.h>
+#include <Common/WKB.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/PeekableReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WithFileSize.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -23,8 +22,11 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/NestedUtils.h>
 #include <Core/UUID.h>
+#include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <Interpreters/castColumn.h>
+#include <Common/quoteString.h>
 #include <algorithm>
 #include <Common/assert_cast.h>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -69,57 +71,6 @@ void ArrowIPCBlockInputFormat::collectDictionaryFields(const std::vector<ArrowIP
 
 namespace
 {
-bool hasUnionField(const std::vector<ArrowIPC::ArrowField> & fields)
-{
-    for (const auto & field : fields)
-    {
-        if (field.type.kind == ArrowIPC::TypeKind::Union || hasUnionField(field.type.children))
-            return true;
-    }
-    return false;
-}
-
-bool elementNarrowsNullability(const DataTypePtr & from, const DataTypePtr & to);
-
-/// True if anywhere strictly inside a container `from` has a Nullable element where `to` does not.
-/// (Top-level nullable->non-nullable is handled natively by convertToHeaderType, so it is ignored here.)
-bool hasNestedNullabilityNarrowing(const DataTypePtr & from, const DataTypePtr & to)
-{
-    const DataTypePtr f = removeNullable(removeLowCardinality(from));
-    const DataTypePtr t = removeNullable(removeLowCardinality(to));
-    const WhichDataType wf(f);
-    const WhichDataType wt(t);
-    if (wf.isArray() && wt.isArray())
-        return elementNarrowsNullability(
-            assert_cast<const DataTypeArray &>(*f).getNestedType(), assert_cast<const DataTypeArray &>(*t).getNestedType());
-    if (wf.isMap() && wt.isMap())
-    {
-        const auto & fm = assert_cast<const DataTypeMap &>(*f);
-        const auto & tm = assert_cast<const DataTypeMap &>(*t);
-        return elementNarrowsNullability(fm.getKeyType(), tm.getKeyType())
-            || elementNarrowsNullability(fm.getValueType(), tm.getValueType());
-    }
-    if (wf.isTuple() && wt.isTuple())
-    {
-        const auto & fe = assert_cast<const DataTypeTuple &>(*f).getElements();
-        const auto & te = assert_cast<const DataTypeTuple &>(*t).getElements();
-        if (fe.size() == te.size())
-            for (size_t i = 0; i < fe.size(); ++i)
-                if (elementNarrowsNullability(fe[i], te[i]))
-                    return true;
-    }
-    return false;
-}
-
-bool elementNarrowsNullability(const DataTypePtr & from, const DataTypePtr & to)
-{
-    const DataTypePtr f = removeLowCardinality(from);
-    const DataTypePtr t = removeLowCardinality(to);
-    if (f->isNullable() && !t->isNullable())
-        return true;
-    return hasNestedNullabilityNarrowing(from, to);
-}
-
 /// A LowCardinality dictionary must have unique values; the library reader rejects non-unique ones.
 /// Validate the common (non-nullable, contiguously-comparable) dictionary value columns.
 void checkDictionaryUnique(const ColumnPtr & values)
@@ -154,68 +105,6 @@ void checkDictionaryUnique(const ColumnPtr & values)
 }
 }
 
-bool ArrowIPCBlockInputFormat::needsLibraryFallback() const
-{
-    /// GeoParquet geometry columns (schema-level "geo" metadata) need WKB/WKT parsing into geo types.
-    if (arrow_schema->custom_metadata.contains("geo"))
-        return true;
-
-    /// Unions map to Variant, which the native reader does not decode yet.
-    if (hasUnionField(arrow_schema->fields))
-        return true;
-
-    /// `import_nested`: a Nested column (dotted name) backed by a List/Struct/Map Arrow field is flattened
-    /// by the library reader; detect that and let it handle the flattening (and case-insensitive matching).
-    const Block & header = getPort().getHeader();
-    const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
-    std::unordered_set<String> nested_field_names;
-    std::unordered_map<String, const ArrowIPC::ArrowField *> field_by_name;
-    for (const auto & field : arrow_schema->fields)
-    {
-        const auto kind = field.type.kind;
-        const bool is_nested = kind == ArrowIPC::TypeKind::List || kind == ArrowIPC::TypeKind::LargeList
-            || kind == ArrowIPC::TypeKind::FixedSizeList || kind == ArrowIPC::TypeKind::Struct
-            || kind == ArrowIPC::TypeKind::Map;
-        String key = field.name;
-        if (case_insensitive)
-            boost::to_lower(key);
-        if (is_nested)
-            nested_field_names.insert(key);
-        field_by_name.emplace(key, &field);
-    }
-    for (const auto & column : header)
-    {
-        const auto dot = column.name.find('.');
-        if (dot != String::npos)
-        {
-            String prefix = column.name.substr(0, dot);
-            if (case_insensitive)
-                boost::to_lower(prefix);
-            if (nested_field_names.contains(prefix))
-                return true;
-        }
-
-        /// null_as_default reading a nullable Arrow column into a non-nullable ClickHouse column: the
-        /// library replaces nulls with the column's DEFAULT expression (not just the type default), so
-        /// delegate the whole column to it. Covers both the top-level and nested cases.
-        if (format_settings.null_as_default)
-        {
-            String key = column.name;
-            if (case_insensitive)
-                boost::to_lower(key);
-            auto it = field_by_name.find(key);
-            if (it != field_by_name.end())
-            {
-                const DataTypePtr natural = ArrowIPC::fieldToCHType(*it->second, format_settings, it->second->nullable);
-                const bool top_level_narrows = natural->isNullable() && !removeLowCardinality(column.type)->isNullable();
-                if (top_level_narrows || hasNestedNullabilityNarrowing(natural, column.type))
-                    return true;
-            }
-        }
-    }
-    return false;
-}
-
 void ArrowIPCBlockInputFormat::prepareReader()
 {
     if (stream)
@@ -223,26 +112,13 @@ void ArrowIPCBlockInputFormat::prepareReader()
     else
         prepareFileReader();
 
-    if (needsLibraryFallback())
+    /// GeoParquet geometry columns (schema-level "geo" metadata) are decoded from WKB/WKT into geo types.
+    if (format_settings.parquet.allow_geoparquet_parser)
     {
-        auto header = std::make_shared<const Block>(getPort().getHeader());
-        if (stream)
-        {
-            peekable->rollbackToCheckpoint(/*drop=*/true);
-            fallback = std::make_unique<ArrowBlockInputFormat>(*peekable, header, /*stream_=*/true, format_settings);
-        }
-        else
-        {
-            seekable->seek(0, SEEK_SET);
-            fallback = std::make_unique<ArrowBlockInputFormat>(*seekable, header, /*stream_=*/false, format_settings);
-        }
-        message_reader.reset();
-        prepared = true;
-        return;
+        auto geo_it = arrow_schema->custom_metadata.find("geo");
+        geo_columns = parseGeoMetadataEncoding(
+            geo_it != arrow_schema->custom_metadata.end() ? &geo_it->second : nullptr);
     }
-
-    if (stream)
-        peekable->dropCheckpoint();
 
     /// Reject duplicate column names, matching the Apache Arrow library based reader.
     std::unordered_set<String> seen_names;
@@ -257,10 +133,7 @@ void ArrowIPCBlockInputFormat::prepareReader()
 
 void ArrowIPCBlockInputFormat::prepareStreamReader()
 {
-    /// Read the schema behind a checkpoint so the stream can be rewound for the library fallback.
-    peekable = std::make_unique<PeekableReadBuffer>(*in);
-    peekable->setCheckpoint();
-    message_reader.emplace(*peekable);
+    message_reader.emplace(*in);
 
     ArrowIPC::MessageReader::Message msg;
     if (!message_reader->readNextMessage(msg))
@@ -326,18 +199,18 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
     }
 }
 
-ColumnPtr ArrowIPCBlockInputFormat::convertToHeaderType(
-    const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type, const String & name)
+void ArrowIPCBlockInputFormat::reinterpretFixedSizeBinary(ColumnWithTypeAndName & column, const DataTypePtr & to_type)
 {
     const DataTypePtr target_no_null = removeNullable(to_type);
     const WhichDataType target(target_no_null);
+    const ColumnPtr & src = column.column;
 
     /// A fixed_size_binary(16) read into a UUID column (e.g. an external file without the arrow.uuid
     /// extension): reinterpret the 16 bytes with the same half-reversal the library import uses.
     if (target.isUUID())
     {
-        const ColumnPtr nested = column->isNullable()
-            ? assert_cast<const ColumnNullable &>(*column).getNestedColumnPtr() : column;
+        const ColumnPtr nested = src->isNullable()
+            ? assert_cast<const ColumnNullable &>(*src).getNestedColumnPtr() : src;
         if (const auto * fixed = typeid_cast<const ColumnFixedString *>(nested.get()); fixed && fixed->getN() == 16)
         {
             const size_t rows = fixed->size();
@@ -351,13 +224,15 @@ ColumnPtr ArrowIPCBlockInputFormat::convertToHeaderType(
             }
             ColumnPtr result = std::move(uuids);
             DataTypePtr result_type = target_no_null;
-            if (column->isNullable())
+            if (src->isNullable())
             {
-                result = ColumnNullable::create(result, assert_cast<const ColumnNullable &>(*column).getNullMapColumnPtr());
+                result = ColumnNullable::create(result, assert_cast<const ColumnNullable &>(*src).getNullMapColumnPtr());
                 result_type = std::make_shared<DataTypeNullable>(target_no_null);
             }
-            return castColumn({result, result_type, name}, to_type);
+            column.column = std::move(result);
+            column.type = std::move(result_type);
         }
+        return;
     }
 
     /// Big integers are decoded as FixedString (their Arrow fixed_size_binary representation); castColumn
@@ -366,11 +241,11 @@ ColumnPtr ArrowIPCBlockInputFormat::convertToHeaderType(
     if (target_is_big_int)
     {
         ColumnPtr null_map;
-        const ColumnPtr nested = column->isNullable()
-            ? assert_cast<const ColumnNullable &>(*column).getNestedColumnPtr()
-            : column;
-        if (column->isNullable())
-            null_map = assert_cast<const ColumnNullable &>(*column).getNullMapColumnPtr();
+        const ColumnPtr nested = src->isNullable()
+            ? assert_cast<const ColumnNullable &>(*src).getNestedColumnPtr()
+            : src;
+        if (src->isNullable())
+            null_map = assert_cast<const ColumnNullable &>(*src).getNullMapColumnPtr();
 
         if (const auto * fixed = typeid_cast<const ColumnFixedString *>(nested.get()))
         {
@@ -394,16 +269,41 @@ ColumnPtr ArrowIPCBlockInputFormat::convertToHeaderType(
                     result = ColumnNullable::create(result, null_map);
                     result_type = std::make_shared<DataTypeNullable>(target_no_null);
                 }
-                /// Reconcile nullability with the requested type (cheap when already equal).
-                return castColumn({result, result_type, name}, to_type);
+                column.column = std::move(result);
+                column.type = std::move(result_type);
             }
         }
     }
+}
 
-    /// Nullable->non-nullable narrowing under input_format_null_as_default is handled by delegating the
-    /// whole read to the library reader (see needsLibraryFallback), which applies column DEFAULT
-    /// expressions; so here a plain cast is sufficient.
-    return castColumn({column, from_type, name}, to_type);
+ColumnPtr ArrowIPCBlockInputFormat::decodeGeoColumn(const ColumnPtr & source, const GeoColumnMetadata & geo_metadata)
+{
+    DataTypePtr type = getGeoDataType(geo_metadata.type);
+    MutableColumnPtr column = type->createColumn();
+
+    const IColumn * data = source.get();
+    const ColumnNullable * nullable = nullptr;
+    if (source->isNullable())
+    {
+        nullable = &assert_cast<const ColumnNullable &>(*source);
+        data = &nullable->getNestedColumn();
+    }
+    const auto & strings = assert_cast<const ColumnString &>(*data);
+
+    for (size_t i = 0; i < strings.size(); ++i)
+    {
+        if (nullable && nullable->isNullAt(i))
+        {
+            column->insertDefault();
+            continue;
+        }
+        const std::string_view ref = strings.getDataAt(i);
+        ReadBuffer in_buffer(const_cast<char *>(ref.data()), ref.size(), 0);
+        GeometricObject object = geo_metadata.encoding == GeoEncoding::WKB
+            ? parseWKBFormat(in_buffer) : parseWKTFormat(in_buffer);
+        appendObjectToGeoColumn(object, geo_metadata.type, *column);
+    }
+    return column;
 }
 
 Chunk ArrowIPCBlockInputFormat::buildChunk(std::vector<ArrowIPC::RecordBatchDecoder::DecodedColumn> & decoded, size_t num_rows)
@@ -412,6 +312,8 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(std::vector<ArrowIPC::RecordBatchDeco
 
     /// Map decoded column name -> index (lower-cased when case-insensitive matching is on).
     const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
+    BlockMissingValues * block_missing_values_ptr
+        = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
     std::unordered_map<String, size_t> name_to_index;
     name_to_index.reserve(decoded.size());
     for (size_t i = 0; i < decoded.size(); ++i)
@@ -422,35 +324,124 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(std::vector<ArrowIPC::RecordBatchDeco
         name_to_index.emplace(std::move(key), i);
     }
 
+    /// Cache of `Nested`/struct table extractors keyed by the (possibly lower-cased) nested table name.
+    /// The backing block must outlive the extractor (it holds a reference into it), so keep both.
+    std::unordered_map<String, std::pair<std::shared_ptr<Block>, std::shared_ptr<NestedColumnExtractHelper>>> nested_extractors;
+
     Columns columns;
     columns.reserve(header.columns());
     for (size_t i = 0; i < header.columns(); ++i)
     {
         const ColumnWithTypeAndName & header_column = header.getByPosition(i);
-        String key = header_column.name;
+        String search_name = header_column.name;
         if (case_insensitive)
-            boost::to_lower(key);
+            boost::to_lower(search_name);
 
-        auto it = name_to_index.find(key);
-        if (it != name_to_index.end())
+        ColumnWithTypeAndName column;
+        auto it = name_to_index.find(search_name);
+        if (it == name_to_index.end())
         {
-            auto & src = decoded[it->second];
-            columns.push_back(convertToHeaderType(src.column, src.type, header_column.type, src.name));
-        }
-        else if (format_settings.arrow.allow_missing_columns)
-        {
-            auto column = header_column.type->createColumn();
-            column->insertManyDefaults(num_rows);
-            if (format_settings.defaults_for_omitted_fields)
-                block_missing_values.setBits(i, num_rows);
-            columns.push_back(std::move(column));
+            bool read_from_nested = false;
+
+            /// A subcolumn of a `Nested`/struct field: `table.a` is extracted from the Arrow field `table`.
+            const String nested_table_name = Nested::extractTableName(header_column.name);
+            String search_nested = nested_table_name;
+            if (case_insensitive)
+                boost::to_lower(search_nested);
+
+            auto nested_it = name_to_index.find(search_nested);
+            if (nested_it != name_to_index.end())
+            {
+                auto extractor_it = nested_extractors.find(search_nested);
+                if (extractor_it == nested_extractors.end())
+                {
+                    /// Collect the requested subcolumns into a single `Nested` type and reshape the decoded
+                    /// column to it, so `Nested::flatten` (used by the extractor) recognises and splits it
+                    /// — mirroring how the library reader reads the field with this type hint.
+                    NamesAndTypesList nested_columns;
+                    for (const auto & name_and_type : header.getNamesAndTypesList())
+                        if (name_and_type.name.starts_with(nested_table_name + "."))
+                            nested_columns.push_back(name_and_type);
+
+                    auto & src = decoded[nested_it->second];
+                    ColumnWithTypeAndName nested_column(src.column, src.type, nested_table_name);
+                    const auto collected = Nested::collect(nested_columns);
+                    if (!collected.empty())
+                    {
+                        const DataTypePtr & nested_table_type = collected.front().type;
+                        nested_column.column = castColumn(nested_column, nested_table_type);
+                        nested_column.type = nested_table_type;
+                    }
+                    auto block = std::make_shared<Block>(Block({std::move(nested_column)}));
+                    auto helper = std::make_shared<NestedColumnExtractHelper>(*block, case_insensitive);
+                    extractor_it = nested_extractors.emplace(search_nested, std::make_pair(block, helper)).first;
+                }
+                if (auto nested_column = extractor_it->second.second->extractColumn(search_name))
+                {
+                    column = *nested_column;
+                    if (case_insensitive)
+                        column.name = header_column.name;
+                    read_from_nested = true;
+                }
+            }
+
+            if (!read_from_nested)
+            {
+                if (!format_settings.arrow.allow_missing_columns)
+                    throw Exception(
+                        ErrorCodes::THERE_IS_NO_COLUMN,
+                        "Column '{}' is not present in the Arrow IPC data", header_column.name);
+
+                auto missing = header_column.type->createColumn();
+                missing->insertManyDefaults(num_rows);
+                if (block_missing_values_ptr)
+                    block_missing_values_ptr->setBits(i, num_rows);
+                columns.push_back(std::move(missing));
+                continue;
+            }
         }
         else
         {
-            throw Exception(
-                ErrorCodes::THERE_IS_NO_COLUMN,
-                "Column '{}' is not present in the Arrow IPC data", header_column.name);
+            auto & src = decoded[it->second];
+            column = ColumnWithTypeAndName(src.column, src.type, src.name);
         }
+
+        /// GeoParquet: parse the WKB/WKT binary column into the geo type (declared in the schema-level
+        /// "geo" metadata, or implied by a `Geometry` header type hint).
+        auto geo_it = geo_columns.find(header_column.name);
+        if (geo_it != geo_columns.end())
+        {
+            column.column = decodeGeoColumn(column.column, geo_it->second);
+            column.type = getGeoDataType(geo_it->second.type);
+        }
+        else if (format_settings.parquet.allow_geoparquet_parser && header_column.type->getName() == "Geometry")
+        {
+            const GeoColumnMetadata mixed{GeoEncoding::WKB, GeoType::Mixed};
+            column.column = decodeGeoColumn(column.column, mixed);
+            column.type = getGeoDataType(GeoType::Mixed);
+        }
+        else
+        {
+            reinterpretFixedSizeBinary(column, header_column.type);
+
+            /// Replace nulls coming from a nullable Arrow column with the type default and mark the missing
+            /// positions, so the engine later applies the column DEFAULT expression. Handles nested cases too.
+            if (format_settings.null_as_default)
+                insertNullAsDefaultIfNeeded(column, header_column, i, block_missing_values_ptr);
+        }
+
+        try
+        {
+            column.column = castColumn(column, header_column.type);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format(
+                "while converting column {} from type {} to type {}",
+                backQuote(header_column.name), column.type->getName(), header_column.type->getName()));
+            throw;
+        }
+        columns.push_back(std::move(column.column));
     }
 
     return Chunk(std::move(columns), num_rows);
@@ -551,25 +542,21 @@ Chunk ArrowIPCBlockInputFormat::read()
     if (is_stopped)
         return {};
 
-    if (fallback)
-        return fallback->read();
-
     return stream ? readStream() : readFile();
 }
 
 const BlockMissingValues * ArrowIPCBlockInputFormat::getMissingValues() const
 {
-    return fallback ? fallback->getMissingValues() : &block_missing_values;
+    return &block_missing_values;
 }
 
 void ArrowIPCBlockInputFormat::resetParser()
 {
     IInputFormat::resetParser();
     prepared = false;
-    fallback.reset();
-    peekable.reset();
     decoder.reset();
     arrow_schema.reset();
+    geo_columns.clear();
     message_reader.reset();
     dictionary_value_fields.clear();
     record_batch_blocks.clear();

@@ -138,12 +138,13 @@ struct ArrowFileFooter
 /// input must support `SEEK_SET`, but not necessarily `SEEK_END`).
 ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size);
 
-/// Builds the Arrow file `Footer` FlatBuffer (schema + record-batch blocks) into `builder` (Finished).
+/// Builds the Arrow file `Footer` FlatBuffer (schema + dictionary/record-batch blocks) into `builder`.
 void buildFooter(
     flatbuffers::FlatBufferBuilder & builder,
     const Names & names,
     const DataTypes & types,
     const FormatSettings & settings,
+    const std::vector<ArrowFileBlock> & dictionary_blocks,
     const std::vector<ArrowFileBlock> & record_blocks);
 
 /// Maps a parsed Arrow field to the ClickHouse data type used for schema inference / the natural
@@ -154,6 +155,20 @@ DataTypePtr fieldToCHType(const ArrowField & field, const FormatSettings & setti
 /// mirroring the type choices of the native writer's record-batch encoder.
 void buildSchemaMessage(
     flatbuffers::FlatBufferBuilder & builder, const Names & names, const DataTypes & types, const FormatSettings & settings);
+
+/// Description of a dictionary-encoded output column (`output_format_arrow_low_cardinality_as_dictionary`).
+struct OutputDictionary
+{
+    int64_t id = 0;
+    int index_bit_width = 32;
+    bool index_is_signed = true;
+};
+
+/// For each top-level column, whether it is written dictionary-encoded and how. Top-level
+/// `LowCardinality` columns are dictionary-encoded (with sequential ids) when
+/// `output_format_arrow_low_cardinality_as_dictionary` is on; everything else is `nullopt`.
+/// Both the schema builder and the output format use this so that ids/index types agree.
+std::vector<std::optional<OutputDictionary>> assignOutputDictionaries(const DataTypes & types, const FormatSettings & settings);
 
 }
 

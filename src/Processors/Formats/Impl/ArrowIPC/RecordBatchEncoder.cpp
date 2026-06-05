@@ -11,6 +11,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -18,6 +19,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/IDataType.h>
 #include <IO/NetUtils.h>
 #include <Core/UUID.h>
@@ -54,6 +56,13 @@ bool RecordBatchEncoder::canNativelyEncode(const DataTypePtr & type)
     {
         const auto & m = assert_cast<const DataTypeMap &>(*t);
         return canNativelyEncode(m.getKeyType()) && canNativelyEncode(m.getValueType());
+    }
+    if (which.isVariant())
+    {
+        for (const auto & v : assert_cast<const DataTypeVariant &>(*t).getVariants())
+            if (!canNativelyEncode(v))
+                return false;
+        return true;
     }
     return which.isInt() || which.isUInt() || which.isFloat() || which.isEnum() || which.isDecimal()
         || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isString()
@@ -347,6 +356,13 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
         return;
     }
 
+    /// Variant maps to an Arrow dense union, which (unlike every other type) has no validity buffer.
+    if (isVariant(type))
+    {
+        encodeVariant(column, type, num_rows);
+        return;
+    }
+
     const IColumn * nested = &column;
     const IColumn * null_map_column = nullptr;
     DataTypePtr nested_type = type;
@@ -369,6 +385,46 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
     nodes.emplace_back(static_cast<int64_t>(num_rows), null_count);
     appendValidity(null_map_column, num_rows);
     encodeValues(*nested, nested_type, num_rows);
+}
+
+void RecordBatchEncoder::encodeVariant(const IColumn & column, const DataTypePtr & type, size_t num_rows)
+{
+    const auto & variant_column = assert_cast<const ColumnVariant &>(column);
+    const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
+    const size_t num_variants = variant_type.getVariants().size();
+    const auto & local_discriminators = variant_column.getLocalDiscriminators();
+    const auto & ch_offsets = variant_column.getOffsets();
+
+    /// The union node itself: no nulls are reported here (NULL rows use the dedicated null child).
+    nodes.emplace_back(static_cast<int64_t>(num_rows), 0);
+
+    PODArray<int8_t> type_ids(num_rows);
+    PODArray<int32_t> value_offsets(num_rows);
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        const auto local = local_discriminators[row];
+        if (local == ColumnVariant::NULL_DISCRIMINATOR)
+        {
+            type_ids[row] = static_cast<int8_t>(num_variants);
+            value_offsets[row] = 0;
+            continue;
+        }
+        type_ids[row] = static_cast<int8_t>(variant_column.globalDiscriminatorByLocal(local));
+        const UInt64 off = ch_offsets[row];
+        if (off > static_cast<UInt64>(std::numeric_limits<int32_t>::max()))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC dense union offset exceeds 32 bits");
+        value_offsets[row] = static_cast<int32_t>(off);
+    }
+    appendBuffer(type_ids.data(), num_rows * sizeof(int8_t));
+    appendBuffer(value_offsets.data(), num_rows * sizeof(int32_t));
+
+    /// Children in global discriminator order, then a trailing single-element null child for NULL rows.
+    for (size_t i = 0; i < num_variants; ++i)
+    {
+        const IColumn & child = variant_column.getVariantByGlobalDiscriminator(i);
+        encodeField(child, variant_type.getVariant(i), child.size());
+    }
+    nodes.emplace_back(1, 1);
 }
 
 RecordBatchEncoder::EncodedBatch RecordBatchEncoder::encode(const Columns & columns, const DataTypes & types, size_t num_rows)
