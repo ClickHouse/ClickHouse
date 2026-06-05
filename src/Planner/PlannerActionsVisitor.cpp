@@ -603,7 +603,8 @@ public:
         return node;
     }
 
-    const ActionsDAG::Node * addConstantIfNecessary(const std::string & node_name, const ColumnWithTypeAndName & column, bool is_deterministic)
+    const ActionsDAG::Node * addConstantIfNecessary(
+        const std::string & node_name, ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic)
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
@@ -618,7 +619,7 @@ public:
                 return it->second;
         }
 
-        const auto * node = &actions_dag.addColumn(column, is_deterministic);
+        const auto * node = &actions_dag.addColumn(std::move(column), std::move(type), std::move(name), is_deterministic);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -960,18 +961,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         return calculateConstantActionNodeName(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
     }();
 
-    ColumnWithTypeAndName column;
-    column.name = constant_node_name;
-    column.type = constant_type;
-    column.column = constant_node.getColumn();
-
-    actions_stack[0].addConstantIfNecessary(constant_node_name, column, constant_node.isDeterministic());
+    actions_stack[0].addConstantIfNecessary(
+        constant_node_name, constant_node.getColumn(), constant_type, constant_node_name, constant_node.isDeterministic());
 
     size_t actions_stack_size = actions_stack.size();
-    for (size_t i = 1; i < actions_stack_size; ++i)
+    if (actions_stack_size > 1)
     {
-        auto & actions_stack_node = actions_stack[i];
-        actions_stack_node.addInputConstantColumnIfNecessary(constant_node_name, column);
+        ColumnWithTypeAndName column{constant_node.getColumn(), constant_type, constant_node_name};
+        for (size_t i = 1; i < actions_stack_size; ++i)
+            actions_stack[i].addInputConstantColumnIfNecessary(constant_node_name, column);
     }
 
     return {constant_node_name, Levels(0)};
@@ -1096,22 +1094,21 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             "No set is registered for key {}",
             PreparedSets::toString(set_key, set_element_types));
 
-    ColumnWithTypeAndName column;
-    column.name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument);
-    column.type = std::make_shared<DataTypeSet>();
+    auto name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument);
+    auto type = std::make_shared<DataTypeSet>();
+    ColumnConstPtr column = ColumnConst::create(ColumnSet::create(1, std::move(set)), 0);
 
-    column.column = ColumnConst::create(ColumnSet::create(1, std::move(set)), 1);
-
-    actions_stack[0].addConstantIfNecessary(column.name, column, in_second_is_deterministic);
+    actions_stack[0].addConstantIfNecessary(name, column, type, name, in_second_is_deterministic);
 
     size_t actions_stack_size = actions_stack.size();
-    for (size_t i = 1; i < actions_stack_size; ++i)
+    if (actions_stack_size > 1)
     {
-        auto & actions_stack_node = actions_stack[i];
-        actions_stack_node.addInputConstantColumnIfNecessary(column.name, column);
+        ColumnWithTypeAndName column_with_name_and_type{column, type, name};
+        for (size_t i = 1; i < actions_stack_size; ++i)
+            actions_stack[i].addInputConstantColumnIfNecessary(name, column_with_name_and_type);
     }
 
-    return {column.name, Levels(0)};
+    return {name, Levels(0)};
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitIndexHintFunction(const QueryTreeNodePtr & node)

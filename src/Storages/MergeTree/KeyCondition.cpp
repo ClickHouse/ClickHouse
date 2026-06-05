@@ -774,11 +774,10 @@ static bool isTrivialCast(const ActionsDAG::Node & node)
     if ((name != "CAST" && name != "_CAST") || node.children.size() != 2 || node.children[1]->type != ActionsDAG::ActionType::COLUMN)
         return false;
 
-    const auto * column_const = typeid_cast<const ColumnConst *>(node.children[1]->column.get());
-    if (!column_const)
+    if (!node.children[1]->column)
         return false;
 
-    Field field = column_const->getField();
+    Field field = node.children[1]->column->getField();
     if (field.getType() != Field::Types::String)
         return false;
 
@@ -837,7 +836,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
 
     auto is_const = [](const ActionsDAG::Node & n)
     {
-        return n.type == ActionsDAG::ActionType::COLUMN && n.column && isColumnConst(*n.column);
+        return n.type == ActionsDAG::ActionType::COLUMN;
     };
 
     const bool c0 = is_const(*node.children[0]);
@@ -974,19 +973,18 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
         case (ActionsDAG::ActionType::COLUMN):
         {
             String name;
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
-                column_const && column_const->getDataType() != TypeIndex::Function)
+            if (node.column && node.column->getDataType() != TypeIndex::Function)
             {
                 /// Re-generate column name for constant.
                 /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
                 /// DAG from the PK does not use it. This breaks matching by column name sometimes.
                 /// Ideally, we should not compare names, but DAG subtrees instead.
-                name = ASTLiteral(column_const->getField()).getColumnName();
+                name = ASTLiteral(node.column->getField()).getColumnName();
             }
             else
                 name = node.result_name;
 
-            res = &inverted_dag.addColumn({node.column, node.result_type, name});
+            res = &inverted_dag.addColumn(node.column, node.result_type, name);
             break;
         }
         case (ActionsDAG::ActionType::ALIAS):
@@ -1665,7 +1663,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (!can_transform_constant)
         return false;
 
-    auto const_column = out_type->createColumnConst(1, out_value);
+    ColumnPtr const_column = out_type->createColumnConst(1, out_value);
 
     ColumnPtr transformed_const_column;
     DataTypePtr transformed_const_type;
@@ -2099,7 +2097,7 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
 
     out_is_injective = isDeterministicTransformInjective(dag.actions->getActionsDAG(), expr_name, dag.output_name);
 
-    auto const_column = out_type->createColumnConst(1, out_value);
+    ColumnPtr const_column = out_type->createColumnConst(1, out_value);
 
     ColumnPtr transformed_const_column;
     DataTypePtr transformed_const_type;
@@ -2874,7 +2872,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     const ActionsDAG::Node * next_node = nullptr;
                     for (const auto * arg : cur_node->children)
                     {
-                        if (arg->column && isColumnConst(*arg->column))
+                        if (arg->column)
                             continue;
 
                         if (next_node)
@@ -2942,7 +2940,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     {
                         const auto * left = func->children[0];
                         const auto * right = func->children[1];
-                        if (left->column && isColumnConst(*left->column))
+                        if (left->column)
                         {
                             const_arg = {left->result_type->createColumnConst(0, (*left->column)[0]), left->result_type, ""};
                             kind = FunctionWithOptionalConstArg::Kind::LEFT_CONST;
