@@ -46,7 +46,10 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
 
-        return std::make_shared<LimitByTransform>(header, group_length, group_offset, in_order, columns);
+        if (input_sorted_by_keys)
+            return std::make_shared<LimitBySortedStreamTransform>(header, group_length, group_offset, columns);
+
+        return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns);
     });
 }
 

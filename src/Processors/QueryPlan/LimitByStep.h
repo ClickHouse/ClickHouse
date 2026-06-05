@@ -46,7 +46,7 @@ private:
 
     Names columns;
 
-    bool in_order = false;
+    bool input_sorted_by_keys = false;
     bool skip_stream_merging = false;
 };
 
