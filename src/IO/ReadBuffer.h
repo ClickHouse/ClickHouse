@@ -184,6 +184,11 @@ public:
       */
     virtual void prefetch(Priority) {}
 
+    virtual bool poll(size_t /*timeout_microseconds*/) const
+    {
+        return true;
+    }
+
     /**
      * Set upper bound for read range [..., position).
      * Useful for reading from remote filesystem, when it matters how much we read.

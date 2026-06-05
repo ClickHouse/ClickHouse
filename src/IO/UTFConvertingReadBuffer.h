@@ -31,6 +31,8 @@ public:
 
     const ReadBuffer & getWrappedReadBuffer() const override { return *impl; }
 
+    bool poll(size_t timeout_microseconds) const override;
+
 private:
     bool nextImpl() override;
 
@@ -57,6 +59,7 @@ private:
 
     ReadBuffer * impl;
     std::unique_ptr<ReadBuffer> owned_impl;
+    bool bom_detected = false;
     Encoding encoding = Encoding::UTF8;
 
     /// Fixed size array for holding bytes that were read during BOM detection

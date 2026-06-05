@@ -51,6 +51,7 @@ TEST(UTFConvertingReadBuffer, SurrogateBoundary)
     String utf8_output;
     WriteBufferFromString out(utf8_output);
     copyData(utf_in, out);
+    out.finalize();
     
     // Verify the end of the output string
     // It should be 'A' followed by U+FFFD (replacement character) and U+10400

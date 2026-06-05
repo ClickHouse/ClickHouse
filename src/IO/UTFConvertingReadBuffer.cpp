@@ -1,4 +1,6 @@
 #include <IO/UTFConvertingReadBuffer.h>
+#include <IO/ParallelReadBuffer.h>
+#include <IO/PeekableReadBuffer.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -47,7 +49,6 @@ UTFConvertingReadBuffer::UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> imp
     , owned_impl(std::move(impl_))
     , pending_bytes{}
 {
-    detectBOM();
 }
 
 UTFConvertingReadBuffer::UTFConvertingReadBuffer(ReadBuffer & impl_)
@@ -55,7 +56,6 @@ UTFConvertingReadBuffer::UTFConvertingReadBuffer(ReadBuffer & impl_)
     , impl(&impl_)
     , pending_bytes{}
 {
-    detectBOM();
 }
 
 UTFConvertingReadBuffer::~UTFConvertingReadBuffer() = default;
@@ -420,6 +420,12 @@ bool UTFConvertingReadBuffer::nextImpl()
     if (eof_reached)
         return false;
 
+    if (!bom_detected)
+    {
+        detectBOM();
+        bom_detected = true;
+    }
+
     if (encoding == Encoding::UTF8)
     {
         if (pending_bytes_count > 0)
@@ -480,6 +486,47 @@ bool UTFConvertingReadBuffer::nextImpl()
 
     eof_reached = true;
     return false;
+}
+
+bool UTFConvertingReadBuffer::poll(size_t timeout_microseconds) const
+{
+    if (hasPendingData() || pending_bytes_count > 0)
+    {
+        return true;
+    }
+
+    if (impl && !working_buffer.empty() && working_buffer.begin() != memory.data())
+    {
+        impl->position() = const_cast<char *>(pos);
+    }
+
+    const ReadBuffer * current = impl;
+    while (current)
+    {
+        if (const auto * wrapper = dynamic_cast<const ReadBufferWrapperBase *>(current))
+        {
+            current = &wrapper->getWrappedReadBuffer();
+        }
+        else if (const auto * parallel = dynamic_cast<const ParallelReadBuffer *>(current))
+        {
+            current = &parallel->getReadBuffer();
+        }
+        else if (const auto * peekable = dynamic_cast<const PeekableReadBuffer *>(current))
+        {
+            current = &peekable->getSubBuffer();
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    if (current)
+    {
+        return current->poll(timeout_microseconds);
+    }
+
+    return true;
 }
 
 }
