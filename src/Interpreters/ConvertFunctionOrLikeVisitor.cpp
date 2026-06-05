@@ -46,10 +46,10 @@ bool isExpressionNonDeterministic(const ASTPtr & ast, const ContextPtr & context
 /// Stores information about a single LIKE/ILIKE/match pattern
 struct PatternData
 {
-    String substring;           /// If pattern is %substring%, this holds the substring
-    String regexp;              /// The regexp equivalent
-    bool is_substring;          /// True if pattern is a pure substring match (%substring%)
-    bool is_case_insensitive;   /// True if case-insensitive (ILIKE or (?i) prefix)
+    String substring;                   /// If pattern is %substring%, this holds the substring
+    String regexp;                      /// The regexp equivalent
+    bool is_substring = false;          /// True if pattern is a pure substring match (%substring%)
+    bool is_case_insensitive = false;   /// True if case-insensitive (ILIKE or (?i) prefix)
 };
 
 /// Tracks information about patterns for a single identifier/expression
@@ -303,7 +303,7 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
                 /// without explicit aliases produce identical first/second parts and merge normally.
                 std::pair<String, String> key{identifier->getAliasOrColumnName(), identifier->getColumnNameWithoutAlias()};
                 auto it = key_to_index.find(key);
-                size_t idx;
+                size_t idx = 0;
                 if (it == key_to_index.end())
                 {
                     idx = per_key_data.size();

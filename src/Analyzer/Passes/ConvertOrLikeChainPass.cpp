@@ -72,10 +72,10 @@ bool isExpressionNonDeterministic(const QueryTreeNodePtr & node)
 /// Stores information about a single LIKE/ILIKE/match pattern
 struct PatternData
 {
-    String substring;           /// If pattern is %substring%, this holds the substring
-    String regexp;              /// The regexp equivalent
-    bool is_substring;          /// True if pattern is a pure substring match (%substring%)
-    bool is_case_insensitive;   /// True if case-insensitive (ILIKE or (?i) prefix)
+    String substring;                   /// If pattern is %substring%, this holds the substring
+    String regexp;                      /// The regexp equivalent
+    bool is_substring = false;          /// True if pattern is a pure substring match (%substring%)
+    bool is_case_insensitive = false;   /// True if case-insensitive (ILIKE or (?i) prefix)
 };
 
 /// Tracks information about patterns for a single identifier/expression
@@ -343,7 +343,7 @@ public:
             }
 
             auto it = key_to_index.find(like_first_argument);
-            size_t idx;
+            size_t idx = 0;
             if (it == key_to_index.end())
             {
                 idx = per_key_data.size();
