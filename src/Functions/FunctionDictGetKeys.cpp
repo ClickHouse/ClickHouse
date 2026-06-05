@@ -391,6 +391,13 @@ private:
         VectorWithMemoryTracking<UInt128> bucket_value_hashes;
         bucket_value_hashes.reserve(input_rows_count);
 
+        /// One representative value per bucket. The hash is only a prefilter and cache key; before appending
+        /// keys for a dictionary row we confirm the attribute value with `equals` against this representative
+        /// (see `fillMissingBucketsFromDict`). This keeps the vector path consistent with the constant path,
+        /// in particular for `NULL` and `NaN`, where `equals` is false even though the hashes are equal.
+        auto bucket_values = attribute_column_type->createColumn();
+        bucket_values->reserve(input_rows_count);
+
         for (size_t cur_row_id = 0; cur_row_id < input_rows_count; ++cur_row_id)
         {
             const UInt128 value_hash = sipHash128AtRow(*values_column, cur_row_id);
@@ -406,6 +413,7 @@ private:
                 value_hash_to_bucket_id[value_hash] = new_bucket_id;
                 row_id_to_bucket_id[cur_row_id] = new_bucket_id;
                 bucket_value_hashes.push_back(value_hash);
+                bucket_values->insertFrom(*values_column, cur_row_id);
             }
         }
 
@@ -433,7 +441,23 @@ private:
 
         if (!missing_bucket_ids.empty())
         {
-            fillMissingBucketsFromDict(dict, attr_name, key_types, bucket_cached_bytes, missing_bucket_ids, value_hash_to_bucket_id);
+            /// Build the `equals` function once (shared across all chunks); it confirms that a dictionary row
+            /// whose attribute hashes into a missing bucket actually equals that bucket's representative value.
+            auto equals_resolver = FunctionFactory::instance().get("equals", helper.context);
+            ColumnsWithTypeAndName equals_signature
+                = {{nullptr, attribute_column_type, "attr"}, {nullptr, attribute_column_type, "value"}};
+            auto equals_function = equals_resolver->build(equals_signature);
+
+            fillMissingBucketsFromDict(
+                dict,
+                attr_name,
+                key_types,
+                bucket_cached_bytes,
+                missing_bucket_ids,
+                value_hash_to_bucket_id,
+                *bucket_values,
+                equals_function,
+                attribute_column_type);
 
             for (size_t bucket_id : missing_bucket_ids)
             {
@@ -545,7 +569,10 @@ private:
         const DataTypes & key_types,
         VectorWithMemoryTracking<SerializedKeysPtr> & out,
         const VectorWithMemoryTracking<size_t> & missing_bucket_ids,
-        const HashToBucket & value_hash_to_bucket_id) const
+        const HashToBucket & value_hash_to_bucket_id,
+        const IColumn & bucket_values,
+        const FunctionBasePtr & equals_function,
+        const DataTypePtr & attr_type) const
     {
         VectorWithMemoryTracking<UInt8> is_missing(out.size(), 0);
         for (size_t id : missing_bucket_ids)
@@ -587,6 +614,14 @@ private:
                 chassert(key_columns[key_pos]->size() == rows_in_chunk);
             }
 
+            /// The hash only selects a candidate bucket per dictionary row. Before appending keys we confirm
+            /// the match with `equals` against the bucket's representative value, exactly like the constant
+            /// path. This is required for correct `NULL`/`NaN` semantics (and guards against hash collisions):
+            /// `equals(NULL, NULL)` and `equals(NaN, NaN)` are not true, so such rows must not match.
+            auto rhs_column = attr_type->createColumn();
+            rhs_column->reserve(rows_in_chunk);
+            VectorWithMemoryTracking<ssize_t> row_candidate_bucket(rows_in_chunk, -1);
+
             for (size_t row_id = 0; row_id < rows_in_chunk; ++row_id)
             {
                 const UInt128 value_hash = sipHash128AtRow(*attr_col, row_id);
@@ -594,15 +629,50 @@ private:
                 /// Not in user given `values_column`
                 const auto * it = value_hash_to_bucket_id.find(value_hash);
                 if (it == value_hash_to_bucket_id.end())
+                {
+                    rhs_column->insertDefault();
                     continue;
+                }
 
                 const size_t bucket_id = it->getMapped();
-
                 chassert(bucket_id < out.size());
 
                 /// In user given `values_column` but not needed
                 if (!is_missing[bucket_id])
+                {
+                    rhs_column->insertDefault();
                     continue;
+                }
+
+                row_candidate_bucket[row_id] = static_cast<ssize_t>(bucket_id);
+                rhs_column->insertFrom(bucket_values, bucket_id);
+            }
+
+            ColumnsWithTypeAndName equals_args
+                = {{attr_col, attr_type, "attr"}, {std::move(rhs_column), attr_type, "value"}};
+            ColumnPtr filter_column
+                = equals_function->execute(equals_args, equals_function->getResultType(), rows_in_chunk, false)
+                      ->convertToFullColumnIfConst();
+
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(filter_column.get()))
+            {
+                auto materialized = ColumnUInt8::create(rows_in_chunk);
+                auto & filter_data = materialized->getData();
+                const auto & data = assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
+                const auto & nullmap = nullable->getNullMapData();
+                for (size_t i = 0; i < rows_in_chunk; ++i)
+                    filter_data[i] = data[i] & ~nullmap[i];
+                filter_column = std::move(materialized);
+            }
+
+            const auto & filter = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
+
+            for (size_t row_id = 0; row_id < rows_in_chunk; ++row_id)
+            {
+                if (row_candidate_bucket[row_id] < 0 || !filter[row_id])
+                    continue;
+
+                const size_t bucket_id = static_cast<size_t>(row_candidate_bucket[row_id]);
 
                 auto & mapped = out[bucket_id];
                 if (!mapped)
