@@ -186,7 +186,12 @@ TEST(Context, TableFunctionResultsCopyRace)
 TEST(Context, MakeQueryContextDoesNotInheritPrivileges)
 {
     /// Stand in for the shared session/global context whose `QueryPrivilegesInfo` gets polluted.
+    /// `Context::createCopy` shares the `query_privileges_info` pointer with `getContext().context`,
+    /// so give the parent its own accumulator first — otherwise `addQueryPrivilegesInfo` below would
+    /// write the fake privileges through to the process-global context and make later gtests that copy
+    /// it (without calling `makeQueryContext`) order-dependent.
     auto parent_context = Context::createCopy(getContext().context);
+    parent_context->makeQueryContext();
     parent_context->addQueryPrivilegesInfo("SELECT(naughty_column) ON some_db.some_table", true);
     parent_context->addQueryPrivilegesInfo("INSERT ON some_db.some_table", false);
 
