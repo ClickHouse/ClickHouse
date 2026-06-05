@@ -2103,8 +2103,12 @@ class TestCase:
         # --allow_repeated_settings, the last occurrence is what takes effect.
         if new_options != "":
             new_options += " --allow_repeated_settings"
+            # Keep `client_options` (e.g. stress-job settings for `.sh` tests) in the exported variable.
+            # `randomize_detach` makes `new_options` non-empty for almost every test, so this branch is taken
+            # nearly always; dropping `client_options` here would stop them reaching `$CLICKHOUSE_CLIENT`.
+            # Put it last so user-supplied `--client-option` values win (last wins with --allow_repeated_settings).
             os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-                new_options + " " + self.base_client_options + " "
+                new_options + " " + self.base_client_options + " " + client_options + " "
             )
         elif client_options:
             client_options += " --allow_repeated_settings"
