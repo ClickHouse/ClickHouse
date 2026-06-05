@@ -403,8 +403,8 @@
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \
-    M(QueryAnalysisMicroseconds, "Total time spent in query analysis: name and type resolution of the query tree (the QueryAnalysisPass). This is a part of QueryTreeOptimizeMicroseconds.", ValueType::Microseconds) \
-    M(QueryTreeOptimizeMicroseconds, "Total time spent running query tree passes: query analysis and all query-tree-level optimizations. Includes QueryAnalysisMicroseconds.", ValueType::Microseconds) \
+    M(QueryAnalysisMicroseconds, "Total time spent in query analysis: name and type resolution of the query tree by QueryAnalysisPass.", ValueType::Microseconds) \
+    M(QueryTreeOptimizeMicroseconds, "Total time spent running query tree passes: query analysis and query tree level optimizations.", ValueType::Microseconds) \
     M(QueryPlanningMicroseconds, "Total time spent building the query plan from the query tree.", ValueType::Microseconds) \
     \
     M(DeltaLakePartitionPrunedFiles, "Number of skipped files during DeltaLake partition pruning", ValueType::Number) \

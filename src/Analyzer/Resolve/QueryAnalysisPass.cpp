@@ -1,6 +1,7 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
+
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
 namespace ProfileEvents
