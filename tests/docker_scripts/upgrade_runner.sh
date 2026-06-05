@@ -368,6 +368,15 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       this regex covers the other variant (peer wins, read returns EOF or another transient socket error).
 #       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
 #       RaftInstance errors are not masked.
+# `Failed to flush system log system.metric_log` + `DEADLOCK_AVOIDED` is a transient lock-timeout emitted by
+#       `SystemLog<MetricLogElement>::flushImpl` when the background `MetricLog` flush loop races with the
+#       ongoing upgrade-test shutdown sequence. Another worker (DROP/RENAME/DETACH on `system.metric_log`,
+#       or a parallel mutation/merge) holds the table-level write lock, the flush blocks for the 60s timeout,
+#       and then aborts with code 473 (`DEADLOCK_AVOIDED`). Losing a few `MetricLogElement` samples during
+#       shutdown is harmless; the upgrade-check stage is not asserting on metric continuity. Filtered via
+#       regex in the secondary pipe below to require BOTH the `SystemLog` flush wrapper for `metric_log` AND
+#       the `DEADLOCK_AVOIDED` error code together, so unrelated lock-timeout errors and unrelated
+#       `metric_log` errors are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -449,6 +458,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "rdk:FAIL.*Connect to.*failed: Connection refused" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
+    | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
