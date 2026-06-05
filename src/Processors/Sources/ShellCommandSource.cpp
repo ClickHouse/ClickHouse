@@ -542,56 +542,60 @@ namespace
                 if (thread.joinable())
                     thread.join();
 
-            /// Resource accounting must observe the borrow's resident set before
-            /// the worker is torn down or the slot is handed back to the pool —
-            /// either path destroys `/proc/<pid>/{stat,status}` and the sampler
-            /// would then read zero CPU and zero `VmHWM`.
-            /// `recordReleased` reads procfs and may throw, but `cleanup` is
-            /// called from the destructor — swallow any exception so the
-            /// destructor stays noexcept.
+            /// Record this borrow's resource usage before the child is gone. The two
+            /// executable UDF types measure it differently.
             if (configuration.sampler)
             {
-                try
+                if (process_pool)
                 {
-                    configuration.sampler->recordReleased();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("ShellCommandSource");
-                }
-            }
-
-            /// Executable (non-pool) path: account the child's `rusage`, which
-            /// `ShellCommand::tryWaitImpl` captures via `wait4`. Under `check_exit_code=true`
-            /// `prepare` has already reaped the child (`isWaitCalled()`), so the usage is
-            /// just read back. Under `check_exit_code=false` the source does not wait for
-            /// the child, so it is reaped here — non-blocking and without status validation:
-            ///   * non-blocking: a child that closed stdout but keeps running is left to
-            ///     `~ShellCommand`'s bounded `command_termination_timeout` + SIGTERM
-            ///     teardown, so enabling profiling cannot turn cleanup into a query hang;
-            ///   * no status check: a non-zero exit is not an error under
-            ///     `check_exit_code=false`, so it must not raise CHILD_WAS_NOT_EXITED_NORMALLY.
-            /// Usage is recorded only if the child has already exited; the `try/catch`
-            /// guards a genuine `wait4` failure.
-            if (configuration.sampler && command && !process_pool)
-            {
-                if (!command->isWaitCalled())
-                {
+                    /// Resource accounting must observe the borrow's resident set before
+                    /// the worker is torn down or the slot is handed back to the pool —
+                    /// either path destroys `/proc/<pid>/{stat,status}` and the sampler
+                    /// would then read zero CPU and zero `VmHWM`.
+                    /// `recordReleased` reads procfs and may throw, but `cleanup` is
+                    /// called from the destructor — swallow any exception so the
+                    /// destructor stays noexcept.
                     try
                     {
-                        command->tryReapWithoutStatusCheck();
+                        configuration.sampler->recordReleased();
                     }
                     catch (...)
                     {
                         tryLogCurrentException("ShellCommandSource");
                     }
                 }
+                else if (command)
+                {
+                    /// Executable (non-pool) path: account the child's `rusage`, which
+                    /// `ShellCommand::tryWaitImpl` captures via `wait4`. Under `check_exit_code=true`
+                    /// `prepare` has already reaped the child (`isWaitCalled()`), so the usage is
+                    /// just read back. Under `check_exit_code=false` the source does not wait for
+                    /// the child, so it is reaped here — non-blocking and without status validation:
+                    ///   * non-blocking: a child that closed stdout but keeps running is left to
+                    ///     `~ShellCommand`'s bounded `command_termination_timeout` + SIGTERM
+                    ///     teardown, so enabling profiling cannot turn cleanup into a query hang;
+                    ///   * no status check: a non-zero exit is not an error under
+                    ///     `check_exit_code=false`, so it must not raise CHILD_WAS_NOT_EXITED_NORMALLY.
+                    /// Usage is recorded only if the child has already exited; the `try/catch`
+                    /// guards a genuine `wait4` failure.
+                    if (!command->isWaitCalled())
+                    {
+                        try
+                        {
+                            command->tryReapWithoutStatusCheck();
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException("ShellCommandSource");
+                        }
+                    }
 
-                if (command->wasChildReaped())
-                    configuration.sampler->recordExecutableFinished(
-                        command->getLastChildUserTimeMicroseconds(),
-                        command->getLastChildSystemTimeMicroseconds(),
-                        command->getLastChildPeakRssBytes());
+                    if (command->wasChildReaped())
+                        configuration.sampler->recordExecutableFinished(
+                            command->getLastChildUserTimeMicroseconds(),
+                            command->getLastChildSystemTimeMicroseconds(),
+                            command->getLastChildPeakRssBytes());
+                }
             }
 
             if (command_is_invalid)
