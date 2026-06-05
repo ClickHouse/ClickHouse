@@ -67,8 +67,8 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     /// Profile events must reflect only the row groups that belong to this bucket, otherwise
     /// every bucket of a single-file split would report the file's totals and the events would
     /// be multiplied by the number of buckets.
-    size_t read_count;
-    size_t total_in_partition;
+    size_t read_count = 0;
+    size_t total_in_partition = 0;
     if (row_groups_to_read.has_value())
     {
         read_count = 0;
