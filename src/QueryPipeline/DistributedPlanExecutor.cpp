@@ -1028,11 +1028,10 @@ protected:
                 }
             }
 
-            /// Forget a task only after the worker reports it terminal. `cancel` merely requests
-            /// termination, so the fragment may still be writing exchange or temporary outputs;
-            /// `forget` drops the worker's only handle to it, which would orphan that fragment. Poll
-            /// for the terminal state with a bounded wait and leave a task that does not settle for
-            /// the worker to reclaim on shutdown rather than orphaning it.
+            /// `forget` drops the worker's only handle to a task, so forgetting one that is still
+            /// running would orphan a fragment that keeps writing exchange and temporary outputs.
+            /// `cancel` only requests termination, so wait for the terminal state before forgetting,
+            /// and leave a task that does not settle for the worker to reclaim on shutdown.
             for (auto & task : tasks_to_cancel)
             {
                 if (waitForTaskTerminal(task))

@@ -304,12 +304,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
     }
 
 #ifdef OS_LINUX
-    /// Streaming exchanges need a streaming exchange listener on the producing nodes, which starts
-    /// only when both `distributed_query.streaming_exchange_port` and `streaming_exchange_listen_host`
-    /// are configured (see programs/server/Server.cpp). Resolve the default exchange kind to Streaming
-    /// only when the listener is available, otherwise use Persisted. Reject an explicit Streaming
-    /// request without a listener so the misconfiguration surfaces instead of producing a plan whose
-    /// fragments connect to a listener that does not exist.
+    /// The streaming exchange listener starts only when both the port and a listen host are set.
+    /// Default to Streaming only when it is available, else Persisted, and reject an explicit Streaming
+    /// request without a listener instead of planning fragments that connect to a missing listener.
     const auto & config = from->getConfigRef();
     const bool streaming_listener_configured =
         config.getUInt("distributed_query.streaming_exchange_port", 0) != 0
