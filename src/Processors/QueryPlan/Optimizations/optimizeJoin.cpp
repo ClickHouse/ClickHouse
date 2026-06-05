@@ -1298,6 +1298,101 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     return result;
 }
 
+static void collectJoinGraphRelationHeaders(
+    const QueryPlan::Node * node,
+    int join_steps_limit,
+    const JoinSettings & join_settings,
+    std::vector<SharedHeader> & relation_headers);
+
+/// Mirrors `buildQueryGraph` for a single join node: collects the output headers of the relations
+/// that the join order optimizer would produce for it (descending into flattenable child joins).
+static void collectJoinGraphRelationHeadersForJoin(
+    const QueryPlan::Node & join_node,
+    int join_steps_limit,
+    const JoinSettings & join_settings,
+    std::vector<SharedHeader> & relation_headers)
+{
+    const auto * join_step = typeid_cast<const JoinStepLogical *>(join_node.step.get());
+    if (!join_step || join_node.children.size() != 2)
+    {
+        relation_headers.push_back(join_node.step->getOutputHeader());
+        return;
+    }
+
+    const auto join_kind = join_step->getJoinOperator().kind;
+    const auto type_changing_sides = join_step->typeChangingSides();
+
+    const bool allow_left_subgraph
+        = !type_changing_sides.contains(JoinTableSide::Left) && (isInnerOrCross(join_kind) || isLeft(join_kind));
+    const size_t lhs_before = relation_headers.size();
+    collectJoinGraphRelationHeaders(join_node.children[0], allow_left_subgraph ? join_steps_limit - 1 : 0, join_settings, relation_headers);
+    const size_t lhs_count = relation_headers.size() - lhs_before;
+
+    const bool allow_right_subgraph
+        = !type_changing_sides.contains(JoinTableSide::Right) && (isInnerOrCross(join_kind) || isRight(join_kind));
+    collectJoinGraphRelationHeaders(
+        join_node.children[1], allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0, join_settings, relation_headers);
+}
+
+/// Mirrors `addChildQueryGraph`: either flattens a child join into multiple relations, or treats
+/// the (possibly trivial-step-peeled) node as a single relation and records its output header.
+static void collectJoinGraphRelationHeaders(
+    const QueryPlan::Node * node,
+    int join_steps_limit,
+    const JoinSettings & join_settings,
+    std::vector<SharedHeader> & relation_headers)
+{
+    if (isTrivialStep(node))
+        node = node->children[0];
+
+    if (const auto * child_join_step = typeid_cast<const JoinStepLogical *>(node->step.get());
+        child_join_step && !child_join_step->isOptimized())
+    {
+        const auto child_join_kind = child_join_step->getJoinOperator().kind;
+        const bool allow_child_join_kind
+            = (isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind))
+            && child_join_step->getJoinOperator().strictness == JoinStrictness::All
+            && child_join_step->typeChangingSides().empty();
+
+        if (child_join_step->getJoinSettings() == join_settings && join_steps_limit > 1 && allow_child_join_kind)
+        {
+            collectJoinGraphRelationHeadersForJoin(*node, join_steps_limit, join_settings, relation_headers);
+            return;
+        }
+    }
+
+    relation_headers.push_back(node->step->getOutputHeader());
+}
+
+/// The join order optimizer reconstructs join steps using `JoinExpressionActions`, which requires
+/// column names to be unique across the two sides of every reconstructed join. When two relations in
+/// the join graph share a column name, reordering can place them on opposite sides of a reconstructed
+/// join and hit a `LOGICAL_ERROR`. This can happen, for example, when parallel replicas or distributed
+/// query rewriting reuses table identifiers (e.g. both relations produce `__table1`), or when scalar
+/// subquery results collide with join table aliases. The unoptimized join handles such names
+/// correctly, so detect this up front and skip the reordering in that case.
+static bool joinGraphHasOverlappingColumnNames(
+    const QueryPlan::Node & join_node,
+    int join_steps_limit,
+    const JoinSettings & join_settings)
+{
+    std::vector<SharedHeader> relation_headers;
+    collectJoinGraphRelationHeadersForJoin(join_node, join_steps_limit, join_settings, relation_headers);
+
+    std::unordered_set<std::string_view> seen_names;
+    for (const auto & header : relation_headers)
+    {
+        if (!header)
+            continue;
+        for (const auto & column : *header)
+        {
+            if (!seen_names.insert(column.name).second)
+                return true;
+        }
+    }
+    return false;
+}
+
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
@@ -1334,35 +1429,23 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
         return;
     }
 
-    /// Skip join order optimization if children's output headers have overlapping column names.
-    /// The `JoinExpressionActions` constructor used during join reconstruction requires unique column names
-    /// across left and right sides. Overlapping names can occur when scalar subquery results and join
-    /// table aliases collide (e.g. both sides produce `__table2`).
-    {
-        auto left_header = node.children[0]->step->getOutputHeader();
-        auto right_header = node.children[1]->step->getOutputHeader();
-
-        std::unordered_set<std::string_view> left_names;
-        for (const auto & col : *left_header)
-            left_names.insert(col.name);
-
-        for (const auto & col : *right_header)
-        {
-            if (left_names.contains(col.name))
-            {
-                join_step->setOptimized();
-                return;
-            }
-        }
-    }
-
-    QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
-    query_graph_builder.context->dummy_stats = join_step->getDummyStats();
-
     int query_graph_size_limit = safe_cast<int>(optimization_settings.query_plan_optimize_join_order_limit);
     if ((isSwapOnlyJoinStrictness(strictness) || isSwapOnlyJoinKind(kind)) && query_graph_size_limit > 2)
         /// Do not reorder joins, only allow swap
         query_graph_size_limit = 2;
+
+    /// Skip join order optimization when the join graph contains relations with overlapping column
+    /// names, which the `JoinExpressionActions`-based reconstruction does not support. See the comment
+    /// on `joinGraphHasOverlappingColumnNames`. This generalizes a check over the immediate children to
+    /// the whole flattened relation set, so it also covers overlaps that only appear after flattening.
+    if (joinGraphHasOverlappingColumnNames(node, query_graph_size_limit, join_step->getJoinSettings()))
+    {
+        join_step->setOptimized();
+        return;
+    }
+
+    QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
+    query_graph_builder.context->dummy_stats = join_step->getDummyStats();
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);

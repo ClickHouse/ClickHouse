@@ -20,6 +20,7 @@
 #include <Storages/System/StorageSystemCompletions.h>
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
+#include <Storages/System/StorageSystemDataSkippingIndexTypes.h>
 #include <Storages/System/StorageSystemDataTypeFamilies.h>
 #include <Storages/System/StorageSystemDictionarySources.h>
 #include <Storages/System/StorageSystemDetachedParts.h>
@@ -107,6 +108,9 @@
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
 #include <Storages/System/StorageSystemZooKeeperWatches.h>
+#if USE_NURAFT
+#include <Storages/System/StorageSystemKeeperChangelogs.h>
+#endif
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
 #include <Storages/System/StorageSystemJemallocStats.h>
@@ -146,7 +150,7 @@
 namespace DB
 {
 
-void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
+void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server)
 {
     auto component_guard = Coordination::setCurrentComponent("attachSystemTablesServer");
     attachNoDescription<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
@@ -176,6 +180,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemAggregateFunctionCombinators>(context, system_database, "aggregate_function_combinators", "Contains a list of all available aggregate function combinators, which could be applied to aggregate functions and change the way they work.");
     attach<StorageSystemDataTypeFamilies>(context, system_database, "data_type_families", "Contains a list of all available native data types along with all the aliases used for compatibility with other DBMS.");
     attach<StorageSystemDictionarySources>(context, system_database, "dictionary_sources", "Contains a list of all available dictionary sources along with their embedded documentation.");
+    attach<StorageSystemDataSkippingIndexTypes>(context, system_database, "data_skipping_index_types", "Contains a list of all available data skipping index types along with their embedded documentation.");
     attach<StorageSystemCollations>(context, system_database, "collations", "Contains a list of all available collations for alphabetical comparison of strings.");
     attach<StorageSystemDatabaseEngines>(context, system_database, "database_engines", "Contains a list of all available database engines");
     attach<StorageSystemTableEngines>(context, system_database, "table_engines", "Contains a list of all available table engines along with information whether a particular table engine supports some specific features (e.g. settings, skipping indices, projections, replication, TTL, deduplication, parallel insert, etc.)");
@@ -283,6 +288,13 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
         attach<StorageSystemZooKeeperConnection>(context, system_database, "zookeeper_connection", "Shows the information about current connections to [Zoo]Keeper (including auxiliary [ZooKeepers)");
         attach<StorageSystemZooKeeperWatches>(context, system_database, "zookeeper_watches", "Shows all active watches across all [Zoo]Keeper connections.");
     }
+
+#if USE_NURAFT
+    if (has_keeper_server)
+    {
+        attach<StorageSystemKeeperChangelogs>(context, system_database, "keeper_changelogs", "Contains information about changelogs stored on this Keeper node.");
+    }
+#endif
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
     {
