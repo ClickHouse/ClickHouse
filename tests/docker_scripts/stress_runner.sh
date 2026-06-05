@@ -301,6 +301,10 @@ python3 /repo/ci/jobs/scripts/stress/stress.py --hung-check --drop-databases --o
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
+# Stop ThreadFuzzer before shutdown to avoid injected sleeps making
+# SystemLog flush so slow that stop_server declares a false deadlock.
+clickhouse-client --receive_timeout 30 --query "SYSTEM STOP THREAD FUZZER" ||:
+
 stop_server
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
 
