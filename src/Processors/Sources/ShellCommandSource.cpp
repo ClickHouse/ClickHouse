@@ -850,10 +850,10 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     }
     else
     {
-        /// Only executable (non-pool) UDFs collect child rusage via `wait4`; the
-        /// attached sampler is that signal. Pool workers (which meter via /proc)
-        /// and non-UDF consumers (StorageExecutable, dictionaries, bridges) keep
-        /// plain `waitpid`.
+        /// Collect the child's rusage (via `wait4`) only for executable (non-pool)
+        /// UDFs, marked by an attached sampler. Pool workers meter via /proc and
+        /// non-UDF consumers (StorageExecutable, dictionaries, bridges) read no
+        /// usage, so the flag is set only when a sampler is present.
         command_config.collect_resource_usage = (source_configuration.sampler != nullptr);
         if (configuration.execute_direct)
             process = ShellCommand::executeDirect(command_config);

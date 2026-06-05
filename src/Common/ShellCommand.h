@@ -11,7 +11,7 @@
 namespace DB
 {
 
-/// Forward declaration only — keeps `<sys/resource.h>` out of this header.
+/// Forward-declared so this header does not include `<sys/resource.h>`.
 struct LastChildResourceUsage;
 
 

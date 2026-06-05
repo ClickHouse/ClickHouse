@@ -349,11 +349,10 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking, bool check_
 
     while (waitpid_retcode < 0)
     {
-        /// Reap the child. Only the resource-accounting path (executable UDFs,
-        /// `Config::collect_resource_usage`) needs per-child `rusage`, so it uses
-        /// `wait4` — which is `waitpid` plus an `rusage` out-parameter, with
-        /// identical pid/status/options/EINTR semantics. Every other consumer
-        /// keeps plain `waitpid` and allocates nothing.
+        /// Reap the child. With `Config::collect_resource_usage` (executable UDFs),
+        /// use `wait4` to also collect the child's `rusage`: it is `waitpid` plus an
+        /// `rusage` out-parameter and shares its pid/status/options/EINTR semantics.
+        /// Without the flag, reap with plain `waitpid` and collect no usage.
         if (config.collect_resource_usage)
             waitpid_retcode = wait4(pid, &status, options, &local_rusage);
         else
