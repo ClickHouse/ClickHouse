@@ -9878,47 +9878,8 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
 
 bool MergeTreeData::scheduleDataProcessingJob(BackgroundJobsAssignee & /*assignee*/)
 {
-    /// Safety net for STID 3631-4165 (pure-virtual call abort in
-    /// `BackgroundJobsAssignee::threadFunc`).
-    ///
-    /// `scheduleDataProcessingJob` is declared pure virtual on
-    /// `IBackgroundOperation`. The real implementations live in
-    /// `StorageMergeTree` and `StorageReplicatedMergeTree`. During normal
-    /// operation, dispatching `data.scheduleDataProcessingJob(*this)` from
-    /// inside `BackgroundJobsAssignee::threadFunc` always resolves to one of
-    /// those derived overrides.
-    ///
-    /// The problem is the destruction race. The standard sequence is:
-    ///   1. `~StorageReplicatedMergeTree` (or `~StorageMergeTree`) body runs.
-    ///   2. The body calls `shutdown(false)`, which is supposed to call
-    ///      `background_operations_assignee.finish()` and stop pool threads.
-    ///   3. Body returns; the dynamic type of `*this` demotes to `MergeTreeData`.
-    ///   4. Member destructors of `MergeTreeData` run, including
-    ///      `~BackgroundJobsAssignee` for both assignees.
-    ///
-    /// If anything between step 2 and the actual `finish()` call goes wrong
-    /// (`shutdown()` throwing partway, a `flushAndPrepareForShutdown` /
-    /// `partialShutdown` exception, an external `shutdown()` that returned
-    /// early without reaching the assignee cleanup), the holder can still be
-    /// non-null when we reach step 4. `~BackgroundJobsAssignee::finish()` then
-    /// calls `deactivate()` which blocks on `exec_mutex` waiting for a
-    /// currently-running `function() = [this]{ threadFunc(); }` to finish.
-    /// That `threadFunc` is about to issue
-    /// `data.scheduleDataProcessingJob(*this)` through the now-demoted vtable,
-    /// where the method was pure virtual at the `MergeTreeData` level — and
-    /// the call lands on `__cxa_pure_virtual`, aborting the process.
-    ///
-    /// Returning `false` here keeps that call well-defined. The caller in
-    /// `threadFunc` interprets `false` as "no work was scheduled" and falls
-    /// through to `postpone()`. `postpone()` re-acquires `holder_mutex` and
-    /// observes that `finish()` has already moved `holder` out, so it is a
-    /// no-op. The pool thread completes `execute()` normally, releases
-    /// `exec_mutex`, and the destructor's `deactivate()` then returns and
-    /// the destructor sequence proceeds safely.
-    ///
-    /// In normal operation this override is never reached, because the
-    /// derived classes provide their own (concrete) overrides and the
-    /// dynamic dispatch picks them up before destruction.
+    /// Last-resort guard for the post-vtable-demotion window of STID 3631-4165.
+    /// Derived overrides are always picked in normal operation.
     return false;
 }
 
