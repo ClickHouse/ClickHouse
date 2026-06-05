@@ -4,6 +4,7 @@
 #include <mutex>
 #include <optional>
 #include <Common/DequeWithMemoryTracking.h>
+#include <Common/getMultipleKeysFromConfig.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -537,6 +538,14 @@ ExchangeLookupPtr createExchangeLookup(
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
             "`distributed_query.streaming_exchange_port` must be in range 1..65535, got {}", streaming_exchange_port);
 
+    /// The listener starts only when a listen host is also configured, so streaming peers are
+    /// unreachable without one. Reject here instead of connecting to a listener that never started.
+    if (getMultipleValuesFromConfig(context->getConfigRef(), "distributed_query", "streaming_exchange_listen_host").empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Streaming exchange requires `distributed_query.streaming_exchange_listen_host` to be configured; "
+            "set it, force `distributed_plan_force_exchange_kind = 'Persisted'`, or enable "
+            "`distributed_plan_execute_locally` for in-process testing");
+
     auto streaming_exchanges = createStreamingExchangeLookup(
         query_id, ExchangeConnections::instance(), exchange_stream_sources, static_cast<UInt16>(streaming_exchange_port));
     return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
@@ -573,6 +582,10 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>(task.task_id);
 
     auto logger = Poco::Logger::getShared("executeDistributedQuery");
+
+    /// Disable the query condition cache: its per-worker state could make workers read inconsistent
+    /// data for the same fragment.
+    context->setSetting("use_query_condition_cache", false);
 
     Strings input_exchange_streams;
     for (const auto & stream_id : task.input_exchange_streams)
@@ -1042,6 +1055,26 @@ protected:
             }
         }
 
+        /// Cancel a task that is not tracked yet (its start request failed) and forget it only once
+        /// the worker reports it terminal, so a start that partially reached the worker is not orphaned.
+        void cancelAndForgetUntracked(const RunningTaskInfo & task)
+        {
+            try
+            {
+                cancelTask(task.endpoint_uri, task.task_id, context);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+
+            if (waitForTaskTerminal(task))
+                tryForgetTask(task);
+            else
+                LOG_WARNING(logger, "Task {} on {} did not reach a terminal state after a failed start; "
+                    "leaving it for the worker to reclaim", task.task_id, task.endpoint_uri);
+        }
+
     private:
         void checkCancelled()
         {
@@ -1310,8 +1343,8 @@ protected:
 
             /// Send the task before registering it: status polling does not tolerate
             /// UnknownTaskId, so a tracker poll racing the start would abort the query.
-            /// On send failure issue best-effort cancel + forget directly in case the
-            /// worker did accept the start; both tolerate UnknownTaskId.
+            /// On send failure clean up directly in case the worker did accept the start;
+            /// cancel/forget tolerate UnknownTaskId.
             auto task_info = buildTaskInfo(task_description);
             LOG_DEBUG(logger, "Sending task {} to {}", task_info.task_id, task_info.endpoint_uri);
             try
@@ -1320,10 +1353,7 @@ protected:
             }
             catch (...)
             {
-                try { cancelTask(task_info.endpoint_uri, task_info.task_id, context); }
-                catch (...) { tryLogCurrentException(logger, fmt::format("cancelTask after failed start for {}", task_info.task_id)); }
-                try { forgetTask(task_info.endpoint_uri, task_info.task_id, context); }
-                catch (...) { tryLogCurrentException(logger, fmt::format("forgetTask after failed start for {}", task_info.task_id)); }
+                running_tasks.cancelAndForgetUntracked(task_info);
                 throw;
             }
             running_tasks.addTask(stage_name, task_info);
