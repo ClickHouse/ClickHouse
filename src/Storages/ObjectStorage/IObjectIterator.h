@@ -5,6 +5,7 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/StorageID.h>
 #include <Formats/FormatFilterInfo.h>
+#include <IO/Progress.h>
 #include <Common/Logger.h>
 #include <Common/Macros.h>
 #include <Formats/FormatSettings.h>
@@ -45,6 +46,8 @@ struct ObjectInfo
     virtual std::string getPathOrPathToArchiveIfArchive() const;
     virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 
+    virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
+
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
 
@@ -84,7 +87,8 @@ public:
         const NamesAndTypesList & virtual_columns_,
         const NamesAndTypesList & hive_partition_columns_,
         const std::string & object_namespace_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        std::function<void(FileProgress)> file_progress_callback_ = {});
 
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
@@ -102,6 +106,7 @@ private:
     const NamesAndTypesList virtual_columns;
     const NamesAndTypesList hive_partition_columns;
     const std::shared_ptr<ExpressionActions> filter_actions;
+    const std::function<void(FileProgress)> file_progress_callback;
     LoggerPtr log = getLogger("ObjectIteratorWithPathAndFileFilter");
 };
 
