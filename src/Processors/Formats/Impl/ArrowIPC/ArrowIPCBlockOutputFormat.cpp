@@ -59,6 +59,38 @@ std::pair<DataTypePtr, MutableColumnPtr> makeIndexColumn(
     fill(col.get());
     return {std::make_shared<DataTypeUInt32>(), std::move(col)};
 }
+
+template <typename T>
+void mapIndexesToGlobal(
+    const PaddedPODArray<T> & local_indexes, const PaddedPODArray<Int64> & local_to_global,
+    PaddedPODArray<Int64> & out, PaddedPODArray<UInt8> * out_null_map)
+{
+    for (size_t row = 0; row < local_indexes.size(); ++row)
+    {
+        const Int64 global = local_to_global[local_indexes[row]];
+        out[row] = global < 0 ? 0 : global;
+        if (out_null_map)
+            (*out_null_map)[row] = global < 0 ? 1 : 0;
+    }
+}
+
+/// Translates a LowCardinality column's per-batch local dictionary indexes into accumulated global ones.
+void mapIndexesToGlobal(
+    const IColumn & local_indexes, const PaddedPODArray<Int64> & local_to_global,
+    PaddedPODArray<Int64> & out, PaddedPODArray<UInt8> * out_null_map)
+{
+    switch (local_indexes.getDataType())
+    {
+        case TypeIndex::UInt8:
+            mapIndexesToGlobal(assert_cast<const ColumnUInt8 &>(local_indexes).getData(), local_to_global, out, out_null_map); break;
+        case TypeIndex::UInt16:
+            mapIndexesToGlobal(assert_cast<const ColumnUInt16 &>(local_indexes).getData(), local_to_global, out, out_null_map); break;
+        case TypeIndex::UInt32:
+            mapIndexesToGlobal(assert_cast<const ColumnUInt32 &>(local_indexes).getData(), local_to_global, out, out_null_map); break;
+        default:
+            mapIndexesToGlobal(assert_cast<const ColumnUInt64 &>(local_indexes).getData(), local_to_global, out, out_null_map); break;
+    }
+}
 }
 
 ArrowIPCBlockOutputFormat::ArrowIPCBlockOutputFormat(
@@ -162,39 +194,37 @@ void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
         if (!state.values)
             state.values = value_type->createColumn();
 
-        ColumnPtr full = columns[i]->convertToFullColumnIfLowCardinality();
-        const IColumn * nested = full.get();
-        const ColumnUInt8 * null_map = nullptr;
-        if (value_nullable)
-        {
-            const auto & nullable = assert_cast<const ColumnNullable &>(*full);
-            nested = &nullable.getNestedColumn();
-            null_map = &nullable.getNullMapColumn();
-        }
+        /// Deduplicate at the dictionary level (a few values), not per row: map each entry of this
+        /// batch's LowCardinality dictionary to a global index, extending the accumulated dictionary
+        /// with any new values (emitted as a delta). The null placeholder maps to -1 (marked via the
+        /// index validity bitmap, never referenced from the Arrow dictionary).
+        const auto & low_cardinality = assert_cast<const ColumnLowCardinality &>(*columns[i]);
+        const ColumnPtr & batch_dictionary = low_cardinality.getDictionary().getNestedColumn();
+        const size_t dict_size = batch_dictionary->size();
 
         const size_t delta_start = state.values->size();
+        PaddedPODArray<Int64> local_to_global(dict_size);
+        for (size_t e = 0; e < dict_size; ++e)
+        {
+            if (value_nullable && batch_dictionary->isNullAt(e))
+            {
+                local_to_global[e] = -1;
+                continue;
+            }
+            const std::string key(batch_dictionary->getDataAt(e));
+            auto [it, inserted] = state.value_to_index.try_emplace(key, static_cast<Int64>(state.values->size()));
+            if (inserted)
+                state.values->insertFrom(*batch_dictionary, e);
+            local_to_global[e] = it->second;
+        }
+
         PaddedPODArray<Int64> indexes(num_rows);
         auto index_null_map = value_nullable ? ColumnUInt8::create() : nullptr;
         if (index_null_map)
-            index_null_map->getData().reserve(num_rows);
-
-        for (size_t row = 0; row < num_rows; ++row)
-        {
-            if (null_map && null_map->getData()[row])
-            {
-                indexes[row] = 0;
-                index_null_map->getData().push_back(UInt8{1});
-                continue;
-            }
-            if (index_null_map)
-                index_null_map->getData().push_back(UInt8{0});
-
-            const std::string key(nested->getDataAt(row));
-            auto [it, inserted] = state.value_to_index.try_emplace(key, static_cast<Int64>(state.values->size()));
-            if (inserted)
-                state.values->insertFrom(*full, row);
-            indexes[row] = it->second;
-        }
+            index_null_map->getData().resize(num_rows);
+        mapIndexesToGlobal(
+            low_cardinality.getIndexes(), local_to_global, indexes,
+            index_null_map ? &index_null_map->getData() : nullptr);
 
         /// Emit the new dictionary values (a delta, except the first batch which registers the id).
         const size_t delta_size = state.values->size() - delta_start;

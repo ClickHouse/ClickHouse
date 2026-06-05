@@ -13,8 +13,10 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/assert_cast.h>
 #include <Common/FloatUtils.h>
@@ -464,22 +466,34 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(const ArrowField & field, size_t 
     const size_t index_size = static_cast<size_t>(bits) / 8;
     checkBufferSize(indices_slice, rows * index_size, "dictionary indices");
 
-    /// Materialize the indices (any width) into a UInt64 column so we can use IColumn::index to gather.
-    auto indices = ColumnUInt64::create(rows);
-    auto & idx = indices->getData();
-
     /// A row can be null either because the indices array marks it null (pyarrow style) or because it
     /// points at a null entry inside the dictionary values (the ClickHouse writer style); handle both.
-    ColumnPtr index_null_map;
     const UInt8 * index_nulls = nullptr;
+    ColumnPtr index_null_map;
     if (field.nullable)
     {
         index_null_map = buildNullMap(validity, rows, null_count);
         index_nulls = assert_cast<const ColumnUInt8 &>(*index_null_map).getData().data();
     }
 
+    /// Keys for the LowCardinality dictionary: the decoded Arrow dictionary values plus, for nullable
+    /// fields, a trailing NULL that null rows point at (Arrow keeps nulls only in the index validity).
+    DataTypePtr value_type = fieldToCHType(field, settings, field.nullable);
+    MutableColumnPtr keys = IColumn::mutate(values->cloneResized(dict_size));
+    UInt64 null_key_index = dict_size;
+    if (field.nullable)
+        keys->insertDefault(); /// a NULL for a Nullable value column
+
+    /// Map each row to a key index (UInt64), pointing null rows at the trailing NULL key.
+    auto indexes = ColumnUInt64::create(rows);
+    auto & idx = indexes->getData();
     for (size_t i = 0; i < rows; ++i)
     {
+        if (index_nulls && index_nulls[i])
+        {
+            idx[i] = null_key_index;
+            continue;
+        }
         UInt64 v = 0;
         switch (bits)
         {
@@ -489,41 +503,24 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(const ArrowField & field, size_t 
             case 64: v = reinterpret_cast<const uint64_t *>(indices_slice.ptr)[i]; break;
             default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unsupported Arrow dictionary index width {}", bits);
         }
-        /// Null rows may carry an arbitrary (possibly out-of-range) index; gather position 0 and mask later.
-        if (index_nulls && index_nulls[i])
-            v = 0;
-        else if (v >= dict_size)
+        if (v >= dict_size)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary index {} out of range (size {})", v, dict_size);
         idx[i] = v;
     }
 
-    ColumnPtr full;
-    if (dict_size == 0)
+    /// Build the LowCardinality column directly from (keys, indexes): the dictionary is deduplicated
+    /// once (a handful of values) and the per-row indexes are remapped with a cheap gather — no
+    /// materialization of the full column and no per-row hashing. `decodeColumns` reports the matching
+    /// LowCardinality type. For the rare value type that cannot live inside LowCardinality, gather the
+    /// full column instead (the trailing NULL key makes null rows resolve to NULL).
+    if (value_type->canBeInsideLowCardinality())
     {
-        /// Empty dictionary: every row must be null; gather would be out of range.
-        auto empty = values->cloneEmpty();
-        empty->insertManyDefaults(rows);
-        full = std::move(empty);
+        auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(value_type);
+        auto column = low_cardinality_type->createColumn();
+        assert_cast<ColumnLowCardinality &>(*column).insertRangeFromDictionaryEncodedColumn(*keys, *indexes);
+        return column;
     }
-    else
-    {
-        full = values->index(*indices, 0);
-    }
-
-    if (!field.nullable)
-        return full;
-
-    /// Ensure the result is Nullable and OR the index-validity nulls into whatever the gather produced.
-    if (full->isNullable())
-    {
-        auto mutable_full = IColumn::mutate(std::move(full));
-        auto & nm = assert_cast<ColumnNullable &>(*mutable_full).getNullMapData();
-        for (size_t i = 0; i < rows; ++i)
-            if (index_nulls[i])
-                nm[i] = 1;
-        return mutable_full;
-    }
-    return ColumnNullable::create(full, index_null_map);
+    return keys->index(*indexes, 0);
 }
 
 ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
@@ -684,8 +681,10 @@ std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns
     {
         DecodedColumn decoded;
         decoded.name = field.name;
-        /// `fieldToCHType` ignores dictionary encoding, so it matches the materialized (full) column we build.
         decoded.type = fieldToCHType(field, settings, field.nullable);
+        /// A dictionary-encoded field decodes into a LowCardinality column of its value type.
+        if (field.dictionary && decoded.type->canBeInsideLowCardinality())
+            decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
         decoded.column = decodeField(field);
         result.push_back(std::move(decoded));
     }
@@ -733,8 +732,11 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
     const auto codec = batch.compression()->codec() == flatbuf::CompressionType_ZSTD
         ? CompressionCodec::Zstd : CompressionCodec::Lz4Frame;
 
-    std::vector<std::pair<size_t, size_t>> placements; /// (offset in decompressed_body, length)
-    placements.reserve(num_buffers);
+    /// First pass: lay out each buffer's decompressed slot (8-byte aligned) without touching the data,
+    /// so the destination buffer can be allocated once and the buffers decompressed in parallel.
+    struct Placement { size_t offset; size_t length; const char * src; size_t src_size; bool raw; };
+    std::vector<Placement> placements(num_buffers);
+    size_t pos = 0;
     for (size_t i = 0; i < num_buffers; ++i)
     {
         const auto * buffer = buffers->Get(static_cast<flatbuffers::uoffset_t>(i));
@@ -742,13 +744,10 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         const char * src = body.data() + buffer->offset();
         const int64_t length = buffer->length();
 
-        while (decompressed_body.size() % 8 != 0)
-            decompressed_body.push_back('\0');
-        const size_t dst_offset = decompressed_body.size();
-
+        pos = (pos + 7) & ~size_t(7);
         if (length == 0)
         {
-            placements.emplace_back(dst_offset, 0);
+            placements[i] = {pos, 0, nullptr, 0, true};
             continue;
         }
         if (length < 8)
@@ -758,27 +757,30 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         memcpy(&uncompressed_length, src, sizeof(uncompressed_length));
         uncompressed_length = DB::fromLittleEndian(uncompressed_length);
 
-        if (uncompressed_length < 0)
-        {
-            /// Stored uncompressed.
-            const size_t len = static_cast<size_t>(length - 8);
-            decompressed_body.resize(dst_offset + len);
-            memcpy(decompressed_body.data() + dst_offset, src + 8, len);
-            placements.emplace_back(dst_offset, len);
-        }
-        else
-        {
-            decompressed_body.resize(dst_offset + static_cast<size_t>(uncompressed_length));
-            decompressBuffer(
-                codec, src + 8, static_cast<size_t>(length - 8),
-                decompressed_body.data() + dst_offset, static_cast<size_t>(uncompressed_length));
-            placements.emplace_back(dst_offset, static_cast<size_t>(uncompressed_length));
-        }
+        const size_t out_len = uncompressed_length < 0 ? static_cast<size_t>(length - 8) : static_cast<size_t>(uncompressed_length);
+        placements[i] = {pos, out_len, src + 8, static_cast<size_t>(length - 8), uncompressed_length < 0};
+        pos += out_len;
     }
 
-    buffer_slices.reserve(placements.size());
-    for (const auto & [offset, length] : placements)
-        buffer_slices.push_back(Slice{decompressed_body.data() + offset, static_cast<int64_t>(length)});
+    decompressed_body.resize(pos);
+
+    std::vector<DecompressJob> jobs;
+    jobs.reserve(num_buffers);
+    for (const auto & p : placements)
+    {
+        if (p.length == 0)
+            continue;
+        char * dst = decompressed_body.data() + p.offset;
+        if (p.raw)
+            memcpy(dst, p.src, p.length);
+        else
+            jobs.push_back(DecompressJob{p.src, p.src_size, dst, p.length});
+    }
+    decompressBuffersParallel(codec, jobs);
+
+    buffer_slices.reserve(num_buffers);
+    for (const auto & p : placements)
+        buffer_slices.push_back(Slice{decompressed_body.data() + p.offset, static_cast<int64_t>(p.length)});
 }
 
 std::vector<RecordBatchDecoder::DecodedColumn>

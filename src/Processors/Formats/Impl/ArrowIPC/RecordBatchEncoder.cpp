@@ -128,14 +128,13 @@ void RecordBatchEncoder::appendOffsets(const IColumn::Offsets & ch_offsets, size
 namespace
 {
 
+/// Appends a fixed-width column's contiguous data straight into the body (a single copy, no temporary).
 template <typename Col>
-void appendFixedWidth(RecordBatchEncoder & /*self*/, const IColumn & column, size_t num_rows, PODArray<char> & out)
+void appendFixedWidth(RecordBatchEncoder & self, const IColumn & column, size_t num_rows)
 {
     using V = typename Col::ValueType;
     const auto & data = assert_cast<const Col &>(column).getData();
-    out.resize(num_rows * sizeof(V));
-    if (num_rows)
-        memcpy(out.data(), data.data(), num_rows * sizeof(V));
+    self.appendBuffer(data.data(), num_rows * sizeof(V));
 }
 
 int arrowTimeUnitForScale(UInt32 scale)
@@ -167,30 +166,29 @@ void RecordBatchEncoder::encodeValues(const IColumn & column, const DataTypePtr 
         return;
     }
 
-    PODArray<char> buf;
     switch (which.idx)
     {
-        case TypeIndex::UInt8: appendFixedWidth<ColumnUInt8>(*this, column, num_rows, buf); break;
-        case TypeIndex::UInt16: appendFixedWidth<ColumnUInt16>(*this, column, num_rows, buf); break;
-        case TypeIndex::UInt32: appendFixedWidth<ColumnUInt32>(*this, column, num_rows, buf); break;
-        case TypeIndex::UInt64: appendFixedWidth<ColumnUInt64>(*this, column, num_rows, buf); break;
-        case TypeIndex::Int8: appendFixedWidth<ColumnInt8>(*this, column, num_rows, buf); break;
-        case TypeIndex::Enum8: appendFixedWidth<ColumnInt8>(*this, column, num_rows, buf); break;
-        case TypeIndex::Int16: appendFixedWidth<ColumnInt16>(*this, column, num_rows, buf); break;
-        case TypeIndex::Enum16: appendFixedWidth<ColumnInt16>(*this, column, num_rows, buf); break;
-        case TypeIndex::Int32: appendFixedWidth<ColumnInt32>(*this, column, num_rows, buf); break;
-        case TypeIndex::Int64: appendFixedWidth<ColumnInt64>(*this, column, num_rows, buf); break;
-        case TypeIndex::Float32: appendFixedWidth<ColumnFloat32>(*this, column, num_rows, buf); break;
-        case TypeIndex::Float64: appendFixedWidth<ColumnFloat64>(*this, column, num_rows, buf); break;
-        case TypeIndex::Date32: appendFixedWidth<ColumnInt32>(*this, column, num_rows, buf); break;
-        case TypeIndex::DateTime: appendFixedWidth<ColumnUInt32>(*this, column, num_rows, buf); break;
+        case TypeIndex::UInt8: appendFixedWidth<ColumnUInt8>(*this, column, num_rows); return;
+        case TypeIndex::UInt16: appendFixedWidth<ColumnUInt16>(*this, column, num_rows); return;
+        case TypeIndex::UInt32: appendFixedWidth<ColumnUInt32>(*this, column, num_rows); return;
+        case TypeIndex::UInt64: appendFixedWidth<ColumnUInt64>(*this, column, num_rows); return;
+        case TypeIndex::Int8: appendFixedWidth<ColumnInt8>(*this, column, num_rows); return;
+        case TypeIndex::Enum8: appendFixedWidth<ColumnInt8>(*this, column, num_rows); return;
+        case TypeIndex::Int16: appendFixedWidth<ColumnInt16>(*this, column, num_rows); return;
+        case TypeIndex::Enum16: appendFixedWidth<ColumnInt16>(*this, column, num_rows); return;
+        case TypeIndex::Int32: appendFixedWidth<ColumnInt32>(*this, column, num_rows); return;
+        case TypeIndex::Int64: appendFixedWidth<ColumnInt64>(*this, column, num_rows); return;
+        case TypeIndex::Float32: appendFixedWidth<ColumnFloat32>(*this, column, num_rows); return;
+        case TypeIndex::Float64: appendFixedWidth<ColumnFloat64>(*this, column, num_rows); return;
+        case TypeIndex::Date32: appendFixedWidth<ColumnInt32>(*this, column, num_rows); return;
+        case TypeIndex::DateTime: appendFixedWidth<ColumnUInt32>(*this, column, num_rows); return;
         case TypeIndex::Date:
         {
             if (settings.arrow.output_date_as_uint16)
             {
                 /// Backwards-compatible mode: write Date as a plain uint16.
-                appendFixedWidth<ColumnUInt16>(*this, column, num_rows, buf);
-                break;
+                appendFixedWidth<ColumnUInt16>(*this, column, num_rows);
+                return;
             }
             /// Date is UInt16 days; widen to Int32 to match Arrow date32.
             const auto & data = assert_cast<const ColumnUInt16 &>(column).getData();
@@ -275,13 +273,13 @@ void RecordBatchEncoder::encodeValues(const IColumn & column, const DataTypePtr 
             appendBuffer(cfs.getChars().data(), cfs.getChars().size());
             return;
         }
-        case TypeIndex::IPv4: appendFixedWidth<ColumnVector<IPv4>>(*this, column, num_rows, buf); break;
-        case TypeIndex::Int128: appendFixedWidth<ColumnVector<Int128>>(*this, column, num_rows, buf); break;
-        case TypeIndex::UInt128: appendFixedWidth<ColumnVector<UInt128>>(*this, column, num_rows, buf); break;
-        case TypeIndex::Int256: appendFixedWidth<ColumnVector<Int256>>(*this, column, num_rows, buf); break;
-        case TypeIndex::UInt256: appendFixedWidth<ColumnVector<UInt256>>(*this, column, num_rows, buf); break;
-        case TypeIndex::IPv6: appendFixedWidth<ColumnVector<IPv6>>(*this, column, num_rows, buf); break;
-        case TypeIndex::Interval: appendFixedWidth<ColumnVector<Int64>>(*this, column, num_rows, buf); break;
+        case TypeIndex::IPv4: appendFixedWidth<ColumnVector<IPv4>>(*this, column, num_rows); return;
+        case TypeIndex::Int128: appendFixedWidth<ColumnVector<Int128>>(*this, column, num_rows); return;
+        case TypeIndex::UInt128: appendFixedWidth<ColumnVector<UInt128>>(*this, column, num_rows); return;
+        case TypeIndex::Int256: appendFixedWidth<ColumnVector<Int256>>(*this, column, num_rows); return;
+        case TypeIndex::UInt256: appendFixedWidth<ColumnVector<UInt256>>(*this, column, num_rows); return;
+        case TypeIndex::IPv6: appendFixedWidth<ColumnVector<IPv6>>(*this, column, num_rows); return;
+        case TypeIndex::Interval: appendFixedWidth<ColumnVector<Int64>>(*this, column, num_rows); return;
         case TypeIndex::UUID:
         {
             /// fixed_size_binary(16) with the two 64-bit halves byte-reversed, matching the library writer.
@@ -335,8 +333,6 @@ void RecordBatchEncoder::encodeValues(const IColumn & column, const DataTypePtr 
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Native Arrow IPC writer does not support encoding type {} yet", type->getName());
     }
-
-    appendBuffer(buf.data(), buf.size());
 }
 
 void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr & type, size_t num_rows)
@@ -457,11 +453,20 @@ RecordBatchEncoder::EncodedBatch RecordBatchEncoder::encode(const Columns & colu
         result.codec = codec;
         result.nodes = std::move(nodes);
 
-        /// Each buffer becomes an 8-byte little-endian uncompressed length followed by the compressed
-        /// bytes; if compression does not shrink it, store it uncompressed with a -1 length prefix.
-        for (const auto & buffer : buffers)
+        /// Compress every (non-empty) buffer independently. Like the Apache Arrow writer, do this in
+        /// parallel across the shared format thread pool — compression CPU dominates here. The body is
+        /// then assembled sequentially (each buffer: an 8-byte little-endian uncompressed length, then
+        /// the compressed bytes; or, if compression does not shrink it, the raw bytes with a -1 prefix).
+        const size_t n = buffers.size();
+        std::vector<std::pair<const char *, size_t>> inputs(n);
+        for (size_t i = 0; i < n; ++i)
+            inputs[i] = {body.data() + buffers[i].offset(), static_cast<size_t>(buffers[i].length())};
+        std::vector<PODArray<char>> compressed(n);
+        compressBuffersParallel(codec, level, inputs, compressed);
+
+        for (size_t i = 0; i < n; ++i)
         {
-            const char * src = body.data() + buffer.offset();
+            const auto & buffer = buffers[i];
             const size_t len = static_cast<size_t>(buffer.length());
 
             while (result.body.size() % 8 != 0)
@@ -474,20 +479,19 @@ RecordBatchEncoder::EncodedBatch RecordBatchEncoder::encode(const Columns & colu
                 continue;
             }
 
-            auto compressed = compressBuffer(codec, src, len, level);
             int64_t prefix;
             const char * payload;
             size_t payload_size;
-            if (compressed.size() < len)
+            if (compressed[i].size() < len)
             {
                 prefix = DB::toLittleEndian(static_cast<int64_t>(len));
-                payload = compressed.data();
-                payload_size = compressed.size();
+                payload = compressed[i].data();
+                payload_size = compressed[i].size();
             }
             else
             {
                 prefix = DB::toLittleEndian(static_cast<int64_t>(-1));
-                payload = src;
+                payload = body.data() + buffer.offset();
                 payload_size = len;
             }
 

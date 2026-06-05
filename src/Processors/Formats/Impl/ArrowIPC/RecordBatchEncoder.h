@@ -41,6 +41,9 @@ public:
     /// Arrow library writer for types the native encoder does not support (e.g. Variant).
     static bool canNativelyEncode(const DataTypePtr & type);
 
+    /// Appends a buffer to the body (8-byte aligned start) and records its {offset, length}.
+    void appendBuffer(const void * data, size_t length);
+
 private:
     void encodeField(const IColumn & column, const DataTypePtr & type, size_t num_rows);
     void encodeValues(const IColumn & column, const DataTypePtr & type, size_t num_rows);
@@ -48,8 +51,6 @@ private:
     /// buffer, the variant children in global order, and a trailing single-element null child).
     void encodeVariant(const IColumn & column, const DataTypePtr & type, size_t num_rows);
 
-    /// Appends a buffer to the body (8-byte aligned start) and records its {offset, length}.
-    void appendBuffer(const void * data, size_t length);
     void appendEmptyBuffer();
     /// Emits the validity buffer: a packed LSB-first bitmap (1 = valid) for nullable columns, or an
     /// empty buffer otherwise. Returns the null count.
