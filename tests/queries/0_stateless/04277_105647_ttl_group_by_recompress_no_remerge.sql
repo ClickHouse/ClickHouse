@@ -27,7 +27,18 @@ CREATE TABLE t_ttl_group_by_recompress_no_remerge
 ENGINE = MergeTree
 ORDER BY (key)
 TTL ts + INTERVAL 3 MONTH GROUP BY key SET value = sum(value),
-    ts + INTERVAL 1 YEAR  RECOMPRESS CODEC(ZSTD(3));
+    ts + INTERVAL 1 YEAR  RECOMPRESS CODEC(ZSTD(3))
+SETTINGS
+    -- Set well above realistic CI pool pressure so this test never trips either gate.
+    -- max_number_of_merges_with_ttl_in_pool: per-table override of the
+    -- server-wide default (2). Without this, parallel sibling tests in
+    -- flaky-check can exhaust the pool; `MergeSelectorApplier::chooseMergesFrom`
+    -- then skips `tryChooseTTLMerge` and the spurious-merge counter under-reports
+    -- the buggy behavior, giving a false PASS on a buggy binary.
+    -- min_parts_to_merge_at_once: closes the `tryChooseRegularMerge` fallback
+    -- so it cannot fold this small test's parts and mask a missing TTL fold.
+    max_number_of_merges_with_ttl_in_pool = 100,
+    min_parts_to_merge_at_once = 100;
 
 -- All rows are far past both TTL boundaries.
 INSERT INTO t_ttl_group_by_recompress_no_remerge VALUES

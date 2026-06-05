@@ -33,7 +33,18 @@ CREATE TABLE t_ttl_group_by_mixed_blocks
 ENGINE = MergeTree
 ORDER BY (key, ts)
 TTL ts + INTERVAL 5 SECOND GROUP BY key SET ts = min(ts), value = sum(value)
-SETTINGS min_bytes_for_wide_part = 0, merge_with_ttl_timeout = 0;
+SETTINGS min_bytes_for_wide_part = 0,
+         merge_with_ttl_timeout = 0,
+         -- Set well above realistic CI pool pressure so this test never trips either gate.
+         -- max_number_of_merges_with_ttl_in_pool: per-table override of the
+         -- server-wide default (2). Without this, parallel sibling tests in
+         -- flaky-check can exhaust the pool; `MergeSelectorApplier::chooseMergesFrom`
+         -- then skips `tryChooseTTLMerge` and the assertion's
+         -- `merge_reason IN ('TTLDropMerge', 'TTLDeleteMerge')` filter misses it.
+         -- min_parts_to_merge_at_once: closes the `tryChooseRegularMerge` fallback
+         -- so it cannot fold this small test's parts and mask a missing TTL fold.
+         max_number_of_merges_with_ttl_in_pool = 100,
+         min_parts_to_merge_at_once = 100;
 
 -- One part with the same GROUP BY key containing both already-expired and
 -- not-yet-expired rows. With `merge_max_block_size = 8192` the merge runs

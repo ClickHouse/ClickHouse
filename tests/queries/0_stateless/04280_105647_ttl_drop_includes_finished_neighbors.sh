@@ -53,6 +53,14 @@ ORDER BY (key)
 TTL ts + INTERVAL 1 SECOND GROUP BY key SET value = sum(value)
 SETTINGS min_bytes_for_wide_part = 0,
          merge_with_ttl_timeout = 0,
+         -- Set well above realistic CI pool pressure so this test never trips either gate.
+         -- max_number_of_merges_with_ttl_in_pool: per-table override of the
+         -- server-wide default (2). Without this, parallel sibling tests in
+         -- flaky-check can exhaust the pool; `MergeSelectorApplier::chooseMergesFrom`
+         -- then skips `tryChooseTTLMerge` and the assertion's
+         -- `merge_reason IN ('TTLDropMerge', 'TTLDeleteMerge')` filter misses it.
+         -- min_parts_to_merge_at_once: closes the `tryChooseRegularMerge` fallback
+         -- so it cannot fold A+B as `RegularMerge` and mask a missing TTL fold.
          max_number_of_merges_with_ttl_in_pool = 100,
          min_parts_to_merge_at_once = 100;
 "
@@ -93,6 +101,10 @@ for _ in $(seq 1 60); do
     fi
     sleep 0.25
 done
+
+if [ "$ACTIVE" != "1" ]; then
+    echo "timed out waiting for active==1 (current=$ACTIVE)" >&2
+fi
 
 # Let part_log catch the merge-completion event.
 sleep 2

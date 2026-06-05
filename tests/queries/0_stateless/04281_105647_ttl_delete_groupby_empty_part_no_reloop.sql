@@ -40,7 +40,17 @@ TTL
 SETTINGS
     min_bytes_for_wide_part = 0,
     merge_with_ttl_timeout = 0,
-    remove_empty_parts = 0;
+    remove_empty_parts = 0,
+    -- Set well above realistic CI pool pressure so this test never trips either gate.
+    -- max_number_of_merges_with_ttl_in_pool: per-table override of the
+    -- server-wide default (2). Without this, parallel sibling tests in
+    -- flaky-check can exhaust the pool; `MergeSelectorApplier::chooseMergesFrom`
+    -- then skips `tryChooseTTLMerge` and the assertion's
+    -- `merge_reason IN ('TTLDropMerge', 'TTLDeleteMerge')` filter misses it.
+    -- min_parts_to_merge_at_once: closes the `tryChooseRegularMerge` fallback
+    -- so it cannot fold this small test's parts and mask a missing TTL fold.
+    max_number_of_merges_with_ttl_in_pool = 100,
+    min_parts_to_merge_at_once = 100;
 
 INSERT INTO t_ttl_delete_groupby_empty_part_no_reloop
 SELECT number AS key, toDateTime('2000-01-01 00:00:00') AS ts, 1 AS value

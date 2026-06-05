@@ -33,7 +33,17 @@ TTL
     ts_group + INTERVAL 1 SECOND GROUP BY key SET value = sum(value)
 SETTINGS
     min_bytes_for_wide_part = 0,
-    merge_with_ttl_timeout = 0;
+    merge_with_ttl_timeout = 0,
+    -- Set well above realistic CI pool pressure so this test never trips either gate.
+    -- max_number_of_merges_with_ttl_in_pool: per-table override of the
+    -- server-wide default (2). Without this, parallel sibling tests in
+    -- flaky-check can exhaust the pool; `MergeSelectorApplier::chooseMergesFrom`
+    -- then skips `tryChooseTTLMerge` and the assertion's
+    -- `merge_reason IN ('TTLDropMerge', 'TTLDeleteMerge')` filter misses it.
+    -- min_parts_to_merge_at_once: closes the `tryChooseRegularMerge` fallback
+    -- so it cannot fold this small test's parts and mask a missing TTL fold.
+    max_number_of_merges_with_ttl_in_pool = 100,
+    min_parts_to_merge_at_once = 100;
 "
 
 $CLICKHOUSE_CLIENT --query "
@@ -76,6 +86,10 @@ for _ in $(seq 1 60); do
 
     sleep 0.25
 done
+
+if [ "$TTL_MERGES" = "0" ] || [ "$ACTIVE_MERGES" != "0" ]; then
+    echo "timed out waiting for first TTL merge (TTL_MERGES=$TTL_MERGES ACTIVE_MERGES=$ACTIVE_MERGES)" >&2
+fi
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS part_log"
 

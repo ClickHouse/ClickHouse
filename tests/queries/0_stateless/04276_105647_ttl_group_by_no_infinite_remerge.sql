@@ -20,7 +20,18 @@ CREATE TABLE t_ttl_group_by_no_infinite_remerge
 )
 ENGINE = MergeTree
 ORDER BY (key)
-TTL ts + INTERVAL 3 MONTH GROUP BY key SET value = sum(value);
+TTL ts + INTERVAL 3 MONTH GROUP BY key SET value = sum(value)
+SETTINGS
+    -- Set well above realistic CI pool pressure so this test never trips either gate.
+    -- max_number_of_merges_with_ttl_in_pool: per-table override of the
+    -- server-wide default (2). Without this, parallel sibling tests in
+    -- flaky-check can exhaust the pool; `MergeSelectorApplier::chooseMergesFrom`
+    -- then skips `tryChooseTTLMerge` and the spurious-merge counter under-reports
+    -- the buggy behavior, giving a false PASS on a buggy binary.
+    -- min_parts_to_merge_at_once: closes the `tryChooseRegularMerge` fallback
+    -- so it cannot fold this small test's parts and mask a missing TTL fold.
+    max_number_of_merges_with_ttl_in_pool = 100,
+    min_parts_to_merge_at_once = 100;
 
 -- All four rows are far past the TTL boundary, so the GROUP BY rule fires
 -- on the first merge and aggregates them into a single row per key.
