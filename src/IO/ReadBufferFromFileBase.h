@@ -69,6 +69,13 @@ public:
     /// Returns std::nullopt for non-remote or local file buffers.
     virtual std::optional<size_t> getRemoteFileSize() const { return std::nullopt; }
 
+    /// Query the actual object's last modification time directly from remote storage.
+    /// Like getRemoteFileSize(), this issues a real metadata request and reflects the current
+    /// state of the object. Useful, together with the size, to confirm that an object was
+    /// concurrently overwritten between listing and reading.
+    /// Returns std::nullopt for non-remote or local file buffers.
+    virtual std::optional<time_t> getRemoteFileLastModificationTime() const { return std::nullopt; }
+
 protected:
     std::optional<size_t> file_size;
     ProfileCallback profile_callback;

@@ -251,6 +251,28 @@ namespace
 using ReadType = CachedOnDiskReadBufferFromFile::ReadType;
 using ReadInfo = CachedOnDiskReadBufferFromFile::ReadInfo;
 
+/// Fetch the remote object's last modification time for diagnostics, alongside its size: a recent
+/// timestamp confirms the object was overwritten between listing and reading. Best-effort -- a
+/// failed metadata request must never mask the diagnostic we are building, so fall back to "None".
+String getRemoteFileLastModifiedForLog(ReadBufferFromFileBase & buf)
+{
+    std::optional<time_t> last_modified;
+    try
+    {
+        last_modified = buf.getRemoteFileLastModificationTime();
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    if (!last_modified.has_value())
+        return "None";
+
+    WriteBufferFromOwnString out;
+    writeDateTimeText(*last_modified, out);
+    return fmt::format("{} (unix time {})", out.str(), *last_modified);
+}
+
 std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     const FileSegment & file_segment,
     ReadInfo & info)
@@ -816,9 +838,10 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                         throw Exception(
                             ErrorCodes::CANNOT_READ_ALL_DATA,
                             "Remote object was truncated between listing and reading: "
-                            "actual object size {}, but need to read until offset {}. "
+                            "actual object size {}, last modified {}, but need to read until offset {}. "
                             "Current file segment: {}",
                             *object_size,
+                            getRemoteFileLastModifiedForLog(*state.buf),
                             offset,
                             file_segment.getInfoForLog());
                     }
@@ -827,14 +850,15 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                         ErrorCodes::LOGICAL_ERROR,
                         "Failed to predownload remaining {} bytes. Current file segment: {}, "
                         "current download offset: {}, expected: {}, eof: {}, "
-                        "internal buffer size: {}, remote object size: {}",
+                        "internal buffer size: {}, remote object size: {}, remote object last modified: {}",
                         state.bytes_to_predownload,
                         file_segment.range().toString(),
                         file_segment.getCurrentWriteOffset(),
                         offset,
                         state.buf->eof(),
                         state.buf->internalBuffer().size(),
-                        object_size ? std::to_string(*object_size) : "None");
+                        object_size ? std::to_string(*object_size) : "None",
+                        getRemoteFileLastModifiedForLog(*state.buf));
                 }
 
                 chassert(!state.buf->hasPendingData());
@@ -1430,8 +1454,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             LOG_WARNING(
                 log,
                 "Remote object is smaller than expected: read {} bytes but expected to read until position {}. "
-                "Actual object size: {}, expected size: {}, stop reason: {}. Treating as EOF.",
-                offset, info.read_until_position, *object_size, file_size_,
+                "Actual object size: {}, last modified: {}, expected size: {}, stop reason: {}. Treating as EOF.",
+                offset, info.read_until_position, *object_size, getRemoteFileLastModifiedForLog(*state.buf), file_size_,
                 impl_read_stop_reason ? *impl_read_stop_reason : "None");
             if (file_segment.isDownloader())
                 file_segment.setDownloadFinishedWithoutContinuation();
@@ -1445,6 +1469,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             "file offset: {}, "
             "read bytes: {}, "
             "object size: {}, "
+            "object last modified: {}, "
             "expected object size: {}, "
             "reading until: {}, "
             "read type: {}, "
@@ -1463,6 +1488,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             offset + size,
             size,
             object_size ? std::to_string(*object_size) : "None",
+            getRemoteFileLastModifiedForLog(*state.buf),
             file_size_,
             info.read_until_position,
             toString(state.read_type),
@@ -1628,8 +1654,10 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
                 LOG_WARNING(
                     log,
                     "ReadBigAt() stopped early due to truncated remote object. "
-                    "Read {} bytes instead of requested {}. Offset: {}, read_until_position: {}",
-                    read_bytes, n, offset, current_info.read_until_position);
+                    "Read {} bytes instead of requested {}. Offset: {}, read_until_position: {}, "
+                    "remote object last modified: {}",
+                    read_bytes, n, offset, current_info.read_until_position,
+                    getRemoteFileLastModifiedForLog(*current_state->buf));
                 break;
             }
 

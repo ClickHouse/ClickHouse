@@ -97,6 +97,8 @@ public:
 
     std::optional<size_t> getRemoteFileSize() const override;
 
+    std::optional<time_t> getRemoteFileLastModificationTime() const override;
+
 private:
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
 

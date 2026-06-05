@@ -434,6 +434,11 @@ std::optional<size_t> ReadBufferFromS3::getRemoteFileSize() const
     return getObjectSizeFromS3();
 }
 
+std::optional<time_t> ReadBufferFromS3::getRemoteFileLastModificationTime() const
+{
+    return S3::getObjectInfo(*client_ptr, bucket, key, version_id).last_modification_time;
+}
+
 off_t ReadBufferFromS3::getPosition()
 {
     return offset - available();

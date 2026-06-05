@@ -349,6 +349,15 @@ std::optional<size_t> ReadBufferFromAzureBlobStorage::getRemoteFileSize() const
     return static_cast<size_t>(blob_container_client->GetBlobClient(path).GetProperties().Value.BlobSize);
 }
 
+std::optional<time_t> ReadBufferFromAzureBlobStorage::getRemoteFileLastModificationTime() const
+{
+    const auto last_modified = blob_container_client->GetBlobClient(path).GetProperties().Value.LastModified;
+    return static_cast<time_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            static_cast<std::chrono::system_clock::time_point>(last_modified).time_since_epoch())
+            .count());
+}
+
 size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & /*progress_callback*/) const
 {
     size_t initial_n = n;
