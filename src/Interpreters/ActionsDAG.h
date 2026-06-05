@@ -242,29 +242,8 @@ public:
 
     void removeAliasesForFilter(const std::string & filter_name);
 
-    /// Union-find over DAG nodes. Callers populate it from whatever notion of
-    /// equivalence they need (structural, equi-join, ...)
-    class EquivalenceClasses
-    {
-    public:
-        explicit EquivalenceClasses(const ActionsDAG & dag);
-
-        const Node * find(const Node * n) const;
-        void unite(const Node * a, const Node * b);
-
-    private:
-        struct EquivalenceClass
-        {
-            const Node * representative;
-            size_t size;
-        };
-
-        mutable std::unordered_map<const Node *, EquivalenceClass> classes;
-    };
-
-    /// Classes from structural equivalence (CSE): same type, function, and children
-    EquivalenceClasses buildStructuralEquivalenceClasses() const;
-    void applyEquivalenceClasses(const EquivalenceClasses & ec);
+    /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
+    /// outputs preserve their names via aliases when needed, dead nodes are pruned
     void deduplicateSubtrees();
 
     /// Get an ActionsDAG in a following way:

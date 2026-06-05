@@ -905,177 +905,176 @@ bool isConstant(const ActionsDAG::Node & n)
     return n.column && isColumnConst(*n.column) && !hasDummyInside(n.column);
 }
 
-struct NodeKey
+class EquivalenceClasses
 {
-    const ActionsDAG::Node * node;
-    std::vector<const ActionsDAG::Node *> canonical_children;
-
-    bool operator==(const NodeKey & o) const
+public:
+    const ActionsDAG::Node * find(const ActionsDAG::Node * n) const
     {
-        if (bool(node->result_type) != bool(o.node->result_type))
-            return false;
-        if (node->result_type && !node->result_type->equals(*o.node->result_type))
-            return false;
-
-        /// any two deterministic constants with the same type and value are equivalent
-        const bool a_const = isConstant(*node);
-        const bool b_const = isConstant(*o.node);
-        if (a_const != b_const)
-            return false;
-        if (a_const)
-            return constColumnsEqual(node->column, o.node->column);
-
-        if (node->type != o.node->type)
-            return false;
-        if (canonical_children != o.canonical_children)
-            return false;
-
-        if (node->type == ActionsDAG::ActionType::FUNCTION)
-        {
-            if (bool(node->function_base) != bool(o.node->function_base))
-                return false;
-            if (node->function_base)
-            {
-                /// prefer creator-pointer identity but fall back to name comparison for hand-built functions
-                const void * ha = node->function_base->getFactoryHandle();
-                const void * hb = o.node->function_base->getFactoryHandle();
-                if (ha && hb)
-                {
-                    if (ha != hb)
-                        return false;
-                }
-                else if (getFunctionCanonicalName(node->function_base->getName())
-                         != getFunctionCanonicalName(o.node->function_base->getName()))
-                {
-                    return false;
-                }
-            }
-        }
-        return true;
+        auto it = classes.find(n);
+        if (it == classes.end())
+            return n;
+        if (it->second.representative == n)
+            return n;
+        const auto * root = find(it->second.representative);
+        it->second.representative = root; /// path compression
+        return root;
     }
-};
 
-struct NodeKeyHash
-{
-    size_t operator()(const NodeKey & k) const
+    void unite(const ActionsDAG::Node * a, const ActionsDAG::Node * b)
     {
-        SipHash h;
-        const bool is_const = isConstant(*k.node);
-        h.update(static_cast<UInt8>(is_const));
-        if (k.node->result_type)
-            h.update(k.node->result_type->getName());
-        if (is_const)
+        const auto * ra = find(a);
+        const auto * rb = find(b);
+        if (ra == rb)
+            return;
+
+        auto & ca = ensure(ra);
+        auto & cb = ensure(rb);
+
+        /// alias should not be representative, rewriting alias.children through find would self-cycle
+        const bool ra_alias = ra->type == ActionsDAG::ActionType::ALIAS;
+        const bool rb_alias = rb->type == ActionsDAG::ActionType::ALIAS;
+
+        const bool a_wins = (ra_alias != rb_alias) ? !ra_alias : ca.size >= cb.size;
+
+        if (a_wins)
         {
-            k.node->column->updateHashWithValue(0, h);
+            cb.representative = ra;
+            ca.size += cb.size;
         }
         else
         {
-            h.update(static_cast<UInt8>(k.node->type));
-            for (const auto * c : k.canonical_children)
-                h.update(reinterpret_cast<uintptr_t>(c));
-            /// Hash by canonical name so handle-stamped and hand-built functions land in the same bucket
-            /// Equality uses the handle when both nodes have one
-            if (k.node->type == ActionsDAG::ActionType::FUNCTION && k.node->function_base)
-                h.update(getFunctionCanonicalName(k.node->function_base->getName()));
+            ca.representative = rb;
+            cb.size += ca.size;
         }
+    }
+
+private:
+    struct Class
+    {
+        const ActionsDAG::Node * representative;
+        size_t size;
+    };
+
+    Class & ensure(const ActionsDAG::Node * n)
+    {
+        auto it = classes.find(n);
+        if (it == classes.end())
+            it = classes.emplace(n, Class{.representative = n, .size = 1}).first;
+        return it->second;
+    }
+
+    mutable std::unordered_map<const ActionsDAG::Node *, Class> classes;
+};
+
+struct ConstantKey
+{
+    const ActionsDAG::Node * sample;
+};
+
+struct ConstantKeyHash
+{
+    size_t operator()(const ConstantKey & k) const
+    {
+        SipHash h;
+        h.update(k.sample->result_type->getName());
+        k.sample->column->updateHashWithValue(0, h);
         return h.get64();
     }
 };
 
-}
-
-ActionsDAG::EquivalenceClasses::EquivalenceClasses(const ActionsDAG & dag)
+struct ConstantKeyEqual
 {
-    for (const auto & node : dag.nodes)
-        classes[&node] = EquivalenceClass{.representative = &node, .size = 1};
-}
-
-const ActionsDAG::Node * ActionsDAG::EquivalenceClasses::find(const Node * n) const
-{
-    auto it = classes.find(n);
-    if (it == classes.end())
-        return n;
-    if (it->second.representative == n)
-        return n;
-    const Node * root = find(it->second.representative);
-    it->second.representative = root; /// path compression
-    return root;
-}
-
-void ActionsDAG::EquivalenceClasses::unite(const Node * a, const Node * b)
-{
-    const Node * ra = find(a);
-    const Node * rb = find(b);
-    if (ra == rb)
-        return;
-    auto & ca = classes[ra];
-    auto & cb = classes[rb];
-    /// rewriting `alias.children` through `find` would self-cycle
-    /// Otherwise union by size; ties go to `a` so first-seen stays the representative.
-    const bool ra_alias = ra->type == ActionsDAG::ActionType::ALIAS;
-    const bool rb_alias = rb->type == ActionsDAG::ActionType::ALIAS;
-    bool a_wins;
-    if (ra_alias != rb_alias)
-        a_wins = !ra_alias;
-    else
-        a_wins = ca.size >= cb.size;
-    if (a_wins)
+    bool operator()(const ConstantKey & a, const ConstantKey & b) const
     {
-        cb.representative = ra;
-        ca.size += cb.size;
+        return a.sample->result_type->equals(*b.sample->result_type)
+            && constColumnsEqual(a.sample->column, b.sample->column);
     }
-    else
-    {
-        ca.representative = rb;
-        cb.size += ca.size;
-    }
-}
+};
 
-ActionsDAG::EquivalenceClasses ActionsDAG::buildStructuralEquivalenceClasses() const
+struct FunctionCandidate
 {
-    EquivalenceClasses ec(*this);
-    std::unordered_map<NodeKey, const Node *, NodeKeyHash> seen;
+    const ActionsDAG::Node * representative;
+    std::vector<const ActionsDAG::Node *> arg_classes;
+};
 
-    for (const auto & node : nodes)
+EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
+{
+    using ActionType = ActionsDAG::ActionType;
+    using Node = ActionsDAG::Node;
+
+    EquivalenceClasses ec;
+    std::unordered_map<ConstantKey, const Node *, ConstantKeyHash, ConstantKeyEqual> constants;
+    std::unordered_map<std::string, std::vector<FunctionCandidate>> functions_by_name;
+
+    for (const auto & node : dag.getNodes())
     {
-        if (node.type == ActionType::ARRAY_JOIN)
+        /// INPUT / PLACEHOLDER are positional, ARRAY_JOIN changes row count
+        if (node.type == ActionType::INPUT
+            || node.type == ActionType::PLACEHOLDER
+            || node.type == ActionType::ARRAY_JOIN)
             continue;
-        /// identify inputs and placeholders by node pointer (do not dedup)
-        if (node.type == ActionType::INPUT || node.type == ActionType::PLACEHOLDER)
-            continue;
+
         if (node.type == ActionType::ALIAS)
         {
             if (!node.children.empty())
                 ec.unite(&node, node.children.front());
             continue;
         }
-        /// `rand()` / `randConstant` and non-deterministic-folded constants stay separate
+
+        /// `rand()` / `randConstant` and similar give different values per call
         if (!node.isDeterministic())
             continue;
         /// Lambda-typed values (like results of FunctionCapture) carry inner DAG we don't see
         if (node.result_type && WhichDataType(node.result_type).isFunction())
             continue;
 
-        NodeKey key{.node = &node, .canonical_children = {}};
-        if (!isConstant(node) && node.type == ActionType::FUNCTION)
+        if (isConstant(node))
         {
-            key.canonical_children.reserve(node.children.size());
-            for (const auto * c : node.children)
-                key.canonical_children.push_back(ec.find(c));
+            auto [it, inserted] = constants.try_emplace(ConstantKey{&node}, &node);
+            if (!inserted)
+                ec.unite(it->second, &node);
+            continue;
         }
 
-        auto it = seen.find(key);
-        if (it != seen.end())
-            ec.unite(it->second, &node);
-        else
-            seen.emplace(std::move(key), &node);
+        if (node.type != ActionType::FUNCTION || !node.function_base)
+            continue;
+
+        std::vector<const Node *> arg_classes;
+        arg_classes.reserve(node.children.size());
+        for (const auto * c : node.children)
+            arg_classes.push_back(ec.find(c));
+
+        auto & candidates = functions_by_name[getFunctionCanonicalName(node.function_base->getName())];
+
+        bool merged = false;
+        for (const auto & cand : candidates)
+        {
+            if (!cand.representative->result_type->equals(*node.result_type))
+                continue;
+            /// same canonical name, different creator pointers -> name collision between distinct functions
+            const auto * ha = node.function_base->getFactoryHandle();
+            const auto * hb = cand.representative->function_base->getFactoryHandle();
+            if (ha && hb && ha != hb)
+                continue;
+            if (cand.arg_classes != arg_classes)
+                continue;
+            ec.unite(cand.representative, &node);
+            merged = true;
+            break;
+        }
+        if (!merged)
+            candidates.push_back({&node, std::move(arg_classes)});
     }
 
     return ec;
 }
 
-void ActionsDAG::applyEquivalenceClasses(const EquivalenceClasses & ec)
+}
+
+void ActionsDAG::deduplicateSubtrees()
 {
+    auto ec = buildStructuralEquivalenceClasses(*this);
+
     for (auto & node : nodes)
         for (auto & child : node.children)
             child = ec.find(child);
@@ -1091,11 +1090,9 @@ void ActionsDAG::applyEquivalenceClasses(const EquivalenceClasses & ec)
         else
             out = &addAlias(*canon, out->result_name);
     }
-}
 
-void ActionsDAG::deduplicateSubtrees()
-{
-    applyEquivalenceClasses(buildStructuralEquivalenceClasses());
+    /// drop non-representative nodes and any orphans they leave behind
+    removeUnusedActions(/*allow_remove_inputs=*/false);
 }
 
 ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
