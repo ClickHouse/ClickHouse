@@ -31,8 +31,6 @@ SnapshotSummaryOperation SnapshotSummary::getOperation() const
                 return SnapshotSummaryOperation::DELETE;
             else if constexpr (std::is_same_v<SnapshotSummaryUpdateReplace, T>)
                 return SnapshotSummaryOperation::REPLACE;
-            else
-                return SnapshotSummaryOperation::UNKNOWN;
         },
         update);
 }
@@ -100,8 +98,6 @@ SnapshotSummary::SnapshotSummary(
             totals.data_files += u.added_files - u.deleted_data_files;
             break;
         }
-        default:
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected operation enum {}", getOperation());
     }
 }
 
@@ -146,74 +142,73 @@ SnapshotSummary::Expected SnapshotSummary::fromJSON(const Poco::JSON::Object & o
         return obj.getValue<String>(field);
     };
 
-    auto get_optional_int = [&](const char * field) -> Int64
+    auto get_optional_uint64 = [&](const char * field) -> UInt64
     {
         if (!obj.has(field))
             return 0;
 
-        return DB::parse<Int64>(get_string(field));
+        return DB::parse<UInt64>(get_string(field));
     };
 
     /// `deleted-data-files` is the canonical Iceberg field; fall back to the legacy
     /// `removed-data-files` when an engine wrote only the latter.
-    auto get_deleted_data_files = [&]() -> Int64
+    auto get_deleted_data_files = [&]() -> UInt64
     {
         return obj.has(Iceberg::f_deleted_data_files)
-            ? get_optional_int(Iceberg::f_deleted_data_files)
-            : get_optional_int(Iceberg::f_removed_data_files);
+            ? get_optional_uint64(Iceberg::f_deleted_data_files)
+            : get_optional_uint64(Iceberg::f_removed_data_files);
     };
-
-    const auto operation_str = get_string(Iceberg::f_operation);
 
     SnapshotSummary result;
 
+    const auto operation_str = get_string(Iceberg::f_operation);
     if (operation_str == Iceberg::f_append)
         result.update = SnapshotSummaryUpdateAppend{
-            .added_files = get_optional_int(Iceberg::f_added_data_files),
-            .added_records = get_optional_int(Iceberg::f_added_records),
-            .added_files_size = get_optional_int(Iceberg::f_added_files_size),
-            .num_partitions = get_optional_int(Iceberg::f_changed_partition_count),
+            .added_files = get_optional_uint64(Iceberg::f_added_data_files),
+            .added_records = get_optional_uint64(Iceberg::f_added_records),
+            .added_files_size = get_optional_uint64(Iceberg::f_added_files_size),
+            .num_partitions = get_optional_uint64(Iceberg::f_changed_partition_count),
         };
     else if (operation_str == Iceberg::f_overwrite)
         result.update = SnapshotSummaryUpdateOverwrite{
-            .added_files = get_optional_int(Iceberg::f_added_data_files),
-            .added_records = get_optional_int(Iceberg::f_added_records),
-            .added_files_size = get_optional_int(Iceberg::f_added_files_size),
-            .added_delete_files = get_optional_int(Iceberg::f_added_delete_files),
-            .added_position_deletes = get_optional_int(Iceberg::f_added_position_deletes),
+            .added_files = get_optional_uint64(Iceberg::f_added_data_files),
+            .added_records = get_optional_uint64(Iceberg::f_added_records),
+            .added_files_size = get_optional_uint64(Iceberg::f_added_files_size),
+            .added_delete_files = get_optional_uint64(Iceberg::f_added_delete_files),
+            .added_position_deletes = get_optional_uint64(Iceberg::f_added_position_deletes),
             .deleted_data_files = get_deleted_data_files(),
-            .removed_records = get_optional_int(Iceberg::f_deleted_records),
-            .removed_files_size = get_optional_int(Iceberg::f_removed_files_size),
-            .num_partitions = get_optional_int(Iceberg::f_changed_partition_count),
+            .removed_records = get_optional_uint64(Iceberg::f_deleted_records),
+            .removed_files_size = get_optional_uint64(Iceberg::f_removed_files_size),
+            .num_partitions = get_optional_uint64(Iceberg::f_changed_partition_count),
         };
     else if (operation_str == Iceberg::f_delete)
         result.update = SnapshotSummaryUpdateDelete{
             .deleted_data_files = get_deleted_data_files(),
-            .removed_records = get_optional_int(Iceberg::f_deleted_records),
-            .removed_files_size = get_optional_int(Iceberg::f_removed_files_size),
-            .removed_position_delete_files = get_optional_int(Iceberg::f_removed_position_delete_files),
-            .removed_position_deletes = get_optional_int(Iceberg::f_removed_position_deletes),
-            .num_partitions = get_optional_int(Iceberg::f_changed_partition_count),
+            .removed_records = get_optional_uint64(Iceberg::f_deleted_records),
+            .removed_files_size = get_optional_uint64(Iceberg::f_removed_files_size),
+            .removed_position_delete_files = get_optional_uint64(Iceberg::f_removed_position_delete_files),
+            .removed_position_deletes = get_optional_uint64(Iceberg::f_removed_position_deletes),
+            .num_partitions = get_optional_uint64(Iceberg::f_changed_partition_count),
         };
     else if (operation_str == Iceberg::f_replace)
         result.update = SnapshotSummaryUpdateReplace{
-            .added_files = get_optional_int(Iceberg::f_added_data_files),
-            .added_records = get_optional_int(Iceberg::f_added_records),
-            .added_files_size = get_optional_int(Iceberg::f_added_files_size),
+            .added_files = get_optional_uint64(Iceberg::f_added_data_files),
+            .added_records = get_optional_uint64(Iceberg::f_added_records),
+            .added_files_size = get_optional_uint64(Iceberg::f_added_files_size),
             .deleted_data_files = get_deleted_data_files(),
-            .removed_records = get_optional_int(Iceberg::f_deleted_records),
-            .removed_files_size = get_optional_int(Iceberg::f_removed_files_size),
-            .num_partitions = get_optional_int(Iceberg::f_changed_partition_count),
+            .removed_records = get_optional_uint64(Iceberg::f_deleted_records),
+            .removed_files_size = get_optional_uint64(Iceberg::f_removed_files_size),
+            .num_partitions = get_optional_uint64(Iceberg::f_changed_partition_count),
         };
     else
         return std::unexpected(fmt::format("Unexpected operation '{}'", operation_str));
 
-    result.totals.records = get_optional_int(Iceberg::f_total_records);
-    result.totals.files_size = get_optional_int(Iceberg::f_total_files_size);
-    result.totals.data_files = get_optional_int(Iceberg::f_total_data_files);
-    result.totals.delete_files = get_optional_int(Iceberg::f_total_delete_files);
-    result.totals.position_deletes = get_optional_int(Iceberg::f_total_position_deletes);
-    result.totals.equality_deletes = get_optional_int(Iceberg::f_total_equality_deletes);
+    result.totals.records = get_optional_uint64(Iceberg::f_total_records);
+    result.totals.files_size = get_optional_uint64(Iceberg::f_total_files_size);
+    result.totals.data_files = get_optional_uint64(Iceberg::f_total_data_files);
+    result.totals.delete_files = get_optional_uint64(Iceberg::f_total_delete_files);
+    result.totals.position_deletes = get_optional_uint64(Iceberg::f_total_position_deletes);
+    result.totals.equality_deletes = get_optional_uint64(Iceberg::f_total_equality_deletes);
 
     if (with_extra_fields)
     {
@@ -301,8 +296,6 @@ void SnapshotSummary::forEachField(std::function<void(std::string_view, std::str
             set_as_string(Iceberg::f_changed_partition_count, u.num_partitions);
             break;
         }
-        default:
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unexpected operation enum {}", getOperation());
     }
 
     set_as_string(Iceberg::f_total_records, totals.records);

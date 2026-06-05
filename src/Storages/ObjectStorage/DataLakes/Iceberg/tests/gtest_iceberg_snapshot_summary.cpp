@@ -230,10 +230,9 @@ TEST(IcebergSnapshotSummary, DeletePositionDeletesRoundTrip)
 
     auto parsed = SnapshotSummary::fromJSON(*obj);
     ASSERT_TRUE(parsed.has_value());
-    const auto * parsed_delete = parsed->getUpdate<DB::Iceberg::SnapshotSummaryUpdateDelete>();
-    ASSERT_NE(parsed_delete, nullptr);
-    EXPECT_EQ(parsed_delete->removed_position_delete_files, 1);
-    EXPECT_EQ(parsed_delete->removed_position_deletes, 4);
+    const auto & parsed_delete = parsed->getUpdate<DB::Iceberg::SnapshotSummaryUpdateDelete>();
+    EXPECT_EQ(parsed_delete.removed_position_delete_files, 1);
+    EXPECT_EQ(parsed_delete.removed_position_deletes, 4);
 }
 
 TEST(IcebergSnapshotSummary, ReplaceAdjustsDataTotals)

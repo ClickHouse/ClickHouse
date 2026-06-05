@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Processors/LimitTransform.h>
@@ -55,7 +56,13 @@ ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
          std::make_shared<DataTypeUInt8>(),
          "Flag that indicates if this snapshot is an ancestor of the current snapshot."},
         {"operation",
-         std::make_shared<DataTypeString>(),
+         std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
+             {"UNKNOWN", static_cast<Int8>(-1)},
+             {"APPEND", static_cast<Int8>(Iceberg::SnapshotSummaryOperation::APPEND)},
+             {"OVERWRITE", static_cast<Int8>(Iceberg::SnapshotSummaryOperation::OVERWRITE)},
+             {"REPLACE", static_cast<Int8>(Iceberg::SnapshotSummaryOperation::REPLACE)},
+             {"DELETE", static_cast<Int8>(Iceberg::SnapshotSummaryOperation::DELETE)},
+         }),
          "Snapshot operation (APPEND, OVERWRITE, DELETE, REPLACE and UNKNOWN). The UNKNOWN status means either that we were unable to read "
          "the summary or that it is empty (it's optional for v1). The correct 'operation' field is required"},
         {"summary",
@@ -96,16 +103,17 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
                     res_columns[column_index++]->insert(iceberg_history_item.parent_id);
                     res_columns[column_index++]->insert(iceberg_history_item.is_current_ancestor);
 
-                    const auto & snapshot_summary = iceberg_history_item.snapshot_summary;
-                    auto snapshot_operation = snapshot_summary.getOperation();
-
-                    res_columns[column_index++]->insert(fmt::format("{}", snapshot_summary.getOperation()));
-
-                    Map summary;
-                    if (snapshot_operation != Iceberg::SnapshotSummaryOperation::UNKNOWN)
-                        summary = snapshot_summary.toMap();
-
-                    res_columns[column_index++]->insert(std::move(summary));
+                    if (!iceberg_history_item.snapshot_summary)
+                    {
+                        res_columns[column_index++]->insert(Int8(-1));
+                        res_columns[column_index++]->insertDefault();
+                    }
+                    else
+                    {
+                        const auto & snapshot_summary = iceberg_history_item.snapshot_summary;
+                        res_columns[column_index++]->insert(snapshot_summary->getOperation());
+                        res_columns[column_index++]->insert(snapshot_summary->toMap());
+                    }
                 }
             }
         }
