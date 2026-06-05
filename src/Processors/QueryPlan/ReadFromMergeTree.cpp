@@ -3058,6 +3058,15 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     query_task_size_limit = query_limit ? query_limit : read_limit;
     reader_settings.read_in_order = true;
 
+    /// If the query has an outer LIMIT that could not be pushed down to the reader
+    /// (e.g. it was zeroed by a JOIN), remember it so the per-part prefetching path
+    /// is disabled: prefetching later ranges would defeat early termination on the
+    /// outer LIMIT. This also covers child readers under a `Merge` table, which
+    /// receive the same `query_limit`/`read_limit` through
+    /// `ReadFromMerge::requestReadingInOrder`.
+    if (query_limit != 0 && read_limit == 0)
+        has_outer_limit = true;
+
     /// In case of read-in-order, don't create too many reading streams.
     /// Almost always we are reading from a single stream at a time because of merge sort.
     if (output_streams_limit)

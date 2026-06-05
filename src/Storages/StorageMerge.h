@@ -191,6 +191,11 @@ public:
     bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
+    /// Propagate `setPreferMultipleStreams` to child `ReadFromMergeTree` steps, so a
+    /// downstream aggregation/distinct-in-order over a `Merge` table keeps multiple
+    /// parallel input streams instead of collapsing them with per-part `PrefetchingConcat`.
+    void setPreferMultipleStreams();
+
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     QueryPlanRawPtrs getChildPlans() override;

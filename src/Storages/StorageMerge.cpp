@@ -1723,6 +1723,21 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     return true;
 }
 
+void ReadFromMerge::setPreferMultipleStreams()
+{
+    filterTablesAndCreateChildrenPlans();
+
+    auto prefer_multiple_streams = [](ReadFromMergeTree & read_from_merge_tree)
+    {
+        read_from_merge_tree.setPreferMultipleStreams();
+        return true;
+    };
+
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized())
+            recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), prefer_multiple_streams);
+}
+
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     for (const auto & filter_info : pushed_down_filters)

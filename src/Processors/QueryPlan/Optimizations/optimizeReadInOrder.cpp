@@ -1219,11 +1219,10 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
             if (!can_read)
                 return nullptr;
 
-            /// If the query has a LIMIT but it was zeroed (e.g. by a JOIN),
-            /// tell the reading step so it can avoid per-part prefetching
-            /// that would defeat early termination.
-            if (sorting.getLimit() > 0 && order_info.input_order->limit == 0)
-                reading->setHasOuterLimit();
+            /// `ReadFromMergeTree::requestReadingInOrder` records whether the query has an
+            /// outer LIMIT that was zeroed for in-order reading (so per-part prefetching is
+            /// disabled). The `Merge` table branch below relies on the same logic for its
+            /// child readers.
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
@@ -1336,6 +1335,11 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
             bool can_read = merge->requestReadingInOrder(order_info.input_order);
             if (!can_read)
                 return {};
+
+            /// Same as the direct `ReadFromMergeTree` branch above: aggregation-in-order
+            /// benefits from multiple input streams, so keep them instead of collapsing
+            /// per-part with `PrefetchingConcat`.
+            merge->setPreferMultipleStreams();
         }
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1466,10 +1470,21 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
             dag, keys);
 
         if (!canImproveOrderForDistinct(order_info, merge->getInputOrder()))
+        {
+            /// Mirror the direct `ReadFromMergeTree` branch: the existing in-order read
+            /// already covers the distinct keys, so still prefer multiple streams to keep
+            /// `DistinctSortedStreamTransform` running per stream.
+            if (order_info.input_order && merge->getInputOrder())
+                merge->setPreferMultipleStreams();
             return {};
+        }
 
         if (!merge->requestReadingInOrder(order_info.input_order))
             return {};
+
+        /// Distinct-in-order's pre-distinct stage runs per stream, so keep multiple
+        /// parallel input streams instead of collapsing them with `PrefetchingConcat`.
+        merge->setPreferMultipleStreams();
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
             join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
