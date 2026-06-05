@@ -68,6 +68,8 @@ struct MergeTreeReaderSettings
     bool use_partial_aggregate_cache = false;
     /// Plan-time probe already called `PartialAggregateCache::get` for these reads and missed; skip redundant execution-time `get`.
     bool skip_partial_aggregate_execution_cache_lookup = false;
+    /// Force reading complete granules, even when the readers could read incomplete granules.
+    bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;
     bool use_prefixes_deserialization_thread_pool = false;
     bool secondary_indices_enable_bulk_filtering = true;
