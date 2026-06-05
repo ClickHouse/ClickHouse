@@ -488,7 +488,7 @@ bool UTFConvertingReadBuffer::nextImpl()
     return false;
 }
 
-bool UTFConvertingReadBuffer::poll(size_t timeout_microseconds) const
+bool UTFConvertingReadBuffer::poll(size_t timeout_microseconds)
 {
     if (hasPendingData() || pending_bytes_count > 0)
     {
@@ -500,20 +500,20 @@ bool UTFConvertingReadBuffer::poll(size_t timeout_microseconds) const
         impl->position() = const_cast<char *>(pos);
     }
 
-    const ReadBuffer * current = impl;
+    ReadBuffer * current = impl;
     while (current)
     {
         if (const auto * wrapper = dynamic_cast<const ReadBufferWrapperBase *>(current))
         {
-            current = &wrapper->getWrappedReadBuffer();
+            current = const_cast<ReadBuffer *>(&wrapper->getWrappedReadBuffer());
         }
-        else if (const auto * parallel = dynamic_cast<const ParallelReadBuffer *>(current))
+        else if (auto * parallel = dynamic_cast<ParallelReadBuffer *>(current))
         {
             current = &parallel->getReadBuffer();
         }
-        else if (const auto * peekable = dynamic_cast<const PeekableReadBuffer *>(current))
+        else if (auto * peekable = dynamic_cast<PeekableReadBuffer *>(current))
         {
-            current = &peekable->getSubBuffer();
+            current = const_cast<ReadBuffer *>(&peekable->getSubBuffer());
         }
         else
         {

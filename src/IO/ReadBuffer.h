@@ -184,10 +184,9 @@ public:
       */
     virtual void prefetch(Priority) {}
 
-    virtual bool poll(size_t /*timeout_microseconds*/) const
-    {
-        return true;
-    }
+    /// Wait until reading more data from this buffer is expected to complete without blocking.
+    /// The default implementation keeps the previous behavior for buffers that cannot expose readiness.
+    virtual bool poll(size_t /* timeout_microseconds */) { return true; }
 
     /**
      * Set upper bound for read range [..., position).

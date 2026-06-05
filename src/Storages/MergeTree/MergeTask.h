@@ -138,7 +138,8 @@ public:
             global_ctx->suffix = std::move(suffix_);
             global_ctx->merging_params = std::move(merging_params_);
 
-            global_ctx->data_settings = global_ctx->data->getSettings(global_ctx->projection);
+            global_ctx->data_settings
+                = global_ctx->data->getSettings(global_ctx->projection ? &global_ctx->projection->settings_changes : nullptr);
 
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
             (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
@@ -201,7 +202,7 @@ private:
     /// Proper initialization is responsibility of the author
     struct GlobalRuntimeContext : public IStageRuntimeContext
     {
-        TableLockHolder * holder;
+        TableLockHolder * holder{};
         MergeList::Entry * merge_entry{nullptr};
         /// If not null, use this instead of the global MergeList::Entry. This is for merging projections.
         std::unique_ptr<MergeListElement> projection_merge_list_element;
@@ -231,12 +232,13 @@ private:
         CompressionCodecPtr compression_codec{nullptr};
 
         NamesAndTypesList gathering_columns{};
-        NameSet merge_required_key_columns{};
+        NameSet merge_required_columns{};
         NamesAndTypesList merging_columns{};
         NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
         NamesAndTypesList virtual_columns{};
         NamesAndTypesList storage_columns_expired_by_ttl{};
+        NamesAndTypesList minmax_idx_columns{};
 
         MergedBlockOutputStream::GatheredData gathered_data{};
         std::unordered_map<String, ColumnsStatistics> statistics_to_build_by_part;
@@ -281,7 +283,7 @@ private:
         PlainMarksByName cached_index_marks;
 
         MergeTreeTransactionPtr txn;
-        bool need_prefix;
+        bool need_prefix{};
         String suffix;
         MergeTreeData::MergingParams merging_params{};
 
@@ -313,6 +315,17 @@ private:
         using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
         ProjectionNameToItsBlocks projection_parts;
         std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
+
+        /// Pre-calculate squash: accumulates raw source blocks before calling calculate().
+        /// Shared across all projections since they all consume the same source blocks.
+        /// Only the columns required by at least one projection (plus _row_exists when
+        /// present) are squashed, so wide source columns no projection reads are not
+        /// retained in memory until the squash boundary.
+        std::optional<Squashing> pre_calculate_squash;
+        NameSet pre_calculate_required_columns;
+        UInt64 pre_calculate_starting_offset{0};
+
+        /// Post-calculate squash: accumulates calculated projection blocks before writing.
         std::vector<Squashing> projection_squashes;
         size_t projection_block_num = 0;
         std::map<String, UInt64> projections_rebuild_elapsed_ns;
@@ -363,6 +376,7 @@ private:
 
         void prepareProjectionsToMergeAndRebuild() const;
         void calculateProjections(const Block & block, UInt64 starting_offset) const;
+        void calculateProjectionForBlock(size_t projection_idx, const Block & block, UInt64 starting_offset) const;
         void finalizeProjections() const;
         void constructTaskForProjectionPartsMerge() const;
         bool executeMergeProjections() const;

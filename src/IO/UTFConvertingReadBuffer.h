@@ -31,7 +31,7 @@ public:
 
     const ReadBuffer & getWrappedReadBuffer() const override { return *impl; }
 
-    bool poll(size_t timeout_microseconds) const override;
+    bool poll(size_t timeout_microseconds) override;
 
 private:
     bool nextImpl() override;
