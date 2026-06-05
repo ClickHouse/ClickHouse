@@ -55,7 +55,7 @@ namespace MemoryWorkerHelpers
 
     struct CgroupLevelAvailability
     {
-        CgroupLevelKind kind;
+        CgroupLevelKind kind = CgroupLevelKind::Unbounded;
         uint64_t available = 0;
     };
 
