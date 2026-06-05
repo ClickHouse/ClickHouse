@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 DROP TABLE IF EXISTS data;
 DROP TABLE IF EXISTS ids;
 
