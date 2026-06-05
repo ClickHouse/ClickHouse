@@ -1,16 +1,12 @@
 <test>
+    <!-- Split out of dotProduct.xml by element type so each file stays under the perf runner
+         per-test query limit (and so BFloat16 can be added without pushing past it). -->
 
     <substitutions>
         <substitution>
             <name>element_type</name>
             <values>
-                <!-- integer cases are not relevant in practice for vector search, disable to reduce test runtime -->
-                <!-- <value>UInt8</value> -->
-                <!-- <value>Int16</value> -->
-                <!-- <value>Int32</value> -->
-                <!-- <value>Int64</value> -->
                 <value>Float32</value>
-                <value>Float64</value>
             </values>
         </substitution>
     </substitutions>
