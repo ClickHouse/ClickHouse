@@ -1045,6 +1045,18 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_bytes);
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
+    /// Qualify the cache keys with the store's identity (type, endpoint,
+    /// namespace) so two independent object stores exposing the same relative
+    /// path and ETag cannot read each other's cached bytes (cf. DiskObjectStorage).
+    auto storage_cache_identity = [&]
+    {
+        return fmt::format(
+            "{}:{}:{}",
+            magic_enum::enum_name(object_storage->getType()),
+            object_storage->getDescription(),
+            object_storage->getObjectsNamespace());
+    };
+
     /// Filesystem cache
     if (use_filesystem_cache)
     {
@@ -1056,6 +1068,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         else
         {
             SipHash hash;
+            hash.update(storage_cache_identity());
             hash.update(object_info.getPath());
             hash.update(object_info.metadata->etag);
 
@@ -1091,7 +1104,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (use_page_cache)
     {
         pipeline.needMemoryCache(
-            "s3:" + object_info.getPath(),
+            storage_cache_identity() + ":" + object_info.getPath(),
             "etag:" + object_info.metadata->etag,
             modified_read_settings.page_cache_settings);
     }
