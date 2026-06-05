@@ -185,6 +185,94 @@ QueryTreeNodePtr IdentifierResolver::wrapExpressionNodeInTupleElement(QueryTreeN
     return expression_node;
 }
 
+QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
+    const Identifier & identifier,
+    const AnalysisTableExpressionData & table_expression_data,
+    const ContextPtr & context)
+{
+    QueryTreeNodes nested_column_nodes;
+    DataTypes nested_types;
+    Array nested_names_array;
+
+    bool allow_compound = context->getSettingsRef()[Setting::analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested];
+
+    for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
+    {
+        if (table_expression_data.subcolumn_names.contains(column_name))
+            continue;
+
+        Identifier column_identifier(column_name);
+        IdentifierView suffix(column_identifier);
+        size_t prefix_size = identifier.getPartsSize();
+
+        for (const auto & part : identifier.getParts())
+        {
+            if (suffix.empty() || part != suffix.front())
+                break;
+
+            suffix.popFirst();
+        }
+
+        if (suffix.empty() || prefix_size + suffix.getPartsSize() != column_identifier.getPartsSize())
+            continue;
+
+        /// Ignore compound identifiers because of the compatibility setting.
+        if (!allow_compound && suffix.getPartsSize() > 1)
+            continue;
+
+        /// FIXME: we can resulve an identifier with a few components as well, e.g.
+        /// for `x.b.first Array(Array(String))` and `x.b.second Array(Array(String))`
+        /// identifier `x.b` can be resolved into `Array(Nested(first String), second String))`.
+        /// But for now, nested functions does not support the inner nesting.
+        /// So, we will get the incorrect result `Nested(first Array(String)), second Array(String))`.
+        if (prefix_size != 1)
+            continue;
+
+        const auto & node_map = table_expression_data.getColumnNodeMap();
+        auto column_node_it = node_map.find(column_name);
+        if (column_node_it == node_map.end())
+            continue;
+
+        const auto & column_node = column_node_it->second;
+        auto column_type = column_node->getColumnType();
+
+        for (size_t i = 0; i < prefix_size; ++i)
+        {
+            const auto * column_type_array = typeid_cast<const DataTypeArray *>(column_type.get());
+            if (column_type_array)
+                column_type = column_type_array->getNestedType();
+            else
+                column_type = nullptr;
+        }
+
+        if (!column_type)
+            continue;
+
+        nested_column_nodes.push_back(column_node);
+        nested_types.push_back(column_type);
+        nested_names_array.push_back(suffix.getFullName());
+    }
+
+    if (nested_types.empty())
+        return nullptr;
+
+    auto nested_function_node = std::make_shared<FunctionNode>("nested");
+    auto & nested_function_node_arguments = nested_function_node->getArguments().getNodes();
+
+    auto nested_function_names_array_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+    auto nested_function_names_constant_node = std::make_shared<ConstantNode>(std::move(nested_names_array),
+        std::move(nested_function_names_array_type));
+    nested_function_node_arguments.push_back(std::move(nested_function_names_constant_node));
+    nested_function_node_arguments.insert(nested_function_node_arguments.end(),
+        nested_column_nodes.begin(),
+        nested_column_nodes.end());
+
+    auto nested_function = FunctionFactory::instance().get(nested_function_node->getFunctionName(), context);
+    nested_function_node->resolveAsFunction(nested_function->build(nested_function_node->getArgumentColumns()));
+
+    return nested_function_node;
+}
+
 /// Resolve identifier functions implementation
 
 /// Try resolve table identifier from database catalog
@@ -404,8 +492,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
 
     const auto & identifier = identifier_lookup.identifier;
     auto identifier_full_name = identifier.getFullName();
-    auto it = scope.table_expression_data_for_alias_resolution->column_name_to_column_node.find(identifier_full_name);
-    if (it != scope.table_expression_data_for_alias_resolution->column_name_to_column_node.end())
+    const auto & node_map = scope.table_expression_data_for_alias_resolution->getColumnNodeMap();
+    auto it = node_map.find(identifier_full_name);
+    if (it != node_map.end())
         return it->second;
 
     /// Check if it's a subcolumn
@@ -546,7 +635,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
 
-    if (auto it = table_expression_data.column_name_to_column_node.find(identifier_full_name); it != table_expression_data.column_name_to_column_node.end())
+    const auto & node_map = table_expression_data.getColumnNodeMap();
+    if (auto it = node_map.find(identifier_full_name); it != node_map.end())
     {
         result_expression = it->second;
     }
@@ -576,86 +666,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
         /// Here we try to create Nested from Array columns with the `identifier` prefix.
         /// For the identifier `x` and columns `x.a Array(String)` and `x.b Array(String)`
         /// we resolve `x` into Nested(a String, b String).
-
-        QueryTreeNodes nested_column_nodes;
-        DataTypes nested_types;
-        Array nested_names_array;
-
-        bool allow_compound = scope.context->getSettingsRef()[Setting::analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested];
-
-        for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
+        if (auto nested_function_node = tryResolveIdentifierAsNestedPrefix(
+                identifier_without_column_qualifier, table_expression_data, scope.context))
         {
-            if (table_expression_data.subcolumn_names.contains(column_name))
-                continue;
-
-            Identifier column_identifier(column_name);
-            IdentifierView suffix(column_identifier);
-            size_t prefix_size = identifier_without_column_qualifier.getPartsSize();
-
-            for (const auto & part : identifier_without_column_qualifier.getParts())
-            {
-                if (suffix.empty() || part != suffix.front())
-                    break;
-
-                suffix.popFirst();
-            }
-
-            if (suffix.empty() || prefix_size + suffix.getPartsSize() != column_identifier.getPartsSize())
-                continue;
-
-            /// Ignore compound identifiers because of the compatibility setting.
-            if (!allow_compound && suffix.getPartsSize() > 1)
-                continue;
-
-            /// FIXME: we can resulve an identifier with a few components as well, e.g.
-            /// for `x.b.first Array(Array(String))` and `x.b.second Array(Array(String))`
-            /// identifier `x.b` can be resolved into `Array(Nested(first String), second String))`.
-            /// But for now, nested functions does not support the inner nesting.
-            /// So, we will get the incorrect result `Nested(first Array(String)), second Array(String))`.
-            if (prefix_size != 1)
-                continue;
-
-            auto column_node_it = table_expression_data.column_name_to_column_node.find(column_name);
-            if (column_node_it == table_expression_data.column_name_to_column_node.end())
-                continue;
-
-            const auto & column_node = column_node_it->second;
-            auto column_type = column_node->getColumnType();
-
-            for (size_t i = 0; i < prefix_size; ++i)
-            {
-
-                const auto * column_type_array = typeid_cast<const DataTypeArray *>(column_type.get());
-                if (column_type_array)
-                    column_type = column_type_array->getNestedType();
-                else
-                    column_type = nullptr;
-            }
-
-            if (!column_type)
-                continue;
-
-            nested_column_nodes.push_back(column_node);
-            nested_types.push_back(column_type);
-            nested_names_array.push_back(suffix.getFullName());
-        }
-
-        if (!nested_types.empty())
-        {
-            auto nested_function_node = std::make_shared<FunctionNode>("nested");
-            auto & nested_function_node_arguments = nested_function_node->getArguments().getNodes();
-
-            auto nested_function_names_array_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
-            auto nested_function_names_constant_node = std::make_shared<ConstantNode>(std::move(nested_names_array),
-                std::move(nested_function_names_array_type));
-            nested_function_node_arguments.push_back(std::move(nested_function_names_constant_node));
-            nested_function_node_arguments.insert(nested_function_node_arguments.end(),
-                nested_column_nodes.begin(),
-                nested_column_nodes.end());
-
-            auto nested_function = FunctionFactory::instance().get(nested_function_node->getFunctionName(), scope.context);
-            nested_function_node->resolveAsFunction(nested_function->build(nested_function_node->getArgumentColumns()));
-
             clone_is_needed = false;
             result_expression = std::move(nested_function_node);
         }
