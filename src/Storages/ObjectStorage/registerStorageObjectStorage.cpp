@@ -142,7 +142,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 - `account_key` - if storage_account_url is used, then account key can be specified here
 - `format` — The [format](/interfaces/formats.md) of the file.
 - `compression` — Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).
-- `partition_strategy` – Options: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to `WILDCARD`
+- `partition_strategy` – Options: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. When `PARTITION BY` is used without an explicit `partition_strategy`, the default is taken from the `file_like_engine_default_partition_strategy` setting, which defaults to `HIVE`.
 - `partition_columns_in_data_file` - Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
 - `extra_credentials` - Use `client_id` and `tenant_id` for authentication. If extra_credentials are provided, they are given priority over `account_name` and `account_key`.
 
@@ -218,9 +218,9 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 #### Partition strategy {#partition-strategy}
 
-`WILDCARD` (default): Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported.
+`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported.
 
-`HIVE` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
+`HIVE` (the default) implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 Note: When using `HIVE` partition strategy, the `use_hive_partitioning` setting has no effect.
 
@@ -252,20 +252,13 @@ arthur :) select _path, * from azure_table;
 #if USE_AWS_S3
 static void registerStorageS3Impl(const String & name, StorageFactory & factory)
 {
-    factory.registerStorage(name, [=](const StorageFactory::Arguments & args)
+    /// The full embedded documentation below describes the Amazon `S3` engine. This same implementation
+    /// is also registered under the S3-compatible `COSN`, `OSS`, and `GCS` engine names; give those a
+    /// concise provider-specific description instead of the S3-specific page.
+    String description;
+    if (name == S3Definition::storage_engine_name)
     {
-        auto configuration = std::make_shared<StorageS3Configuration>();
-        return createStorageObjectStorage(args, configuration);
-    },
-    {
-        .supports_settings = true,
-        .supports_sort_order = true, // for partition by
-        .supports_schema_inference = true,
-        .source_access_type = AccessTypeObjects::Source::S3,
-        .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
-    },
-    Documentation{
-        .description = R"DOCS_MD(
+        description = R"DOCS_MD(
 This engine provides integration with the [Amazon S3](https://aws.amazon.com/s3/) ecosystem. This engine is similar to the [HDFS](/engines/table-engines/integrations/hdfs) engine, but provides S3-specific features.
 
 ## Example {#example}
@@ -303,7 +296,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 - `format` — The [format](/sql-reference/formats#formats-overview) of the file.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](../mergetree-family/mergetree.md#table_engine-mergetree-s3).
 - `compression` — Compression type. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Parameter is optional. By default, it will auto-detect compression by file extension.
-- `partition_strategy` – Options: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to `WILDCARD`
+- `partition_strategy` – Options: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. When `PARTITION BY` is used without an explicit `partition_strategy`, the default is taken from the `file_like_engine_default_partition_strategy` setting, which defaults to `HIVE`.
 - `partition_columns_in_data_file` - Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
 - `storage_class_name` - Options: `STANDARD` or `INTELLIGENT_TIERING`, allow to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
 - `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
@@ -347,9 +340,9 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 #### Partition strategy {#partition-strategy}
 
-`WILDCARD` (default): Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported.
+`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported.
 
-`HIVE` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`.
+`HIVE` (the default) implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`.
 Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 Note: When using `HIVE` partition strategy, the `use_hive_partitioning` setting has no effect.
@@ -690,7 +683,38 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
 
 - [s3 table function](../../../sql-reference/table-functions/s3.md)
 - [Integrating S3 with ClickHouse](/integrations/s3)
-)DOCS_MD",
+)DOCS_MD";
+    }
+    else
+    {
+        String provider;
+        if (name == COSNDefinition::storage_engine_name)
+            provider = "[Tencent Cloud Object Storage (COS)](https://www.tencentcloud.com/products/cos)";
+        else if (name == OSSDefinition::storage_engine_name)
+            provider = "[Alibaba Cloud Object Storage Service (OSS)](https://www.alibabacloud.com/product/object-storage-service)";
+        else if (name == GCSDefinition::storage_engine_name)
+            provider = "[Google Cloud Storage (GCS)](https://cloud.google.com/storage)";
+
+        description = "The `" + name + "` engine provides integration with " + provider
+            + " through its Amazon S3-compatible API. It shares the implementation, parameters, and settings of the "
+              "[`S3`](/engines/table-engines/integrations/s3) table engine; see that engine's documentation for the "
+              "full description, parameters, examples, and settings.\n";
+    }
+
+    factory.registerStorage(name, [=](const StorageFactory::Arguments & args)
+    {
+        auto configuration = std::make_shared<StorageS3Configuration>();
+        return createStorageObjectStorage(args, configuration);
+    },
+    {
+        .supports_settings = true,
+        .supports_sort_order = true, // for partition by
+        .supports_schema_inference = true,
+        .source_access_type = AccessTypeObjects::Source::S3,
+        .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+    },
+    Documentation{
+        .description = description,
         .syntax = "ENGINE = " + name + "(url [, NOSIGN | access_key_id, secret_access_key [, session_token]] [, format] [, compression])",
         .related = {"AzureBlobStorage", "HDFS"}});
 }
@@ -1133,7 +1157,7 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 ## Aliases {#aliases}
 
-Table engine `Iceberg` is an alias to `IcebergS3` now.
+The `Iceberg` table engine auto-detects the storage backend from the `disk` setting and dispatches to `IcebergS3`, `IcebergAzure`, or `IcebergLocal` accordingly. When no `disk` is specified, it defaults to the `IcebergS3` implementation.
 
 ## Data types {#data-types}
 
@@ -1829,7 +1853,7 @@ Stop the MV before dropping it to prevent background refresh from blocking DDL o
 
 ## Aliases {#aliases}
 
-Table engine `Paimon` is an alias to `PaimonS3` now.
+The `Paimon` table engine auto-detects the storage backend from the `disk` setting and dispatches to `PaimonS3`, `PaimonAzure`, or `PaimonLocal` accordingly. When no `disk` is specified, it defaults to the `PaimonS3` implementation.
 
 ## Virtual Columns {#virtual-columns}
 

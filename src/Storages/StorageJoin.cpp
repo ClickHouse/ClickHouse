@@ -538,8 +538,8 @@ In ClickHouse Cloud, if your service was created with a version earlier than 25.
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
 ) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
 ```
 

@@ -23,8 +23,8 @@ This table contains the following columns (the column type is shown in brackets)
 - `supports_replication` ([UInt8](/sql-reference/data-types/int-uint)) — Flag that indicates if table engine supports data replication.
 - `supports_deduplication` ([UInt8](/sql-reference/data-types/int-uint)) — Flag that indicates if table engine supports data deduplication.
 - `supports_parallel_insert` ([UInt8](/sql-reference/data-types/int-uint)) — Flag that indicates if table engine supports parallel insert (see max_insert_threads setting).
-- `description` ([String](/sql-reference/data-types/string)) — A high-level description of what the table engine does.
-- `syntax` ([String](/sql-reference/data-types/string)) — How the table engine is specified in the ENGINE clause of a CREATE TABLE query.
+- `description` ([String](/sql-reference/data-types/string)) — A description of what the table engine does. For engines that have a dedicated documentation page, this contains the full Markdown body of that page; for the remaining engines it is a concise summary.
+- `syntax` ([String](/sql-reference/data-types/string)) — How the table engine is used when creating a table. For most engines this is the ENGINE clause of a CREATE TABLE query, but some engines (such as the various kinds of views or the Loop engine) are used through other forms, such as CREATE VIEW or a SELECT from a table function.
 - `examples` ([String](/sql-reference/data-types/string)) — Usage examples.
 - `introduced_in` ([String](/sql-reference/data-types/string)) — The ClickHouse version in which the table engine was first introduced, in the form major.minor.
 - `related` ([Array](/sql-reference/data-types/array)([String](/sql-reference/data-types/string))) — The names of related table engines.

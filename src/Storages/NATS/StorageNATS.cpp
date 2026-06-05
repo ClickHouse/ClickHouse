@@ -862,7 +862,7 @@ Optional parameters:
 
 - `nats_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `nats_stream` – The name of an existing stream in NATS JetStream.
-- `nats_consumer` – The name of an existing durable  pull consumer in NATS JetStream.
+- `nats_consumer_name` – The name of an existing durable pull consumer in NATS JetStream.
 - `nats_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient for NATS core only.
 - `nats_queue_group` – Name for queue group of NATS subscribers. Default is the table name.
 - `nats_max_reconnect` – Deprecated and has no effect, reconnect is performed permanently with nats_reconnect_wait timeout.
