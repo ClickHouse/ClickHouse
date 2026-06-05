@@ -52,6 +52,9 @@ public:
     /// Executable (non-pool) path: fill elapsed_us, user_time_us, system_time_us,
     /// and peak_memory_byte_seconds from the scalars returned by ShellCommand::getLastChild*.
     /// Must be called at most once per sampler lifetime.
+    /// Coverage note: these come from `wait4` rusage, which — unlike pool mode's /proc
+    /// subtree walk — counts the child plus the descendants it reaps (CPU summed, peak
+    /// RSS maxed), but not descendants it never waits on.
     void recordExecutableFinished(UInt64 user_time_us, UInt64 system_time_us, UInt64 peak_rss_bytes) noexcept;
 
     /// Pool wait = entry → borrow acquired.
