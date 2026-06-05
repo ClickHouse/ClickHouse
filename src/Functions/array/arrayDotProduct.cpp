@@ -25,9 +25,9 @@ extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 /// enabling the compiler to generate FMA instructions across all SIMD targets.
 /// Generates x86_64_v4 (AVX-512) and default (SSE2/NEON/AVX2) variants.
 MULTITARGET_FUNCTION_X86_V4(
-    MULTITARGET_FUNCTION_HEADER(template <typename ResultType> static ResultType NO_SANITIZE_UNDEFINED NO_INLINE),
+    MULTITARGET_FUNCTION_HEADER(template <typename ResultType, typename ArgumentType> static ResultType NO_SANITIZE_UNDEFINED NO_INLINE),
     dotProductImpl,
-    MULTITARGET_FUNCTION_BODY((const ResultType * __restrict data_x, const ResultType * __restrict data_y, size_t count) {
+    MULTITARGET_FUNCTION_BODY((const ArgumentType * __restrict data_x, const ArgumentType * __restrict data_y, size_t count) {
         /// Manual unrolling with independent accumulators to break FP dependency chains.
         /// With FMA latency ~4 cycles and throughput 1/cycle, we need >= 4 independent
         /// chains to saturate the pipeline. 16 accumulators is enough to do that while
@@ -40,10 +40,12 @@ MULTITARGET_FUNCTION_X86_V4(
         size_t i = 0;
         const size_t unrolled_end = count / unroll_count * unroll_count;
 
-        /// Main unrolled loop — compiler auto-vectorizes with FMA
+        /// Main unrolled loop — compiler auto-vectorizes with FMA. `ArgumentType` is widened to
+        /// `ResultType` on the fly, so `BFloat16` inputs (-> `Float32`) take the same vectorized path as
+        /// `Float32`; the widening is the identity when `ArgumentType` == `ResultType`.
         for (; i < unrolled_end; i += unroll_count)
             for (size_t s = 0; s < unroll_count; ++s)
-                partial_sums[s] += data_x[i + s] * data_y[i + s];
+                partial_sums[s] += static_cast<ResultType>(data_x[i + s]) * static_cast<ResultType>(data_y[i + s]);
 
         /// Reduce partial sums
         ResultType sum = 0;
@@ -52,7 +54,7 @@ MULTITARGET_FUNCTION_X86_V4(
 
         /// Tail: process remaining elements that don't fill a full unroll block
         for (; i < count; ++i)
-            sum += data_x[i] * data_y[i];
+            sum += static_cast<ResultType>(data_x[i]) * static_cast<ResultType>(data_y[i]);
 
         return sum;
     }))
@@ -65,6 +67,7 @@ struct DotProduct
     static DataTypePtr getReturnType(const DataTypePtr & left, const DataTypePtr & right)
     {
         using Types = TypeList<
+            DataTypeBFloat16,
             DataTypeFloat32,
             DataTypeFloat64,
             DataTypeUInt8,
@@ -92,7 +95,10 @@ struct DotProduct
                         using RightType = typename std::decay_t<decltype(right_)>::FieldType;
                         using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<LeftType, RightType>::Type;
 
-                        if constexpr (std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
+                        /// Same-type `Float32` and `BFloat16` both accumulate to `Float32` (matching
+                        /// `arrayNorm`/`arrayDistance`); everything else uses the promoted arithmetic type.
+                        if constexpr ((std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
+                                   || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<RightType, BFloat16>))
                             result_type = std::make_shared<DataTypeFloat32>();
                         else
                             result_type = std::make_shared<DataTypeNumber<ResultType>>();
@@ -103,7 +109,7 @@ struct DotProduct
         if (!valid)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Arguments of function {} only support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                "Arguments of function {} only support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
                 name);
         return result_type;
     }
@@ -158,7 +164,7 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments for function {} must be of type Array", getName());
 
             const auto & nested_type = array_type->getNestedType();
-            if (!isNativeNumber(nested_type))
+            if (!isNativeNumber(nested_type) && !WhichDataType(nested_type).isBFloat16())
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Function {} cannot process values of type {}",
@@ -180,6 +186,7 @@ public:
     ACTION(Int16) \
     ACTION(Int32) \
     ACTION(Int64) \
+    ACTION(BFloat16) \
     ACTION(Float32) \
     ACTION(Float64)
 
@@ -202,7 +209,7 @@ public:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
-                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
                     getName(),
                     type_x->getName());
         }
@@ -228,7 +235,7 @@ private:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
-                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
                     getName(),
                     type_y->getName());
         }
@@ -240,7 +247,8 @@ private:
         /// Compute result type from input types, matching getReturnType logic.
         /// This avoids an extra dispatch level (10x fewer template instantiations).
         using ResultType = std::conditional_t<
-            std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>,
+            (std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
+                || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<RightType, BFloat16>),
             Float32,
             typename NumberTraits::ResultOfAdditionMultiplication<LeftType, RightType>::Type>;
 
@@ -279,16 +287,17 @@ private:
             const size_t array_size = offsets_x[row] - current_offset;
 
             if constexpr (
-                std::is_same_v<ResultType, LeftType> && std::is_same_v<LeftType, RightType>
-                && (std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>))
+                std::is_same_v<LeftType, RightType>
+                && ((std::is_same_v<ResultType, LeftType> && (std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>))
+                    || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<ResultType, Float32>)))
             {
                 /// SIMD-optimized path for same-type floating point
 #if USE_MULTITARGET_CODE
                 if (isArchSupported(TargetArch::x86_64_v4))
-                    result_data[row] = dotProductImpl_x86_64_v4<ResultType>(data_x.data() + current_offset, data_y.data() + current_offset, array_size);
+                    result_data[row] = dotProductImpl_x86_64_v4<ResultType, LeftType>(data_x.data() + current_offset, data_y.data() + current_offset, array_size);
                 else
 #endif
-                    result_data[row] = dotProductImpl<ResultType>(data_x.data() + current_offset, data_y.data() + current_offset, array_size);
+                    result_data[row] = dotProductImpl<ResultType, LeftType>(data_x.data() + current_offset, data_y.data() + current_offset, array_size);
             }
             else
             {
@@ -364,16 +373,17 @@ private:
             const size_t array_size = offsets_x[0];
 
             if constexpr (
-                std::is_same_v<ResultType, LeftType> && std::is_same_v<LeftType, RightType>
-                && (std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>))
+                std::is_same_v<LeftType, RightType>
+                && ((std::is_same_v<ResultType, LeftType> && (std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>))
+                    || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<ResultType, Float32>)))
             {
                 /// SIMD-optimized path for same-type floating point
 #if USE_MULTITARGET_CODE
                 if (isArchSupported(TargetArch::x86_64_v4))
-                    result[row] = dotProductImpl_x86_64_v4<ResultType>(data_x.data(), data_y.data() + current_offset, array_size);
+                    result[row] = dotProductImpl_x86_64_v4<ResultType, LeftType>(data_x.data(), data_y.data() + current_offset, array_size);
                 else
 #endif
-                    result[row] = dotProductImpl<ResultType>(data_x.data(), data_y.data() + current_offset, array_size);
+                    result[row] = dotProductImpl<ResultType, LeftType>(data_x.data(), data_y.data() + current_offset, array_size);
             }
             else
             {
