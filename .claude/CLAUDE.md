@@ -167,7 +167,7 @@ Link related pull requests and issues explicitly, using full GitHub URLs, one re
 - When an issue was caused by a pull request (a regression), put `Caused by: <full link to the pull request>` on its own line in the issue.
 - For any other relevant pull request or issue, put `Related: <full link>` on its own line.
 
-Use the keyword `Closes` (not `Fixes` or `Resolves`) for consistency. Only `Closes` triggers GitHub's automatic closing; `Caused by` and `Related` are conventions for humans and tooling. Issues never close pull requests, so the issue side uses only `Caused by` and `Related`.
+Use the keyword `Closes` (not `Fixes` or `Resolves`) for consistency, even though GitHub also auto-closes on `Fixes` and `Resolves`. `Caused by` and `Related` are not GitHub keywords and trigger no automatic closing; they are conventions for humans and tooling. Issues never close pull requests, so the issue side uses only `Caused by` and `Related`.
 
 ARM machines in CI are not slow. They are similar to x86 in performance.
 
