@@ -3,6 +3,7 @@ import pytest
 import time
 import os
 import uuid
+import socket
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
@@ -17,6 +18,19 @@ DEFAULT_SCHEMA = Schema(
     NestedField(field_id=2, name="name", field_type=StringType(), required=False),
     NestedField(field_id=3, name="value", field_type=LongType(), required=False),
 )
+
+
+def wait_for_hms(started_cluster, timeout=120):
+    """Wait until the Hive Metastore TCP port 9083 is accepting connections."""
+    hive_ip = started_cluster.get_instance_ip("hive")
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((hive_ip, 9083), timeout=2):
+                return
+        except OSError:
+            time.sleep(1)
+    raise Exception(f"Hive Metastore at {hive_ip}:9083 did not become available within {timeout}s")
 
 
 def load_hive_catalog(started_cluster):
@@ -73,6 +87,7 @@ def test_ttransport_exception_restart_service(started_cluster):
     namespace = f"test_namespace_{uuid.uuid4().hex[:8]}"
     table_names = [f"table_{i}" for i in range(3)]
 
+    wait_for_hms(started_cluster)
     catalog.create_namespace(namespace)
     for table_name in table_names:
         catalog.create_table(
@@ -89,7 +104,9 @@ def test_ttransport_exception_restart_service(started_cluster):
     )
 
     started_cluster.restart_service("hive")
-    time.sleep(10)
+    # Give the old HMS process time to stop before probing the new one.
+    time.sleep(2)
+    wait_for_hms(started_cluster)
 
     tables_after = get_tables_from_clickhouse(node, "lake_test")
     assert sorted(tables_before) == sorted(tables_after), (
