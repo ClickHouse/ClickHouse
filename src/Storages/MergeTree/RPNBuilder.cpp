@@ -47,7 +47,91 @@ namespace ErrorCodes
 namespace
 {
 
-void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, const ContextPtr & context, bool use_analyzer, bool legacy = false)
+void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, const ContextPtr & context, bool use_analyzer, bool legacy = false);
+
+/// Produces the lambda's column name in the AST format `lambda(tuple(args), body)`.
+/// Used both for live FUNCTION nodes wrapping `ExecutableFunctionCapture`/`FunctionCapture` and for
+/// constant-folded COLUMN nodes that hold a `ColumnConst<ColumnFunction>` (e.g. when all captured
+/// arguments are constants and `removeUnusedActions` collapsed the FUNCTION into a COLUMN).
+void appendLambdaColumnName(
+    const LambdaCapture & capture,
+    ActionsDAG capture_dag,
+    WriteBuffer & out,
+    const ContextPtr & context,
+    bool use_analyzer,
+    bool legacy)
+{
+    writeString("lambda(tuple(", out);
+    bool first = true;
+    for (const auto & arg : capture.lambda_arguments)
+    {
+        if (!first)
+            writeCString(", ", out);
+        first = false;
+
+        writeString(arg.name, out);
+    }
+    writeString("), ", out);
+
+    ActionsDAGWithInversionPushDown inverted_capture_dag(capture_dag.getOutputs().at(0), context);
+    appendColumnNameWithoutAlias(*inverted_capture_dag.predicate, out, context, use_analyzer, legacy);
+    writeChar(')', out);
+}
+
+/// For a constant-folded lambda (`ColumnConst` wrapping `ColumnFunction`), reconstruct the lambda
+/// AST-format name. Returns true on success and writes the name to `out`.
+bool tryAppendConstantFunctionColumnName(
+    const ActionsDAG::Node & node,
+    WriteBuffer & out,
+    const ContextPtr & context,
+    bool use_analyzer,
+    bool legacy)
+{
+    const auto * column_const = node.column.get();
+    if (!column_const)
+        return false;
+
+    const auto * column_function = typeid_cast<const ColumnFunction *>(&column_const->getDataColumn());
+    if (!column_function)
+        return false;
+
+    const auto * function_expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get());
+    if (!function_expression)
+        return false;
+
+    const auto & capture = function_expression->getCapture();
+    auto capture_dag = function_expression->getAcionsDAG().clone();
+
+    /// Stitch the captured constant columns into the body DAG so the body's input nodes
+    /// are resolved to actual constants. After `ActionsDAGWithInversionPushDown` rewrites
+    /// the constant column names to their AST form, the resulting name will match the one
+    /// produced for the index sample block (which was built via the old analyzer).
+    const auto & captured_columns = column_function->getCapturedColumns();
+    if (!captured_columns.empty())
+    {
+        if (captured_columns.size() != capture.captured_names.size())
+            return false;
+
+        ActionsDAG captured_columns_dag;
+        auto & outputs = captured_columns_dag.getOutputs();
+        outputs.reserve(captured_columns.size());
+        for (size_t i = 0; i < captured_columns.size(); ++i)
+        {
+            const auto & captured = captured_columns[i];
+            auto captured_column_const = assert_cast<const ColumnConst &>(*captured.column).getPtr();
+            const auto & captured_node = captured_columns_dag.addColumn(std::move(captured_column_const), captured.type, captured.name);
+            const auto & alias_node = captured_columns_dag.addAlias(captured_node, capture.captured_names[i]);
+            outputs.push_back(&alias_node);
+        }
+
+        capture_dag = ActionsDAG::merge(std::move(captured_columns_dag), std::move(capture_dag));
+    }
+
+    appendLambdaColumnName(capture, std::move(capture_dag), out, context, use_analyzer, legacy);
+    return true;
+}
+
+void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, const ContextPtr & context, bool use_analyzer, bool legacy)
 {
     switch (node.type)
     {
@@ -56,9 +140,15 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
             break;
         case ActionsDAG::ActionType::COLUMN:
         {
+            /// A constant-folded lambda is a `ColumnConst` of a `ColumnFunction`. Recover the
+            /// `lambda(tuple(args), body)` AST form so the name aligns with what the index sample
+            /// block produced for the same expression (the index goes through the old analyzer).
+            if (tryAppendConstantFunctionColumnName(node, out, context, use_analyzer, legacy))
+                break;
+
             /// If it was created from ASTLiteral, then result_name can be an alias.
             /// We need to convert value back to string here.
-            const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
+            const auto * column_const = node.column.get();
             if (column_const && !use_analyzer)
                 writeString(applyVisitor(FieldVisitorToString(), column_const->getField()), out);
             else
@@ -89,21 +179,7 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
                     capture_dag = ActionsDAG::merge(std::move(captured_columns_dag), std::move(capture_dag));
                 }
 
-                writeString("lambda(tuple(", out);
-                bool first = true;
-                for (const auto & arg : capture->lambda_arguments)
-                {
-                    if (!first)
-                        writeCString(", ", out);
-                    first = false;
-
-                    writeString(arg.name, out);
-                }
-                writeString("), ", out);
-
-                ActionsDAGWithInversionPushDown inverted_capture_dag(capture_dag.getOutputs().at(0), context);
-                appendColumnNameWithoutAlias(*inverted_capture_dag.predicate, out, context, use_analyzer, legacy);
-                writeChar(')', out);
+                appendLambdaColumnName(*capture, std::move(capture_dag), out, context, use_analyzer, legacy);
                 break;
             }
             else
@@ -174,14 +250,14 @@ RPNBuilderTreeNode::RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, RPNBu
     : dag_node(dag_node_)
     , tree_context(tree_context_)
 {
-    assert(dag_node);
+    chassert(dag_node);
 }
 
 RPNBuilderTreeNode::RPNBuilderTreeNode(const IAST * ast_node_, RPNBuilderTreeContext & tree_context_)
     : ast_node(ast_node_)
     , tree_context(tree_context_)
 {
-    assert(ast_node);
+    chassert(ast_node);
 }
 
 std::string RPNBuilderTreeNode::getColumnName() const
@@ -233,7 +309,7 @@ bool RPNBuilderTreeNode::isConstant() const
     }
 
     const auto * node_without_alias = getNodeWithoutAlias(dag_node);
-    return node_without_alias->column && isColumnConst(*node_without_alias->column);
+    return node_without_alias->column != nullptr;
 }
 
 bool RPNBuilderTreeNode::isNullable() const
@@ -336,9 +412,9 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
     {
         const auto * node_without_alias = getNodeWithoutAlias(dag_node);
 
-        if (node_without_alias->column && isColumnConst(*node_without_alias->column))
+        if (node_without_alias->column)
         {
-            output_value = (*node_without_alias->column)[0];
+            output_value = node_without_alias->column->getField();
             output_type = node_without_alias->result_type;
 
             if (!output_value.isNull())
@@ -359,11 +435,7 @@ FutureSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
     if (!dag_node->column)
         return {};
 
-    const IColumn * column = dag_node->column.get();
-    if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-        column = &column_const->getDataColumn();
-
-    if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
+    if (const auto * column_set = typeid_cast<const ColumnSet *>(&dag_node->column->getDataColumn()))
         return column_set->getData();
 
     return {};

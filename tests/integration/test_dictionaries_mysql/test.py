@@ -12,7 +12,13 @@ from helpers.cluster import ClickHouseCluster
 from helpers.port_forward import PortForward
 from helpers.config_cluster import mysql_pass
 
-DICTS = ["configs/dictionaries/mysql_dict1.xml", "configs/dictionaries/mysql_dict2.xml"]
+DICTS = [
+    "configs/dictionaries/mysql_dict1.xml",
+    "configs/dictionaries/mysql_dict2.xml",
+    "configs/dictionaries/mysql_dict_compression.xml",
+    "configs/dictionaries/mysql_dict_compression_wire.xml",
+    "configs/dictionaries/mysql_dict_no_compression_wire.xml",
+]
 CONFIG_FILES = [
     "configs/remote_servers.xml",
     "configs/named_collections.xml",
@@ -249,6 +255,78 @@ def test_mysql_dictionaries_custom_query_partial_load_complex_key(started_cluste
 
     execute_mysql_query(mysql_connection, "DROP TABLE test.test_table_1;")
     execute_mysql_query(mysql_connection, "DROP TABLE test.test_table_2;")
+
+
+def test_mysql_dict_complex_key_with_special_chars(started_cluster):
+    """Regression test: ExternalQueryBuilder uses backslash escaping for MySQL backend.
+
+    MySQL uses IdentifierQuotingStyle::Backticks, so escape_quote_with_quote stays false
+    (backslash escaping: ' -> \\', \\ -> \\\\). Verify that keys containing single quotes
+    and backslashes are looked up correctly via dictGet.
+    """
+    mysql_connection = get_mysql_conn(started_cluster)
+
+    execute_mysql_query(
+        mysql_connection,
+        "CREATE TABLE IF NOT EXISTS test.test_mysql_escape (key_col TEXT, value_col TEXT);",
+    )
+    # Single-quote key: use double-quote MySQL string literal to avoid escaping.
+    execute_mysql_query(
+        mysql_connection,
+        "INSERT INTO test.test_mysql_escape VALUES (\"it's\", 'quote');",
+    )
+    # Backslash key: use CHAR(92) to insert a literal backslash without SQL escaping confusion.
+    execute_mysql_query(
+        mysql_connection,
+        "INSERT INTO test.test_mysql_escape VALUES (CONCAT('foo', CHAR(92), 'bar'), 'backslash');",
+    )
+    execute_mysql_query(
+        mysql_connection,
+        "INSERT INTO test.test_mysql_escape VALUES ('normal', 'normal value');",
+    )
+
+    query = instance.query
+    query(
+        f"""
+    CREATE DICTIONARY test_dict_mysql_escape
+    (
+        key_col String,
+        value_col String DEFAULT ''
+    )
+    PRIMARY KEY key_col
+    LAYOUT(COMPLEX_KEY_DIRECT())
+    SOURCE(MYSQL(
+        HOST 'mysql80'
+        PORT 3306
+        USER 'root'
+        PASSWORD '{mysql_pass}'
+        DB 'test'
+        TABLE 'test_mysql_escape'))
+    """
+    )
+
+    result = query(
+        "SELECT dictGet('test_dict_mysql_escape', 'value_col', tuple('it\\'s'))"
+    )
+    assert result == "quote\n", f"Unexpected result: {result!r}"
+
+    result = query(
+        "SELECT dictGet('test_dict_mysql_escape', 'value_col', tuple('foo\\\\bar'))"
+    )
+    assert result == "backslash\n", f"Unexpected result: {result!r}"
+
+    result = query(
+        "SELECT dictGet('test_dict_mysql_escape', 'value_col', tuple('normal'))"
+    )
+    assert result == "normal value\n", f"Unexpected result: {result!r}"
+
+    result = query(
+        "SELECT dictGet('test_dict_mysql_escape', 'value_col', tuple('missing'))"
+    )
+    assert result == "\n", f"Unexpected result: {result!r}"
+
+    query("DROP DICTIONARY test_dict_mysql_escape;")
+    execute_mysql_query(mysql_connection, "DROP TABLE test.test_mysql_escape;")
 
 
 def test_predefined_connection_configuration(started_cluster):
@@ -545,3 +623,111 @@ def test_background_dictionary_reconnect(started_cluster):
             )
             > 0
         )
+
+
+def test_enable_compression_xml_dict(started_cluster):
+    """Regression: <enable_compression>1</enable_compression> in XML dictionary source must not be rejected."""
+    mysql_connection = get_mysql_conn(started_cluster)
+
+    try:
+        execute_mysql_query(mysql_connection, "DROP TABLE IF EXISTS test.dict_compression_table;")
+        execute_mysql_query(
+            mysql_connection,
+            "CREATE TABLE test.dict_compression_table (id INT NOT NULL, value TEXT, PRIMARY KEY(id));",
+        )
+        execute_mysql_query(
+            mysql_connection,
+            "INSERT INTO test.dict_compression_table VALUES (1, 'compressed');",
+        )
+
+        # Regression: verify that <enable_compression>1</enable_compression> in the XML
+        # source config is accepted by the parser and does not raise UNKNOWN_SETTING.
+        # The dict may be in FAILED state here (dict_compression_table did not exist at
+        # server startup so the initial load failed), but any failure must be a connection
+        # or table error — not a configuration-rejection error.
+        last_exception = instance.query(
+            "SELECT last_exception FROM system.dictionaries WHERE name = 'dict_compression'"
+        ).strip()
+        assert "UNKNOWN_SETTING" not in last_exception, (
+            f"<enable_compression> was rejected in the XML dict config: {last_exception!r}"
+        )
+
+        # Pool-isolation regression: dict_compression_wire (enable_compression=1,
+        # share_connection=1) and dict_no_compression_wire (enable_compression=0,
+        # share_connection=1) share the same host/user/db/port. The PoolFactory cache
+        # key must include the compression flag so each dict gets its own pool.
+        # Reload both in one cycle so they compete for the same cache lifetime; a broken
+        # discriminator would cause them to share a pool and one assertion below would fail.
+        for _ in range(10):
+            try:
+                instance.query("SYSTEM RELOAD DICTIONARIES")
+                break
+            except Exception:
+                time.sleep(0.5)
+
+        xml_wire_compression = ""
+        for _ in range(10):
+            xml_wire_compression = instance.query(
+                "SELECT dictGet('dict_compression_wire', 'VARIABLE_VALUE', 'Compression')"
+            ).strip()
+            if xml_wire_compression == "ON":
+                break
+            time.sleep(0.5)
+        assert xml_wire_compression == "ON", (
+            f"Expected Compression=ON via XML dict config path, got: {xml_wire_compression!r}"
+        )
+
+        no_compression_status = ""
+        for _ in range(10):
+            no_compression_status = instance.query(
+                "SELECT dictGet('dict_no_compression_wire', 'VARIABLE_VALUE', 'Compression')"
+            ).strip()
+            if no_compression_status == "OFF":
+                break
+            time.sleep(0.5)
+        assert no_compression_status == "OFF", (
+            f"Expected Compression=OFF for uncompressed dict, got: {no_compression_status!r}"
+        )
+
+        # Wire-level assertion for the DDL dictionary source path (address-based
+        # PoolWithFailover constructor via createMySQLPoolWithFailover). This is a separate
+        # code path from the XML config pool above.
+        instance.query("DROP DICTIONARY IF EXISTS dict_compression_wire_check")
+        instance.query(
+            f"""
+            CREATE DICTIONARY dict_compression_wire_check
+            (
+                VARIABLE_NAME String,
+                VARIABLE_VALUE String
+            )
+            PRIMARY KEY VARIABLE_NAME
+            SOURCE(MYSQL(
+                host 'mysql80'
+                port 3306
+                user 'root'
+                password '{mysql_pass}'
+                db 'performance_schema'
+                table 'session_status'
+                enable_compression 1
+            ))
+            LAYOUT(COMPLEX_KEY_HASHED())
+            LIFETIME(0)
+            """
+        )
+        try:
+            wire_compression = ""
+            for _ in range(10):
+                wire_compression = instance.query(
+                    "SELECT dictGet('dict_compression_wire_check', 'VARIABLE_VALUE', 'Compression')"
+                ).strip()
+                if wire_compression == "ON":
+                    break
+                time.sleep(0.5)
+            assert wire_compression == "ON", (
+                f"Expected Compression=ON via DDL dict source path, got: {wire_compression!r}"
+            )
+        finally:
+            instance.query("DROP DICTIONARY IF EXISTS dict_compression_wire_check")
+    finally:
+        execute_mysql_query(mysql_connection, "DROP TABLE IF EXISTS test.dict_compression_table;")
+        mysql_connection.close()

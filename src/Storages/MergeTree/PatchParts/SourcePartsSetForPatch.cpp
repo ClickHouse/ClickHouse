@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -167,13 +168,13 @@ void SourcePartsSetForPatch::writeBinary(WriteBuffer & out) const
 
 void SourcePartsSetForPatch::readBinary(ReadBuffer & in)
 {
-    UInt8 version;
+    UInt8 version = 0;
     readBinaryLittleEndian(version, in);
 
     if (version != VERSION)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version of SourcePartsSetForPatch: {}", std::to_string(version));
 
-    UInt64 num_parts;
+    UInt64 num_parts = 0;
     readBinaryLittleEndian(num_parts, in);
 
     for (size_t i = 0; i < num_parts; ++i)

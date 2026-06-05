@@ -1,6 +1,7 @@
 import glob
 import json as json_module
 import os
+import platform
 import signal
 import subprocess
 import sys
@@ -163,15 +164,30 @@ class ClickHouseProc:
         return False
 
     def start_azurite(self):
+        # Raise the open files limit before launching azurite-rs.
+        # Each concurrent test query opens a TCP connection plus an in-memory
+        # blob handle, and the default soft limit (1024) was exhausted under
+        # parallel load, causing `accept error: Too many open files`.
+        # Fall back to the hard limit if 1048576 cannot be set.
         command = (
-            f"cd {temp_dir} && azurite-rs --host 0.0.0.0 --blob-port 10000 --silent --in-memory",
+            f"cd {temp_dir} && "
+            "(ulimit -n 1048576 2>/dev/null || ulimit -n $(ulimit -Hn)) && "
+            "azurite-rs --host 0.0.0.0 --blob-port 10000 --silent --in-memory"
         )
         with open(self.AZURITE_LOG, "w") as log_file:
             self.azurite_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT, shell=True
             )
         print(f"Started azurite-rs asynchronously with PID {self.azurite_proc.pid}")
-        return True
+
+        if Shell.check(
+            "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:10000/ | grep -qE '400|200'",
+            verbose=False,
+            retries=6,
+        ):
+            return True
+        print("Failed to start azurite-rs")
+        return False
 
     def start_kafka(self):
         command = [
@@ -183,16 +199,17 @@ class ClickHouseProc:
             )
         print(f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}")
 
-        for _ in range(60):
-            res = Shell.check(
-                "rpk topic list --brokers 127.0.0.1:9092",
-                verbose=True,
-            )
-            if res:
-                return True
-            time.sleep(1)
-        print("Failed to start Kafka")
-        return False
+        # setup_kafka.sh exits 0 only after broker AND schema registry are ready,
+        # so wait on the script itself. Its own timeout is 60s; pad here.
+        try:
+            returncode = self.kafka_proc.wait(timeout=90)
+        except subprocess.TimeoutExpired:
+            print("Failed to start Kafka: setup_kafka.sh did not finish in time")
+            return False
+        if returncode != 0:
+            print(f"setup_kafka.sh exited with code {returncode}")
+            return False
+        return True
 
     @staticmethod
     def log_cluster_config():
@@ -733,6 +750,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             return False
 
     def run_test(self, cmd, timeout=7200):
+        """Run a `clickhouse-test` command and return its integer exit code.
+
+        Returns 0 on success, non-zero on failure. In particular, exit code
+        `STOP_TESTING_EXIT_CODE` (2) signals that `clickhouse-test` aborted
+        the run via `StopTesting` (server died, hung check failed, etc.) and
+        is forwarded to `FTResultsProcessor.run` as `runner_exit_code` so it
+        can populate the synthetic "Server died" leaf.
+        """
         print(f"Run test: [{cmd}]")
         with open(self.test_output_file, "w") as f:
             process = subprocess.Popen(
@@ -757,7 +782,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             try:
                 process.wait(timeout=timeout)
                 reader_thread.join()
-                return process.returncode == 0
+                return process.returncode
             except subprocess.TimeoutExpired:
                 print(
                     f"ERROR: fast test timed out after {timeout}s, killing process group"
@@ -765,7 +790,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                 process.wait()
                 reader_thread.join()
-                return False
+                return process.returncode
             finally:
                 # Kill any test processes that survived clickhouse-test's own cleanup
                 # (e.g. if it was killed with SIGKILL before its signal handlers ran).
@@ -849,6 +874,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
                 res += self._collect_core_dumps()
+                res += self._collect_diagnostic_reports()
                 res += self._get_logs_archive_coordination()
                 if Path(self.MINIO_LOG).exists():
                     res.append(self.MINIO_LOG)
@@ -877,6 +903,22 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         for run_dir in sorted(p_temp_dir.glob("run_r*")):
             result.extend(ClickHouseService.collect_cores(run_dir))
         return result
+
+    @staticmethod
+    def _collect_diagnostic_reports() -> List[str]:
+        # macOS writes .ips crash reports to /Library/Logs/DiagnosticReports as
+        # root. Grant read access so the runner can list and read the files
+        # in place; the darwin fast-test pre-hook wipes the directory under
+        # sudo before the run, so anything we see here belongs to the current
+        # run even if the previous runner was terminated unexpectedly.
+        if platform.system() != "Darwin":
+            return []
+        reports_dir = Path("/Library/Logs/DiagnosticReports")
+        Shell.check(
+            f"sudo chmod -R a+rX {reports_dir}",
+            verbose=True,
+        )
+        return [str(p) for p in reports_dir.glob("*.ips")]
 
     @classmethod
     def _get_logs_archive_coordination(cls):
@@ -1092,7 +1134,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             "minio_audit_logs",
             "minio_server_logs",
         ]
-        ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 10_000_000
+        ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 20_000_000
 
         command_args = self.LOGS_SAVER_CLIENT_OPTIONS
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"
@@ -1338,6 +1380,8 @@ if __name__ == "__main__":
             param = sys.argv[2]
             assert param in ["stateless"]
             res = ch.start_minio(param)
+        elif command == "start_azurite":
+            res = ch.start_azurite()
         else:
             raise ValueError(f"Unknown command: {command}")
     except Exception as e:

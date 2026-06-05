@@ -1,4 +1,5 @@
 #include <Common/assert_cast.h>
+#include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -26,7 +27,7 @@ namespace
 {
 
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)
-class ExecutableFunctionNow64 : public IExecutableFunction
+class ExecutableFunctionNow64 final : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionNow64(Field time_) : time_value(time_) {}
@@ -42,7 +43,7 @@ private:
     Field time_value;
 };
 
-class FunctionBaseNow64 : public IFunctionBase
+class FunctionBaseNow64 final : public IFunctionBase
 {
 public:
     explicit FunctionBaseNow64(Field time_, DataTypes argument_types_, DataTypePtr return_type_)
@@ -81,7 +82,7 @@ private:
     DataTypePtr return_type;
 };
 
-class Now64OverloadResolver : public IFunctionOverloadResolver
+class Now64OverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "now64";

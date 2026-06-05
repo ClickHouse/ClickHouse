@@ -1,3 +1,6 @@
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Columns/ColumnConst.h>
 #include <Common/ProfileEvents.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
@@ -101,7 +104,7 @@ namespace ErrorCodes
 namespace ClusterProxy
 {
 
-ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
+static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     bool is_remote_function,
     ContextPtr context,
     const Settings & settings,
@@ -237,7 +240,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
             new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
     }
 
-    if (settings[Setting::max_execution_time_leaf].value > 0)
+    if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
     {
         /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'
         /// with 'timeout_overflow_mode_leaf'
@@ -378,6 +381,21 @@ void executeQuery(
     const size_t shards = cluster->getShardCount();
     ProfileEvents::increment(ProfileEvents::Shards, shards);
 
+    /// Tracker is shared between local-missing-table skip path in SelectStreamFactory and
+    /// remote unavailable-shard skip path in ReadFromRemote so max_skip_unavailable_shards_num
+    /// and max_skip_unavailable_shards_ratio are enforced uniformly across both paths.
+    UnavailableShardTrackerPtr unavailable_shard_tracker;
+    {
+        const auto & new_settings_ref = new_context->getSettingsRef();
+        if (new_settings_ref[Setting::skip_unavailable_shards])
+        {
+            size_t max_num = new_settings_ref[Setting::max_skip_unavailable_shards_num];
+            Float64 max_ratio = static_cast<double>(new_settings_ref[Setting::max_skip_unavailable_shards_ratio]);
+            if (max_num > 0 || max_ratio > 0)
+                unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
+        }
+    }
+
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
@@ -413,7 +431,8 @@ void executeQuery(
                 remote_shards,
                 static_cast<UInt32>(shards),
                 parallel_replicas_enabled,
-                shard_filter_generator);
+                shard_filter_generator,
+                unavailable_shard_tracker);
         }
     }
     else
@@ -452,7 +471,8 @@ void executeQuery(
                 remote_shards,
                 static_cast<UInt32>(shards),
                 parallel_replicas_enabled,
-                shard_filter_generator);
+                shard_filter_generator,
+                unavailable_shard_tracker);
         }
     }
 
@@ -462,16 +482,6 @@ void executeQuery(
         scalars.emplace(
             "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
         auto external_tables = context->getExternalTables();
-
-        UnavailableShardTrackerPtr unavailable_shard_tracker;
-        const auto & new_settings_ref = new_context->getSettingsRef();
-        if (new_settings_ref[Setting::skip_unavailable_shards])
-        {
-            size_t max_num = new_settings_ref[Setting::max_skip_unavailable_shards_num];
-            Float64 max_ratio = new_settings_ref[Setting::max_skip_unavailable_shards_ratio];
-            if (max_num > 0 || max_ratio > 0)
-                unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
-        }
 
         auto plan = std::make_unique<QueryPlan>();
         auto read_from_remote = std::make_unique<ReadFromRemote>(
@@ -732,7 +742,16 @@ void executeQueryWithParallelReplicas(
             remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
         }
 
-        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan));
+        /// The subquery carries its own SETTINGS (shipped to remote replicas via the AST). Pass its
+        /// context down so the local plan is optimized with the same read-in-order settings as the
+        /// replicas, and the initiator does not end up with a different coordination mode.
+        ContextPtr local_context = new_context;
+        if (const auto * query_node = query_tree->as<QueryNode>())
+            local_context = query_node->getContext();
+        else if (const auto * union_node = query_tree->as<UnionNode>())
+            local_context = union_node->getContext();
+
+        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan), std::move(local_context));
         auto stub_local_plan = std::make_unique<QueryPlan>();
         stub_local_plan->addStep(std::move(read_from_local));
 

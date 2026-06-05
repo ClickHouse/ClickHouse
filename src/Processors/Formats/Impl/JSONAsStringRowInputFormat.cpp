@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/JSONAsStringRowInputFormat.h>
 #include <Formats/JSONUtils.h>
@@ -98,7 +99,7 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
     ++buf->position();
     ++balance;
 
-    char * pos;
+    char * pos = nullptr;
 
     while (balance)
     {
@@ -191,6 +192,7 @@ JSONAsObjectExternalSchemaReader::JSONAsObjectExternalSchemaReader(const FormatS
 {
 }
 
+void registerInputFormatJSONAsString(FormatFactory & factory);
 void registerInputFormatJSONAsString(FormatFactory & factory)
 {
     factory.registerInputFormat("JSONAsString", [](
@@ -203,16 +205,19 @@ void registerInputFormatJSONAsString(FormatFactory & factory)
     });
 }
 
+void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("JSONAsString", &JSONUtils::fileSegmentationEngineJSONEachRow);
 }
 
+void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory);
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory)
 {
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsString", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
+void registerJSONAsStringSchemaReader(FormatFactory & factory);
 void registerJSONAsStringSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("JSONAsString", [](const FormatSettings &)
@@ -221,6 +226,7 @@ void registerJSONAsStringSchemaReader(FormatFactory & factory)
     });
 }
 
+void registerInputFormatJSONAsObject(FormatFactory & factory);
 void registerInputFormatJSONAsObject(FormatFactory & factory)
 {
     factory.registerInputFormat("JSONAsObject", [](
@@ -233,16 +239,19 @@ void registerInputFormatJSONAsObject(FormatFactory & factory)
     });
 }
 
+void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factory);
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factory)
 {
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsObject", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
+void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("JSONAsObject", &JSONUtils::fileSegmentationEngineJSONEachRow);
 }
 
+void registerJSONAsObjectSchemaReader(FormatFactory & factory);
 void registerJSONAsObjectSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("JSONAsObject", [](const FormatSettings & settings)

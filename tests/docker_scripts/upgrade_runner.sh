@@ -19,8 +19,10 @@ ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_t
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
-azurite-rs --host 0.0.0.0 --blob-port 10000 --debug > /azurite_log 2>&1 &
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
+
+bash /repo/ci/jobs/scripts/functional_tests/setup_kafka.sh || { echo "Failed to start Kafka (Redpanda)"; exit 1; }
 
 echo "Get previous release tag"
 PACKAGES_DIR=/repo/ci/tmp
@@ -107,7 +109,7 @@ sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_defau
 
 start_server || (echo "Failed to start server" && exit 1)
 
-clickhouse-client --query="SELECT 'Server version: ', version()"
+clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', version()"
 
 mkdir tmp_stress_output
 
@@ -286,7 +288,7 @@ check_allow_list() {
 
 start_server || check_allow_list || (echo "Failed to start server" && exit 1)
 
-clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
+clickhouse-client --receive_timeout 30 --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
     && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
     >> /test_output/test_results.tsv)
@@ -294,7 +296,7 @@ clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''"
 # Remove file application_errors.txt if it's empty
 [ -s /test_output/application_errors.txt ] || rm -f /test_output/application_errors.txt
 
-clickhouse-client --query="SELECT 'Server version: ', version()"
+clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', version()"
 
 # Let the server run for a while before checking log.
 sleep 60
@@ -344,6 +346,28 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       via regex in the secondary pipe below to require the `rdk:FAIL` tag AND the specific connection-refused
 #       message together, so real Kafka regressions (auth, protocol, config) that also emit `rdk:FAIL` are
 #       not masked.
+# `No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed` is the unique signature of
+#       issue #102259 (`getFileNameForRenamedColumnStream` uses `substr(0, N)` instead of `substr(N)`, producing
+#       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until it lands, the
+#       upgraded server detaches the renamed-column parts of `02538_alter_rename_sequence`'s `wrong_metadata_wide`
+#       table. Matched via the exact corrupted filename + column name, which is unique to that test and that bug.
+# `No stream (ba1.bin) file checksum for column b` is the same bug observed on
+#       `02555_davengers_rename_chain`'s `wrong_metadata` table. The test chains `a -> a1` and then
+#       `a1 -> b`, so the corrupted file name is `<new=b><old=a1>.bin = ba1.bin` for column `b`. The
+#       `<column><stream>` combination is unique to this chained-rename test.
+# `wrong_metadata` + `Detaching broken part` + `backward incompatibility` is the follow-up cleanup line for
+#       the same issue: a "Detaching broken part" notice that does not contain the corrupted filename.
+#       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
+#       broken-part detach messages are not masked. The regex matches both `wrong_metadata` (from
+#       `02555_davengers_rename_chain`) and `wrong_metadata_wide` (from `02538_alter_rename_sequence`).
+# `RaftInstance: session` + `failed to read rpc header from socket` + `due to error` is a benign NuRaft
+#       shutdown-time message emitted by `rpc_session::start` in `contrib/NuRaft/src/asio_service.cxx` when
+#       the peer side of an accepted RPC connection (in single-node Keeper this is a loopback `::1` client)
+#       closes its socket before the acceptor cancels its pending header read. The already-allow-listed sibling
+#       `RaftInstance: failed to accept a rpc connection due to error 125` is the inverse race (acceptor wins);
+#       this regex covers the other variant (peer wins, read returns EOF or another transient socket error).
+#       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
+#       RaftInstance errors are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -412,6 +436,10 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "This engine is deprecated and is not supported in transactions" \
            -e "Prevent converting Nullable type to non-Nullable type inside mutation" \
            -e "e.what() = failed to parse response body" \
+           -e "Tuple element name 'null' is reserved" \
+           -e "No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed" \
+           -e "No stream (ba1.bin) file checksum for column b" \
+           -e "Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
@@ -419,6 +447,8 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
     | grep -av -e "rdk:FAIL.*Connect to.*failed: Connection refused" \
+    | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
+    | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then

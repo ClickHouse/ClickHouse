@@ -3,8 +3,10 @@
 #include <memory>
 #include <mutex>
 
+#include <Columns/ColumnConst.h>
 #include <Core/Names.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/UUID.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/IKeyValueEntity.h>
@@ -201,7 +203,7 @@ public:
         DefaultsOrFilter defaults_or_filter) const
     {
         bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
-        assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+        chassert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
         size_t attribute_names_size = attribute_names.size();
 
@@ -452,7 +454,7 @@ public:
     void updateDictionaryID(const StorageID & new_dictionary_id)
     {
         std::lock_guard lock{mutex};
-        assert((new_dictionary_id.uuid == dictionary_id.uuid) && (dictionary_id.uuid != UUIDHelpers::Nil));
+        chassert((new_dictionary_id.uuid == dictionary_id.uuid) && (dictionary_id.uuid != UUIDHelpers::Nil));
         dictionary_id = new_dictionary_id;
     }
 

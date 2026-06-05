@@ -1,4 +1,6 @@
 #include <memory>
+#include <Columns/ColumnConst.h>
+#include <Common/assert_cast.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -34,7 +36,7 @@ namespace QueryPlanOptimizations
 
 /// For ANTI JOIN exclusion filters, rows with any NULL key can never match in the join (since NULL = NULL is false in SQL)
 /// and must always pass the runtime filter. This wraps the filter condition with OR isNull(key1) OR isNull(key2) OR ...
-const ActionsDAG::Node * addNullBypassForAntiJoin(
+static const ActionsDAG::Node * addNullBypassForAntiJoin(
     ActionsDAG & dag,
     const ActionsDAG::Node * filter_condition,
     const ColumnsWithTypeAndName & keys)
@@ -60,7 +62,7 @@ const ActionsDAG::Node * addNullBypassForAntiJoin(
 }
 
 /// Build a `tuple(key1, key2, ...)` node in the given DAG, casting each key to the corresponding common type if needed.
-const ActionsDAG::Node & addTupleOfKeys(
+static const ActionsDAG::Node & addTupleOfKeys(
     ActionsDAG & dag,
     const ColumnsWithTypeAndName & keys,
     const DataTypes & common_types,
@@ -77,17 +79,15 @@ const ActionsDAG::Node & addTupleOfKeys(
     return dag.addFunction(tuple_func, key_nodes, {});
 }
 
-const ActionsDAG::Node & createRuntimeFilterCondition(
+static const ActionsDAG::Node & createRuntimeFilterCondition(
     ActionsDAG & actions_dag,
     const String & filter_name,
     const ColumnWithTypeAndName & key_column,
     const DataTypePtr & filter_element_type)
 {
-    const auto & filter_name_node = actions_dag.addColumn(
-        ColumnWithTypeAndName(
-            DataTypeString().createColumnConst(0, filter_name),
-            std::make_shared<DataTypeString>(),
-            filter_name));
+    auto string_type = std::make_shared<DataTypeString>();
+    auto filter_name_column = string_type->createColumnConst(0, filter_name);
+    const auto & filter_name_node = actions_dag.addColumn(std::move(filter_name_column), std::move(string_type), filter_name);
 
     const auto & key_column_node = actions_dag.findInOutputs(key_column.name);
     const auto * filter_argument = &key_column_node;
@@ -307,11 +307,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
             /// Build __applyFilter(filter_name, tuple_node) condition directly,
             /// since the tuple node is freshly created and not yet in the DAG outputs
-            const auto & filter_name_node = filter_dag.addColumn(
-                ColumnWithTypeAndName(
-                    DataTypeString().createColumnConst(0, filter_name),
-                    std::make_shared<DataTypeString>(),
-                    filter_name));
+            auto string_type = std::make_shared<DataTypeString>();
+            auto filter_name_column = string_type->createColumnConst(0, filter_name);
+            const auto & filter_name_node = filter_dag.addColumn(std::move(filter_name_column), std::move(string_type), filter_name);
             auto filter_function = FunctionFactory::instance().get("__applyFilter", /*query_context*/nullptr);
             const auto & condition = filter_dag.addFunction(filter_function, {&filter_name_node, &tuple_node}, {});
 
