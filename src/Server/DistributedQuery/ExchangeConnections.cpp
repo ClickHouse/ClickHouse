@@ -136,5 +136,41 @@ void ExchangeConnections::cleanupQuery(const String & query_id)
     }
 }
 
+void ExchangeConnections::removePendingStreams(const String & query_id, const std::vector<String> & exchange_stream_ids)
+{
+    std::vector<FutureConnectionPtr> to_cancel;
+    {
+        std::lock_guard lock(mutex);
+        for (const auto & exchange_stream_id : exchange_stream_ids)
+        {
+            auto it = pending_connections.find(std::make_pair(query_id, exchange_stream_id));
+            if (it != pending_connections.end())
+            {
+                to_cancel.push_back(it->second);
+                pending_connections.erase(it);
+            }
+        }
+    }
+
+    if (to_cancel.empty())
+        return;
+
+    LOG_TRACE(log, "Cleaning up {} pending exchange connections for query id {}", to_cancel.size(), query_id);
+
+    auto exception = std::make_exception_ptr(
+        Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Exchange connection cancelled, query id {}", query_id));
+    for (auto & future : to_cancel)
+    {
+        try
+        {
+            future->cancel(exception);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "FutureConnection cancel");
+        }
+    }
+}
+
 }
 #endif

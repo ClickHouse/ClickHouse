@@ -44,6 +44,11 @@ public:
     /// not leak `FutureConnection`s/eventfds across the lifetime of the server.
     void cleanupQuery(const String & query_id);
 
+    /// Drop the pending entries for the given streams of a query, waking any waiter with a
+    /// cancellation. Used by a worker task to release only its own output streams on completion or
+    /// cancellation, without disturbing sibling tasks of the same query that own other streams.
+    void removePendingStreams(const String & query_id, const std::vector<String> & exchange_stream_ids);
+
 private:
     std::mutex mutex;
     using ConnectionKey = std::pair<String, String>; /// query_id, exchange_stream_id

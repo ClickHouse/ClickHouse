@@ -3,6 +3,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <Common/scope_guard_safe.h>
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/MapWithMemoryTracking.h>
@@ -597,6 +598,13 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
 
     LOG_TRACE(logger, "Task '{}' input exchange streams: [{}], output exchange streams: [{}]",
         task.task_id, fmt::join(input_exchange_streams, ", "), fmt::join(output_exchange_streams, ", "));
+
+#ifdef OS_LINUX
+    /// Release this task's pending streaming exchange connections on the worker when it ends. A
+    /// consumer that never connects (e.g. its query was cancelled) would otherwise leave them behind.
+    /// Only this task's output streams are dropped, so sibling tasks of the same query are unaffected.
+    SCOPE_EXIT_SAFE(ExchangeConnections::instance()->removePendingStreams(distributed_query_id, output_exchange_streams));
+#endif
 
     auto temporary_files = createTemporaryFilesLookup(
         object_storage, object_storage_path, input_exchange_streams, output_exchange_streams);
