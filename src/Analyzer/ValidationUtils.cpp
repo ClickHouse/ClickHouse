@@ -317,9 +317,6 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
             auto & grouping_set_keys = node->as<ListNode &>();
             for (auto & grouping_set_key : grouping_set_keys.getNodes())
             {
-                if (grouping_set_key->as<ConstantNode>())
-                    continue;
-
                 group_by_keys_nodes.push_back(grouping_set_key->clone());
                 if (params.group_by_use_nulls)
                     group_by_keys_nodes.back()->convertToNullable();
@@ -327,9 +324,6 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
         }
         else
         {
-            if (node->as<ConstantNode>())
-                continue;
-
             group_by_keys_nodes.push_back(node->clone());
             if (params.group_by_use_nulls)
                 group_by_keys_nodes.back()->convertToNullable();
