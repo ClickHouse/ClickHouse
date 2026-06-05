@@ -4768,6 +4768,9 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
         if (analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "make_distributed_plan does not support a distributed read from a projection");
+        if (!index_read_tasks.empty())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan does not support a distributed read using direct text index tasks");
     }
 
     StorageID table_id = data.getStorageID();
