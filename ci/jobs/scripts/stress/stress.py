@@ -212,7 +212,7 @@ class RandomServerRestarter(RandomRestarter):
         while time.monotonic() < deadline:
             try:
                 subprocess.run(
-                    "clickhouse client -q 'SELECT 1'",
+                    "clickhouse client --receive_timeout=5 -q 'SELECT 1'",
                     shell=True,
                     capture_output=True,
                     timeout=5,
@@ -598,7 +598,7 @@ class RandomQueryKiller(ChaosThread):
     def _kill_random_query(self) -> None:
         try:
             result = check_output(
-                "clickhouse client -q \""
+                "clickhouse client --receive_timeout=10 -q \""
                 "SELECT query_id FROM system.processes "
                 "WHERE query NOT LIKE '%system.processes%' "
                 "AND query NOT LIKE '%KILL QUERY%' "
@@ -611,7 +611,7 @@ class RandomQueryKiller(ChaosThread):
             if query_id:
                 logging.info("Killing random query: %s", query_id)
                 call(
-                    f"clickhouse client -q \"KILL QUERY WHERE query_id = '{query_id}' ASYNC\" 2>/dev/null",
+                    f"clickhouse client --receive_timeout=10 -q \"KILL QUERY WHERE query_id = '{query_id}' ASYNC\" 2>/dev/null",
                     shell=True,
                     timeout=5,
                 )
@@ -639,7 +639,7 @@ class RandomQueryKiller(ChaosThread):
     def _kill_random_mutation(self) -> None:
         try:
             result = check_output(
-                "clickhouse client -q \""
+                "clickhouse client --receive_timeout=10 -q \""
                 "SELECT mutation_id, database, table "
                 "FROM system.mutations "
                 "WHERE NOT is_done AND NOT is_killed "
@@ -652,7 +652,7 @@ class RandomQueryKiller(ChaosThread):
                 mutation_id, db, table = line.split("\t")
                 logging.info("Killing random mutation: %s on %s.%s", mutation_id, db, table)
                 call(
-                    f"clickhouse client -q \"KILL MUTATION WHERE database = '{db}' "
+                    f"clickhouse client --receive_timeout=10 -q \"KILL MUTATION WHERE database = '{db}' "
                     f"AND table = '{table}' AND mutation_id = '{mutation_id}'\" 2>/dev/null",
                     shell=True,
                     timeout=5,
