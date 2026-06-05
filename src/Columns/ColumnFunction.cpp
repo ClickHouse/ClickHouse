@@ -316,12 +316,22 @@ void ColumnFunction::updateHashWithValue(size_t n, SipHash & hash) const
         column.column->updateHashWithValue(n, hash);
 }
 
-WeakHash32 ColumnFunction::getWeakHash32() const
+void ColumnFunction::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
 {
-    WeakHash32 hash(elements_size);
+    if (captured_columns.empty())
+    {
+        if (initial)
+            for (size_t i = 0, n = row_end - row_begin; i < n; ++i)
+                hash_out[i] = 0;
+        return;
+    }
+
+    bool first = initial;
     for (const auto & column : captured_columns)
-        hash.update(column.column->getWeakHash32());
-    return hash;
+    {
+        column.column->computeHashInto(row_begin, row_end, hash_out, first);
+        first = false;
+    }
 }
 
 void ColumnFunction::updateHashFast(SipHash & hash) const

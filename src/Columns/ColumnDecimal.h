@@ -104,7 +104,7 @@ public:
     void skipSerializedInArena(ReadBuffer & in) const final;
     void updateHashWithValue(size_t n, SipHash & hash) const final;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const final;
-    WeakHash32 getWeakHash32() const final;
+    void computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const final;
     void updateHashFast(SipHash & hash) const final;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final;

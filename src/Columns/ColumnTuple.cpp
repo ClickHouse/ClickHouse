@@ -7,7 +7,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
-#include <Common/WeakHash.h>
+#include <Common/HashCombine32.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
@@ -415,15 +415,50 @@ void ColumnTuple::updateHashWithValueRange(size_t begin, size_t end, SipHash & h
         column->updateHashWithValueRange(begin, end, hash);
 }
 
-WeakHash32 ColumnTuple::getWeakHash32() const
+void ColumnTuple::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
 {
-    auto s = size();
-    WeakHash32 hash(s);
+    const size_t n = row_end - row_begin;
 
+    if (columns.empty())
+    {
+        /// Empty tuple: a fixed per-row value (0), independent of representation.
+        if (initial)
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = 0;
+        else
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = fmix32Combined(0, hash_out[i]);
+        return;
+    }
+
+    if (initial)
+    {
+        /// First element seeds the buffer, the rest combine into it. This produces the
+        /// finalized per-row tuple hash directly.
+        bool first = true;
+        for (const auto & column : columns)
+        {
+            column->computeHashInto(row_begin, row_end, hash_out, first);
+            first = false;
+        }
+        return;
+    }
+
+    /// Non-initial: build the finalized composite row hash in a scratch buffer, then
+    /// combine that single value into the prior key columns' hash. Combining the
+    /// finalized tuple hash (rather than streaming elements straight into `hash_out`)
+    /// keeps composition representation-independent: a materialized `Tuple` and a
+    /// `ColumnConst(Tuple)` of the same value compose identically. See
+    /// IColumn::computeHashInto.
+    PaddedPODArray<UInt32> tuple_hash(n);
+    bool first = true;
     for (const auto & column : columns)
-        hash.update(column->getWeakHash32());
-
-    return hash;
+    {
+        column->computeHashInto(row_begin, row_end, tuple_hash.data(), first);
+        first = false;
+    }
+    for (size_t i = 0; i < n; ++i)
+        hash_out[i] = fmix32Combined(tuple_hash[i], hash_out[i]);
 }
 
 void ColumnTuple::updateHashFast(SipHash & hash) const

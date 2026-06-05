@@ -5,7 +5,6 @@
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/WeakHash.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -167,9 +166,9 @@ void ColumnLazy::updateHashWithValue(size_t, SipHash &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateHashWithValue is not supported for {}", getName());
 }
 
-WeakHash32 ColumnLazy::getWeakHash32() const
+void ColumnLazy::computeHashInto(size_t, size_t, uint32_t *, bool) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getWeakHash32 is not supported for {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method computeHashInto is not supported for {}", getName());
 }
 
 void ColumnLazy::updateHashFast(SipHash &) const

@@ -5,7 +5,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
-#include <Common/WeakHash.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
@@ -198,9 +197,9 @@ public:
     /// variant vs the shared variant).
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    WeakHash32 getWeakHash32() const override
+    void computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const override
     {
-        return variant_column_ptr->getWeakHash32();
+        variant_column_ptr->computeHashInto(row_begin, row_end, hash_out, initial);
     }
 
     void updateHashFast(SipHash & hash) const override

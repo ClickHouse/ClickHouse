@@ -2,7 +2,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/WeakHash.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -522,10 +522,15 @@ void ColumnReplicated::updateHashWithValue(size_t n, SipHash & hash) const
     nested_column->updateHashWithValue(indexes.getIndexAt(n), hash);
 }
 
-WeakHash32 ColumnReplicated::getWeakHash32() const
+void ColumnReplicated::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
 {
-    WeakHash32 nested_column_hash = nested_column->getWeakHash32();
-    return indexes.getWeakHash(nested_column_hash);
+    const size_t nested_size = nested_column->size();
+
+    PaddedPODArray<UInt32> nested_hash(nested_size);
+    if (nested_size)
+        nested_column->computeHashInto(0, nested_size, nested_hash.data(), true);
+
+    indexes.computeHashInto(nested_hash, row_begin, row_end, hash_out, initial);
 }
 
 void ColumnReplicated::updateHashFast(SipHash & hash) const

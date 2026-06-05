@@ -135,16 +135,19 @@ void ScatterByPartitionTransform::generateOutputChunks()
 
     chassert(!columns.empty());
 
-    hash.reset(num_rows);
+    hash.resize(num_rows);
 
+    bool initial = true;
     for (const auto & column_number : key_columns)
-        hash.update(columns[column_number]->getWeakHash32());
+    {
+        columns[column_number]->computeHashInto(0, num_rows, hash.data(), initial);
+        initial = false;
+    }
 
-    const PaddedPODArray<UInt32> & hash_data = hash.getData();
     IColumn::Selector selector(num_rows);
 
     for (size_t row = 0; row < num_rows; ++row)
-        selector[row] = (static_cast<UInt64>(hash_data[row]) * output_size) >> 32; /// The "fastrange" method from Daniel Lemire
+        selector[row] = (static_cast<UInt64>(hash[row]) * output_size) >> 32; /// The "fastrange" method from Daniel Lemire
 
     for (const auto & column : columns)
     {

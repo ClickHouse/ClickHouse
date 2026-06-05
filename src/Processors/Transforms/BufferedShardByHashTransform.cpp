@@ -1,7 +1,7 @@
 #include <Columns/IColumn.h>
-#include <Interpreters/JoinUtils.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/BufferedShardByHashTransform.h>
+#include <Common/MapToRange.h>
 
 namespace DB
 {
@@ -132,20 +132,24 @@ void BufferedShardByHashTransform::generateOutputChunks()
 
     chassert(!columns.empty());
 
-    /// Compute cheap weak hash for each row for routing
-    WeakHash32 hash(num_rows);
+    /// Compute a composite 32-bit hash over all key columns into a reusable buffer.
+    /// No allocations: each `computeHashInto` call writes directly into hash_buffer.
+    /// Fixed-width columns use fmix32 (SIMD-vectorised); ColumnString uses CRC32C.
+    hash_buffer.resize(num_rows);
+    bool initial = true;
     for (auto column_number : key_columns)
-        hash.update(columns[column_number]->getWeakHash32());
+    {
+        columns[column_number]->computeHashInto(0, num_rows, hash_buffer.data(), initial);
+        initial = false;
+    }
 
-    /// Partition rows by shard using Lemire fastrange. The downstream hash table picks
-    /// buckets via hash & mask (low bits). Routing via the same low bits would make all
-    /// keys in a shard share the same low bits and cluster into a small subset of buckets.
-    /// Lemire's multiply-and-shift uses the whole 32-bit hash to map into [0, num_shards) without
-    /// a divide, so the shard decision depends on the whole hash.
-    selector = JoinCommon::hashToSelector(hash, [n = num_shards](size_t h) { return ((h & 0xFFFFFFFF) * n) >> 32; });
+    /// Partition rows by shard using Lemire fastrange.
+    /// The hash has full 32-bit avalanche so the high bits fed into the shift are
+    /// well-distributed — no intHashCRC32 finalizer is needed.
+    selector.resize(num_rows);
+    mapToRange(hash_buffer.data(), num_rows, static_cast<UInt32>(num_shards), selector.data());
 
     /// Physically split every column into N per-shard mutable columns.
-    /// Skip shards that received no rows.
     for (auto & cols : shard_columns)
         cols.clear();
 

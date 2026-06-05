@@ -126,6 +126,9 @@ inline UInt64 intHashCRC32(T x, UInt64 updated_value)
     return intHashCRC32(repr, updated_value);
 }
 
+/// Default initial value for `updateWeakHash32` hashing chains (all bits set).
+inline constexpr UInt32 WEAK_HASH32_INITIAL_VALUE = ~UInt32(0);
+
 inline UInt32 updateWeakHash32(const UInt8 * pos, size_t size, UInt32 updated_value)
 {
     if (size < 8)

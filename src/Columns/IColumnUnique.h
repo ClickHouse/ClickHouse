@@ -1,8 +1,6 @@
 #pragma once
 #include <optional>
 #include <Columns/IColumn.h>
-#include <Common/WeakHash.h>
-
 namespace DB
 {
 
@@ -173,9 +171,9 @@ public:
         throwNotImplementedForColumnUnique("scatter");
     }
 
-    WeakHash32 getWeakHash32() const override
+    void computeHashInto(size_t /*row_begin*/, size_t /*row_end*/, uint32_t * /*hash_out*/, bool /*initial*/) const override
     {
-        throwNotImplementedForColumnUnique("getWeakHash32");
+        throwNotImplementedForColumnUnique("computeHashInto");
     }
 
     void updateHashFast(SipHash &) const override

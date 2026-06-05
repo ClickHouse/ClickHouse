@@ -181,7 +181,7 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash & hash) const override;
 

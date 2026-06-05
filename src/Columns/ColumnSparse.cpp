@@ -7,7 +7,7 @@
 #include <Columns/ColumnReplicated.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
+#include <Common/HashCombine32.h>
 #include <Common/iota.h>
 
 #include <algorithm>
@@ -775,22 +775,21 @@ void ColumnSparse::updateHashWithValue(size_t n, SipHash & hash) const
     values->updateHashWithValue(getValueIndex(n), hash);
 }
 
-WeakHash32 ColumnSparse::getWeakHash32() const
+void ColumnSparse::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
 {
-    WeakHash32 values_hash = values->getWeakHash32();
-    WeakHash32 hash(size());
+    const size_t values_size = values->size();
 
-    auto & hash_data = hash.getData();
-    auto & values_hash_data = values_hash.getData();
+    PaddedPODArray<UInt32> values_hash(values_size);
+    if (values_size)
+        values->computeHashInto(0, values_size, values_hash.data(), true);
 
-    auto offset_it = begin();
-    for (size_t i = 0; i < _size; ++i, ++offset_it)
+    auto offset_it = getIterator(row_begin);
+    for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
     {
-        size_t value_index = offset_it.getValueIndex();
-        hash_data[i] = values_hash_data[value_index];
+        const uint32_t value = values_hash[offset_it.getValueIndex()];
+        uint32_t & out = hash_out[i - row_begin];
+        out = initial ? value : fmix32Combined(value, out);
     }
-
-    return hash;
 }
 
 void ColumnSparse::updateHashFast(SipHash & hash) const

@@ -6,7 +6,6 @@
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
 #include <Core/Field.h>
 
 
@@ -182,9 +181,9 @@ void ColumnMap::updateHashWithValueRange(size_t begin, size_t end, SipHash & has
     nested->updateHashWithValueRange(begin, end, hash);
 }
 
-WeakHash32 ColumnMap::getWeakHash32() const
+void ColumnMap::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
 {
-    return nested->getWeakHash32();
+    nested->computeHashInto(row_begin, row_end, hash_out, initial);
 }
 
 void ColumnMap::updateHashFast(SipHash & hash) const

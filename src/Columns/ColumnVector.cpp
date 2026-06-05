@@ -1,30 +1,30 @@
 #include <Columns/ColumnVector.h>
 
+#include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/MaskOperations.h>
+#include <Columns/RadixSortHelper.h>
+#include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <base/bit_cast.h>
 #include <base/scope_guard.h>
 #include <base/sort.h>
 #include <base/unaligned.h>
-#include <Columns/ColumnCompressed.h>
-#include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/MaskOperations.h>
-#include <Columns/RadixSortHelper.h>
-#include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/HashCombine32.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
 #include <Common/TargetSpecific.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
-#include <IO/Operators.h>
-#include <IO/ReadHelpers.h>
 
 #include <bit>
 #include <cstring>
@@ -36,8 +36,8 @@
 #endif
 
 #if USE_EMBEDDED_COMPILER
-#include <DataTypes/Native.h>
-#include <llvm/IR/IRBuilder.h>
+#    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
 #endif
 
 
@@ -46,10 +46,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int PARAMETER_OUT_OF_BOUND;
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
+extern const int PARAMETER_OUT_OF_BOUND;
+extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 }
 
 template <typename T>
@@ -78,24 +78,108 @@ void ColumnVector<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash
     hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
 }
 
+/// Extract the raw uint32 input for fmix32/fmix32Combined from a value of type T.
+///
+/// Shared by both the initial and combine paths so the extraction logic is written once.
+///   - ≤4 bytes: cast to uint32_t (fmix32 applied externally)
+///   - 8 bytes:  fold high and low halves via fmix32(high) ^ low (fmix32 applied externally)
+///   - >8 bytes: fold consecutive 4-byte words through fmix32 internally; result is returned as-is
+///   - float: normalise -0.0 to +0.0 before bit-casting
 template <typename T>
-WeakHash32 ColumnVector<T>::getWeakHash32() const
+[[gnu::always_inline]] static inline uint32_t hashValueRaw32(T v) noexcept
 {
-    auto s = data.size();
-    WeakHash32 hash(s);
-
-    const T * begin = data.data();
-    const T * end = begin + s;
-    UInt32 * hash_data = hash.getData().data();
-
-    while (begin < end)
+    if constexpr (std::is_same_v<T, BFloat16>)
     {
-        *hash_data = static_cast<UInt32>(hashCRC32(*begin, *hash_data));
-        ++begin;
-        ++hash_data;
+        // `BFloat16` is a 16-bit float but is NOT a `std::is_floating_point` type, so without
+        // this branch it would fall into the `sizeof(T) <= 4` integer case below, where
+        // `static_cast<uint32_t>(v)` routes through `Float32` and truncates to an integer —
+        // collapsing e.g. `0.1` and `0.2` to `0` and invoking UB for negative/NaN/Inf inputs.
+        // Hash the raw 16 bits instead, normalising `-0.0` (`0x8000`) to `+0.0` so the two zero
+        // encodings (which compare equal) hash identically, matching the floating-point branch.
+        UInt16 bits = v.raw();
+        if (bits == 0x8000)
+            bits = 0;
+        return static_cast<uint32_t>(bits);
     }
+    else if constexpr (std::is_floating_point_v<T>)
+    {
+        if constexpr (sizeof(T) == sizeof(uint32_t))
+        {
+            uint32_t bits = 0;
+            if (v != T{0})
+                __builtin_memcpy(&bits, &v, sizeof(bits));
+            return bits;
+        }
+        else
+        {
+            static_assert(sizeof(T) == sizeof(uint64_t));
+            uint64_t bits = 0;
+            if (v != T{0})
+                __builtin_memcpy(&bits, &v, sizeof(bits));
+            return static_cast<uint32_t>(bits) ^ fmix32(static_cast<uint32_t>(bits >> 32));
+        }
+    }
+    else if constexpr (sizeof(T) <= sizeof(uint32_t))
+    {
+        return static_cast<uint32_t>(v);
+    }
+    else if constexpr (sizeof(T) == sizeof(uint64_t))
+    {
+        const auto bits = static_cast<uint64_t>(v);
+        return static_cast<uint32_t>(bits) ^ fmix32(static_cast<uint32_t>(bits >> 32));
+    }
+    else
+    {
+        // 128-bit and wider: fold four bytes at a time with inner fmix32 steps.
+        // No outer fmix32 is applied here; fmix32/fmix32Combined at the call site
+        // provides the final avalanche.
+        uint32_t acc = 0;
+        const auto * p = reinterpret_cast<const uint8_t *>(&v);
+        for (size_t off = 0; off < sizeof(T); off += 4)
+        {
+            uint32_t word = 0;
+            __builtin_memcpy(&word, p + off, 4);
+            acc = fmix32(acc ^ word);
+        }
+        return acc;
+    }
+}
 
-    return hash;
+MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(template <typename T> static void NO_INLINE),
+    computeHashIntoVectorImpl,
+    MULTITARGET_FUNCTION_BODY((const T * src, size_t n, uint32_t * out, bool initial) /// NOLINT(bugprone-macro-repeated-side-effects)
+                              {
+                                  if (initial)
+                                  {
+                                      // No prior — zero cost for the combine path.
+                                      for (size_t i = 0; i < n; ++i)
+                                          out[i] = fmix32(hashValueRaw32(src[i]));
+                                  }
+                                  else
+                                  {
+                                      // Combine the finalized per-row hash fmix32(raw), the same value the
+                                      // initial path produces, so a materialized column and a transparent
+                                      // wrapper (Const/LowCardinality/Sparse) of the same value compose
+                                      // identically across chunks. See IColumn::computeHashInto.
+                                      for (size_t i = 0; i < n; ++i)
+                                          out[i] = fmix32Combined(fmix32(hashValueRaw32(src[i])), out[i]);
+                                  }
+                              }))
+
+template <typename T>
+void ColumnVector<T>::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
+{
+    const T * src = data.data() + row_begin;
+    const size_t n = row_end - row_begin;
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v4))
+    {
+        computeHashIntoVectorImpl_x86_64_v4<T>(src, n, hash_out, initial);
+        return;
+    }
+#endif
+    computeHashIntoVectorImpl<T>(src, n, hash_out, initial);
 }
 
 template <typename T>
@@ -109,7 +193,11 @@ struct ColumnVector<T>::less
 {
     const Self & parent;
     int nan_direction_hint;
-    less(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
+    less(const Self & parent_, int nan_direction_hint_)
+        : parent(parent_)
+        , nan_direction_hint(nan_direction_hint_)
+    {
+    }
     bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::less(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
 };
 
@@ -118,7 +206,11 @@ struct ColumnVector<T>::less_stable
 {
     const Self & parent;
     int nan_direction_hint;
-    less_stable(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
+    less_stable(const Self & parent_, int nan_direction_hint_)
+        : parent(parent_)
+        , nan_direction_hint(nan_direction_hint_)
+    {
+    }
     bool operator()(size_t lhs, size_t rhs) const
     {
         if (unlikely(parent.data[lhs] == parent.data[rhs]))
@@ -141,8 +233,15 @@ struct ColumnVector<T>::greater
 {
     const Self & parent;
     int nan_direction_hint;
-    greater(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
-    bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::greater(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
+    greater(const Self & parent_, int nan_direction_hint_)
+        : parent(parent_)
+        , nan_direction_hint(nan_direction_hint_)
+    {
+    }
+    bool operator()(size_t lhs, size_t rhs) const
+    {
+        return CompareHelper<T>::greater(parent.data[lhs], parent.data[rhs], nan_direction_hint);
+    }
 };
 
 template <typename T>
@@ -150,7 +249,11 @@ struct ColumnVector<T>::greater_stable
 {
     const Self & parent;
     int nan_direction_hint;
-    greater_stable(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
+    greater_stable(const Self & parent_, int nan_direction_hint_)
+        : parent(parent_)
+        , nan_direction_hint(nan_direction_hint_)
+    {
+    }
     bool operator()(size_t lhs, size_t rhs) const
     {
         if (unlikely(parent.data[lhs] == parent.data[rhs]))
@@ -173,8 +276,15 @@ struct ColumnVector<T>::equals
 {
     const Self & parent;
     int nan_direction_hint;
-    equals(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
-    bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::equals(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
+    equals(const Self & parent_, int nan_direction_hint_)
+        : parent(parent_)
+        , nan_direction_hint(nan_direction_hint_)
+    {
+    }
+    bool operator()(size_t lhs, size_t rhs) const
+    {
+        return CompareHelper<T>::equals(parent.data[lhs], parent.data[rhs], nan_direction_hint);
+    }
 };
 
 /// Radix sort treats all positive NaNs to be greater than all numbers.
@@ -189,8 +299,7 @@ void moveNanToRequestedSide(
     const typename ColumnVector<T>::Container & data,
     size_t data_size,
     bool reverse,
-    int nan_direction_hint
-)
+    int nan_direction_hint)
 {
     const auto is_nulls_last = ((nan_direction_hint > 0) != reverse);
     size_t nans_to_move = 0;
@@ -339,8 +448,12 @@ void ColumnVector<T>::compareColumn(
 }
 
 template <typename T>
-void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                    size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
+void ColumnVector<T>::getPermutation(
+    IColumn::PermutationSortDirection direction,
+    IColumn::PermutationSortStability stability,
+    size_t limit,
+    int nan_direction_hint,
+    IColumn::Permutation & res) const
 {
     size_t data_size = data.size();
     res.resize_exact(data_size);
@@ -397,9 +510,11 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
                 if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
                     try_sort = trySort(res.begin(), res.end(), less(*this, nan_direction_hint));
-                else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+                else if (
+                    direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
                     try_sort = trySort(res.begin(), res.end(), less_stable(*this, nan_direction_hint));
-                else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+                else if (
+                    direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
                     try_sort = trySort(res.begin(), res.end(), greater(*this, nan_direction_hint));
                 else
                     try_sort = trySort(res.begin(), res.end(), greater_stable(*this, nan_direction_hint));
@@ -431,8 +546,13 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 }
 
 template <typename T>
-void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                    size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
+void ColumnVector<T>::updatePermutation(
+    IColumn::PermutationSortDirection direction,
+    IColumn::PermutationSortStability stability,
+    size_t limit,
+    int nan_direction_hint,
+    IColumn::Permutation & res,
+    EqualRanges & equal_ranges) const
 {
     auto sort = [&](auto begin, auto end, auto pred)
     {
@@ -478,38 +598,26 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
     {
         this->updatePermutationImpl(
-            limit, res, equal_ranges,
-            less(*this, nan_direction_hint),
-            equals(*this, nan_direction_hint),
-            sort, partial_sort);
+            limit, res, equal_ranges, less(*this, nan_direction_hint), equals(*this, nan_direction_hint), sort, partial_sort);
     }
     else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
     {
         this->updatePermutationImpl(
-            limit, res, equal_ranges,
-            less_stable(*this, nan_direction_hint),
-            equals(*this, nan_direction_hint),
-            sort, partial_sort);
+            limit, res, equal_ranges, less_stable(*this, nan_direction_hint), equals(*this, nan_direction_hint), sort, partial_sort);
     }
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
     {
         this->updatePermutationImpl(
-            limit, res, equal_ranges,
-            greater(*this, nan_direction_hint),
-            equals(*this, nan_direction_hint),
-            sort, partial_sort);
+            limit, res, equal_ranges, greater(*this, nan_direction_hint), equals(*this, nan_direction_hint), sort, partial_sort);
     }
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
     {
         this->updatePermutationImpl(
-            limit, res, equal_ranges,
-            greater_stable(*this, nan_direction_hint),
-            equals(*this, nan_direction_hint),
-            sort, partial_sort);
+            limit, res, equal_ranges, greater_stable(*this, nan_direction_hint), equals(*this, nan_direction_hint), sort, partial_sort);
     }
 }
 
-template<typename T>
+template <typename T>
 size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range) const
 {
     const size_t range_size = equal_range.size();
@@ -615,10 +723,13 @@ void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
 
     if (start + length > src_vec.data.size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                        "Parameters start = {}, length = {} are out of bound "
-                        "in ColumnVector<T>::insertRangeFrom method (data.size() = {}).",
-                        toString(start), toString(length), toString(src_vec.data.size()));
+        throw Exception(
+            ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Parameters start = {}, length = {} are out of bound "
+            "in ColumnVector<T>::insertRangeFrom method (data.size() = {}).",
+            toString(start),
+            toString(length),
+            toString(src_vec.data.size()));
 
     size_t old_size = data.size();
     data.resize(old_size + length);
@@ -630,7 +741,7 @@ static inline UInt64 blsr(UInt64 mask)
 #ifdef __BMI__
     return _blsr_u64(mask);
 #else
-    return mask & (mask-1);
+    return mask & (mask - 1);
 #endif
 }
 
@@ -663,17 +774,14 @@ private:
     PaddedPODArray<T> & container;
 
 public:
-    explicit ResultInserter(PaddedPODArray<T> & cont) : container(cont) {}
-
-    void insertSingle(T element)
+    explicit ResultInserter(PaddedPODArray<T> & cont)
+        : container(cont)
     {
-        container.push_back(element);
     }
 
-    void insertRange(const T * begin, const T * end)
-    {
-        container.insert(begin, end);
-    }
+    void insertSingle(T element) { container.push_back(element); }
+
+    void insertRange(const T * begin, const T * end) { container.insert(begin, end); }
 };
 
 template <typename T>
@@ -684,7 +792,11 @@ private:
     size_t & container_size;
 
 public:
-    explicit InPlaceResultInserter(T * ptr, size_t & size) : result_ptr(ptr), container_size(size) {}
+    explicit InPlaceResultInserter(T * ptr, size_t & size)
+        : result_ptr(ptr)
+        , container_size(size)
+    {
+    }
 
     void insertSingle(T element)
     {
@@ -703,41 +815,39 @@ public:
 };
 
 DECLARE_DEFAULT_CODE(
-template <typename T, typename Inserter, size_t SIMD_ELEMENTS>
-inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Inserter & inserter)
-{
-    while (filt_pos < filt_end_aligned)
-    {
-        UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
-        const uint8_t prefix_to_copy = prefixToCopy(mask);
+    template <typename T, typename Inserter, size_t SIMD_ELEMENTS>
+    inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Inserter & inserter) {
+        while (filt_pos < filt_end_aligned)
+        {
+            UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
+            const uint8_t prefix_to_copy = prefixToCopy(mask);
 
-        if (0xFF != prefix_to_copy)
-        {
-            inserter.insertRange(data_pos, data_pos + prefix_to_copy);
-        }
-        else
-        {
-            const uint8_t suffix_to_copy = suffixToCopy(mask);
-            if (0xFF != suffix_to_copy)
+            if (0xFF != prefix_to_copy)
             {
-                inserter.insertRange(data_pos + SIMD_ELEMENTS - suffix_to_copy, data_pos + SIMD_ELEMENTS);
+                inserter.insertRange(data_pos, data_pos + prefix_to_copy);
             }
             else
             {
-                while (mask)
+                const uint8_t suffix_to_copy = suffixToCopy(mask);
+                if (0xFF != suffix_to_copy)
                 {
-                    size_t index = std::countr_zero(mask);
-                    inserter.insertSingle(data_pos[index]);
-                    mask = blsr(mask);
+                    inserter.insertRange(data_pos + SIMD_ELEMENTS - suffix_to_copy, data_pos + SIMD_ELEMENTS);
+                }
+                else
+                {
+                    while (mask)
+                    {
+                        size_t index = std::countr_zero(mask);
+                        inserter.insertSingle(data_pos[index]);
+                        mask = blsr(mask);
+                    }
                 }
             }
-        }
 
-        filt_pos += SIMD_ELEMENTS;
-        data_pos += SIMD_ELEMENTS;
-    }
-}
-)
+            filt_pos += SIMD_ELEMENTS;
+            data_pos += SIMD_ELEMENTS;
+        }
+    })
 
 namespace
 {
@@ -745,7 +855,8 @@ template <typename T, typename Container>
 void resize(Container & res_data, size_t reserve_size)
 {
 #if defined(MEMORY_SANITIZER)
-    res_data.resize_fill(reserve_size, static_cast<T>(0)); // MSan doesn't recognize that all allocated memory is written by AVX-512 intrinsics.
+    res_data.resize_fill(
+        reserve_size, static_cast<T>(0)); // MSan doesn't recognize that all allocated memory is written by AVX-512 intrinsics.
 #else
     res_data.resize(reserve_size);
 #endif
@@ -753,83 +864,83 @@ void resize(Container & res_data, size_t reserve_size)
 }
 
 DECLARE_X86_ICELAKE_SPECIFIC_CODE(
-template <size_t ELEMENT_WIDTH>
-inline void compressStoreAVX512(const void *src, void *dst, const UInt64 mask)
-{
-    __m512i vsrc = _mm512_loadu_si512(src);
-    if constexpr (ELEMENT_WIDTH == 1)
-        _mm512_mask_compressstoreu_epi8(dst, static_cast<__mmask64>(mask), vsrc);
-    else if constexpr (ELEMENT_WIDTH == 2)
-        _mm512_mask_compressstoreu_epi16(dst, static_cast<__mmask32>(mask), vsrc);
-    else if constexpr (ELEMENT_WIDTH == 4)
-        _mm512_mask_compressstoreu_epi32(dst, static_cast<__mmask16>(mask), vsrc);
-    else if constexpr (ELEMENT_WIDTH == 8)
-        _mm512_mask_compressstoreu_epi64(dst, static_cast<__mmask8>(mask), vsrc);
-}
+    template <size_t ELEMENT_WIDTH> inline void compressStoreAVX512(const void * src, void * dst, const UInt64 mask) {
+        __m512i vsrc = _mm512_loadu_si512(src);
+        if constexpr (ELEMENT_WIDTH == 1)
+            _mm512_mask_compressstoreu_epi8(dst, static_cast<__mmask64>(mask), vsrc);
+        else if constexpr (ELEMENT_WIDTH == 2)
+            _mm512_mask_compressstoreu_epi16(dst, static_cast<__mmask32>(mask), vsrc);
+        else if constexpr (ELEMENT_WIDTH == 4)
+            _mm512_mask_compressstoreu_epi32(dst, static_cast<__mmask16>(mask), vsrc);
+        else if constexpr (ELEMENT_WIDTH == 8)
+            _mm512_mask_compressstoreu_epi64(dst, static_cast<__mmask8>(mask), vsrc);
+    }
 
-template <typename T, typename Container, size_t SIMD_ELEMENTS>
-inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
-{
-    static constexpr size_t VEC_LEN = 64;   /// AVX512 vector length - 64 bytes
-    static constexpr size_t ELEMENT_WIDTH = sizeof(T);
-    static constexpr size_t ELEMENTS_PER_VEC = VEC_LEN / ELEMENT_WIDTH;
-    static constexpr UInt64 KMASK = 0xffffffffffffffff >> (64 - ELEMENTS_PER_VEC);
+    template <typename T, typename Container, size_t SIMD_ELEMENTS>
+    inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data) {
+        static constexpr size_t VEC_LEN = 64; /// AVX512 vector length - 64 bytes
+        static constexpr size_t ELEMENT_WIDTH = sizeof(T);
+        static constexpr size_t ELEMENTS_PER_VEC = VEC_LEN / ELEMENT_WIDTH;
+        static constexpr UInt64 KMASK = 0xffffffffffffffff >> (64 - ELEMENTS_PER_VEC);
 
-    size_t current_offset = res_data.size();
-    size_t reserve_size = res_data.size();
-    size_t alloc_size = SIMD_ELEMENTS * 2;
+        size_t current_offset = res_data.size();
+        size_t reserve_size = res_data.size();
+        size_t alloc_size = SIMD_ELEMENTS * 2;
 
-    while (filt_pos < filt_end_aligned)
-    {
-        /// to avoid calling resize too frequently, resize to reserve buffer.
-        if (reserve_size - current_offset < SIMD_ELEMENTS)
+        while (filt_pos < filt_end_aligned)
         {
-            reserve_size += alloc_size;
-            resize<T>(res_data, reserve_size);
-            alloc_size *= 2;
-        }
+            /// to avoid calling resize too frequently, resize to reserve buffer.
+            if (reserve_size - current_offset < SIMD_ELEMENTS)
+            {
+                reserve_size += alloc_size;
+                resize<T>(res_data, reserve_size);
+                alloc_size *= 2;
+            }
 
-        UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
+            UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
 
-        if (0xffffffffffffffff == mask)
-        {
-            for (size_t i = 0; i < SIMD_ELEMENTS; i += ELEMENTS_PER_VEC)
-                _mm512_storeu_si512(reinterpret_cast<void *>(&res_data[current_offset + i]),
-                        _mm512_loadu_si512(reinterpret_cast<const void *>(data_pos + i)));
-            current_offset += SIMD_ELEMENTS;
-        }
-        else
-        {
-            if (mask)
+            if (0xffffffffffffffff == mask)
             {
                 for (size_t i = 0; i < SIMD_ELEMENTS; i += ELEMENTS_PER_VEC)
+                    _mm512_storeu_si512(
+                        reinterpret_cast<void *>(&res_data[current_offset + i]),
+                        _mm512_loadu_si512(reinterpret_cast<const void *>(data_pos + i)));
+                current_offset += SIMD_ELEMENTS;
+            }
+            else
+            {
+                if (mask)
                 {
-                    compressStoreAVX512<ELEMENT_WIDTH>(reinterpret_cast<const void *>(data_pos + i),
-                            reinterpret_cast<void *>(&res_data[current_offset]), mask & KMASK);
-                    current_offset += std::popcount(mask & KMASK);
-                    /// prepare mask for next iter, if ELEMENTS_PER_VEC = 64, no next iter
-                    if constexpr (ELEMENTS_PER_VEC < 64)
+                    for (size_t i = 0; i < SIMD_ELEMENTS; i += ELEMENTS_PER_VEC)
                     {
-                        mask >>= ELEMENTS_PER_VEC;
+                        compressStoreAVX512<ELEMENT_WIDTH>(
+                            reinterpret_cast<const void *>(data_pos + i),
+                            reinterpret_cast<void *>(&res_data[current_offset]),
+                            mask & KMASK);
+                        current_offset += std::popcount(mask & KMASK);
+                        /// prepare mask for next iter, if ELEMENTS_PER_VEC = 64, no next iter
+                        if constexpr (ELEMENTS_PER_VEC < 64)
+                        {
+                            mask >>= ELEMENTS_PER_VEC;
+                        }
                     }
                 }
             }
-        }
 
-        filt_pos += SIMD_ELEMENTS;
-        data_pos += SIMD_ELEMENTS;
-    }
-    /// Resize to the real size.
-    res_data.resize_exact(current_offset);
-}
-)
+            filt_pos += SIMD_ELEMENTS;
+            data_pos += SIMD_ELEMENTS;
+        }
+        /// Resize to the real size.
+        res_data.resize_exact(current_offset);
+    })
 
 template <typename T>
 ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
     size_t size = data.size();
     if (size != filt.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
+        throw Exception(
+            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
     auto res = this->create();
     Container & res_data = res->getData();
@@ -879,7 +990,8 @@ void ColumnVector<T>::filter(const IColumn::Filter & filt)
     const auto filter_size = filt.size();
 
     if (size != filter_size)
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filter_size, size);
+        throw Exception(
+            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filter_size, size);
 
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + size;
@@ -921,7 +1033,8 @@ void ColumnVector<T>::applyZeroMap(const IColumn::Filter & filt, bool inverted)
 {
     size_t size = data.size();
     if (size != filt.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
+        throw Exception(
+            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
 
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + size;
@@ -1006,7 +1119,8 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 {
     const size_t size = data.size();
     if (size != offsets.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets {} doesn't match size of column {}", offsets.size(), size);
+        throw Exception(
+            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets {} doesn't match size of column {}", offsets.size(), size);
 
     if (size == 0 || offsets.back() == 0)
         return this->create();
@@ -1105,7 +1219,9 @@ ColumnPtr ColumnVector<T>::compress(bool force_compression) const
         return ColumnCompressed::wrap(this->getPtr());
 
     const size_t compressed_size = compressed->size();
-    return ColumnCompressed::create(data_size, compressed_size,
+    return ColumnCompressed::create(
+        data_size,
+        compressed_size,
         [my_compressed = std::move(compressed), column_size = data_size]
         {
             auto res = ColumnVector<T>::create(column_size);
@@ -1116,11 +1232,16 @@ ColumnPtr ColumnVector<T>::compress(bool force_compression) const
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
+ColumnPtr ColumnVector<T>::createWithOffsets(
+    const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
 {
     if (offsets.size() + shift != size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}", offsets.size(), shift, size());
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}",
+            offsets.size(),
+            shift,
+            size());
 
     auto res = this->create();
     auto & res_data = res->getData();
@@ -1141,17 +1262,15 @@ void ColumnVector<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_p
 }
 
 DECLARE_DEFAULT_CODE(
-    template <typename Container, typename Type> void vectorIndexImpl(
-    const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
+    template <typename Container, typename Type>
+    void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
     {
         for (size_t i = 0; i < limit; ++i)
             res_data[i] = data[indexes[i]];
-    }
-);
+    });
 
 DECLARE_X86_ICELAKE_SPECIFIC_CODE(
-    template <typename Container, typename Type>
-    __attribute__((no_sanitize("memory"))) /// False positive on _mm512_permutex2var_epi8
+    template <typename Container, typename Type> __attribute__((no_sanitize("memory"))) /// False positive on _mm512_permutex2var_epi8
     void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
     {
         static constexpr UInt64 MASK64 = 0xffffffffffffffff;
@@ -1260,8 +1379,7 @@ DECLARE_X86_ICELAKE_SPECIFIC_CODE(
                 _mm512_mask_storeu_epi8(res_pos + pos, tail_mask, out);
             }
         }
-    }
-);
+    });
 
 template <typename T>
 template <typename Type>

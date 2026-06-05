@@ -4,7 +4,6 @@
 #include <Core/Field.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
-#include <Common/WeakHash.h>
 #include <IO/BufferWithOwnMemory.h>
 
 
@@ -103,7 +102,7 @@ public:
     void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override { throwMustBeDecompressed(); }
     void skipSerializedInArena(ReadBuffer &) const override { throwMustBeDecompressed(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeDecompressed(); }
-    WeakHash32 getWeakHash32() const override { throwMustBeDecompressed(); }
+    void computeHashInto(size_t, size_t, uint32_t *, bool) const override { throwMustBeDecompressed(); }
     void updateHashFast(SipHash &) const override { throwMustBeDecompressed(); }
     ColumnPtr filter(const Filter &, ssize_t) const override { throwMustBeDecompressed(); }
     void filter(const Filter &) override { throwMustBeDecompressed(); }

@@ -1,15 +1,16 @@
+#include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnCompressed.h>
 
-#include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <base/memcmpSmall.h>
+#include <Common/HashCombine32.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
+#include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
-#include <base/memcmpSmall.h>
 #include <Common/memcpySmall.h>
 
 #if defined(__SSE2__)
@@ -28,11 +29,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_LARGE_STRING_SIZE;
-    extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int PARAMETER_OUT_OF_BOUND;
-    extern const int LOGICAL_ERROR;
+extern const int TOO_LARGE_STRING_SIZE;
+extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
+extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+extern const int PARAMETER_OUT_OF_BOUND;
+extern const int LOGICAL_ERROR;
 }
 
 
@@ -55,7 +56,7 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
     return new_col_holder;
 }
 
-void ColumnFixedString::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const
+void ColumnFixedString::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options & options) const
 {
     if (options.notFull(name_buf))
         writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, name_buf);
@@ -152,23 +153,61 @@ void ColumnFixedString::updateHashWithValueRange(size_t begin, size_t end, SipHa
     hash.update(reinterpret_cast<const char *>(&chars[n * begin]), n * (end - begin));
 }
 
-WeakHash32 ColumnFixedString::getWeakHash32() const
+/// Fold `n` bytes through fmix32 in 4-byte chunks and return the raw pre-final-fmix32 value.
+/// The string length is XOR'd in before the final fmix32 (applied externally) so rows
+/// of different widths never collide.
+[[gnu::always_inline]] static inline uint32_t hashFixedStringRaw32(const UInt8 * row, size_t n) noexcept
 {
-    auto s = size();
-    WeakHash32 hash(s);
-
-    const UInt8 * pos = chars.data();
-    UInt32 * hash_data = hash.getData().data();
-
-    for (size_t row = 0; row < s; ++row)
+    uint32_t acc = 0;
+    size_t off = 0;
+    for (; off + 4 <= n; off += 4)
     {
-        *hash_data = ::updateWeakHash32(pos, n, *hash_data);
-
-        pos += n;
-        ++hash_data;
+        uint32_t word = 0;
+        __builtin_memcpy(&word, row + off, 4);
+        acc = fmix32(acc ^ word);
     }
+    if (off < n)
+    {
+        uint32_t tail = 0;
+        __builtin_memcpy(&tail, row + off, n - off);
+        acc = fmix32(acc ^ tail);
+    }
+    return acc ^ static_cast<uint32_t>(n); // length terminator; outer fmix32 applied at call site
+}
 
-    return hash;
+MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(static void NO_INLINE),
+    computeHashIntoFixedStringImpl,
+    MULTITARGET_FUNCTION_BODY(
+        (const UInt8 * chars, size_t row_n, size_t n_rows, uint32_t * out, bool initial) /// NOLINT(bugprone-macro-repeated-side-effects)
+        {
+            if (initial)
+            {
+                for (size_t i = 0; i < n_rows; ++i)
+                    out[i] = fmix32(hashFixedStringRaw32(chars + i * row_n, row_n));
+            }
+            else
+            {
+                // Combine the finalized per-row hash so materialized and wrapped
+                // (Const/LowCardinality/Sparse) representations compose identically.
+                // See IColumn::computeHashInto.
+                for (size_t i = 0; i < n_rows; ++i)
+                    out[i] = fmix32Combined(fmix32(hashFixedStringRaw32(chars + i * row_n, row_n)), out[i]);
+            }
+        }))
+
+void ColumnFixedString::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
+{
+    const UInt8 * src = chars.data() + row_begin * n;
+    const size_t n_rows = row_end - row_begin;
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v4))
+    {
+        computeHashIntoFixedStringImpl_x86_64_v4(src, n, n_rows, hash_out, initial);
+        return;
+    }
+#endif
+    computeHashIntoFixedStringImpl(src, n, n_rows, hash_out, initial);
 }
 
 void ColumnFixedString::updateHashFast(SipHash & hash) const
@@ -178,8 +217,12 @@ void ColumnFixedString::updateHashFast(SipHash & hash) const
 }
 
 #if USE_EMBEDDED_COMPILER
-bool ColumnFixedString::isComparatorCompilable() const { return true; }
-llvm::Value * ColumnFixedString::compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const
+bool ColumnFixedString::isComparatorCompilable() const
+{
+    return true;
+}
+llvm::Value * ColumnFixedString::compileComparator(
+    llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const
 {
     llvm::Value * lhs_chars_ptr = b.CreateExtractValue(lhs, {0});
     llvm::Value * lhs_row_index = b.CreateExtractValue(lhs, {1});
@@ -193,11 +236,10 @@ llvm::Value * ColumnFixedString::compileComparator(llvm::IRBuilderBase & b, llvm
     auto * rhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), rhs_chars_ptr, b.CreateMul(rhs_row_index, n_value));
 
     llvm::Module * module = b.GetInsertBlock()->getModule();
-    auto * memcmp_func_type = llvm::FunctionType::get(b.getInt32Ty(),
-        {lhs_current_ptr->getType(), n_value->getType(), rhs_current_ptr->getType(), n_value->getType()}, false);
-    llvm::Function * memcmp_func = llvm::dyn_cast<llvm::Function>(
-        module->getOrInsertFunction("memcmpSmallCharsAllowOverflow15", memcmp_func_type).getCallee()
-    );
+    auto * memcmp_func_type = llvm::FunctionType::get(
+        b.getInt32Ty(), {lhs_current_ptr->getType(), n_value->getType(), rhs_current_ptr->getType(), n_value->getType()}, false);
+    llvm::Function * memcmp_func
+        = llvm::dyn_cast<llvm::Function>(module->getOrInsertFunction("memcmpSmallCharsAllowOverflow15", memcmp_func_type).getCallee());
     auto * compare_result = b.CreateCall(memcmp_func, {lhs_current_ptr, n_value, rhs_current_ptr, n_value});
 
     /// memcmpSmallAllowOverflow15 returns -1/0/1, so truncating i32 to i8 is safe
@@ -222,8 +264,12 @@ struct ColumnFixedString::ComparatorBase
     }
 };
 
-void ColumnFixedString::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                    size_t limit, int /*nan_direction_hint*/, Permutation & res) const
+void ColumnFixedString::getPermutation(
+    IColumn::PermutationSortDirection direction,
+    IColumn::PermutationSortStability stability,
+    size_t limit,
+    int /*nan_direction_hint*/,
+    Permutation & res) const
 {
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
         getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this), DefaultSort(), DefaultPartialSort());
@@ -235,19 +281,28 @@ void ColumnFixedString::getPermutation(IColumn::PermutationSortDirection directi
         getPermutationImpl(limit, res, ComparatorDescendingStable(*this), DefaultSort(), DefaultPartialSort());
 }
 
-void ColumnFixedString::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                    size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
+void ColumnFixedString::updatePermutation(
+    IColumn::PermutationSortDirection direction,
+    IColumn::PermutationSortStability stability,
+    size_t limit,
+    int /*nan_direction_hint*/,
+    Permutation & res,
+    EqualRanges & equal_ranges) const
 {
     auto comparator_equal = ComparatorEqual(*this);
 
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(
+            limit, res, equal_ranges, ComparatorAscendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(
+            limit, res, equal_ranges, ComparatorAscendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(
+            limit, res, equal_ranges, ComparatorDescendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(
+            limit, res, equal_ranges, ComparatorDescendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
 }
 
 size_t ColumnFixedString::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
@@ -278,9 +333,13 @@ void ColumnFixedString::doInsertRangeFrom(const IColumn & src, size_t start, siz
     chassert(this->n == src_concrete.n);
 
     if (start + length > src_concrete.size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "
-                        "in ColumnFixedString::insertRangeFrom method (size() = {}).",
-                        toString(start), toString(length), toString(src_concrete.size()));
+        throw Exception(
+            ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Parameters start = {}, length = {} are out of bound "
+            "in ColumnFixedString::insertRangeFrom method (size() = {}).",
+            toString(start),
+            toString(length),
+            toString(src_concrete.size()));
 
     size_t old_size = chars.size();
     chars.resize(old_size + length * n);
@@ -291,7 +350,8 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
 {
     size_t col_size = size();
     if (col_size != filt.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), col_size);
+        throw Exception(
+            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), col_size);
 
     auto res = ColumnFixedString::create(n);
 
@@ -328,11 +388,11 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
                 res->chars.resize(res_chars_size + n);
                 memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos + index * n, n);
                 res_chars_size += n;
-            #ifdef __BMI__
+#ifdef __BMI__
                 mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+#else
+                mask = mask & (mask - 1);
+#endif
             }
         }
         data_pos += chars_per_simd_elements;
@@ -360,7 +420,8 @@ void ColumnFixedString::filter(const IColumn::Filter & filt)
 {
     size_t col_size = size();
     if (col_size != filt.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), col_size);
+        throw Exception(
+            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), col_size);
 
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + col_size;
@@ -393,11 +454,11 @@ void ColumnFixedString::filter(const IColumn::Filter & filt)
                 size_t index = std::countr_zero(mask);
                 memmove(res_data_pos + res_chars_size, data_pos + index * n, n);
                 res_chars_size += n;
-            #ifdef __BMI__
+#ifdef __BMI__
                 mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+#else
+                mask = mask & (mask - 1);
+#endif
             }
         }
         data_pos += chars_per_simd_elements;
@@ -538,14 +599,15 @@ ColumnPtr ColumnFixedString::compress(bool force_compression) const
 
     const size_t column_size = size();
     const size_t compressed_size = compressed->size();
-    return ColumnCompressed::create(column_size, compressed_size,
+    return ColumnCompressed::create(
+        column_size,
+        compressed_size,
         [my_compressed = std::move(compressed), column_size, my_n = n]
         {
             size_t chars_size = my_n * column_size;
             auto res = ColumnFixedString::create(my_n);
             res->getChars().resize(chars_size);
-            ColumnCompressed::decompressBuffer(
-                my_compressed->data(), res->getChars().data(), my_compressed->size(), chars_size);
+            ColumnCompressed::decompressBuffer(my_compressed->data(), res->getChars().data(), my_compressed->size(), chars_size);
             return res;
         });
 }

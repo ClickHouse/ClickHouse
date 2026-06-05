@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Common/WeakHash.h>
-
 
 namespace DB
 {
@@ -65,9 +63,11 @@ public:
     {
     }
 
-    WeakHash32 getWeakHash32() const override
+    void computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const override
     {
-        return WeakHash32(s);
+        if (initial)
+            for (size_t i = 0, n = row_end - row_begin; i < n; ++i)
+                hash_out[i] = 0;
     }
 
     void updateHashFast(SipHash & /*hash*/) const override

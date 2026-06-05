@@ -47,7 +47,11 @@ public:
 
     bool containsDefault() const;
 
-    WeakHash32 getWeakHash(const WeakHash32 & dict_hash) const;
+    /// Per-row hash of indexed data: gathers the precomputed per-dictionary-row hashes
+    /// `dict_hash` by index and writes (or combines, when initial == false) into `hash_out`.
+    /// `hash_out[i]` corresponds to row `row_begin + i`.
+    void computeHashInto(
+        const PaddedPODArray<UInt32> & dict_hash, size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const;
 
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const PaddedPODArray<UInt64> & dict_sizes) const;
 
