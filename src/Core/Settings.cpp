@@ -6491,7 +6491,7 @@ Cloud default value: `1`.
 Allows to record the filesystem caching log for each query
 )", 0) \
     DECLARE(Bool, enable_reader_executor_log, false, R"(
-Allows recording one row per `ReaderExecutor` (at destruction) into `system.reader_executor_log`. Useful for diagnosing read pipeline behavior on a per-reader basis: cache hit/miss bytes, allocations, latency breakdown. Disabled by default because high-fan-out queries can create many rows.
+Allows recording one row per `ReaderExecutor` (at destruction) into `system.reader_executor_log`. Useful for diagnosing read pipeline behavior on a per-reader basis: per-tier byte counters (page cache, filesystem cache, source), request counts, and a latency breakdown. Disabled by default because high-fan-out queries can create many rows.
 )", EXPERIMENTAL) \
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.

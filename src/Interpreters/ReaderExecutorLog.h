@@ -8,7 +8,7 @@ namespace DB
 {
 
 /// One row per `ReaderExecutor` instance, written at destruction. Lets you
-/// query per-reader-per-query cache behavior, allocations and time
+/// query per-reader-per-query cache behavior, byte counters and time
 /// breakdown from `system.reader_executor_log` instead of grepping the
 /// debug log.
 struct ReaderExecutorLogElement
