@@ -51,9 +51,9 @@ void TableFunctionObfuscate::parseArguments(const ASTPtr & ast_function, Context
 
 ColumnsDescription TableFunctionObfuscate::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    assert(create.select);
-    assert(create.children.size() == 1);
-    assert(create.children[0]->as<ASTSelectWithUnionQuery>());
+    chassert(create.select);
+    chassert(create.children.size() == 1);
+    chassert(create.children[0]->as<ASTSelectWithUnionQuery>());
 
     SharedHeader sample_block;
 
