@@ -1359,17 +1359,27 @@ void DistributedQueryPlanExecutor::startStageWithDependencies(const String & sta
     if (executed_stages.contains(stage_name))
         return;
 
+    /// A streaming producer runs concurrently with its consumer and blocks until the consumer
+    /// connects, so start streaming producers only after this stage (their consumer); starting them
+    /// first can fill the worker pool with producers waiting for consumers that have not run yet.
+    /// A persisted producer runs to completion before the consumer reads its output, so start and
+    /// wait for persisted producers up front.
+    Strings streaming_dependencies;
     if (distributed_query_plan.stage_depends_on.contains(stage_name))
     {
         Strings dependencies_to_wait;
 
         for (const auto & [dependency, exchange_id] : distributed_query_plan.stage_depends_on.at(stage_name))
         {
-            startStageWithDependencies(dependency, executed_stages);
-
-            /// If exchange data is persistent then we will need to wait for stage to finish
             if (distributed_query_plan.exchange_descriptions.at(exchange_id).kind == ExchangeDescription::Kind::Persisted)
+            {
+                startStageWithDependencies(dependency, executed_stages);
                 dependencies_to_wait.push_back(dependency);
+            }
+            else
+            {
+                streaming_dependencies.push_back(dependency);
+            }
         }
 
         for (const auto & dependency : dependencies_to_wait)
@@ -1384,15 +1394,32 @@ void DistributedQueryPlanExecutor::startStageWithDependencies(const String & sta
         stage_name, dumpQueryPlan(stage.query_plan_fragment), stage.tasks.size());
     startStage(stage_name, stage);
     executed_stages.insert(stage_name);
+
+    /// The consumer is running now and can accept connections, so start its streaming producers.
+    for (const auto & dependency : streaming_dependencies)
+        startStageWithDependencies(dependency, executed_stages);
 }
 
 void DistributedQueryPlanExecutor::start()
 {
     LOG_DEBUG(logger, "Starting distributed query, unique id: {}", toString(unique_query_id));
 
-    /// Execute stages in topological order
+    /// Start from the root stages (those no other stage depends on) so the recursion can start each
+    /// consumer before its streaming producers. Entering at an arbitrary stage could start a producer
+    /// before its consumer is running.
     {
+        UnorderedSetWithMemoryTracking<String> depended_on_stages;
+        for (const auto & [_, dependencies] : distributed_query_plan.stage_depends_on)
+            for (const auto & [dependency, exchange_id] : dependencies)
+                depended_on_stages.insert(dependency);
+
         UnorderedSetWithMemoryTracking<String> executed_stages;
+        for (const auto & [stage_name, _] : distributed_query_plan.stages)
+            if (!depended_on_stages.contains(stage_name))
+                startStageWithDependencies(stage_name, executed_stages);
+
+        /// Start anything not reachable from a root (a disconnected stage should not occur, but if it
+        /// does it must still run).
         for (const auto & [stage_name, _] : distributed_query_plan.stages)
             startStageWithDependencies(stage_name, executed_stages);
     }
