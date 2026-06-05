@@ -1,9 +1,0 @@
-matching pattern, with index
-100000
-matching pattern, without index
-100000
-non-matching pattern, with index
-0
-SELECT count() FROM t_text_index_like_large WHERE s LIKE \'%abbbc%\';	1
-SELECT count() FROM t_text_index_like_large WHERE s LIKE \'%abbbc%\' SETTINGS use_skip_indexes = 0;	0
-SELECT count() FROM t_text_index_like_large WHERE s LIKE \'%xyzcb%\';	0

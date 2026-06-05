@@ -346,8 +346,6 @@ private:
     void initBlockLogsInput();
     void initBlockProfileEventsInput();
 
-    void ensureConnected() const;
-
     [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected, TimeoutSetter * timeout_setter = nullptr);
 };
 

@@ -75,6 +75,14 @@ RollupTransform::RollupTransform(SharedHeader header, AggregatingTransformParams
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {}
 
+MutableColumnPtr getColumnWithDefaults(Block const & header, size_t key, size_t n)
+{
+    auto const & col = header.getByPosition(key);
+    auto result_column = col.column->cloneEmpty();
+    col.type->insertManyDefaultsInto(*result_column, n);
+    return result_column;
+}
+
 Chunk RollupTransform::generate()
 {
     if (!consumed_chunks.empty())

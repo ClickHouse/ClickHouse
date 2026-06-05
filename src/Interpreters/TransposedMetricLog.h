@@ -18,12 +18,12 @@ using DatabasePtr = std::shared_ptr<IDatabase>;
 
 struct TransposedMetricLogElement
 {
-    UInt16 event_date{};
-    time_t event_time{};
+    UInt16 event_date;
+    time_t event_time;
     Decimal64 event_time_microseconds{};
     std::string metric_name;
-    Int64 value{};
-    UInt8 is_event{};
+    Int64 value;
+    UInt8 is_event;
 
     static std::string name() { return "TransposedMetricLog"; }
     static ColumnsDescription getColumnsDescription();

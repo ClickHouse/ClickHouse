@@ -197,7 +197,6 @@ void TemplateBlockOutputFormat::resetFormatterImpl()
     statistics = Statistics();
 }
 
-void registerOutputFormatTemplate(FormatFactory & factory);
 void registerOutputFormatTemplate(FormatFactory & factory)
 {
     factory.registerOutputFormat("Template", [](

@@ -1,5 +1,3 @@
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
-
 #include <Client.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
@@ -117,7 +115,9 @@ bool Client::processASTFuzzerStep(const String & query_to_execute, const ASTPtr 
     // and TOO_DEEP_RECURSION should not fail the fuzzer check.
     // Similarly, MEMORY_LIMIT_EXCEEDED means the server correctly
     // rejected an expensive query, not that it died.
-    if (have_error && (exception->code() == ErrorCodes::TOO_DEEP_RECURSION || exception->code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED))
+    if (have_error
+        && (exception->code() == ErrorCodes::TOO_DEEP_RECURSION
+            || exception->code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED))
     {
         have_error = false;
         server_exception.reset();
@@ -757,7 +757,6 @@ bool Client::buzzHouse()
 
                     full_query.resize(0);
                     dumpContent();
-                    full_query.resize(0);
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     fuzz_config->outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
@@ -904,18 +903,9 @@ bool Client::buzzHouse()
                      {
                          const auto & dict = rg.pickRandomly(
                              gen.filterCollection<BuzzHouse::SQLDictionary>(gen.attached_dictionaries_to_compare_content));
-                         BuzzHouse::SQLQuery reload;
                          runDumpReadOracle(
-                             [&]()
-                             {
-                                 qo.dumpDictionaryContent(rg, gen, dict, reload, sq1, sq2);
-                                 full_query.resize(0);
-                                 BuzzHouse::SQLQueryToString(full_query, reload);
-                                 fuzz_config->outf << full_query << std::endl;
-                                 server_up &= processBuzzHouseQuery(full_query);
-                             },
-                             [&](auto s)
-                             { qo.dumpObjectIntermediateSteps(rg, gen, dict, BuzzHouse::SQLObject::DICTIONARY, s, intermediate_queries); },
+                             [&]() { qo.dumpDictionaryContent(rg, gen, dict, sq1, sq2); },
+                             [&](auto s) { qo.dumpObjectIntermediateSteps(rg, gen, dict, BuzzHouse::SQLObject::DICTIONARY, s, intermediate_queries); },
                              "Dump and read dictionary");
                      }},
                     {5
@@ -928,8 +918,7 @@ bool Client::buzzHouse()
                              = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLView>(gen.attached_views_to_compare_content));
                          runDumpReadOracle(
                              [&]() { qo.dumpViewContent(rg, view, sq1, sq2); },
-                             [&](auto s)
-                             { qo.dumpObjectIntermediateSteps(rg, gen, view, BuzzHouse::SQLObject::VIEW, s, intermediate_queries); },
+                             [&](auto s) { qo.dumpObjectIntermediateSteps(rg, gen, view, BuzzHouse::SQLObject::VIEW, s, intermediate_queries); },
                              "Dump and read view");
                      }},
                     {20
@@ -1034,8 +1023,7 @@ bool Client::buzzHouse()
                     {30
                          * static_cast<uint32_t>(
                              fuzz_config->allow_client_restarts && fuzz_config->allow_query_oracles
-                             && gen.collectionHas<BuzzHouse::SQLPolicy>([&gen](const BuzzHouse::SQLPolicy & p)
-                                                                        { return gen.rowPolicyForOracle(p); })),
+                             && gen.collectionHas<BuzzHouse::SQLPolicy>([&gen](const BuzzHouse::SQLPolicy & p) { return gen.rowPolicyForOracle(p); })),
                      [&]()
                      {
                          /// Row policy oracle: an existing catalog row policy USING pred must be equivalent to WHERE pred.
@@ -1094,9 +1082,7 @@ bool Client::buzzHouse()
                          const uint64_t nseed = rg.nextInFullRange();
                          const auto & tbl
                              = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)).get();
-                         const auto & engine = tbl.isAnyIcebergEngine()
-                             ? "iceberg"
-                             : (tbl.isAnyDeltaLakeEngine() ? "deltalake" : (tbl.isAnyPaimonEngine() ? "paimon" : "kafka"));
+                         const auto & engine = tbl.isAnyIcebergEngine() ? "iceberg" : (tbl.isAnyDeltaLakeEngine() ? "deltalake" : (tbl.isAnyPaimonEngine() ? "paimon" : "kafka"));
                          const auto & ndname = tbl.isKafkaEngine() ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
                          const auto & ntname = tbl.getBaseName(false);
                          const bool async = fuzz_config->allow_async_requests && rg.nextSmallNumber() < 4;
