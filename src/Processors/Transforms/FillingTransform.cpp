@@ -87,9 +87,9 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
             if (common::mulOverflow(step_value, static_cast<Int64>(step_kind->toAvgSeconds()), avg_seconds))
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                                 "Overflow in WITH FILL step value");
-            if (avg_seconds > -86400 && avg_seconds < 86400)
+            if (std::abs(avg_seconds) < 86400)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                                "Value of step is too low ({} seconds). Must be >= 1 day", avg_seconds);
+                                "Value of step is to low ({} seconds). Must be >= 1 day", std::abs(avg_seconds));
         }
 
         if (which.isDate())
@@ -212,7 +212,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     return true;
 }
 
-static SortDescription deduplicateSortDescription(const SortDescription & sort_description, const Block & header)
+SortDescription deduplicateSortDescription(const SortDescription & sort_description, const Block & header)
 {
     SortDescription result;
     std::unordered_set<std::string> unique_columns;
