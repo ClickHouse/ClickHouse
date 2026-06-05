@@ -25,6 +25,12 @@
 #ifdef PCODEC_MULTITARGET
 #    include <Common/TargetSpecific.h>
 #    if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
+/// `Common/TargetSpecific.h` exposes a per-function attribute macro for the V4 target
+/// (`X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE`) but not for V3, so we spell out the V3 attribute here,
+/// matching the `arch=x86-64-v3` target the header's `BEGIN_X86_64_V3_SPECIFIC_CODE` block uses.
+#        ifndef X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE
+#            define X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v3")))
+#        endif
 #        define PCO_MULTITARGET_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
             FUNCTION_HEADER X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE name##_x86_64_v4 FUNCTION_BODY \
             FUNCTION_HEADER X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE name##_x86_64_v3 FUNCTION_BODY \
