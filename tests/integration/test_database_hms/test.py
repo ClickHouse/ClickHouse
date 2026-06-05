@@ -43,7 +43,7 @@ def test_hive_catalog_url_parsing(started_cluster):
             CREATE DATABASE test_hms_support_check ENGINE = DataLakeCatalog('thrift://hive:9083', 'minio', '{password}') 
             SETTINGS catalog_type = 'hive', 
                      warehouse = 'test_warehouse', 
-                     storage_endpoint = 'http://minio1:9001/warehouse-hms/data/'
+                     storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
         """)
         node.query("DROP DATABASE IF EXISTS test_hms_support_check")
     except Exception as e:
@@ -57,7 +57,7 @@ def test_hive_catalog_url_parsing(started_cluster):
             CREATE DATABASE test_valid_url ENGINE = DataLakeCatalog('thrift://hive:9083', 'minio', '{password}') 
             SETTINGS catalog_type = 'hive', 
                      warehouse = 'test_warehouse', 
-                     storage_endpoint = 'http://minio1:9001/warehouse-hms/data/'
+                     storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
         """)
         node.query("DROP DATABASE IF EXISTS test_valid_url")
     except Exception as e:
@@ -69,7 +69,7 @@ def test_hive_catalog_url_parsing(started_cluster):
             CREATE DATABASE test_missing_protocol ENGINE = DataLakeCatalog('thrift:hive:9083', 'minio', '{password}') 
             SETTINGS catalog_type = 'hive', 
                      warehouse = 'test_warehouse', 
-                     storage_endpoint = 'http://minio1:9001/warehouse-hms/data/'
+                     storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
         """)
         node.query("select * FROM test_missing_protocol.abc")
         pytest.fail("Missing protocol separator should fail")
@@ -85,7 +85,7 @@ def test_hive_catalog_url_parsing(started_cluster):
             CREATE DATABASE test_missing_port ENGINE = DataLakeCatalog('thrift://hive-metastore', 'minio', '{password}') 
             SETTINGS catalog_type = 'hive', 
                      warehouse = 'test_warehouse', 
-                     storage_endpoint = 'http://minio1:9001/warehouse-hms/data/'
+                     storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
         """)
         node.query("select * FROM test_missing_port.abc")
         pytest.fail("Missing port should fail")
@@ -101,7 +101,7 @@ def test_hive_catalog_url_parsing(started_cluster):
             CREATE DATABASE test_invalid_port ENGINE = DataLakeCatalog('thrift://hive-metastore:abc', 'minio', '{password}') 
             SETTINGS catalog_type = 'hive', 
                      warehouse = 'test_warehouse', 
-                     storage_endpoint = 'http://minio1:9001/warehouse-hms/data/'
+                     storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
         """)
         node.query("select * FROM test_invalid_port.abc")
         pytest.fail("Invalid port should fail")
@@ -117,7 +117,7 @@ def test_hive_catalog_url_parsing(started_cluster):
             CREATE DATABASE test_port_zero ENGINE = DataLakeCatalog('thrift://hive-metastore:0', 'minio', '{password}') 
             SETTINGS catalog_type = 'hive', 
                      warehouse = 'test_warehouse', 
-                     storage_endpoint = 'http://minio1:9001/warehouse-hms/data/'
+                     storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
         """)
         node.query("select * FROM test_port_zero.abc")
         pytest.fail("Port zero should fail")
@@ -133,7 +133,7 @@ def test_hive_catalog_url_parsing(started_cluster):
             CREATE DATABASE test_port_too_large ENGINE = DataLakeCatalog('thrift://hive-metastore:70000', 'minio', '{password}') 
             SETTINGS catalog_type = 'hive', 
                      warehouse = 'test_warehouse', 
-                     storage_endpoint = 'http://minio1:9001/warehouse-hms/data/'
+                     storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
         """)
         node.query("select * FROM test_port_too_large.abc")
         pytest.fail("Port too large should fail")
@@ -149,7 +149,7 @@ def test_hive_catalog_url_parsing(started_cluster):
             CREATE DATABASE test_empty_port ENGINE = DataLakeCatalog('thrift://hive-metastore:', 'minio', '{password}') 
             SETTINGS catalog_type = 'hive', 
                      warehouse = 'test_warehouse', 
-                     storage_endpoint = 'http://minio1:9001/warehouse-hms/data/'
+                     storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
         """)
         node.query("select * FROM test_empty_port.abc")
         pytest.fail("Empty port should fail")
@@ -165,7 +165,7 @@ def test_hive_catalog_url_parsing(started_cluster):
             CREATE DATABASE test_complex_path ENGINE = DataLakeCatalog('thrift://hive-metastore:9083/metastore/db/table', 'minio', '{password}') 
             SETTINGS catalog_type = 'hive', 
                      warehouse = 'test_warehouse', 
-                     storage_endpoint = 'http://minio1:9001/warehouse-hms/data/'
+                     storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
         """)
         node.query("DROP DATABASE IF EXISTS test_complex_path")
     except Exception as e:
@@ -187,7 +187,7 @@ def test_check_database(started_cluster):
             CREATE DATABASE test_hms_check_db ENGINE = DataLakeCatalog('thrift://hive:9083', 'minio', '{password}') 
             SETTINGS catalog_type = 'hive', 
                      warehouse = 'test_warehouse', 
-                     storage_endpoint = 'http://minio1:9001/warehouse-hms/data/'
+                     storage_endpoint = 'http://minio:9000/warehouse-hms/data/'
         """)
         node.query("CHECK DATABASE test_hms_check_db")
 

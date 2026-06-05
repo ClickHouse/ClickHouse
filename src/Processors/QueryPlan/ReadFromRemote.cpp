@@ -3,7 +3,6 @@
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -231,7 +230,7 @@ void ReadFromRemote::enforceAggregationInOrder(const SortDescription & sort_desc
     DB::enforceAggregationInOrder(stage, &shards, sort_description, *context);
 }
 
-static ASTSelectQuery & getSelectQuery(ASTPtr ast)
+ASTSelectQuery & getSelectQuery(ASTPtr ast)
 {
     if (const auto * explain = ast->as<ASTExplainQuery>())
         ast = explain->getExplainedQuery();
@@ -282,17 +281,20 @@ ASTPtr tryBuildAdditionalFilterAST(
         /// Support for IN. The stored AST from the Set is taken.
         if (WhichDataType(node->result_type).isSet())
         {
-            const auto & data_column = node->column->getDataColumnPtr();
-            if (const auto * col_set = typeid_cast<const ColumnSet *>(data_column.get()))
+            auto maybe_set = node->column;
+            if (const auto * col_const = typeid_cast<const ColumnConst *>(maybe_set.get()))
+                maybe_set = col_const->getDataColumnPtr();
+
+            if (const auto * col_set = typeid_cast<const ColumnSet *>(maybe_set.get()))
                 node_to_ast[node] = col_set->getData()->getSourceAST();
 
             stack.pop();
             continue;
         }
 
-        if (node->column)
+        if (node->column && isColumnConst(*node->column))
         {
-            auto literal = make_intrusive<ASTLiteral>(node->column->getField());
+            auto literal = make_intrusive<ASTLiteral>((*node->column)[0]);
             /// Need to enforce type of the literal, because some type is not comparable to its native type
             /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
             auto casted_literal = makeASTFunction("_CAST", literal, make_intrusive<ASTLiteral>(node->result_type->getName()));
@@ -380,8 +382,11 @@ ASTPtr tryBuildAdditionalFilterAST(
         if (external_tables && isNameOfGlobalInFunction(func_name))
         {
             const auto * second_arg = node->children.at(1);
-            const auto & data_column = second_arg->column->getDataColumnPtr();
-            if (const auto * col_set = typeid_cast<const ColumnSet *>(data_column.get()))
+            auto maybe_set = second_arg->column;
+            if (const auto * col_const = typeid_cast<const ColumnConst *>(maybe_set.get()))
+                maybe_set = col_const->getDataColumnPtr();
+
+            if (const auto * col_set = typeid_cast<const ColumnSet *>(maybe_set.get()))
             {
                 auto future_set = col_set->getData();
                 if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get());
@@ -413,16 +418,7 @@ ASTPtr tryBuildAdditionalFilterAST(
                         /// and it should be built before sending the external tables.
 
                         auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(source_ast, context);
-                        /// The subquery may produce columns with duplicate names
-                        /// (e.g. `(x, y) GLOBAL IN (SELECT number, number FROM ...)`).
-                        /// `ColumnsDescription` prohibits duplicate column names, so deduplicate
-                        /// the names here. This mirrors `buildQueryTreeForShard.cpp` which performs
-                        /// the same step. Column matching when the temporary table is populated and
-                        /// when it is later used by the remote shard's `IN` operator is by position,
-                        /// so renaming the columns is safe.
-                        Block header_with_unique_names = *header;
-                        makeUniqueColumnNamesInBlock(header_with_unique_names);
-                        NamesAndTypesList columns = header_with_unique_names.getNamesAndTypesList();
+                        NamesAndTypesList columns = header->getNamesAndTypesList();
 
                         auto external_storage_holder = TemporaryTableHolder(
                             context,
@@ -489,37 +485,8 @@ static void addFilters(
     if (table_expressions.size() != 1)
         return;
 
-    /// Extract the storage snapshot, identifier (when available) and alias from the table expression.
-    /// Supported cases:
-    ///   - TableNode (a real table)
-    ///   - TableFunctionNode (e.g. `numbers(3)`, `remote(...)`)
-    ///   - QueryNode wrapping any of the above (one level of subquery)
-    StorageSnapshotPtr table_snapshot;
-    ASTPtr table_identifier_ast;
-    String table_alias;
-
-    auto extract_from_expression = [&](const QueryTreeNodePtr & expr) -> bool
-    {
-        if (const auto * tn = expr->as<TableNode>())
-        {
-            table_snapshot = tn->getStorageSnapshot();
-            table_identifier_ast = tn->toASTIdentifier();
-            table_alias = tn->getAlias();
-            return true;
-        }
-        if (const auto * tfn = expr->as<TableFunctionNode>())
-        {
-            table_snapshot = tfn->getStorageSnapshot();
-            /// Table functions don't have a stable database/table identifier - we only
-            /// need the alias on the receiving side so `setColumnShortName` can strip it.
-            table_identifier_ast = nullptr;
-            table_alias = tfn->getAlias();
-            return true;
-        }
-        return false;
-    };
-
-    if (!extract_from_expression(table_expressions.front()))
+    const auto * table_node = table_expressions.front()->as<TableNode>();
+    if (!table_node)
     {
         const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
         if (!inner_query_node)
@@ -530,14 +497,15 @@ static void addFilters(
         if (table_expressions.size() != 1)
             return;
 
-        if (!extract_from_expression(table_expressions.front()))
+        table_node = table_expressions.front()->as<TableNode>();
+        if (!table_node)
             return;
     }
 
     TableWithColumnNamesAndTypes table_with_columns(
-        table_identifier_ast ? DatabaseAndTableWithAlias(table_identifier_ast) : DatabaseAndTableWithAlias{},
-        table_snapshot->getColumns(GetColumnsOptions::Kind::Ordinary));
-    table_with_columns.table.alias = table_alias;
+        DatabaseAndTableWithAlias(table_node->toASTIdentifier()),
+        table_node->getStorageSnapshot()->getColumns(GetColumnsOptions::Kind::Ordinary));
+    table_with_columns.table.alias = table_node->getAlias();
 
     bool optimize_final = settings[Setting::enable_optimize_predicate_expression_to_final_subquery];
     bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
@@ -893,14 +861,12 @@ static ASTPtr makeExplain(const ExplainPlanOptions & options, ASTPtr query)
     return explain_query;
 }
 
-static ASTPtr makeExplainPipeline(bool header, bool distributed, bool compact_repeated_processor_chains, ASTPtr query)
+static ASTPtr makeExplainPipeline(bool header, bool distributed, ASTPtr query)
 {
     auto explain_settings = make_intrusive<ASTSetQuery>();
     explain_settings->is_standalone = false;
     explain_settings->changes.emplace_back("header", int(header));
     explain_settings->changes.emplace_back("distributed", int(distributed));
-    if (compact_repeated_processor_chains)
-        explain_settings->changes.emplace_back("compact_repeated_processor_chains", 1);
 
     auto explain_query = make_intrusive<ASTExplainQuery>(ASTExplainQuery::ExplainKind::QueryPipeline);
     explain_query->setExplainedQuery(query);
@@ -969,11 +935,7 @@ void ReadFromRemote::describeDistributedPipeline(FormatSettings & settings, bool
 
         auto & shard_copy = used_shards.emplace_back(shard);
         shard_copy.header = header;
-        shard_copy.query = makeExplainPipeline(
-            settings.write_header,
-            distributed,
-            settings.compact_repeated_processor_chains,
-            shard.query);
+        shard_copy.query = makeExplainPipeline(settings.write_header, distributed, shard.query);
     }
 
     formatExplain(settings, addPipes(used_shards, header));
@@ -1148,7 +1110,7 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
 
     String query_string = formattedAST(ast, enable_analyzer);
 
-    chassert(output_header);
+    assert(output_header);
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
@@ -1199,7 +1161,7 @@ void ReadFromParallelRemoteReplicasStep::describeDistributedPipeline(FormatSetti
     auto header = std::make_shared<const Block>(
         Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}});
 
-    auto explain_query = makeExplainPipeline(settings.write_header, distributed, settings.compact_repeated_processor_chains, query_ast);
+    auto explain_query = makeExplainPipeline(settings.write_header, distributed, query_ast);
     formatExplain(settings, addPipes(explain_query, header));
 }
 }

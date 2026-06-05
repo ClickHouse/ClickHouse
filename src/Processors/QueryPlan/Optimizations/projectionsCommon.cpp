@@ -1,7 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 
-#include <Columns/ColumnConst.h>
-#include <Common/assert_cast.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -114,7 +112,7 @@ void QueryDAG::appendExpression(const ActionsDAG & expression)
         dag = std::move(cloned);
 }
 
-static const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
+const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
 {
     auto & outputs = dag.getOutputs();
     for (auto it = outputs.begin(); it != outputs.end(); ++it)
@@ -139,8 +137,11 @@ static const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::strin
             }
             else
             {
-                auto column = node->result_type->createColumnConst(0, 1);
-                *it = &dag.addColumn(std::move(column), node->result_type, node->result_name);
+                ColumnWithTypeAndName col;
+                col.name = node->result_name;
+                col.type = node->result_type;
+                col.column = col.type->createColumnConst(1, 1);
+                *it = &dag.addColumn(std::move(col));
             }
 
             return node;
@@ -248,14 +249,6 @@ bool QueryDAG::build(QueryPlan::Node & node)
         outputs.insert(outputs.begin(), filter_node);
     }
 
-    /// Remove materialize() and identity() wrappers from the combined DAG.
-    /// This must happen after all expressions are merged and filter nodes are added
-    /// back to outputs, because:
-    /// 1. Removing wrappers before merging would change output column names (e.g.,
-    ///    "materialize(name)" → "name"), causing subsequent merges to fail when they
-    ///    try to match input names to the modified output names.
-    /// 2. removeTrivialWrappers calls removeUnusedActions, which can invalidate raw
-    ///    pointers (like filter_nodes) to nodes that are no longer reachable from outputs.
     if (dag)
         dag->removeTrivialWrappers();
 

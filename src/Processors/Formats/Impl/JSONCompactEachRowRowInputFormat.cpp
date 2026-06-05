@@ -247,7 +247,6 @@ void JSONCompactEachRowRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr &
     transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
 }
 
-void registerInputFormatJSONCompactEachRow(FormatFactory & factory);
 void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
 {
     for (bool yield_strings : {true, false})
@@ -269,7 +268,6 @@ void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
     }
 }
 
-void registerJSONCompactEachRowSchemaReader(FormatFactory & factory);
 void registerJSONCompactEachRowSchemaReader(FormatFactory & factory)
 {
     for (bool json_strings : {false, true})
@@ -295,7 +293,6 @@ void registerJSONCompactEachRowSchemaReader(FormatFactory & factory)
     }
 }
 
-void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory)
 {
     auto register_func = [&](const String & format_name, bool with_names, bool with_types)
