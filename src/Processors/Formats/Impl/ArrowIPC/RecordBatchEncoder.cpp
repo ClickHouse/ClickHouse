@@ -479,9 +479,9 @@ RecordBatchEncoder::EncodedBatch RecordBatchEncoder::encode(const Columns & colu
                 continue;
             }
 
-            int64_t prefix;
-            const char * payload;
-            size_t payload_size;
+            int64_t prefix = 0;
+            const char * payload = nullptr;
+            size_t payload_size = 0;
             if (compressed[i].size() < len)
             {
                 prefix = DB::toLittleEndian(static_cast<int64_t>(len));

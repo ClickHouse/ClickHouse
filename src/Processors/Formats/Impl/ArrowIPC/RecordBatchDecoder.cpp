@@ -311,7 +311,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             for (size_t i = 0; i < rows; ++i)
             {
                 const char * v = views.ptr + i * 16;
-                int32_t length;
+                int32_t length = 0;
                 memcpy(&length, v, sizeof(int32_t));
                 if (length < 0)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Negative Arrow view length {}", length);
@@ -321,8 +321,8 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
                 }
                 else
                 {
-                    int32_t data_buffer_index;
-                    int32_t offset;
+                    int32_t data_buffer_index = 0;
+                    int32_t offset = 0;
                     memcpy(&data_buffer_index, v + 8, sizeof(int32_t));
                     memcpy(&offset, v + 12, sizeof(int32_t));
                     if (data_buffer_index < 0 || static_cast<size_t>(data_buffer_index) >= data_buffers.size())
@@ -753,7 +753,7 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         if (length < 8)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is too small for its length prefix");
 
-        int64_t uncompressed_length;
+        int64_t uncompressed_length = 0;
         memcpy(&uncompressed_length, src, sizeof(uncompressed_length));
         uncompressed_length = DB::fromLittleEndian(uncompressed_length);
 

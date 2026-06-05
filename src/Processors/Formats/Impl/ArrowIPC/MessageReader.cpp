@@ -29,7 +29,7 @@ constexpr int64_t MAX_REASONABLE_METADATA_LENGTH = 256 * 1024 * 1024;
 
 int32_t readInt32LE(ReadBuffer & in)
 {
-    int32_t value;
+    int32_t value = 0;
     in.readStrict(reinterpret_cast<char *>(&value), sizeof(value));
     return DB::fromLittleEndian(value);
 }

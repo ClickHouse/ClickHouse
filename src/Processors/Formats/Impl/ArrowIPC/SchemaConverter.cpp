@@ -609,7 +609,7 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
     if (std::string_view(magic, ARROW_MAGIC.size()) != ARROW_MAGIC)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not an Arrow file: missing trailing magic");
 
-    int32_t footer_length;
+    int32_t footer_length = 0;
     in.seek(file_size - static_cast<off_t>(ARROW_MAGIC.size()) - static_cast<off_t>(sizeof(int32_t)), SEEK_SET);
     in.readStrict(reinterpret_cast<char *>(&footer_length), sizeof(footer_length));
     footer_length = DB::fromLittleEndian(footer_length);
