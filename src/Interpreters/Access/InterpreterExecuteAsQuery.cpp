@@ -26,8 +26,10 @@ namespace
     /// storage precedence: the first storage in `user_directories` order that has the
     /// name cached in memory wins (including an LDAP storage ordered before `users_xml`).
     ///
-    ///   1. In-memory `find<User>`. If it hits an LDAP-owned entry, run the forced
-    ///      lookup to refresh possibly-stale role mapping (see `LDAPAccessStorage::findImpl`).
+    ///   1. In-memory `find<User>`. If it hits an LDAP-owned entry, refresh possibly-stale
+    ///      role mapping by re-running `find` on THAT storage with `force_external_lookup`
+    ///      (see `LDAPAccessStorage::findImpl`); never globally, which could materialize a
+    ///      same-named user in an earlier LDAP storage and change which directory wins.
     ///   2. On a miss, `force_external_lookup=true` lets `LDAPAccessStorage` service-bind
     ///      the directory to resolve users not yet cached here. No-op for other storages.
     ///   3. Still nothing -> `getID` for the canonical `UNKNOWN_USER` error.
@@ -42,7 +44,7 @@ namespace
             const auto storage = access_control.findStorage(*id);
             if (storage && storage->getStorageType() == LDAPAccessStorage::STORAGE_TYPE)
             {
-                if (auto refreshed_id = access_control.find<User>(target_user_name, /* force_external_lookup = */ true))
+                if (auto refreshed_id = storage->find<User>(target_user_name, /* force_external_lookup = */ true))
                     return *refreshed_id;
             }
             return *id;

@@ -20,11 +20,12 @@ module, leaving the LDAP storage's in-memory cache empty, so the first test exer
 the not-yet-logged-in path before any subsequent test materializes those users. The
 tests on `node_with_role_mapping`, `node_bad_lookup_password`,
 `node_with_local_user_precedence`, `node_misconfigured_lookup`,
-`node_with_role_mapping_user_dn`, `shard1_node`, and `shard2_node` exercise the
-role-mapping, misconfiguration, local-vs-LDAP precedence, surfaced-config-error,
-AD-style `{user_dn}` mapping, and distributed-cache-poisoning variants on instances
-that no other test in this module logs into outside of its dedicated test, so each
-instance's LDAP cache state is controlled by exactly one test.
+`node_with_role_mapping_user_dn`, `shard1_node`, `shard2_node`, and
+`node_with_two_ldap_directories` exercise the role-mapping, misconfiguration,
+local-vs-LDAP precedence, surfaced-config-error, AD-style `{user_dn}` mapping,
+distributed-cache-poisoning, and two-LDAP-directory cache-refresh variants on
+instances that no other test in this module logs into outside of its dedicated
+test, so each instance's LDAP cache state is controlled by exactly one test.
 """
 
 import logging
@@ -119,6 +120,20 @@ shard1_node = cluster.add_instance(
 shard2_node = cluster.add_instance(
     "shard2_node",
     main_configs=["configs/ldap_cluster_with_secret.xml"],
+    user_configs=["configs/users.xml"],
+    stay_alive=True,
+)
+
+# Instance with TWO LDAP user-directories backed by the same OpenLDAP container,
+# each with a distinct role-mapping prefix so the directory that resolves a user
+# can be identified by the role granted on materialization. Used to verify that
+# the cache-refresh layer in `InterpreterExecuteAsQuery::resolveImpersonationTargetUser`
+# refreshes only the storage that won pass 1 rather than starting a global
+# `force_external_lookup` that could materialize the same user in an earlier
+# storage and change which directory wins.
+node_with_two_ldap_directories = cluster.add_instance(
+    "node_with_two_ldap_directories",
+    main_configs=["configs/ldap_two_directories.xml"],
     user_configs=["configs/users.xml"],
     stay_alive=True,
 )
@@ -566,6 +581,89 @@ def test_execute_as_already_materialized_ldap_user_when_ldap_first(started_clust
         password="qwerty",
     )
     assert result.strip() == "janedoe"
+
+
+def test_execute_as_refresh_does_not_change_winning_storage_with_two_ldap_directories(
+    started_cluster,
+):
+    """`@clickhouse-gh[bot]` 2026-06-05 inline review on
+    `src/Interpreters/Access/InterpreterExecuteAsQuery.cpp`: the cache-refresh
+    pass must run against the storage that won the first (non-forced) lookup,
+    not globally. With two LDAP user-directories `[ldap_a, ldap_b, users_xml]`,
+    once one of them has cached the target user and the other has not, pass 1
+    correctly returns the cached entry, matching the pre-PR `getID<User>`
+    precedence. A global `find<User>(name, force_external_lookup=true)` from
+    that point would walk the storages in order and could materialize the
+    target user in the previously empty LDAP storage via its service bind,
+    returning that UUID instead, so `EXECUTE AS janedoe` would run with roles
+    from the wrong directory.
+
+    Strategy:
+      1. Authenticate `janedoe` against this instance once. Whichever LDAP
+         user-directory binds first materializes the entry; the other LDAP
+         storage stays empty.
+      2. `EXECUTE AS janedoe` from `admin`. Pass 1 resolves to the cached
+         storage. The fix refreshes that storage only, leaving the empty one
+         alone.
+      3. Assert the empty LDAP storage is still empty after `EXECUTE AS`.
+         Before the fix the global force_external_lookup would have
+         materialized `janedoe` there as well, returning a different UUID and
+         changing which directory wins.
+    """
+    # Materialize `janedoe` in whichever LDAP storage the auth chain reaches
+    # first. Both directories point to the same OpenLDAP backend, so the bind
+    # succeeds in the first one tried.
+    login_result = node_with_two_ldap_directories.query(
+        "SELECT currentUser()", user="janedoe", password="qwerty"
+    )
+    assert login_result.strip() == "janedoe", login_result
+
+    cached_storages = sorted(
+        line.strip()
+        for line in node_with_two_ldap_directories.query(
+            "SELECT storage FROM system.users "
+            "WHERE name = 'janedoe' AND storage IN ('ldap_a', 'ldap_b') "
+            "ORDER BY storage",
+            user="admin",
+            password="qwerty",
+        ).splitlines()
+        if line.strip()
+    )
+    assert len(cached_storages) == 1, (
+        "expected exactly one LDAP storage to have cached `janedoe` after "
+        f"login, got {cached_storages!r}"
+    )
+    cached_storage = cached_storages[0]
+    other_storage = "ldap_b" if cached_storage == "ldap_a" else "ldap_a"
+
+    # The actual `EXECUTE AS`. Pass 1 resolves to `cached_storage`. The fix
+    # refreshes only `cached_storage`'s entry. The buggy path would call a
+    # global force_external_lookup that walks the directories in order and
+    # could materialize `janedoe` in the previously empty `other_storage`.
+    node_with_two_ldap_directories.query(
+        "EXECUTE AS janedoe SELECT 1",
+        user="admin",
+        password="qwerty",
+    )
+
+    post_other = node_with_two_ldap_directories.query(
+        f"SELECT count() FROM system.users "
+        f"WHERE name = 'janedoe' AND storage = '{other_storage}'",
+        user="admin",
+        password="qwerty",
+    )
+    assert post_other.strip() == "0", (
+        f"EXECUTE AS materialized `janedoe` in `{other_storage}` even "
+        f"though pass 1 resolved to `{cached_storage}`: "
+        f"got {post_other.strip()} entries in `{other_storage}`"
+    )
+    post_cached = node_with_two_ldap_directories.query(
+        f"SELECT count() FROM system.users "
+        f"WHERE name = 'janedoe' AND storage = '{cached_storage}'",
+        user="admin",
+        password="qwerty",
+    )
+    assert post_cached.strip() == "1", post_cached
 
 
 def test_execute_as_wrong_lookup_password_throws_ldap_error(started_cluster):
