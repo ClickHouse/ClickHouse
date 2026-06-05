@@ -41,7 +41,6 @@ public:
 
     bool contains_password = false;
     bool contains_hash = false;
-    bool jwt_use_authenticator = false;
     ASTPtr valid_until;
 
 protected:

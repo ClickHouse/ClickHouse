@@ -29,9 +29,6 @@ BackgroundTaskSchedulingSettings BackgroundJobsAssignee::getSettings() const
             return getContext()->getBackgroundProcessingTaskSchedulingSettings();
         case Type::Moving:
             return getContext()->getBackgroundMoveTaskSchedulingSettings();
-        case Type::Streaming:
-            /// TODO(michicosun): Change to streaming-specific settings.
-            return getContext()->getBackgroundProcessingTaskSchedulingSettings();
     }
 }
 
@@ -109,8 +106,6 @@ String BackgroundJobsAssignee::toString(Type type)
             return "DataProcessing";
         case Type::Moving:
             return "Moving";
-        case Type::Streaming:
-            return "Streaming";
     }
 }
 
@@ -163,9 +158,6 @@ try
             break;
         case Type::Moving:
             succeed = data.scheduleDataMovingJob(*this);
-            break;
-        case Type::Streaming:
-            succeed = data.scheduleStreamingJob(*this);
             break;
     }
 

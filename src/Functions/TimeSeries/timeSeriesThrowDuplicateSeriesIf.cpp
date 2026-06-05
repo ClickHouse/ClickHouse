@@ -22,7 +22,7 @@ namespace ErrorCodes
 /// throws an exception with the following message "Multiple series have the same tags <tags>,
 /// duplicate series in the same result set are not allowed".
 /// If the `condition` is false the function returns 0.
-class FunctionTimeSeriesThrowDuplicateSeriesIf final : public IFunction
+class FunctionTimeSeriesThrowDuplicateSeriesIf : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesThrowDuplicateSeriesIf";
