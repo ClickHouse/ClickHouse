@@ -2347,6 +2347,25 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
                 deferred_prewhere_info != nullptr);
         }
 
+        /// Build indexes before PREWHERE sets. KeyCondition (inside buildIndexes) calls
+        /// buildOrderedSetInplace only for IN sets whose left argument maps to key columns,
+        /// so ordered sets are built only when actually needed for primary key analysis.
+        /// Building indexes first is important because the set is shared between the PREWHERE
+        /// DAG and the index filter DAG via ColumnSet: if we built non-ordered sets for
+        /// PREWHERE first, the set would be created without elements and KeyCondition would
+        /// not be able to use it for index analysis.
+        buildIndexes(
+            indexes,
+            index_filter_dag,
+            data,
+            getParts(),
+            vector_search_parameters,
+            top_k_filter_info,
+            context,
+            query_info,
+            storage_snapshot->metadata,
+            skip_partition_pruning);
+
         /// Build sets for PREWHERE and row_level_filter synchronously during applyFilters.
         /// PREWHERE is evaluated at the storage level during data reading, before the
         /// pipeline-level CreatingSetsStep has a chance to execute. Although CreatingSetsStep
@@ -2359,18 +2378,6 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             VirtualColumnUtils::buildSetsForDAG(query_info.prewhere_info->prewhere_actions, context);
         if (query_info.row_level_filter)
             VirtualColumnUtils::buildSetsForDAG(query_info.row_level_filter->actions, context);
-
-        buildIndexes(
-            indexes,
-            index_filter_dag,
-            data,
-            getParts(),
-            vector_search_parameters,
-            top_k_filter_info,
-            context,
-            query_info,
-            storage_snapshot->metadata,
-            skip_partition_pruning);
     }
 }
 
