@@ -4613,10 +4613,8 @@ def get_server_memory_fraction(args) -> Optional[float]:
     if maximum == 0:
         return None
 
-    # Cache the server PID — it does not change during a test run.
-    if not hasattr(get_server_memory_fraction, "_server_pid"):
-        get_server_memory_fraction._server_pid = get_server_pid()
-    pid = get_server_memory_fraction._server_pid
+    # Not cached: RandomServerRestarter may change the PID mid-run.
+    pid = get_server_pid()
     if pid is None:
         return None
 
