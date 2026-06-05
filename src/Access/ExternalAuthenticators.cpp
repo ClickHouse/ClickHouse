@@ -598,17 +598,16 @@ bool ExternalAuthenticators::findLDAPUser(const String & server, const String & 
         const auto pit = ldap_client_params_blueprint.find(server);
         if (pit == ldap_client_params_blueprint.end())
         {
-            /// If parsing this server failed in `setConfiguration`, surface the saved
-            /// error here. Otherwise the caller has no way to distinguish "user not in
-            /// LDAP" from "the LDAP server config is broken", and `EXECUTE AS` would
-            /// silently degrade to `UNKNOWN_USER`. This mirrors fail-close: better to
-            /// fail loudly on every lookup against the broken server than to skip it.
+            /// Mirror `checkLDAPCredentials`: an unknown server name is a configuration
+            /// error, not a user miss. If the server failed to parse, attach the saved
+            /// reason; otherwise the directory references a name with no `<ldap_servers>`
+            /// block at all (e.g. a typo).
             const auto eit = ldap_server_parse_errors.find(server);
             if (eit != ldap_server_parse_errors.end())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "LDAP server '{}' is misconfigured and cannot be used for forced "
                     "user lookup: {}", server, eit->second);
-            return false;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server '{}' is not configured", server);
         }
 
         /// The service-bind path is opt-in: a server without `lookup_bind_dn` configured does

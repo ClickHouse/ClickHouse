@@ -116,6 +116,22 @@ node_static_user_dn_detection = cluster.add_instance(
     stay_alive=True,
 )
 
+# Instance whose `<user_directories><ldap><server>` references a server name
+# (`openldap_typo`) that has no `<ldap_servers>` block at all. The directory's
+# storage is constructed -- `LDAPAccessStorage::setConfiguration` only checks
+# that `<server>` is non-empty -- so the broken reference is invisible until a
+# query reaches `ExternalAuthenticators::findLDAPUser`. Before the fix that
+# function silently returned `false`, so `EXECUTE AS` collapsed to
+# `UNKNOWN_USER`. After the fix it throws `BAD_ARGUMENTS: LDAP server
+# 'openldap_typo' is not configured`, mirroring `checkLDAPCredentials` on the
+# normal LDAP login path.
+node_unknown_server_in_directory = cluster.add_instance(
+    "node_unknown_server_in_directory",
+    main_configs=["configs/ldap_unknown_server_in_directory.xml"],
+    user_configs=["configs/users.xml"],
+    stay_alive=True,
+)
+
 # Two-shard cluster instances configured with `<secret>foo</secret>`, so the
 # interserver protocol authenticates remote queries via
 # `AlwaysAllowCredentials{initial_user}`. Used to reproduce the distributed
@@ -419,6 +435,30 @@ def test_execute_as_misconfigured_lookup_throws_config_error(started_cluster):
     )
     assert "openldap" in error, error
     assert "user_dn_detection" in error or "misconfigured" in error.lower(), error
+    assert "UNKNOWN_USER" not in error, error
+
+
+def test_execute_as_unknown_server_in_directory_throws_config_error(started_cluster):
+    """Bot review on `src/Access/ExternalAuthenticators.cpp` after commit
+    `832d43faa5d`: a `<user_directories><ldap><server>` value that does not
+    match any `<ldap_servers>` block is accepted at construction time
+    (`LDAPAccessStorage::setConfiguration` only checks that `<server>` is
+    non-empty). Before the fix, `findLDAPUser` returned `false` for such a
+    server, so `EXECUTE AS` against the broken directory collapsed to
+    `UNKNOWN_USER` and hid the broken reference. The misconfigured-parse path
+    only covered the case where `<ldap_servers>` *did* contain a block but
+    `parseLDAPServer` rejected it; a typo in the directory's `<server>` value
+    was not on that path. After the fix `findLDAPUser` throws
+    `BAD_ARGUMENTS: LDAP server '...' is not configured`, mirroring
+    `checkLDAPCredentials` on the LDAP login path.
+    """
+    error = node_unknown_server_in_directory.query_and_get_error(
+        "EXECUTE AS janedoe SELECT 1",
+        user="admin",
+        password="qwerty",
+    )
+    assert "openldap_typo" in error, error
+    assert "is not configured" in error, error
     assert "UNKNOWN_USER" not in error, error
 
 

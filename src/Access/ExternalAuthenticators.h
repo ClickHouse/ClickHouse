@@ -47,8 +47,11 @@ public:
 
     /// Resolves an LDAP user name to "exists in directory" + role mappings, using the
     /// service-bind credentials configured on the named LDAP server. Returns false (without
-    /// throwing) if the server is unknown, the service-bind credentials are not configured,
-    /// or the user does not exist. Used by `LDAPAccessStorage::findImpl(..., force_external_lookup=true)`.
+    /// throwing) when the service-bind credentials are not configured, or when the user
+    /// does not exist in the directory. Throws `BAD_ARGUMENTS` when the server name is not
+    /// configured at all (mirrors `checkLDAPCredentials`), so a typo in the directory's
+    /// `<server>` value surfaces instead of degrading to `UNKNOWN_USER`. Used by
+    /// `LDAPAccessStorage::findImpl(..., force_external_lookup=true)`.
     bool findLDAPUser(const String & server, const String & user_name,
         const LDAPClient::RoleSearchParamsList * role_search_params = nullptr, LDAPClient::SearchResultsList * role_search_results = nullptr) const;
 
