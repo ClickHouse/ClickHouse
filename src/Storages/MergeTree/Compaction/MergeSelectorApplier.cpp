@@ -50,6 +50,7 @@ struct ChooseContext
     const PartitionIdToTTLs & next_recompress_times;
     const time_t current_time;
     const bool aggressive;
+    const bool readonly;
 };
 
 MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, MergeType type)
@@ -93,7 +94,8 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     }
 
     /// Recompression - 3 priority
-    if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyRecompressionTTL())
+    /// A read-only table only reclaims disk via drop/delete; recompression rewrites parts, so skip it.
+    if (!ctx.readonly && !ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyRecompressionTTL())
     {
         TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time);
 
@@ -173,12 +175,14 @@ MergeSelectorApplier::MergeSelectorApplier(
     bool merge_with_ttl_allowed_,
     bool aggressive_,
     IMergeSelector::RangeFilter range_filter_,
-    StorageID storage_id_)
+    StorageID storage_id_,
+    bool readonly_)
     : merge_constraints(std::move(merge_constraints_))
     , merge_with_ttl_allowed(merge_with_ttl_allowed_)
     , aggressive(aggressive_)
     , range_filter(std::move(range_filter_))
     , storage_id(std::move(storage_id_))
+    , readonly(readonly_)
 {
     chassert(!merge_constraints.empty(), "At least one merge constraint should be passed");
 
@@ -212,11 +216,17 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .next_recompress_times = next_recompress_times,
         .current_time = current_time,
         .aggressive = aggressive,
+        .readonly = readonly,
     };
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)
         if (auto choices = tryChooseTTLMerge(ctx); !choices.empty())
             return choices;
+
+    /// A read-only table (the `table_readonly` MergeTree setting) only performs TTL drop/delete merges
+    /// to reclaim disk space; it does not run regular merges, so that no background CPU is wasted on it.
+    if (readonly)
+        return {};
 
     return tryChooseRegularMerge(ctx);
 }

@@ -32,13 +32,17 @@ public:
     const bool aggressive = false;
     const IMergeSelector::RangeFilter range_filter = nullptr;
     const StorageID storage_id;
+    /// If true, the table is read-only (the `table_readonly` MergeTree setting): only TTL drop/delete merges
+    /// (which reclaim disk by removing expired data) are allowed; regular and recompression merges are skipped.
+    const bool readonly = false;
 
     MergeSelectorApplier(
         std::vector<MergeConstraint> && merge_constraints_,
         bool merge_with_ttl_allowed_,
         bool aggressive_,
         IMergeSelector::RangeFilter range_filter_,
-        StorageID storage_id_);
+        StorageID storage_id_,
+        bool readonly_ = false);
 
     MergeSelectorChoices chooseMergesFrom(
         const PartsRanges & ranges,
