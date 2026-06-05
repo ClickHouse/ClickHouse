@@ -15,6 +15,9 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Set.h>
+
+#include <QueryPipeline/SizeLimits.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -41,6 +44,9 @@ namespace Setting
 {
     extern const SettingsUInt64 max_recursive_cte_evaluation_depth;
     extern const SettingsUInt64 recursive_cte_max_in_filter_cardinality;
+    extern const SettingsUInt64 max_rows_in_set;
+    extern const SettingsUInt64 max_bytes_in_set;
+    extern const SettingsBool transform_null_in;
 }
 
 namespace ErrorCodes
@@ -318,6 +324,54 @@ QueryTreeNodePtr buildInFilterNode(
     return in_function_node;
 }
 
+/// Returns true if an `IN (values...)` set built from `values` (typed by the
+/// CTE column's resolved type) would stay within the user's configured set-size
+/// limits (`max_rows_in_set` / `max_bytes_in_set`).
+///
+/// The planner lowers the injected `IN` through `FutureSetFromTuple`, which
+/// enforces these limits via `PreparedSets::getSizeLimitsForSet`: under
+/// `set_overflow_mode = 'throw'` an oversized set raises
+/// `SET_SIZE_LIMIT_EXCEEDED`, and under `'break'` it is silently truncated.
+/// Either outcome would make the recursive join behave differently from the
+/// unoptimized scan (fail, or return incomplete results). So we fail closed:
+/// when the generated set would not fit, the caller skips injection for this
+/// step and the physical table is scanned without the generated predicate.
+///
+/// The set is measured exactly the way the planner would build it — including
+/// the hashed byte count — rather than by predicting its size from `values`.
+bool generatedInSetFitsLimits(
+    const DataTypePtr & cte_column_type,
+    const std::vector<Field> & values,
+    const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    const size_t max_rows = settings[Setting::max_rows_in_set];
+    const size_t max_bytes = settings[Setting::max_bytes_in_set];
+
+    /// `0` means unlimited for both — the common case, nothing to check.
+    if (max_rows == 0 && max_bytes == 0)
+        return true;
+
+    auto column = cte_column_type->createColumn();
+    column->reserve(values.size());
+    for (const auto & value : values)
+        column->insert(value);
+
+    /// Build the set with unlimited (non-throwing) limits, then compare its
+    /// measured size against the user's limits using the same `>` boundary the
+    /// `throw` path uses, so the decision is exact for both overflow modes.
+    Set set(SizeLimits{}, 0, settings[Setting::transform_null_in]);
+    set.setHeader({ColumnWithTypeAndName{cte_column_type->createColumn(), cte_column_type, "_"}});
+    set.insertFromColumns({std::move(column)});
+    set.finishInsert();
+
+    if (max_rows != 0 && set.getTotalRowCount() > max_rows)
+        return false;
+    if (max_bytes != 0 && set.getTotalByteCount() > max_bytes)
+        return false;
+    return true;
+}
+
 /// Conjoin a list of predicate nodes into a single `and(...)` expression.
 QueryTreeNodePtr conjoinPredicates(std::vector<QueryTreeNodePtr> predicates, const ContextPtr & context)
 {
@@ -499,9 +553,11 @@ private:
     /// filter from the pristine original WHERE saved at construction time, so
     /// nothing accumulates across steps.
     ///
-    /// Returns true on success, false if the join-key cardinality exceeded the
-    /// configured cap for some key — in that case the recursive step runs
-    /// without any CTE-derived filter (the caller restores original clauses).
+    /// Returns true on success, false if for some key the join-key cardinality
+    /// exceeded the configured cap or the generated `IN` set would exceed the
+    /// user's `max_rows_in_set` / `max_bytes_in_set` limits — in that case the
+    /// recursive step runs without any CTE-derived filter (the caller restores
+    /// original clauses).
     bool injectFiltersIntoRecursiveQuery(size_t max_in_filter_cardinality)
     {
         if (cte_join_keys.empty() || max_in_filter_cardinality == 0)
@@ -522,6 +578,13 @@ private:
 
             if (values->empty())
                 continue;
+
+            /// Fail closed if the generated `IN` set would exceed the user's
+            /// `max_rows_in_set` / `max_bytes_in_set` limits: injecting it would
+            /// either throw `SET_SIZE_LIMIT_EXCEEDED` or silently truncate the
+            /// set, neither of which can happen on the unoptimized scan path.
+            if (!generatedInSetFitsLimits(key.cte_column_type, *values, recursive_query_context))
+                return false;
 
             predicates_by_query[key.containing_query_node]
                 .push_back(buildInFilterNode(*key.real_column_node, key.cte_column_type, *values, recursive_query_context));
