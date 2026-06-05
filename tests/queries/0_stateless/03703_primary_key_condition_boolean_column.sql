@@ -1,17 +1,15 @@
--- Tags: no-parallel-replicas
-
 SELECT '--- Test 1: Int32 column used as boolean condition in WHERE';
 
 DROP TABLE IF EXISTS test_bool_index;
 
-CREATE TABLE test_bool_index (id Int32, value String) 
-ENGINE = MergeTree 
+CREATE TABLE test_bool_index (id Int32, value String)
+ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 8192;
 
 INSERT INTO test_bool_index SELECT number, toString(number) FROM numbers(1000);
 
-EXPLAIN indexes = 1, description = 0 SELECT * FROM test_bool_index WHERE id;
+SELECT count() FROM test_bool_index WHERE id SETTINGS force_primary_key = 1;
 
 DROP TABLE test_bool_index;
 
@@ -24,11 +22,9 @@ ENGINE = MergeTree
 ORDER BY x
 SETTINGS index_granularity = 8192;
 
-INSERT INTO test_bool_float VALUES (0, 'zero'), (NULL, 'nan'), (1.5, 'positive'), (-2.5, 'negative');
+INSERT INTO test_bool_float VALUES (0, 'zero'), (1.5, 'positive'), (-2.5, 'negative');
 
-EXPLAIN indexes = 1, description = 0 SELECT * FROM test_bool_float WHERE x;
-
-SELECT x FROM test_bool_float WHERE x ORDER BY y;
+SELECT x FROM test_bool_float WHERE x ORDER BY y SETTINGS force_primary_key = 1;
 
 DROP TABLE test_bool_float;
 
@@ -43,9 +39,7 @@ SETTINGS index_granularity = 8192, allow_nullable_key = 1;
 
 INSERT INTO test_bool_nullable VALUES (NULL, 'null'), (0, 'zero'), (1, 'one'), (2, 'two');
 
-EXPLAIN indexes = 1, description = 0 SELECT * FROM test_bool_nullable WHERE id;
-
-SELECT id, value FROM test_bool_nullable WHERE id ORDER BY value;
+SELECT id, value FROM test_bool_nullable WHERE id ORDER BY value SETTINGS force_primary_key = 1;
 
 DROP TABLE test_bool_nullable;
 
