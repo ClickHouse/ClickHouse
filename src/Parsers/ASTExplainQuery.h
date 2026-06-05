@@ -62,7 +62,7 @@ public:
             return TableOverride;
         if (str == "EXPLAIN CURRENT TRANSACTION")
             return CurrentTransaction;
-        if (str == "ANALYZE")
+        if (str == "EXPLAIN ANALYZE")
             return Analyze;
 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown explain kind '{}'", str);

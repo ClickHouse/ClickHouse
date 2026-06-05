@@ -5,8 +5,8 @@
 #include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
-#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #if CLICKHOUSE_CLOUD
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #endif
@@ -20,6 +20,8 @@
 
 namespace DB
 {
+
+class AnalyzeStepsStats;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;

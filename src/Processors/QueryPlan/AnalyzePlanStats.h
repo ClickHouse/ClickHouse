@@ -19,7 +19,6 @@ namespace DB
 
 struct AnalyzeStats
 {
-    UInt64 total_query_time = 0;
     UInt64 sum_elapsed_ns = 0;
 
     UInt64 input_rows = 0;
@@ -27,7 +26,9 @@ struct AnalyzeStats
     UInt64 output_rows = 0;
     UInt64 output_bytes = 0;
 
-    UInt64 wall_clock_time = 0;
+    UInt64 wall_clock_time_ns = 0;
+
+    UInt64 total_num_processors = 0;
 
     /// TODO: how to account for input wait time
     /// among several processors?
@@ -41,7 +42,7 @@ class AnalyzeStepsStats
 {
     using StepAndGroup = std::pair<const IQueryPlanStep *, size_t>;
 public: 
-    explicit AnalyzeStepsStats(const QueryPipeline & pipeline);
+    explicit AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 total_query_time_);
 
     /// Print the stats
     void printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & detail_prefix) const;
@@ -53,5 +54,8 @@ private:
         AnalyzeStats,
         boost::hash<StepAndGroup>
     > steps_to_stats; 
+
+    UInt64 max_num_threads_per_query = 0;
+    UInt64 execution_query_time_ns = 0;
 };
 }

@@ -92,18 +92,18 @@ bool ExecutionThreadContext::executeTask()
     }
     std::optional<Stopwatch> execution_time_watch;
 
-#ifndef NDEBUG
-    execution_time_watch.emplace();
-#else
-    if (profile_processors)
-        execution_time_watch.emplace();
-#endif
-
     if (measure_step_wall_clock)
     {
         chassert(node->processor()->getStepWallClock().get());
         node->processor()->getStepWallClock()->onEnter();
     }
+
+#ifndef NDEBUG
+    execution_time_watch.emplace();
+#else
+    if (profile_processors || measure_step_wall_clock)
+        execution_time_watch.emplace();
+#endif
 
     try
     {
@@ -115,12 +115,6 @@ bool ExecutionThreadContext::executeTask()
         node->exception = std::current_exception();
     }
 
-    if (measure_step_wall_clock)
-    {
-        chassert(node->processor()->getStepWallClock().get());
-        node->processor()->getStepWallClock()->onLeave();
-    }
-
     if (profile_processors || measure_step_wall_clock)
     {
         UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
@@ -128,6 +122,13 @@ bool ExecutionThreadContext::executeTask()
         if (trace_processors)
             span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
     }
+
+    if (measure_step_wall_clock)
+    {
+        chassert(node->processor()->getStepWallClock().get());
+        node->processor()->getStepWallClock()->onLeave();
+    }
+
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch->elapsed();
     if (trace_processors)

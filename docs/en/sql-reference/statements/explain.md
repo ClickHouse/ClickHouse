@@ -24,7 +24,7 @@ Shows the execution plan of a statement.
 Syntax:
 
 ```sql
-EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
     [
       SELECT ... |
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
@@ -64,6 +64,9 @@ Union
 - `QUERY TREE` — Query tree after Query Tree level optimizations.
 - `PLAN` — Query execution plan.
 - `PIPELINE` — Query execution pipeline.
+- `ANALYZE` — Executes the query and annotates the execution plan with measured runtime metrics.
+- `ESTIMATE` — Estimated number of rows, marks and parts to be read from the tables while processing the query.
+- `TABLE OVERRIDE` — Validated result of a table override on a table-function schema.
 
 ### EXPLAIN AST {#explain-ast}
 
@@ -633,6 +636,92 @@ ExpressionTransform
             (ReadFromStorage)
             NumbersRange × 2 0 → 1
 ```
+
+### EXPLAIN ANALYZE {#explain-analyze}
+
+`EXPLAIN ANALYZE` actually runs the query, discards the result rows, and prints the same plan tree as `EXPLAIN PLAN` with each step annotated by what really happened at run time.
+
+Settings:
+
+The settings used for `EXPLAIN ANALYZE` are a subset of settings for `EXPLAIN PLAN`. The information about them can be found in {#explain-plan} section.
+
+- `header`
+- `description`
+- `projections`
+- `sorting`
+- `input_headers`
+- `column_structure` 
+- `optimize`
+
+:::note
+  Current version of `EXPLAIN ANALYZE` can be run only on a single node.
+:::
+
+Example:
+
+```sql
+EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k;
+```
+
+```text
+Query summary:
+  Time:        10.96 ms (build 6.63 ms · execute 4.33 ms)
+  Read:        1.00 million rows, 8.00 MB (230.86 million rows/s., 1.85 GB/s.)
+  Peak memory: 32.64 KiB
+
+Output: k, count()
+
+Expression ((Project names + Projection))
+│  Actual: rows 10.00 → 10.00 · time 27.60 us (0.6%) · 90.00 B → 90.00 B · parallelism 1.00/32
+└──Aggregating
+   │  Keys: modulo(number, 10_UInt8)
+   │  Aggregates: count()
+   │  Skip merging: 0
+   │  Actual: rows 1.00 million → 10.00 (0.00%) · time 761.80 us (17.6%) · 1.00 MB → 90.00 B · parallelism 4.52/16
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      │  Actual: rows 1.00 million → 1.00 million · time 522.50 us (12.1%) · 8.00 MB → 1.00 MB · parallelism 4.77/15
+      └──ReadFromSystemNumbers
+            Output: number
+            Actual: rows 0.00 → 1.00 million · time 867.58 us (20.0%) · 0.00 B → 8.00 MB · parallelism 9.40/15
+
+19 rows in set. Elapsed: 0.016 sec. Processed 1.00 million rows, 8.00 MB (63.78 million rows/s., 510.27 MB/s.)
+Peak memory usage: 32.64 KiB.
+```
+
+Let's examine the output. First let's look at the header.
+
+```txt
+   Query summary:
+     Time:        <total> (build <build> · execute <execute>)
+     Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
+     Peak memory: <peak>
+```
+
+- `Time` — total time split into building (i.e. planning + optimization + pipeline construction) and execution (running the pipeline) phases.
+- `Read` — rows and uncompressed bytes read from tables, with throughput - the same numbers the normal query footer reports as "Processed".
+- `Peak memory` — peak memory the query used.
+
+Now let's look at the new lines that appear in the query plan.
+
+```txt
+Actual: rows <in> → <out> (<selectivity>%) · time <t> (<share>%) · <bytes_in> → <bytes_out> · parallelism <avg>/<max>
+```
+
+- `rows <in> → <out>` — rows that entered and left the step; (<selectivity>%) shows how much the step filtered (`out/in`) or expanded the data, it is hidden when input rows equals output rows and when input rows equals `0`.
+- `time <t> (<share>%)` — wall-clock time the step was active, and its share of  query execution time (i.e. without build time). Note shares can add up to more than 100% because steps run concurrently.
+- `<bytes_in> → <bytes_out>` — uncompressed in-memory bytes flowing through the step (omitted when both are zero).
+- `parallelism <avg>/<max>` — average number of CPU threads working within this step at once, out of the maximum it could use. A value near max means the step was well parallelized; near 1 means it ran mostly serially.
+
+:::note
+ClickHouse parallelizes not only execution of tasks within a plan step, but also the execution of plan steps. The `parallelism` metric reflects only the work of this step. Other steps may run concurrently, so this number does not show how the step's parallelism compares to the whole query.
+:::
+
+:::note
+The maximum number in `parallelism` is computed as a minimum between:
+1. total number of tasks within the plan step;
+2. The maximum number of query processing threads set in `max_threads`.
+:::
+
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
 Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](/engines/table-engines/mergetree-family/mergetree) family.

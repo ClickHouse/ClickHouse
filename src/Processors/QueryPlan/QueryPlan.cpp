@@ -17,6 +17,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
+#include <Processors/QueryPlan/AnalyzePlanStats.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Planner/Utils.h>

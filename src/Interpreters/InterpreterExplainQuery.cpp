@@ -40,7 +40,11 @@
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <QueryPipeline/printPipeline.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
+#include <Common/ThreadStatus.h>
+#include <Common/ProfileEvents.h>
+#include <Common/formatReadable.h>
 #include <Core/Settings.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
@@ -49,7 +53,11 @@
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 
 
-
+namespace ProfileEvents
+{
+    extern const Event SelectedRows;
+    extern const Event SelectedBytes;
+}
 
 
 namespace DB
@@ -459,11 +467,8 @@ struct QueryAnalyzeSettings
     {
         {"header", query_plan_options.header},
         {"description", query_plan_options.description},
-        {"indexes", query_plan_options.indexes},
-        {"indices", query_plan_options.indexes},
         {"projections", query_plan_options.projections},
         {"sorting", query_plan_options.sorting},
-        {"distributed", query_plan_options.distributed},
         {"input_headers", query_plan_options.input_headers},
         {"column_structure", query_plan_options.column_structure},
         {"optimize", optimize},
@@ -649,6 +654,40 @@ bool explainQueryTree(
     return true;
 }
 
+}
+
+static void formatHeaderExplainAnalyze(
+        UInt64 total_time_ns,
+        UInt64 build_ns,
+        UInt64 execute_ns,
+        UInt64 read_rows,
+        UInt64 read_bytes,
+        Int64 peak_memory,
+        WriteBuffer & out)
+{
+    out << "Query summary:\n";
+
+    /// Total time, split into the build (planning + pipeline) and execution phases.
+    out << "  Time:        " << formatReadableTime(static_cast<double>(total_time_ns))
+        << " (build " << formatReadableTime(static_cast<double>(build_ns))
+        << " · execute " << formatReadableTime(static_cast<double>(execute_ns)) << ")\n";
+
+    /// Rows/bytes read from tables, with throughput relative to the execution time.
+    out << "  Read:        " << formatReadableQuantity(static_cast<double>(read_rows)) << " rows, "
+        << formatReadableSizeWithDecimalSuffix(static_cast<double>(read_bytes));
+    if (execute_ns)
+    {
+        const double rows_per_sec = static_cast<double>(read_rows) * 1e9 / static_cast<double>(execute_ns);
+        const double bytes_per_sec = static_cast<double>(read_bytes) * 1e9 / static_cast<double>(execute_ns);
+        out << " (" << formatReadableQuantity(rows_per_sec) << " rows/s., "
+            << formatReadableSizeWithDecimalSuffix(bytes_per_sec) << "/s.)";
+    }
+    out << "\n";
+
+    if (peak_memory >= 0)
+        out << "  Peak memory: " << formatReadableSizeWithBinarySuffix(static_cast<double>(peak_memory)) << "\n";
+
+    out << "\n";
 }
 
 QueryPipeline InterpreterExplainQuery::executeImpl()
@@ -934,8 +973,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             QueryPlan plan;
             ContextPtr context;
 
+            UInt64 build_ns = 0;
+            Stopwatch watch;            
             if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
+
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
@@ -943,10 +985,12 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             else
             {
                 InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
+                /// Watch In
                 interpreter.buildQueryPlan(plan);
+                /// Watch Out
                 context = interpreter.getContext();
             }
-
+            build_ns += watch.elapsed();
             auto optimization_settings = QueryPlanOptimizationSettings(context);
 
             /// TODO: add the same decision branch into EXPLAIN PLAN
@@ -955,23 +999,46 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             optimization_settings.is_explain = true;
             optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+
+            watch.restart();
             plan.optimize(optimization_settings);
             auto pipeline_builder = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
+            build_ns += watch.elapsed();
 
             pipeline_builder->setSinks([](const SharedHeader & header, Pipe::StreamType)-> ProcessorPtr
             {
                 return std::make_shared<EmptySink>(header);
             });
 
+            watch.restart();
             auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
+            build_ns += watch.elapsed();
+
             pipeline.setMeasureStepWallClock(true);
 
             CompletedPipelineExecutor executor(pipeline);
 
+            watch.restart();
             /// TODO: this function might throw -- wrap into try catch loop
             executor.execute();
+            UInt64 execute_ns = watch.elapsed();
 
-            AnalyzeStepsStats steps_to_stats(pipeline);
+            UInt64 total_time_ns = execute_ns + build_ns;
+
+            UInt64 read_rows = 0;
+            UInt64 read_bytes = 0;
+            Int64  peak_memory = 0;
+
+            if (auto thread_group = CurrentThread::getGroup())
+            {
+                read_rows   = thread_group->performance_counters[ProfileEvents::SelectedRows];
+                read_bytes  = thread_group->performance_counters[ProfileEvents::SelectedBytes];
+                peak_memory = thread_group->memory_tracker.getPeak();
+            }
+
+            AnalyzeStepsStats steps_to_stats(pipeline, execute_ns);
+
+            formatHeaderExplainAnalyze(total_time_ns, build_ns, execute_ns, read_rows, read_bytes, peak_memory, buf);
 
             plan.explainPlan(buf, 
             settings.query_plan_options, 
