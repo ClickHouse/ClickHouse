@@ -56,7 +56,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
             {"query_plan_max_set_size_for_projection_match", 0, 10000, "Added new setting that bounds the cost of content-hashing IN-clause sets in the projection matcher (today: aggregate projection). Sets larger than the limit are treated as non-matching. Zero disables content-hash comparison entirely (compatibility value: projection match never succeeds for nodes with IN-sets)."},
             {"min_columns_for_hash_join_row_store", 0, 3, "New setting to control the minimum number of payload columns to trigger transforming hash join payload to row major."},
-            {"max_bytes_for_hash_join_row_store", 5_GiB, 5_GiB, "Maximum total bytes of build-side data below which the hash join payload is transformed to row-major format. 0 means no maximum."},
+            {"max_bytes_for_hash_join_row_store", 5_GiB, 5_GiB, "Maximum number of bytes to place into the row-major hash join storage. 0 means no limit."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
