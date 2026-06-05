@@ -128,10 +128,9 @@ public:
     /// If process terminated, then handle return code.
     bool waitIfProccesTerminated();
 
-    /// Reap the child if it has already terminated and capture its `rusage`,
-    /// WITHOUT validating the exit status — for callers that must not treat a
-    /// non-zero child exit as an error and only want the usage data.
-    /// Non-blocking; returns whether the child was reaped.
+    /// Non-blocking reap: if the child has already terminated, collect its `rusage`
+    /// without inspecting the exit status, so a non-zero or signalled exit is not
+    /// raised as an error. Returns whether the child was reaped.
     bool tryReapWithoutStatusCheck();
 
     WriteBufferFromFile in;        /// If the command reads from stdin, do not forget to call in.close() after writing all the data there.
