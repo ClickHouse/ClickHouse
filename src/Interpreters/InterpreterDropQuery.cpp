@@ -267,14 +267,19 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
         DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(detached_table_id, check_ref_deps, check_loading_deps, false);
 
-        DatabaseCatalog::instance().removeDependencies(detached_table_id, check_ref_deps, check_loading_deps, false);
-        NamedCollectionFactory::instance().removeDependencies(detached_table_id);
-
         if (query.sync)
         {
             uuid_to_wait = detached_table_uuid;
         }
-        actual_database->dropDetachedTable(context_, table_name, query.sync);
+        actual_database->dropDetachedTable(
+            context_,
+            table_name,
+            query.sync,
+            [detached_table_id, check_ref_deps, check_loading_deps]()
+            {
+                DatabaseCatalog::instance().removeDependencies(detached_table_id, check_ref_deps, check_loading_deps, false);
+                NamedCollectionFactory::instance().removeDependencies(detached_table_id);
+            });
 
         return {};
     }

@@ -247,7 +247,8 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, db_disk, table_metadata_path_drop, sync);
 }
 
-void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & table_name, const bool sync)
+void DatabaseAtomic::dropDetachedTable(
+    ContextPtr local_context, const String & table_name, const bool sync, const std::function<void()> & dependency_cleanup)
 {
     waitDatabaseStarted();
 
@@ -267,6 +268,8 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
                 query_status->throwIfKilled();
         });
 
+    dependency_cleanup();
+
     String table_metadata_path_drop;
 
     {
@@ -282,16 +285,15 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
         LOG_TRACE(log, "Rename metadata from {} to {} for removing.", table_metadata_path, table_metadata_path_drop);
         db_disk->replaceFile(table_metadata_path, table_metadata_path_drop);
 
-        /// If a crash happens here, we get stale orphan flag
-        /// but it is better than removing detached flag first and risking table ressurection on restart
-        const auto detached_flag_path = getDetachedPermanentlyFlagPath(table_metadata_path);
-        LOG_TRACE(log, "Deleting {} flag.", detached_flag_path);
-        db_disk->removeFileIfExists(detached_flag_path);
-
-
         table_name_to_path.erase(table_name);
         snapshot_detached_tables.erase(table_name);
     }
+
+    /// If a crash happens at this point, we get stale orphan flag
+    /// but it is better than removing detached flag first and risking table ressurection on restart
+    const auto detached_flag_path = getDetachedPermanentlyFlagPath(table_metadata_path);
+    LOG_TRACE(log, "Deleting {} flag.", detached_flag_path);
+    db_disk->removeFileIfExists(detached_flag_path);
 
     if (db_disk->existsFileOrDirectory(getPathSymlink(table_name)))
     {
