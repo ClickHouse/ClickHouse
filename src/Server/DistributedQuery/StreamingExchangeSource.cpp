@@ -272,6 +272,9 @@ std::optional<Chunk> StreamingExchangeSource::tryGenerate()
     readVarUInt(num_rows, *packet_in);
     UInt64 num_columns = 0;
     readVarUInt(num_columns, *packet_in);
+    UInt64 chunk_num = 0;
+    if (has_aggregated_chunk_info)
+        readVarUInt(chunk_num, *packet_in);
 
     /// The final packet is the empty end-of-stream marker. A final packet carrying rows would have
     /// them dropped once finished_reading is set, so reject it as a protocol violation.
@@ -293,6 +296,7 @@ std::optional<Chunk> StreamingExchangeSource::tryGenerate()
             info->bucket_num = block.info.bucket_num;
             info->is_overflows = block.info.is_overflows;
             info->out_of_order_buckets = block.info.out_of_order_buckets;
+            info->chunk_num = chunk_num;
             result->getChunkInfos().add(std::move(info));
         }
         rows_read += num_rows;

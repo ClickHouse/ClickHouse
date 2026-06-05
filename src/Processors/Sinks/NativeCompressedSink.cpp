@@ -25,7 +25,7 @@ void NativeCompressedSink::initWriterOnce(const Chunk & chunk)
 
     if (!writer)
     {
-        const bool has_aggregated_chunk_info = !!chunk.getChunkInfos().get<AggregatedChunkInfo>();
+        has_aggregated_chunk_info = !!chunk.getChunkInfos().get<AggregatedChunkInfo>();
         UInt64 stream_flags = 0;
         if (has_aggregated_chunk_info)
             stream_flags |= 1;
@@ -48,13 +48,17 @@ void NativeCompressedSink::consume(Chunk chunk)
     LOG_TEST(log, "Writing chunk with {} rows to stream {}", chunk.getNumRows(), stream_name);
 
     Block block = input.getHeader().cloneWithColumns(chunk.getColumns());
-    /// Carry aggregation metadata in block.info so the reader can reconstruct AggregatedChunkInfo.
-    if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
+    auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
+    /// Carry most aggregation metadata in block.info so the reader can reconstruct AggregatedChunkInfo.
+    if (agg_info)
     {
         block.info.bucket_num = agg_info->bucket_num;
         block.info.is_overflows = agg_info->is_overflows;
         block.info.out_of_order_buckets = agg_info->out_of_order_buckets;
     }
+    /// chunk_num has no BlockInfo field; write it next to the block so memory-bound merging can restore order.
+    if (has_aggregated_chunk_info)
+        writeVarUInt(agg_info ? agg_info->chunk_num : 0, *compressed_buf);
     writer->write(block);
 }
 

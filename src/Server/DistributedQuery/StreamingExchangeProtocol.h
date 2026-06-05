@@ -17,7 +17,7 @@ namespace StreamingExchangeProtocol
 {
     /// Wire-format version. Bumped on any change to packet layouts.
     /// Negotiated in SourceHello/SinkHello; mismatches reject the connection.
-    static constexpr UInt64 PROTOCOL_VERSION = 1;
+    static constexpr UInt64 PROTOCOL_VERSION = 2;
 
     /// Sanity cap for the body of a Hello packet.
     static constexpr UInt64 MAX_HELLO_BODY_BYTES = 64 * 1024;

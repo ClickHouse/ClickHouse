@@ -274,7 +274,8 @@ void StreamingExchangeSink::consume(Chunk chunk)
     out->write(reinterpret_cast<const char*>(&packet_header), sizeof(packet_header));
 
     const bool final_chunk = chunk.empty();
-    const bool has_aggregated_chunk_info = !!chunk.getChunkInfos().get<AggregatedChunkInfo>();
+    auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
+    const bool has_aggregated_chunk_info = !!agg_info;
     UInt64 flags = 0;
     if (final_chunk)
         flags |= 1;
@@ -283,6 +284,10 @@ void StreamingExchangeSink::consume(Chunk chunk)
     writeVarUInt(flags, *out);
     writeVarUInt(chunk.getNumRows(), *out);
     writeVarUInt(chunk.getNumColumns(), *out);
+    /// chunk_num has no BlockInfo field; carry it in the exchange framing so memory-bound merging
+    /// can restore chunk order on the receiver.
+    if (has_aggregated_chunk_info)
+        writeVarUInt(agg_info->chunk_num, *out);
 
     if (chunk.getNumColumns() > 0)
     {
@@ -290,9 +295,9 @@ void StreamingExchangeSink::consume(Chunk chunk)
         auto writer = std::make_unique<NativeWriter>(*compressed_buf, DBMS_TCP_PROTOCOL_VERSION, input.getSharedHeader());
 
         Block block = input.getHeader().cloneWithColumns(chunk.getColumns());
-        /// Carry aggregation metadata in block.info so the receiver can reconstruct AggregatedChunkInfo,
-        /// the same way partial-aggregation results are transported for distributed/parallel reads.
-        if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
+        /// Carry the remaining aggregation metadata in block.info, the same way partial-aggregation
+        /// results are transported for distributed/parallel reads.
+        if (agg_info)
         {
             block.info.bucket_num = agg_info->bucket_num;
             block.info.is_overflows = agg_info->is_overflows;
