@@ -1042,11 +1042,11 @@ Total amount of rows (records) stored in tables of MergeTree family in the syste
 
 ### TotalUncompressedBytesOfMergeTreeTables {#totaluncompressedbytesofmergetreetables}
 
-Total amount of uncompressed bytes (including data and indices) stored in all tables of MergeTree family.
+Total amount of uncompressed bytes, as reported by the part checksums, stored in all tables of MergeTree family. It is the same source as the `total_bytes_uncompressed` column of `system.tables`, and it does not include files that are stored uncompressed, such as marks and primary key indices.
 
 ### TotalUncompressedBytesOfMergeTreeTablesSystem {#totaluncompressedbytesofmergetreetablessystem}
 
-Total amount of uncompressed bytes (including data and indices) stored in tables of MergeTree family in the system database.
+Total amount of uncompressed bytes, as reported by the part checksums, stored in tables of MergeTree family in the system database. It is the same source as the `total_bytes_uncompressed` column of `system.tables`, and it does not include files that are stored uncompressed, such as marks and primary key indices.
 
 ### TrackedMemory {#trackedmemory}
 
