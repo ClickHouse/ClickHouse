@@ -6,6 +6,8 @@ SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
 SET enable_parallel_replicas = 0;
 SET cross_to_inner_join_rewrite = 0;
+-- Required (with cross-to-inner rewrite off) to turn the comma-join equalities into join edges.
+SET query_plan_merge_filter_into_join_condition = 1;
 -- Low budget so a small clique already exceeds it.
 SET query_plan_optimize_join_order_max_searched_plans = 10;
 -- Pin the relation limit so the clique is actually reordered (randomized settings may lower it).
