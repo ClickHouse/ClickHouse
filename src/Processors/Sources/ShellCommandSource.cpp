@@ -854,11 +854,6 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     }
     else
     {
-        /// This is the non-pool branch, so an attached sampler here means an
-        /// `executable` UDF — the only consumer that reads the child's `wait4` rusage.
-        /// Non-UDF callers (StorageExecutable, dictionaries, bridges) have no sampler.
-        /// Pool UDFs take the pooled branch above and meter via /proc, so they leave
-        /// this flag false and reap with plain `waitpid`.
         command_config.collect_resource_usage = (source_configuration.sampler != nullptr);
         if (configuration.execute_direct)
             process = ShellCommand::executeDirect(command_config);
