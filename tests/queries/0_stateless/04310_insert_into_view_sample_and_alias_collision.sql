@@ -28,7 +28,9 @@ INSERT INTO v_sample VALUES (1, 'x'); -- { serverError NOT_IMPLEMENTED }
 -- 2. Colliding alias swap routes values to the correct target columns.
 --    view.b -> t.a and view.a -> t.b, so (view.b = 10, view.a = 20) must store (t.a = 10, t.b = 20).
 CREATE TABLE t_swap (a Int32, b Int32) ENGINE = MergeTree ORDER BY tuple();
-CREATE VIEW v_swap AS SELECT a AS b, b AS a FROM t_swap;
+-- Columns are qualified with the table name so the alias swap is not misread as a
+-- cyclic alias by the old analyzer (`SELECT a AS b, b AS a` is `CYCLIC_ALIASES` there).
+CREATE VIEW v_swap AS SELECT t_swap.a AS b, t_swap.b AS a FROM t_swap;
 INSERT INTO v_swap (b, a) VALUES (10, 20);
 SELECT 'swap:', a, b FROM t_swap;
 
