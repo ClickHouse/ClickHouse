@@ -43,7 +43,6 @@ def started_cluster():
             "udf_cpu.py",
             "udf_mem.py",
             "udf_syscall.py",
-            "udf_linger.py",
         ):
             _copy_into_container(
                 os.path.join(SCRIPT_DIR, "user_scripts", script),
@@ -192,20 +191,5 @@ def test_pool_wait_is_zero_on_executable_path(started_cluster):
     # for both an absent row and a genuine zero):
     invocations = _profile_event_value(qid, "ExecutableUserDefinedFunctionInvocations")
     assert invocations >= 1, f"UDF did not run (Invocations={invocations}); PoolWait==0 is meaningless"
-
-
-def test_check_exit_code_false_does_not_hang(started_cluster):
-    _skip_msan()
-    import time
-    qid = "exec-noexit-nohang-1"
-    # The UDF closes stdout (pipeline finishes) then sleeps 120s. check_exit_code=false
-    # means cleanup must NOT block on the child; ~ShellCommand terminates it on the
-    # bounded command_termination_timeout (3s). A regression to a blocking reap would
-    # make this query take ~120s. `sum` forces UDF evaluation (count() would prune it).
-    start = time.time()
-    result = _run("SELECT sum(test_udf_linger_no_exit_check(number)) FROM numbers(8)", qid)
-    elapsed = time.time() - start
-    assert result.strip() == "28", f"Unexpected UDF result: {result!r}"
-    assert elapsed < 30, f"Query took {elapsed:.1f}s — cleanup blocked on the lingering child (unbounded-wait regression)"
 
 

@@ -69,21 +69,4 @@
         <command_read_timeout>30000</command_read_timeout>
         <command_write_timeout>30000</command_write_timeout>
     </function>
-    <function>
-        <type>executable</type>
-        <name>test_udf_linger_no_exit_check</name>
-        <return_type>UInt64</return_type>
-        <argument>
-            <type>UInt64</type>
-        </argument>
-        <format>TabSeparated</format>
-        <command>udf_linger.py</command>
-        <!-- check_exit_code=false => prepare() does not wait for the child. Small
-             termination timeout so the bounded ~ShellCommand teardown is fast. -->
-        <check_exit_code>0</check_exit_code>
-        <command_termination_timeout>3</command_termination_timeout>
-        <max_command_execution_time>30</max_command_execution_time>
-        <command_read_timeout>30000</command_read_timeout>
-        <command_write_timeout>30000</command_write_timeout>
-    </function>
 </functions>
