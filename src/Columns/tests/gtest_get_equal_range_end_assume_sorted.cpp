@@ -200,7 +200,7 @@ ColumnPtr makeSortedFixedString(const RunLengths & runs, size_t n)
     size_t value = 0;
     for (size_t rl : runs)
     {
-        for (size_t b = 0; b < n; ++b)
+        for (size_t b = 0; b < n && b < sizeof(value); ++b)
             buf[n - 1 - b] = static_cast<char>((value >> (8 * b)) & 0xFF);
         for (size_t k = 0; k < rl; ++k)
             col->insertData(buf.data(), n);
