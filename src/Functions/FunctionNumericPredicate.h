@@ -68,7 +68,8 @@ public:
             || (res = execute<Int32>(in, input_rows_count))
             || (res = execute<Int64>(in, input_rows_count))
             || (res = execute<Float32>(in, input_rows_count))
-            || (res = execute<Float64>(in, input_rows_count))))
+            || (res = execute<Float64>(in, input_rows_count))
+            || (res = execute<BFloat16>(in, input_rows_count))))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
 
         return res;

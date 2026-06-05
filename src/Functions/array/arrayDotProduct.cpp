@@ -23,16 +23,18 @@ extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 /// Auto-vectorized dot product kernel.
 /// Uses manual unrolling with independent accumulators to break FP dependency chains,
 /// enabling the compiler to generate FMA instructions across all SIMD targets.
-/// Generates x86_64_v4 (AVX-512), x86_64_v3 (AVX2), and default (SSE2/NEON) variants.
-MULTITARGET_FUNCTION_X86_V4_V3(
+/// Generates x86_64_v4 (AVX-512) and default (SSE2/NEON/AVX2) variants.
+MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(template <typename ResultType> static ResultType NO_SANITIZE_UNDEFINED NO_INLINE),
     dotProductImpl,
     MULTITARGET_FUNCTION_BODY((const ResultType * __restrict data_x, const ResultType * __restrict data_y, size_t count) {
         /// Manual unrolling with independent accumulators to break FP dependency chains.
         /// With FMA latency ~4 cycles and throughput 1/cycle, we need >= 4 independent
-        /// chains to saturate the pipeline. We use more (32 for Float32, 16 for Float64)
-        /// so the compiler can map them to multiple SIMD registers across all targets.
-        constexpr size_t unroll_count = 128 / sizeof(ResultType);
+        /// chains to saturate the pipeline. 16 accumulators is enough to do that while
+        /// keeping the per-row reduction and scalar remainder small: a wider unroll
+        /// (e.g. 128/sizeof = 32 for Float32) only pays off for very long arrays and
+        /// noticeably regresses the short (~150-element) arrays typical of vector search.
+        constexpr size_t unroll_count = 16;
         ResultType partial_sums[unroll_count]{};
 
         size_t i = 0;
@@ -45,8 +47,8 @@ MULTITARGET_FUNCTION_X86_V4_V3(
 
         /// Reduce partial sums
         ResultType sum = 0;
-        for (size_t s = 0; s < unroll_count; ++s)
-            sum += partial_sums[s];
+        for (auto & partial_sum : partial_sums)
+            sum += partial_sum;
 
         /// Tail: process remaining elements that don't fill a full unroll block
         for (; i < count; ++i)
@@ -268,8 +270,6 @@ private:
 #if USE_MULTITARGET_CODE
                 if (isArchSupported(TargetArch::x86_64_v4))
                     result_data[row] = dotProductImpl_x86_64_v4<ResultType>(data_x.data() + current_offset, data_y.data() + current_offset, array_size);
-                else if (isArchSupported(TargetArch::x86_64_v3))
-                    result_data[row] = dotProductImpl_x86_64_v3<ResultType>(data_x.data() + current_offset, data_y.data() + current_offset, array_size);
                 else
 #endif
                     result_data[row] = dotProductImpl<ResultType>(data_x.data() + current_offset, data_y.data() + current_offset, array_size);
@@ -355,8 +355,6 @@ private:
 #if USE_MULTITARGET_CODE
                 if (isArchSupported(TargetArch::x86_64_v4))
                     result[row] = dotProductImpl_x86_64_v4<ResultType>(data_x.data(), data_y.data() + current_offset, array_size);
-                else if (isArchSupported(TargetArch::x86_64_v3))
-                    result[row] = dotProductImpl_x86_64_v3<ResultType>(data_x.data(), data_y.data() + current_offset, array_size);
                 else
 #endif
                     result[row] = dotProductImpl<ResultType>(data_x.data(), data_y.data() + current_offset, array_size);
