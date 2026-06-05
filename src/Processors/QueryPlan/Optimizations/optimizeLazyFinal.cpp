@@ -251,7 +251,7 @@ static SplitResult trySplitNonIntersectingParts(
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     const auto & sorting_key = metadata_snapshot->getSortingKey();
 
-    if (!isSafePrimaryKey(primary_key))
+    if (!isSafePrimaryKey(primary_key, metadata_snapshot->getColumns()))
         return {};
 
     bool in_reverse_order = false;

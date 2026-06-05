@@ -165,3 +165,85 @@ SELECT 'tuple-final-split-0 groupArray', length(groupArray(c)) FROM tm_split_rep
     SETTINGS max_threads = 4, split_parts_ranges_into_intersecting_and_non_intersecting_final = 0;
 
 DROP TABLE tm_split_repro_tuple_final;
+
+-- Primary key derived from a `Map` column via a function call (`mapKeys(m)`). The resolved
+-- expression type is `Array(K)`, so `isSafePrimaryDataKeyType` alone cannot tell that the
+-- PK depends on a `Map`. The fix walks the PK expression's source storage columns and marks
+-- the PK unsafe when any source column is a `Map`. Without this extra check the splitter
+-- still drops one row from a 4-part bucketed-`Map` table because the index keys (built from
+-- in-memory insertion-ordered `Map`) and the data keys (read in bucket order) differ.
+
+DROP TABLE IF EXISTS tm_split_repro_mapkeys;
+
+CREATE TABLE tm_split_repro_mapkeys(m Map(String, Array(UInt8))) ENGINE = MergeTree() ORDER BY mapKeys(m) SETTINGS
+    min_bytes_for_wide_part = 0,
+    map_serialization_version_for_zero_level_parts = 'with_buckets',
+    max_buckets_in_map = 11,
+    map_buckets_strategy = 'constant',
+    map_buckets_min_avg_size = 2;
+
+-- 4 parts (the original 14-row 3-part shape was not enough to drop a row when the PK is
+-- a `mapKeys(m)` expression; tiandiwonder's empirical confirmation used 4 parts).
+INSERT INTO tm_split_repro_mapkeys VALUES (map('k1', [1,2,3], 'k2', [4,5,6])), (map('k0', [], 'k1', [100,20,90]));
+INSERT INTO tm_split_repro_mapkeys SELECT map('k1', [number, number + 2, number * 2]) FROM numbers(6);
+INSERT INTO tm_split_repro_mapkeys SELECT map('k2', [number, number + 2, number * 2]) FROM numbers(6);
+INSERT INTO tm_split_repro_mapkeys SELECT map('k3', [number, number + 2, number * 2]) FROM numbers(6);
+
+SELECT 'mapkeys-inj count', count() FROM tm_split_repro_mapkeys
+    SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 1, max_threads = 4;
+SELECT 'mapkeys-inj groupArray', length(groupArray(m)) FROM tm_split_repro_mapkeys
+    SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 1, max_threads = 4;
+
+DROP TABLE tm_split_repro_mapkeys;
+
+-- Primary key as a `Map` sub-column reference (`m.keys`). The resolved expression type is
+-- the sub-column type `Array(K)`, so this is also invisible to `isSafePrimaryDataKeyType`.
+-- The PK source-column check resolves `m.keys` against the storage columns and finds it as
+-- a sub-column of a `Map`, marking the PK unsafe.
+
+DROP TABLE IF EXISTS tm_split_repro_mdotkeys;
+
+CREATE TABLE tm_split_repro_mdotkeys(m Map(String, Array(UInt8))) ENGINE = MergeTree() ORDER BY m.keys SETTINGS
+    min_bytes_for_wide_part = 0,
+    map_serialization_version_for_zero_level_parts = 'with_buckets',
+    max_buckets_in_map = 11,
+    map_buckets_strategy = 'constant',
+    map_buckets_min_avg_size = 2;
+
+INSERT INTO tm_split_repro_mdotkeys VALUES (map('k1', [1,2,3], 'k2', [4,5,6])), (map('k0', [], 'k1', [100,20,90]));
+INSERT INTO tm_split_repro_mdotkeys SELECT map('k1', [number, number + 2, number * 2]) FROM numbers(6);
+INSERT INTO tm_split_repro_mdotkeys SELECT map('k2', [number, number + 2, number * 2]) FROM numbers(6);
+INSERT INTO tm_split_repro_mdotkeys SELECT map('k3', [number, number + 2, number * 2]) FROM numbers(6);
+
+SELECT 'mdotkeys-inj count', count() FROM tm_split_repro_mdotkeys
+    SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 1, max_threads = 4;
+SELECT 'mdotkeys-inj groupArray', length(groupArray(m)) FROM tm_split_repro_mdotkeys
+    SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 1, max_threads = 4;
+
+DROP TABLE tm_split_repro_mdotkeys;
+
+-- Same `Map`-derived PK shape on `ReplacingMergeTree`, exercising the FINAL split path with
+-- `split_parts_ranges_into_intersecting_and_non_intersecting_final = 0`. Add an `id` column
+-- to the PK to make every row's sort key unique so `FINAL` does not deduplicate on
+-- `mapKeys(m)` collisions.
+
+DROP TABLE IF EXISTS tm_split_repro_mapkeys_final;
+
+CREATE TABLE tm_split_repro_mapkeys_final(id UInt32, m Map(String, Array(UInt8))) ENGINE = ReplacingMergeTree() ORDER BY (id, mapKeys(m)) SETTINGS
+    min_bytes_for_wide_part = 0,
+    map_serialization_version_for_zero_level_parts = 'with_buckets',
+    max_buckets_in_map = 11,
+    map_buckets_strategy = 'constant',
+    map_buckets_min_avg_size = 2;
+
+INSERT INTO tm_split_repro_mapkeys_final VALUES (1, map('k1', [1,2,3], 'k2', [4,5,6])), (2, map('k0', [], 'k1', [100,20,90]));
+INSERT INTO tm_split_repro_mapkeys_final SELECT 100 + number, map('k1', [number, number + 2, number * 2]) FROM numbers(6);
+INSERT INTO tm_split_repro_mapkeys_final SELECT 200 + number, map('k2', [number, number + 2, number * 2]) FROM numbers(6);
+INSERT INTO tm_split_repro_mapkeys_final SELECT 300 + number, map('k3', [number, number + 2, number * 2]) FROM numbers(6);
+
+SELECT 'mapkeys-final-split-0 count', count() FROM tm_split_repro_mapkeys_final FINAL
+    SETTINGS max_threads = 4, split_parts_ranges_into_intersecting_and_non_intersecting_final = 0;
+SELECT 'mapkeys-final-split-0 groupArray', length(groupArray(m)) FROM tm_split_repro_mapkeys_final FINAL
+    SETTINGS max_threads = 4, split_parts_ranges_into_intersecting_and_non_intersecting_final = 0;
+
+DROP TABLE tm_split_repro_mapkeys_final;

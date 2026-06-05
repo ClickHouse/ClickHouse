@@ -12,3 +12,9 @@ tuple-inj count	14
 tuple-inj groupArray	14
 tuple-final-split-0 count	14
 tuple-final-split-0 groupArray	14
+mapkeys-inj count	20
+mapkeys-inj groupArray	20
+mdotkeys-inj count	20
+mdotkeys-inj groupArray	20
+mapkeys-final-split-0 count	20
+mapkeys-final-split-0 groupArray	20

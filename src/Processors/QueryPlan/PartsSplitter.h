@@ -8,6 +8,8 @@
 namespace DB
 {
 
+class ColumnsDescription;
+
 using ReadingInOrderStepGetter = std::function<Pipe(RangesInDataParts)>;
 
 /// Result of splitting parts ranges into intersecting and non-intersecting by primary key.
@@ -19,6 +21,10 @@ struct SplitPartsRangesResult
 
 /// Check if the primary key types are safe for splitting (no floats with NaN, etc.).
 bool isSafePrimaryKey(const KeyDescription & primary_key);
+
+/// Same as above plus a source-column check that also rejects PKs derived from a `Map`
+/// storage column when the resolved expression type alone is safe (`mapKeys(m)`, `m.keys`).
+bool isSafePrimaryKey(const KeyDescription & primary_key, const ColumnsDescription & columns);
 
 /// Split ranges in data parts into non-intersecting (unique key ranges) and
 /// intersecting (overlapping key ranges that need FINAL merge).
@@ -41,6 +47,7 @@ struct SplitPartsWithRangesByPrimaryKeyResult
 SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     const KeyDescription & primary_key,
     const KeyDescription & sorting_key,
+    const ColumnsDescription & storage_columns,
     ExpressionActionsPtr sorting_expr,
     RangesInDataParts parts,
     size_t max_layers,
@@ -58,6 +65,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 RangesInDataParts findPKRangesForFinalAfterSkipIndex(
     const KeyDescription & primary_key,
     const KeyDescription & sorting_key,
+    const ColumnsDescription & storage_columns,
     RangesInDataParts & ranges_in_data_parts,
     const LoggerPtr & logger);
 
