@@ -206,6 +206,43 @@ SELECT id FROM walk_having ORDER BY id;
 
 DROP TABLE edges_having;
 
+-- A restrictive `max_rows_in_set` must not change the result. The injected
+-- `IN (...)` predicate is lowered into a set bounded by `max_rows_in_set` /
+-- `max_bytes_in_set`; when a recursive step produces more distinct join keys
+-- than that limit, injecting the filter would either throw
+-- `SET_SIZE_LIMIT_EXCEEDED` (`set_overflow_mode = 'throw'`) or silently
+-- truncate the set (`'break'`). Both diverge from the unoptimized scan, so the
+-- optimization must fail closed and fall back to a plain scan for that step.
+-- Here the tree branches (0 -> {1, 2}) so the second recursive step looks up
+-- two distinct keys at once, exceeding `max_rows_in_set = 1`.
+DROP TABLE IF EXISTS tree;
+CREATE TABLE tree (parent UInt64, child UInt64) ENGINE = MergeTree ORDER BY parent;
+INSERT INTO tree VALUES (0, 1), (0, 2), (1, 3), (2, 4);
+
+WITH RECURSIVE walk_tree AS
+(
+    SELECT child AS current_id FROM tree WHERE parent = 0
+  UNION ALL
+    SELECT e.child AS current_id
+    FROM tree AS e
+    INNER JOIN walk_tree AS t ON e.parent = t.current_id
+)
+SELECT current_id FROM walk_tree ORDER BY current_id
+SETTINGS max_rows_in_set = 1, set_overflow_mode = 'throw';
+
+WITH RECURSIVE walk_tree AS
+(
+    SELECT child AS current_id FROM tree WHERE parent = 0
+  UNION ALL
+    SELECT e.child AS current_id
+    FROM tree AS e
+    INNER JOIN walk_tree AS t ON e.parent = t.current_id
+)
+SELECT current_id FROM walk_tree ORDER BY current_id
+SETTINGS max_rows_in_set = 1, set_overflow_mode = 'break';
+
+DROP TABLE tree;
+
 DROP TABLE edges;
 DROP TABLE two_hop;
 DROP TABLE t_a;
