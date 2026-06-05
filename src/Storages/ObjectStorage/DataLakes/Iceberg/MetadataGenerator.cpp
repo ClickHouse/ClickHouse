@@ -294,6 +294,14 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     if (!current_schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
     current_schema = deepCopy(current_schema);
+
+    auto existing_fields = current_schema->getArray(Iceberg::f_fields);
+    for (UInt32 i = 0; i < existing_fields->size(); ++i)
+    {
+        if (existing_fields->getObject(i)->getValue<String>(Iceberg::f_name) == column_name)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} already exists", column_name);
+    }
+
     auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
     metadata_object->set(Iceberg::f_last_column_id, last_column_id + 1);
 
@@ -333,6 +341,7 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
     auto new_type = Iceberg::getIcebergType(type, last_column_id);
     auto schema_fields = current_schema->getArray(Iceberg::f_fields);
 
+    bool found = false;
     for (UInt32 i = 0; i < schema_fields->size(); ++i)
     {
         auto current_field = schema_fields->getObject(i);
@@ -347,9 +356,14 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow change type from nullable to non-nullable {}", type->getPrettyName());
 
             current_field->set(Iceberg::f_required, new_type.second);
+            found = true;
             break;
         }
     }
+
+    if (!found)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found column {}", column_name);
+
     current_schema->set(Iceberg::f_schema_id, current_schema_id + 1);
     metadata_object->getArray(Iceberg::f_schemas)->add(current_schema);
 }
