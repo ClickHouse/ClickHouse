@@ -677,6 +677,17 @@ void UserDefinedWebAssemblyFunctionFactory::addOrReplace(RegisteredFunction regi
     registry[registered_function.sql_name] = RegistryEntry{std::move(registered_function.function), std::move(registered_function.create_query)};
 }
 
+void UserDefinedWebAssemblyFunctionFactory::replaceAll(VectorWithMemoryTracking<RegisteredFunction> registered_functions)
+{
+    UnorderedMapWithMemoryTracking<String, RegistryEntry> new_registry;
+    new_registry.reserve(registered_functions.size());
+    for (auto & registered_function : registered_functions)
+        new_registry[registered_function.sql_name] = RegistryEntry{std::move(registered_function.function), std::move(registered_function.create_query)};
+
+    std::unique_lock lock(registry_mutex);
+    registry = std::move(new_registry);
+}
+
 bool UserDefinedWebAssemblyFunctionFactory::has(const String & function_name) const
 {
     std::shared_lock lock(registry_mutex);
