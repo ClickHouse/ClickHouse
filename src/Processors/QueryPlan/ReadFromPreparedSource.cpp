@@ -24,6 +24,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_)
@@ -59,8 +60,10 @@ ReadFromStorageStep::ReadFromStorageStep(
 
 void ReadFromStorageStep::serialize(Serialization & ctx) const
 {
+    /// Not a logical error: a caller (e.g. the distributed-plan serializability check) may probe an
+    /// unsupported plan, and a logical error would abort debug/fuzzer builds instead of being handled.
     if (storage->getName() != "SystemOne")
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromStorageStep serailization is implemented only for StorageSystemOne, got: {}", storage->getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ReadFromStorageStep serialization is implemented only for StorageSystemOne, got: {}", storage->getName());
 
     writeStringBinary(storage->getName(), ctx.out);
 }
