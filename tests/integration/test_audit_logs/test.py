@@ -4,6 +4,7 @@ import struct
 import sys
 import time
 
+import pymysql
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -192,15 +193,46 @@ def test_audit_log_pg_unsupported_auth_method(start_cluster):
     assert "Unknown Host" not in log_content, "Client IP must be recorded, not 'Unknown Host'"
 
 
-def mysql_handshake_request():
-    """Build a minimal MySQL HandshakeRequest packet (just length and sequence id)."""
-    # 4 bytes: packet length (LSB first)
-    # 1 byte: sequence id
-    return struct.pack("<IB", 1, 1)  # minimal 1-byte payload, sequence id 1
+def mysql_handshake_response(username, auth_response=b"", database="", auth_plugin_name="mysql_native_password", capability_flags=None):
+    """Build a MySQL HandshakeResponse41 packet with the given username.
+
+    This constructs a valid protocol-level response that the server can parse
+    to extract the username, which is needed for proper audit logging.
+    """
+    CLIENT_PROTOCOL_41 = 0x00000200
+    CLIENT_SECURE_CONNECTION = 0x00008000
+    CLIENT_PLUGIN_AUTH = 0x00080000
+    CLIENT_CONNECT_WITH_DB = 0x00000008
+
+    if capability_flags is None:
+        capability_flags = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH
+        if database:
+            capability_flags |= CLIENT_CONNECT_WITH_DB
+
+    max_packet_size = 16777216
+    character_set = 33  # utf8_general_ci
+
+    payload = struct.pack("<I", capability_flags)
+    payload += struct.pack("<I", max_packet_size)
+    payload += struct.pack("<B", character_set)
+    payload += b"\x00" * 23  # reserved
+    payload += username.encode() + b"\x00"
+    # auth_response with length prefix (CLIENT_SECURE_CONNECTION)
+    payload += struct.pack("<B", len(auth_response)) + auth_response
+    if database and (capability_flags & CLIENT_CONNECT_WITH_DB):
+        payload += database.encode() + b"\x00"
+    if capability_flags & CLIENT_PLUGIN_AUTH:
+        payload += auth_plugin_name.encode() + b"\x00"
+
+    # MySQL packet header: 3-byte length (LE) + 1-byte sequence id
+    header = struct.pack("<I", len(payload))[:3] + struct.pack("<B", 1)
+    return header + payload
 
 
 def test_audit_log_mysql_ssl_required_failure(start_cluster):
     """When MySQL requires SSL but client doesn't support it, must emit LoginFailure with client IP."""
+    unique_user = "mysql_ssl_req_audit_user"
+
     # Create a config that requires secure transport for MySQL
     mysql_secure_config = """<clickhouse>
     <mysql_port>9004</mysql_port>
@@ -217,13 +249,15 @@ def test_audit_log_mysql_ssl_required_failure(start_cluster):
 
     s = None
     try:
-        # Try to connect to MySQL port without SSL - send minimal handshake
+        # Connect to MySQL port and complete the initial handshake exchange
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(5)
         s.connect((node_user_dcl.ip_address, 9004))
-        # Send a minimal packet to trigger the handshake response
-        s.sendall(mysql_handshake_request())
-        # Read response (we expect an error)
+        # Read server's Handshake packet first
+        s.recv(4096)
+        # Send a valid HandshakeResponse without CLIENT_SSL flag
+        s.sendall(mysql_handshake_response(unique_user))
+        # Read error response
         s.recv(4096)
     except Exception:
         pass  # Expected to fail
@@ -239,44 +273,44 @@ def test_audit_log_mysql_ssl_required_failure(start_cluster):
         )
         node_user_dcl.query("SYSTEM RELOAD CONFIG")
 
-    # Verify LoginFailure was logged with client IP
-    assert_audit_log_contain_with_retry(node_user_dcl, "LoginFailure")
-    log_content = node_user_dcl.grep_in_log("LoginFailure", from_host=True, filename="clickhouse-server.audit.log")
+    # Verify LoginFailure was logged with the unique username and client IP
+    assert_audit_log_contain_with_retry(node_user_dcl, unique_user)
+    log_content = node_user_dcl.grep_in_log(unique_user, from_host=True, filename="clickhouse-server.audit.log")
+    assert "LoginFailure" in log_content, "LoginFailure must be emitted for SSL-required failure"
     assert "Unknown Host" not in log_content, "Client IP must be recorded for SSL-required failure, not 'Unknown Host'"
 
 
 def test_audit_log_mysql_wrong_password(start_cluster):
     """When MySQL authentication fails with wrong password, must emit LoginFailure with client IP."""
-    # Create a user with sha256_password authentication
+    unique_user = "mysql_wrong_pass_user"
+
+    # Create a user with double_sha1_password authentication (supported by MySQL protocol)
     node_user_dcl.query(
-        "CREATE USER IF NOT EXISTS mysql_wrong_pass_user IDENTIFIED WITH sha256_password BY 'correct_password'"
+        f"CREATE USER IF NOT EXISTS {unique_user} IDENTIFIED WITH double_sha1_password BY 'correct_password'"
     )
 
     # Wait for user to be created
     time.sleep(1)
 
     try:
-        # Try to connect to MySQL port with wrong password via clickhouse-client
-        # This will attempt authentication over the native protocol, which should fail
-        node_user_dcl.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "clickhouse client --host 127.0.0.1 --port 9000 "
-                "--user mysql_wrong_pass_user --password wrongpassword --query 'SELECT 1' 2>&1 || true"
-            ],
-            privileged=True
+        # Connect via pymysql to the MySQL wire port with wrong password
+        pymysql.connections.Connection(
+            host=node_user_dcl.ip_address,
+            user=unique_user,
+            password="wrongpassword",
+            database="default",
+            port=9004,
         )
     except Exception:
         pass  # Expected to fail
     finally:
         # Clean up
-        node_user_dcl.query("DROP USER IF EXISTS mysql_wrong_pass_user")
+        node_user_dcl.query(f"DROP USER IF EXISTS {unique_user}")
 
     # Verify LoginFailure was logged with the username and client IP
-    assert_audit_log_contain_with_retry(node_user_dcl, "mysql_wrong_pass_user")
-    log_content = node_user_dcl.grep_in_log("mysql_wrong_pass_user", from_host=True, filename="clickhouse-server.audit.log")
-    assert "LoginFailure" in log_content, "LoginFailure must be emitted for failed authentication"
+    assert_audit_log_contain_with_retry(node_user_dcl, unique_user)
+    log_content = node_user_dcl.grep_in_log(unique_user, from_host=True, filename="clickhouse-server.audit.log")
+    assert "LoginFailure" in log_content, "LoginFailure must be emitted for failed MySQL authentication"
     assert "Unknown Host" not in log_content, "Client IP must be recorded for auth failure, not 'Unknown Host'"
 
 
