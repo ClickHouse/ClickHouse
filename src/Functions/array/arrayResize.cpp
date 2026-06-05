@@ -138,8 +138,6 @@ ColumnPtr FunctionArrayResize::executeImpl(const ColumnsWithTypeAndName & argume
         return nested_result;
     }
 
-    auto result_column = removeNullable(return_type)->createColumn();
-
     auto array_column = arguments[0].column;
     auto size_column = arguments[1].column;
 

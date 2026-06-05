@@ -557,6 +557,15 @@ DataTypePtr normalizeInferredColumnTypeForStorage(const DataTypePtr & type, cons
     return type;
 }
 
+void checkNullableArrayIsAllowed(const DataTypePtr & type, const Settings & settings)
+{
+    if (isArray(type) && !settings[Setting::allow_experimental_nullable_array_type])
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Nested type {} cannot be inside Nullable type",
+            type->getName());
+}
+
 }
 
 DataTypePtr InterpreterCreateQuery::getColumnType(
@@ -592,15 +601,14 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         if (column_type->isNullable())
             throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Can't use [NOT] NULL modifier with Nullable type");
         if (*col_decl.null_modifier)
+        {
+            checkNullableArrayIsAllowed(column_type, settings);
             column_type = makeNullable(column_type);
+        }
     }
     else if (make_columns_nullable)
     {
-        if (isArray(column_type) && !settings[Setting::allow_experimental_nullable_array_type])
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Nested type {} cannot be inside Nullable type",
-                column_type->getName());
+        checkNullableArrayIsAllowed(column_type, settings);
         column_type = makeNullable(column_type);
     }
     else if (auto default_expr = col_decl.getDefaultExpression();
@@ -614,7 +622,10 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
             column_type = std::make_shared<DataTypeLowCardinality>(makeNullable(low_cardinality_type->getDictionaryType()));
         }
         else
+        {
+            checkNullableArrayIsAllowed(column_type, settings);
             column_type = makeNullable(column_type);
+        }
     }
     return column_type;
 }

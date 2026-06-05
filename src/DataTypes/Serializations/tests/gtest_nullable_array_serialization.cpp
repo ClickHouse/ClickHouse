@@ -45,7 +45,7 @@ ColumnPtr makeNestedArrayNullableArrayColumn()
 
 }
 
-void testNestedArrayNullableArrayBulkRoundtrip(bool position_independent_encoding)
+static void testNestedArrayNullableArrayBulkRoundtrip(bool position_independent_encoding)
 {
     auto type = DataTypeFactory::instance().get("Array(Nullable(Array(Nullable(UInt8))))");
     const auto column = makeNestedArrayNullableArrayColumn();

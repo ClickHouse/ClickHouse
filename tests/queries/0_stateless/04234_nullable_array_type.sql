@@ -3,11 +3,25 @@
 DROP TABLE IF EXISTS nullable_array_type;
 
 CREATE TABLE nullable_array_type_bad (a Nullable(Array(Int32))) ENGINE = Memory; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+CREATE TABLE nullable_array_type_bad_null_modifier (a Array(Int32) NULL) ENGINE = Memory; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+CREATE TABLE nullable_array_type_bad_default_null (a Array(Int32) DEFAULT NULL) ENGINE = Memory; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
 CREATE TABLE ctas_nullable_array_bad ENGINE = Memory AS SELECT CAST([1, 2] AS Nullable(Array(Int32))) AS a; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 CREATE TABLE ctas_nullable_array_bad2 ENGINE = Memory AS SELECT CAST(NULL AS Nullable(Array(Int32))) AS a; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
 SET allow_experimental_nullable_array_type = 1;
+
+CREATE TABLE nullable_array_type_null_modifier (a Array(Int32) NULL) ENGINE = Memory;
+SELECT throwIf(toTypeName(a) != 'Nullable(Array(Int32))')
+FROM nullable_array_type_null_modifier
+FORMAT Null;
+DROP TABLE nullable_array_type_null_modifier;
+
+CREATE TABLE nullable_array_type_default_null (a Array(Int32) DEFAULT NULL) ENGINE = Memory;
+SELECT throwIf(toTypeName(a) != 'Nullable(Array(Int32))')
+FROM nullable_array_type_default_null
+FORMAT Null;
+DROP TABLE nullable_array_type_default_null;
 
 SELECT throwIf(toTypeName(if(number % 2, [1, 2], CAST(NULL AS Nullable(Array(Int32))))) != 'Nullable(Array(Int32))')
 FROM numbers(1)
