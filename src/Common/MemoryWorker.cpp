@@ -414,6 +414,16 @@ MemoryWorker::MemoryWorker(
         catch (...)
         {
             tryLogCurrentException(log, "Cannot use cgroups reader");
+            /// Fail closed: the hierarchy walk above may have already assigned `cgroups_reader`
+            /// and pushed some (but not all) ancestor levels before throwing. Leaving that
+            /// partial state would make `readAvailableForDynamicLimit` take the cgroup branch
+            /// (it only checks `cgroups_reader && !cgroup_memory_levels.empty()`) and compute
+            /// the headroom minimum from an incomplete ancestor set, overestimating the real
+            /// budget when the dropped ancestor was the tighter one. Drop everything so we
+            /// fall back to the jemalloc source and host-wide `/proc/meminfo` instead.
+            cgroups_reader.reset();
+            cgroup_memory_levels.clear();
+            source = MemoryUsageSource::None;
         }
 #endif
     }
