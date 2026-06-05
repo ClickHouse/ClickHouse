@@ -1,13 +1,6 @@
--- Tags: no-parallel-replicas
--- Regression test for ClickHouse/ClickHouse#99495:
--- `LIMIT ... WITH TIES` aborted with `Assertion 'row < chunk.getNumRows()' failed` in
--- `LimitTransform::makeChunkWithPreviousRow` (`src/Processors/LimitTransform.cpp:60`) when the
--- read-in-order pipeline produced a per-block virtual-row chunk that reached `LimitTransform`
--- after `rows_read` had already hit the limit boundary.
---
--- The virtual-row chunk is empty (zero rows) but carries `MergeTreeReadInfo`; when it arrived
--- with `rows_read == offset + limit` and `with_ties`, `makeChunkWithPreviousRow` was called with
--- `chunk.getNumRows() - 1`, which underflows to `UINT64_MAX` and trips the assertion.
+-- Tags: no-parallel-replicas, no-random-merge-tree-settings
+-- The bug requires `index_granularity = 1` plus `read_in_order_use_virtual_row*` to fire,
+-- so we pin the MergeTree settings (CREATE TABLE) and the query settings (SETTINGS clause).
 
 DROP TABLE IF EXISTS t_99495;
 
@@ -25,8 +18,6 @@ INSERT INTO t_99495 VALUES (1, {'1': '1'});
 INSERT INTO t_99495 VALUES (2, {'2': '2'});
 INSERT INTO t_99495 VALUES (3, {'3': '3'});
 
--- Pre-fix: aborts the server in debug builds, throws in release builds.
--- Post-fix: returns the single matching row.
 SELECT id
 FROM t_99495
 PREWHERE mapContains(m, toFixedString('1', 1))
@@ -37,7 +28,6 @@ SETTINGS
     read_in_order_use_virtual_row = 1,
     read_in_order_use_virtual_row_per_block = 1;
 
--- Same query but using OFFSET: another path that previously hit the same assertion.
 SELECT id
 FROM t_99495
 PREWHERE mapContains(m, toFixedString('1', 1))
