@@ -54,6 +54,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMerge.h>
@@ -298,6 +299,14 @@ bool StorageMerge::isRemote() const
 {
     auto first_remote_table = traverseTablesUntil([](const StoragePtr & table) { return table && table->isRemote(); });
     return first_remote_table != nullptr;
+}
+
+bool StorageMerge::hasChildTable(std::function<bool(const StoragePtr &)> predicate) const
+{
+    return traverseTablesUntil([&predicate](const StoragePtr & table)
+    {
+        return table && predicate(table);
+    }) != nullptr;
 }
 
 bool StorageMerge::supportsPrewhere() const
@@ -562,7 +571,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     }
 
     QueryPlanResourceHolder resources;
-    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines;
 
     auto table_it = selected_tables.begin();
     auto modified_context = Context::createCopy(context);
@@ -708,16 +717,14 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 /// (Assuming that view has empty list of columns if it's parameterized.)
                 if (storage->isView() && storage->as<StorageView>() && storage->as<StorageView>()->isParameterizedView())
                     throw Exception(ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Parameterized view can't be queried through a Merge table.");
-
-                /// An `Alias` storage whose target table has been dropped returns empty in-memory metadata
-                if (storage->getName() == "Alias")
+                else if (const auto * alias = storage->as<StorageAlias>(); alias && !alias->tryGetTargetTable())
                     throw Exception(
                         ErrorCodes::UNKNOWN_TABLE,
                         "Table {} matched by the regexp of {} is an `Alias` whose target table is missing",
                         storage->getStorageID().getNameForLogs(),
                         storage_merge->getStorageID().getNameForLogs());
-
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Table has no columns.");
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Table has no columns.");
             }
 
             auto nested_storage_snapshot = storage->getStorageSnapshot(storage_metadata_snapshot, modified_context);
@@ -1185,7 +1192,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     return modified_query_info;
 }
 
-bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::function<bool(ReadFromMergeTree &)> & func)
+static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::function<bool(ReadFromMergeTree &)> & func)
 {
     bool ok = true;
     for (auto * child : node->children)
@@ -1496,7 +1503,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
     else
     {
         /// database_name argument is a regexp
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
 
         for (const auto & db : databases)
         {
@@ -1738,6 +1745,18 @@ QueryPlanRawPtrs ReadFromMerge::getChildPlans()
     return plans;
 }
 
+std::vector<QueryPlan *> ReadFromMerge::getAllChildPlans()
+{
+    filterTablesAndCreateChildrenPlans();
+
+    std::vector<QueryPlan *> plans;
+    plans.reserve(child_plans->size());
+    for (auto & child_plan : *child_plans)
+        plans.push_back(child_plan.plan.isInitialized() ? &child_plan.plan : nullptr);
+
+    return plans;
+}
+
 IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
 {
     ColumnSizeByName column_sizes;
@@ -1818,6 +1837,7 @@ std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
     return first_table ? std::nullopt : std::make_optional(total_rows_or_bytes);
 }
 
+void registerStorageMerge(StorageFactory & factory);
 void registerStorageMerge(StorageFactory & factory)
 {
     factory.registerStorage("Merge", [](const StorageFactory::Arguments & args)
