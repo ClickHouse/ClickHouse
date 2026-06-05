@@ -114,7 +114,7 @@ public:
             return std::make_shared<AggregateFunctionNothingNull>(arguments, params);
         }
 
-        chassert(nested_function);
+        assert(nested_function);
 
         if (auto adapter = nested_function->getOwnNullAdapter(nested_function, arguments, params, properties))
             return adapter;
@@ -162,7 +162,6 @@ public:
 
 }
 
-void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorNull>());

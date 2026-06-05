@@ -7,8 +7,8 @@
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
@@ -71,7 +71,7 @@ void DataTypeNullable::updateHashImpl(SipHash & hash) const
     nested_data_type->updateHash(hash);
 }
 
-MutableColumnConstPtr DataTypeNullable::createColumnConst(size_t size, const Field & field) const
+ColumnPtr DataTypeNullable::createColumnConst(size_t size, const Field & field) const
 {
     if (onlyNull())
     {
@@ -98,8 +98,8 @@ MutableColumnConstPtr DataTypeNullable::createColumnConst(size_t size, const Fie
 SerializationPtr DataTypeNullable::doGetSerialization(const SerializationInfoSettings & settings) const
 {
     if (settings.propagate_types_serialization_versions_to_nested_types)
-        return SerializationNullable::create(nested_data_type->getSerialization(settings));
-    return SerializationNullable::create(nested_data_type->getDefaultSerialization());
+        return std::make_shared<SerializationNullable>(nested_data_type->getSerialization(settings));
+    return std::make_shared<SerializationNullable>(nested_data_type->getDefaultSerialization());
 }
 
 void DataTypeNullable::forEachChild(const ChildCallback & callback) const

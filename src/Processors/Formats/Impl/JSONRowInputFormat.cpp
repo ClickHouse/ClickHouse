@@ -101,7 +101,6 @@ NamesAndTypesList JSONRowSchemaReader::readSchema()
     return JSONUtils::readMetadata(*peekable_buf, format_settings.json);
 }
 
-void registerInputFormatJSON(FormatFactory & factory);
 void registerInputFormatJSON(FormatFactory & factory)
 {
     factory.registerInputFormat("JSON", [](
@@ -116,7 +115,6 @@ void registerInputFormatJSON(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("JSON");
 }
 
-void registerJSONSchemaReader(FormatFactory & factory);
 void registerJSONSchemaReader(FormatFactory & factory)
 {
     auto register_schema_reader = [&](const String & format, bool fallback_to_json_each_row)

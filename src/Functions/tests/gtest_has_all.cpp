@@ -5,7 +5,7 @@
 using namespace DB::GatherUtils;
 
 
-static auto uni_int_dist(int min, int max)
+auto uni_int_dist(int min, int max)
 {
     std::random_device rd;
     std::mt19937 mt(rd());
@@ -32,7 +32,7 @@ void arrayInit(T* elements_to_have, size_t nb_elements_to_have, T* array_element
     }
 }
 
-static void nullMapInit(UInt8 * null_map, size_t null_map_size, size_t nb_null_elements)
+void nullMapInit(UInt8 * null_map, size_t null_map_size, size_t nb_null_elements)
 {
     /// -2 to keep the last element of the array non-null
     auto [dist, gen] = uni_int_dist(0, static_cast<int>(null_map_size - 2));
