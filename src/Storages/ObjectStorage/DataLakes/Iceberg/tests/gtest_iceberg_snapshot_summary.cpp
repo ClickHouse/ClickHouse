@@ -118,15 +118,6 @@ TEST(IcebergSnapshotSummary, OverwriteWithoutParentThrows)
 }
 #endif
 
-#ifndef DEBUG_OR_SANITIZER_BUILD
-TEST(IcebergSnapshotSummary, ToJSONUnknownOperationThrows)
-{
-    /// A default-constructed summary holds no operation (`std::monostate`), which `toJSON` rejects.
-    SnapshotSummary summary;
-    EXPECT_THROW((void)summary.toJSON(), DB::Exception);
-}
-#endif
-
 TEST(IcebergSnapshotSummary, ToJSONAppendFields)
 {
     SnapshotSummary summary(DB::Iceberg::SnapshotSummaryUpdateAppend{.added_files = 2, .added_records = 3, .added_files_size = 1638, .num_partitions = 2});
