@@ -548,8 +548,8 @@ bool UTFConvertingReadBuffer::nextImpl()
 
         if (impl->hasPendingData() || impl->next())
         {
-            working_buffer = Buffer(impl->position(), impl->buffer().end());
-            nextimpl_working_buffer_offset = 0;
+            working_buffer = impl->buffer();
+            nextimpl_working_buffer_offset = impl->offset();
             return true;
         }
 

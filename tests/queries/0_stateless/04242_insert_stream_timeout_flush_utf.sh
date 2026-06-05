@@ -35,12 +35,7 @@ for iteration in [1, 2]:
     write_batch(iteration)
     time.sleep(6)
     write_trigger(iteration)
-' | ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_timeout_utf FORMAT JSONEachRow" \
-    --max_insert_block_size=1000 \
-    --input_format_connection_handling=1 \
-    --input_format_max_block_wait_ms=2000 \
-    --min_insert_block_size_bytes=0 \
-    --min_insert_block_size_rows=0
+' | ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_timeout_utf SETTINGS max_insert_threads = 1, input_format_parallel_parsing = 0, max_insert_block_size = 1000, input_format_connection_handling = 1, input_format_max_block_wait_ms = 2000, min_insert_block_size_bytes = 0, min_insert_block_size_rows = 0 FORMAT JSONEachRow"
 
 sleep 1
 record_count=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM test_insert_timeout_utf")
