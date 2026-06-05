@@ -78,7 +78,8 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
     if (dict.end() != it)
         return it->second;
     auto hints = this->getHints(name);
-    throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}. Maybe you meant: {}", name, toString(hints));
+    auto hint_string = hints.empty() ? "" : fmt::format(". Maybe you meant: {}", toString(hints));
+    throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}{}", name, hint_string);
 }
 
 FormatFactory::Creators & FormatFactory::getOrCreateCreators(const String & name)
@@ -203,6 +204,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
+    format_settings.float_precision = settings[Setting::output_format_float_precision];
     format_settings.trim_fixed_string = settings[Setting::output_format_trim_fixed_string];
     format_settings.parquet.row_group_rows = settings[Setting::output_format_parquet_row_group_size];
     format_settings.parquet.row_group_bytes = settings[Setting::output_format_parquet_row_group_size_bytes];

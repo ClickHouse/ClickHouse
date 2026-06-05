@@ -3,6 +3,7 @@
 #include <memory>
 #include <mutex>
 
+#include <Columns/ColumnConst.h>
 #include <Core/Names.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/UUID.h>
