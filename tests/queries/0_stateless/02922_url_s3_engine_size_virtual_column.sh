@@ -10,3 +10,4 @@ $CLICKHOUSE_CLIENT -q "select _file, _size from url('http://localhost:11111/test
 
 $CLICKHOUSE_CLIENT -q "select _file, _size from s3('http://localhost:11111/test/{a,b,c}.tsv', 'One') order by _file"
 $CLICKHOUSE_CLIENT -q "select _file, _size from s3('http://localhost:11111/test/{a,b,c}.tsv', 'One') order by _file"
+
