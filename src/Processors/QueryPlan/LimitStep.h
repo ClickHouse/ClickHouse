@@ -26,6 +26,9 @@ public:
     size_t getLimit() const { return limit; }
     size_t getOffset() const { return offset; }
 
+    /// Used by the read-in-order OFFSET-skip optimization to reduce the offset by the rows skipped on read.
+    void setOffset(size_t offset_) { offset = offset_; }
+
     size_t getLimitForSorting() const
     {
         if (limit > std::numeric_limits<UInt64>::max() - offset)

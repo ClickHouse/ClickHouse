@@ -320,6 +320,10 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
+
+    /// For forward read-in-order with an OFFSET: drop the leading granules consumed by the offset from the
+    /// analyzed ranges and return the rows skipped (the caller must reduce the downstream offset by it).
+    size_t skipRowsForOffset(size_t offset);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
@@ -435,6 +439,9 @@ private:
 
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
+
+    /// Keeps `skipRowsForOffset` idempotent.
+    bool offset_granules_skipped = false;
 
     PartitionIdToMaxBlockPtr max_block_numbers_to_read;
 

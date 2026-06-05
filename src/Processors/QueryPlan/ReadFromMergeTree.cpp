@@ -2926,6 +2926,50 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     return true;
 }
 
+size_t ReadFromMergeTree::skipRowsForOffset(size_t offset)
+{
+    if (offset == 0 || offset_granules_skipped)
+        return 0;
+
+    /// Only forward read-in-order is supported.
+    if (!query_info.input_order_info || query_info.input_order_info->direction != 1)
+        return 0;
+
+    /// Any per-row filtering or merging between reading and the offset would make the granule row counts not
+    /// match the rows the offset sees.
+    if (isQueryWithFinal() || query_info.prewhere_info || query_info.row_level_filter || isQueryWithSampling())
+        return 0;
+
+    if (is_parallel_reading_from_replicas || output_each_partition_through_separate_port)
+        return 0;
+
+    /// Need a safe, ascending primary key to reason about granule ordering.
+    const auto & metadata = storage_snapshot->metadata;
+    if (!isSafePrimaryKey(metadata->getPrimaryKey()) || !metadata->getSortingKeyReverseFlags().empty())
+        return 0;
+
+    auto & result = getAnalysisResult();
+    if (!result.split_parts.layers.empty())
+        return 0;
+
+    const size_t skipped_rows = skipLeadingGranulesForOffset(result.parts_with_ranges, offset, /*in_reverse_order=*/false, log);
+    offset_granules_skipped = true;
+    if (skipped_rows == 0)
+        return 0;
+
+    /// Keep the reported statistics consistent with the trimmed ranges.
+    UInt64 selected_ranges = 0;
+    for (const auto & part : result.parts_with_ranges)
+        selected_ranges += part.ranges.size();
+
+    result.selected_parts = result.parts_with_ranges.size();
+    result.selected_ranges = selected_ranges;
+    result.selected_marks = result.parts_with_ranges.getMarksCountAllParts();
+    result.selected_rows = result.parts_with_ranges.getRowsCountAllParts();
+
+    return skipped_rows;
+}
+
 bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversion_)
 {
     /// Disable virtual row for FINAL.

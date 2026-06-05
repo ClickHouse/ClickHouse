@@ -56,6 +56,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"unique_key_max_encoded_size", 256, 256, "New setting: maximum size (bytes) of the order-preserving binary encoding of a single UNIQUE KEY row"},
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
             {"query_plan_max_set_size_for_projection_match", 0, 10000, "Added new setting that bounds the cost of content-hashing IN-clause sets in the projection matcher (today: aggregate projection). Sets larger than the limit are treated as non-matching. Zero disables content-hash comparison entirely (compatibility value: projection match never succeeds for nodes with IN-sets)."},
+            {"query_plan_optimize_read_in_order_skip_offset", true, true, "New setting that skips reading leading granules entirely consumed by `OFFSET` when reading a `MergeTree` table in primary key order."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {

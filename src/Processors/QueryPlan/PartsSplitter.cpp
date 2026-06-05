@@ -693,6 +693,153 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
     return splitPartsRangesImpl(std::move(ranges_in_data_parts), in_reverse_order, logger);
 }
 
+size_t skipLeadingGranulesForOffset(RangesInDataParts & ranges_in_data_parts, size_t offset, bool in_reverse_order, const LoggerPtr & logger)
+{
+    /// Reverse order is not supported yet (boundary-value semantics differ).
+    if (in_reverse_order || offset == 0 || ranges_in_data_parts.empty())
+        return 0;
+
+    IndexAccess index_access(ranges_in_data_parts);
+
+    /// One cursor per non-empty part at its front (smallest) granule; `front` caches its primary key value.
+    struct PartCursor
+    {
+        size_t part_index;
+        const MarkRanges * ranges;
+        size_t range_index;
+        size_t mark;
+        size_t consumed = 0;
+        bool active = true;
+        Values front;
+    };
+
+    std::vector<PartCursor> cursors;
+    cursors.reserve(ranges_in_data_parts.size());
+    for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
+    {
+        const auto & ranges = ranges_in_data_parts[part_index].ranges;
+        if (ranges.empty())
+            continue;
+
+        PartCursor cursor{part_index, &ranges, 0, ranges.front().begin, 0, true, {}};
+        cursor.front = index_access.getValue(part_index, cursor.mark);
+        cursors.push_back(std::move(cursor));
+    }
+
+    if (cursors.empty())
+        return 0;
+
+    /// Move a cursor to its next granule (across range gaps), refreshing `front`; deactivate when exhausted.
+    auto advance = [&](PartCursor & cursor)
+    {
+        ++cursor.mark;
+        if (cursor.mark == (*cursor.ranges)[cursor.range_index].end)
+        {
+            ++cursor.range_index;
+            if (cursor.range_index == cursor.ranges->size())
+            {
+                cursor.active = false;
+                return;
+            }
+            cursor.mark = (*cursor.ranges)[cursor.range_index].begin;
+        }
+        cursor.front = index_access.getValue(cursor.part_index, cursor.mark);
+    };
+
+    size_t remaining = offset;
+    size_t skipped_rows = 0;
+
+    while (remaining > 0)
+    {
+        /// The active cursor with the smallest front value holds the smallest not-yet-skipped rows.
+        std::optional<size_t> best;
+        for (size_t i = 0; i < cursors.size(); ++i)
+            if (cursors[i].active && (!best || compareValues(cursors[i].front, cursors[*best].front, in_reverse_order) < 0))
+                best = i;
+
+        if (!best)
+            break;
+
+        PartCursor & cursor = cursors[*best];
+        const auto & index_granularity = *ranges_in_data_parts[cursor.part_index].data_part->index_granularity;
+
+        /// Drop the granule only if its upper bound value(mark+1) is strictly less than every other part's
+        /// front value, so no tie spans the cut (result independent of merge tie-breaking). value(mark+1) is
+        /// undefined for a part's last granule (+inf): droppable only when no other part has granules left.
+        const bool end_value_defined = (cursor.mark + 1) < index_granularity.getMarksCount();
+        Values end_value;
+        if (end_value_defined)
+            end_value = index_access.getValue(cursor.part_index, cursor.mark + 1);
+
+        bool strictly_separated = true;
+        for (size_t i = 0; i < cursors.size() && strictly_separated; ++i)
+        {
+            if (i == *best || !cursors[i].active)
+                continue;
+            if (!end_value_defined || compareValues(end_value, cursors[i].front, in_reverse_order) >= 0)
+                strictly_separated = false;
+        }
+
+        if (!strictly_separated)
+            break;
+
+        const size_t rows = index_granularity.getMarkRows(cursor.mark);
+        if (rows > remaining)
+            break;
+
+        remaining -= rows;
+        skipped_rows += rows;
+        ++cursor.consumed;
+        advance(cursor);
+    }
+
+    if (skipped_rows == 0)
+        return 0;
+
+    std::vector<size_t> consumed_marks(ranges_in_data_parts.size(), 0);
+    for (const auto & cursor : cursors)
+        consumed_marks[cursor.part_index] = cursor.consumed;
+
+    /// Rebuild the ranges, dropping the first consumed_marks[part] granules of each part.
+    RangesInDataParts new_ranges_in_data_parts;
+    new_ranges_in_data_parts.reserve(ranges_in_data_parts.size());
+    for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
+    {
+        auto & part = ranges_in_data_parts[part_index];
+        size_t to_drop = consumed_marks[part_index];
+        if (to_drop == 0)
+        {
+            new_ranges_in_data_parts.push_back(std::move(part));
+            continue;
+        }
+
+        MarkRanges new_ranges;
+        for (auto range : part.ranges)
+        {
+            const size_t length = range.end - range.begin;
+            if (to_drop >= length)
+            {
+                to_drop -= length;
+                continue;
+            }
+            range.begin += to_drop;
+            to_drop = 0;
+            new_ranges.push_back(range);
+        }
+
+        if (!new_ranges.empty())
+        {
+            part.ranges = std::move(new_ranges);
+            new_ranges_in_data_parts.push_back(std::move(part));
+        }
+    }
+
+    ranges_in_data_parts = std::move(new_ranges_in_data_parts);
+
+    LOG_TRACE(logger, "skipLeadingGranulesForOffset: skipped {} rows out of offset {}", skipped_rows, offset);
+    return skipped_rows;
+}
+
 
 namespace ErrorCodes
 {
