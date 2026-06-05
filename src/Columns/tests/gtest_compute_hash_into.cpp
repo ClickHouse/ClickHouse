@@ -6,6 +6,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
@@ -803,6 +804,23 @@ TEST(ComputeHashInto, ReprIndependenceConstFixedString)
 
     EXPECT_EQ(composeKey(*prefix, *materialized), composeKey(*prefix, *as_const))
         << "Materialized FixedString and ColumnConst(FixedString) of the same value must compose identically";
+}
+
+TEST(ComputeHashInto, ReprIndependenceConstNothing)
+{
+    // A dummy column (ColumnNothing) has a single fixed per-row hash (0). It must still combine
+    // that finalized value on the non-initial path, so a materialized ColumnNothing and a
+    // ColumnConst(ColumnNothing) compose identically. Otherwise a key (prefix, Nothing) would
+    // route differently depending on whether the Nothing column is materialized or a const
+    // wrapper, splitting equal multi-column keys across shards / grace_hash partitions.
+    const size_t n = 333;
+    auto prefix = makeUInt32Column(randomUInts(n));
+
+    auto materialized = ColumnNothing::create(n);
+    auto as_const = makeConst(ColumnNothing::create(1), n);
+
+    EXPECT_EQ(composeKey(*prefix, *materialized), composeKey(*prefix, *as_const))
+        << "Materialized ColumnNothing and ColumnConst(ColumnNothing) must compose identically";
 }
 
 // ColumnSparse exercises the per-row gather combine path (the same combineWeakHash32(value, prior)

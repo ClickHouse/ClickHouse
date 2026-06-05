@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Common/HashTable/Hash.h>
 
 namespace DB
 {
@@ -65,9 +66,18 @@ public:
 
     void computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const override
     {
+        /// A dummy column has a single fixed per-row hash (0). On the non-initial path it must
+        /// still combine that finalized value into the prior accumulator (like an empty
+        /// ColumnTuple/ColumnFunction), otherwise a materialized dummy column and a ColumnConst
+        /// wrapper of it would compose differently and split equal multi-column keys. See
+        /// IColumn::computeHashInto.
+        const size_t n = row_end - row_begin;
         if (initial)
-            for (size_t i = 0, n = row_end - row_begin; i < n; ++i)
+            for (size_t i = 0; i < n; ++i)
                 hash_out[i] = 0;
+        else
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = combineWeakHash32(0, hash_out[i]);
     }
 
     void updateHashFast(SipHash & /*hash*/) const override
