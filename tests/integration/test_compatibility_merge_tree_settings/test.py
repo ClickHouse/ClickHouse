@@ -115,3 +115,89 @@ def test_config_overrides_compatibility(started_cluster):
             )
         )
     )
+
+
+# Rows whose optimized row order differs from their insertion order (same data as
+# 04146_merge_tree_optimize_row_order_if_no_order_by).
+ROW_ORDER_ROWS = (
+    "('Bob', 4, 100, '1'), ('Nikita', 2, 54, '1'), ('Nikita', 1, 228, '1'), "
+    "('Alex', 4, 83, '1'), ('Alex', 4, 134, '1'), ('Alex', 1, 65, '0'), "
+    "('Alex', 4, 134, '1'), ('Bob', 2, 53, '0'), ('Alex', 4, 83, '0'), "
+    "('Alex', 1, 63, '1'), ('Bob', 2, 53, '1'), ('Alex', 4, 192, '1'), "
+    "('Alex', 2, 128, '1'), ('Nikita', 2, 148, '0'), ('Bob', 4, 177, '0'), "
+    "('Nikita', 1, 173, '0'), ('Alex', 1, 239, '0'), ('Alex', 1, 63, '0'), "
+    "('Alex', 2, 224, '1'), ('Bob', 4, 177, '0'), ('Alex', 2, 128, '1'), "
+    "('Alex', 4, 134, '0'), ('Alex', 4, 83, '1'), ('Bob', 4, 100, '0'), "
+    "('Nikita', 2, 54, '1'), ('Alex', 1, 239, '1'), ('Bob', 2, 187, '1'), "
+    "('Alex', 1, 65, '1'), ('Bob', 2, 53, '1'), ('Alex', 2, 224, '0'), "
+    "('Alex', 4, 192, '0'), ('Nikita', 1, 173, '1'), ('Nikita', 2, 148, '1'), "
+    "('Bob', 2, 187, '1'), ('Nikita', 2, 208, '1'), ('Nikita', 2, 208, '0'), "
+    "('Nikita', 1, 228, '0'), ('Nikita', 2, 148, '0')"
+)
+
+
+def _on_disk_order(instance, table):
+    return instance.query(
+        f"SELECT groupArray((name, timestamp, money, flag)) "
+        f"FROM (SELECT * FROM {table}) SETTINGS max_threads = 1"
+    )
+
+
+def _create_row_order_table(instance, table, extra_settings=""):
+    settings = "add_minmax_index_for_numeric_columns = 0"
+    if extra_settings:
+        settings = f"{extra_settings}, {settings}"
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        CREATE TABLE {table} (
+            name String,
+            timestamp Int64,
+            money UInt8,
+            flag String
+        ) ENGINE = MergeTree
+        ORDER BY ()
+        SETTINGS {settings}
+        """
+    )
+    instance.query(
+        f"INSERT INTO {table} VALUES {ROW_ORDER_ROWS}",
+        settings={"max_insert_threads": 1},
+    )
+
+
+def test_optimize_row_order_if_no_order_by_compatibility(started_cluster):
+    # Under an old `compatibility` setting, `optimize_row_order_if_no_order_by` must
+    # default to its previous value (off), so the on-disk order of an `ORDER BY ()`
+    # table with no explicit setting matches the insertion order.
+    _create_row_order_table(node_with_compatibility, "t_compat_default")
+    _create_row_order_table(
+        node_with_compatibility, "t_compat_off", "optimize_row_order_if_no_order_by = 0"
+    )
+    _create_row_order_table(
+        node_with_compatibility, "t_compat_on", "optimize_row_order_if_no_order_by = 1"
+    )
+
+    # With the old compatibility the default behaves like the disabled setting ...
+    assert _on_disk_order(node_with_compatibility, "t_compat_default") == _on_disk_order(
+        node_with_compatibility, "t_compat_off"
+    )
+    # ... and differs from the explicitly enabled optimization.
+    assert _on_disk_order(node_with_compatibility, "t_compat_default") != _on_disk_order(
+        node_with_compatibility, "t_compat_on"
+    )
+
+    for table in ("t_compat_default", "t_compat_off", "t_compat_on"):
+        node_with_compatibility.query(f"DROP TABLE {table} SYNC")
+
+    # Without any compatibility, the default is on, so the same table optimizes the
+    # row order (matching the explicitly enabled setting, differing from disabled).
+    _create_row_order_table(node, "t_default")
+    _create_row_order_table(node, "t_off", "optimize_row_order_if_no_order_by = 0")
+    _create_row_order_table(node, "t_on", "optimize_row_order_if_no_order_by = 1")
+
+    assert _on_disk_order(node, "t_default") == _on_disk_order(node, "t_on")
+    assert _on_disk_order(node, "t_default") != _on_disk_order(node, "t_off")
+
+    for table in ("t_default", "t_off", "t_on"):
+        node.query(f"DROP TABLE {table} SYNC")
