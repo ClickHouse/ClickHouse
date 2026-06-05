@@ -90,7 +90,7 @@ public:
         std::unique_ptr<Settings> settings;
 
         AsynchronousInsertQueueDataKind data_kind;
-        UInt128 hash;
+        UInt128 hash{};
 
         InsertQuery(
             const ASTPtr & query_,
@@ -239,7 +239,7 @@ private:
         QueueIteratorByKey iterators;
 
         OptionalTimePoint last_insert_time;
-        std::chrono::milliseconds busy_timeout_ms;
+        std::chrono::milliseconds busy_timeout_ms{};
     };
 
     /// Times of the two most recent queue flushes.

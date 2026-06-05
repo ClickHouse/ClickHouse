@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnConst.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -712,7 +713,7 @@ getColumnsForNewDataPart(
     {
         settings = SerializationInfo::Settings
         {
-            (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+            static_cast<double>((*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
             false,
             serialization_infos.getSettings().version,
             serialization_infos.getSettings().string_serialization_version,
@@ -726,7 +727,7 @@ getColumnsForNewDataPart(
     {
         settings = SerializationInfo::Settings
         {
-            (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+            static_cast<double>((*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
             false,
             (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
@@ -1271,7 +1272,7 @@ static void processStatisticsChanges(
 }
 
 /// Initialize and write to disk new part fields like checksums, columns, etc.
-void finalizeMutatedPart(
+static void finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
     const IMergedBlockOutputStream::GatheredData & all_gathered_data,
@@ -1349,6 +1350,7 @@ void finalizeMutatedPart(
         written_files.push_back(std::move(out_comp));
     }
 
+    if (!new_data_part->storage.storesMetadataVersionInPartAttributes())
     {
         auto out_metadata = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, context->getWriteSettings());
         DB::writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
@@ -1395,7 +1397,7 @@ void finalizeMutatedPart(
         new_data_part->setIndex(*source_part->getIndex());
 
     /// Load rest projections which are hardlinked
-    bool noop;
+    bool noop = false;
     new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
 
     /// All information about sizes is stored in checksums.
@@ -1413,11 +1415,11 @@ void finalizeMutatedPart(
 
 struct MutationContext
 {
-    MergeTreeData * data;
-    MergeTreeDataMergerMutator * mutator;
-    PartitionActionBlocker * merges_blocker;
-    TableLockHolder * holder;
-    MergeListEntry * mutate_entry;
+    MergeTreeData * data{};
+    MergeTreeDataMergerMutator * mutator{};
+    PartitionActionBlocker * merges_blocker{};
+    TableLockHolder * holder{};
+    MergeListEntry * mutate_entry{};
 
     LoggerPtr log{getLogger("MutateTask")};
 
@@ -1428,7 +1430,7 @@ struct MutationContext
     DiskPtr disk;
 
     MutationCommandsConstPtr commands;
-    time_t time_of_mutation;
+    time_t time_of_mutation{};
     ContextPtr context;
     ReservationSharedPtr space_reservation;
 
@@ -1474,7 +1476,7 @@ struct MutationContext
     NameSet files_to_skip;
     NameToNameVector files_to_rename;
 
-    bool need_sync;
+    bool need_sync{};
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
 
     MergeTreeTransactionPtr txn;
@@ -1497,7 +1499,7 @@ struct MutationContext
     }
 
     /// Whether we need to count lightweight delete rows in this mutation
-    bool count_lightweight_deleted_rows;
+    bool count_lightweight_deleted_rows{};
     UInt64 execute_elapsed_ns = 0;
 };
 
@@ -1573,6 +1575,7 @@ private:
     void prepare();
     bool mutateOriginalPartAndPrepareProjections();
     void createBuildTextIndexesTask();
+    void calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset);
     void writeTempProjectionPart(size_t projection_idx, Chunk chunk);
     void finalizeTempProjectionsAndIndexes();
     bool iterateThroughAllMergeSubtasks();
@@ -1595,6 +1598,17 @@ private:
     using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
     ProjectionNameToItsBlocks projection_parts;
 
+    /// Pre-calculate squash: accumulates raw source blocks before calling calculate().
+    /// Shared across all projections since they all consume the same source blocks.
+    /// Only the columns required by at least one projection (plus `_row_exists` when
+    /// present) are squashed, so wide source columns no projection reads are not
+    /// retained in memory until the squash boundary.
+    std::optional<Squashing> pre_calculate_squash;
+    NameSet pre_calculate_required_columns;
+    UInt64 pre_calculate_starting_offset{0};
+
+    /// Post-calculate squash: accumulates calculated projection blocks before writing
+    /// temporary projection parts.
     std::vector<Squashing> projection_squashes;
     const ProjectionsDescription & projections;
 
@@ -1604,7 +1618,7 @@ private:
     /// Existing rows count calculated during part writing.
     /// It is initialized in prepare(), calculated in mutateOriginalPartAndPrepareProjections()
     /// and set to new_data_part in finalize()
-    size_t existing_rows_count;
+    size_t existing_rows_count{};
 };
 
 
@@ -1612,10 +1626,36 @@ void PartMergerWriter::prepare()
 {
     const auto & settings = ctx->context->getSettingsRef();
 
-    for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
+    /// Pre-calculate squash: accumulate source blocks to produce larger blocks for
+    /// projection calculation. Shared across all projections since they all consume
+    /// the same source blocks. This drastically reduces the number of temporary
+    /// projection parts (e.g., from ~3500 to ~30 for a 28M-row part), cutting the
+    /// tree merge overhead from 4 levels / 390 merge rounds to 1 level / 3 rounds.
+    if (!ctx->projections_to_build.empty())
     {
-        // We split the materialization into multiple stages similar to the process of INSERT SELECT query.
-        projection_squashes.emplace_back(std::make_shared<const Block>(ctx->updated_header), settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
+        /// The header is set lazily from the slim block computed on the first call to
+        /// `calculateProjection`, so we do not need to pass `ctx->updated_header` here.
+        pre_calculate_squash.emplace(
+            std::make_shared<const Block>(),
+            settings[Setting::min_insert_block_size_rows],
+            settings[Setting::min_insert_block_size_bytes]);
+
+        /// Collect the union of columns required by all projections. Only these columns
+        /// (plus `_row_exists` when present in the source block) are pushed into the
+        /// squash buffer.
+        for (const auto * projection : ctx->projections_to_build)
+            for (const auto & name : projection->required_columns)
+                pre_calculate_required_columns.insert(name);
+    }
+
+    for (size_t i = 0; i < ctx->projections_to_build.size(); ++i)
+    {
+        /// Post-calculate squash: accumulates calculated projection blocks before
+        /// writing temporary projection parts.
+        projection_squashes.emplace_back(
+            std::make_shared<const Block>(ctx->updated_header),
+            settings[Setting::min_insert_block_size_rows],
+            settings[Setting::min_insert_block_size_bytes]);
     }
 
     {
@@ -1662,25 +1702,42 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             existing_rows_count += MutationHelpers::getExistingRowsCount(cur_block);
 
         UInt64 starting_offset = (*ctx->mutate_entry)->rows_written;
-        for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
+        if (!ctx->projections_to_build.empty())
         {
-            Chunk squashed_chunk;
+            /// Build a slim block containing only the columns required by at least one
+            /// projection (plus `_row_exists` when present). This avoids retaining
+            /// unrelated wide source columns in the pre-calculate squash buffer.
+            Block slim_block;
+            for (const auto & name : pre_calculate_required_columns)
+                if (cur_block.has(name))
+                    slim_block.insert(cur_block.getByName(name));
+            if (cur_block.has(RowExistsColumn::name))
+                slim_block.insert(cur_block.getByName(RowExistsColumn::name));
 
+            auto & pre_squash = *pre_calculate_squash;
+            pre_squash.setHeader(slim_block.cloneEmpty());
+
+            /// Record the starting offset when the accumulator is empty (new batch starts).
+            if (pre_squash.empty())
+                pre_calculate_starting_offset = starting_offset;
+
+            pre_squash.add({slim_block.getColumns(), slim_block.rows()});
+            Chunk squashed = Squashing::squash(
+                pre_squash.generate(),
+                pre_squash.getHeader());
+            if (squashed)
             {
-                ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-                Block block_to_squash = ctx->projections_to_build[i]->calculate(cur_block, starting_offset, ctx->context);
+                Block big_block = pre_squash.getHeader()->cloneWithColumns(squashed.detachColumns());
+                UInt64 batch_offset = pre_calculate_starting_offset;
 
-                /// Everything is deleted by lighweight delete
-                if (block_to_squash.rows() == 0)
-                    continue;
+                /// If the accumulator still has data (current block was excluded from the
+                /// flush and started a new batch), record its offset now.
+                if (!pre_squash.empty())
+                    pre_calculate_starting_offset = starting_offset;
 
-                projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
-                projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()});
-                squashed_chunk = Squashing::squash(projection_squashes[i].generate(), projection_squashes[i].getHeader());
+                for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
+                    calculateProjection(i, big_block, batch_offset);
             }
-
-            if (squashed_chunk)
-                writeTempProjectionPart(i, std::move(squashed_chunk));
         }
 
         if (build_text_index_transform)
@@ -1717,6 +1774,28 @@ void PartMergerWriter::createBuildTextIndexesTask()
         ctx->mrk_extension);
 }
 
+void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset)
+{
+    Chunk squashed_chunk;
+    {
+        ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
+        Block block_to_squash = ctx->projections_to_build[projection_idx]->calculate(block, starting_offset, ctx->context);
+
+        /// Everything is deleted by lightweight delete
+        if (block_to_squash.rows() == 0)
+            return;
+
+        projection_squashes[projection_idx].setHeader(block_to_squash.cloneEmpty());
+        projection_squashes[projection_idx].add({block_to_squash.getColumns(), block_to_squash.rows()});
+        squashed_chunk = Squashing::squash(
+            projection_squashes[projection_idx].generate(),
+            projection_squashes[projection_idx].getHeader());
+    }
+
+    if (squashed_chunk)
+        writeTempProjectionPart(projection_idx, std::move(squashed_chunk));
+}
+
 void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chunk)
 {
     const auto & projection = *ctx->projections_to_build[projection_idx];
@@ -1740,7 +1819,21 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
 
 void PartMergerWriter::finalizeTempProjectionsAndIndexes()
 {
-    // Write the last block
+    /// First, flush the shared pre-calculate squash buffer.
+    /// This sends the last accumulated source blocks through calculate().
+    if (pre_calculate_squash)
+    {
+        auto & pre_squash = *pre_calculate_squash;
+        Chunk remaining = Squashing::squash(pre_squash.flush(), pre_squash.getHeader());
+        if (remaining)
+        {
+            Block big_block = pre_squash.getHeader()->cloneWithColumns(remaining.detachColumns());
+            for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
+                calculateProjection(i, big_block, pre_calculate_starting_offset);
+        }
+    }
+
+    /// Then, flush any remaining post-calculate squash buffers.
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
         auto squashed_chunk = Squashing::squash(
@@ -2163,7 +2256,7 @@ private:
 
     void finalize()
     {
-        bool noop;
+        bool noop = false;
         ctx->new_data_part->setMinMaxIndex(std::move(ctx->minmax_idx));
         ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
         ctx->mutating_executor.reset();
@@ -2785,7 +2878,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
         if (need_recalculate)
         {
-            bool inserted;
+            bool inserted = false;
             auto index_ptr = index_factory.get(index);
 
             if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))

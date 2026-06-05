@@ -157,6 +157,9 @@ namespace ProfileEvents
     extern const Event ReplicaPartialShutdown;
     extern const Event ReplicatedCoveredPartsInZooKeeperOnStart;
     extern const Event MergesRejectedByMemoryLimit;
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection;
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync;
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeMutations;
 }
 
 namespace CurrentMetrics
@@ -641,7 +644,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             /// Allow structure mismatch for secondary queries from Replicated database.
             /// It may happen if the table was altered just after creation.
             /// Metadata will be updated in cloneMetadataIfNeeded(...), metadata_version will be 0 for a while.
-            int32_t metadata_version;
+            int32_t metadata_version = 0;
             bool same_structure = checkTableStructure(zookeeper_path, metadata_snapshot, &metadata_version, need_check_structure, getCreateQueryZooKeeperRetriesInfo());
 
             if (same_structure)
@@ -754,7 +757,10 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// Mutation maybe killed or whole replica was deleted.
             /// Wait event will unblock at this moment.
             Coordination::Stat exists_stat;
-            if (!getZooKeeper()->exists(fs::path(zookeeper_path) / "mutations" / mutation_id, &exists_stat, wait_event))
+            if (!getZooKeeper()->existsWatch(
+                    fs::path(zookeeper_path) / "mutations" / mutation_id,
+                    &exists_stat,
+                    Coordination::WatchCallbackPtrOrEventPtr{wait_event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeMutations}))
             {
                 throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
             }
@@ -777,7 +783,11 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
             std::string mutation_pointer_value;
             /// Replica could be removed
-            if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, nullptr, wait_event))
+            if (!zookeeper->tryGetWatch(
+                    mutation_pointer,
+                    mutation_pointer_value,
+                    nullptr,
+                    Coordination::WatchCallbackPtrOrEventPtr{wait_event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeMutations}))
             {
                 LOG_WARNING(log, "Replica {} was removed during mutation. "
                     "Mutation will be done asynchronously when replica is restored.", replica);
@@ -1257,7 +1267,7 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
         }
     }
 
-    Coordination::Error code;
+    Coordination::Error code{};
 
     do
     {
@@ -2086,7 +2096,7 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
         total_rows_on_filesystem += part.part->rows_count;
 
     const auto storage_settings_ptr = getSettings();
-    bool insane = static_cast<double>(uncovered_unexpected_parts_rows) > static_cast<double>(total_rows_on_filesystem) * (*storage_settings_ptr)[MergeTreeSetting::replicated_max_ratio_of_wrong_parts];
+    bool insane = static_cast<double>(uncovered_unexpected_parts_rows) > static_cast<double>(total_rows_on_filesystem) * static_cast<double>((*storage_settings_ptr)[MergeTreeSetting::replicated_max_ratio_of_wrong_parts]);
 
     constexpr auto sanity_report_fmt = "The local set of parts of table {} doesn't look like the set of parts in ZooKeeper: "
         "{} rows of {} total rows in filesystem are suspicious. "
@@ -2324,7 +2334,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
     {
         /// Do not commit if the part is obsolete, but check it's checksums just in case. It may throw if checksums mismatch
         Coordination::Requests ops;
-        size_t num_check_ops;
+        size_t num_check_ops = 0;
         getOpsToCheckPartChecksumsAndCommit(zookeeper, part, hardlinked_files, replace_zero_copy_lock, ops, num_check_ops);
         return {};
     }
@@ -2339,15 +2349,15 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
             throw Exception(ErrorCodes::ABORTED, "Cannot commit part because shutdown called");
 
         Coordination::Requests ops;
-        size_t num_check_ops;
+        size_t num_check_ops = 0;
         getOpsToCheckPartChecksumsAndCommit(zookeeper, part, hardlinked_files, replace_zero_copy_lock, ops, num_check_ops);
 
         Coordination::Responses responses;
-        Coordination::Error e;
+        Coordination::Error e{};
         {
 
-            Coordination::SimpleFaultInjection fault((*getSettings())[MergeTreeSetting::fault_probability_before_part_commit],
-                                                     (*getSettings())[MergeTreeSetting::fault_probability_after_part_commit], "part commit");
+            Coordination::SimpleFaultInjection fault(static_cast<double>((*getSettings())[MergeTreeSetting::fault_probability_before_part_commit]),
+                                                     static_cast<double>((*getSettings())[MergeTreeSetting::fault_probability_after_part_commit]), "part commit");
             ThreadFuzzer::maybeInjectSleep();
             e = zookeeper->tryMulti(ops, responses, /* check_session_valid */ true);
         }
@@ -6936,7 +6946,7 @@ void StorageReplicatedMergeTree::alter(
             mutation_entry.source_replica = replica_name;
             mutation_entry.commands = std::move(maybe_mutation_commands);
 
-            int32_t mutations_version;
+            int32_t mutations_version = 0;
             if (maybe_mutations_version_after_logs_pull.has_value())
             {
                 mutations_version = *maybe_mutations_version_after_logs_pull;
@@ -7076,8 +7086,8 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(
       * NOTE: If you need to similarly support a `DROP PART` request, you will have to think of some new mechanism for it,
       *     to guarantee this invariant.
       */
-    Int64 right;
-    Int64 mutation_version;
+    Int64 right = 0;
+    Int64 mutation_version = 0;
 
     {
         delimiting_block_lock = allocateBlockNumber(
@@ -7618,7 +7628,10 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
         bool pulled_to_queue = false;
         do
         {
-            String log_pointer = getZooKeeper()->get(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer", nullptr, watch_event);
+            String log_pointer = getZooKeeper()->getWatch(
+                fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer",
+                nullptr,
+                Coordination::WatchCallbackPtrOrEventPtr{watch_event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync});
             if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
             {
                 pulled_to_queue = true;
@@ -7686,7 +7699,10 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
             {
                 Coordination::EventPtr event = std::make_shared<Poco::Event>();
 
-                log_pointer = getZooKeeper()->get(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer", nullptr, event);
+                log_pointer = getZooKeeper()->getWatch(
+                    fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer",
+                    nullptr,
+                    Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync});
                 if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
                 {
                     pulled_to_queue = true;
@@ -7754,7 +7770,8 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
     /// Third - wait until the entry disappears from the replica queue or replica become inactive.
     String path_to_wait_on = fs::path(table_zookeeper_path) / "replicas" / replica / "queue" / queue_entry_to_wait_for;
 
-    return getZooKeeper()->waitForDisappear(path_to_wait_on, stop_waiting);
+    return getZooKeeper()->waitForDisappear(
+        path_to_wait_on, stop_waiting, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync);
 }
 
 
@@ -10647,7 +10664,7 @@ std::pair<bool, NameSet> getParentLockedBlobs(const ZooKeeperWithFaultInjectionP
             LOG_TRACE(log, "Found mutation parent {} for part {}", part_candidate_info_str, part_info_str);
             /// Get hardlinked files
             String files_not_to_remove_str;
-            Coordination::Error code;
+            Coordination::Error code{};
             zookeeper_ptr->tryGet(fs::path(zero_copy_part_path_prefix) / part_candidate_info_str, files_not_to_remove_str, nullptr, nullptr, &code);
             if (code != Coordination::Error::ZOK)
             {
@@ -10986,6 +11003,7 @@ void StorageReplicatedMergeTree::watchZeroCopyLock(const String & part_name, con
                 *flag = false;
             };
         });
+        watch.setTriggeredEvent(ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection);
         bool exists = zookeeper->tryGetWatch(lock_path, replica, nullptr, watch);
 
         if (exists)
@@ -11270,7 +11288,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 
             /// Two replicas may try to commit an empty part simultaneously, so some lost part may be counted twice in lost_part_count.
             /// Ensure that we are the first replica who commits that part.
-            size_t num_check_ops_unused;
+            size_t num_check_ops_unused = 0;
             bool part_found = getOpsToCheckPartChecksumsAndCommit(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper),
                 new_data_part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true, ops, num_check_ops_unused);
             if (part_found)
