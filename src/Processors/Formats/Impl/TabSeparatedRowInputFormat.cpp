@@ -1,5 +1,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
+#include <IO/UTFConvertingReadBuffer.h>
 
 #include <Columns/IColumn.h>
 #include <Common/assert_cast.h>
@@ -72,7 +73,16 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
 
 void TabSeparatedRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf = std::make_unique<PeekableReadBuffer>(in_);
+    if (need_utf_bom_detection)
+    {
+        auto utf_buf = std::make_unique<UTFConvertingReadBuffer>(in_);
+        buf = std::make_unique<PeekableReadBuffer>(*utf_buf);
+        addBuffer(std::move(utf_buf));
+    }
+    else
+    {
+        buf = std::make_unique<PeekableReadBuffer>(in_);
+    }
     RowInputFormatWithNamesAndTypes::setReadBuffer(*buf);
 }
 

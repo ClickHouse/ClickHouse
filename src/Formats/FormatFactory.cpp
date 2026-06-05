@@ -595,6 +595,9 @@ InputFormatPtr FormatFactory::getInputImpl(
         format = creators.input_creator(buf, sample, row_input_format_params, format_settings);
     }
 
+    if (shouldDetectUTFBOM(name))
+        format->setNeedUTFBOMDetection(true);
+
     if (owned_buf)
         format->addBuffer(std::move(owned_buf));
     if (!settings[Setting::input_format_record_errors_file_path].toString().empty())

@@ -358,7 +358,7 @@ bool PeekableReadBuffer::poll(size_t timeout_microseconds)
         return true;
     }
 
-    if (!currentlyReadFromOwnMemory())
+    if (!currentlyReadFromOwnMemory() && !checkpoint)
     {
         sub_buf->position() = pos;
     }
