@@ -11,6 +11,7 @@
 
     <distributed_query>
         <streaming_exchange_port>9223</streaming_exchange_port>
+        <streaming_exchange_listen_host>0.0.0.0</streaming_exchange_listen_host>
         <!-- Persisted exchange needs storage that all workers can read; use the
              MinIO instance provided by `with_minio=True`. The Streaming kind
              does not touch this section. -->
