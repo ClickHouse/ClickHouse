@@ -260,7 +260,7 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<Re
 
 static UInt64 getTotalSpaceByName(const String & name, const String & disk_path, UInt64 keep_free_space_bytes)
 {
-    struct statvfs fs;
+    struct statvfs fs{};
     if (name == "default") /// for default disk we get space from path/data/
         fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
     else
@@ -284,7 +284,7 @@ std::optional<UInt64> DiskLocal::getAvailableSpace() const
         return 0;
     /// we use f_bavail, because part of b_free space is
     /// available for superuser only and for system purposes
-    struct statvfs fs;
+    struct statvfs fs{};
     if (name == "default") /// for default disk we get space from path/data/
         fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
     else
@@ -600,7 +600,7 @@ SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
 void DiskLocal::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & disk_map)
 {
     String new_disk_path;
-    UInt64 new_keep_free_space_bytes;
+    UInt64 new_keep_free_space_bytes = 0;
 
     loadDiskLocalConfig(name, config, config_prefix, context, new_disk_path, new_keep_free_space_bytes);
 
@@ -674,7 +674,7 @@ try
     /// Proper disk read checking requires direct io
     read_settings.local_fs_settings.direct_io_threshold = 1;
     auto buf = readFile(disk_checker_path, read_settings, {});
-    UInt32 magic_number;
+    UInt32 magic_number = 0;
     readIntBinary(magic_number, *buf);
     if (buf->eof())
         return magic_number;
@@ -851,7 +851,7 @@ void DiskLocal::startupImpl()
 
 struct stat DiskLocal::stat(const String & path) const
 {
-    struct stat st;
+    struct stat st{};
     auto full_path = fs::path(disk_path) / path;
     if (::stat(full_path.string().c_str(), &st) == 0)
         return st;
@@ -884,7 +884,7 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
         bool, bool) -> DiskPtr
     {
         String path;
-        UInt64 keep_free_space_bytes;
+        UInt64 keep_free_space_bytes = 0;
         loadDiskLocalConfig(name, config, config_prefix, context, path, keep_free_space_bytes);
 
         for (const auto & [disk_name, disk_ptr] : map)

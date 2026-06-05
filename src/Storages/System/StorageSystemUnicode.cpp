@@ -361,7 +361,7 @@ void StorageSystemUnicode::fillData(
     /// Common buffers/err_code used for ICU API calls
     UChar buffer[32];
     char char_name_buffer[100];
-    UErrorCode err_code;
+    UErrorCode err_code = {};
 
     auto prop_names = getPropNames();
 

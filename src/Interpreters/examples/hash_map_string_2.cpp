@@ -607,7 +607,7 @@ void NO_INLINE bench(const std::vector<std::string_view> & data, const char * na
 
     Map map;
     typename Map::LookupResult it;
-    bool inserted;
+    bool inserted = {};
 
     for (const auto & value : data)
     {

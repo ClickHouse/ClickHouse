@@ -38,7 +38,7 @@ Block InterpreterExistsQuery::getSampleBlock()
 
 QueryPipeline InterpreterExistsQuery::executeImpl()
 {
-    ASTQueryWithTableAndOutput * exists_query;
+    ASTQueryWithTableAndOutput * exists_query = nullptr;
     bool result = false;
 
     if ((exists_query = query_ptr->as<ASTExistsTableQuery>()))

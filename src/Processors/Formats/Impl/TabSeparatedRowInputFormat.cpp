@@ -325,7 +325,7 @@ void TabSeparatedFormatReader::skipRow()
     ReadBuffer & istr = *buf;
     while (!istr.eof())
     {
-        char * pos;
+        char * pos = nullptr;
         if (is_raw)
             pos = find_first_symbols<'\r', '\n'>(istr.position(), istr.buffer().end());
         else

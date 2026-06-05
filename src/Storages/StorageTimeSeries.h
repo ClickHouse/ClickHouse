@@ -108,7 +108,7 @@ private:
     /// `is_inner_table` is true when the table was auto-created by TimeSeries and is owned by it.
     struct Target
     {
-        ViewTarget::Kind kind;
+        ViewTarget::Kind kind{};
         StorageID table_id = StorageID::createEmpty();
         bool is_inner_table = false;
     };

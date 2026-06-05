@@ -1194,8 +1194,8 @@ void NO_INLINE Aggregator::executeImplBatch(
     };
     std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(allocator.allocate(places_size), places_deleter);
 
-    size_t key_start;
-    size_t key_end;
+    size_t key_start = 0;
+    size_t key_end = 0;
     /// If all keys are const, key columns contain only 1 row.
     if  (all_keys_are_const)
     {
@@ -1222,7 +1222,9 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if (i == key_start + PrefetchingHelper::iterationsToMeasure())
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
 
-                if (i + prefetch_look_ahead < row_end)
+                /// Bound by `key_end` (not `row_end`): when all keys are const the key
+                /// columns hold 1 row, so the look-ahead must not cross that row.
+                if (i + prefetch_look_ahead < key_end)
                 {
                     auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
                     method.data.prefetch(std::move(key_holder));

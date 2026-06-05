@@ -129,8 +129,8 @@ void buildScatterSelector(
     for (size_t i = 0; i < num_rows; ++i)
     {
         Data::key_type key = ColumnsHashing::hash128(i, columns.size(), columns);
-        typename Data::LookupResult it;
-        bool inserted;
+        typename Data::LookupResult it = nullptr;
+        bool inserted = false;
         partitions_map.emplace(key, it, inserted);
 
         if (inserted)

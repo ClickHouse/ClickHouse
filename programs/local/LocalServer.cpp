@@ -677,7 +677,7 @@ void LocalServer::connect()
     );
 
     /// This is needed for table function input(...).
-    ReadBuffer * in;
+    ReadBuffer * in = nullptr;
     auto table_file = getClientConfiguration().getString("table-file", "-");
     if (table_file == "-" || table_file == "stdin")
     {
@@ -705,7 +705,7 @@ try
 
     /// Try to increase limit on number of open files.
     {
-        rlimit rlim;
+        rlimit rlim{};
         if (getrlimit(RLIMIT_NOFILE, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 
@@ -839,11 +839,13 @@ void LocalServer::processConfig()
     delayed_interactive = getClientConfiguration().has("interactive") && (!queries.empty() || !queries_files.empty());
     if (!is_interactive || delayed_interactive)
     {
-        echo_queries = getClientConfiguration().hasOption("echo") || getClientConfiguration().hasOption("verbose");
         ignore_error = getClientConfiguration().getBool("ignore-error", false);
 
         query_id = getClientConfiguration().getString("query_id", "");
     }
+
+    /// `clickhouse-local` historically makes `--verbose` imply query echoing.
+    setupEchoAndHighlightSettings(/* verbose_implies_echo */ true);
 
     print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
     const std::string clickhouse_dialect{"clickhouse"};

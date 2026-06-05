@@ -765,7 +765,13 @@ static ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_i
 
 static bool isTrivialCast(const ActionsDAG::Node & node)
 {
-    if (node.function_base->getName() != "CAST" || node.children.size() != 2 || node.children[1]->type != ActionsDAG::ActionType::COLUMN)
+    /// Recognize both the user-facing `CAST` and the analyzer-internal `_CAST` here; they
+    /// produce the same node shape and our caller treats them identically. Without `_CAST`
+    /// in this check, scalar subquery results wrapped by the analyzer (e.g. `_CAST(Const,
+    /// 'Nullable(Type)')` with matching source/target types) survive into `KeyCondition`
+    /// as un-stripped FUNCTION nodes and block partition pruning (issue #105291).
+    const auto & name = node.function_base->getName();
+    if ((name != "CAST" && name != "_CAST") || node.children.size() != 2 || node.children[1]->type != ActionsDAG::ActionType::COLUMN)
         return false;
 
     const auto * column_const = typeid_cast<const ColumnConst *>(node.children[1]->column.get());
@@ -893,10 +899,22 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
         cloned_args.push_back(&cloneDAGWithInversionPushDown(*trailing_const, inverted_dag, inputs_mapping, context, false));
     const auto & const_cloned = cloneDAGWithInversionPushDown(*const_node, inverted_dag, inputs_mapping, context, false);
 
-    auto op_func = FunctionFactory::instance().get(String{canonical_op}, context);
+    const String canonical_op_str{canonical_op};
+    auto op_func = FunctionFactory::instance().get(canonical_op_str, context);
     auto make_cmp = [&](const ActionsDAG::Node * lhs) -> const ActionsDAG::Node &
     {
-        return inverted_dag.addFunction(op_func, {lhs, &const_cloned}, "");
+        const auto & cmp_node = inverted_dag.addFunction(op_func, {lhs, &const_cloned}, "");
+        /// If `lhs` is itself a `coalesce` or `ifNull` (nested coalesce), expand it recursively here.
+        /// Otherwise the inner `coalesce` would remain unexpanded after the first
+        /// `cloneDAGWithInversionPushDown` pass and a subsequent pass (e.g. when each skip index builds its
+        /// own `KeyCondition` via `createIndexCondition`) would expand it then, producing a `KeyCondition`
+        /// whose RPN no longer matches the template's RPN. The disjunction-tracking machinery in
+        /// `MergeTreeDataSelectExecutor::filterMarksUsingIndex` assumes both RPNs share the same length and
+        /// position layout; the mismatch causes an out-of-bounds write into `partial_disjunction_result`
+        /// when the index RPN exceeds `MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT`.
+        if (const auto * rewritten = tryRewriteCoalesceComparison(cmp_node, canonical_op_str, inverted_dag, inputs_mapping, context))
+            return *rewritten;
+        return cmp_node;
     };
 
     const size_t total = cloned_args.size();
@@ -1489,7 +1507,7 @@ static bool applyFunctionChainToColumn(
         auto arg_type_inner = removeLowCardinality(removeNullable(argument_type));
         if (isDateTime64(arg_type_inner) || isTime64(arg_type_inner))
         {
-            Int64 value;
+            Int64 value = 0;
             if (isDateTime64(arg_type_inner))
                 value = (*result_column)[0].safeGet<DateTime64>().getValue();
             else
@@ -3001,7 +3019,7 @@ struct KeyCondition::RPNElement::Polygon
 
     /// Bounding box of the ring, precomputed once when the RPN element is built
     /// Useful for quick rejection to avoid costly `intersects` checks
-    BoxT bbox;
+    BoxT bbox{};
 };
 
 KeyCondition::RPNElement::RPNElement()
@@ -3388,7 +3406,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             }
 
             /// Looking for func(key, const) or func(const, key).
-            size_t const_arg_pos;
+            size_t const_arg_pos = 0;
             if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
                 const_arg_pos = 1;
             else if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
