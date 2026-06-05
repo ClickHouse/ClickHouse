@@ -45,13 +45,12 @@ DISTRIBUTED_SETTINGS = (
 
 
 def test_worker_error_not_masked(started_cluster):
-    """When a worker task fails due to a setting not being propagated, the
-    initiator should report the worker's error, not QUERY_WAS_CANCELLED.
+    """A worker task error must surface to the initiator with the real error, not QUERY_WAS_CANCELLED.
 
-    sleepEachRow(0.01) on 10000 rows = 100s/block on the worker, exceeding
-    the default function_sleep_max_microseconds_per_block (3s). The initiator
-    sets a higher limit, but it's NOT propagated to workers — so the worker
-    fails with error 160 (FUNCTION_THROW). The initiator should propagate this.
+    The initiator sets max_rows_to_read = 5, which is propagated to the workers; each worker reads
+    more than 5 rows and fails with TOO_MANY_ROWS, and the initiator must report that. This also
+    covers settings propagation: without it the workers would not enforce the limit and the query
+    would silently succeed.
     """
     for node in [node1, node2]:
         node.query(
@@ -63,11 +62,10 @@ def test_worker_error_not_masked(started_cluster):
     with pytest.raises(QueryRuntimeException) as exc_info:
         node1.query(
             f"""
-            SELECT count()
-            FROM test_err_mask AS a JOIN test_err_mask AS b ON a.id = b.id
-            WHERE sleepEachRow(0.01) = 0
+            SELECT sum(id)
+            FROM test_err_mask
             SETTINGS {DISTRIBUTED_SETTINGS},
-                     function_sleep_max_microseconds_per_block = 1000000000
+                     max_rows_to_read = 5
             """,
             timeout=30,
         )
@@ -75,14 +73,15 @@ def test_worker_error_not_masked(started_cluster):
     error_msg = str(exc_info.value)
     logging.info(f"Query failed with: {error_msg}")
 
-    # The error should contain the actual worker failure (sleep time exceeded),
-    # not QUERY_WAS_CANCELLED.
+    # The error should be the worker's limit failure, not QUERY_WAS_CANCELLED.
     assert "QUERY_WAS_CANCELLED" not in error_msg, (
         f"Initiator masked the worker error with QUERY_WAS_CANCELLED: {error_msg}"
     )
-    assert "sleep" in error_msg.lower() or "maximum" in error_msg.lower(), (
-        f"Expected sleep-related error from worker, got: {error_msg}"
-    )
+    assert (
+        "TOO_MANY_ROWS" in error_msg
+        or "max_rows_to_read" in error_msg
+        or "Limit for rows" in error_msg
+    ), f"Expected the propagated max_rows_to_read limit to be enforced on the worker, got: {error_msg}"
 
     for node in [node1, node2]:
         node.query("DROP TABLE IF EXISTS test_err_mask")

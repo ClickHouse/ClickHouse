@@ -50,6 +50,11 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         query_context->setClientInfo(client_info);
     }
 
+    /// Apply the initiator's settings so the worker honors query limits and execution-affecting
+    /// settings. Force make_distributed_plan off: the worker runs an already-split local fragment.
+    query_context->applySettingsChanges(task_description.settings_changes);
+    query_context->setSetting("make_distributed_plan", false);
+
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(unique_temp_file_path, query_context);
 
     std::shared_ptr<std::promise<String>> task_promise = std::make_shared<std::promise<String>>();

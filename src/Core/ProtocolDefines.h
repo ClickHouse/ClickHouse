@@ -55,7 +55,8 @@ static constexpr auto DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS = 54475;
 static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 1;
-static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 0;
+/// Version 1 added the initiator's settings changes to the task.
+static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 1;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;
 

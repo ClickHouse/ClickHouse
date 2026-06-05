@@ -7,6 +7,7 @@
 #include <IO/Progress.h>
 
 #include <Common/DequeWithMemoryTracking.h>
+#include <Common/SettingsChanges.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
@@ -91,6 +92,9 @@ struct DistributedQueryTaskDescription
     String serialized_query_plan;
     ExchangeDescriptions exchanges;
     ExchangeStreamSources exchange_stream_sources;
+    /// The initiator's changed settings, applied on the worker so query limits and execution-affecting
+    /// settings (e.g. max_memory_usage) are honored remotely.
+    SettingsChanges settings_changes;
 };
 
 /// Executes a task locally

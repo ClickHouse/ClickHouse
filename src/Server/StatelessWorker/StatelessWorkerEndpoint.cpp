@@ -87,6 +87,13 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
         writeStringBinary(stream, out);
         writeStringBinary(host, out);
     }
+
+    writeVarUInt(task_description.settings_changes.size(), out);
+    for (const auto & change : task_description.settings_changes)
+    {
+        writeStringBinary(change.name, out);
+        writeFieldBinary(change.value, out);
+    }
 }
 
 namespace
@@ -162,6 +169,20 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
         String host;
         readStringBinary(host, in);
         task_description.exchange_stream_sources.stream_hosts[stream] = host;
+    }
+
+    if (version >= 1)
+    {
+        size_t settings_changes_size = 0;
+        readVarUInt(settings_changes_size, in);
+        task_description.settings_changes.reserve(settings_changes_size);
+        for (size_t i = 0; i < settings_changes_size; ++i)
+        {
+            String name;
+            readStringBinary(name, in);
+            Field value = readFieldBinary(in);
+            task_description.settings_changes.emplace_back(name, value);
+        }
     }
 }
 

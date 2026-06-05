@@ -1247,6 +1247,7 @@ protected:
         task_description.initial_query_id = context->getCurrentQueryId();
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
+        task_description.settings_changes = context->getSettingsRef().changes();
 
         const String unique_temp_file_path = toString(unique_query_id);
 
