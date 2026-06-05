@@ -255,11 +255,6 @@ StoragePtr TableFunctionURL::getStorage(
         && !is_secondary_query
         && !is_insert_query;
 
-    const auto & client_info = context->getClientInfo();
-    bool can_use_distributed_iterator =
-        client_info.collaborate_with_initiator &&
-        context->hasClusterFunctionReadTaskCallback();
-
     if (can_use_parallel_replicas)
     {
         return std::make_shared<StorageURLCluster>(
@@ -274,6 +269,8 @@ StoragePtr TableFunctionURL::getStorage(
             configuration);
     }
 
+    /// Note: distributed_processing is always false for the plain url() table function.
+    /// Cluster table functions (urlCluster) handle distributed processing in their own getStorage() method.
     return std::make_shared<StorageURL>(
         source,
         StorageID(getDatabaseName(), table_name),
@@ -287,7 +284,7 @@ StoragePtr TableFunctionURL::getStorage(
         configuration.headers,
         configuration.http_method,
         nullptr,
-        /*distributed_processing=*/can_use_distributed_iterator);
+        /*distributed_processing=*/false);
 }
 
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool is_insert_query) const
