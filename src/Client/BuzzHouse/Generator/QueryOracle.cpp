@@ -691,10 +691,16 @@ void QueryOracle::dumpTableContent(
     jtf->set_final(t.supportsFinal());
     switch (strategy)
     {
-        case DumpOracleStrategy::DUMP_TABLE:
+        case DumpOracleStrategy::REINSERT_TABLE:
         case DumpOracleStrategy::OPTIMIZE:
         case DumpOracleStrategy::REATTACH:
-        case DumpOracleStrategy::BACKUP_RESTORE: {
+        case DumpOracleStrategy::BACKUP_RESTORE:
+        case DumpOracleStrategy::RENAME_BACK:
+        case DumpOracleStrategy::FREEZE_UNFREEZE:
+        case DumpOracleStrategy::MOVE_PARTITION:
+        case DumpOracleStrategy::REPLACE_PARTITION:
+        case DumpOracleStrategy::ALTER_COLUMN:
+        case DumpOracleStrategy::ALTER_TABLE: {
             /// Dump entire table and compare contents
             bool first = true;
             uint32_t col_idx = 0;
@@ -733,6 +739,17 @@ void QueryOracle::dumpTableContent(
             eca->mutable_col_alias()->set_column("s0");
         }
         break;
+        case DumpOracleStrategy::TRUNCATE_COUNT: {
+            /// After truncation or deletion, count should be 0
+            ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+            CastExpr * casexpr = eca->mutable_expr()->mutable_comp_expr()->mutable_cast_expr();
+
+            casexpr->set_simple(true);
+            casexpr->mutable_expr()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(0);
+            casexpr->mutable_type_name()->mutable_type()->mutable_non_nullable()->set_integers(Integers::UInt64);
+            eca->mutable_col_alias()->set_column("s0");
+        }
+        break;
         case DumpOracleStrategy::INSERT_COUNT: {
             /// On the first step get the current count plus the rows to be inserted
             ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
@@ -758,14 +775,21 @@ void QueryOracle::dumpTableContent(
     /// Prepare second query
     switch (strategy)
     {
-        case DumpOracleStrategy::DUMP_TABLE:
+        case DumpOracleStrategy::REINSERT_TABLE:
         case DumpOracleStrategy::OPTIMIZE:
         case DumpOracleStrategy::REATTACH:
         case DumpOracleStrategy::BACKUP_RESTORE:
-        case DumpOracleStrategy::ALTER_UPDATE:
+        case DumpOracleStrategy::RENAME_BACK:
+        case DumpOracleStrategy::FREEZE_UNFREEZE:
+        case DumpOracleStrategy::MOVE_PARTITION:
+        case DumpOracleStrategy::REPLACE_PARTITION:
+        case DumpOracleStrategy::ALTER_COLUMN:
+        case DumpOracleStrategy::ALTER_TABLE:
             /// Second step equal as the first one
             sq2.CopyFrom(sq1);
             break;
+        case DumpOracleStrategy::ALTER_UPDATE:
+        case DumpOracleStrategy::TRUNCATE_COUNT:
         case DumpOracleStrategy::INSERT_COUNT: {
             /// In the second step, just get the total count
             sq2.CopyFrom(sq1);
@@ -878,70 +902,71 @@ void QueryOracle::dumpOracleIntermediateSteps(
 
     intermediate_queries.clear();
     gen.setAllowNotDetermistic(false);
+
+    auto maybeSetClusterAndSettings = [&](auto * msg)
+    {
+        if (cluster.has_value())
+            msg->mutable_cluster()->set_cluster(cluster.value());
+        if (rg.nextSmallNumber() < 3)
+            gen.generateSettingValues(rg, formatSettings, msg->mutable_setting_values());
+    };
+    auto dumpTableSteps = [&](const SQLTable & tbl)
+    {
+        SQLQuery sq_export;
+        SQLQuery sq_trunc;
+        SQLQuery sq_import;
+
+        generateExportQuery(rg, gen, test_content, t, sq_export);
+        Truncate * trunc = sq_trunc.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
+        t.setName(trunc->mutable_est(), false);
+        maybeSetClusterAndSettings(trunc);
+        generateImportQuery(rg, gen, tbl, sq_export, sq_import);
+
+        intermediate_queries.emplace_back(sq_export);
+        intermediate_queries.emplace_back(sq_trunc);
+        intermediate_queries.emplace_back(sq_import);
+    };
+
     switch (strategy)
     {
-        case DumpOracleStrategy::DUMP_TABLE: {
-            SQLQuery next2;
-            SQLQuery next3;
+        case DumpOracleStrategy::REINSERT_TABLE: {
             const auto & t2
                 = test_content ? t : rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format)).get();
-
-            /// Export data
-            generateExportQuery(rg, gen, test_content, t, next);
-            /// Truncate table, then insert everything again
-            Truncate * trunc = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
-
-            t.setName(trunc->mutable_est(), false);
-            if (cluster.has_value())
-            {
-                trunc->mutable_cluster()->set_cluster(cluster.value());
-            }
-            /// Import data again
-            generateImportQuery(rg, gen, t2, next, next3);
-
-            intermediate_queries.emplace_back(next);
-            intermediate_queries.emplace_back(next2);
-            intermediate_queries.emplace_back(next3);
+            dumpTableSteps(t2);
         }
         break;
         case DumpOracleStrategy::OPTIMIZE: {
             OptimizeTable * ot = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_opt();
 
             gen.generateNextOptimizeTableInternal(rg, t, true, ot);
-            if (rg.nextSmallNumber() < 3)
-            {
-                gen.generateSettingValues(rg, formatSettings, ot->mutable_setting_values());
-            }
+            maybeSetClusterAndSettings(ot);
             intermediate_queries.emplace_back(next);
         }
         break;
-        case DumpOracleStrategy::REATTACH:
-            reattachSteps(rg, gen, t, SQLObject::TABLE, intermediate_queries);
-            break;
-        case DumpOracleStrategy::BACKUP_RESTORE:
-            backupRestoreSteps(rg, gen, fc, t, SQLObject::TABLE, intermediate_queries);
-            break;
-        case DumpOracleStrategy::ALTER_UPDATE: {
-            if (!t.areInsertsAppends() || rg.nextBool())
-            {
-                std::optional<String> acluster;
-                Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+        case DumpOracleStrategy::REATTACH: reattachSteps(rg, gen, t, SQLObject::TABLE, intermediate_queries); break;
+        case DumpOracleStrategy::BACKUP_RESTORE: backupRestoreSteps(rg, gen, fc, t, SQLObject::TABLE, intermediate_queries); break;
+        case DumpOracleStrategy::ALTER_TABLE: {
+            Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
 
-                acluster = gen.alterSingleTable(rg, t, 1, false, t.areInsertsAppends(), false, at);
-                if (acluster.has_value())
-                {
-                    at->mutable_cluster()->set_cluster(acluster.value());
-                }
-                if (rg.nextSmallNumber() < 3)
-                {
-                    gen.generateSettingValues(rg, formatSettings, at->mutable_setting_values());
-                }
+            gen.alterSingleTable(rg, t, 1, false, false, at);
+            maybeSetClusterAndSettings(at);
+            intermediate_queries.emplace_back(next);
+        }
+        break;
+        case DumpOracleStrategy::ALTER_UPDATE: {
+            if (rg.nextBool())
+            {
+                /// UPDATE t SET ... WHERE ...
+                LightUpdate * upt = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_upt();
+                gen.generateNextUpdateOrDeleteOnTable<LightUpdate>(rg, t, upt);
+                maybeSetClusterAndSettings(upt);
             }
             else
             {
-                LightUpdate * upt = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_upt();
-
-                gen.generateNextUpdateOrDeleteOnTable<LightUpdate>(rg, t, upt);
+                /// ALTER TABLE t UPDATE ... WHERE ...
+                Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+                gen.generateNextUpdate(rg, t, at->mutable_alter()->mutable_update());
+                maybeSetClusterAndSettings(at);
             }
             intermediate_queries.emplace_back(next);
         }
@@ -956,6 +981,158 @@ void QueryOracle::dumpOracleIntermediateSteps(
             gen.generateInsertToTable(rg, t, false, nrows, ins);
             intermediate_queries.emplace_back(next);
             intermediate_queries.emplace_back(next2);
+        }
+        break;
+        case DumpOracleStrategy::RENAME_BACK: {
+            SQLQuery next2;
+            Rename * ren1 = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_rename();
+            Rename * ren2 = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_rename();
+            const String tmp_name = "buzzhouse_oracle_tmp_" + std::to_string(gen.table_counter++);
+
+            ren1->set_sobject(SQLObject::TABLE);
+            t.setName(ren1->mutable_old_object()->mutable_est(), true);
+            SQLBase::setName(ren1->mutable_new_object()->mutable_est(), tmp_name, true, t.db);
+            maybeSetClusterAndSettings(ren1);
+
+            ren2->set_sobject(SQLObject::TABLE);
+            SQLBase::setName(ren2->mutable_old_object()->mutable_est(), tmp_name, true, t.db);
+            t.setName(ren2->mutable_new_object()->mutable_est(), true);
+            maybeSetClusterAndSettings(ren2);
+
+            intermediate_queries.emplace_back(next);
+            intermediate_queries.emplace_back(next2);
+        }
+        break;
+        case DumpOracleStrategy::FREEZE_UNFREEZE: {
+            SQLQuery next2;
+            Alter * alt1 = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+            Alter * alt2 = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+            const String fname = rg.nextIdentifier("f", gen.freeze_counter++, false);
+
+            alt1->set_sobject(SQLObject::TABLE);
+            t.setName(alt1->mutable_object()->mutable_est(), false);
+            alt1->mutable_alter()->mutable_freeze_partition()->set_fname(fname);
+            maybeSetClusterAndSettings(alt1);
+
+            alt2->set_sobject(SQLObject::TABLE);
+            t.setName(alt2->mutable_object()->mutable_est(), false);
+            alt2->mutable_alter()->mutable_unfreeze_partition()->set_fname(fname);
+            maybeSetClusterAndSettings(alt2);
+
+            intermediate_queries.emplace_back(next);
+            intermediate_queries.emplace_back(next2);
+        }
+        break;
+        case DumpOracleStrategy::MOVE_PARTITION: {
+            const String dname = t.getDatabaseName();
+            const String tname = t.getBaseName();
+
+            if (t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname))
+            {
+                SQLQuery next2;
+                const String partition_id = fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname);
+
+                /// ALTER TABLE t DETACH PARTITION partition_id
+                Alter * alt1 = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+                alt1->set_sobject(SQLObject::TABLE);
+                t.setName(alt1->mutable_object()->mutable_est(), false);
+                alt1->mutable_alter()->mutable_detach_partition()->mutable_partition()->set_partition_id(partition_id);
+                maybeSetClusterAndSettings(alt1);
+
+                /// ALTER TABLE t ATTACH PARTITION partition_id
+                Alter * alt2 = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+                alt2->set_sobject(SQLObject::TABLE);
+                t.setName(alt2->mutable_object()->mutable_est(), false);
+                alt2->mutable_alter()->mutable_attach_partition()->mutable_partition()->set_partition_id(partition_id);
+                maybeSetClusterAndSettings(alt2);
+
+                intermediate_queries.emplace_back(next);
+                intermediate_queries.emplace_back(next2);
+            }
+            else
+            {
+                dumpTableSteps(t);
+            }
+        }
+        break;
+        case DumpOracleStrategy::REPLACE_PARTITION: {
+            const String dname = t.getDatabaseName();
+            const String tname = t.getBaseName();
+
+            if (t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname))
+            {
+                const String partition_id = fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname);
+
+                /// ALTER TABLE t REWRITE PARTS IN PARTITION partition_id
+                Alter * alt = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+                alt->set_sobject(SQLObject::TABLE);
+                t.setName(alt->mutable_object()->mutable_est(), false);
+                alt->mutable_alter()->mutable_rewrite_parts()->mutable_single_partition()->mutable_partition()->set_partition_id(
+                    partition_id);
+                maybeSetClusterAndSettings(alt);
+
+                intermediate_queries.emplace_back(next);
+            }
+            else
+            {
+                dumpTableSteps(t);
+            }
+        }
+        break;
+        case DumpOracleStrategy::ALTER_COLUMN: {
+            SQLQuery next2;
+            const String col_name = "buzzhouse_oracle_col_" + std::to_string(t.col_counter++);
+
+            /// ALTER TABLE t ADD COLUMN col_name UInt8 DEFAULT 0
+            Alter * alt1 = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+            alt1->set_sobject(SQLObject::TABLE);
+            t.setName(alt1->mutable_object()->mutable_est(), false);
+            ColumnDef * def = alt1->mutable_alter()->mutable_add_column()->mutable_new_col();
+            def->mutable_col()->mutable_col()->set_column(col_name);
+            def->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(Integers::UInt8);
+            maybeSetClusterAndSettings(alt1);
+
+            /// ALTER TABLE t DROP COLUMN col_name
+            Alter * alt2 = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+            alt2->set_sobject(SQLObject::TABLE);
+            t.setName(alt2->mutable_object()->mutable_est(), false);
+            alt2->mutable_alter()->mutable_drop_column()->mutable_col()->set_column(col_name);
+            maybeSetClusterAndSettings(alt2);
+
+            intermediate_queries.emplace_back(next);
+            intermediate_queries.emplace_back(next2);
+        }
+        break;
+        case DumpOracleStrategy::TRUNCATE_COUNT: {
+            const uint32_t choice = rg.randomInt<uint32_t>(0, 2);
+
+            if (choice == 0)
+            {
+                /// TRUNCATE TABLE t
+                Truncate * trunc = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
+                t.setName(trunc->mutable_est(), false);
+                maybeSetClusterAndSettings(trunc);
+            }
+            else if (choice == 1)
+            {
+                /// DELETE FROM t WHERE true
+                LightDelete * del = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_del();
+                gen.generateNextUpdateOrDeleteOnTable<LightDelete>(rg, t, del);
+                del->mutable_del()->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
+                    SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
+                maybeSetClusterAndSettings(del);
+            }
+            else
+            {
+                /// ALTER TABLE t DELETE WHERE true
+                Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+                Delete * del = at->mutable_alter()->mutable_del();
+                gen.generateNextDelete(rg, t, del);
+                del->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
+                    SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
+                maybeSetClusterAndSettings(at);
+            }
+            intermediate_queries.emplace_back(next);
         }
     }
     gen.setAllowNotDetermistic(true);
@@ -1029,14 +1206,9 @@ void QueryOracle::dumpObjectIntermediateSteps(
     gen.setAllowNotDetermistic(false);
     switch (strategy)
     {
-        case DumpOracleStrategy::REATTACH:
-            reattachSteps(rg, gen, obj, sobject, intermediate_queries);
-            break;
-        case DumpOracleStrategy::BACKUP_RESTORE:
-            backupRestoreSteps(rg, gen, fc, obj, sobject, intermediate_queries);
-            break;
-        default:
-            UNREACHABLE();
+        case DumpOracleStrategy::REATTACH: reattachSteps(rg, gen, obj, sobject, intermediate_queries); break;
+        case DumpOracleStrategy::BACKUP_RESTORE: backupRestoreSteps(rg, gen, fc, obj, sobject, intermediate_queries); break;
+        default: UNREACHABLE();
     }
     gen.setAllowNotDetermistic(true);
 }

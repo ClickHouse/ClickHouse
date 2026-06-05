@@ -195,9 +195,7 @@ String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp)
                 pool.insert(pool.end(), {"Gorilla", "FPC", "ALP"});
             }
             break;
-        case SQLTypeClass::DATE:
-            pool.insert(pool.end(), {"Delta", "DoubleDelta", "T64"});
-            break;
+        case SQLTypeClass::DATE: pool.insert(pool.end(), {"Delta", "DoubleDelta", "T64"}); break;
         case SQLTypeClass::DATETIME:
             pool.emplace_back("Delta");
             if (!static_cast<const DateTimeType *>(leaf)->extended)

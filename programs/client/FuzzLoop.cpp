@@ -853,17 +853,31 @@ bool Client::buzzHouse()
                          const auto & tbl = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(
                              test_content ? gen.attached_tables_to_compare_content : gen.attached_tables_to_test_format));
 
-                         BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::DUMP_TABLE;
+                         BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::REINSERT_TABLE;
+                         const bool is_mt = tbl.get().isMergeTreeFamily();
                          rg.pickWeighted(
                              {{20 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::OPTIMIZE; }},
                               {20 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::REATTACH; }},
-                              {5 * static_cast<uint32_t>(test_content),
+                              {10 * static_cast<uint32_t>(test_content),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE; }},
+                              {40 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_TABLE; }},
                               {20 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_UPDATE; }},
                               {20 * static_cast<uint32_t>(test_content && tbl.get().areInsertsAppends()),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::INSERT_COUNT; }},
-                              {40, [&]() { /* DUMP_TABLE is the default */ }}});
+                              {15 * static_cast<uint32_t>(test_content),
+                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::RENAME_BACK; }},
+                              {15 * static_cast<uint32_t>(test_content && is_mt),
+                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::FREEZE_UNFREEZE; }},
+                              {15 * static_cast<uint32_t>(test_content && is_mt),
+                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::MOVE_PARTITION; }},
+                              {15 * static_cast<uint32_t>(test_content && is_mt),
+                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::REPLACE_PARTITION; }},
+                              {15 * static_cast<uint32_t>(test_content),
+                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_COLUMN; }},
+                              {10 * static_cast<uint32_t>(test_content),
+                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::TRUNCATE_COUNT; }},
+                              {60, [&]() { /* REINSERT_TABLE is the default */ }}});
 
                          if (test_content)
                          {

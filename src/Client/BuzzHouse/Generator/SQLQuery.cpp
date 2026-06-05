@@ -306,33 +306,18 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
                                             : ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeS3;
                         break;
                     case TableEngineValues::AzureBlobStorage:
-                    case TableEngineValues::AzureQueue:
-                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_azureBlobStorage;
-                        break;
-                    case TableEngineValues::IcebergAzure:
-                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_icebergAzure;
-                        break;
-                    case TableEngineValues::DeltaLakeAzure:
-                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeAzure;
-                        break;
-                    case TableEngineValues::IcebergLocal:
-                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_icebergLocal;
-                        break;
-                    case TableEngineValues::DeltaLakeLocal:
-                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeLocal;
-                        break;
+                    case TableEngineValues::AzureQueue: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_azureBlobStorage; break;
+                    case TableEngineValues::IcebergAzure: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_icebergAzure; break;
+                    case TableEngineValues::DeltaLakeAzure: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeAzure; break;
+                    case TableEngineValues::IcebergLocal: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_icebergLocal; break;
+                    case TableEngineValues::DeltaLakeLocal: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeLocal; break;
                     case TableEngineValues::PaimonS3:
                         val = rg.nextBool() ? ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimon
                                             : ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonS3;
                         break;
-                    case TableEngineValues::PaimonAzure:
-                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonAzure;
-                        break;
-                    case TableEngineValues::PaimonLocal:
-                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonLocal;
-                        break;
-                    default:
-                        UNREACHABLE();
+                    case TableEngineValues::PaimonAzure: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonAzure; break;
+                    case TableEngineValues::PaimonLocal: val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_paimonLocal; break;
+                    default: UNREACHABLE();
                 }
             }
             else

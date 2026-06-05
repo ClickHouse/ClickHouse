@@ -27,27 +27,13 @@ static String escapeJSON(const String & s)
     {
         switch (c)
         {
-            case '"':
-                out += "\\\"";
-                break;
-            case '\\':
-                out += "\\\\";
-                break;
-            case '\b':
-                out += "\\b";
-                break;
-            case '\f':
-                out += "\\f";
-                break;
-            case '\n':
-                out += "\\n";
-                break;
-            case '\r':
-                out += "\\r";
-                break;
-            case '\t':
-                out += "\\t";
-                break;
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\b': out += "\\b"; break;
+            case '\f': out += "\\f"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
             default:
                 if (c < 0x20 || c >= 0x80)
                     out += fmt::format("\\u{:04x}", c);
@@ -335,10 +321,8 @@ bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableD
         case PeerTableDatabase::ClickHouse:
         case PeerTableDatabase::MySQL:
         case PeerTableDatabase::PostgreSQL:
-        case PeerTableDatabase::SQLite:
-            return !performQuery(query);
-        case PeerTableDatabase::None:
-            return fc.processServerQuery(false, query);
+        case PeerTableDatabase::SQLite: return !performQuery(query);
+        case PeerTableDatabase::None: return fc.processServerQuery(false, query);
     }
 }
 
@@ -1569,20 +1553,11 @@ bool DolorIntegration::performDatabaseIntegration(RandomGenerator & rg, SQLDatab
 
     switch (d.catalog)
     {
-        case LakeCatalog::Glue:
-            catalog = "glue";
-            break;
-        case LakeCatalog::Hive:
-            catalog = "hive";
-            break;
-        case LakeCatalog::REST:
-            catalog = "rest";
-            break;
-        case LakeCatalog::Unity:
-            catalog = "unity";
-            break;
-        default:
-            UNREACHABLE();
+        case LakeCatalog::Glue: catalog = "glue"; break;
+        case LakeCatalog::Hive: catalog = "hive"; break;
+        case LakeCatalog::REST: catalog = "rest"; break;
+        case LakeCatalog::Unity: catalog = "unity"; break;
+        default: UNREACHABLE();
     }
     buf += fmt::format(
         R"({{"seed":{},"database_name":"{}","storage":"{}","engine":"{}","catalog":"{}"}})",
@@ -1635,8 +1610,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
                     "http://{}:{}{}{}", cat->server_hostname, cat->port, cat->path, d.format == LakeFormat::Iceberg ? "/iceberg" : ""));
             catalog_str = d.format == LakeFormat::Iceberg ? "rest" : "unity";
             break;
-        default:
-            UNREACHABLE();
+        default: UNREACHABLE();
     }
 
     if (rg.nextMediumNumber() < 6)
@@ -1809,8 +1783,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
                         cat->path,
                         t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "/iceberg" : "");
                     break;
-                default:
-                    UNREACHABLE();
+                default: UNREACHABLE();
             }
 
             /// The other storages are not tested yet
@@ -1968,11 +1941,8 @@ void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, SQLDatab
 
     switch (d.integration)
     {
-        case IntegrationCall::Dolor:
-            next = dolor.get();
-            break;
-        default:
-            UNREACHABLE();
+        case IntegrationCall::Dolor: next = dolor.get(); break;
+        default: UNREACHABLE();
     }
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performDatabaseIntegration(rg, d));
@@ -1986,35 +1956,16 @@ void ExternalIntegrations::createExternalDatabaseTable(
 
     switch (t.integration)
     {
-        case IntegrationCall::MySQL:
-            next = mysql.get();
-            break;
-        case IntegrationCall::PostgreSQL:
-            next = postresql.get();
-            break;
-        case IntegrationCall::SQLite:
-            next = sqlite.get();
-            break;
-        case IntegrationCall::MongoDB:
-            next = mongodb.get();
-            break;
-        case IntegrationCall::Redis:
-            next = redis.get();
-            break;
-        case IntegrationCall::MinIO:
-            next = minio.get();
-            break;
-        case IntegrationCall::Azurite:
-            next = azurite.get();
-            break;
-        case IntegrationCall::HTTP:
-            next = http.get();
-            break;
-        case IntegrationCall::Dolor:
-            next = dolor.get();
-            break;
-        default:
-            UNREACHABLE();
+        case IntegrationCall::MySQL: next = mysql.get(); break;
+        case IntegrationCall::PostgreSQL: next = postresql.get(); break;
+        case IntegrationCall::SQLite: next = sqlite.get(); break;
+        case IntegrationCall::MongoDB: next = mongodb.get(); break;
+        case IntegrationCall::Redis: next = redis.get(); break;
+        case IntegrationCall::MinIO: next = minio.get(); break;
+        case IntegrationCall::Azurite: next = azurite.get(); break;
+        case IntegrationCall::HTTP: next = http.get(); break;
+        case IntegrationCall::Dolor: next = dolor.get(); break;
+        default: UNREACHABLE();
     }
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performTableIntegration(rg, t, true, entries));
@@ -2027,11 +1978,8 @@ bool ExternalIntegrations::reRunCreateDatabase(const IntegrationCall ic, const S
 
     switch (ic)
     {
-        case IntegrationCall::Dolor:
-            next = dolor.get();
-            break;
-        default:
-            UNREACHABLE();
+        case IntegrationCall::Dolor: next = dolor.get(); break;
+        default: UNREACHABLE();
     }
     return next ? next->reRunCreateDatabase(body) : false;
 }
@@ -2042,11 +1990,8 @@ bool ExternalIntegrations::reRunCreateTable(const IntegrationCall ic, const Stri
 
     switch (ic)
     {
-        case IntegrationCall::Dolor:
-            next = dolor.get();
-            break;
-        default:
-            UNREACHABLE();
+        case IntegrationCall::Dolor: next = dolor.get(); break;
+        default: UNREACHABLE();
     }
     return next ? next->reRunCreateTable(body) : false;
 }
@@ -2058,11 +2003,8 @@ bool ExternalIntegrations::performExternalCommand(
 
     switch (ic)
     {
-        case IntegrationCall::Dolor:
-            next = dolor.get();
-            break;
-        default:
-            UNREACHABLE();
+        case IntegrationCall::Dolor: next = dolor.get(); break;
+        default: UNREACHABLE();
     }
     if (next)
     {
@@ -2080,16 +2022,11 @@ ClickHouseIntegratedDatabase * ExternalIntegrations::getPeerPtr(const PeerTableD
 {
     switch (pt)
     {
-        case PeerTableDatabase::ClickHouse:
-            return clickhouse.get();
-        case PeerTableDatabase::MySQL:
-            return mysql.get();
-        case PeerTableDatabase::PostgreSQL:
-            return postresql.get();
-        case PeerTableDatabase::SQLite:
-            return sqlite.get();
-        case PeerTableDatabase::None:
-            return nullptr;
+        case PeerTableDatabase::ClickHouse: return clickhouse.get();
+        case PeerTableDatabase::MySQL: return mysql.get();
+        case PeerTableDatabase::PostgreSQL: return postresql.get();
+        case PeerTableDatabase::SQLite: return sqlite.get();
+        case PeerTableDatabase::None: return nullptr;
     }
 }
 
@@ -2109,10 +2046,8 @@ bool ExternalIntegrations::optimizeTableForOracle(const PeerTableDatabase pt, co
 {
     switch (t.peer_table)
     {
-        case PeerTableDatabase::ClickHouse:
-            return clickhouse->optimizeTableForOracle(pt, t);
-        default:
-            return false;
+        case PeerTableDatabase::ClickHouse: return clickhouse->optimizeTableForOracle(pt, t);
+        default: return false;
     }
 }
 
@@ -2130,14 +2065,9 @@ void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const Stri
 {
     switch (dc)
     {
-        case IntegrationCall::MinIO:
-            minio->setBackupDetails(filename, bout);
-            break;
-        case IntegrationCall::Azurite:
-            azurite->setBackupDetails(filename, bout);
-            break;
-        default:
-            UNREACHABLE();
+        case IntegrationCall::MinIO: minio->setBackupDetails(filename, bout); break;
+        case IntegrationCall::Azurite: azurite->setBackupDetails(filename, bout); break;
+        default: UNREACHABLE();
     }
 }
 
@@ -2237,38 +2167,17 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
             {
                 switch (c)
                 {
-                    case '\'':
-                        replaced += "\\'";
-                        break;
-                    case '\\':
-                        replaced += "\\\\";
-                        break;
-                    case '\b':
-                        replaced += "\\b";
-                        break;
-                    case '\f':
-                        replaced += "\\f";
-                        break;
-                    case '\r':
-                        replaced += "\\r";
-                        break;
-                    case '\n':
-                        replaced += "\\n";
-                        break;
-                    case '\t':
-                        replaced += "\\t";
-                        break;
-                    case '\0':
-                        replaced += "\\0";
-                        break;
-                    case '\a':
-                        replaced += "\\a";
-                        break;
-                    case '\v':
-                        replaced += "\\v";
-                        break;
-                    default:
-                        replaced += c;
+                    case '\'': replaced += "\\'"; break;
+                    case '\\': replaced += "\\\\"; break;
+                    case '\b': replaced += "\\b"; break;
+                    case '\f': replaced += "\\f"; break;
+                    case '\r': replaced += "\\r"; break;
+                    case '\n': replaced += "\\n"; break;
+                    case '\t': replaced += "\\t"; break;
+                    case '\0': replaced += "\\0"; break;
+                    case '\a': replaced += "\\a"; break;
+                    case '\v': replaced += "\\v"; break;
+                    default: replaced += c;
                 }
             }
             /// Some settings may not exist in earlier ClickHouse versions, so we can ignore the errors here

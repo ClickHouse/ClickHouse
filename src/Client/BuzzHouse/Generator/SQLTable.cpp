@@ -1952,8 +1952,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
         }
         break;
-        default:
-            break;
+        default: break;
     }
     if (!projection)
     {
@@ -2988,12 +2987,10 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
                 return std::nullopt;
             switch (t->getTypeClass())
             {
-                case SQLTypeClass::BOOL:
-                    return "true";
+                case SQLTypeClass::BOOL: return "true";
                 case SQLTypeClass::INT:
                 case SQLTypeClass::FLOAT:
-                case SQLTypeClass::DECIMAL:
-                    return "0";
+                case SQLTypeClass::DECIMAL: return "0";
                 case SQLTypeClass::ENUM: {
                     /// regexp_tree parses enum YAML values via deserializeWholeText with
                     /// enum_as_number=false, so we must emit a label, not a numeric id.
@@ -3007,20 +3004,13 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
                         label = label.substr(1, label.size() - 2);
                     return label;
                 }
-                case SQLTypeClass::STRING:
-                    return "text";
-                case SQLTypeClass::DATE:
-                    return "2024-01-01";
-                case SQLTypeClass::DATETIME:
-                    return "2024-01-01 12:00:00";
-                case SQLTypeClass::TIME:
-                    return "12:00:00";
-                case SQLTypeClass::UUID:
-                    return "00000000-0000-0000-0000-000000000000";
-                case SQLTypeClass::IPV4:
-                    return "0.0.0.0";
-                case SQLTypeClass::IPV6:
-                    return "::";
+                case SQLTypeClass::STRING: return "text";
+                case SQLTypeClass::DATE: return "2024-01-01";
+                case SQLTypeClass::DATETIME: return "2024-01-01 12:00:00";
+                case SQLTypeClass::TIME: return "12:00:00";
+                case SQLTypeClass::UUID: return "00000000-0000-0000-0000-000000000000";
+                case SQLTypeClass::IPV4: return "0.0.0.0";
+                case SQLTypeClass::IPV6: return "::";
                 default:
                     /// Skip complex (Array/Map/Tuple/JSON/Variant/Dynamic/etc.)
                     return std::nullopt;

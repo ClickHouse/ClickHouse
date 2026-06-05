@@ -9,12 +9,19 @@ namespace BuzzHouse
 
 enum class DumpOracleStrategy
 {
-    DUMP_TABLE = 1,
+    REINSERT_TABLE = 1,
     OPTIMIZE = 2,
     REATTACH = 3,
     BACKUP_RESTORE = 4,
     ALTER_UPDATE = 5,
-    INSERT_COUNT = 6
+    INSERT_COUNT = 6,
+    RENAME_BACK = 7,
+    FREEZE_UNFREEZE = 8,
+    MOVE_PARTITION = 9,
+    REPLACE_PARTITION = 10,
+    ALTER_COLUMN = 11,
+    ALTER_TABLE = 12,
+    TRUNCATE_COUNT = 13
 };
 
 struct MatchHandler
