@@ -554,8 +554,23 @@ void MemoryWorker::setDynamicHardLimitSettings(Int64 ceiling, double ratio)
     /// here (instead of in the caller) closes the race window where the worker could
     /// overwrite an out-of-band `setHardLimit` with a stale value before observing the
     /// new generation.
+    /// The "keep the shrunk value" logic below is only safe when the worker can actually
+    /// recompute and raise the limit back toward `ceiling` on a later tick. That requires
+    /// both a live source (`start` runs no tick when `source == None`) and a platform where
+    /// `readAvailableForDynamicLimit` can return a value (Linux only; elsewhere it always
+    /// returns `std::nullopt`). When neither holds — non-Linux, or a build/config with no
+    /// memory source — the dynamic adjustment is a no-op, so preserving a previously-shrunk
+    /// value would strand `total_memory_tracker` below the new `ceiling` forever (e.g. a
+    /// reload raising `max_server_memory_usage` from 8 GiB to 16 GiB would never take
+    /// effect). In that case apply the new `ceiling` directly, matching the pre-PR behavior.
+#if defined(OS_LINUX)
+    const bool worker_can_recompute = source != MemoryUsageSource::None;
+#else
+    const bool worker_can_recompute = false;
+#endif
+
     Int64 limit_to_apply = ceiling;
-    if (ratio > 0.0 && !first_configuration)
+    if (ratio > 0.0 && !first_configuration && worker_can_recompute)
     {
         /// Dynamic adjustment is enabled and the worker may have already shrunk the hard
         /// limit below `ceiling` under memory pressure. An unrelated config reload (e.g.
