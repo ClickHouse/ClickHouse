@@ -1,22 +1,12 @@
--- Triangle topology: 3 tables, all 3 pairs connected (hub–arm1, hub–arm2, arm1–arm2).
+-- Triangle topology: 3 tables, all 3 pairs connected (hub-arm1, hub-arm2, arm1-arm2).
+-- This is the smallest clique. With CSG = {hub} and neighbourhood {arm1, arm2}, DPhyp must
+-- enumerate the complement {arm1, arm2} (grown from a single neighbour seed) so that every valid
+-- CSG-CMP pair is considered. DPhyp and DPsize explore the same set of pairs and must produce
+-- identical results, which the result-hash checks below verify.
 --
--- This topology tests the "all-subsets direct emit" enhancement in emitCsg.
---
--- The DPhyp paper (Moerkotte & Neumann, Algorithm EmitCsg) emits only
--- individual neighbour nodes {v} as direct complement seeds, then calls
--- EnumerateCmpRec for out-of-neighbourhood extensions. For a triangle
--- with CSG = {hub} and N = {arm1, arm2}, the paper emits {arm1} and
--- {arm2} directly, then calls EnumerateCmpRec({hub}, {arm1},
--- excl = {hub, arm1, arm2}). Since arm2 is already in the exclusion,
--- it is never added to the complement starting from arm1 alone, so the
--- pair ({hub}, {arm1, arm2}) would be missed by the strict paper
--- algorithm.
---
--- Our implementation emits every non-empty SUBSET of N as a direct seed
--- via forEachNonEmptySubset, which immediately finds ({hub}, {arm1, arm2})
--- and allows the optimizer to consider the bushy split. Both DPhyp and
--- DPsize must explore the same set of valid CSG-CP pairs and therefore
--- produce identical result sets.
+-- All three joins have equal estimated cost on this data (any plan scans `hub` once), so the chosen
+-- order is one of several equal-cost plans; the EXPLAIN pins the plan currently produced rather than
+-- a uniquely-optimal one.
 --
 -- Topology:
 --   arm1 (10 rows) -- hub (10 000 rows) -- arm2 (10 rows)
@@ -37,7 +27,7 @@ INSERT INTO tri_hub  SELECT number FROM numbers(10000);
 INSERT INTO tri_arm1 SELECT number, number FROM numbers(10);
 INSERT INTO tri_arm2 SELECT number, number, number FROM numbers(10);
 
--- DPhyp must find the same optimal plan as DPsize (bushy: hub JOIN (arm1 JOIN arm2)).
+-- EXPLAIN of the (equal-cost) plan DPhyp produces on the triangle.
 EXPLAIN
 SELECT hub.id, a1.id, a2.id
 FROM tri_hub hub, tri_arm1 a1, tri_arm2 a2

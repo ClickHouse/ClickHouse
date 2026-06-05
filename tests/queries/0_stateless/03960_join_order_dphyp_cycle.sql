@@ -46,9 +46,11 @@ DROP TABLE cy4_d;
 -- =====================================================================
 -- Regression test for complement enumeration.
 -- With CSG={A}, neighbourhood={B,D}. A buggy exclusion would prevent
--- discovering the complement {B,C,D}. Engineered cardinalities ensure
--- the optimal plan joins B-C-D first, then A last.
--- DPhyp and DPsize EXPLAIN plans must match.
+-- discovering the complement {B,C,D}, so DPhyp would fail to build a plan
+-- over all four relations. The EXPLAINs below confirm both algorithms
+-- produce a complete 4-table plan that joins the B-C-D chain before the
+-- single-row A. The B-C-D orderings have equal estimated cost, so DPhyp
+-- and DPsize may pick different ones; each plan is recorded separately.
 -- =====================================================================
 
 CREATE TABLE cyc_a (id UInt32, d_id UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';
@@ -61,7 +63,7 @@ INSERT INTO cyc_b SELECT number, 0 FROM numbers(100);
 INSERT INTO cyc_c SELECT number, number % 100 FROM numbers(10);
 INSERT INTO cyc_d SELECT number, number % 10 FROM numbers(50);
 
--- DPhyp must produce the same join order as DPsize.
+-- DPhyp builds a complete plan over all four relations (joins single-row A last).
 EXPLAIN
 SELECT sum(sipHash64(a.id, b.id, c.id, d.id))
 FROM cyc_a a, cyc_b b, cyc_c c, cyc_d d
