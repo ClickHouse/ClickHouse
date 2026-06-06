@@ -87,6 +87,8 @@ namespace ProfileEvents
 {
 extern const Event IcebergIteratorInitializationMicroseconds;
 extern const Event IcebergMetadataUpdateMicroseconds;
+extern const Event IcebergMetadataFilesCacheHits;
+extern const Event IcebergMetadataFilesCacheMisses;
 extern const Event IcebergMetadataFilesCacheSkipped;
 extern const Event IcebergTrivialCountOptimizationApplied;
 }
