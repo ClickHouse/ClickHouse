@@ -121,19 +121,9 @@ void ExchangeConnections::cleanupQuery(const String & query_id)
 
     auto exception = std::make_exception_ptr(
         Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Exchange connection cancelled, query id {}", query_id));
+    /// `cancel` is a no-op if the connection already paired (FutureConnection completes at most once).
     for (auto & future : to_cancel)
-    {
-        /// `cancel` may throw if the promise was already satisfied by a concurrent
-        /// addConnection/getConnection pairing; swallow so other waiters still get woken.
-        try
-        {
-            future->cancel(exception);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "FutureConnection cancel");
-        }
-    }
+        future->cancel(exception);
 }
 
 void ExchangeConnections::removePendingStreams(const String & query_id, const std::vector<String> & exchange_stream_ids)
@@ -159,17 +149,9 @@ void ExchangeConnections::removePendingStreams(const String & query_id, const st
 
     auto exception = std::make_exception_ptr(
         Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Exchange connection cancelled, query id {}", query_id));
+    /// `cancel` is a no-op if the connection already paired (FutureConnection completes at most once).
     for (auto & future : to_cancel)
-    {
-        try
-        {
-            future->cancel(exception);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "FutureConnection cancel");
-        }
-    }
+        future->cancel(exception);
 }
 
 }

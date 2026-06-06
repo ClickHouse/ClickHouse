@@ -4,6 +4,7 @@
 
 #include <Poco/Net/StreamSocket.h>
 #include <Common/Logger.h>
+#include <atomic>
 #include <future>
 
 namespace DB
@@ -40,8 +41,14 @@ public:
 private:
     static int createEventFd();
 
+    /// Wake the epoll waiter via the eventfd after the promise is completed.
+    void notifyWaiter();
+
     std::promise<Poco::Net::Socket> promise;
     std::shared_future<Poco::Net::Socket> future;
+    /// Guards the single allowed promise completion: setSocket and cancel race (the peer connecting
+    /// vs. query teardown), and the loser must be a no-op rather than throw "promise already set".
+    std::atomic<bool> satisfied{false};
     int event_fd;
     LoggerPtr log = getLogger("FutureConnection");
 };

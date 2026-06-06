@@ -58,25 +58,35 @@ Poco::Net::Socket FutureConnection::getSocket()
 
 void FutureConnection::setSocket(Poco::Net::Socket socket)
 {
+    /// First completion wins; a later setSocket/cancel is a no-op (the connection already paired
+    /// or the query was torn down).
+    if (satisfied.exchange(true))
+        return;
+
     LOG_TRACE(log, "Setting socket for FutureConnection");
-
-    /// Set the promise value, promise can be set only once.
     promise.set_value(std::move(socket));
-
-    uint64_t value = 1;
-    ssize_t written = write(event_fd, &value, sizeof(value));
-    chassert(written == sizeof(value));
+    notifyWaiter();
 }
 
 void FutureConnection::cancel(std::exception_ptr exception)
 {
+    if (satisfied.exchange(true))
+        return;
+
     LOG_TRACE(log, "Cancelling FutureConnection");
-
-    /// Set the promise exception, promise can be set only once.
     promise.set_exception(std::move(exception));
+    notifyWaiter();
+}
 
+void FutureConnection::notifyWaiter()
+{
     uint64_t value = 1;
-    ssize_t written = write(event_fd, &value, sizeof(value));
+    ssize_t written = 0;
+    /// Retry on EINTR so a signal does not leave the promise ready while the epoll waiter is never
+    /// woken. Other write failures cannot happen for a non-full, valid eventfd.
+    do
+        written = write(event_fd, &value, sizeof(value));
+    while (written < 0 && errno == EINTR);
     chassert(written == sizeof(value));
 }
 
