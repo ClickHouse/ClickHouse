@@ -90,6 +90,9 @@ public:
     String os_user;
     String client_hostname;
     String client_name;
+    /// Canonical id of the AI coding agent that invoked the client (e.g. `claude-code`, `cursor`),
+    /// detected from environment variables. Empty when no agent is detected.
+    String client_agent;
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
