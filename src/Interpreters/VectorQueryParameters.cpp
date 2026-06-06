@@ -30,6 +30,7 @@
 #include <Columns/ColumnConst.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 
 #include <Poco/String.h>
 
@@ -69,11 +70,6 @@ String dataTypePtrToString(const DataTypePtr & type)
     return type->getName();
 }
 
-// bool scopeEndsWith(const String & scope, std::string_view suffix)
-// {
-//     return scope.size() >= suffix.size()
-//         && scope.compare(scope.size() - suffix.size(), suffix.size(), suffix) == 0;
-// }
 
 bool isVectorScanBindingScope(const String & dag_scope)
 {
@@ -248,38 +244,6 @@ bool stringToNumericArrayField(std::string_view literal, const DataTypePtr & tar
     }
 }
 
-// COSINEDISTANCEInfoPtr rebuildCOSINEDISTANCEInfo(
-//     const COSINEDISTANCEInfoPtr & hybrid_search_info,
-//     VectorScanInfoPtr vector_scan_info,
-//     TextSearchInfoPtr text_search_info,
-//     SparseSearchInfoPtr sparse_search_info)
-// {
-//     if (!hybrid_search_info)
-//         return hybrid_search_info;
-
-//     if (hybrid_search_info->fusion_weight >= 0)
-//     {
-//         return std::make_shared<COSINEDISTANCEInfo>(
-//             vector_scan_info,
-//             text_search_info,
-//             sparse_search_info,
-//             hybrid_search_info->search_func_list,
-//             hybrid_search_info->function_column_name,
-//             hybrid_search_info->topk,
-//             hybrid_search_info->fusion_type,
-//             hybrid_search_info->fusion_weight);
-//     }
-
-//     return std::make_shared<COSINEDISTANCEInfo>(
-//         vector_scan_info,
-//         text_search_info,
-//         sparse_search_info,
-//         hybrid_search_info->search_func_list,
-//         hybrid_search_info->function_column_name,
-//         hybrid_search_info->topk,
-//         hybrid_search_info->fusion_type,
-//         hybrid_search_info->fusion_k);
-// }
 
 bool isNumericFieldType(Field::Types::Which type)
 {
@@ -363,14 +327,6 @@ String getFieldName(String input_name)
     return "";
 }
 
-// void addUniqueString(std::vector<String> & values, const String & value)
-// {
-//     if (value.empty())
-//         return;
-//     size_t index = value.find('_');
-//     String trimmed_value = value.substr(0, index);
-//     values.push_back(trimmed_value);
-// }
 
 String getLastFunctionName(const VectorQueryPlanCache::ASTLiteralPosition & position)
 {
@@ -391,6 +347,7 @@ bool scopeMatchesStepType(Int32 step_type, const String & scope)
     switch (step_type)
     {
         case 1:
+        case 4:
             return scope == "ExpressionStep";
         case 2:
             return scope == "FilterStep"
@@ -402,10 +359,8 @@ bool scopeMatchesStepType(Int32 step_type, const String & scope)
             // in post-join expression DAGs after optimization. Keep the scope filter
             // slightly broader so JOIN literals do not get dropped spuriously.
             return scope.find("Join") != String::npos || scope == "ExpressionStep";
-        case 4:
-            return scope.find(".QueryInfo.") != String::npos;
         default:
-            return true;
+            return false;
     }
 }
 
@@ -482,103 +437,6 @@ bool candidateMatchesAstLiteral(
     return false;
 }
 
-// void findQueryInfoAndCollectConstants(
-//     const SelectQueryInfo & query_info,
-//     const StorageSnapshotPtr & storage_snapshot,
-//     const std::vector<UInt32> & plan_node_path,
-//     const String & step_name,
-//     std::vector<PlanConstantCandidate> & out_candidates)
-// {
-//     // QueryInfo keeps several query-owned constants outside ActionsDAGs. Those
-//     // payloads still have to participate in cache restore, so we normalize them
-//     // into the same binding format used for ordinary DAG constants.
-//     const auto collect_vector_info = [&](const VectorScanInfoPtr & vector_scan_info, const String & scope)
-//     {
-//         if (!vector_scan_info)
-//             return;
-
-//         for (size_t i = 0; i < vector_scan_info->vector_scan_descs.size(); ++i)
-//         {
-//             const auto & desc = vector_scan_info->vector_scan_descs[i];
-//             if (!desc.query_column || !isColumnConst(*desc.query_column))
-//                 continue;
-
-//             const auto * column_const = typeid_cast<const ColumnConst *>(desc.query_column.get());
-//             if (!column_const)
-//                 continue;
-
-//             Field value = column_const->getField();
-//             DataTypePtr target_type;
-//             if (storage_snapshot)
-//             {
-//                 try
-//                 {
-//                     target_type = storage_snapshot->getConcreteType(desc.search_column_name);
-//                 }
-//                 catch (...)
-//                 {
-//                     LOG_TRACE(logger, "Exception caught when getting concrete type from storage snapshot");
-//                 }
-//             }
-
-//             PlanConstantCandidate candidate;
-//             candidate.binding.plan_node_path = plan_node_path;
-//             candidate.binding.parameter_index = 0;
-//             candidate.binding.dag_scope = scope;
-//             candidate.binding.dag_node_index = static_cast<UInt32>(i);
-//             candidate.binding.value_text = applyVisitor(FieldVisitorToString(), value);
-//             candidate.binding.field_type = static_cast<Int32>(value.getType());
-//             candidate.binding.target_type = target_type;
-//             candidate.value = std::move(value);
-//             candidate.step_type = 4;
-//             candidate.identifier_names = desc.search_column_name;
-//             if (!query_info.hybrid_search_info)
-//                 candidate.plan_function_name = Poco::toLower(desc.column_name);
-//             else
-//                 candidate.plan_function_name = getFunctionName(FunctionNames::COSINEDISTANCE);
-//             if (!candidate.plan_function_name.empty())
-//                 addUniqueString(candidate.function_names, candidate.plan_function_name);
-//             out_candidates.push_back(std::move(candidate));
-//         }
-//     };
-
-//     const auto collect_text_info = [&](const TextSearchInfoPtr & text_search_info, const String & scope)
-//     {
-//         if (!text_search_info)
-//             return;
-
-//         Field value(text_search_info->query_text);
-//         PlanConstantCandidate candidate;
-//         candidate.binding.plan_node_path = plan_node_path;
-//         candidate.binding.parameter_index = 0;
-//         candidate.binding.dag_scope = scope;
-//         candidate.binding.dag_node_index = 0;
-//         candidate.binding.value_text = applyVisitor(FieldVisitorToString(), value);
-//         candidate.binding.field_type = static_cast<Int32>(value.getType());
-//         candidate.binding.target_type = {};
-//         candidate.value = std::move(value);
-//         candidate.step_type = 4;
-//         candidate.identifier_names = text_search_info->text_column_name;
-//         if (!query_info.hybrid_search_info)
-//             candidate.plan_function_name = Poco::toLower(text_search_info->function_column_name);
-//         else
-//             candidate.plan_function_name = getFunctionName(FunctionNames::COSINEDISTANCE);
-//         if (!candidate.plan_function_name.empty())
-//             addUniqueString(candidate.function_names, candidate.plan_function_name);
-//         out_candidates.push_back(std::move(candidate));
-//     };
-
-//     const String prefix = step_name + ".QueryInfo";
-//     collect_vector_info(query_info.vector_scan_info, prefix + ".VectorScan");
-//     collect_text_info(query_info.text_search_info, prefix + ".TextSearch");
-
-//     if (query_info.hybrid_search_info)
-//     {
-//         collect_vector_info(query_info.hybrid_search_info->vector_scan_info, prefix + ".Hybrid.VectorScan");
-//         collect_text_info(query_info.hybrid_search_info->text_search_info, prefix + ".Hybrid.TextSearch");
-//     }
-// }
-
 void findActionsDAGAndCollectConstants(
     const ActionsDAG & dag,
     const std::vector<UInt32> & plan_node_path,
@@ -588,7 +446,6 @@ void findActionsDAGAndCollectConstants(
 {
     if (dag.getOutputs().empty())
         return;
-    // LOG_ERROR(logger, "dag={}", dag.dumpDAG());
     // Helper to check if a function is a comparison operator
     auto is_comparison_function = [](const String & func_name) -> bool
     {
@@ -602,7 +459,6 @@ void findActionsDAGAndCollectConstants(
 
     String current_field_name;
     bool should_clear_and_return = false;
-    // LOG_ERROR(logger, "node number={}", dag.getNodes().size());
     std::unordered_map<const ActionsDAG::Node *, size_t> map;
     for (const auto & node : dag.getNodes())
     {
@@ -615,7 +471,6 @@ void findActionsDAGAndCollectConstants(
     {
         if (!node || should_clear_and_return)
             return;
-        // LOG_ERROR(logger, "type={}", node->type);
         // Process based on node type
         switch (node->type)
         {
@@ -625,7 +480,6 @@ void findActionsDAGAndCollectConstants(
                 if (node->function_base)
                 {
                     String func_name = Poco::toLower(node->function_base->getName());
-                    // LOG_ERROR(logger, "func_name={}", func_name);
                     function_names.push_back(func_name);
                     // Recursively traverse children
                     for (const auto * child : node->children)
@@ -639,13 +493,11 @@ void findActionsDAGAndCollectConstants(
             {
                 // Save current field name
                 current_field_name = node->result_name;
-                // LOG_ERROR(logger, "current_field_name={}", current_field_name);
                 break;
             }
 
             case ActionsDAG::ActionType::COLUMN:
             {
-                // LOG_ERROR(logger, "COLUMN");
                 // Check if this is a constant column
                 if (node->column && isColumnConst(*node->column))
                 {
@@ -661,6 +513,7 @@ void findActionsDAGAndCollectConstants(
                     if (function_size >= 1)
                         last_function_name = function_names[function_size - 1];
                     current_field_name = " ";
+                    DataTypePtr result_type;
                     for (const auto * child : parent_node->children)
                     {
                         switch(child->type)
@@ -668,6 +521,7 @@ void findActionsDAGAndCollectConstants(
                             case ActionsDAG::ActionType::INPUT:
                                 input_number++;
                                 current_field_name = getFieldName(child->result_name);
+                                result_type = child->result_type;
                                 break;
                             case ActionsDAG::ActionType::COLUMN:
                                 column_const_number++;
@@ -676,8 +530,6 @@ void findActionsDAGAndCollectConstants(
                                 break;
                         }
                     }
-                    // LOG_ERROR(logger, "input_number={},column_const_number={},last_function_name={},current_field_name={}", 
-                    //     input_number, column_const_number, last_function_name, current_field_name);
                     if (input_number > 1 || (column_const_number > 1 && is_comparison_function(last_function_name)))
                     {
                         // Set clear flag and return immediately
@@ -691,7 +543,7 @@ void findActionsDAGAndCollectConstants(
                     candidate.binding.dag_node_index = static_cast<UInt32>(map[node]);
                     candidate.binding.value_text = applyVisitor(FieldVisitorToString(), value);
                     candidate.binding.field_type = static_cast<Int32>(value.getType());
-                    candidate.binding.target_type = {};
+                    candidate.binding.target_type = result_type;
                     candidate.value = value;
                     candidate.step_type = step_type;
                     candidate.function_names = function_names;
@@ -705,15 +557,14 @@ void findActionsDAGAndCollectConstants(
         }
     };
     
-    if (dag_scope == "FilterStep")
+    for (const auto * node : dag.getOutputs())
     {
-        const auto * last_output = dag.getOutputs().front();
         std::vector<String> function_names;
-        traverse_node(last_output, nullptr, function_names);
+        traverse_node(node, nullptr, function_names);
 
         if (should_clear_and_return)
             out_candidates.clear();
-    }
+    }        
 }
 
 namespace
@@ -777,18 +628,15 @@ bool parseNormalizedParams(
 
         if (type == Field::Types::String)
         {
-            // if (raw.size() > 2 && ((raw.front() == '\'' && raw.back() == '\'') || (raw.front() == '"' && raw.back() == '"')))
-            // {
-                try
-                {
-                    parsed = parseStringLiteral(raw, converted);
-                }
-                catch (...)
-                {
-                    parsed = false;
-                    LOG_TRACE(logger, "parse string error,raw={},size={}", raw, raw.size());
-                }
-            // }
+            try
+            {
+                parsed = parseStringLiteral(raw, converted);
+            }
+            catch (...)
+            {
+                parsed = false;
+                LOG_TRACE(logger, "parse string error,raw={},size={}", raw, raw.size());
+            }
         }
         else if (type == Field::Types::Array)
         {
@@ -820,78 +668,6 @@ bool parseNormalizedParams(
 }
 }
 
-// /// Helper function to handle common logic for ReadFromMergeTree and ReadWithCOSINEDISTANCE steps
-// template<typename T>
-// void processReadStepWithQueryInfo(
-//     T * step,
-//     const VectorQueryPlanCache::PlanConstantBinding & plan_constant_binding,
-//     const std::function<VectorScanInfoPtr(const VectorScanInfoPtr &, const StorageSnapshotPtr &, const UInt32, const UInt32, const DataTypePtr &)> & apply_bindings_to_vector_info,
-//     const std::function<TextSearchInfoPtr(const TextSearchInfoPtr &, const UInt32, bool)> & apply_bindings_to_text_info,
-//     bool only_vector)
-// {
-//     // Classify the scope type once to avoid repeated string suffix matching
-//     enum class ScopeType { None, VectorScan, TextSearch, HybridVectorScan, HybridTextSearch };
-//     ScopeType scope_type = ScopeType::None;
-//     const String & dag_scope = plan_constant_binding.dag_scope;
-
-//     if (scopeEndsWith(dag_scope, ".QueryInfo.VectorScan"))
-//         scope_type = ScopeType::VectorScan;
-//     else if (scopeEndsWith(dag_scope, ".QueryInfo.TextSearch"))
-//         scope_type = ScopeType::TextSearch;
-//     else if (scopeEndsWith(dag_scope, ".QueryInfo.Hybrid.VectorScan"))
-//         scope_type = ScopeType::HybridVectorScan;
-//     else if (scopeEndsWith(dag_scope, ".QueryInfo.Hybrid.TextSearch"))
-//         scope_type = ScopeType::HybridTextSearch;
-
-//     if (scope_type == ScopeType::VectorScan)
-//     {
-//         const auto updated_vector_info = apply_bindings_to_vector_info(
-//             step->getQueryInfo().vector_scan_info,
-//             step->getStorageSnapshot(),
-//             plan_constant_binding.dag_node_index,
-//             plan_constant_binding.parameter_index,
-//             plan_constant_binding.target_type);
-//         if (updated_vector_info != step->getQueryInfo().vector_scan_info)
-//             step->setVectorScanInfo(updated_vector_info);
-//     }
-
-//     if (scope_type == ScopeType::TextSearch)
-//     {
-//         const auto updated_text_info = apply_bindings_to_text_info(
-//             step->getQueryInfo().text_search_info,
-//             plan_constant_binding.parameter_index, false);
-//         if (updated_text_info != step->getQueryInfo().text_search_info)
-//             step->setTextSearchInfo(updated_text_info);
-//     }
-
-//     if (step->getQueryInfo().hybrid_search_info)
-//     {
-//         if (scope_type == ScopeType::HybridVectorScan || scope_type == ScopeType::HybridTextSearch)
-//         {
-//             auto updated_hybrid_vector = (scope_type == ScopeType::HybridVectorScan)
-//                 ? apply_bindings_to_vector_info(
-//                     step->getQueryInfo().hybrid_search_info->vector_scan_info,
-//                     step->getStorageSnapshot(),
-//                     plan_constant_binding.dag_node_index,
-//                     plan_constant_binding.parameter_index,
-//                     plan_constant_binding.target_type)
-//                 : step->getQueryInfo().hybrid_search_info->vector_scan_info;
-//             auto updated_hybrid_text = (scope_type == ScopeType::HybridTextSearch)
-//                 ? apply_bindings_to_text_info(
-//                     step->getQueryInfo().hybrid_search_info->text_search_info,
-//                     plan_constant_binding.parameter_index, only_vector)
-//                 : step->getQueryInfo().hybrid_search_info->text_search_info;
-//             auto updated_hybrid = rebuildCOSINEDISTANCEInfo(
-//                 step->getQueryInfo().hybrid_search_info,
-//                 updated_hybrid_vector ? updated_hybrid_vector
-//                                       : step->getQueryInfo().hybrid_search_info->vector_scan_info,
-//                 updated_hybrid_text,
-//                 step->getQueryInfo().hybrid_search_info->sparse_search_info);
-//             if (updated_hybrid != step->getQueryInfo().hybrid_search_info)
-//                 step->setCOSINEDISTANCEInfo(updated_hybrid);
-//         }
-//     }
-// }
 
 }
 
@@ -1197,11 +973,7 @@ void VectorQueryParameters::replaceConstantsInQueryPlan(
     (void) only_vector;
     // Replacement happens on a cloned QueryPlan from the cache. The cached entry
     // remains immutable; only the clone owned by the current execution is patched.
-    //
-    // There are two broad classes of replacements here:
-    // 1. Generic constant columns inside ActionsDAG nodes.
-    // 2. QueryInfo-owned payloads that live outside DAGs, such as vector query
-    //    columns, text-search query strings, and other step-local state.
+    // Generic constant columns inside ActionsDAG nodes.
     if (plan_constant_bindings.empty() || parameters.params.empty() || parameters.parsed_params.empty())
         return;
     // Parse the normalized literal tokens only once per VectorQueryParameters instance.
@@ -1238,9 +1010,17 @@ void VectorQueryParameters::replaceConstantsInQueryPlan(
             return;
         try
         {
+            Field raw_value = parameters.parsed_params[parameter_index];
+            if (raw_value.getType() == Field::Types::String && isArray(dag_node.result_type))
+            {
+                Field converted;
+                const auto & raw_text = raw_value.safeGet<String>();
+                if (stringToNumericArrayField(raw_text, dag_node.result_type, converted))
+                    raw_value = std::move(converted);
+            }
             // ActionsDAG constants are rewritten by replacing the const column payload
             // at the recorded node index with the parsed runtime Field value.
-            ColumnPtr new_column = dag_node.result_type->createColumnConst(0, parameters.parsed_params[parameter_index]);
+            ColumnPtr new_column = dag_node.result_type->createColumnConst(0, raw_value);
             const_cast<ColumnPtr &>(dag_node.column) = std::move(new_column);
         }
         catch (...)
@@ -1249,87 +1029,6 @@ void VectorQueryParameters::replaceConstantsInQueryPlan(
         }
     };
 
-    // auto apply_bindings_to_vector_info = [&](const VectorScanInfoPtr & vector_scan_info, const StorageSnapshotPtr & storage_snapshot, const UInt32 dag_node_index, const UInt32 parameter_index, const DataTypePtr & target_type_hint) -> VectorScanInfoPtr
-    // {
-    //     if (!vector_scan_info)
-    //         return vector_scan_info;
-    //     if (parameter_index >= parameters.parsed_params.size() || parameter_index >= parameters.params.size())
-    //         return vector_scan_info;
-
-    //     if (dag_node_index >= vector_scan_info->vector_scan_descs.size())
-    //         return vector_scan_info;
-
-    //     auto descs = vector_scan_info->vector_scan_descs;
-    //     auto & desc = descs[dag_node_index];
-    //     try
-    //     {
-    //         // Vector search descriptors keep the query vector outside the normal
-    //         // DAG constant list, so the cached plan must patch that const column
-    //         // directly from the runtime parameter value.
-    //         auto query_type = target_type_hint;
-    //         if (!query_type)
-    //         {
-    //             if (!storage_snapshot)
-    //                 return vector_scan_info;
-    //             query_type = storage_snapshot->getConcreteType(desc.search_column_name);
-    //         }
-    //         Field raw_value = parameters.parsed_params[parameter_index];
-    //         if (raw_value.getType() == Field::Types::String)
-    //         {
-    //             Field converted;
-    //             const auto & raw_text = raw_value.safeGet<String>();
-    //             if (stringToNumericArrayField(raw_text, query_type, converted))
-    //                 raw_value = std::move(converted);
-    //         }
-
-    //         if (raw_value.getType() != Field::Types::Array)
-    //             return vector_scan_info;
-
-    //         desc.query_column = query_type->createColumnConst(1, raw_value);
-    //         return std::make_shared<VectorScanInfo>(descs);
-    //     }
-    //     catch (...)
-    //     {
-    //         LOG_DEBUG(logger, "parse string to ArrayField error: {}", getCurrentExceptionMessage(false));
-    //         return vector_scan_info;
-    //     }
-    // };
-
-    // auto apply_bindings_to_text_info = [&](const TextSearchInfoPtr & text_search_info, const UInt32 parameter_index, bool vector_only) -> TextSearchInfoPtr
-    // {
-    //     if (!text_search_info)
-    //         return text_search_info;
-    //     if (parameter_index >= parameters.params.size())
-    //         return text_search_info;
-
-    //     String updated_query_text = parameters.params[parameter_index].original_string;
-    //     // If there are quotation marks on both sides of a string, it will cause errors in query results, so it is necessary to remove the quotation marks on both ends.
-    //     if (!vector_only && updated_query_text.size() > 2 && ((updated_query_text.front() == '\'' && updated_query_text.back() == '\'') || (updated_query_text.front() == '"' && updated_query_text.back() == '"')))
-    //         updated_query_text = updated_query_text.substr(1, updated_query_text.size() - 2);
-    //     if (updated_query_text == text_search_info->query_text)
-    //     {
-    //         return text_search_info;
-    //     }
-
-    //     if (text_search_info->from_table_func)
-    //     {
-    //         return std::make_shared<TextSearchInfo>(
-    //             text_search_info->from_table_func,
-    //             text_search_info->index_name,
-    //             updated_query_text,
-    //             text_search_info->function_column_name,
-    //             text_search_info->topk,
-    //             text_search_info->text_operator,
-    //             text_search_info->enable_nlq);
-    //     }
-    //     return std::make_shared<TextSearchInfo>(
-    //         text_search_info->text_column_name,
-    //         updated_query_text,
-    //         text_search_info->function_column_name,
-    //         text_search_info->topk,
-    //         text_search_info->text_operator,
-    //         text_search_info->enable_nlq);
-    // };
 
     // Each binding points to one mutable constant slot inside the cached plan.
     // Rewriting all bindings restores the plan to the runtime literal values of
@@ -1368,34 +1067,9 @@ void VectorQueryParameters::replaceConstantsInQueryPlan(
                 {
                     ActionsDAG dag = filter_actions->clone();
                     apply_bindings_to_dag(dag,  plan_constant_binding.dag_node_index, plan_constant_binding.parameter_index);
-                    // read_step->setFilterActionsDAGForQueryInfo(std::make_shared<ActionsDAG>(std::move(dag)));
                 }
             }
-
-            // if (auto prewhere_info = read_step->getPrewhereInfo())
-            // {
-            //     if (plan_constant_binding.dag_scope == "ReadFromMergeTree.Prewhere")
-            //         apply_bindings_to_dag(prewhere_info->prewhere_actions,  plan_constant_binding.dag_node_index, plan_constant_binding.parameter_index);
-            //     if (plan_constant_binding.dag_scope == "ReadFromMergeTree.RowLevelFilter" && prewhere_info->row_level_filter)
-            //         apply_bindings_to_dag(*prewhere_info->row_level_filter,  plan_constant_binding.dag_node_index, plan_constant_binding.parameter_index);
-            // }
-
-            // processReadStepWithQueryInfo<ReadFromMergeTree>(
-            //     read_step,
-            //     plan_constant_binding,
-            //     apply_bindings_to_vector_info,
-            //     apply_bindings_to_text_info,
-            //     only_vector);
         }
-        // else if (auto * read_hybrid_step = typeid_cast<ReadWithCOSINEDISTANCE *>(node->step.get()))
-        // {
-        //     processReadStepWithQueryInfo<ReadWithCOSINEDISTANCE>(
-        //         read_hybrid_step,
-        //         plan_constant_binding,
-        //         apply_bindings_to_vector_info,
-        //         apply_bindings_to_text_info,
-        //         only_vector);
-        // }
     }
 }
 
@@ -1409,7 +1083,6 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
     std::vector<VectorQueryPlanCache::ASTLiteralPosition> positions;
     if (!query_ast)
         return positions;
-
     std::unordered_set<std::string> unique_strings;
 
     auto should_skip_limit_child = [](const ASTPtr & parent, const ASTPtr & child)
@@ -1631,7 +1304,7 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
 
                 if (pos.step_type == 3)
                 {
-                    LOG_DEBUG(logger, "Join ... On found");
+                    LOG_DEBUG(logger, "Join ... On found Literal");
                     can_cache = false;
                     return;
                 }
@@ -1991,8 +1664,7 @@ bool VectorQueryParameters::parseNormalizedParamsWithPlan(
 std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::CollectQueryPlanConstants(
     QueryPlan & query_plan,
     const std::vector<VectorQueryPlanCache::ASTLiteralPosition> & ast_literal_positions,
-    const NormalizedQueryResult & parameters,
-    bool only_vector)
+    const NormalizedQueryResult & parameters)
 {
     // Walk the finished QueryPlan and record every constant location that must be
     // patched on a cache hit. The collected binding order follows the same runtime
@@ -2022,80 +1694,47 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
             continue;
 
         const String step_name = node->step ? node->step->getName() : "Unknown";
-        // LOG_ERROR(logger, "step_name={}", step_name);
-        // Expression-like steps store constants inside ActionsDAG nodes.
-        // Those constants are reachable only after planning, so they must be
-        // collected from the built plan rather than from the AST.
-        //
-        // Even in `only_vector` mode we still scan DAG constants here because
-        // plain `distance(vector, [...])` queries may keep the query vector only
-        // inside ActionsDAG constants instead of QueryInfo.vector_scan_info.
-        if (!only_vector)
-        {
-            if (auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get()))
-                findActionsDAGAndCollectConstants(
-                    expression_step->getExpression(),
-                    path,
-                    "ExpressionStep",
-                    1,
-                    candidates);
+        if (auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get()))
+            findActionsDAGAndCollectConstants(
+                expression_step->getExpression(),
+                path,
+                "ExpressionStep",
+                1,
+                candidates);
 
-            if (auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
+        if (auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
+            findActionsDAGAndCollectConstants(
+                filter_step->getExpression(),
+                path,
+                "FilterStep",
+                2,
+                candidates);
+        // JoinStepLogical is not supported temporarily because updatePipeline is not implemented, so an error will occur after restoration.
+        if (typeid_cast<JoinStepLogical *>(node->step.get()))
+            return bindings;
+
+        if (auto * read_step = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+        {
+            // Read steps can own additional filter DAGs that are separate from
+            // the main ExpressionStep / FilterStep chain.
+            if (const auto & filter_actions = read_step->getFilterActionsDAG())
                 findActionsDAGAndCollectConstants(
-                    filter_step->getExpression(),
+                    *filter_actions,
                     path,
-                    "FilterStep",
+                    "ReadFromMergeTree.FilterActions",
                     2,
                     candidates);
 
-            if (auto * read_step = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+            if (auto prewhere_info = read_step->getPrewhereInfo())
             {
-                // Read steps can own additional filter DAGs that are separate from
-                // the main ExpressionStep / FilterStep chain.
-                if (const auto & filter_actions = read_step->getFilterActionsDAG())
-                    findActionsDAGAndCollectConstants(
-                        *filter_actions,
-                        path,
-                        "ReadFromMergeTree.FilterActions",
-                        2,
-                        candidates);
-
-                if (auto prewhere_info = read_step->getPrewhereInfo())
-                {
-                    findActionsDAGAndCollectConstants(
-                        prewhere_info->prewhere_actions,
-                        path,
-                        "ReadFromMergeTree.Prewhere",
-                        2,
-                        candidates);
-                    // if (prewhere_info->row_level_filter)
-                    //     findActionsDAGAndCollectConstants(
-                    //         *prewhere_info->row_level_filter,
-                    //         path,
-                    //         "ReadFromMergeTree.RowLevelFilter",
-                    //         2,
-                    //         candidates);
-                }
-
-                // findQueryInfoAndCollectConstants(
-                //     read_step->getQueryInfo(),
-                //     read_step->getStorageSnapshot(),
-                //     path,
-                //     step_name,
-                //     candidates);
+                findActionsDAGAndCollectConstants(
+                    prewhere_info->prewhere_actions,
+                    path,
+                    "ReadFromMergeTree.Prewhere",
+                    2,
+                    candidates);
             }
         }
-        // if (auto * read_hybrid_step = typeid_cast<ReadWithCOSINEDISTANCE *>(node->step.get()))
-        // {
-        //     // Hybrid-search read steps keep vector/text payloads in QueryInfo rather
-        //     // than in ordinary DAG nodes, so they need a dedicated binding path.
-        //     findQueryInfoAndCollectConstants(
-        //         read_hybrid_step->getQueryInfo(),
-        //         read_hybrid_step->getStorageSnapshot(),
-        //         path,
-        //         step_name,
-        //         candidates);
-        // }
 
         for (size_t i = 0; i < node->children.size(); ++i)
         {
@@ -2107,7 +1746,6 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
 
     std::vector<bool> candidate_used(candidates.size(), false);
     bindings.reserve(ast_literal_positions.size());
-    // LOG_ERROR(logger, "candidates={}", candidates.size());
 
     for (Int64 ast_index = static_cast<Int64>(ast_literal_positions.size()) - 1; ast_index >= 0; --ast_index)
     {
@@ -2133,7 +1771,7 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
                 function_chain += ast_position.function_list[function_index];
             }
 
-            LOG_ERROR(
+            LOG_DEBUG(
                 logger,
                 "CollectQueryPlanConstants failed: no QueryPlan constant matches AST literal index={} step_type={} identifier_name={} ast_path_name={} raw_param={} parsed_param={} function_list={}",
                 ast_index,
@@ -2162,7 +1800,7 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
                 scopes_text += candidate_scopes[scope_index];
             }
 
-            LOG_ERROR(
+            LOG_DEBUG(
                 logger,
                 "CollectQueryPlanConstants failed: AST literal index={} step_type={} identifier_name={} ast_path_name={} matched multiple QueryPlan constants: {}",
                 ast_index,
@@ -2186,7 +1824,7 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
         if (candidate_used[candidate_index])
             continue;
 
-        LOG_ERROR(
+        LOG_DEBUG(
             logger,
             "CollectQueryPlanConstants failed: QueryPlan constant scope={} dag_node_index={} value={} has no matching AST literal position",
             candidates[candidate_index].binding.dag_scope,

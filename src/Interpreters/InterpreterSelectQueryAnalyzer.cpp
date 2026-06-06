@@ -436,7 +436,6 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
             std::vector<VectorQueryPlanCache::ASTLiteralPosition> ast_literal_positions;
             if (query)
                 ast_literal_positions = parameterizer.collectASTLiteralPositions(query, vector_query_plan_cache_only_vector);
-            // LOG_ERROR(getLogger("InterpreterSelectQueryAnalyzer"), "ast_literal_positions={}", ast_literal_positions.size());
             vector_query_plan_cache_writer.setAstLiteralPositions(ast_literal_positions);
             auto parameter_values = parameterizer.buildParameterValuesFromAST(query, ast_literal_positions);
             VectorQueryParameters::NormalizedQueryResult collected_parameters;
@@ -448,18 +447,16 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
             plan_constant_bindings = parameterizer.CollectQueryPlanConstants(
                 query_plan,
                 ast_literal_positions,
-                collected_parameters,
-                vector_query_plan_cache_only_vector);
-            // LOG_ERROR(getLogger("InterpreterSelectQueryAnalyzer"), "plan_constant_bindings={}", plan_constant_bindings.size());
+                collected_parameters);
             if (!ast_literal_positions.empty())
             {
                 vector_query_plan_cache_writer.setAst(query);
-                // LOG_ERROR(getLogger("InterpreterSelectQueryAnalyzer"), "setAst");
+                LOG_DEBUG(getLogger("InterpreterSelectQueryAnalyzer"), "setAst");
                 if (!plan_constant_bindings.empty())
                 {
                     vector_query_plan_cache_writer.setPlanConstantBindings(std::move(plan_constant_bindings));
                     vector_query_plan_cache_writer.setPlan(query_plan);
-                    // LOG_ERROR(getLogger("InterpreterSelectQueryAnalyzer"), "setPlan");
+                    LOG_DEBUG(getLogger("InterpreterSelectQueryAnalyzer"), "setPlan");
                 }
                 setVectorQueryPlanCacheWriter(std::make_shared<VectorQueryPlanCache::Writer>(std::move(vector_query_plan_cache_writer)));
             }    

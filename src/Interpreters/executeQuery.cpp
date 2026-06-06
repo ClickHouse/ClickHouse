@@ -325,7 +325,6 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                 result.is_select = true;
                 result.vector_query_for_plan_cache = parameterized_result.normalized_sql;
                 result.new_query = parameterized_result.new_sql;
-                // LOG_ERROR(logger, "vector_query_for_plan_cache={}", result.vector_query_for_plan_cache);
                 if (vector_query_plan_cache && !internal)
                 {
                     chassert(!result.vector_query_for_plan_cache.empty());
@@ -357,7 +356,7 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                                 cached_ast_literal_positions);
                         if (ast_parameters_restored)
                         {
-                            // LOG_ERROR(logger, "Restore AST from vector_query_plan_cache({})", result.new_query);
+                            LOG_DEBUG(logger, "Restore AST from vector_query_plan_cache({})", result.new_query);
                             result.vector_ast_restored = true;
                             result.skip_ast_processing = true;
                             result.can_use_query_result_cache = query_result_cache != nullptr
@@ -379,12 +378,11 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                         }
                         else
                         {
-                            // LOG_ERROR(logger, "Failed to restore AST from query_plan_cache({})", result.new_query);
+                            LOG_DEBUG(logger, "Failed to restore AST from query_plan_cache({})", result.new_query);
                             result.ast.reset();
                             parsed_cache_parameters = false;
                         }
                     }
-
                     if (!result.query_result_cache_hit)
                     {
                         // Counts plan_size into QueryPlanCacheReadBytes (separate from ast_size counted in hasAstCacheEntryForKey above).
@@ -404,10 +402,12 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                                 parameterized_result,
                                 cached_plan_constant_bindings,
                                 vector_query_plan_cache_only_vector);
-                            // LOG_ERROR(logger, "Restore QueryPlan from query_plan_cache({})", result.new_query);
+                            LOG_DEBUG(logger, "Restore QueryPlan from query_plan_cache({})", result.new_query);
                             result.skip_ast_processing = true;
                         }
                     }
+                    else
+                        LOG_DEBUG(logger, "use QueryResult from query_plan_cache({})", result.new_query);
                 }
             }
         }
@@ -415,7 +415,7 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
         {
             result = VectorQueryPlanCacheRestoreResult{};
             result.vector_query_for_plan_cache.assign(begin, end);
-            // LOG_ERROR(logger, "normalizeQueryAndExtractParams failed: {}", getCurrentExceptionMessage(false));
+            LOG_DEBUG(logger, "normalizeQueryAndExtractParams failed: {}", getCurrentExceptionMessage(false));
         }
     }
     else if (vector_use_cast)
@@ -2197,7 +2197,7 @@ static BlockIO executeQueryImpl(
                 if (interpreter)
                 {
                     interpreter->is_internal = internal;
-                    if (enable_vector_query_plan_cache)
+                    if (enable_vector_query_plan_cache && !skip_ast_processing)
                     {
                         interpreter->is_select = is_select;
                         interpreter->setVectorQueryString(vector_query_for_plan_cache.empty() ? query : vector_query_for_plan_cache);
@@ -2346,7 +2346,7 @@ static BlockIO executeQueryImpl(
             {
                 return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
             };
-
+            
             // If plan cache was used, wrap the callback:
             if (vector_query_plan_cache_writer)
             {

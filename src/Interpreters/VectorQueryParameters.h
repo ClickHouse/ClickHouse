@@ -144,8 +144,7 @@ public:
     std::vector<VectorQueryPlanCache::PlanConstantBinding> CollectQueryPlanConstants(
         QueryPlan & query_plan,
         const std::vector<VectorQueryPlanCache::ASTLiteralPosition> & ast_literal_positions,
-        const NormalizedQueryResult & parameters,
-        bool only_vector = false);
+        const NormalizedQueryResult & parameters);
 
 };
 

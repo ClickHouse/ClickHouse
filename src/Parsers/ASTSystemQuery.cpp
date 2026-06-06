@@ -373,6 +373,15 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::CLEAR_VECTOR_QUERY_PLAN_CACHE:
+        {
+            if (vector_query_plan_cache_tag.has_value())
+            {
+                print_keyword(" TAG ");
+                ostr << quoteString(*vector_query_plan_cache_tag);
+            }
+            break;
+        }
         case Type::UNFREEZE:
         {
             print_keyword(" WITH NAME ");

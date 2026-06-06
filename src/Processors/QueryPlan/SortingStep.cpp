@@ -304,6 +304,74 @@ void SortingStep::updateLimit(size_t limit_)
         use_buffering = false;
 }
 
+QueryPlanStepPtr SortingStep::clone() const
+{
+    std::unique_ptr<SortingStep> step;
+    if (type == Type::Full)
+    {
+        if (partition_by_description.empty())
+            step = std::make_unique<SortingStep>(
+                input_headers.front(),
+                result_description,
+                limit,
+                sort_settings,
+                is_sorting_for_merge_join);
+        else
+            step = std::make_unique<SortingStep>(
+                input_headers.front(),
+                result_description,
+                partition_by_description,
+                limit,
+                sort_settings);
+    }
+    else if (type == Type::FinishSorting)
+    {
+        step = std::make_unique<SortingStep>(
+            input_headers.front(),
+            prefix_description,
+            result_description,
+            sort_settings.max_block_size,
+            limit);
+    }
+    else if (type == Type::MergingSorted)
+    {
+        step = std::make_unique<SortingStep>(
+            input_headers.front(),
+            result_description,
+            sort_settings,
+            limit,
+            always_read_till_end);
+    }
+    else if (type == Type::PartitionedFinishSorting)
+    {
+        step = std::make_unique<SortingStep>(
+            input_headers.front(),
+            prefix_description,
+            result_description,
+            sort_settings.max_block_size,
+            limit);
+        step->convertToPartitionedFinishSorting();
+    }
+ 
+    // Copy additional properties
+    step->type = type;
+    step->prefix_description = prefix_description;
+    step->limit = limit;
+    step->always_read_till_end = always_read_till_end;
+    step->use_buffering = use_buffering;
+    step->apply_virtual_row_conversions = apply_virtual_row_conversions;
+    step->sort_settings = sort_settings;
+    step->partition_by_description = partition_by_description;
+    step->is_sorting_for_merge_join = is_sorting_for_merge_join;
+    step->threshold_tracker = threshold_tracker;
+    step->limit_by_columns = limit_by_columns;
+    step->limit_by_group_length = limit_by_group_length;
+ 
+    // Set step description
+    step->step_description = step_description;
+    return step;
+}
+
 void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_, bool apply_virtual_row_conversions_)
 {
     type = Type::FinishSorting;

@@ -86,6 +86,19 @@ void LimitStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Reads All Data", always_read_till_end);
 }
 
+QueryPlanStepPtr LimitStep::clone() const
+{
+    auto step = std::make_unique<LimitStep>(
+        input_headers.front(),
+        limit,
+        offset,
+        always_read_till_end,
+        with_ties,
+        description);
+    step->step_description = step_description;
+    return step;
+}
+
 void LimitStep::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;
