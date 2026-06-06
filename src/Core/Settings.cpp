@@ -6101,6 +6101,9 @@ Allow to merge filter into `JOIN` condition and convert `CROSS JOIN` to `INNER`.
     DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
 Allow to convert `JOIN` to subquery with `IN` if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
 )", 0) \
+    DECLARE(Bool, query_plan_optimize_self_join_shared_scan, false, R"(
+Scan the table once for `INNER`/`LEFT` self-joins and replay from an in-memory buffer instead of performing a second scan. Only fires when both sides resolve to the same `MergeTree` table, the build side reads a superset of the probe side's columns, the same storage snapshot is used, and there is no `FINAL`, `SAMPLE`, `PREWHERE`, row-level filter, parallel replicas, vector search, or pushed-down `WHERE` filter.
+)", 0) \
     DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
 Allow to push down filter to PREWHERE expression for supported storages
 )", 0) \

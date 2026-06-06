@@ -51,6 +51,7 @@ namespace Setting
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool query_plan_optimize_prewhere;
     extern const SettingsBool optimize_prewhere_after_pushdown;
+    extern const SettingsBool query_plan_optimize_self_join_shared_scan;
     extern const SettingsBool query_plan_push_down_limit;
     extern const SettingsBool query_plan_push_limit_by_into_sort;
     extern const SettingsBool query_plan_top_k_through_join;
@@ -193,6 +194,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
     correlated_subqueries_use_in_memory_buffer = from[Setting::correlated_subqueries_use_in_memory_buffer]
         && from[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT;
+    optimize_self_join_shared_scan = from[Setting::query_plan_enable_optimizations]
+        && from[Setting::query_plan_optimize_self_join_shared_scan];
 
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];

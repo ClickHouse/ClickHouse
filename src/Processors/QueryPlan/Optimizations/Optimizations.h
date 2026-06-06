@@ -207,6 +207,16 @@ void materializeQueryPlanReferences(QueryPlan::Node & node, QueryPlan::Nodes & n
 void optimizeUnusedCommonSubplans(QueryPlan::Node & node);
 void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings);
 
+/// If both children of a JoinStepLogical read the same MergeTree table with identical scan
+/// parameters, share the scan: insert CommonSubplanStep above ReadFromMergeTree on the build side
+/// and replace the probe side's ReadFromMergeTree with a CommonSubplanReferenceStep.
+/// useMemoryBufferForCommonSubplanResult later converts these into SaveSubqueryResultToBufferStep
+/// + ReadFromCommonBufferStep so the table is scanned only once.
+void tryOptimizeSelfJoinSharedScan(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & settings);
+
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.
 std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root);
