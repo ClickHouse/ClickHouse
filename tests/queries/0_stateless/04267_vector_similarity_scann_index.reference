@@ -40,3 +40,5 @@
 16. Serialization round-trip (DETACH/ATTACH)
 1
 0
+17. L2Distance optimized plan returns correct distance value (not double-sqrt)
+1

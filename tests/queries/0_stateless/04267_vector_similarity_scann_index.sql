@@ -376,3 +376,29 @@ SELECT count() FROM (
     SETTINGS use_skip_indexes = 0
 );
 DROP TABLE tab_scann_detach;
+
+-- Test 17: Optimized plan must return the correct L2Distance value, not sqrt(L2Distance).
+-- Vector [3.0, 4.0] has L2Distance to [0.0, 0.0] = 5.0.
+-- A double-sqrt bug would return sqrt(5) ≈ 2.236 instead.
+SELECT '17. L2Distance optimized plan returns correct distance value (not double-sqrt)';
+DROP TABLE IF EXISTS tab_scann_l2_val;
+CREATE TABLE tab_scann_l2_val (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
+    ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+INSERT INTO tab_scann_l2_val VALUES (0, [3.0, 4.0]);
+INSERT INTO tab_scann_l2_val SELECT toInt32(number + 1), [toFloat32(number + 100), toFloat32(number + 100)] FROM numbers(1999);
+OPTIMIZE TABLE tab_scann_l2_val FINAL;
+-- Distance value from optimized plan must match brute force (< 0.01 tolerance for float32).
+SELECT abs(dist_idx - dist_exact) < 0.01 FROM
+(
+    WITH [toFloat32(0.0), toFloat32(0.0)] AS ref
+    SELECT L2Distance(vec, ref) AS dist_idx FROM tab_scann_l2_val
+    ORDER BY L2Distance(vec, ref) ASC LIMIT 1
+    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1
+) AS t1,
+(
+    WITH [toFloat32(0.0), toFloat32(0.0)] AS ref
+    SELECT L2Distance(vec, ref) AS dist_exact FROM tab_scann_l2_val
+    ORDER BY L2Distance(vec, ref) ASC LIMIT 1
+    SETTINGS use_skip_indexes = 0
+) AS t2;
+DROP TABLE tab_scann_l2_val;
