@@ -28,15 +28,6 @@ namespace
 using BloomDivider = libdivide::divider<size_t, libdivide::BRANCHFREE>;
 constexpr size_t BLOOM_WORD_BITS = 8 * sizeof(BloomFilter::UnderType);
 
-ALWAYS_INLINE BloomFilterHashPair makeCityHashPair(const char * data, size_t size, UInt64 seed)
-{
-    return
-    {
-        CityHash_v1_0_2::CityHash64WithSeed(data, size, seed),
-        CityHash_v1_0_2::CityHash64WithSeed(data, size, SEED_GEN_A * seed + SEED_GEN_B)
-    };
-}
-
 ALWAYS_INLINE UInt64 hashWithSeedCityHash(UInt64 hash, UInt64 hash_seed)
 {
     return CityHash_v1_0_2::Hash128to64(CityHash_v1_0_2::uint128(hash, hash_seed));
@@ -47,15 +38,21 @@ ALWAYS_INLINE size_t fastMod(size_t value, size_t modulus, const BloomDivider & 
     return value - (value / divider) * modulus;
 }
 
-ALWAYS_INLINE void addHashPairGeneric(
+/// `add` and `find` share the same loop. When `compile_time_hashes` is non-zero the number of
+/// hash functions is known at compile time, so the compiler unrolls the loop; otherwise the runtime
+/// `hashes` argument is used. This keeps a single source of truth for both the generic and the
+/// specialized (e.g. the default `k = 3`) code paths.
+template <size_t compile_time_hashes>
+ALWAYS_INLINE void addHashPairToFilter(
     BloomFilter::Container & filter,
     const BloomFilterHashPair & pair,
     size_t hashes,
     size_t modulus,
     const BloomDivider & divider)
 {
+    const size_t count = compile_time_hashes != 0 ? compile_time_hashes : hashes;
     size_t acc = pair.hash1;
-    for (size_t i = 0; i < hashes; ++i)
+    for (size_t i = 0; i < count; ++i)
     {
         size_t pos = fastMod(acc + i * i, modulus, divider);
         filter[pos / BLOOM_WORD_BITS] |= (1ULL << (pos % BLOOM_WORD_BITS));
@@ -63,15 +60,17 @@ ALWAYS_INLINE void addHashPairGeneric(
     }
 }
 
-ALWAYS_INLINE bool findHashPairGeneric(
+template <size_t compile_time_hashes>
+ALWAYS_INLINE bool findHashPairInFilter(
     const BloomFilter::Container & filter,
     const BloomFilterHashPair & pair,
     size_t hashes,
     size_t modulus,
     const BloomDivider & divider)
 {
+    const size_t count = compile_time_hashes != 0 ? compile_time_hashes : hashes;
     size_t acc = pair.hash1;
-    for (size_t i = 0; i < hashes; ++i)
+    for (size_t i = 0; i < count; ++i)
     {
         size_t pos = fastMod(acc + i * i, modulus, divider);
         if (!(filter[pos / BLOOM_WORD_BITS] & (1ULL << (pos % BLOOM_WORD_BITS))))
@@ -79,67 +78,6 @@ ALWAYS_INLINE bool findHashPairGeneric(
         acc += pair.hash2;
     }
     return true;
-}
-
-ALWAYS_INLINE void addHashPairK3(
-    BloomFilter::Container & filter,
-    const BloomFilterHashPair & pair,
-    size_t modulus,
-    const BloomDivider & divider)
-{
-    size_t acc = pair.hash1;
-    for (size_t i = 0; i < 3; ++i)
-    {
-        size_t pos = fastMod(acc + i * i, modulus, divider);
-        filter[pos / BLOOM_WORD_BITS] |= (1ULL << (pos % BLOOM_WORD_BITS));
-        acc += pair.hash2;
-    }
-}
-
-ALWAYS_INLINE bool findHashPairK3(
-    const BloomFilter::Container & filter,
-    const BloomFilterHashPair & pair,
-    size_t modulus,
-    const BloomDivider & divider)
-{
-    size_t acc = pair.hash1;
-    for (size_t i = 0; i < 3; ++i)
-    {
-        size_t pos = fastMod(acc + i * i, modulus, divider);
-        if (!(filter[pos / BLOOM_WORD_BITS] & (1ULL << (pos % BLOOM_WORD_BITS))))
-            return false;
-        acc += pair.hash2;
-    }
-    return true;
-}
-
-[[maybe_unused]] void addHashPairsK3Impl(
-    BloomFilter::Container & filter,
-    const BloomFilterHashPair * pairs,
-    size_t count,
-    size_t modulus,
-    const BloomDivider & divider)
-{
-    for (size_t i = 0; i < count; ++i)
-        addHashPairK3(filter, pairs[i], modulus, divider);
-}
-
-[[maybe_unused]] size_t findHashPairsK3Impl(
-    const BloomFilter::Container & filter,
-    const BloomFilterHashPair * pairs,
-    size_t count,
-    size_t modulus,
-    const BloomDivider & divider,
-    UInt8 * out_mask)
-{
-    size_t found_count = 0;
-    for (size_t i = 0; i < count; ++i)
-    {
-        const bool found = findHashPairK3(filter, pairs[i], modulus, divider);
-        out_mask[i] = found;
-        found_count += found;
-    }
-    return found_count;
 }
 }
 
@@ -178,31 +116,38 @@ void BloomFilter::resize(size_t size_)
     filter.resize(words);
 }
 
+BloomFilterHashPair BloomFilter::computeHashPair(const char * data, size_t len, UInt64 seed_)
+{
+    return
+    {
+        CityHash_v1_0_2::CityHash64WithSeed(data, len, seed_),
+        CityHash_v1_0_2::CityHash64WithSeed(data, len, SEED_GEN_A * seed_ + SEED_GEN_B)
+    };
+}
+
 bool BloomFilter::find(const char * data, size_t len) const
 {
-    return findHashPair(makeCityHashPair(data, len, seed));
+    return findHashPair(computeHashPair(data, len, seed));
 }
 
 void BloomFilter::add(const char * data, size_t len)
 {
-    addHashPair(makeCityHashPair(data, len, seed));
+    addHashPair(computeHashPair(data, len, seed));
 }
 
 void BloomFilter::addHashPair(const BloomFilterHashPair & pair)
 {
     if (hashes == 3)
-    {
-        addHashPairK3(filter, pair, modulus, divider);
-        return;
-    }
-    addHashPairGeneric(filter, pair, hashes, modulus, divider);
+        addHashPairToFilter<3>(filter, pair, hashes, modulus, divider);
+    else
+        addHashPairToFilter<0>(filter, pair, hashes, modulus, divider);
 }
 
 bool BloomFilter::findHashPair(const BloomFilterHashPair & pair) const
 {
     if (hashes == 3)
-        return findHashPairK3(filter, pair, modulus, divider);
-    return findHashPairGeneric(filter, pair, hashes, modulus, divider);
+        return findHashPairInFilter<3>(filter, pair, hashes, modulus, divider);
+    return findHashPairInFilter<0>(filter, pair, hashes, modulus, divider);
 }
 
 void BloomFilter::addHashPairs(const BloomFilterHashPair * pairs, size_t count)
@@ -210,14 +155,16 @@ void BloomFilter::addHashPairs(const BloomFilterHashPair * pairs, size_t count)
     if (count == 0)
         return;
 
+    /// Dispatch on the number of hash functions once, outside the loop, so the specialized path stays unrolled.
     if (hashes == 3)
     {
-        addHashPairsK3Impl(filter, pairs, count, modulus, divider);
+        for (size_t i = 0; i < count; ++i)
+            addHashPairToFilter<3>(filter, pairs[i], hashes, modulus, divider);
         return;
     }
 
     for (size_t i = 0; i < count; ++i)
-        addHashPairGeneric(filter, pairs[i], hashes, modulus, divider);
+        addHashPairToFilter<0>(filter, pairs[i], hashes, modulus, divider);
 }
 
 size_t BloomFilter::findHashPairs(const BloomFilterHashPair * pairs, size_t count, UInt8 * out_mask) const
@@ -225,13 +172,23 @@ size_t BloomFilter::findHashPairs(const BloomFilterHashPair * pairs, size_t coun
     if (count == 0)
         return 0;
 
-    if (hashes == 3)
-        return findHashPairsK3Impl(filter, pairs, count, modulus, divider, out_mask);
-
     size_t found_count = 0;
+
+    /// Dispatch on the number of hash functions once, outside the loop, so the specialized path stays unrolled.
+    if (hashes == 3)
+    {
+        for (size_t i = 0; i < count; ++i)
+        {
+            const bool found = findHashPairInFilter<3>(filter, pairs[i], hashes, modulus, divider);
+            out_mask[i] = found;
+            found_count += found;
+        }
+        return found_count;
+    }
+
     for (size_t i = 0; i < count; ++i)
     {
-        const bool found = findHashPairGeneric(filter, pairs[i], hashes, modulus, divider);
+        const bool found = findHashPairInFilter<0>(filter, pairs[i], hashes, modulus, divider);
         out_mask[i] = found;
         found_count += found;
     }

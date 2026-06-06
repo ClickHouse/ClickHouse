@@ -7,7 +7,6 @@
 #include <Common/SharedMutex.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
-#include <city.h>
 #include <algorithm>
 #include <vector>
 
@@ -108,21 +107,10 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
 
 static constexpr UInt64 BLOOM_FILTER_SEED = 42;
 static constexpr size_t HASH_BATCH_SIZE = 1024;
-static constexpr UInt64 SEED_GEN_A = 845897321;
-static constexpr UInt64 SEED_GEN_B = 217728422;
 
 namespace
 {
-ALWAYS_INLINE BloomFilterHashPair makeCityHashPair(const char * data, size_t size, UInt64 seed)
-{
-    return
-    {
-        CityHash_v1_0_2::CityHash64WithSeed(data, size, seed),
-        CityHash_v1_0_2::CityHash64WithSeed(data, size, SEED_GEN_A * seed + SEED_GEN_B)
-    };
-}
-
-void hashFixedSizeCityHash(
+void hashFixedSizeColumn(
     const char * raw_data,
     size_t value_size,
     size_t row_count,
@@ -132,13 +120,13 @@ void hashFixedSizeCityHash(
     const char * position = raw_data;
     for (size_t row = 0; row < row_count; ++row)
     {
-        out_hashes[row] = makeCityHashPair(position, value_size, seed);
+        out_hashes[row] = BloomFilter::computeHashPair(position, value_size, seed);
         position += value_size;
     }
 }
 
 template <typename ProcessBatch>
-void forEachColumnHashBatchCityHash(const IColumn & column, UInt64 seed, ProcessBatch && process_batch)
+void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch && process_batch)
 {
     const size_t row_count = column.size();
     if (row_count == 0)
@@ -158,7 +146,7 @@ void forEachColumnHashBatchCityHash(const IColumn & column, UInt64 seed, Process
         {
             const size_t batch_size = std::min(hash_pairs.size(), row_count - start_row);
             const char * batch_data = raw_data.data() + start_row * value_size;
-            hashFixedSizeCityHash(batch_data, value_size, batch_size, seed, hash_pairs.data());
+            hashFixedSizeColumn(batch_data, value_size, batch_size, seed, hash_pairs.data());
             process_batch(hash_pairs.data(), batch_size, start_row);
             start_row += batch_size;
         }
@@ -172,7 +160,7 @@ void forEachColumnHashBatchCityHash(const IColumn & column, UInt64 seed, Process
         for (size_t index = 0; index < batch_size; ++index)
         {
             const auto value = column.getDataAt(start_row + index);
-            hash_pairs[index] = makeCityHashPair(value.data(), value.size(), seed);
+            hash_pairs[index] = BloomFilter::computeHashPair(value.data(), value.size(), seed);
         }
         process_batch(hash_pairs.data(), batch_size, start_row);
         start_row += batch_size;
@@ -354,7 +342,7 @@ ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & value
         dst_data.resize(values.column->size());
 
         size_t found_count = 0;
-        forEachColumnHashBatchCityHash(*values.column, bloom_filter->getSeed(),
+        forEachColumnHashBatch(*values.column, bloom_filter->getSeed(),
             [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t start_row)
             {
                 found_count += bloom_filter->findHashPairs(hash_pairs, count, dst_data.data() + start_row);
@@ -371,7 +359,7 @@ ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & value
 
 void ApproximateRuntimeFilter::insertIntoBloomFilter(ColumnPtr values)
 {
-    forEachColumnHashBatchCityHash(*values, bloom_filter->getSeed(),
+    forEachColumnHashBatch(*values, bloom_filter->getSeed(),
         [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t /* start_row */)
         {
             bloom_filter->addHashPairs(hash_pairs, count);

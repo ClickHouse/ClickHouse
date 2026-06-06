@@ -52,6 +52,11 @@ public:
     void addHashPairs(const BloomFilterHashPair * pairs, size_t count);
     size_t findHashPairs(const BloomFilterHashPair * pairs, size_t count, UInt8 * out_mask) const;
 
+    /// Compute the pair of hashes for a value, the way `add`/`find` do. Use it to pre-hash values in
+    /// bulk (e.g. column-wise) and feed the result to `addHashPairs`/`findHashPairs`, without
+    /// duplicating the hash function and seed derivation outside of `BloomFilter`.
+    static BloomFilterHashPair computeHashPair(const char * data, size_t len, UInt64 seed_);
+
     void clear();
 
     void addHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed);
