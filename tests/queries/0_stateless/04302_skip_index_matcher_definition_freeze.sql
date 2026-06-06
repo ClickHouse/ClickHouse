@@ -10,13 +10,13 @@ CREATE TABLE skip_index_matcher_definition_freeze
 ENGINE = MergeTree
 ORDER BY tuple();
 
-SELECT extract(create_table_query, 'INDEX idx \\([^)]*\\) TYPE minmax GRANULARITY 1')
+SELECT extract(create_table_query, 'INDEX idx (?:\\([^)]*\\)|\\S+) TYPE minmax GRANULARITY 1')
 FROM system.tables
 WHERE database = currentDatabase() AND name = 'skip_index_matcher_definition_freeze';
 
 ALTER TABLE skip_index_matcher_definition_freeze ADD COLUMN a2 UInt64;
 
-SELECT extract(create_table_query, 'INDEX idx \\([^)]*\\) TYPE minmax GRANULARITY 1')
+SELECT extract(create_table_query, 'INDEX idx (?:\\([^)]*\\)|\\S+) TYPE minmax GRANULARITY 1')
 FROM system.tables
 WHERE database = currentDatabase() AND name = 'skip_index_matcher_definition_freeze';
 
@@ -31,13 +31,13 @@ ORDER BY tuple();
 
 ALTER TABLE skip_index_matcher_definition_freeze_alter ADD INDEX idx(COLUMNS('^a')) TYPE minmax GRANULARITY 1;
 
-SELECT extract(create_table_query, 'INDEX idx \\([^)]*\\) TYPE minmax GRANULARITY 1')
+SELECT extract(create_table_query, 'INDEX idx (?:\\([^)]*\\)|\\S+) TYPE minmax GRANULARITY 1')
 FROM system.tables
 WHERE database = currentDatabase() AND name = 'skip_index_matcher_definition_freeze_alter';
 
 ALTER TABLE skip_index_matcher_definition_freeze_alter ADD COLUMN a2 UInt64;
 
-SELECT extract(create_table_query, 'INDEX idx \\([^)]*\\) TYPE minmax GRANULARITY 1')
+SELECT extract(create_table_query, 'INDEX idx (?:\\([^)]*\\)|\\S+) TYPE minmax GRANULARITY 1')
 FROM system.tables
 WHERE database = currentDatabase() AND name = 'skip_index_matcher_definition_freeze_alter';
 
@@ -52,13 +52,13 @@ CREATE TABLE skip_index_matcher_definition_freeze_multi
 ENGINE = MergeTree
 ORDER BY tuple();
 
-SELECT extract(create_table_query, 'INDEX idx \\([^)]*\\) TYPE minmax GRANULARITY 1')
+SELECT extract(create_table_query, 'INDEX idx (?:\\([^)]*\\)|\\S+) TYPE minmax GRANULARITY 1')
 FROM system.tables
 WHERE database = currentDatabase() AND name = 'skip_index_matcher_definition_freeze_multi';
 
 ALTER TABLE skip_index_matcher_definition_freeze_multi ADD COLUMN a3 UInt64;
 
-SELECT extract(create_table_query, 'INDEX idx \\([^)]*\\) TYPE minmax GRANULARITY 1')
+SELECT extract(create_table_query, 'INDEX idx (?:\\([^)]*\\)|\\S+) TYPE minmax GRANULARITY 1')
 FROM system.tables
 WHERE database = currentDatabase() AND name = 'skip_index_matcher_definition_freeze_multi';
 
