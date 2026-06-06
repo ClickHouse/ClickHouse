@@ -1029,9 +1029,8 @@ void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_
     {
         disk_cache->setMaxSizeInBytes(disk_cache_max_size_in_bytes);
         disk_cache->setMaxCount(disk_cache_max_entries);
-
-        disk_cache_max_entry_size_in_bytes = disk_cache_max_entry_size_in_bytes_;
-        disk_cache_max_entry_size_in_rows = disk_cache_max_entry_size_in_rows_;
+        disk_cache->setMaxEntrySizeInBytes(disk_cache_max_entry_size_in_bytes_);
+        disk_cache->setMaxEntrySizeInRows(disk_cache_max_entry_size_in_rows_);
     }
 }
 
@@ -1543,6 +1542,18 @@ void QueryResultCache::OnDiskCache::setMaxCount(size_t max_count)
 {
     std::lock_guard lock(mutex);
     cache_policy->setMaxCount(max_count);
+}
+
+void QueryResultCache::OnDiskCache::setMaxEntrySizeInBytes(size_t max_entry_size_in_bytes_)
+{
+    std::lock_guard lock(mutex);
+    max_entry_size_in_bytes = max_entry_size_in_bytes_;
+}
+
+void QueryResultCache::OnDiskCache::setMaxEntrySizeInRows(size_t max_entry_size_in_rows_)
+{
+    std::lock_guard lock(mutex);
+    max_entry_size_in_rows = max_entry_size_in_rows_;
 }
 
 void QueryResultCache::OnDiskCache::clear(const std::optional<String> & tag)

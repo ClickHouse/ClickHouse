@@ -213,6 +213,10 @@ public:
 
         void setMaxCount(size_t max_count);
 
+        void setMaxEntrySizeInBytes(size_t max_entry_size_in_bytes_);
+
+        void setMaxEntrySizeInRows(size_t max_entry_size_in_rows_);
+
     private:
         /// On-disk file name for an entry. It must encode every dimension that participates in `Key::operator==` /
         /// `KeyHasher` besides the AST hash (currently `is_subquery`), otherwise two distinct keys that share the same AST
@@ -282,9 +286,8 @@ private:
     size_t max_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
     size_t max_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
 
-    /// On disk cache configuration
-    size_t disk_cache_max_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
-    size_t disk_cache_max_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
+    /// The on-disk per-entry limits live inside `OnDiskCache` (they are checked by `OnDiskCache::set`); the reload path
+    /// updates them there directly, so there are no separate members for them here.
 
     friend class StorageSystemQueryResultCache;
     friend class QueryResultCacheWriter;
