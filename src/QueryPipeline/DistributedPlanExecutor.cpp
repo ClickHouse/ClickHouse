@@ -633,6 +633,10 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     optimization_settings.merge_filter_into_join_condition = false;
     optimization_settings.top_k_through_join = false;
 
+    /// The fragment's read is bucketed; re-introducing the implicit count projection would count the
+    /// whole part per bucket. Keep it off so counts read the bucket's mark ranges.
+    optimization_settings.optimize_use_implicit_projections = false;
+
     QueryPipeline pipeline;
 
     {

@@ -204,6 +204,13 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     is_parallel_replicas_initiator_with_projection_support = is_parallel_replicas_initiator_with_projection_support_;
 
     make_distributed_plan = from[Setting::make_distributed_plan];
+
+    /// The implicit count/minmax projection counts a whole part from metadata; a distributed read
+    /// buckets the part, so the projection would be counted once per bucket and multiply the result.
+    /// Disable it for distributed plans (also forced off when a worker re-optimizes a fragment).
+    if (make_distributed_plan)
+        optimize_use_implicit_projections = false;
+
     distributed_plan_execute_locally = from[Setting::distributed_plan_execute_locally];
     distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
     distributed_plan_default_reader_bucket_count = from[Setting::distributed_plan_default_reader_bucket_count];
