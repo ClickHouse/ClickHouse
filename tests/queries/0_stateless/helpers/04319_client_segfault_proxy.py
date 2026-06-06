@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Helper for `tests/queries/0_stateless/04260_client_segfault_send_error_105292.sh`.
+# Helper for `tests/queries/0_stateless/04319_client_segfault_send_error_105292.sh`.
 #
 # A single-shot TCP proxy that relays one client connection to a target server
 # and forces a TCP RST on the client socket after `cutoff` bytes have flowed
@@ -7,7 +7,7 @@
 # next write, which is exactly what `Connection::sendQuery` sees when a real
 # server closes the stream mid-write (issue #105292).
 #
-# Usage: python3 04260_client_segfault_proxy.py <target_host> <target_port> <cutoff_bytes> <port_file>
+# Usage: python3 04319_client_segfault_proxy.py <target_host> <target_port> <cutoff_bytes> <port_file>
 #
 # The proxy writes the listening port atomically to <port_file>, services one
 # connection, and exits. No external kill is needed and no orphan job remains.

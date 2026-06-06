@@ -11,9 +11,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-PROXY="${CUR_DIR}/helpers/04260_client_segfault_proxy.py"
+PROXY="${CUR_DIR}/helpers/04319_client_segfault_proxy.py"
 
-TMP_DIR=${CLICKHOUSE_TMP:-/tmp}/04260_client_segfault_105292
+TMP_DIR=${CLICKHOUSE_TMP:-/tmp}/04319_client_segfault_105292
 mkdir -p "${TMP_DIR}"
 PROXY_LOG="${TMP_DIR}/proxy.log"
 PROXY_PORT_FILE="${TMP_DIR}/proxy.port"
