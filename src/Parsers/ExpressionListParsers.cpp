@@ -3257,6 +3257,11 @@ std::optional<ExpressionOperatorPrettyInfo> tryGetExpressionOperatorPrettyInfo(s
                 return;
             if (op.function_name == "match")
                 return;
+            /// AT TIME ZONE desugars to toTimeZone at parse time; do not register toTimeZone as a
+            /// pretty-printer infix symbol — any toTimezone() node in the ActionsDAG may have been
+            /// written directly by the user, not via AT TIME ZONE.
+            if (op.function_name == "toTimeZone")
+                return;
 
             result.insert_or_assign(op.function_name, ExpressionOperatorPrettyInfo{lexeme, op.priority});
         };
