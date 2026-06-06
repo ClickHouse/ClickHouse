@@ -125,6 +125,14 @@ void optimizeUsePartAggregationCache(
     if (!cache)
         return;
 
+    /// A cache configured with size 0 is disabled (`clickhouse-local` creates such a dummy cache,
+    /// and a server can set `part_aggregation_cache.max_size_in_bytes = 0`). In that state every
+    /// `set` is rejected, so running the optimization would read and aggregate each uncached part
+    /// only to discard the result and produce no cache entries — doubling the work of an eligible
+    /// `GROUP BY`. Skip the optimization entirely when the cache is disabled.
+    if (!cache->isEnabled())
+        return;
+
     /// Apply the same `ReadFromMergeTree` eligibility gates as aggregate projections. The
     /// populator reads raw per-part rows with `createMergeTreeSequentialSource` and therefore
     /// cannot preserve read semantics such as `FINAL`, `SAMPLE`, read-in-order, parallel-replica

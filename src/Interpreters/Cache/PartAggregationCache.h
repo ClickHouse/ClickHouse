@@ -68,6 +68,12 @@ public:
     size_t sizeInBytes() const;
     size_t entryCount() const;
 
+    /// Whether the cache is enabled, i.e. configured with a non-zero size. A zero-size cache (the
+    /// dummy cache `clickhouse-local` creates, or a server with `part_aggregation_cache.max_size_in_bytes = 0`)
+    /// rejects every `set`, so callers should skip the read-and-aggregate work entirely instead of
+    /// performing it only to discard the result.
+    bool isEnabled() const;
+
     struct DumpEntry
     {
         Key key;

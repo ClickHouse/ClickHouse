@@ -199,6 +199,12 @@ size_t PartAggregationCache::entryCount() const
     return cache.size();
 }
 
+bool PartAggregationCache::isEnabled() const
+{
+    std::lock_guard lock(mutex);
+    return max_size_in_bytes > 0;
+}
+
 std::vector<PartAggregationCache::DumpEntry> PartAggregationCache::dump() const
 {
     std::lock_guard lock(mutex);
