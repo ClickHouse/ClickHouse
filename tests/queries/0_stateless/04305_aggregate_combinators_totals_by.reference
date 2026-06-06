@@ -29,3 +29,8 @@ RU	SPb	110000	110000
 --- T10: Validation - duplicate TOTALS ---
 --- T11: Validation - duplicate BY ---
 --- T12: Validation - TOTALS + BY in same call ---
+--- T13: count combinator (was broken by is_simple_count fast path) ---
+NL	5
+RU	5
+NL	2
+RU	3

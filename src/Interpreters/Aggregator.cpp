@@ -686,7 +686,15 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     if (params.aggregates_size == 1)
     {
         /// Check if COUNT() or COUNT(non-nullable column) which can be verified by simply casting to `AggregateFunctionCount *`.
-        if (typeid_cast<const AggregateFunctionCount *>(params.aggregates[0].function.get()))
+        /// Additionally, the TOTALS/BY combinator path is incompatible with the inline count
+        /// optimization: simple count writes counts directly through finalizeChunk, bypassing
+        /// insertResultsIntoColumns where post-aggregation states are finalized. Without this
+        /// guard, queries like `SELECT k, count(v TOTALS) FROM t GROUP BY k` would return
+        /// per-group counts instead of the global count.
+        const auto & agg = params.aggregates[0];
+        const bool has_combinator = agg.totals_combinator || agg.by_columns.has_value();
+
+        if (!has_combinator && typeid_cast<const AggregateFunctionCount *>(agg.function.get()))
             is_simple_count = true;
     }
 

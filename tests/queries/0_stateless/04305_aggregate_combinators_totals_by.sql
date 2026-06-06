@@ -72,4 +72,8 @@ SELECT avg(salary BY country BY city) FROM test_combinators GROUP BY country, ci
 SELECT '--- T12: Validation - TOTALS + BY in same call ---';
 SELECT avg(salary TOTALS BY country) FROM test_combinators GROUP BY country; -- { clientError SYNTAX_ERROR }
 
+SELECT '--- T13: count combinator (was broken by is_simple_count fast path) ---';
+SELECT country, count(salary TOTALS) AS c FROM test_combinators GROUP BY country ORDER BY country;
+SELECT country, count(salary BY country) AS c FROM test_combinators GROUP BY country ORDER BY country;
+
 DROP TABLE test_combinators;
