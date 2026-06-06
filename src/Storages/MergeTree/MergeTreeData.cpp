@@ -9877,6 +9877,13 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
     }
 }
 
+bool MergeTreeData::scheduleDataProcessingJob(BackgroundJobsAssignee & /*assignee*/)
+{
+    /// Last-resort guard for the post-vtable-demotion window of STID 3631-4165.
+    /// Derived overrides are always picked in normal operation.
+    return false;
+}
+
 bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
 {
     if (parts_mover.moves_blocker.isCancelled())

@@ -1336,6 +1336,10 @@ public:
 
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
+    /// Last-resort guard for the post-vtable-demotion window of STID 3631-4165;
+    /// derived overrides are always picked in normal operation.
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
+
     /// Schedules job to move parts between disks/volumes and so on.
     bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) override;
     bool areBackgroundMovesNeeded() const;
