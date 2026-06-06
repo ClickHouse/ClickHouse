@@ -1,6 +1,7 @@
 #include <Storages/StoragePrometheusQuery.h>
 
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -20,6 +21,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool prometheus_query_use_stats_bucket;
+}
 
 namespace ErrorCodes
 {
@@ -141,6 +147,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     evaluation_settings.start_time = start_time;
     evaluation_settings.end_time = end_time;
     evaluation_settings.step = step;
+    evaluation_settings.use_stats_bucket = context->getSettingsRef()[Setting::prometheus_query_use_stats_bucket];
     return config;
 }
 

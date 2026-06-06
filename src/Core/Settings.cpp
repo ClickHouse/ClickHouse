@@ -8154,6 +8154,10 @@ Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optim
 Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
 )", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
     \
+    DECLARE(Bool, prometheus_query_use_stats_bucket, false, R"(
+When evaluating `*_over_time` PromQL functions through `prometheusQuery()` / `prometheusQueryRange()`, controls whether the stats-bucket aligned fast-path variants (`*_stats`) are used. When `false` (the default), always use the baseline vector-bucket `*OverTimeToGrid` aggregates. When `true`, use the `*_stats` variants on aligned grids (`window % grid_step == 0 && window >= grid_step`); misaligned grids still use the baseline aggregates.
+)", EXPERIMENTAL) \
+    \
     DECLARE(String, promql_database, "", R"(
 Specifies the database name used by the 'promql' dialect. Empty string means the current database.
 )", EXPERIMENTAL) \

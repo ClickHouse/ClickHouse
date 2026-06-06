@@ -29,6 +29,10 @@ namespace
         bool drop_metric_name = true;
         int8_t scalar_arg_index = -1;
         int8_t range_vector_arg_index = 0;
+        /// `true` when a `<ch_function_name>_stats` aggregate is registered. Selected only when
+        /// `prometheus_query_use_stats_bucket` is enabled and the grid is aligned
+        /// (`step > 0 && window >= step && window % step == 0`).
+        bool has_stats_variant = false;
     };
 
     /// Checks if the types of the specified arguments are valid for the function.
@@ -131,85 +135,124 @@ namespace
             {"avg_over_time",
              {
                  "timeSeriesAvgOverTimeToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
+                 /* scalar_arg_index = */ -1,
+                 /* range_vector_arg_index = */ 0,
+                 /* has_stats_variant = */ true,
              }},
 
             {"min_over_time",
              {
                  "timeSeriesMinOverTimeToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
+                 /* scalar_arg_index = */ -1,
+                 /* range_vector_arg_index = */ 0,
+                 /* has_stats_variant = */ true,
              }},
 
             {"max_over_time",
              {
                  "timeSeriesMaxOverTimeToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
+                 /* scalar_arg_index = */ -1,
+                 /* range_vector_arg_index = */ 0,
+                 /* has_stats_variant = */ true,
              }},
 
             {"sum_over_time",
              {
                  "timeSeriesSumOverTimeToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
+                 /* scalar_arg_index = */ -1,
+                 /* range_vector_arg_index = */ 0,
+                 /* has_stats_variant = */ true,
              }},
 
             {"count_over_time",
              {
                  "timeSeriesCountOverTimeToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
+                 /* scalar_arg_index = */ -1,
+                 /* range_vector_arg_index = */ 0,
+                 /* has_stats_variant = */ true,
              }},
 
             {"stddev_over_time",
              {
                  "timeSeriesStddevOverTimeToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
+                 /* scalar_arg_index = */ -1,
+                 /* range_vector_arg_index = */ 0,
+                 /* has_stats_variant = */ true,
              }},
 
             {"stdvar_over_time",
              {
                  "timeSeriesStdvarOverTimeToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
+                 /* scalar_arg_index = */ -1,
+                 /* range_vector_arg_index = */ 0,
+                 /* has_stats_variant = */ true,
              }},
 
             {"present_over_time",
              {
                  "timeSeriesPresentOverTimeToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
+                 /* scalar_arg_index = */ -1,
+                 /* range_vector_arg_index = */ 0,
+                 /* has_stats_variant = */ true,
              }},
 
             {"first_over_time",
              {
                  "timeSeriesFirstOverTimeToGrid",
                  /* drop_metric_name = */ false,
+                 /* scalar_arg_index = */ -1,
+                 /* range_vector_arg_index = */ 0,
+                 /* has_stats_variant = */ true,
              }},
 
             {"ts_of_min_over_time",
              {
                  "timeSeriesTsOfMinOverTimeToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
+                 /* scalar_arg_index = */ -1,
+                 /* range_vector_arg_index = */ 0,
+                 /* has_stats_variant = */ true,
              }},
 
             {"ts_of_max_over_time",
              {
                  "timeSeriesTsOfMaxOverTimeToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
+                 /* scalar_arg_index = */ -1,
+                 /* range_vector_arg_index = */ 0,
+                 /* has_stats_variant = */ true,
              }},
 
             {"ts_of_last_over_time",
              {
                  "timeSeriesTsOfLastOverTimeToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
+                 /* scalar_arg_index = */ -1,
+                 /* range_vector_arg_index = */ 0,
+                 /* has_stats_variant = */ true,
              }},
 
             {"ts_of_first_over_time",
              {
                  "timeSeriesTsOfFirstOverTimeToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
+                 /* scalar_arg_index = */ -1,
+                 /* range_vector_arg_index = */ 0,
+                 /* has_stats_variant = */ true,
              }},
 
             {"quantile_over_time",
              {
                  "timeSeriesQuantileOverTimeToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
                  /* scalar_arg_index = */ 0,
                  /* range_vector_arg_index = */ 1,
              }},
@@ -217,13 +260,16 @@ namespace
             {"absent_over_time",
              {
                  "timeSeriesAbsentOverTimeToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
+                 /* scalar_arg_index = */ -1,
+                 /* range_vector_arg_index = */ 0,
+                 /* has_stats_variant = */ true,
              }},
 
             {"mad_over_time",
              {
                  "timeSeriesMadOverTimeToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
              }},
         };
 
@@ -394,8 +440,19 @@ SQLQueryPiece applyFunctionOverRange(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
+    /// `prometheus_query_use_stats_bucket` controls the implementation:
+    ///   * `false` (default) — always use the baseline vector-bucket aggregate.
+    ///   * `true` — use the stats-bucket aligned fast path (`*_stats`) when the function
+    ///     has a registered `_stats` variant and the grid is aligned
+    ///     (`step > 0 && window >= step && window % step == 0`). Misaligned grids still
+    ///     fall back to the baseline aggregate.
+    String ch_function_name{impl_info->ch_function_name};
+    const bool stats_path_aligned = step > 0 && window >= step && (window % step) == 0;
+    if (impl_info->has_stats_variant && context.use_stats_bucket && stats_path_aligned)
+        ch_function_name += "_stats";
+
     auto agg_func = addParametersToAggregateFunction(
-        makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
+        makeASTFunction(ch_function_name, std::move(timestamps), std::move(values)),
         timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
         timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
         timeSeriesDurationToAST(step, context.timestamp_data_type),

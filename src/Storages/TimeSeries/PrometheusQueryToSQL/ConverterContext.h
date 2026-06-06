@@ -21,6 +21,9 @@ struct ConverterContext
     const ResultType result_type;
     SQLSubqueries subqueries;
 
+    /// See PrometheusQueryEvaluationSettings::use_stats_bucket.
+    bool use_stats_bucket = false;
+
     ConverterContext(std::shared_ptr<const PrometheusQueryTree> promql_tree_,
                      const PrometheusQueryEvaluationSettings & settings_);
 };

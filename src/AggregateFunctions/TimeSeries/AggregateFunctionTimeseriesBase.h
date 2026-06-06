@@ -12,6 +12,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -212,8 +214,29 @@ public:
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr __restrict place, TimestampType timestamp, ValueType value) const
     {
-        if (timestamp + window + step < start_timestamp || timestamp > end_timestamp)
-            return;
+        /// Some Traits (e.g. stats-bucket aligned _over_time variants) want to drop samples falling
+        /// in `(start_timestamp - window - step, start_timestamp - step]`, because the bucket-level
+        /// driver cannot sub-filter bucket 0 once samples are merged into running stats.
+        /// Most Traits keep the loose filter to preserve current behaviour and let downstream
+        /// code (e.g. `appendActiveSamplesToWindow`) sub-filter per-sample.
+        constexpr bool strict_pre_window_filter = []
+        {
+            if constexpr (requires { Traits::strict_pre_window_filter; })
+                return Traits::strict_pre_window_filter;
+            else
+                return false;
+        }();
+
+        if constexpr (strict_pre_window_filter)
+        {
+            if (timestamp + step <= start_timestamp || timestamp > end_timestamp)
+                return;
+        }
+        else
+        {
+            if (timestamp + window + step < start_timestamp || timestamp > end_timestamp)
+                return;
+        }
 
         const size_t index = bucketIndexForTimestamp(timestamp);
         auto & bucket = data(place)->buckets[index];
@@ -417,7 +440,7 @@ public:
 
         writeBinaryLittleEndian(data(place)->buckets.size(), buf);
 
-        for (const auto & bucket : data(place)->buckets)
+        for (auto & bucket : const_cast<State *>(data(place))->buckets)
         {
             writeBinaryLittleEndian(bucket.first, buf);
             FunctionImpl::serializeBucket(bucket.second, buf);

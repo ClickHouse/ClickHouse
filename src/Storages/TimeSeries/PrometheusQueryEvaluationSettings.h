@@ -56,6 +56,13 @@ struct PrometheusQueryEvaluationSettings
     /// (If a step is given in the subquery, as in "http_requests_total[10m:1m]", then the given step is used.)
     /// If not set then it's 15 seconds by default.
     std::optional<DurationType> default_subquery_step;
+
+    /// When `true`, route `*_over_time` PromQL functions to the experimental stats-bucket
+    /// aligned fast-path (`*_stats`) aggregate on aligned grids (`window % grid_step == 0`
+    /// && `window >= grid_step`). When `false` (the default), always use the baseline
+    /// vector-bucket `*OverTimeToGrid` aggregate. Mirrors the
+    /// `prometheus_query_use_stats_bucket` session setting.
+    bool use_stats_bucket = false;
 };
 
 }
