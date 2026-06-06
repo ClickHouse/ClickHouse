@@ -22,7 +22,8 @@ wait_for_mutations() {
 client() {
     # SET enable_analyzer=1; -- Different EXPLAIN output
     # SET use_query_condition_cache = 0; -- Need it because we rerun some queries (with different settings) and we want to execute the full analysis
-    $CLICKHOUSE_CLIENT --echo --enable-analyzer=1 --use_query_condition_cache=0 --mutations_sync=2 --alter_sync=2 -q "$1"
+    # SET use_statistics_for_part_pruning = 0; -- Disable statistics-based part pruning to keep EXPLAIN output stable
+    $CLICKHOUSE_CLIENT --echo --enable-analyzer=1 --use_query_condition_cache=0 --mutations_sync=2 --alter_sync=2 --use_statistics_for_part_pruning=0 -q "$1"
 }
 
 declare -a table_settings=("min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage=0" "min_bytes_for_full_part_storage ='1G'")

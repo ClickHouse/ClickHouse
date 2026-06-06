@@ -38,13 +38,13 @@ id: 3 array: [1,2,3] string: str3 date: 2020-01-03
 ```
 and table `imp_regex_table`:
 
-```sql
+```sql title="Query"
 CREATE TABLE imp_regex_table (id UInt32, array Array(UInt32), string String, date Date) ENGINE = Memory;
 ```
 
 We'll insert the data from the aforementioned file into the table above using the following query:
 
-```bash
+```bash title="Query"
 $ cat data.tsv | clickhouse-client  --query "INSERT INTO imp_regex_table SETTINGS format_regexp='id: (.+?) array: (.+?) string: (.+?) date: (.+?)', format_regexp_escaping_rule='Escaped', format_regexp_skip_unmatched=0 FORMAT Regexp;"
 ```
 

@@ -7,8 +7,6 @@ title: 'Testing ClickHouse'
 doc_type: 'guide'
 ---
 
-# Testing ClickHouse
-
 ## Test types {#test-types}
 
 There are following tests in ClickHouse:
@@ -205,6 +203,7 @@ List of available tags:
 | `no-parallel-replicas` | Disables test when parallel replicas are enabled ||
 | `no-debug` | Disables tests in Debug builds ||
 | `no-release` | Disables tests in Release builds ||
+| `no-darwin` | Disables test on macOS (Darwin) | Test relies on Linux-specific features such as distributed queries, `procfs`, or HTTP server |
 
 The following options are also supported: `no-stress`, `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-backward-compatibility-check`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
 
@@ -554,9 +553,6 @@ Configuration is in `uncrustify.cfg` in the sources root.
 It is less tested than `clang-format`.
 
 `CLion` has its own code formatter that has to be tuned for our code style.
-
-We also use `codespell` to find typos in code.
-It is automated as well.
 
 ## Test coverage {#test-coverage}
 

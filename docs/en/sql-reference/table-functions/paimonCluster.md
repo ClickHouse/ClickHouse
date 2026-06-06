@@ -21,7 +21,7 @@ Allows processing files from Apache [Paimon](https://paimon.apache.org/) in para
 ## Syntax {#syntax}
 
 ```sql
-paimonS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+paimonS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 
 paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
 
@@ -32,6 +32,7 @@ paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
 
 - `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
 - Description of all other arguments coincides with description of arguments in equivalent [paimon](/sql-reference/table-functions/paimon.md) table function.
+- An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
 **Returned value**
 

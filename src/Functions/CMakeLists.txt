@@ -1,7 +1,6 @@
-add_subdirectory(divide)
-
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions .)
+add_headers_and_sources(clickhouse_functions AI)
 
 # These files are moved from clickhouse_functions into dbms to make dbms self-contained (not depend on clickhouse_functions)
 # This allows less dependency and linker work (specially important when building many example executables)
@@ -90,7 +89,7 @@ list (APPEND PUBLIC_LIBS
 list (APPEND PRIVATE_LIBS
         ch_contrib::zlib
         boost::filesystem
-        divide_impl
+        ch_contrib::libdivide
         ch_contrib::xxHash
         ch_contrib::stringzilla
 )
@@ -182,6 +181,17 @@ add_subdirectory(keyvaluepair)
 
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)
+
+# TODO: at v3 these wrapper TUs regress because the SLP vectorizer / SIMD-aware codegen
+# fires inside the per-row dispatch (YMM scratch zero-init in `stringJaccardIndex`,
+# YMM `ColumnString` prologue forcing `vzeroupper` around `randomString`'s `getUInt`,
+# longer BMI2 encodings in `XXH3`'s short-input fast path crossing a 16-byte fetch boundary).
+# Compiling at v2 restores master codegen; the actual AVX2 kernels they call live in other TUs.
+if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
+    set_source_files_properties(FunctionsStringDistance.cpp PROPERTIES COMPILE_FLAGS "-march=x86-64-v2")
+    set_source_files_properties(randomString.cpp PROPERTIES COMPILE_FLAGS "-march=x86-64-v2")
+    set_source_files_properties(FunctionsHashingMisc.cpp PROPERTIES COMPILE_FLAGS "-march=x86-64-v2")
+endif()
 
 if (USE_GPERF)
     # Only for regenerating

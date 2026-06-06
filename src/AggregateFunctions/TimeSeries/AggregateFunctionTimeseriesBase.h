@@ -5,8 +5,6 @@
 #include <memory>
 #include <type_traits>
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -14,7 +12,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -54,6 +51,10 @@ public:
         return Traits::getName();
     }
 
+    /// Timeseries parameters may carry DecimalField (from toDateTime64(...) casts), whose
+    /// default printed form collides with String literals — so we print parameters with ::Type.
+    bool shouldPrintParametersWithTypes() const override { return true; }
+
     using Bucket = typename Traits::Bucket;
 
     struct State
@@ -62,17 +63,11 @@ public:
         UnorderedMapWithMemoryTracking<size_t, Bucket> buckets;
     };
 
-    explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_,
+    explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_, const Array & parameters_,
         TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, UInt32 timestamp_scale_)
         : Base(
             argument_types_,
-            {
-                /// Normalize all parameters to decimals with the same scale as the scale of timestamp argument
-                DecimalField<Decimal64>(start_timestamp_, timestamp_scale_),
-                DecimalField<Decimal64>(end_timestamp_, timestamp_scale_),
-                DecimalField<Decimal64>(step_, timestamp_scale_),
-                DecimalField<Decimal64>(window_, timestamp_scale_)
-            },
+            parameters_,
             createResultType())
         , bucket_count(bucketCount(start_timestamp_, end_timestamp_, step_))
         , start_timestamp(start_timestamp_)
@@ -107,6 +102,14 @@ public:
         return sizeof(State);
     }
 
+    /// Upper bound on the number of buckets that can be allocated for a single grid.
+    /// This prevents absurdly large grids (e.g. from adversarial input that passes extreme
+    /// timestamps and a tiny step) from allocating huge amounts of memory or triggering
+    /// undefined behaviour in downstream arithmetic. 16M is consistent with the
+    /// `MAX_ARRAY_SIZE` used by other aggregate functions (`AggregateFunctionGroupArray`,
+    /// `AggregateFunctionIntervalLengthSum`, etc.).
+    static constexpr size_t MAX_BUCKET_COUNT = 0xFFFFFF;
+
     static size_t bucketCount(TimestampType start_timestamp, TimestampType end_timestamp, IntervalType step)
     {
         if (end_timestamp < start_timestamp)
@@ -118,15 +121,95 @@ public:
         if (step <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Step should be greater than zero");
 
-        return (end_timestamp - start_timestamp) / step + 1;
+        /// Compute the bucket count using unsigned 64-bit arithmetic to avoid signed overflow
+        /// when `start_timestamp` is very negative (e.g. `DateTime64` near `INT64_MIN`
+        /// produced by an adversarial fuzzer-generated query). Since we already verified
+        /// `end_timestamp >= start_timestamp`, the unsigned difference is the correct
+        /// mathematical value for any representable input.
+        const UInt64 start_bits = static_cast<UInt64>(static_cast<Int64>(start_timestamp));
+        const UInt64 end_bits = static_cast<UInt64>(static_cast<Int64>(end_timestamp));
+        const UInt64 step_bits = static_cast<UInt64>(static_cast<Int64>(step));
+
+        const UInt64 diff = end_bits - start_bits;
+        const UInt64 quotient = diff / step_bits;
+
+        /// Check the cap on `quotient` rather than on `quotient + 1`. With
+        /// `start = INT64_MIN`, `end = INT64_MAX`, `step = 1`, `diff` is `UINT64_MAX`,
+        /// `quotient` is `UINT64_MAX`, and `quotient + 1` wraps to `0` — bypassing the
+        /// cap and returning `bucket_count = 0`, which later fires `chassert(index <
+        /// bucket_count)` inside `bucketIndexForTimestamp`. Since `MAX_BUCKET_COUNT`
+        /// is well below `UINT64_MAX`, checking `quotient >= MAX_BUCKET_COUNT` is
+        /// equivalent to the original `count > MAX_BUCKET_COUNT` in the safe range,
+        /// but remains correct at the `UInt64` overflow boundary.
+        if (quotient >= MAX_BUCKET_COUNT)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Number of buckets in the timeseries grid exceeds maximum ({}). "
+                "Consider narrowing the [start, end] range or increasing the step.",
+                MAX_BUCKET_COUNT);
+
+        return static_cast<size_t>(quotient + 1);
     }
 
     size_t bucketIndexForTimestamp(const TimestampType timestamp) const
     {
         chassert(timestamp <= end_timestamp);
-        const size_t index = (timestamp <= start_timestamp) ? 0 : ((timestamp - start_timestamp + step - 1) / step);
+        if (timestamp <= start_timestamp)
+            return 0;
+
+        /// Use unsigned arithmetic to avoid signed overflow when `start_timestamp` is very
+        /// negative. Both operands are first converted to `Int64` (the native type of every
+        /// supported `TimestampType`), then reinterpreted as `UInt64`. Since the early-return
+        /// above guarantees `timestamp > start_timestamp`, the unsigned subtraction produces
+        /// the correct non-negative delta in all cases.
+        const UInt64 ts_bits = static_cast<UInt64>(static_cast<Int64>(timestamp));
+        const UInt64 start_bits = static_cast<UInt64>(static_cast<Int64>(start_timestamp));
+        const UInt64 step_bits = static_cast<UInt64>(static_cast<Int64>(step));
+
+        const UInt64 diff = ts_bits - start_bits;
+        /// Overflow-safe ceil-division. The classic `(diff + step - 1) / step` formula can
+        /// overflow modulo `2^64` when `diff` is close to `UINT64_MAX` (reachable for extreme
+        /// inputs such as `start_timestamp` near `INT64_MIN` and a large `step`). The
+        /// mathematically-equivalent form `diff / step + (diff % step != 0)` never exceeds
+        /// `diff` itself and therefore cannot overflow `UInt64`.
+        const size_t index = static_cast<size_t>(diff / step_bits + (diff % step_bits != 0));
         chassert(index < bucket_count);
         return index;
+    }
+
+    /// Compute the grid timestamp for a given bucket index, i.e. `start_timestamp + index * step`.
+    /// Uses unsigned 64-bit arithmetic internally to avoid signed overflow on extreme inputs
+    /// (`start_timestamp` near `INT64_MIN` together with a `step` near `INT64_MAX`). The final
+    /// cast back to `TimestampType` preserves the same bit pattern that the signed accumulator
+    /// `current_timestamp += step` would produce for normal inputs, but does not trigger UBSAN
+    /// on the adversarial boundary values generated by the AST fuzzer.
+    TimestampType timestampAtIndex(size_t index) const
+    {
+        const UInt64 start_bits = static_cast<UInt64>(static_cast<Int64>(start_timestamp));
+        const UInt64 step_bits = static_cast<UInt64>(static_cast<Int64>(step));
+        const UInt64 result_bits = start_bits + static_cast<UInt64>(index) * step_bits;
+        return static_cast<TimestampType>(static_cast<Int64>(result_bits));
+    }
+
+    /// Returns whether a sample at `timestamp` cannot contribute to any grid point: too old or too new.
+    bool isSampleOutOfGrid(const TimestampType timestamp) const
+    {
+        /// Compare as Int128 to avoid signed-overflow `TimestampType` when `window` is set near `INT64_MAX`.
+        const Int128 window_end =
+            static_cast<Int128>(static_cast<Int64>(timestamp)) +
+            static_cast<Int128>(static_cast<Int64>(window)) +
+            static_cast<Int128>(static_cast<Int64>(step));
+        return window_end < static_cast<Int128>(static_cast<Int64>(start_timestamp))
+            || timestamp > end_timestamp;
+    }
+
+    /// Returns whether a sample at `timestamp` is past the sliding-window cutoff for grid point `current_timestamp`.
+    bool isSampleOutOfWindow(const TimestampType timestamp, const TimestampType current_timestamp) const
+    {
+        /// Compare as Int128 to avoid signed-overflow `TimestampType` when `window` is set near `INT64_MAX`.
+        const Int128 sum =
+            static_cast<Int128>(static_cast<Int64>(timestamp)) +
+            static_cast<Int128>(static_cast<Int64>(window));
+        return sum <= static_cast<Int128>(static_cast<Int64>(current_timestamp));
     }
 
     static const State * data(ConstAggregateDataPtr __restrict place)
@@ -149,9 +232,9 @@ public:
         data(place)->~State();
     }
 
-    void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr __restrict place, TimestampType timestamp, ValueType value) const
+    void ALWAYS_INLINE add(AggregateDataPtr __restrict place, TimestampType timestamp, ValueType value) const
     {
-        if (timestamp + window + step < start_timestamp || timestamp > end_timestamp)
+        if (isSampleOutOfGrid(timestamp))
             return;
 
         const size_t index = bucketIndexForTimestamp(timestamp);
@@ -365,19 +448,19 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        UInt16 format_version;
+        UInt16 format_version = 0;
         readBinaryLittleEndian(format_version, buf);
 
         if (format_version != FORMAT_VERSION)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with different format version");
 
-        size_t size;
+        size_t size = 0;
         readBinaryLittleEndian(size, buf);
 
         if (size != bucket_count)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot deserialize data with different bucket count");
 
-        size_t buckets_size;
+        size_t buckets_size = 0;
         readBinaryLittleEndian(buckets_size, buf);
 
         if (buckets_size > bucket_count)
@@ -387,7 +470,7 @@ public:
 
         for (size_t i = 0; i < buckets_size; ++i)
         {
-            size_t index;
+            size_t index = 0;
             readBinaryLittleEndian(index, buf);
 
             if (index >= bucket_count)

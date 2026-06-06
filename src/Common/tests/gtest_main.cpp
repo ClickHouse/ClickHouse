@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <base/sanitizer_options.h>
+
 #include <Common/tests/gtest_global_context.h>
 
 class ContextEnvironment : public testing::Environment
@@ -12,6 +14,10 @@ public:
 int main(int argc, char ** argv)
 {
     testing::InitGoogleTest(&argc, argv);
+
+    auto & options = getTestCommandLineOptions();
+    options.argc = argc;
+    options.argv = argv;
 
     testing::AddGlobalTestEnvironment(new ContextEnvironment);
 

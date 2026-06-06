@@ -14,16 +14,16 @@ Syntax:
 ```sql
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [IN access_storage_type]
-    [KEYED BY {user_name | ip_address | client_key | client_key,user_name | client_key,ip_address} | NOT KEYED]
+    [KEYED BY {user_name | ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
     [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
-        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | written_bytes | execution_time | failed_sequential_authentications} = number } [,...] |
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | written_bytes | execution_time | failed_sequential_authentications | queries_per_normalized_hash} = number } [,...] |
          NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
-Keys `user_name`, `ip_address`, `client_key`, `client_key, user_name` and `client_key, ip_address` correspond to the fields in the [system.quotas](../../../operations/system-tables/quotas.md) table.
+Keys `user_name`, `ip_address`, `client_key`, `client_key, user_name`, `client_key, ip_address`, and `normalized_query_hash` correspond to the fields in the [system.quotas](../../../operations/system-tables/quotas.md) table.
 
-Parameters `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `written_bytes`, `execution_time`, `failed_sequential_authentications` correspond to the fields in the [system.quotas_usage](../../../operations/system-tables/quotas_usage.md) table.
+Parameters `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `written_bytes`, `execution_time`, `failed_sequential_authentications`, `queries_per_normalized_hash` correspond to the fields in the [system.quotas_usage](../../../operations/system-tables/quotas_usage.md) table.
 
 `ON CLUSTER` clause allows creating quotas on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
@@ -39,6 +39,18 @@ For the default user limit the maximum execution time with half a second in 30 m
 
 ```sql
 CREATE QUOTA qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
+```
+
+Create a quota where each distinct normalized query pattern gets its own bucket, limited to 100 executions per hour:
+
+```sql
+CREATE QUOTA qC KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO default;
+```
+
+Limit any single normalized query pattern to at most 50 executions per hour (regardless of the quota key type):
+
+```sql
+CREATE QUOTA qD FOR INTERVAL 1 hour MAX queries_per_normalized_hash = 50 TO default;
 ```
 
 Further examples, using the xml configuration (not supported in ClickHouse Cloud), can be found in the [Quotas guide](/operations/quotas).

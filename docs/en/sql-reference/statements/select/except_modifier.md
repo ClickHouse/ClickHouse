@@ -7,8 +7,6 @@ keywords: ['EXCEPT', 'modifier']
 doc_type: 'reference'
 ---
 
-# EXCEPT modifier {#except}
-
 > Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.
 
 ## Syntax {#syntax}

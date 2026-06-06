@@ -23,7 +23,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3Distance : public IFunction
+class FunctionH3Distance final : public IFunction
 {
 public:
     static constexpr auto name = "h3Distance";
@@ -101,10 +101,14 @@ public:
         {
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
-            Int64 res = 0;
+            Int64 res = -1;
 
             if (validator.validateCell(start) && validator.validateCell(end))
-                res = gridPathCellsSize(start, end);
+            {
+                int64_t distance = 0;
+                if (!gridDistance(start, end, &distance))
+                    res = distance;
+            }
 
             dst_data[row] = res;
         }

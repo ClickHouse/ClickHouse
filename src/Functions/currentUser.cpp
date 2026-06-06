@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -10,7 +11,7 @@ namespace DB
 namespace
 {
 
-class FunctionCurrentUser : public IFunction
+class FunctionCurrentUser final : public IFunction
 {
     const String user_name;
 

@@ -1,3 +1,5 @@
+SET optimize_trivial_insert_select = 0;
+
 drop table if exists test;
 create table test
 (

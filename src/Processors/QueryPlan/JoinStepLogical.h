@@ -168,7 +168,7 @@ public:
     void setDummyStats(String dummy_stats_) { dummy_stats = std::move(dummy_stats_); }
 
     bool canRemoveUnusedColumns() const override;
-    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
@@ -217,6 +217,7 @@ protected:
     TemporaryDataOnDiskScopePtr tmp_data;
 
 private:
+
     bool disjunctions_optimization_applied = false;
 };
 
