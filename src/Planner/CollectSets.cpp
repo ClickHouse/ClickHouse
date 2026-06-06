@@ -40,37 +40,46 @@ namespace ErrorCodes
 namespace
 {
 
-class CollectSetsVisitor : public InDepthQueryTreeVisitorWithContext<CollectSetsVisitor>
+class CollectSetsVisitor : public ConstInDepthQueryTreeVisitor<CollectSetsVisitor>
 {
 public:
     explicit CollectSetsVisitor(PlannerContext & planner_context_)
-        : InDepthQueryTreeVisitorWithContext<CollectSetsVisitor>(planner_context_.getQueryContext())
-        , planner_context(planner_context_)
+        : planner_context(planner_context_)
     {}
 
-    void enterImpl(const QueryTreeNodePtr & node)
+    void visitImpl(const QueryTreeNodePtr & node)
     {
         if (const auto * table_node = node->as<TableFunctionNode>())
         {
             const auto & table_function_name = table_node->getTableFunctionName();
             const auto & context = planner_context.getQueryContext();
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, context);
-            if (!table_function_ptr)
-                return;
-            auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(node, context);
 
             const auto & table_function_arguments = table_node->getArguments().getNodes();
-            size_t table_function_arguments_size = table_function_arguments.size();
 
-            for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
+            if (!table_function_ptr)
             {
-                const auto & table_function_argument = table_function_arguments[table_function_argument_index];
-
-                auto skip_argument_index_it = std::find(skip_analysis_arguments_indexes.begin(), skip_analysis_arguments_indexes.end(), table_function_argument_index);
-                if (skip_argument_index_it != skip_analysis_arguments_indexes.end())
-                {
+                /// The name is not a table function: it is a parameterized view resolved as a `TableFunctionNode`.
+                /// Its arguments are view parameter values substituted into the view query, not expressions to
+                /// collect sets from, so skip all of them. This also avoids traversing into unresolved nodes.
+                for (const auto & table_function_argument : table_function_arguments)
                     skip_children.insert(table_function_argument);
-                    continue;
+            }
+            else
+            {
+                auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(node, context);
+                size_t table_function_arguments_size = table_function_arguments.size();
+
+                for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
+                {
+                    const auto & table_function_argument = table_function_arguments[table_function_argument_index];
+
+                    auto skip_argument_index_it = std::find(skip_analysis_arguments_indexes.begin(), skip_analysis_arguments_indexes.end(), table_function_argument_index);
+                    if (skip_argument_index_it != skip_analysis_arguments_indexes.end())
+                    {
+                        skip_children.insert(table_function_argument);
+                        continue;
+                    }
                 }
             }
         }
@@ -192,7 +201,7 @@ private:
 
 }
 
-void collectSets(QueryTreeNodePtr node, PlannerContext & planner_context)
+void collectSets(const QueryTreeNodePtr & node, PlannerContext & planner_context)
 {
     CollectSetsVisitor visitor(planner_context);
     visitor.visit(node);
