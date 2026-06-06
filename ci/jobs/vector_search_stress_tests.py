@@ -381,7 +381,7 @@ class RunTest:
         add_index = f"ALTER TABLE {self._table} ADD INDEX vector_index {self._vector_column} TYPE vector_similarity('{index_type}','{self._distance_metric}', {self._dimension}, {quantization}, {hnsw_M}, {hnsw_ef_C})"
         self._chclient.query(add_index)
 
-        logger("Materialzing the index with {add_index}")
+        logger(f"Materialzing the index with {add_index}")
         materialize_index = f"ALTER TABLE {self._table} MATERIALIZE INDEX vector_index SETTINGS mutations_sync = 0"
         self._chclient.query(materialize_index)
 
@@ -681,12 +681,12 @@ class RunTest:
                         "USE_RAW_BYTES_FOR_QUERY_VECTOR requires truth records with a materialised query_vector"
                     )
                 params = {"$search_vector_binary$": query_vector.tobytes()}
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, reinterpret($search_vector_binary$, 'Array(Float32)') ) AS distance LIMIT {self._k} SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 2"
+                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, reinterpret($search_vector_binary$, 'Array(Float32)') ) AS distance LIMIT {self._k} SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 10"
                 q_start = current_time_ms()
                 result = chclient.query(ann_search_query, parameters=params)
             else:
                 query_source = self._render_query_source_sql(truth_record)
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k} SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 1"
+                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k} SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 10"
                 q_start = current_time_ms()
                 result = chclient.query(ann_search_query)
 
