@@ -2243,8 +2243,14 @@ Changelog::Changelog(
 {
     try
     {
+        /// In the experimental S3 changelog mode the active changelog disk is `s3_log_disk`, not the local
+        /// `latest_log_storage_disk`, and durability is guaranteed by finalizing the S3 object on flush rather
+        /// than by an `fsync` on a local disk. The `DiskLocal` requirement below would otherwise reject any
+        /// object-storage-only log configuration (the "run Keeper without a local data volume" use case), so it
+        /// must not apply when the S3 changelog writer is in charge.
         if (auto latest_log_disk = getLatestLogDisk();
-            log_file_settings.force_sync && dynamic_cast<const DiskLocal *>(latest_log_disk.get()) == nullptr)
+            !keeper_context->isS3ExperimentalChangelog() && log_file_settings.force_sync
+            && dynamic_cast<const DiskLocal *>(latest_log_disk.get()) == nullptr)
         {
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS,
