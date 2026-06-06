@@ -29,14 +29,13 @@ public:
     void onFinish() override;
 
 private:
-    void initWriterOnce(const Chunk & chunk);
+    void initWriterOnce();
 
     const String stream_name;
 
     WriteBuffer & out;
     std::unique_ptr<CompressedWriteBuffer> compressed_buf;
     std::unique_ptr<NativeWriter> writer;
-    bool has_aggregated_chunk_info = false;    /// Set once at start; whether chunk_num is carried per block
     size_t rows_written;
     LoggerPtr log = getLogger("NativeCompressedSink");
 };

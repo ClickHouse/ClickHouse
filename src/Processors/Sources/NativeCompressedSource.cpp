@@ -24,21 +24,23 @@ Chunk NativeCompressedSource::generate()
     {
         if (!reader)
         {
-            readVarUInt(stream_flags, *in);
             compressed_buf = std::make_unique<CompressedReadBuffer>(*in);
             reader = std::make_unique<NativeReader>(*compressed_buf, output.getHeader(), DBMS_TCP_PROTOCOL_VERSION);
         }
 
-        const bool has_aggregated_chunk_info = (stream_flags & 1);
-        /// Each data block is prefixed with its chunk_num (it has no BlockInfo field). At end of stream
-        /// there is no prefix, so stop here, the same way NativeReader::read stops on eof.
+        /// Each block is prefixed with a per-block flag, and a chunk_num when it carries aggregation
+        /// metadata. At end of stream there is no prefix, so stop here, the same way NativeReader::read
+        /// stops on eof.
+        if (compressed_buf->eof())
+            return {};
+
+        UInt64 block_flags = 0;
+        readVarUInt(block_flags, *compressed_buf);
+        const bool has_aggregated_chunk_info = (block_flags & 1);
+
         UInt64 chunk_num = 0;
         if (has_aggregated_chunk_info)
-        {
-            if (compressed_buf->eof())
-                return {};
             readVarUInt(chunk_num, *compressed_buf);
-        }
 
         Block block = reader->read();
 
