@@ -1697,17 +1697,6 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     db_disk->removeFileIfExists(fs::path(table.metadata_path));
-    try
-    {
-        auto metadata_path = getPathForMetadata(table.table_id);
-        db_disk->removeFileIfExists(DatabaseOnDisk::getDetachedPermanentlyFlagPath(metadata_path));
-    }
-    // NOLINTNEXTLINE(bugprone-empty-catch)
-    catch (...)
-    {
-        // Ok: database may not exist anymore, ignore
-    }
-
     removeUUIDMappingFinally(table.table_id.uuid);
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
 }
