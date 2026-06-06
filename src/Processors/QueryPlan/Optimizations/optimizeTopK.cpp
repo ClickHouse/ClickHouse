@@ -31,6 +31,23 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         return 0;
 
     node = node->children.front();
+
+    /// `tryExecuteFunctionsAfterSorting` (the `liftUpFunctions` optimization, which runs
+    /// earlier in the same pass) lifts expressions that don't depend on the sort columns
+    /// above `Sort`, placing `ExpressionStep`s between `Limit` and `Sort`. This happens,
+    /// for example, when selecting an `ALIAS` column with `ORDER BY ... LIMIT` (issue
+    /// #96452): the `ALIAS` is computed from a physical column that is not part of the
+    /// sort key, so its expression is lifted above the `Sort`. Walk through such
+    /// expressions so the top-K optimization still recognizes the underlying `Sort`.
+    /// The lifted expressions never touch the sort columns, so they do not affect either
+    /// the sort-column resolution below or the threshold tracking on the read step.
+    while (typeid_cast<ExpressionStep *>(node->step.get()))
+    {
+        if (node->children.size() != 1)
+            return 0;
+        node = node->children.front();
+    }
+
     auto * sorting_step = typeid_cast<SortingStep *>(node->step.get());
     if (!sorting_step)
         return 0;

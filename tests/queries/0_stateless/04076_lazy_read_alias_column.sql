@@ -42,6 +42,25 @@ SELECT trimLeft(explain) AS s
 FROM (EXPLAIN SELECT body_alias FROM test_lazy_alias WHERE severity = 'medium' ORDER BY time DESC LIMIT 10)
 WHERE s LIKE 'LazilyRead%';
 
+-- 3b. The regression also disabled the top-K optimization for the ALIAS shape.
+--     `tryExecuteFunctionsAfterSorting` lifts the ALIAS expression above `Sort`
+--     (the expression does not depend on the sort column), turning the plan into
+--     `Limit -> Expression -> Sorting`, which made `tryOptimizeTopK` bail out before
+--     enabling skip-index / dynamic top-K filtering. The top-K dynamic prewhere filter
+--     (`__topKFilter`) must now be present for the ALIAS query exactly as it is for the
+--     physical column, so that the same number of rows is scanned (issue #96452).
+SELECT 'physical_topk_filter';
+SELECT count() > 0
+FROM (EXPLAIN actions = 1 SELECT body FROM test_lazy_alias ORDER BY time DESC LIMIT 10
+      SETTINGS use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000)
+WHERE explain LIKE '%__topKFilter%';
+
+SELECT 'alias_topk_filter';
+SELECT count() > 0
+FROM (EXPLAIN actions = 1 SELECT body_alias FROM test_lazy_alias ORDER BY time DESC LIMIT 10
+      SETTINGS use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000)
+WHERE explain LIKE '%__topKFilter%';
+
 -- 4. Verify correctness: ALIAS column result must match the expression on source column.
 SELECT 'alias_result';
 SELECT body_alias

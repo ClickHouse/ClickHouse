@@ -4,6 +4,10 @@ alias_column_plan
 LazilyReadFromMergeTree
 alias_filtered_plan
 LazilyReadFromMergeTree
+physical_topk_filter
+1
+alias_topk_filter
+1
 alias_result
 short
 short
