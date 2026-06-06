@@ -69,6 +69,12 @@ SETTINGS transform_null_in = 1;
 SELECT NULL IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))), NULL NOT IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))) FROM numbers(2) SETTINGS transform_null_in = 1;
 1	0
 0	1
+SELECT number, NULL IN (if(number = 0, NULL, 1)), NULL NOT IN (if(number = 0, NULL, 1)) FROM numbers(2) SETTINGS transform_null_in = 1;
+0	1	0
+1	0	1
+SELECT number, NULL IN (if(number = 0, NULL, 1)), NULL NOT IN (if(number = 0, NULL, 1)) FROM numbers(2) SETTINGS transform_null_in = 0;
+0	\N	\N
+1	\N	\N
 SET enable_analyzer = 0;
 SELECT number FROM numbers(10) WHERE number % 2 IN (number % 3, number % 5) ORDER BY number;
 0

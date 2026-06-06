@@ -1323,11 +1323,21 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         arguments_projection_names, parameters_projection_names, scope);
                 }
 
-                /// Case 3: scalar-returning function -> rewrite to ifNull(equals/notEquals, default)
-                /// We wrap with ifNull to preserve IN's non-nullable behavior (NULL → 0 for IN, 1 for NOT IN)
+                /// Case 3: scalar-returning function -> rewrite to a row-wise comparison.
                 if (is_not_array_or_tuple_type)
                 {
                     auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+
+                    if (transform_null_in)
+                    {
+                        auto comparison_fn = std::make_shared<FunctionNode>(is_not_in ? "isDistinctFrom" : "isNotDistinctFrom");
+                        comparison_fn->getArguments().getNodes() = {fn_args[0], fn_args[1]};
+
+                        node = comparison_fn;
+                        resolveFunction(node, scope);
+                        return ProjectionNames{proj};
+                    }
+
                     auto eq_fn = std::make_shared<FunctionNode>(is_not_in ? "notEquals" : "equals");
                     eq_fn->getArguments().getNodes() = {fn_args[0], fn_args[1]};
 
@@ -1335,7 +1345,26 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     auto ifnull_fn = std::make_shared<FunctionNode>("ifNull");
                     ifnull_fn->getArguments().getNodes() = {eq_fn, default_val};
 
-                    node = ifnull_fn;
+                    const bool left_can_be_null = isNullableOrLowCardinalityNullable(in_first_argument->getResultType());
+                    if (left_can_be_null)
+                    {
+                        auto is_null_fn = std::make_shared<FunctionNode>("isNull");
+                        is_null_fn->getArguments().getNodes().push_back(fn_args[0]);
+
+                        auto null_const = std::make_shared<ConstantNode>(
+                            Field{},
+                            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
+
+                        auto raw_if = std::make_shared<FunctionNode>("if");
+                        raw_if->getArguments().getNodes() = {is_null_fn, null_const, ifnull_fn};
+
+                        node = raw_if;
+                    }
+                    else
+                    {
+                        node = ifnull_fn;
+                    }
+
                     resolveFunction(node, scope);
                     return ProjectionNames{proj};
                 }

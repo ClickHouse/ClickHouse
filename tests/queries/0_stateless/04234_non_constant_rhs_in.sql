@@ -24,6 +24,8 @@ FROM (SELECT materialize(NULL) AS x, materialize(NULL) AS y)
 SETTINGS transform_null_in = 1;
 
 SELECT NULL IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))), NULL NOT IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))) FROM numbers(2) SETTINGS transform_null_in = 1;
+SELECT number, NULL IN (if(number = 0, NULL, 1)), NULL NOT IN (if(number = 0, NULL, 1)) FROM numbers(2) SETTINGS transform_null_in = 1;
+SELECT number, NULL IN (if(number = 0, NULL, 1)), NULL NOT IN (if(number = 0, NULL, 1)) FROM numbers(2) SETTINGS transform_null_in = 0;
 
 SET enable_analyzer = 0;
 
