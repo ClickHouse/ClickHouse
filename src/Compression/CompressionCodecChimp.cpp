@@ -118,7 +118,7 @@ constexpr UInt8 getBitLengthOfLength(UInt8 data_bytes_size)
     // 4-byte value is 32 bits, and we need 5 bits to represent 32 values
     // 8-byte          64 bits        =>    6
     const UInt8 bit_lengths[] = {0, 0, 0, 0, 5, 0, 0, 0, 6};
-    assert(data_bytes_size >= 1 && data_bytes_size < sizeof(bit_lengths) && bit_lengths[data_bytes_size] != 0);
+    chassert(data_bytes_size >= 1 && data_bytes_size < sizeof(bit_lengths) && bit_lengths[data_bytes_size] != 0);
     return bit_lengths[data_bytes_size];
 }
 
@@ -171,12 +171,12 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     static constexpr Int16 NO_PREVIOUS_VALUES = sizeof(T) * 16;
     /// std::vector value-initializes its elements, so the ring buffer of previously seen values starts zeroed.
-    std::vector<T> stored_values(NO_PREVIOUS_VALUES);
+    std::vector<T> stored_values(NO_PREVIOUS_VALUES); // STYLE_CHECK_ALLOW_STD_CONTAINERS
     static constexpr Int16 LOG_NO_PREVIOUS_VALUES = log2(NO_PREVIOUS_VALUES);
     static constexpr Int16 THRESHOLD = 6 + LOG_NO_PREVIOUS_VALUES;
     static constexpr int ARRAY_SIZE = 1 << (THRESHOLD + 1);
     /// Maps the hash of the least significant bits of a value to the index of the most recent value with that hash.
-    std::vector<int> indices(ARRAY_SIZE);
+    std::vector<int> indices(ARRAY_SIZE); // STYLE_CHECK_ALLOW_STD_CONTAINERS
     static const Int16 setLsb = ARRAY_SIZE - 1;
 
     unalignedStoreLittleEndian<UInt32>(dest, items_count);
@@ -211,7 +211,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
         // find best matching previous value
         T xored_data;
-        BinaryValueInfo curr_xored_info;
+        BinaryValueInfo curr_xored_info{};
         int match_key = static_cast<int>(curr_value & setLsb);
         int match_index = indices[match_key];
         if ((total - match_index) < NO_PREVIOUS_VALUES)
@@ -293,7 +293,7 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
     static const Int16 LOG_NO_PREVIOUS_VALUES = log2(NO_PREVIOUS_VALUES);
     int current_index = 0;
     /// std::vector value-initializes its elements, so the ring buffer of previously seen values starts zeroed.
-    std::vector<T> stored_values(NO_PREVIOUS_VALUES);
+    std::vector<T> stored_values(NO_PREVIOUS_VALUES); // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     const char * const source_end = source + source_size;
 
@@ -333,7 +333,7 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
         T curr_value = prev_value;
         BinaryValueInfo curr_xored_info = prev_xored_info;
         T xored_data = 0;
-        UInt64 match_index;
+        UInt64 match_index = 0;
         UInt8 flag = static_cast<UInt8>(reader.readBits(2));
         switch (flag)
         {
@@ -392,10 +392,10 @@ UInt8 getDataBytesSize(const IDataType * column_type)
             column_type->getName());
 
     size_t max_size = column_type->getSizeOfValueInMemory();
-    if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
+    if (max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Chimp is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Chimp is only applicable for data types of size 4, 8 bytes. Given type {}",
             column_type->getName());
 }
 
@@ -438,7 +438,7 @@ UInt32 CompressionCodecChimp::doCompressData(const char * source, UInt32 source_
     UInt32 result_size = 0;
 
     const UInt32 compressed_size = getMaxCompressedDataSize(source_size);
-    switch (data_bytes_size) // NOLINT(bugprone-switch-missing-default-case)
+    switch (data_bytes_size)
     {
     case 4:
         result_size = compressDataForType<UInt32>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos], compressed_size);
@@ -446,6 +446,8 @@ UInt32 CompressionCodecChimp::doCompressData(const char * source, UInt32 source_
     case 8:
         result_size = compressDataForType<UInt64>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos], compressed_size);
         break;
+    default:
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot compress with Chimp codec: only data types of size 4 or 8 bytes are supported, given {}", UInt32{data_bytes_size});
     }
     return 2 + bytes_to_skip + result_size;
 }
@@ -465,10 +467,15 @@ UInt32 CompressionCodecChimp::doDecompressData(const char * source, UInt32 sourc
     if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Chimp-encoded data. File has wrong header");
 
-    if (bytes_to_skip >= uncompressed_size)
+    if (bytes_to_skip > uncompressed_size)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Chimp-encoded data. File has wrong header");
 
     memcpy(dest, &source[2], bytes_to_skip);
+
+    /// All data is in the skip section when data_bytes_size > uncompressed_size.
+    if (bytes_to_skip == uncompressed_size)
+        return uncompressed_size;
+
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
     UInt32 uncompressed_size_left = uncompressed_size - bytes_to_skip;
     switch (bytes_size)
