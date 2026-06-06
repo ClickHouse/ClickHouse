@@ -10,6 +10,7 @@
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 #include <IO/ReadSettings.h>
 #include <hdfs/hdfs.h>
 #include <limits>
@@ -167,8 +168,13 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     size_t pread(char * buffer, size_t size, size_t offset)
     {
         ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, size);
+        /// Account each successfully read chunk immediately, so that scheduler/profile accounting
+        /// reflects the bytes already consumed even if a later chunk or the throttler throws.
+        SCOPE_EXIT({ rlock.unlock(); });
 
-        constexpr size_t max_single_pread = static_cast<size_t>(std::numeric_limits<int>::max());
+        /// `hdfsPread` takes the size as a 32-bit `tSize`, so a single request above `INT_MAX` would
+        /// overflow. Split larger requests into chunks capped at this boundary.
+        constexpr size_t max_single_pread = static_cast<size_t>(std::numeric_limits<int32_t>::max());
         size_t total_read = 0;
 
         while (total_read < size)
@@ -194,19 +200,18 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
                     std::string(hdfsGetLastError()));
             }
 
-            if (!bytes_read)
-                break;
+            if (bytes_read)
+            {
+                rlock.consume(bytes_read);
+                if (read_settings.remote_throttler)
+                    read_settings.remote_throttler->throttle(bytes_read);
+            }
 
             total_read += static_cast<size_t>(bytes_read);
-
-            if (read_settings.remote_throttler)
-                read_settings.remote_throttler->throttle(bytes_read);
-
             if (static_cast<size_t>(bytes_read) < current_read_size)
                 break;
         }
 
-        rlock.unlock(total_read);
         return total_read;
     }
 };
