@@ -191,7 +191,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Experimental drop detached table feature is not enabled (the setting 'allow_experimental_drop_detached_table')");
 
-        context_->checkAccess(AccessType::DROP_TABLE, table_id);
 
         auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.getDatabaseName());
         if (query.if_exists && !database)
@@ -203,6 +202,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName()));
         }
 
+        context_->checkAccess(AccessType::DROP_TABLE, table_id);
         const auto table_name = table_id.getTableName();
 
         auto new_query_ptr = query.clone();

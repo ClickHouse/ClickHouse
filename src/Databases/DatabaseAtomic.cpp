@@ -293,7 +293,14 @@ void DatabaseAtomic::dropDetachedTable(
     /// but it is better than removing detached flag first and risking table ressurection on restart
     const auto detached_flag_path = getDetachedPermanentlyFlagPath(table_metadata_path);
     LOG_TRACE(log, "Deleting {} flag.", detached_flag_path);
-    db_disk->removeFileIfExists(detached_flag_path);
+    try
+    {
+        db_disk->removeFileIfExists(detached_flag_path);
+    }
+    catch (...)
+    {
+        // Ok: we don't want to disrupt further cleanup
+    }
 
     if (db_disk->existsFileOrDirectory(getPathSymlink(table_name)))
     {
