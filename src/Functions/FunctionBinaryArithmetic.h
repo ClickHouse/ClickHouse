@@ -885,6 +885,24 @@ inline bool hasNullableArrayArgument(const ColumnsWithTypeAndName & arguments)
     return false;
 }
 
+inline bool shouldPreserveNullableArrayArgumentsForArithmetic(const ColumnsWithTypeAndName & arguments)
+{
+    if (arguments.size() != 2 || !hasNullableArrayArgument(arguments))
+        return false;
+
+    const bool left_is_array = isArrayOrNullableArray(*arguments[0].type);
+    const bool right_is_array = isArrayOrNullableArray(*arguments[1].type);
+
+    if (left_is_array && right_is_array)
+        return true;
+
+    if (left_is_array == right_is_array)
+        return false;
+
+    const auto & scalar_argument = left_is_array ? arguments[1] : arguments[0];
+    return !scalar_argument.type->isNullable() && isNumber(removeNullable(scalar_argument.type));
+}
+
 struct UnwrappedNullableArrayColumn
 {
     ColumnPtr column;
@@ -1019,6 +1037,7 @@ class FunctionBinaryArithmetic : public IFunction
     ContextPtr context;
 
     bool check_decimal_overflow = true;
+    bool preserve_nullable_array_arguments = false;
 
     static bool castType(const IDataType * type, auto && f)
     {
@@ -2246,9 +2265,10 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionBinaryArithmetic>(context_); }
 
-    explicit FunctionBinaryArithmetic(ContextPtr context_)
+    explicit FunctionBinaryArithmetic(ContextPtr context_, bool preserve_nullable_array_arguments_ = false)
     :   context(context_),
-        check_decimal_overflow(decimalCheckArithmeticOverflow(context_))
+        check_decimal_overflow(decimalCheckArithmeticOverflow(context_)),
+        preserve_nullable_array_arguments(preserve_nullable_array_arguments_)
     {}
 
     String getName() const override { return name; }
@@ -2263,7 +2283,7 @@ public:
         /// And we also shouldn't use default implementation for nulls for the case when operation is
         /// divideOrNull, intDivOrNull, moduloOrNull or positiveModuloOrNull, because it will return
         /// null when the divisor is zero, and it is conflict with the default implementation.
-        return !division_by_nullable && !is_division_or_null;
+        return !division_by_nullable && !is_division_or_null && !preserve_nullable_array_arguments;
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
@@ -3458,17 +3478,20 @@ public:
         const ColumnWithTypeAndName & left_,
         const ColumnWithTypeAndName & right_,
         const DataTypePtr & return_type_,
-        ContextPtr context_)
+        ContextPtr context_,
+        bool preserve_nullable_array_arguments_ = false)
     {
-        return std::make_shared<FunctionBinaryArithmeticWithConstants>(left_, right_, return_type_, context_);
+        return std::make_shared<FunctionBinaryArithmeticWithConstants>(
+            left_, right_, return_type_, context_, preserve_nullable_array_arguments_);
     }
 
     FunctionBinaryArithmeticWithConstants(
         const ColumnWithTypeAndName & left_,
         const ColumnWithTypeAndName & right_,
         const DataTypePtr & return_type_,
-        ContextPtr context_)
-        : Base(context_), left(left_), right(right_), return_type(return_type_)
+        ContextPtr context_,
+        bool preserve_nullable_array_arguments_ = false)
+        : Base(context_, preserve_nullable_array_arguments_), left(left_), right(right_), return_type(return_type_)
     {
     }
 
@@ -3811,6 +3834,8 @@ public:
                 return_type);
         };
 
+        const bool preserve_nullable_array_arguments = detail::shouldPreserveNullableArrayArgumentsForArithmetic(arguments);
+
         /// More efficient specialization for two numeric arguments.
         if (arguments.size() == 2
             && ((arguments[0].column && isColumnConst(*arguments[0].column))
@@ -3820,18 +3845,20 @@ public:
             {
                 if (division_by_nullable)
                     return make_adaptor(FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(
-                        arguments[0], arguments[1], return_type, context));
+                        arguments[0], arguments[1], return_type, context, preserve_nullable_array_arguments));
             }
             return make_adaptor(FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(
-                arguments[0], arguments[1], return_type, context));
+                arguments[0], arguments[1], return_type, context, preserve_nullable_array_arguments));
         }
 
         if constexpr (can_have_division_by_nullable)
         {
             if (division_by_nullable)
-                return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(context));
+                return make_adaptor(std::make_shared<FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>>(
+                    context, preserve_nullable_array_arguments));
         }
-        return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(context));
+        return make_adaptor(std::make_shared<FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>>(
+            context, preserve_nullable_array_arguments));
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
