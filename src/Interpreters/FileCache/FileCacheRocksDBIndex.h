@@ -49,7 +49,7 @@ public:
 
     struct Entry
     {
-        FileCacheKey key;
+        FileCacheKey key{};
         size_t offset = 0;
         Int64 size = -1; /// -1 means unknown (need stat)
         FileCacheOriginInfo origin;
