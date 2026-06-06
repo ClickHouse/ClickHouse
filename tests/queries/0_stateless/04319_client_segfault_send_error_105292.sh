@@ -58,17 +58,26 @@ if [ -z "${PROXY_PORT}" ]; then
     exit 1
 fi
 
+# Invoke the client binary directly (NOT `${CLICKHOUSE_CLIENT}`) because
+# `${CLICKHOUSE_CLIENT}` already carries the runner-injected `--host=` and
+# `--port=` of the real server. Boost program_options keeps the FIRST value
+# of a repeated CLI option for `--port`, so an appended `--port=${PROXY_PORT}`
+# would silently be ignored and the client would connect straight to the
+# server, bypassing the proxy and the regression path entirely.
 # `--send_logs_level=none` keeps server log packets out of the client's
 # fatal-log file (the abrupt close races with chunked I/O on the server side
 # and would otherwise pollute it with an unrelated stack trace).
-# `--allow_repeated_settings` lets the override win over the runner-injected one.
-${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=none \
+${CLICKHOUSE_CLIENT_BINARY} --send_logs_level=none \
+    --database="${CLICKHOUSE_DATABASE}" \
     --host=127.0.0.1 --port="${PROXY_PORT}" \
     < "${INSERT_SQL}" >"${CLIENT_LOG}" 2>&1
 CLIENT_EXIT=$?
 
-# Proxy exits on its own after RSTing the single connection.
-wait "${PROXY_PID}" 2>/dev/null
+# Proxy exits on its own after RSTing the single connection. Capture its exit
+# status so we can assert the regression path (cutoff exceeded + RST) was
+# actually exercised, not bypassed by an early target-connect / EOF failure.
+wait "${PROXY_PID}"
+PROXY_EXIT=$?
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_105292"
 
@@ -81,6 +90,25 @@ fi
 if grep -q "Address: 0x108\|Segmentation fault" "${CLIENT_LOG}"; then
     echo "BAD: crash signature in client output (exit ${CLIENT_EXIT})"
     head -50 "${CLIENT_LOG}"
+    exit 1
+fi
+
+# Proxy exits 0 only after forwarding more than `cutoff` bytes and forcing the
+# RST. Any other exit means the client never reached the mid-write cutoff path
+# (target-connect failure, accept timeout, EOF or send error before cutoff),
+# in which case a passing client run would not actually exercise the regression.
+if [ "${PROXY_EXIT}" != "0" ]; then
+    echo "BAD: proxy did not exercise the mid-write cutoff path (PROXY_EXIT=${PROXY_EXIT})"
+    echo "--- proxy log ---"
+    cat "${PROXY_LOG}"
+    echo "--- client log ---"
+    head -50 "${CLIENT_LOG}"
+    exit 1
+fi
+if ! grep -q "CUTOFF_EXCEEDED" "${PROXY_LOG}"; then
+    echo "BAD: proxy did not log CUTOFF_EXCEEDED marker (PROXY_EXIT=${PROXY_EXIT})"
+    echo "--- proxy log ---"
+    cat "${PROXY_LOG}"
     exit 1
 fi
 

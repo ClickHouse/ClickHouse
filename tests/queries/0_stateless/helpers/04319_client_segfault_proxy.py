@@ -7,10 +7,13 @@
 # next write, which is exactly what `Connection::sendQuery` sees when a real
 # server closes the stream mid-write (issue #105292).
 #
-# Usage: python3 04319_client_segfault_proxy.py <target_host> <target_port> <cutoff_bytes> <port_file>
+# Exit code is the regression-path signal: 0 only when more than `cutoff` bytes
+# were forwarded and the RST was injected; non-zero on every other path
+# (target-connect failure, accept timeout, client EOF before cutoff, server
+# send error before cutoff). The orchestrator must check this so a passing
+# test always proves the mid-write cutoff path was hit.
 #
-# The proxy writes the listening port atomically to <port_file>, services one
-# connection, and exits. No external kill is needed and no orphan job remains.
+# Usage: python3 04319_client_segfault_proxy.py <target_host> <target_port> <cutoff_bytes> <port_file>
 
 import os
 import socket
@@ -33,9 +36,13 @@ def serve_one(client_sock, target_host, target_port, cutoff):
     try:
         server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_sock.connect((target_host, target_port))
-    except OSError:
-        client_sock.close()
-        return
+    except OSError as e:
+        print(f"TARGET_CONNECT_FAILED: {e}", flush=True)
+        try:
+            client_sock.close()
+        except OSError:
+            pass
+        return False
 
     cutoff_event = threading.Event()
 
@@ -55,20 +62,29 @@ def serve_one(client_sock, target_host, target_port, cutoff):
     threading.Thread(target=s2c, daemon=True).start()
 
     sent = 0
+    cutoff_reached = False
+    client_eof = False
+    client_recv_error = False
+    server_send_error = False
     try:
         while True:
-            data = client_sock.recv(8192)
+            try:
+                data = client_sock.recv(8192)
+            except OSError:
+                client_recv_error = True
+                break
             if not data:
+                client_eof = True
                 break
             try:
                 server_sock.sendall(data)
             except OSError:
+                server_send_error = True
                 break
             sent += len(data)
             if sent > cutoff:
+                cutoff_reached = True
                 break
-    except OSError:
-        pass
     finally:
         cutoff_event.set()
         force_rst(client_sock)
@@ -81,6 +97,19 @@ def serve_one(client_sock, target_host, target_port, cutoff):
             server_sock.close()
         except OSError:
             pass
+
+    if cutoff_reached:
+        print(f"CUTOFF_EXCEEDED: bytes={sent} cutoff={cutoff}", flush=True)
+        return True
+    if client_eof:
+        print(f"CLIENT_EOF_BEFORE_CUTOFF: bytes={sent} cutoff={cutoff}", flush=True)
+    elif client_recv_error:
+        print(f"CLIENT_RECV_ERROR_BEFORE_CUTOFF: bytes={sent} cutoff={cutoff}", flush=True)
+    elif server_send_error:
+        print(f"SERVER_SEND_ERROR_BEFORE_CUTOFF: bytes={sent} cutoff={cutoff}", flush=True)
+    else:
+        print(f"UNKNOWN_EARLY_EXIT: bytes={sent} cutoff={cutoff}", flush=True)
+    return False
 
 
 def main():
@@ -106,12 +135,14 @@ def main():
     try:
         client_sock, _ = listener.accept()
     except socket.timeout:
-        return
+        print("ACCEPT_TIMEOUT", flush=True)
+        return 1
     finally:
         listener.close()
 
-    serve_one(client_sock, target_host, target_port, cutoff)
+    success = serve_one(client_sock, target_host, target_port, cutoff)
+    return 0 if success else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
