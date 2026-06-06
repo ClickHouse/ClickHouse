@@ -90,6 +90,8 @@ namespace CoordinationSetting
     extern const CoordinationSettingsBool nuraft_streaming_mode;
     extern const CoordinationSettingsUInt64 nuraft_max_log_gap_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
+    extern const CoordinationSettingsUInt64 nuraft_max_uncommitted_log_entries;
+    extern const CoordinationSettingsUInt64 nuraft_append_entries_backward_probe_throttle_threshold;
     extern const CoordinationSettingsBool use_new_dispatcher;
 }
 
@@ -581,6 +583,11 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::nuraft_max_log_gap_in_stream], "nuraft_max_log_gap_in_stream", log);
     params.max_bytes_in_flight_in_stream_
         = static_cast<int64_t>(coordination_settings[CoordinationSetting::nuraft_max_bytes_in_flight_in_stream]);
+    params.max_uncommitted_log_entries_ = coordination_settings[CoordinationSetting::nuraft_max_uncommitted_log_entries];
+    params.append_entries_backward_probe_throttle_threshold_ = getValueOrMaxInt32AndLogWarning(
+        coordination_settings[CoordinationSetting::nuraft_append_entries_backward_probe_throttle_threshold],
+        "nuraft_append_entries_backward_probe_throttle_threshold",
+        log);
 
     params.return_method_ = nuraft::raft_params::async_handler;
 
@@ -700,7 +707,10 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     last_log_idx_on_disk = log_store->next_slot() - 1;
     LOG_TRACE(log, "Last local log idx {}", last_log_idx_on_disk.load());
     if (state_machine->last_commit_index() >= last_log_idx_on_disk)
+    {
+        LOG_INFO(log, "No log preprocessing needed (last_commit_index={} >= last_log_idx_on_disk={})", state_machine->last_commit_index(), last_log_idx_on_disk.load());
         keeper_context->setLocalLogsPreprocessed();
+    }
 
     loadLatestConfig();
 
@@ -930,6 +940,16 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 if (req.log_entries().empty())
                     break;
 
+                LOG_TRACE(
+                    log,
+                    "Logs not preprocessed, ProcessReq callback with {} entries, last_commit_index={}, last_log_idx_on_disk={}, "
+                    "isCommitInProgress={}, get_target_committed_log_idx={}",
+                    req.log_entries().size(),
+                    state_machine->last_commit_index(),
+                    last_log_idx_on_disk.load(),
+                    raft_instance->isCommitInProgress(),
+                    raft_instance->get_target_committed_log_idx());
+
                 /// committing/preprocessing of local logs can take some time
                 /// and we don't want election to start during that time so we
                 /// set serving requests to avoid elections on timeout
@@ -937,10 +957,20 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 SCOPE_EXIT(raft_instance->setServingRequest(false));
                 /// maybe we got snapshot installed
                 if (state_machine->last_commit_index() >= last_log_idx_on_disk && !raft_instance->isCommitInProgress())
+                {
+                    LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: preprocessing logs");
                     preprocess_logs();
+                }
                 /// we don't want to append new logs if we are committing local logs
                 else if (raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk)
+                {
+                    LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: waiting for preprocessing");
                     keeper_context->waitLocalLogsPreprocessedOrShutdown();
+                }
+                else
+                {
+                    LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: ignoring");
+                }
 
                 break;
             }
@@ -950,6 +980,8 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 if (req.log_entries().empty())
                     break;
+
+                LOG_TRACE(log, "Logs not preprocessed, GotAppendEntryReqFromLeader callback with last_log_idx={}, current last_log_idx_on_disk={}, dropping {} entries from the request", req.get_last_log_idx(), last_log_idx_on_disk.load(), req.log_entries().size());
 
                 /// we need to rollback some local logs so we set last_log_idx_on_disk
                 /// to the last common log index from leader
@@ -1003,12 +1035,12 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 // and not a RW lock
                 auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
 
-                assert(entry->get_val_type() == nuraft::app_log);
+                chassert(entry->get_val_type() == nuraft::app_log);
                 auto next_zxid = state_machine->getNextZxid();
 
                 auto entry_buf = entry->get_buf_ptr();
 
-                IKeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version;
+                IKeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version = {};
                 size_t request_end_position = 0;
                 auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version, &request_end_position);
                 request_for_session->zxid = next_zxid;
@@ -1069,7 +1101,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 // and not a RW lock
                 auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
 
-                assert(entry->get_val_type() == nuraft::app_log);
+                chassert(entry->get_val_type() == nuraft::app_log);
 
                 auto & entry_buf = entry->get_buf();
                 auto request_for_session = state_machine->parseRequest(entry_buf, true);
@@ -1367,7 +1399,7 @@ bool KeeperServer::waitForConfigUpdateWithReconfigDisabled(const ClusterUpdateAc
 
 Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 {
-    Keeper4LWInfo result;
+    Keeper4LWInfo result{};
     result.is_leader = raft_instance->is_leader();
 
     auto srv_config = state_manager->get_srv_config();

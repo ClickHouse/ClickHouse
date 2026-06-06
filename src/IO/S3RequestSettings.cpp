@@ -102,12 +102,7 @@ S3RequestSettings::S3RequestSettings(const S3RequestSettings & settings)
 {
 }
 
-S3RequestSettings::S3RequestSettings(S3RequestSettings && settings) noexcept
-    : request_throttler(std::move(settings.request_throttler))
-    , proxy_resolver(std::move(settings.proxy_resolver))
-    , impl(std::make_unique<S3RequestSettingsImpl>(std::move(*settings.impl)))
-{
-}
+S3RequestSettings::S3RequestSettings(S3RequestSettings && settings) noexcept = default;
 
 S3RequestSettings::S3RequestSettings(
     const Poco::Util::AbstractConfiguration & config,
@@ -159,14 +154,7 @@ S3RequestSettings::~S3RequestSettings() = default;
 
 S3REQUEST_SETTINGS_SUPPORTED_TYPES(S3RequestSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
-S3RequestSettings & S3RequestSettings::operator=(S3RequestSettings && settings) noexcept
-{
-    request_throttler = std::move(settings.request_throttler);
-    proxy_resolver = std::move(settings.proxy_resolver);
-    *impl = std::move(*settings.impl);
-
-    return *this;
-}
+S3RequestSettings & S3RequestSettings::operator=(S3RequestSettings && settings) noexcept = default;
 
 void S3RequestSettings::updateFromSettings(const DB::Settings & settings, bool if_changed, bool validate_settings)
 {
@@ -224,7 +212,7 @@ void S3RequestSettings::validateUploadSettings()
                 ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting upload_part_size_multiply_parts_count_threshold cannot be zero");
 
-        size_t maybe_overflow;
+        size_t maybe_overflow = 0;
         if (common::mulOverflow((*this)[S3RequestSetting::max_upload_part_size].value, (*this)[S3RequestSetting::upload_part_size_multiply_factor].value, maybe_overflow))
             throw Exception(
                             ErrorCodes::INVALID_SETTING_VALUE,
@@ -233,7 +221,7 @@ void S3RequestSettings::validateUploadSettings()
                             (*this)[S3RequestSetting::upload_part_size_multiply_factor].value, ReadableSize((*this)[S3RequestSetting::max_upload_part_size].value));
     }
 
-    std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
+    NameSet storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
     if (!(*this)[S3RequestSetting::storage_class_name].value.empty() && !storage_class_names.contains((*this)[S3RequestSetting::storage_class_name]))
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,

@@ -34,7 +34,7 @@ namespace QueryPlanOptimizations
 
 /// For ANTI JOIN exclusion filters, rows with any NULL key can never match in the join (since NULL = NULL is false in SQL)
 /// and must always pass the runtime filter. This wraps the filter condition with OR isNull(key1) OR isNull(key2) OR ...
-const ActionsDAG::Node * addNullBypassForAntiJoin(
+static const ActionsDAG::Node * addNullBypassForAntiJoin(
     ActionsDAG & dag,
     const ActionsDAG::Node * filter_condition,
     const ColumnsWithTypeAndName & keys)
@@ -60,7 +60,7 @@ const ActionsDAG::Node * addNullBypassForAntiJoin(
 }
 
 /// Build a `tuple(key1, key2, ...)` node in the given DAG, casting each key to the corresponding common type if needed.
-const ActionsDAG::Node & addTupleOfKeys(
+static const ActionsDAG::Node & addTupleOfKeys(
     ActionsDAG & dag,
     const ColumnsWithTypeAndName & keys,
     const DataTypes & common_types,
@@ -77,7 +77,7 @@ const ActionsDAG::Node & addTupleOfKeys(
     return dag.addFunction(tuple_func, key_nodes, {});
 }
 
-const ActionsDAG::Node & createRuntimeFilterCondition(
+static const ActionsDAG::Node & createRuntimeFilterCondition(
     ActionsDAG & actions_dag,
     const String & filter_name,
     const ColumnWithTypeAndName & key_column,

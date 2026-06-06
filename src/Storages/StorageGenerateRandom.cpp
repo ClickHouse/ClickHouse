@@ -187,7 +187,7 @@ T fuzzyRandomInteger(pcg64 & rng)
             }
         }
 
-        T result;
+        T result{};
         memcpy(&result, words, sizeof(T));
         return result;
     }
@@ -954,6 +954,7 @@ VirtualColumnsDescription StorageGenerateRandom::createVirtuals()
 }
 
 
+void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory)
 {
     factory.registerStorage("GenerateRandom", [](const StorageFactory::Arguments & args)

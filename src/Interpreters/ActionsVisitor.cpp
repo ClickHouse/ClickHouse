@@ -558,7 +558,7 @@ std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPt
     const auto * as_literal = ast->as<ASTLiteral>();
     if (as_literal)
     {
-        assert(!as_literal->unique_column_name.empty());
+        chassert(!as_literal->unique_column_name.empty());
         child_column_name = as_literal->unique_column_name;
     }
 

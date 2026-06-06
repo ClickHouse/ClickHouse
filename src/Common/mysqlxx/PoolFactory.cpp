@@ -1,3 +1,5 @@
+#include <map>
+
 #include <mysqlxx/PoolFactory.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>

@@ -18,7 +18,7 @@ void NATSCoreConsumer::subscribe()
 
     for (const auto & subject : getSubjects())
     {
-        natsSubscription * subscription;
+        natsSubscription * subscription = nullptr;
         auto status = natsConnection_QueueSubscribe(&subscription, getNativeConnection(), subject.c_str(), getQueueName().c_str(), onMsg, static_cast<void *>(this));
         if (status != NATS_OK)
             throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Failed to subscribe consumer {} to subject {}", static_cast<void*>(this), subject);
