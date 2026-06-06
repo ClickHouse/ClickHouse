@@ -400,34 +400,35 @@ Input columns are laid out in WASM memory as:
 
 ```
 [ColumnarV1Header: 8 bytes]
-[ColDescriptor × num_columns: 20 bytes each]
+[ColDescriptor × num_columns: 40 bytes each]
 [Column data blocks]
 ```
 
-Each `ColDescriptor` contains:
+The 8-byte header contains two `uint32` fields: `num_rows` then `num_cols`.
 
-- `type` (4 bytes) — column type identifier
-- `null_offset` (4 bytes) — offset to null bitmap (zero if not nullable)
-- `offsets_offset` (4 bytes) — offset to offsets array (for arrays/strings)
-- `data_offset` (4 bytes) — offset to data block
-- `data_size` (4 bytes) — size of data block in bytes
+Each `ColDescriptor` is exactly 40 bytes and contains five `uint64` fields
+(all byte offsets are absolute from the start of the frame buffer):
 
-Supported column types:
+- `type` (8 bytes) — column type identifier (see below)
+- `null_offset` (8 bytes) — absolute offset to the `u8[num_rows]` null map (0 if not nullable; 1 = null, 0 = non-null)
+- `offsets_offset` (8 bytes) — absolute offset to the `uint64[num_rows+1]` offsets array (for `COL_BYTES` columns; 0 otherwise)
+- `data_offset` (8 bytes) — absolute offset to the column data block
+- `data_size` (8 bytes) — size of the data block in bytes
 
-- `0` — `Bytes` (`UInt8`)
-- `1` — `Nullable Bytes`
-- `2` — `Fixed8` (`Int8` / `UInt8`)
-- `3` — `Nullable Fixed8`
-- `4` — `Fixed32` (`Int32` / `UInt32` / `Float32`)
-- `5` — `Nullable Fixed32`
-- `6` — `Fixed64` (`Int64` / `UInt64` / `Float64`)
-- `7` — `Nullable Fixed64`
-- `8` — `Complex` — recursive format for `Array`, `Tuple`, and nested types
-- `9` — `Variant` — discriminated union type
+Base column types:
 
-Type values can be combined with flags:
+- `0` — `COL_BYTES` — variable-length byte strings (`String`); paired with `offsets_offset` array and data block of raw bytes (no null terminators)
+- `1` — `COL_FIXED8` — 1-byte fixed-width scalars (`Int8`, `UInt8`)
+- `2` — `COL_FIXED16` — 2-byte fixed-width scalars (`Int16`, `UInt16`)
+- `3` — `COL_FIXED32` — 4-byte fixed-width scalars (`Int32`, `UInt32`, `Float32`)
+- `4` — `COL_FIXED64` — 8-byte fixed-width scalars (`Int64`, `UInt64`, `Float64`, `DateTime64`)
+- `5` — `COL_COMPLEX` — recursive format for `Array(T)` and `Tuple(T…)`
+- `6` — `COL_VARIANT` — discriminated union (`Variant(…)`)
 
-- `COL_IS_CONST` (0x80) — column is constant (all rows have the same value)
+Modifier flags (OR'd onto the base type):
+
+- `COL_IS_NULLABLE` (`0x20`) — nullable column; `null_offset` carries a `u8[num_rows]` null map
+- `COL_IS_CONST` (`0x80`) — constant column; only 1 row of data is stored; the reader replicates it to the full row count
 
 Example usage:
 
