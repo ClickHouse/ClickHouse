@@ -1809,7 +1809,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             return {};
 
         auto nullmap_column = readByteMapFromArrowColumn(arrow_column);
-        auto nullable_type = std::make_shared<DataTypeNullable>(std::move(nested_column.type));
+        auto nullable_type = makeNullableAllowingArray(nested_column.type);
         auto nullable_column = ColumnNullable::create(nested_column.column, nullmap_column);
 
         return {std::move(nullable_column), std::move(nullable_type), column_name};

@@ -68,7 +68,7 @@ public:
         for (size_t i = 1; i < arguments.size(); ++i)
         {
             if (arguments[i].type->isNullable())
-                return makeNullable(result_type);
+                return makeNullableAllowingArray(result_type);
         }
         return result_type;
     }
@@ -425,7 +425,7 @@ public:
         for (size_t i = 1; i < arguments.size(); ++i)
         {
             if (arguments[i].type->isNullable())
-                return makeNullable(result_type);
+                return makeNullableAllowingArray(result_type);
         }
         return result_type;
     }

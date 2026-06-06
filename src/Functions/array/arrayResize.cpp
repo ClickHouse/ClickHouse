@@ -73,7 +73,7 @@ DataTypePtr FunctionArrayResize::getReturnTypeImpl(const ColumnsWithTypeAndName 
         auto data_types = {array_type->getNestedType(), arguments[2].type};
         DataTypePtr result = std::make_shared<DataTypeArray>(getLeastSupertype(data_types));
         if (arguments[0].type->isNullable())
-            return makeNullable(result);
+            return makeNullableAllowingArray(result);
         return result;
     }
 }

@@ -70,7 +70,7 @@ public:
 
         auto result_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(arguments_types));
         if (result_is_nullable)
-            return makeNullable(result_type);
+            return makeNullableAllowingArray(result_type);
         return result_type;
     }
 

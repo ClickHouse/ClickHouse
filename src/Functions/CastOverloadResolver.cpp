@@ -246,7 +246,7 @@ protected:
         if (keep_nullable
             && (arguments.front().type->isNullable() || arguments.front().type->isLowCardinalityNullable() || isDynamic(*arguments.front().type))
             && canBeInsideNullableWithSettings(*type, getContext()->getSettingsRef()))
-            return makeNullable(type);
+            return makeNullableAllowingArray(type);
 
         return type;
     }

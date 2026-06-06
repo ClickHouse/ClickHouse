@@ -49,7 +49,7 @@ public:
 
         auto result_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
         if (arguments[0]->isNullable())
-            return makeNullable(result_type);
+            return makeNullableAllowingArray(result_type);
         return result_type;
     }
 

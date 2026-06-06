@@ -24,6 +24,9 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
 /** Whether `Nullable(Array(...))` is allowed for the given settings. */
 bool allowNullableArrayType(const Settings & settings);
 
+/** Returns true if `type` contains `Nullable(Array(...))` at any nesting level. */
+bool hasNullableArray(const DataTypePtr & type);
+
 /** Like `IDataType::canBeInsideNullable`, but respects `allow_experimental_nullable_array_type` for `Array`. */
 bool canBeInsideNullableWithSettings(const IDataType & type, const Settings & settings);
 bool canBeInsideNullableWithSettings(const DataTypePtr & type, const Settings & settings);

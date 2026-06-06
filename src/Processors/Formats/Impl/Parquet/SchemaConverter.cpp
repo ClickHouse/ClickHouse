@@ -287,7 +287,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
             && (node.schema_context == SchemaContext::ListTuple || node.schema_context == SchemaContext::ListElement)
             && levels.size() >= 2
             && !levels[levels.size() - 2].is_array)
-            array.output_type = makeNullable(array.output_type);
+            array.output_type = makeNullableAllowingArray(array.output_type);
         array.nested_columns = {*node.output_idx};
         array.rep = rep;
         node.output_idx = array_idx;

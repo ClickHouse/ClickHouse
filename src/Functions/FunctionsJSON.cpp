@@ -29,6 +29,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/NullableUtils.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -49,6 +50,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_simdjson;
+    extern const SettingsBool allow_experimental_nullable_array_type;
 }
 
 namespace ErrorCodes
@@ -707,6 +709,7 @@ public:
 
     explicit JSONOverloadResolver(ContextPtr context)
         : allow_simdjson(context->getSettingsRef()[Setting::allow_simdjson])
+        , allow_nullable_array_type(context->getSettingsRef()[Setting::allow_experimental_nullable_array_type])
         , format_settings(getFormatSettings(context))
     {}
 
@@ -725,6 +728,12 @@ public:
             has_nothing_argument |= isNothing(arg.type);
 
         DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
+        if (hasNullableArray(json_return_type) && !allow_nullable_array_type)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} cannot use Nullable(Array) return type while setting allow_experimental_nullable_array_type is disabled",
+                getName());
+
         validateJSONIndexArgumentsIfNeeded<Impl>(Name::name, arguments);
         NullPresence null_presence = getNullPresense(arguments);
         DataTypePtr return_type;
@@ -733,7 +742,14 @@ public:
         else if (null_presence.has_null_constant)
             return_type = makeNullable(std::make_shared<DataTypeNothing>());
         else if (null_presence.has_nullable)
-            return_type = makeNullable(json_return_type);
+        {
+            if (isArray(json_return_type) && !allow_nullable_array_type)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} cannot create Nullable(Array) while setting allow_experimental_nullable_array_type is disabled",
+                    getName());
+            return_type = makeNullableAllowingArray(json_return_type);
+        }
         else
             return_type = json_return_type;
 
@@ -747,6 +763,7 @@ public:
 
 private:
     const bool allow_simdjson;
+    const bool allow_nullable_array_type;
     FormatSettings format_settings;
 };
 

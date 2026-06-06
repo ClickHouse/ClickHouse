@@ -2348,7 +2348,7 @@ public:
                 };
                 auto array_result = std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
                 if (arguments[0]->isNullable() || arguments[1]->isNullable())
-                    return makeNullable(array_result);
+                    return makeNullableAllowingArray(array_result);
                 return array_result;
             }
         }
@@ -2439,11 +2439,11 @@ public:
                     /// `makeNullableSafe` does not wrap `Array` (`canBeInsideNullable() == false`).
                     /// Preserve outer nullability when the array argument is `Nullable(Array(...))`.
                     if (arguments[0]->isNullable())
-                        return makeNullable(array_result);
+                        return makeNullableAllowingArray(array_result);
                     return makeNullableSafe(array_result);
                 }
                 if (arguments[0]->isNullable())
-                    return makeNullable(array_result);
+                    return makeNullableAllowingArray(array_result);
                 return array_result;
             }
             if (isNumber(removeNullable(arguments[0])) && detail::isArrayOrNullableArray(*arguments[1]))
@@ -2457,11 +2457,11 @@ public:
                 if constexpr (is_division_or_null)
                 {
                     if (arguments[1]->isNullable())
-                        return makeNullable(array_result);
+                        return makeNullableAllowingArray(array_result);
                     return makeNullableSafe(array_result);
                 }
                 if (arguments[1]->isNullable())
-                    return makeNullable(array_result);
+                    return makeNullableAllowingArray(array_result);
                 return array_result;
             }
         }

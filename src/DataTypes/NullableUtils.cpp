@@ -31,6 +31,33 @@ bool allowNullableArrayType(const Settings & settings)
     return settings[Setting::allow_experimental_nullable_array_type];
 }
 
+bool hasNullableArray(const DataTypePtr & type)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        if (isArray(nullable_type->getNestedType()))
+            return true;
+    }
+
+    bool res = false;
+    type->forEachChild([&res](const IDataType & child)
+    {
+        if (res)
+            return;
+
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&child))
+        {
+            if (isArray(nullable_type->getNestedType()))
+            {
+                res = true;
+                return;
+            }
+        }
+    });
+
+    return res;
+}
+
 bool canBeInsideNullableWithSettings(const IDataType & type, const Settings & settings)
 {
     if (isArray(type))

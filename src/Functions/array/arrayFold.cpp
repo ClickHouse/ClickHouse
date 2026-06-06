@@ -156,7 +156,7 @@ public:
         for (size_t i = 1; i + 1 < arguments.size(); ++i)
         {
             if (arguments[i].type->isNullable())
-                return makeNullable(accumulator_type);
+                return makeNullableAllowingArray(accumulator_type);
         }
 
         return accumulator_type;

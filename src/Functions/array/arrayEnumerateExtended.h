@@ -62,7 +62,7 @@ public:
         for (const auto & argument : arguments)
         {
             if (argument->isNullable())
-                return makeNullable(result_type);
+                return makeNullableAllowingArray(result_type);
         }
         return result_type;
     }

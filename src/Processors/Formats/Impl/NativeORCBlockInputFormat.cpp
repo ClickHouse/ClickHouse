@@ -1741,7 +1741,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         auto nested_column = readColumnFromORCColumn(orc_column, orc_type, column_name, true, nested_type_hint);
 
         auto nullmap_column = readByteMapFromORCColumn(orc_column);
-        auto nullable_type = std::make_shared<DataTypeNullable>(std::move(nested_column.type));
+        auto nullable_type = makeNullableAllowingArray(nested_column.type);
         auto nullable_column = ColumnNullable::create(nested_column.column, nullmap_column);
         return {nullable_column, nullable_type, column_name};
     }

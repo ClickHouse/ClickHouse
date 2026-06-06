@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -10,12 +11,18 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnDynamic.h>
+#include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 #include <memory>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_nullable_array_type;
+}
 
 namespace ErrorCodes
 {
@@ -35,7 +42,13 @@ class FunctionDynamicElement final : public IFunction
 public:
     static constexpr auto name = "dynamicElement";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDynamicElement>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDynamicElement>(context); }
+
+    explicit FunctionDynamicElement(ContextPtr context)
+        : allow_nullable_array_type(context && context->getSettingsRef()[Setting::allow_experimental_nullable_array_type])
+    {
+    }
+
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -121,6 +134,12 @@ private:
         if (!element_type)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of {} must be a valid type name. Got: {}", getName(), element_type_name);
 
+        if (hasNullableArray(element_type) && !allow_nullable_array_type)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} cannot use Nullable(Array) type while setting allow_experimental_nullable_array_type is disabled",
+                getName());
+
         return element_type;
     }
 
@@ -134,6 +153,8 @@ private:
 
         return res;
     }
+
+    bool allow_nullable_array_type;
 };
 
 }

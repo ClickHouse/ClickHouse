@@ -159,7 +159,7 @@ inline DataTypePtr applyNullableArrayReturnType(
     for (size_t i = first_array_argument_index; i < arguments.size(); ++i)
     {
         if (arguments[i].type->isNullable())
-            return makeNullable(return_type);
+            return makeNullableAllowingArray(return_type);
     }
     return return_type;
 }

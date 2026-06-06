@@ -118,7 +118,7 @@ public:
         for (const auto & argument : arguments)
         {
             if (argument.type->isNullable() && checkAndGetDataType<DataTypeArray>(removeNullable(argument.type).get()))
-                return makeNullable(type);
+                return makeNullableAllowingArray(type);
         }
         return type;
     }

@@ -480,7 +480,7 @@ namespace
         for (auto & type : data_types)
         {
             if (canBeInsideNullableBySchemaSettings(type, settings))
-                type = makeNullable(type);
+                type = makeNullableAllowingArray(type);
         }
 
         updateTypeIndexes(data_types, type_indexes);
@@ -1466,7 +1466,7 @@ static void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, 
     {
         auto nested_type = nullable_type->getNestedType();
         transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info, remain_nothing_types);
-        data_type = std::make_shared<DataTypeNullable>(std::move(nested_type));
+        data_type = makeNullableAllowingArray(nested_type);
         return;
     }
 
@@ -1690,7 +1690,7 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
             return nullptr;
 
         auto array_res = std::make_shared<DataTypeArray>(nested_type);
-        return (make_nullable && canBeInsideNullableBySchemaSettings(array_res, settings)) ? makeNullable(array_res) : array_res;
+        return (make_nullable && canBeInsideNullableBySchemaSettings(array_res, settings)) ? makeNullableAllowingArray(array_res) : array_res;
     }
 
     if (which.isVariant())

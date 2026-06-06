@@ -52,7 +52,7 @@ public:
 
         DataTypePtr result = std::make_shared<DataTypeArray>(getLeastSupertype(types));
         if (arguments[0]->isNullable())
-            return makeNullable(result);
+            return makeNullableAllowingArray(result);
         return result;
     }
 

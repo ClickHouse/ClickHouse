@@ -603,13 +603,13 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         if (*col_decl.null_modifier)
         {
             checkNullableArrayIsAllowed(column_type, settings);
-            column_type = makeNullable(column_type);
+            column_type = makeNullableAllowingArray(column_type);
         }
     }
     else if (make_columns_nullable)
     {
         checkNullableArrayIsAllowed(column_type, settings);
-        column_type = makeNullable(column_type);
+        column_type = makeNullableAllowingArray(column_type);
     }
     else if (auto default_expr = col_decl.getDefaultExpression();
         !hasNullable(column_type) && col_decl.default_specifier == ColumnDefaultSpecifier::Default && default_expr
@@ -624,7 +624,7 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         else
         {
             checkNullableArrayIsAllowed(column_type, settings);
-            column_type = makeNullable(column_type);
+            column_type = makeNullableAllowingArray(column_type);
         }
     }
     return column_type;
@@ -717,7 +717,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 if ((col_decl.null_modifier && *col_decl.null_modifier) || make_columns_nullable)
                 {
                     checkNullableArrayIsAllowed(column.type, context_->getSettingsRef());
-                    column.type = makeNullable(column.type);
+                    column.type = makeNullableAllowingArray(column.type);
                 }
             }
 

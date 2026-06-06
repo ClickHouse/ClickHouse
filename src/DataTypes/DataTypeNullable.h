@@ -56,13 +56,18 @@ public:
     void forEachChild(const ChildCallback & callback) const override;
 
 private:
+    DataTypeNullable(const DataTypePtr & nested_data_type_, bool allow_array);
+
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     DataTypePtr nested_data_type;
+
+    friend DataTypePtr makeNullableAllowingArray(const DataTypePtr & type);
 };
 
 
 DataTypePtr makeNullable(const DataTypePtr & type);
+DataTypePtr makeNullableAllowingArray(const DataTypePtr & type);
 DataTypePtr makeNullableSafe(const DataTypePtr & type);
 DataTypePtr removeNullable(const DataTypePtr & type);
 DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type);

@@ -28,16 +28,15 @@ namespace ErrorCodes
 
 
 DataTypeNullable::DataTypeNullable(const DataTypePtr & nested_data_type_)
+    : DataTypeNullable(nested_data_type_, false)
+{
+}
+
+DataTypeNullable::DataTypeNullable(const DataTypePtr & nested_data_type_, bool allow_array)
     : nested_data_type{nested_data_type_}
 {
-    if (!nested_data_type->canBeInsideNullable())
-    {
-        /// `Nullable(Array)` is gated by `allow_experimental_nullable_array_type` in context-aware validation
-        /// (`validateDataType`, CAST, CREATE, etc.), not in `IDataType::canBeInsideNullable()`.
-        if (isArray(nested_data_type))
-            return;
+    if (!nested_data_type->canBeInsideNullable() && !(allow_array && isArray(nested_data_type)))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Nested type {} cannot be inside Nullable type", nested_data_type->getName());
-    }
 }
 
 
@@ -145,7 +144,7 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     DataTypePtr nested_type = DataTypeFactory::instance().get(arguments->children[0]);
 
-    return std::make_shared<DataTypeNullable>(nested_type);
+    return makeNullableAllowingArray(nested_type);
 }
 
 
@@ -160,6 +159,13 @@ DataTypePtr makeNullable(const DataTypePtr & type)
     if (type->isNullable())
         return type;
     return std::make_shared<DataTypeNullable>(type);
+}
+
+DataTypePtr makeNullableAllowingArray(const DataTypePtr & type)
+{
+    if (type->isNullable())
+        return type;
+    return DataTypePtr(new DataTypeNullable(type, true));
 }
 
 DataTypePtr makeNullableSafe(const DataTypePtr & type)

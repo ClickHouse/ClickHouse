@@ -64,11 +64,16 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (isArray(arguments[0]) && !allow_nullable_array_type)
+        if (isArray(arguments[0]))
+        {
+            if (allow_nullable_array_type)
+                return makeNullableAllowingArray(arguments[0]);
+
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Function {} cannot create Nullable(Array) while setting allow_experimental_nullable_array_type is disabled",
                 getName());
+        }
 
         return makeNullableOrLowCardinalityNullable(arguments[0]);
     }

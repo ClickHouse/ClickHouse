@@ -52,7 +52,7 @@ DataTypePtr FunctionArrayConcat::getReturnTypeImpl(const DataTypes & arguments) 
 
     auto result_type = getLeastSupertype(array_arguments);
     if (has_null_constant)
-        return makeNullable(result_type);
+        return makeNullableAllowingArray(result_type);
     return result_type;
 }
 
