@@ -208,10 +208,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
                         /// `cached_location` is the full URI (e.g. "s3://bucket/ns/table");
                         /// `table_root` is the path portion ("bucket/ns/table").
                         /// Accept only when table_root is a suffix of cached_location.
-                        location_ok = cached_location.size() >= table_root.size()
-                            && cached_location.compare(
-                                   cached_location.size() - table_root.size(),
-                                   table_root.size(), table_root) == 0;
+                        location_ok = cached_location.ends_with(table_root);
                     }
                     if (location_ok)
                     {
