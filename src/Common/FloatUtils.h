@@ -14,7 +14,7 @@ inline float convertFloat16ToFloat32(uint16_t float16_value)
     uint32_t new_mantissa = 0;
     uint32_t new_sign = old_sign << 16;
 
-    if (unlikely(old_exponent == 0x1F))
+    if (old_exponent == 0x1F) [[unlikely]]
     {
         /// Inf, NaN
         new_exponent = 0xFFu << 23;
@@ -22,7 +22,7 @@ inline float convertFloat16ToFloat32(uint16_t float16_value)
     }
     else if (old_exponent == 0)
     {
-        if (likely(old_mantissa == 0))
+        if (old_mantissa == 0) [[likely]]
         {
             /// Zeros
             new_exponent = 0;
@@ -33,7 +33,7 @@ inline float convertFloat16ToFloat32(uint16_t float16_value)
             /// Subnormals
             uint32_t adjustment = __builtin_clz(old_mantissa) - 22;
             new_exponent = (112 - adjustment) << 23;
-            new_mantissa = (old_mantissa ^ (1 << (9 - adjustment))) << 13 << adjustment;
+            new_mantissa = (old_mantissa ^ (1 << (9 - adjustment))) << 14 << adjustment;
         }
     }
     else
