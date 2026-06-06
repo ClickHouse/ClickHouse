@@ -1,6 +1,10 @@
 #pragma once
 
 #include <pdqsort.h>
+#include <blqs.h>
+
+#include <iterator>
+#include <memory>
 
 #ifndef NDEBUG
 
@@ -118,6 +122,12 @@ void partial_sort(RandomIt first, RandomIt middle, RandomIt last)
 
 #pragma clang diagnostic pop
 
+/** Branchless quicksort (blqsort) outperforms pdqsort by a wide margin on unpatterned,
+  * high-cardinality data, which is the common case reaching this function (already-sorted,
+  * reverse-sorted and nearly-sorted inputs are caught earlier by `trySort`, which keeps using
+  * pdqsort's pattern-defeating fast paths). blqsort requires raw pointers, so we convert the
+  * (always contiguous) iterators with `std::to_address`.
+  */
 template <typename RandomIt, typename Compare>
 void sort(RandomIt first, RandomIt last, Compare compare)
 {
@@ -126,7 +136,14 @@ void sort(RandomIt first, RandomIt last, Compare compare)
 #endif
 
     ComparatorWrapper<Compare> compare_wrapper = compare;
-    ::pdqsort(first, last, compare_wrapper);
+
+    /// blqsort needs raw pointers. Contiguous iterators (raw pointers, PODArray and vector
+    /// iterators) provide them via `std::to_address`; the rare non-contiguous random-access
+    /// iterators (e.g. reverse iterators over contiguous storage) keep using pdqsort.
+    if constexpr (std::contiguous_iterator<RandomIt>)
+        ::blqs::sort(std::to_address(first), std::to_address(last), compare_wrapper);
+    else
+        ::pdqsort(first, last, compare_wrapper);
 }
 
 template <typename RandomIt>

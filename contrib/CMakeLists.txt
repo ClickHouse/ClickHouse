@@ -62,6 +62,7 @@ enable_heavy_build_check_if_needed()
 
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
+add_contrib (blqsort-cmake blqsort)
 add_contrib (pocketfft-cmake pocketfft)
 add_contrib (crc32-vpmsum-cmake crc32-vpmsum)
 add_contrib (sparsehash-c11-cmake sparsehash-c11)

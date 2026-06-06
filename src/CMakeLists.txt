@@ -643,10 +643,12 @@ target_link_libraries(
 
 target_link_libraries(clickhouse_common_io PUBLIC
     ch_contrib::miniselect
-    ch_contrib::pdqsort)
+    ch_contrib::pdqsort
+    ch_contrib::blqsort)
 target_link_libraries(dbms PUBLIC
     ch_contrib::miniselect
-    ch_contrib::pdqsort)
+    ch_contrib::pdqsort
+    ch_contrib::blqsort)
 
 target_link_libraries(dbms PRIVATE ch_contrib::zstd)
 
