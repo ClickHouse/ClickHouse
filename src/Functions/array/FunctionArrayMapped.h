@@ -24,8 +24,10 @@
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/array/NullableArrayOffsets.h>
 
 #include <algorithm>
+#include <vector>
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
@@ -498,6 +500,17 @@ public:
 
             bool is_single_array_argument = arguments.size() == num_fixed_params + 2;
             ColumnPtr array_null_map;
+            struct ArrayArgument
+            {
+                ColumnPtr column_array_ptr;
+                const ColumnArray * column_array = nullptr;
+                const DataTypeArray * array_type = nullptr;
+                String name;
+                size_t argument_index = 0;
+            };
+            std::vector<ArrayArgument> array_arguments;
+            array_arguments.reserve(arguments.size() - 1 - num_fixed_params);
+
             for (size_t i = 1 + num_fixed_params; i < arguments.size(); ++i)
             {
                 const auto & array_with_type_and_name = arguments[i];
@@ -527,30 +540,50 @@ public:
                     throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected Array type, found {}", array_type_ptr->getName());
 
+                array_arguments.emplace_back(column_array_ptr, column_array, array_type, array_with_type_and_name.name, i + 1);
+            }
+
+            if (array_null_map)
+                array_null_map = detail::materializeNullMapToRowCount(array_null_map, input_rows_count);
+
+            const auto * row_null_map = array_null_map
+                ? &assert_cast<const ColumnUInt8 &>(*array_null_map)
+                : nullptr;
+
+            for (auto & array_argument : array_arguments)
+            {
+                if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(
+                        *array_argument.column_array, row_null_map, input_rows_count))
+                {
+                    materialized_columns.emplace_back(null_rows_empty_array);
+                    array_argument.column_array_ptr = std::move(null_rows_empty_array);
+                    array_argument.column_array = assert_cast<const ColumnArray *>(array_argument.column_array_ptr.get());
+                }
+
                 if (!offsets_column)
                 {
-                    offsets_column = column_array->getOffsetsPtr();
+                    offsets_column = array_argument.column_array->getOffsetsPtr();
                 }
                 else
                 {
                     /// The first condition is optimization: do not compare data if the pointers are equal.
-                    if (column_array->getOffsetsPtr() != offsets_column
-                        && column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
+                    if (array_argument.column_array->getOffsetsPtr() != offsets_column
+                        && array_argument.column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
                         throw Exception(
                             ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                             "Arrays passed to {} must have equal size. Argument {} has size {} which differs with the size of another argument, {}",
                             getName(),
-                            i + 1,
-                            column_array->getOffsets().back(),  /// By the way, PODArray supports addressing -1th element.
+                            array_argument.argument_index,
+                            array_argument.column_array->getOffsets().back(),  /// By the way, PODArray supports addressing -1th element.
                             typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData().back());
                 }
 
-                const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&column_array->getData());
+                const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&array_argument.column_array->getData());
                 size_t tuple_size = column_tuple ? column_tuple->getColumns().size() : 0;
 
                 if (is_single_array_argument && tuple_size > 1 && tuple_size == num_function_arguments)
                 {
-                    const auto & type_tuple = assert_cast<const DataTypeTuple &>(*array_type->getNestedType());
+                    const auto & type_tuple = assert_cast<const DataTypeTuple &>(*array_argument.array_type->getNestedType());
                     const auto & tuple_names = type_tuple.getElementNames();
 
                     arrays.reserve(column_tuple->getColumns().size());
@@ -559,21 +592,21 @@ public:
                         arrays.emplace_back(
                             column_tuple->getColumnPtr(j),
                             type_tuple.getElement(j),
-                            array_with_type_and_name.name + "." + tuple_names[j]);
+                            array_argument.name + "." + tuple_names[j]);
                     }
                 }
                 else
                 {
                     arrays.emplace_back(
-                        column_array->getDataPtr(),
-                        array_type->getNestedType(),
-                        array_with_type_and_name.name);
+                        array_argument.column_array->getDataPtr(),
+                        array_argument.array_type->getNestedType(),
+                        array_argument.name);
                 }
 
-                if (i == 1 + num_fixed_params)
+                if (!column_first_array)
                 {
-                    column_first_array_ptr = column_array_ptr;
-                    column_first_array = column_array;
+                    column_first_array_ptr = array_argument.column_array_ptr;
+                    column_first_array = array_argument.column_array;
                 }
             }
 

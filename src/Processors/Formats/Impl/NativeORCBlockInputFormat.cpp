@@ -979,7 +979,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.orc.case_insensitive_column_matching,
-        format_settings.orc.dictionary_as_low_cardinality);
+        format_settings.orc.dictionary_as_low_cardinality,
+        format_settings.schema_inference_allow_nullable_array_type);
 
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
     const auto & header = getPort().getHeader();
@@ -1196,12 +1197,14 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     bool allow_missing_columns_,
     bool null_as_default_,
     bool case_insensitive_matching_,
-    bool dictionary_as_low_cardinality_)
+    bool dictionary_as_low_cardinality_,
+    bool allow_nullable_array_type_)
     : header(header_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
     , case_insensitive_matching(case_insensitive_matching_)
     , dictionary_as_low_cardinality(dictionary_as_low_cardinality_)
+    , allow_nullable_array_type(allow_nullable_array_type_)
 {
 }
 
@@ -1726,8 +1729,10 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
 {
     bool skipped = false;
 
-    if (!inside_nullable && (orc_column->hasNulls || (type_hint && isNullableOrLowCardinalityNullable(type_hint))) && !orc_column->isEncoded
-        && orc_type->getKind() != orc::MAP)
+    const bool type_hint_is_nullable = type_hint && isNullableOrLowCardinalityNullable(type_hint);
+    const bool can_wrap_list_in_nullable = orc_type->getKind() != orc::LIST || allow_nullable_array_type || type_hint_is_nullable;
+    if (!inside_nullable && (orc_column->hasNulls || type_hint_is_nullable) && !orc_column->isEncoded
+        && orc_type->getKind() != orc::MAP && can_wrap_list_in_nullable)
     {
         DataTypePtr nested_type_hint;
         if (type_hint)
@@ -1888,7 +1893,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             DataTypePtr nested_type_hint;
             if (type_hint)
             {
-                const auto * array_type_hint = typeid_cast<const DataTypeArray *>(type_hint.get());
+                const auto * array_type_hint = typeid_cast<const DataTypeArray *>(removeNullable(type_hint).get());
                 if (array_type_hint)
                     nested_type_hint = array_type_hint->getNestedType();
             }

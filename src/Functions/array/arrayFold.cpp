@@ -11,7 +11,10 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/array/NullableArrayOffsets.h>
 #include <Common/assert_cast.h>
+
+#include <vector>
 
 namespace DB
 {
@@ -178,6 +181,15 @@ public:
         const ColumnArray * first_array_col_concrete = nullptr;
         ColumnPtr first_array_col_offsets;
         ColumnPtr array_null_map;
+        struct ArrayArgument
+        {
+            ColumnPtr column_array_ptr;
+            const ColumnArray * column_array = nullptr;
+            const DataTypeArray * array_type = nullptr;
+            String name;
+        };
+        std::vector<ArrayArgument> array_arguments;
+        array_arguments.reserve(arguments.size() - 2);
 
         ColumnsWithTypeAndName arrays_data_with_type_and_name; /// for all arrays, the pointers to the internal data column, type and name
         arrays_data_with_type_and_name.reserve(arguments.size() - 1);
@@ -227,26 +239,47 @@ public:
             if (!array_type_concrete)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected array type, found {}", array_type->getName());
 
+            array_arguments.emplace_back(array_col, array_col_concrete, array_type_concrete, array_with_type_and_name.name);
+        }
+
+        if (array_null_map)
+            array_null_map = materializeNullMapToRowCount(array_null_map, input_rows_count);
+
+        const auto * row_null_map = array_null_map
+            ? &assert_cast<const ColumnUInt8 &>(*array_null_map)
+            : nullptr;
+
+        for (auto & array_argument : array_arguments)
+        {
+            if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*array_argument.column_array, row_null_map, input_rows_count))
+            {
+                array_argument.column_array_ptr = std::move(null_rows_empty_array);
+                array_argument.column_array = assert_cast<const ColumnArray *>(array_argument.column_array_ptr.get());
+            }
+
             /// Check that the cardinality of the arrays across a row is the same for all array arguments.
             /// This simplifies later calculations which can work only with the offsets of the first column.
             if (!first_array_col_offsets)
-                first_array_col_offsets = array_col_concrete->getOffsetsPtr();
+                first_array_col_offsets = array_argument.column_array->getOffsetsPtr();
             else
             {
                 /// It suffices to check that the internal offset columns are equal.
                 /// The first condition is optimization: skip comparison if the offset pointers are equal.
-                if (array_col_concrete->getOffsetsPtr() != first_array_col_offsets
-                    && array_col_concrete->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*first_array_col_offsets).getData())
+                if (array_argument.column_array->getOffsetsPtr() != first_array_col_offsets
+                    && array_argument.column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*first_array_col_offsets).getData())
                     throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "arrays_data_with_type_and_name passed to {} must have equal size", getName());
             }
 
-            if (i == 1)
+            if (!first_array_col)
             {
-                first_array_col = array_col;
-                first_array_col_concrete = array_col_concrete;
+                first_array_col = array_argument.column_array_ptr;
+                first_array_col_concrete = array_argument.column_array;
             }
 
-            ColumnWithTypeAndName data_type_name(array_col_concrete->getDataPtr(), recursiveRemoveLowCardinality(array_type_concrete->getNestedType()), array_with_type_and_name.name);
+            ColumnWithTypeAndName data_type_name(
+                array_argument.column_array->getDataPtr(),
+                recursiveRemoveLowCardinality(array_argument.array_type->getNestedType()),
+                array_argument.name);
             arrays_data_with_type_and_name.push_back(data_type_name);
         }
 

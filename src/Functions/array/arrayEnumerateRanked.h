@@ -8,9 +8,12 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/array/NullableArrayOffsets.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/VectorWithMemoryTracking.h>
+
+#include <vector>
 
 
 /** The function will enumerate distinct values of the passed multidimensional arrays looking inside at the specified depths.
@@ -169,8 +172,8 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
     VectorWithMemoryTracking<const ColumnArray::Offsets *> offsets_by_depth;
     VectorWithMemoryTracking<ColumnPtr> offsetsptr_by_depth;
+    std::vector<ColumnPtr> argument_columns(num_arguments);
 
-    size_t array_num = 0;
     for (size_t i = 0; i < num_arguments; ++i)
     {
         ColumnPtr argument_column = arguments[i].column ? arguments[i].column->convertToFullColumnIfConst() : nullptr;
@@ -191,10 +194,26 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
             }
         }
 
+        argument_columns[i] = std::move(argument_column);
+    }
+
+    const auto * row_null_map_data = row_null_map ? row_null_map.get() : nullptr;
+
+    size_t array_num = 0;
+    for (size_t i = 0; i < num_arguments; ++i)
+    {
+        ColumnPtr argument_column = argument_columns[i];
         const auto * array = argument_column ? get_array_column(argument_column.get()) : nullptr;
         if (!array)
             continue;
-        array_holders.emplace_back(std::move(argument_column));
+
+        if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*array, row_null_map_data, input_rows_count))
+        {
+            argument_column = std::move(null_rows_empty_array);
+            array = assert_cast<const ColumnArray *>(argument_column.get());
+        }
+
+        array_holders.emplace_back(argument_column);
 
         if (array_num == 0) // TODO check with prev
         {

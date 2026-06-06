@@ -18,8 +18,11 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Functions/array/NullableArrayOffsets.h>
 
 #include <Common/scope_guard_safe.h>
+
+#include <vector>
 
 
 namespace DB
@@ -100,25 +103,24 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
     }
 
     const IColumn * ranges_col_array = ranges_column.get();
-    const IColumn * ranges_col_tuple = nullptr;
     const ColumnArray::Offsets * ranges_offsets = nullptr;
+    ColumnPtr ranges_array_holder;
+    const ColumnArray * ranges_array = nullptr;
     if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(ranges_col_array))
     {
-        ranges_col_tuple = &arr->getData();
+        ranges_array_holder = ranges_column;
+        ranges_array = arr;
         ranges_offsets = &arr->getOffsets();
     }
     else if (const ColumnConst * const_arr = checkAndGetColumnConst<ColumnArray>(ranges_col_array))
     {
         materialized_columns.emplace_back(const_arr->convertToFullColumn());
-        const auto & materialized_arr = typeid_cast<const ColumnArray &>(*materialized_columns.back());
-        ranges_col_tuple = &materialized_arr.getData();
-        ranges_offsets = &materialized_arr.getOffsets();
+        ranges_array_holder = materialized_columns.back();
+        ranges_array = assert_cast<const ColumnArray *>(ranges_array_holder.get());
+        ranges_offsets = &ranges_array->getOffsets();
     }
     else
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} as argument of function {}", ranges_col_array->getName(), getName());
-
-    const IColumn & indices_col = static_cast<const ColumnTuple *>(ranges_col_tuple)->getColumn(0);
-    const IColumn & lengths_col = static_cast<const ColumnTuple *>(ranges_col_tuple)->getColumn(1);
 
     /// Handling arguments
     /// The code is mostly copied from `arrayReduce`. Maybe create a utility header?
@@ -127,6 +129,13 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 
     VectorWithMemoryTracking<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
     const ColumnArray::Offsets * offsets = nullptr;
+    struct ArrayArgument
+    {
+        ColumnPtr column_array_ptr;
+        const ColumnArray * column_array = nullptr;
+    };
+    std::vector<ArrayArgument> array_arguments;
+    array_arguments.reserve(num_arguments_columns);
 
     for (size_t i = 0; i < num_arguments_columns; ++i)
     {
@@ -151,18 +160,46 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
         const ColumnArray::Offsets * offsets_i = nullptr;
         if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(col))
         {
-            aggregate_arguments_vec[i] = &arr->getData();
             offsets_i = &arr->getOffsets();
+            array_arguments.emplace_back(materialized_columns.back(), arr);
         }
         else if (const ColumnConst * const_arr = checkAndGetColumnConst<ColumnArray>(col))
         {
             materialized_columns.emplace_back(const_arr->convertToFullColumn());
             const auto & materialized_arr = typeid_cast<const ColumnArray &>(*materialized_columns.back());
-            aggregate_arguments_vec[i] = &materialized_arr.getData();
             offsets_i = &materialized_arr.getOffsets();
+            array_arguments.emplace_back(materialized_columns.back(), &materialized_arr);
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} as argument of function {}", col->getName(), getName());
+
+        chassert(offsets_i);
+    }
+
+    const auto * row_null_map_data = row_null_map ? row_null_map.get() : nullptr;
+
+    if (auto null_rows_empty_ranges = NullableArrayOffsets::emptyNullRows(*ranges_array, row_null_map_data, input_rows_count))
+    {
+        ranges_array_holder = std::move(null_rows_empty_ranges);
+        ranges_array = assert_cast<const ColumnArray *>(ranges_array_holder.get());
+        ranges_offsets = &ranges_array->getOffsets();
+    }
+
+    const IColumn & ranges_col_tuple = ranges_array->getData();
+    const IColumn & indices_col = static_cast<const ColumnTuple *>(&ranges_col_tuple)->getColumn(0);
+    const IColumn & lengths_col = static_cast<const ColumnTuple *>(&ranges_col_tuple)->getColumn(1);
+
+    for (size_t i = 0; i < num_arguments_columns; ++i)
+    {
+        auto & argument = array_arguments[i];
+        if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*argument.column_array, row_null_map_data, input_rows_count))
+        {
+            argument.column_array_ptr = std::move(null_rows_empty_array);
+            argument.column_array = assert_cast<const ColumnArray *>(argument.column_array_ptr.get());
+        }
+
+        aggregate_arguments_vec[i] = &argument.column_array->getData();
+        const auto * offsets_i = &argument.column_array->getOffsets();
 
         if (i == 0)
             offsets = offsets_i;

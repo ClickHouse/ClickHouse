@@ -7,8 +7,11 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/array/NullableArrayOffsets.h>
 #include <IO/WriteHelpers.h>
 #include <Common/VectorWithMemoryTracking.h>
+
+#include <vector>
 
 
 namespace DB
@@ -87,6 +90,7 @@ public:
         Columns holders(num_arguments);
         Columns tuple_columns(num_arguments);
         ColumnUInt8::MutablePtr null_map;
+        std::vector<const ColumnArray *> array_columns(num_arguments);
 
         bool has_unaligned = false;
         size_t unaligned_index = 0;
@@ -109,7 +113,6 @@ public:
                 }
 
                 holder = nullable_column->getNestedColumnPtr();
-                holders[i] = holder;
             }
 
             const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(holder.get());
@@ -120,9 +123,22 @@ public:
                     i + 1,
                     getName(),
                     holder->getName());
-            tuple_columns[i] = column_array->getDataPtr();
+            holders[i] = holder;
+            array_columns[i] = column_array;
+        }
 
-            if (i && !column_array->hasEqualOffsets(static_cast<const ColumnArray &>(*holders[0])))
+        const auto * row_null_map = null_map ? null_map.get() : nullptr;
+        for (size_t i = 0; i < num_arguments; ++i)
+        {
+            if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*array_columns[i], row_null_map, input_rows_count))
+            {
+                holders[i] = std::move(null_rows_empty_array);
+                array_columns[i] = assert_cast<const ColumnArray *>(holders[i].get());
+            }
+
+            tuple_columns[i] = array_columns[i]->getDataPtr();
+
+            if (i && !array_columns[i]->hasEqualOffsets(static_cast<const ColumnArray &>(*holders[0])))
             {
                 has_unaligned = true;
                 unaligned_index = i;

@@ -679,6 +679,9 @@ void validateJSONIndexArgumentsNotNullable(
 template <template<typename> typename Impl>
 void validateJSONIndexArgumentsIfNeeded(const char * function_name, const ColumnsWithTypeAndName & arguments)
 {
+    if (arguments.empty())
+        return;
+
     if constexpr (!JSONImplAllowsNullableIndexArguments<Impl<DummyJSONParser>>::value)
     {
         const size_t num_index_arguments = Impl<DummyJSONParser>::getNumberOfIndexArguments(arguments);
@@ -717,13 +720,12 @@ public:
 
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
-        validateJSONIndexArgumentsIfNeeded<Impl>(Name::name, arguments);
-
         bool has_nothing_argument = false;
         for (const auto & arg : arguments)
             has_nothing_argument |= isNothing(arg.type);
 
         DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
+        validateJSONIndexArgumentsIfNeeded<Impl>(Name::name, arguments);
         NullPresence null_presence = getNullPresense(arguments);
         DataTypePtr return_type;
         if (has_nothing_argument)

@@ -15,11 +15,14 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/array/NullableArrayOffsets.h>
 #include <Common/Arena.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 
 #include <Common/scope_guard_safe.h>
+
+#include <vector>
 
 
 namespace DB
@@ -203,6 +206,13 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
     VectorWithMemoryTracking<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
     const ColumnArray::Offsets * offsets = nullptr;
     ColumnPtr array_null_map;
+    struct ArrayArgument
+    {
+        ColumnPtr column_array_ptr;
+        const ColumnArray * column_array = nullptr;
+    };
+    std::vector<ArrayArgument> array_arguments;
+    array_arguments.reserve(num_arguments_columns);
 
     for (size_t i = 0; i < num_arguments_columns; ++i)
     {
@@ -213,18 +223,41 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
         const ColumnArray::Offsets * offsets_i = nullptr;
         if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(col))
         {
-            aggregate_arguments_vec[i] = &arr->getData();
             offsets_i = &arr->getOffsets();
         }
         else if (const ColumnConst * const_arr = checkAndGetColumnConst<ColumnArray>(col))
         {
             materialized_columns.emplace_back(const_arr->convertToFullColumn());
-            const auto & materialized_arr = typeid_cast<const ColumnArray &>(*materialized_columns.back());
-            aggregate_arguments_vec[i] = &materialized_arr.getData();
-            offsets_i = &materialized_arr.getOffsets();
+            col_holder = materialized_columns.back();
+            col = col_holder.get();
+            offsets_i = &assert_cast<const ColumnArray &>(*col).getOffsets();
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} as argument of function {}", col->getName(), getName());
+
+        chassert(offsets_i);
+        array_arguments.emplace_back(col_holder, assert_cast<const ColumnArray *>(col_holder.get()));
+    }
+
+    if (array_null_map)
+        array_null_map = materializeNullMapToRowCount(array_null_map, input_rows_count);
+
+    const auto * row_null_map = array_null_map
+        ? &assert_cast<const ColumnUInt8 &>(*array_null_map)
+        : nullptr;
+
+    for (size_t i = 0; i < num_arguments_columns; ++i)
+    {
+        auto & argument = array_arguments[i];
+        if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*argument.column_array, row_null_map, input_rows_count))
+        {
+            materialized_columns.emplace_back(null_rows_empty_array);
+            argument.column_array_ptr = std::move(null_rows_empty_array);
+            argument.column_array = assert_cast<const ColumnArray *>(argument.column_array_ptr.get());
+        }
+
+        aggregate_arguments_vec[i] = &argument.column_array->getData();
+        const auto * offsets_i = &argument.column_array->getOffsets();
 
         if (i == 0)
             offsets = offsets_i;

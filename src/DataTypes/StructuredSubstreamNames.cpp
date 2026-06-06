@@ -20,16 +20,6 @@ namespace
 using Substream = ISerialization::Substream;
 using SubstreamPath = ISerialization::SubstreamPath;
 
-bool isTupleOrVariantSubstream(Substream::Type type)
-{
-    return type == Substream::TupleElement
-        || type == Substream::VariantElement
-        || type == Substream::VariantElementNullMap
-        || type == Substream::VariantDiscriminators
-        || type == Substream::VariantDiscriminatorsPrefix
-        || type == Substream::VariantOffsets;
-}
-
 bool pathContainsSubstreamInRange(const SubstreamPath & path, size_t begin, size_t end, Substream::Type type)
 {
     for (size_t i = begin; i < end && i < path.size(); ++i)
@@ -74,6 +64,19 @@ String getPathPrefixInRange(const SubstreamPath & path, size_t begin_index, size
     return stream_name;
 }
 
+String getStructuredPathPrefixInRange(const SubstreamPath & path, size_t begin_index, size_t end_index)
+{
+    String stream_name;
+    for (size_t i = begin_index; i < end_index && i < path.size(); ++i)
+    {
+        if (path[i].type == Substream::ArrayElements)
+            stream_name += ".array";
+        else
+            stream_name += getPathPrefixInRange(path, i, i + 1);
+    }
+    return stream_name;
+}
+
 std::optional<size_t> findLastSubstreamInRange(
     const SubstreamPath & path, size_t begin_index, size_t end_index, Substream::Type type)
 {
@@ -84,22 +87,6 @@ std::optional<size_t> findLastSubstreamInRange(
             last_index = i;
     }
     return last_index;
-}
-
-String repeatArrayPrefix(size_t count)
-{
-    String result;
-    for (size_t i = 0; i < count; ++i)
-        result += ".array";
-    return result;
-}
-
-size_t countLeadingTupleOrVariantPrefix(const SubstreamPath & path)
-{
-    size_t prefix_end = 0;
-    while (prefix_end < path.size() && isTupleOrVariantSubstream(path[prefix_end].type))
-        ++prefix_end;
-    return prefix_end;
 }
 
 /// Build structured suffix for paths that contain Nullable(Array(...)) at any nesting depth.
@@ -117,31 +104,28 @@ String buildStructuredSubstreamNameSuffix(const SubstreamPath & path)
 
     if (last_type == Substream::NullMap)
     {
+        const String path_context = getStructuredPathPrefixInRange(path, 0, path_size - 1);
+
         if (array_elements_count == 0)
-            return ".null";
+            return path_context + ".null";
 
         const bool is_element_null_map = array_elements_count >= 2 || has_array_sizes_before_end;
         if (is_element_null_map)
-        {
-            const auto last_array_elements = findLastSubstreamInRange(path, 0, path_size, Substream::ArrayElements);
-            const String element_context = last_array_elements
-                ? getPathPrefixInRange(path, *last_array_elements + 1, path_size - 1)
-                : String{};
-            return repeatArrayPrefix(array_elements_count) + ".nested" + element_context + ".null";
-        }
+            return path_context + ".nested.null";
 
-        return ".array.null";
+        return path_context + ".null";
     }
 
     if (last_type == Substream::ArraySizes)
     {
         const size_t array_sizes_count = countSubstreamsInRange(path, 0, path_size, Substream::ArraySizes);
+        const String path_context = getStructuredPathPrefixInRange(path, 0, path_size - 1);
 
         if (array_elements_count == 0)
         {
             if (has_null_map_before_end)
-                return ".array.size" + toString(array_sizes_count - 1);
-            return ".size" + toString(array_sizes_count - 1);
+                return path_context + ".array.size" + toString(array_sizes_count - 1);
+            return path_context + ".size" + toString(array_sizes_count - 1);
         }
 
         const auto last_array_elements = findLastSubstreamInRange(path, 0, path_size, Substream::ArrayElements);
@@ -149,25 +133,16 @@ String buildStructuredSubstreamNameSuffix(const SubstreamPath & path)
             ? countSubstreamsInRange(path, *last_array_elements + 1, path_size, Substream::ArraySizes)
             : array_sizes_count;
 
-        return repeatArrayPrefix(array_elements_count) + ".array.size" + toString(array_sizes_after_last_elements - 1);
+        return path_context + ".array.size" + toString(array_sizes_after_last_elements - 1);
     }
 
     if (last_type == Substream::Regular)
     {
-        if (path_size >= 2 && path[path_size - 2].type == Substream::ArrayElements)
-            return ".array.nested";
+        const String path_context = getStructuredPathPrefixInRange(path, 0, path_size - 1);
+        if (array_elements_count == 0)
+            return path_context;
 
-        const auto last_array_elements = findLastSubstreamInRange(path, 0, path_size, Substream::ArrayElements);
-        if (!last_array_elements)
-            return "";
-
-        const String element_context = getPathPrefixInRange(path, *last_array_elements + 1, path_size - 1);
-        const bool is_element_data = array_elements_count >= 2 || has_array_sizes_before_end;
-
-        if (is_element_data)
-            return repeatArrayPrefix(array_elements_count) + ".nested" + element_context;
-
-        return ".array.nested" + element_context;
+        return path_context + ".nested";
     }
 
     return "";
@@ -280,9 +255,7 @@ bool needsStructuredSubstreamNames(const IDataType & type)
 
 String getStructuredSubstreamNameSuffix(const SubstreamPath & path)
 {
-    const size_t leading_prefix_end = countLeadingTupleOrVariantPrefix(path);
-    String result = getPathPrefixInRange(path, 0, leading_prefix_end);
-    result += buildStructuredSubstreamNameSuffix(path);
+    String result = buildStructuredSubstreamNameSuffix(path);
 
     if (!result.empty())
         return result;

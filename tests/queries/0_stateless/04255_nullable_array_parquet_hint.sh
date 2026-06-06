@@ -12,26 +12,101 @@ TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 PARQUET_FILE="$TMP_DIR/nullable_list.parquet"
+ARROW_FILE="$TMP_DIR/nullable_list.arrow"
+ORC_FILE="$TMP_DIR/nullable_list.orc"
 
-python3 - "$PARQUET_FILE" <<'PYEOF'
+python3 - "$PARQUET_FILE" "$ARROW_FILE" <<'PYEOF'
 import sys
 import pyarrow as pa
+import pyarrow.ipc as ipc
 import pyarrow.parquet as pq
 
-path = sys.argv[1]
+parquet_path = sys.argv[1]
+arrow_path = sys.argv[2]
 arr = pa.array([[1, 2], None, [], [3, 4]], type=pa.list_(pa.int32()))
-pq.write_table(pa.table({"arr": arr}), path)
+table = pa.table({"arr": arr})
+pq.write_table(table, parquet_path)
+with ipc.new_file(arrow_path, table.schema) as writer:
+    writer.write_table(table)
 PYEOF
 
-$CLICKHOUSE_LOCAL -q "
-SET allow_experimental_nullable_array_type = 1;
+$CLICKHOUSE_LOCAL --allow_experimental_nullable_array_type=1 -q "
+SELECT arrayJoin([
+    CAST([1, 2] AS Nullable(Array(Int32))),
+    CAST(NULL AS Nullable(Array(Int32))),
+    CAST([] AS Nullable(Array(Int32))),
+    CAST([3, 4] AS Nullable(Array(Int32)))
+]) AS arr
+FORMAT ORC
+" > "$ORC_FILE"
+
+result=$($CLICKHOUSE_LOCAL -q "
+DESC file('$PARQUET_FILE', Parquet)
+")
+echo "$result" | grep -F 'arr' | grep -F 'Array(Nullable(Int32))' > /dev/null || {
+    echo "Expected non-nullable Array(...) in Parquet schema inference with the setting disabled, got: $result"
+    exit 1
+}
+
+result=$($CLICKHOUSE_LOCAL --allow_experimental_nullable_array_type=1 -q "
+DESC file('$PARQUET_FILE', Parquet)
+")
+echo "$result" | grep -F 'arr' | grep -F 'Nullable(Array' > /dev/null || {
+    echo "Expected Nullable(Array(...)) in Parquet schema inference with the setting enabled, got: $result"
+    exit 1
+}
+
+$CLICKHOUSE_LOCAL --allow_experimental_nullable_array_type=1 -q "
+SELECT throwIf(count() != 4 OR sum(isNull(arr)) != 1 OR countIf(length(arr) IS NULL) != 1 OR sum(length(arr)) != 4)
+FROM file('$PARQUET_FILE', Parquet)
+FORMAT Null
+"
+
+result=$($CLICKHOUSE_LOCAL -q "
+DESC file('$ARROW_FILE', Arrow)
+")
+echo "$result" | grep -F 'arr' | grep -F 'Array(Nullable(Int32))' > /dev/null || {
+    echo "Expected non-nullable Array(...) in schema inference with the setting disabled, got: $result"
+    exit 1
+}
+
+result=$($CLICKHOUSE_LOCAL --allow_experimental_nullable_array_type=1 -q "
+DESC file('$ARROW_FILE', Arrow)
+")
+echo "$result" | grep -F 'arr' | grep -F 'Nullable(Array' > /dev/null || {
+    echo "Expected Nullable(Array(...)) in schema inference with the setting enabled, got: $result"
+    exit 1
+}
+
+result=$($CLICKHOUSE_LOCAL -q "
+DESC file('$ORC_FILE', ORC)
+")
+echo "$result" | grep -F 'arr' | grep -F 'Array(Nullable(Int32))' > /dev/null || {
+    echo "Expected non-nullable Array(...) in ORC schema inference with the setting disabled, got: $result"
+    exit 1
+}
+
+result=$($CLICKHOUSE_LOCAL --allow_experimental_nullable_array_type=1 -q "
+DESC file('$ORC_FILE', ORC)
+")
+echo "$result" | grep -F 'arr' | grep -F 'Nullable(Array' > /dev/null || {
+    echo "Expected Nullable(Array(...)) in ORC schema inference with the setting enabled, got: $result"
+    exit 1
+}
+
+$CLICKHOUSE_LOCAL --allow_experimental_nullable_array_type=1 -q "
 SELECT throwIf(count() != 4 OR sum(isNull(arr)) != 1 OR countIf(length(arr) IS NULL) != 1 OR sum(length(arr)) != 4)
 FROM file('$PARQUET_FILE', Parquet, 'arr Nullable(Array(Int32))')
 FORMAT Null
 "
 
-result=$($CLICKHOUSE_LOCAL -q "
-SET allow_experimental_nullable_array_type = 1;
+$CLICKHOUSE_LOCAL --allow_experimental_nullable_array_type=1 -q "
+SELECT throwIf(count() != 4 OR sum(isNull(arr)) != 1 OR countIf(length(arr) IS NULL) != 1 OR sum(length(arr)) != 4)
+FROM file('$ORC_FILE', ORC, 'arr Nullable(Array(Int32))')
+FORMAT Null
+"
+
+result=$($CLICKHOUSE_LOCAL --allow_experimental_nullable_array_type=1 -q "
 DESC format(JSONEachRow, '{\"arr\": null}
 {\"arr\": [1,2]}') SETTINGS schema_inference_make_columns_nullable = 1
 ")

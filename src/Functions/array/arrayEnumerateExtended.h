@@ -1,6 +1,7 @@
 #pragma once
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/array/NullableArrayOffsets.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -11,6 +12,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/ColumnsHashing.h>
+
+#include <vector>
 
 
 namespace DB
@@ -140,6 +143,7 @@ ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWith
     Columns array_holders;
     ColumnPtr offsets_column;
     ColumnUInt8::MutablePtr row_null_map;
+    std::vector<const ColumnArray *> array_columns(num_arguments);
     for (size_t i = 0; i < num_arguments; ++i)
     {
         ColumnPtr array_ptr = arguments[i].column->convertToFullColumnIfConst();
@@ -162,18 +166,29 @@ ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWith
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of {}-th argument of function {}",
                 arguments[i].column->getName(), i + 1, getName());
         array_holders.emplace_back(std::move(array_ptr));
+        array_columns[i] = array;
+    }
 
-        const ColumnArray::Offsets & offsets_i = array->getOffsets();
+    const auto * row_null_map_data = row_null_map ? row_null_map.get() : nullptr;
+    for (size_t i = 0; i < num_arguments; ++i)
+    {
+        if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*array_columns[i], row_null_map_data, input_rows_count))
+        {
+            array_holders[i] = std::move(null_rows_empty_array);
+            array_columns[i] = assert_cast<const ColumnArray *>(array_holders[i].get());
+        }
+
+        const ColumnArray::Offsets & offsets_i = array_columns[i]->getOffsets();
         if (i == 0)
         {
             offsets = &offsets_i;
-            offsets_column = array->getOffsetsPtr();
+            offsets_column = array_columns[i]->getOffsetsPtr();
         }
         else if (offsets_i != *offsets)
             throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Lengths of all arrays passed to {} must be equal.",
                 getName());
 
-        const auto * array_data = &array->getData();
+        const auto * array_data = &array_columns[i]->getData();
         data_columns[i] = array_data;
     }
 

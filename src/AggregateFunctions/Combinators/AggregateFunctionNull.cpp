@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -19,6 +21,16 @@ namespace ErrorCodes
 
 namespace
 {
+
+bool isNullableArrayArgument(const DataTypePtr & argument)
+{
+    return argument->isNullable() && typeid_cast<const DataTypeArray *>(removeNullable(argument).get());
+}
+
+bool hasNullableArrayArgument(const DataTypes & arguments)
+{
+    return std::any_of(arguments.begin(), arguments.end(), isNullableArrayArgument);
+}
 
 class AggregateFunctionCombinatorNull final : public IAggregateFunctionCombinator
 {
@@ -129,12 +141,16 @@ public:
         }
 
         const auto & result_type = nested_function->getResultType();
-        bool return_type_is_nullable = !properties.returns_default_when_only_null && result_type->canBeInsideNullable();
+        const bool result_type_is_array = typeid_cast<const DataTypeArray *>(result_type.get());
+        const bool nullable_array_argument = hasNullableArrayArgument(arguments);
+        bool return_type_is_nullable = !properties.returns_default_when_only_null
+            && (result_type->canBeInsideNullable() || (result_type_is_array && nullable_array_argument));
 
-        /// `DataTypeArray::canBeInsideNullable()` is false, but keep the guard for safety if that ever changes.
-        /// Do not block `Tuple`: the base Null combinator must still return `Nullable(Tuple(...))` when
-        /// arguments are nullable (see `AggregateFunctionIf::getOwnNullAdapter` for *If* only).
-        if (return_type_is_nullable && typeid_cast<const DataTypeArray *>(result_type.get()))
+        /// Keep array-returning aggregates compatible unless the nullable argument itself is
+        /// `Nullable(Array(...))`; in that case the null adapter must preserve the all-NULL result.
+        /// Do not block `Tuple`: the base Null combinator must still return `Nullable(Tuple(...))`
+        /// when arguments are nullable (see `AggregateFunctionIf::getOwnNullAdapter` for *If* only).
+        if (return_type_is_nullable && result_type_is_array && !nullable_array_argument)
             return_type_is_nullable = false;
 
         bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;

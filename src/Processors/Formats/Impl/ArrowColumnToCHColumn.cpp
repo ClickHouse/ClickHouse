@@ -1745,6 +1745,19 @@ static bool nestedTypeAllowsNullableWrapperForArrowRead(const DataTypePtr & nest
     return nested_type->canBeInsideNullable();
 }
 
+static bool arrowTypeIsListLike(const arrow::DataType & type)
+{
+    switch (type.id())
+    {
+        case arrow::Type::LIST:
+        case arrow::Type::LARGE_LIST:
+        case arrow::Type::FIXED_SIZE_LIST:
+            return true;
+        default:
+            return false;
+    }
+}
+
 static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     std::string column_name,
@@ -1759,8 +1772,18 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
     const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet)
 {
-    bool type_hint_not_nullable_capable = type_hint && !nestedTypeAllowsNullableWrapperForArrowRead(removeNullable(type_hint), settings.format_settings);
-    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
+    bool type_hint_not_nullable_capable = type_hint
+        && !nestedTypeAllowsNullableWrapperForArrowRead(removeNullable(type_hint), settings.format_settings);
+    bool arrow_type_not_nullable_capable = !type_hint
+        && arrowTypeIsListLike(*arrow_column->type())
+        && !settings.format_settings.schema_inference_allow_nullable_array_type;
+    bool read_as_nullable_column = (arrow_column->null_count()
+        || is_nullable_column
+        || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable())))
+        && !geo_metadata
+        && !type_hint_not_nullable_capable
+        && !arrow_type_not_nullable_capable
+        && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::MAP &&
         arrow_column->type()->id() != arrow::Type::DICTIONARY)

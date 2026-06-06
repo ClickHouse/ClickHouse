@@ -11,6 +11,7 @@
 
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 
 using namespace DB;
 
@@ -69,6 +70,7 @@ static void testNestedArrayNullableArrayBulkRoundtrip(bool position_independent_
 
     auto serialization = type->getDefaultSerialization();
     ISerialization::SerializeBinaryBulkStatePtr state;
+    serialization->serializeBinaryBulkStatePrefix(*column, settings, state);
     serialization->serializeBinaryBulkWithMultipleStreams(*column, 0, column->size(), settings, state);
 
     for (auto & [name, buffer] : write_buffers)
@@ -108,4 +110,93 @@ TEST(NullableArraySerialization, NestedArrayNullableArrayBulkRoundtrip)
 TEST(NullableArraySerialization, NestedArrayNullableArrayBulkRoundtripPositionIndependent)
 {
     testNestedArrayNullableArrayBulkRoundtrip(true);
+}
+
+TEST(NullableArraySerialization, ArrayTupleNullableArrayStreamNamesAreUnique)
+{
+    auto type = DataTypeFactory::instance().get("Array(Tuple(a Nullable(Array(UInt8)), b Nullable(Array(UInt16))))");
+    const auto column = type->createColumn();
+
+    std::unordered_map<String, std::unique_ptr<WriteBufferFromOwnString>> write_buffers;
+    std::unordered_set<String> stream_names;
+    size_t stream_getter_calls = 0;
+
+    ISerialization::StreamFileNameSettings stream_settings;
+    stream_settings.column_type = type.get();
+
+    ISerialization::SerializeBinaryBulkSettings settings;
+    settings.getter = [&](const SubstreamPath & path) -> WriteBuffer *
+    {
+        ++stream_getter_calls;
+
+        const auto stream_name = ISerialization::getFileNameForStream("c", path, stream_settings);
+        stream_names.insert(stream_name);
+
+        auto & buffer = write_buffers[stream_name];
+        if (!buffer)
+            buffer = std::make_unique<WriteBufferFromOwnString>();
+        return buffer.get();
+    };
+
+    auto serialization = type->getDefaultSerialization();
+    ISerialization::SerializeBinaryBulkStatePtr state;
+    serialization->serializeBinaryBulkStatePrefix(*column, settings, state);
+    serialization->serializeBinaryBulkWithMultipleStreams(*column, 0, column->size(), settings, state);
+
+    auto dump_stream_names = [&]
+    {
+        String result;
+        for (const auto & stream_name : stream_names)
+            result += stream_name + "\n";
+        return result;
+    };
+
+    EXPECT_EQ(stream_getter_calls, stream_names.size());
+    EXPECT_TRUE(stream_names.contains("c.size0"));
+    EXPECT_TRUE(stream_names.contains("c.array%2Ea.null")) << dump_stream_names();
+    EXPECT_TRUE(stream_names.contains("c.array%2Ea.array.size0")) << dump_stream_names();
+    EXPECT_TRUE(stream_names.contains("c.array%2Ea.array.nested")) << dump_stream_names();
+    EXPECT_TRUE(stream_names.contains("c.array%2Eb.null")) << dump_stream_names();
+    EXPECT_TRUE(stream_names.contains("c.array%2Eb.array.size0")) << dump_stream_names();
+    EXPECT_TRUE(stream_names.contains("c.array%2Eb.array.nested")) << dump_stream_names();
+}
+
+TEST(NullableArraySerialization, VariantNullableArrayAlternativesStreamNamesAreUnique)
+{
+    auto type = DataTypeFactory::instance().get("Variant(Array(Nullable(Array(UInt8))), Array(Nullable(Array(UInt16))))");
+
+    std::unordered_set<String> stream_names;
+    size_t stream_count = 0;
+
+    ISerialization::StreamFileNameSettings stream_settings;
+    stream_settings.column_type = type.get();
+
+    auto serialization = type->getDefaultSerialization();
+    serialization->enumerateStreams(
+        [&](const SubstreamPath & path)
+        {
+            ++stream_count;
+            stream_names.insert(ISerialization::getFileNameForStream("c", path, stream_settings));
+        },
+        type);
+
+    auto dump_stream_names = [&]
+    {
+        String result;
+        for (const auto & stream_name : stream_names)
+            result += stream_name + "\n";
+        return result;
+    };
+
+    bool has_uint8_alternative = false;
+    bool has_uint16_alternative = false;
+    for (const auto & stream_name : stream_names)
+    {
+        has_uint8_alternative |= stream_name.find("UInt8") != String::npos;
+        has_uint16_alternative |= stream_name.find("UInt16") != String::npos;
+    }
+
+    EXPECT_EQ(stream_count, stream_names.size()) << dump_stream_names();
+    EXPECT_TRUE(has_uint8_alternative) << dump_stream_names();
+    EXPECT_TRUE(has_uint16_alternative) << dump_stream_names();
 }

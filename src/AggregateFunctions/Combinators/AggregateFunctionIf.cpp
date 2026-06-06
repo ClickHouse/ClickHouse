@@ -4,9 +4,12 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <absl/container/inlined_vector.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -45,6 +48,11 @@ public:
         return std::make_shared<AggregateFunctionIf>(nested_function, arguments, params);
     }
 };
+
+static bool isNullableArrayArgument(const DataTypePtr & argument)
+{
+    return argument->isNullable() && typeid_cast<const DataTypeArray *>(removeNullable(argument).get());
+}
 
 
 /** There are two cases: for single argument and variadic.
@@ -471,8 +479,13 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
 
     /// Nullability of the last argument (condition) does not affect the nullability of the result (NULL is processed as false).
     /// For other arguments it is as usual (at least one is NULL then the result is NULL if possible).
-    bool return_type_is_nullable = !properties.returns_default_when_only_null && getResultType()->canBeInsideNullable()
-        && std::any_of(arguments.begin(), arguments.end() - 1, [](const auto & element) { return element->isNullable(); });
+    const bool has_nullable_argument = std::any_of(
+        arguments.begin(), arguments.end() - 1, [](const auto & element) { return element->isNullable(); });
+    const bool has_nullable_array_argument = std::any_of(arguments.begin(), arguments.end() - 1, isNullableArrayArgument);
+    const auto & result_type = getResultType();
+    const bool result_type_is_array = typeid_cast<const DataTypeArray *>(result_type.get());
+    bool return_type_is_nullable = !properties.returns_default_when_only_null && has_nullable_argument
+        && (result_type->canBeInsideNullable() || (result_type_is_array && has_nullable_array_argument));
 
     /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns
     /// true, which changed the If-combinator null adapter for Tuple-returning functions:
@@ -486,8 +499,7 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
     /// This inconsistency predates the introduction of `Nullable(Tuple)`.
     if (return_type_is_nullable)
     {
-        const auto & result_type = getResultType();
-        if (typeid_cast<const DataTypeTuple *>(result_type.get()) || typeid_cast<const DataTypeArray *>(result_type.get()))
+        if (typeid_cast<const DataTypeTuple *>(result_type.get()) || (result_type_is_array && !has_nullable_array_argument))
             return_type_is_nullable = false;
     }
 
