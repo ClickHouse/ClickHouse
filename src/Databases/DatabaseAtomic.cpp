@@ -268,8 +268,6 @@ void DatabaseAtomic::dropDetachedTable(
                 query_status->throwIfKilled();
         });
 
-    dependency_cleanup();
-
     String table_metadata_path_drop;
 
     {
@@ -284,6 +282,8 @@ void DatabaseAtomic::dropDetachedTable(
 
         LOG_TRACE(log, "Rename metadata from {} to {} for removing.", table_metadata_path, table_metadata_path_drop);
         db_disk->replaceFile(table_metadata_path, table_metadata_path_drop);
+
+        dependency_cleanup();
 
         table_name_to_path.erase(table_name);
         snapshot_detached_tables.erase(table_name);

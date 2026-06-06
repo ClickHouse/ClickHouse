@@ -202,9 +202,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName()));
         }
 
-        context_->checkAccess(AccessType::DROP_TABLE, table_id);
         const auto table_name = table_id.getTableName();
-
         auto new_query_ptr = query.clone();
         if (!query.cluster.empty() && !maybeRemoveOnCluster(new_query_ptr, getContext()))
         {
@@ -222,6 +220,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         {
             return {};
         }
+
+        context_->checkAccess(AccessType::DROP_TABLE, table_id);
+
         if (database->isTableExist(table_name, context_) && !database->isTableDetached(table_name))
         {
             throw Exception(
