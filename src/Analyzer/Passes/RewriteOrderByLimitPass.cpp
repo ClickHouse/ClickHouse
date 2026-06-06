@@ -98,6 +98,14 @@ struct OrderByLimitRewriteVisitor : public InDepthQueryTreeVisitorWithContext<Or
             return {};
         if (query_node.hasLimitBy())
             return {};
+        /// `DISTINCT` would be applied to the physical row offsets selected by the subquery
+        /// instead of the original projection, which changes the result set.
+        if (query_node.isDistinct())
+            return {};
+        /// `OFFSET` is kept on the main query while the subquery clone also carries it,
+        /// so it would be applied twice. Reject the rewrite to avoid wrong results.
+        if (query_node.hasOffset())
+            return {};
 
         if (!query_node.hasLimit() || !query_node.hasOrderBy())
             return {};
@@ -218,10 +226,12 @@ static bool rewriteOrderByLimit(QueryTreeNodePtr & original_query, const Storage
     };
     auto collect_column_nodes = [](const NamesAndTypes & column_names_and_types, QueryTreeNodePtr source) -> QueryTreeNodes
     {
+        /// Keep `source` for every generated column: the range has more than one entry, so moving it
+        /// here would leave the second and subsequent `ColumnNode`s with an empty source.
         return collectVec(
             column_names_and_types
             | std::views::transform(
-                [&](const NameAndTypePair & pair) -> QueryTreeNodePtr { return std::make_shared<ColumnNode>(pair, std::move(source)); }));
+                [&](const NameAndTypePair & pair) -> QueryTreeNodePtr { return std::make_shared<ColumnNode>(pair, source); }));
     };
 
     auto part_offset_column_info = NamesAndTypes{*part_column, *part_offset_column};
