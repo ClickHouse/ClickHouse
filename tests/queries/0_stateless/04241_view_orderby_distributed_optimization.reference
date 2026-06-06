@@ -28,3 +28,5 @@ outer inline OVER disables pushdown:	1
 fractional LIMIT disables pushdown:	1
 fractional LIMIT result count:	20
 extremes disables pushdown:	1
+type mismatch disables pushdown:	1
+type mismatch result:	9

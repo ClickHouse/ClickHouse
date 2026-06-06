@@ -244,6 +244,36 @@ SELECT 'extremes disables pushdown:',
     (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 10 SETTINGS extremes = 1)
      WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
 
+-- View whose declared column type differs from the inner expression type:
+-- pushdown must be disabled. `StorageView` converts the inner result to the
+-- view's declared structure *after* the inner query runs, so the conversion
+-- (here `UInt64` -> `String`) is not order-preserving. The view declares
+-- `x String` over a numeric `id`, and the data is `1..12`, where the
+-- lexicographic order diverges from the numeric order at the top: the correct
+-- (`String`) `ORDER BY x DESC LIMIT 1` is `'9'`, while a buggy numeric pushdown
+-- would sort by `UInt64` and return `'12'`. The optimization must skip this
+-- view (no merge sort) and the result must be the lexicographic top `'9'`.
+DROP TABLE IF EXISTS test_local_strtype_04241;
+DROP TABLE IF EXISTS test_distributed_strtype_04241;
+DROP VIEW IF EXISTS test_view_strtype_04241;
+
+CREATE TABLE test_local_strtype_04241 (id UInt64) ENGINE = MergeTree() ORDER BY id;
+CREATE TABLE test_distributed_strtype_04241 AS test_local_strtype_04241
+ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), test_local_strtype_04241, id);
+INSERT INTO test_local_strtype_04241 SELECT number + 1 FROM numbers(12);
+
+CREATE VIEW test_view_strtype_04241 (x String) AS SELECT id AS x FROM test_distributed_strtype_04241;
+
+SELECT 'type mismatch disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT x FROM test_view_strtype_04241 ORDER BY x DESC LIMIT 1)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+SELECT 'type mismatch result:', x FROM test_view_strtype_04241 ORDER BY x DESC LIMIT 1;
+
+DROP VIEW test_view_strtype_04241;
+DROP TABLE test_distributed_strtype_04241;
+DROP TABLE test_local_strtype_04241;
+
 DROP TABLE test_join_04241;
 DROP VIEW test_view_04241;
 DROP TABLE test_distributed_04241;

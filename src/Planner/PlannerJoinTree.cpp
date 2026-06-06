@@ -81,6 +81,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
@@ -970,6 +972,42 @@ void pushOrderByIntoView(
     /// View must not already have ORDER BY/LIMIT
     if (sel->orderBy() || sel->limitBy() || sel->limitLength() || sel->limitOffset())
         return;
+
+    /// The pushed `ORDER BY`/`LIMIT` is evaluated by the view's inner query,
+    /// before `StorageView` converts the inner result to the view's declared
+    /// column structure (`StorageView::readImpl` adds a "Convert VIEW subquery
+    /// result to VIEW table structure" step). When a view declares a column type
+    /// that differs from the type produced by the inner expression — e.g.
+    /// `CREATE VIEW v (x String) AS SELECT toUInt64(id) AS x FROM dist` — the
+    /// conversion is not order-preserving: the inner query sorts numerically
+    /// (`2` before `10`), while the view's `String` output should sort
+    /// lexicographically (`'10'` before `'2'`). Pushing the sort/limit below the
+    /// conversion would truncate the wrong rows, so the outer query could no
+    /// longer recover the correct top-N.
+    ///
+    /// Only push when every `ORDER BY` column has the same type in the view's
+    /// declared structure and in the inner query's output. Resolving the inner
+    /// query may fail (e.g. `SQL SECURITY DEFINER`, table functions, missing
+    /// access); in that case we conservatively skip the optimization.
+    SharedHeader inner_header;
+    try
+    {
+        auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
+        inner_header = InterpreterSelectQueryAnalyzer::getSampleBlock(inner, view_context, SelectQueryOptions().analyze());
+    }
+    catch (const Exception &)
+    {
+        return;
+    }
+
+    for (const auto & node : order_list.getNodes())
+    {
+        const auto * col = node->as<SortNode>()->getExpression()->as<ColumnNode>();
+        if (!inner_header->has(col->getColumnName()))
+            return;
+        if (!col->getColumnType()->equals(*inner_header->getByName(col->getColumnName()).type))
+            return;
+    }
 
     /// Clone and add ORDER BY/LIMIT to the view's inner query.
     /// Preserve every ORDER BY modifier (direction, NULLS FIRST/LAST, COLLATE,
