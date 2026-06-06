@@ -141,8 +141,6 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
         writeVarUInt(client_version_major, out);
         writeVarUInt(client_version_minor, out);
         writeVarUInt(client_tcp_protocol_version, out);
-        if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
-            writeBinary(client_agent, out);
     }
     else if (interface == Interface::HTTP)
     {
@@ -211,6 +209,11 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
         else
             writeBinary(static_cast<UInt8>(0), out);
     }
+
+    /// Sent for all interfaces (not only TCP): the detected client agent must also be preserved
+    /// when a clickhouse-local query (LOCAL interface) is forwarded to remote shards.
+    if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
+        writeBinary(client_agent, out);
 }
 
 
@@ -250,8 +253,6 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
         readVarUInt(client_version_major, in);
         readVarUInt(client_version_minor, in);
         readVarUInt(client_tcp_protocol_version, in);
-        if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
-            readBinary(client_agent, in);
     }
     else if (interface == Interface::HTTP)
     {
@@ -317,6 +318,9 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
         if (have_jwt)
             readBinary(jwt, in);
     }
+
+    if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
+        readBinary(client_agent, in);
 }
 
 

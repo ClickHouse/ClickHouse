@@ -2,3 +2,4 @@ claude: claude-code
 cursor: cursor
 generic: my-custom-agent
 none: 
+local->remote: claude-code
