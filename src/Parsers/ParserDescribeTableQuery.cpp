@@ -2,6 +2,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDescribeTableQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
@@ -54,9 +55,39 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         }
     }
 
-    /// Try to parse SELECT query without parentheses (e.g., DESCRIBE SELECT 1)
-    /// Only when the next token is not '(' — like (SELECT ...) AS alias we must go through ParserTableExpression
-    if (pos->type != TokenType::OpeningRoundBracket && ParserSelectWithUnionQuery().parse(pos, select, expected))
+    /// A SELECT can be the source of DESCRIBE in several forms:
+    ///   - a bare SELECT:                 DESCRIBE SELECT 1
+    ///   - a set operation:               DESCRIBE (SELECT 1) UNION ALL (SELECT 2)
+    /// while a single parenthesized SELECT is a table expression that may carry an alias:
+    ///   - a subquery with an alias:      DESCRIBE (SELECT 1) AS source
+    /// The latter must go through ParserTableExpression so the trailing alias is accepted.
+    /// To tell them apart we speculatively parse a SELECT and only keep it when it is a bare
+    /// SELECT or a real set operation; a lone parenthesized SELECT is rolled back and handled
+    /// as a table expression below.
+    bool parsed_as_select = false;
+    {
+        auto saved_pos = pos;
+        ASTPtr parsed_select;
+        if (ParserSelectWithUnionQuery().parse(pos, parsed_select, expected))
+        {
+            const auto * union_query = parsed_select->as<ASTSelectWithUnionQuery>();
+            const bool is_set_operation = union_query && union_query->list_of_selects
+                && union_query->list_of_selects->children.size() > 1;
+
+            if (saved_pos->type != TokenType::OpeningRoundBracket || is_set_operation)
+            {
+                select = std::move(parsed_select);
+                parsed_as_select = true;
+            }
+            else
+            {
+                /// A single parenthesized SELECT: roll back and let ParserTableExpression pick up the alias.
+                pos = saved_pos;
+            }
+        }
+    }
+
+    if (parsed_as_select)
     {
         /// TEMPORARY is only valid with a table name, not with a subquery or SELECT
         if (temporary)
