@@ -144,6 +144,10 @@ static inline void sorting_network(T* l, int partsz_min1, Compare comp) {
 	}
 }
 
+// ClickHouse modification: the clang static analyzer reports a false positive
+// (clang-analyzer-cplusplus.Move) in this heapsort; the moves are correct, as each
+// moved-from slot is overwritten before being read again. Suppress it for these two functions.
+// NOLINTBEGIN(clang-analyzer-cplusplus.Move)
 template<typename T, typename Compare>
 inline void heap_sift_down(T* left, ptrdiff_t n, ptrdiff_t j, T& k, Compare& comp) {
 	while (j * 2 + 1 < n) {
@@ -176,6 +180,7 @@ void heap_sort(T* left, T* right, Compare comp) {
 		}
 	}
 }
+// NOLINTEND(clang-analyzer-cplusplus.Move)
 
 template<typename T, typename Compare>
 static inline void med5(T& a, T& b, T& c, T& d, T& e, Compare comp) {
