@@ -222,6 +222,16 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
             external_data);
     }
 
+    /// Reject blocks declaring an oversized decompressed size before the caller allocates
+    /// a buffer of that size. The declared size comes from the (possibly untrusted) block
+    /// header, so this must happen before any 'memory.resize(size_decompressed)'.
+    if (max_decompressed_block_size && size_decompressed > max_decompressed_block_size)
+        throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED,
+                        "Too large size_decompressed: {}, the maximum is: {}. "
+                        "When reading compressed external data via HTTP, this limit can be tuned "
+                        "by the 'http_max_multipart_form_data_size' setting.",
+                        size_decompressed, max_decompressed_block_size);
+
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
     // Is whole compressed block available in 'compressed_in->' buffer?

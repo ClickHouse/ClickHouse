@@ -38,6 +38,13 @@ protected:
     /// Report decompression errors as CANNOT_DECOMPRESS, not CORRUPTED_DATA
     bool external_data;
 
+    /// If non-zero, reject blocks whose declared decompressed size exceeds this value,
+    /// before the decompressed buffer is allocated. This guards against decompression
+    /// bombs when reading from an untrusted source: a tiny compressed block can declare
+    /// an arbitrarily large decompressed size in its header, forcing a huge allocation
+    /// in the caller before any outer read limit can take effect.
+    size_t max_decompressed_block_size = 0;
+
     /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
     ///
     /// If always_copy is true then even if the compressed block is already stored in compressed_in.buffer()
@@ -69,6 +76,16 @@ public:
     void disableChecksumming()
     {
         disable_checksum = true;
+    }
+
+    /** Limit the declared decompressed size of a single block.
+      * When set, a block whose header declares a larger decompressed size is rejected
+      * before its decompressed buffer is allocated. Use for data from untrusted sources.
+      * A value of 0 disables the limit.
+      */
+    void setDecompressedSizeLimit(size_t limit)
+    {
+        max_decompressed_block_size = limit;
     }
 
     /// Some compressed read buffer can do useful seek operation

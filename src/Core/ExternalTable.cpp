@@ -208,6 +208,12 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
         /// Apply size limit to decompressed data to prevent decompression bomb attacks
         if (settings[Setting::http_max_multipart_form_data_size])
         {
+            /// Reject any single block whose header declares a decompressed size larger than the
+            /// limit *before* the decompressed buffer is allocated. Without this, a tiny crafted
+            /// block can force an oversized allocation that the outer LimitReadBuffer (which only
+            /// counts bytes after decompression) cannot prevent.
+            compressed_buffer->setDecompressedSizeLimit(settings[Setting::http_max_multipart_form_data_size]);
+
             read_buffer = std::make_unique<LimitReadBuffer>(
                 std::move(compressed_buffer),
                 LimitReadBuffer::Settings{
