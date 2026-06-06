@@ -23,6 +23,7 @@ S3_URLS = "s3urls"
 SCHEMA = "schema"
 ID_COLUMN = "id_column"
 VECTOR_COLUMN = "vector_column"
+VECTOR_INDEX_TYPE = "vector_index_type"
 DISTANCE_METRIC = "distance_metric"
 DIMENSION = "dimension"
 SOURCE_SELECT_LIST = "source_select_list"
@@ -140,6 +141,7 @@ test_params_laion_5b_full_run = {
         "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/truth_set_10k.tar"
     ],
     QUANTIZATION: "bf16",  # 'b1' for binary quantization
+    VECTOR_INDEX_TYPE: "hnsw",
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 512,
     HNSW_EF_SEARCH: None,  # Default in CH is 256, use higher value for maybe 'b1' indexes
@@ -158,6 +160,7 @@ test_params_laion_5b_quick_test = {
         "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion_100k_1k.tar"
     ],
     QUANTIZATION: "bf16",
+    VECTOR_INDEX_TYPE: "hnsw",
     HNSW_M: 16,
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
@@ -177,6 +180,7 @@ test_params_laion_5b_1m = {
     LIMIT_N: 1000000,  # Adds a LIMIT clause to load exact number of rows
     TRUTH_SET_FILES: None,
     QUANTIZATION: "bf16",
+    VECTOR_INDEX_TYPE: "hnsw",
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
@@ -198,6 +202,7 @@ test_params_hackernews_10m = {
         "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_10m_1k.tar"
     ],
     QUANTIZATION: "b1",
+    VECTOR_INDEX_TYPE: "fastknn",
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: 256,
@@ -218,7 +223,8 @@ test_params_cohere_wiki_20m = {
     TRUTH_SET_FILES: [
         "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m_25k.tar"
     ],
-    QUANTIZATION: "b1",
+    QUANTIZATION: "b1_projected",
+    VECTOR_INDEX_TYPE: "fastknn",
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
@@ -366,6 +372,11 @@ class RunTest:
         quantization = self._test_params[QUANTIZATION]
         hnsw_M = self._test_params[HNSW_M]
         hnsw_ef_C = self._test_params[HNSW_EF_CONSTRUCTION]
+        index_type = self._test_params[VECTOR_INDEX_TYPE]
+
+        if index_type == "fastknn":
+            hnsw_M = 0
+            hnsw_ef_C = 0
 
         add_index = f"ALTER TABLE {self._table} ADD INDEX vector_index {self._vector_column} TYPE vector_similarity('hnsw','{self._distance_metric}', {self._dimension}, {quantization}, {hnsw_M}, {hnsw_ef_C})"
         self._chclient.query(add_index)
@@ -670,12 +681,12 @@ class RunTest:
                         "USE_RAW_BYTES_FOR_QUERY_VECTOR requires truth records with a materialised query_vector"
                     )
                 params = {"$search_vector_binary$": query_vector.tobytes()}
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, reinterpret($search_vector_binary$, 'Array(Float32)') ) AS distance LIMIT {self._k} SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 10"
+                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, reinterpret($search_vector_binary$, 'Array(Float32)') ) AS distance LIMIT {self._k} SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 1"
                 q_start = current_time_ms()
                 result = chclient.query(ann_search_query, parameters=params)
             else:
                 query_source = self._render_query_source_sql(truth_record)
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k} SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 10"
+                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k} SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 1"
                 q_start = current_time_ms()
                 result = chclient.query(ann_search_query)
 
@@ -808,9 +819,9 @@ def install_and_start_clickhouse():
     info = Info()
 
     if Utils.is_arm():
-        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/105591/5a30362c5a8e8240c155a64ddcfd1203727174dd/build_arm_release/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/5fa7cbe6fce1b816049d890ebd7a04a4fd373c59/build_arm_release/clickhouse"
     elif Utils.is_amd():
-        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/105591/5a30362c5a8e8240c155a64ddcfd1203727174dd/build_amd_release/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/5fa7cbe6fce1b816049d890ebd7a04a4fd373c59/build_amd_release/clickhouse"
     else:
         assert False, f"Unknown processor architecture"
 
