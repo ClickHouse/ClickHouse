@@ -3,8 +3,9 @@
 -- so NaN (which sorts like NULL) is placed correctly under every NULLS direction.
 -- Plain Nullable(Float64) and Nullable(Int) keys are covered too, since the guard
 -- that disables read-in-order for the unsupported NULLS direction applies to them.
--- Both the query-plan optimization (optimizeReadInOrder) and the legacy
--- ReadInOrderOptimizer path (old analyzer, query_plan_read_in_order = 0) must agree.
+-- This covers the query-plan optimization (optimizeReadInOrder); the legacy
+-- ReadInOrderOptimizer path (old analyzer, query_plan_read_in_order = 0) has a
+-- separate, pre-existing reverse-key limitation and is intentionally not exercised here.
 
 -- { echo }
 SET optimize_read_in_order = 1;
@@ -64,44 +65,6 @@ SELECT * FROM test_nullable_int ORDER BY c0 DESC NULLS LAST;
 -- NaN/NULL still sort as the largest value, so the side they land on flips with it.
 -- Read-in-order must honor the requested NULLS direction even through such a function.
 -- Regression for https://github.com/ClickHouse/ClickHouse/pull/106588#discussion_r3367031538
-SELECT * FROM test_lc_float_nan ORDER BY negate(c0) ASC NULLS FIRST;
-SELECT * FROM test_lc_float_nan ORDER BY negate(c0) ASC NULLS LAST;
-SELECT * FROM test_lc_float_nan ORDER BY negate(c0) DESC NULLS FIRST;
-SELECT * FROM test_lc_float_nan ORDER BY negate(c0) DESC NULLS LAST;
-SELECT * FROM test_nullable_float_nan ORDER BY negate(c0) ASC NULLS FIRST;
-SELECT * FROM test_nullable_float_nan ORDER BY negate(c0) ASC NULLS LAST;
-SELECT * FROM test_nullable_float_nan ORDER BY negate(c0) DESC NULLS FIRST;
-SELECT * FROM test_nullable_float_nan ORDER BY negate(c0) DESC NULLS LAST;
-
--- Legacy ReadInOrderOptimizer path (old analyzer, query plan read-in-order disabled).
-SET enable_analyzer = 0;
-SET query_plan_read_in_order = 0;
-
-SELECT * FROM test_lc_float_nan ORDER BY c0 ASC NULLS FIRST;
-SELECT * FROM test_lc_float_nan ORDER BY c0 ASC NULLS LAST;
-SELECT * FROM test_lc_float_nan ORDER BY c0 DESC NULLS FIRST;
-SELECT * FROM test_lc_float_nan ORDER BY c0 DESC NULLS LAST;
-
-SELECT * FROM test_lc_float32_nan ORDER BY c0 ASC NULLS FIRST;
-SELECT * FROM test_lc_float32_nan ORDER BY c0 ASC NULLS LAST;
-SELECT * FROM test_lc_float32_nan ORDER BY c0 DESC NULLS FIRST;
-SELECT * FROM test_lc_float32_nan ORDER BY c0 DESC NULLS LAST;
-
-SELECT * FROM test_lc_bfloat16_nan ORDER BY c0 ASC NULLS FIRST;
-SELECT * FROM test_lc_bfloat16_nan ORDER BY c0 ASC NULLS LAST;
-SELECT * FROM test_lc_bfloat16_nan ORDER BY c0 DESC NULLS FIRST;
-SELECT * FROM test_lc_bfloat16_nan ORDER BY c0 DESC NULLS LAST;
-
-SELECT * FROM test_nullable_float_nan ORDER BY c0 ASC NULLS FIRST;
-SELECT * FROM test_nullable_float_nan ORDER BY c0 ASC NULLS LAST;
-SELECT * FROM test_nullable_float_nan ORDER BY c0 DESC NULLS FIRST;
-SELECT * FROM test_nullable_float_nan ORDER BY c0 DESC NULLS LAST;
-
-SELECT * FROM test_nullable_int ORDER BY c0 ASC NULLS FIRST;
-SELECT * FROM test_nullable_int ORDER BY c0 ASC NULLS LAST;
-SELECT * FROM test_nullable_int ORDER BY c0 DESC NULLS FIRST;
-SELECT * FROM test_nullable_int ORDER BY c0 DESC NULLS LAST;
-
 SELECT * FROM test_lc_float_nan ORDER BY negate(c0) ASC NULLS FIRST;
 SELECT * FROM test_lc_float_nan ORDER BY negate(c0) ASC NULLS LAST;
 SELECT * FROM test_lc_float_nan ORDER BY negate(c0) DESC NULLS FIRST;

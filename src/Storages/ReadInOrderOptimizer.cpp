@@ -1,8 +1,6 @@
 #include <Storages/ReadInOrderOptimizer.h>
 
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/IDataType.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -209,8 +207,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
     const ContextPtr & context,
     UInt64 limit) const
 {
-    const auto & sorting_key = metadata_snapshot->getSortingKey();
-    const Names & sorting_key_columns = sorting_key.column_names;
+    const Names & sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
     /// read_direction will be set from the first non-constant ORDER BY column
     int read_direction = 0;
 
@@ -228,17 +225,6 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
             break;
 
         auto match = matchSortDescriptionAndKey(actions[desc_pos]->getActions(), description[desc_pos], sorting_key_columns[key_pos]);
-
-        /// Physical storage is ASC NULLS LAST (or DESC NULLS FIRST). NULLs (and NaNs)
-        /// sort as the largest value. When opposite ordering is requested - we cannot
-        /// read in storage order - reject. A monotonic function may reverse the key, so
-        /// match.direction (which folds in the monotonicity flip) decides the achievable side.
-        const auto & sort_key_type = sorting_key.data_types[key_pos];
-        const bool key_has_special_nulls = isNullableOrLowCardinalityNullable(sort_key_type)
-            || isFloat(*removeLowCardinality(sort_key_type));
-        if (key_has_special_nulls && match.direction
-            && match.direction != description[desc_pos].nulls_direction * description[desc_pos].direction)
-            break;
 
         /// If the ORDER BY column matches a fixed (constant) key column,
         /// add it to the sort description but don't let it set read_direction.
