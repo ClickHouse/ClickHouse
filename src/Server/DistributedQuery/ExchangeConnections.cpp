@@ -30,6 +30,14 @@ void ExchangeConnections::addConnection(const String & query_id, const String & 
         return;
     }
 
+    /// The owning task already released this stream; do not recreate a slot nothing will consume.
+    if (released_streams.contains(connection_key))
+    {
+        LOG_TRACE(log, "Dropping connection for released query id {} exchange stream {}", query_id, exchange_stream_id);
+        socket.close();
+        return;
+    }
+
     auto & slot = pending_connections[connection_key];
 
     /// One producer per stream. A duplicate (reconnect or repeated `SourceHello`) must not drop the
@@ -62,6 +70,15 @@ FutureConnectionPtr ExchangeConnections::getConnection(const String & query_id, 
         future_connection->cancel(std::make_exception_ptr(
             Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Exchange connection cancelled, query id {}", query_id)));
         return future_connection;
+    }
+
+    /// The owning task already released this stream; reject instead of creating a slot nothing frees.
+    if (released_streams.contains(connection_key))
+    {
+        auto cancelled = std::make_shared<FutureConnection>();
+        cancelled->cancel(std::make_exception_ptr(
+            Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Exchange stream already released, query id {} stream {}", query_id, exchange_stream_id)));
+        return cancelled;
     }
 
     auto & slot = pending_connections[connection_key];
@@ -123,6 +140,19 @@ void ExchangeConnections::cleanupQuery(const String & query_id)
         future->cancel(exception);
 }
 
+void ExchangeConnections::markStreamReleased(const ConnectionKey & key)
+{
+    if (released_streams.insert(key).second)
+    {
+        released_streams_order.push_back(key);
+        while (released_streams_order.size() > MAX_RELEASED_STREAMS)
+        {
+            released_streams.erase(released_streams_order.front());
+            released_streams_order.pop_front();
+        }
+    }
+}
+
 void ExchangeConnections::removePendingStreams(const String & query_id, const std::vector<String> & exchange_stream_ids)
 {
     std::vector<FutureConnectionPtr> to_cancel;
@@ -130,12 +160,15 @@ void ExchangeConnections::removePendingStreams(const String & query_id, const st
         std::lock_guard lock(mutex);
         for (const auto & exchange_stream_id : exchange_stream_ids)
         {
-            auto it = pending_connections.find(std::make_pair(query_id, exchange_stream_id));
-            if (it != pending_connections.end())
+            const auto key = std::make_pair(query_id, exchange_stream_id);
+            if (auto it = pending_connections.find(key); it != pending_connections.end())
             {
                 to_cancel.push_back(it->second.future);
                 pending_connections.erase(it);
             }
+            /// Tombstone the stream so a connection arriving after this task finished is rejected
+            /// instead of recreating an orphan slot (a worker never runs cleanupQuery).
+            markStreamReleased(key);
         }
     }
 

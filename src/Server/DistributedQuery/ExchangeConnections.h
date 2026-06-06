@@ -71,6 +71,18 @@ private:
     static constexpr size_t MAX_CANCELLED_QUERIES = 100000;
     std::unordered_set<String> cancelled_queries;
     std::deque<String> cancelled_queries_order;
+
+    /// Streams already released by `removePendingStreams`. A worker never calls `cleanupQuery`, so
+    /// without this a connection arriving after the owning task finished would recreate a slot that
+    /// nothing ever releases, leaking an eventfd. Late add/get for these streams is rejected. Bounded
+    /// with the same FIFO eviction as `cancelled_queries`.
+    static constexpr size_t MAX_RELEASED_STREAMS = 100000;
+    std::unordered_set<ConnectionKey, boost::hash<ConnectionKey>> released_streams;
+    std::deque<ConnectionKey> released_streams_order;
+
+    /// Records a stream as released, evicting the oldest entry past the cap. Call under `mutex`.
+    void markStreamReleased(const ConnectionKey & key);
+
     LoggerPtr log = getLogger("ExchangeConnections");
 };
 

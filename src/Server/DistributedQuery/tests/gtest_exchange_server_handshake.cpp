@@ -184,4 +184,20 @@ TEST(ExchangeConnectionsRendezvous, DuplicateConsumerRejected)
     EXPECT_NO_THROW(first->getSocket());
 }
 
+/// A connection arriving after the owning task released the stream must be rejected, not stored in a
+/// fresh slot (a worker never runs cleanupQuery, so such a slot would leak its eventfd forever).
+TEST(ExchangeConnectionsRendezvous, ConnectionAfterReleaseRejected)
+{
+    auto connections = std::make_shared<ExchangeConnections>();
+    auto [client, server] = makeConnectedPair();
+
+    connections->removePendingStreams("query", {"stream"});
+    connections->addConnection("query", "stream", server);
+
+    /// The late socket was not stored, so a later consumer gets a cancelled future, not the socket.
+    auto future = connections->getConnection("query", "stream");
+    EXPECT_TRUE(future->isReady());
+    EXPECT_ANY_THROW(future->getSocket());
+}
+
 #endif
