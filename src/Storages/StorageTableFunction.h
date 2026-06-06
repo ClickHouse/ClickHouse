@@ -51,8 +51,8 @@ public:
     StoragePtr getNested() const override
     {
         StoragePtr nested_storage = getNestedImpl();
-        assert(!nested_storage->getStoragePolicy());
-        assert(!nested_storage->storesDataOnDisk());
+        chassert(!nested_storage->getStoragePolicy());
+        chassert(!nested_storage->storesDataOnDisk());
         return nested_storage;
     }
 
