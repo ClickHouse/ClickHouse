@@ -378,8 +378,10 @@ SELECT count() FROM (
 DROP TABLE tab_scann_detach;
 
 -- Test 17: Optimized plan must return the correct L2Distance value, not sqrt(L2Distance).
--- Vector [3.0, 4.0] has L2Distance to [0.0, 0.0] = 5.0.
+-- Vector [3.0, 4.0] has L2Distance to [0.0, 0.0] = 5.0 exactly.
 -- A double-sqrt bug would return sqrt(5) ≈ 2.236 instead.
+-- Compare against the known exact value (not against another subquery, which the optimizer
+-- could merge into the same scan and return the same wrong value for both sides).
 SELECT '17. L2Distance optimized plan returns correct distance value (not double-sqrt)';
 DROP TABLE IF EXISTS tab_scann_l2_val;
 CREATE TABLE tab_scann_l2_val (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
@@ -387,20 +389,12 @@ CREATE TABLE tab_scann_l2_val (id Int32, vec Array(Float32), INDEX idx vec TYPE 
 INSERT INTO tab_scann_l2_val VALUES (0, [3.0, 4.0]);
 INSERT INTO tab_scann_l2_val SELECT toInt32(number + 1), [toFloat32(number + 100), toFloat32(number + 100)] FROM numbers(1999);
 OPTIMIZE TABLE tab_scann_l2_val FINAL;
--- Distance value from optimized plan must match brute force (< 0.01 tolerance for float32).
-SELECT abs(dist_idx - dist_exact) < 0.01 FROM
-(
-    WITH [toFloat32(0.0), toFloat32(0.0)] AS ref
-    SELECT L2Distance(vec, ref) AS dist_idx FROM tab_scann_l2_val
-    ORDER BY L2Distance(vec, ref) ASC LIMIT 1
-    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1
-) AS t1,
-(
-    WITH [toFloat32(0.0), toFloat32(0.0)] AS ref
-    SELECT L2Distance(vec, ref) AS dist_exact FROM tab_scann_l2_val
-    ORDER BY L2Distance(vec, ref) ASC LIMIT 1
-    SETTINGS use_skip_indexes = 0
-) AS t2;
+-- Exact L2Distance([3,4], [0,0]) = 5.0. Tolerance 0.01 for float32 rounding.
+-- A double-sqrt bug would produce sqrt(5) ≈ 2.24, caught by abs(...) >= 0.01.
+SELECT abs(L2Distance(vec, [toFloat32(0.0), toFloat32(0.0)]) - 5.0) < 0.01
+FROM tab_scann_l2_val
+ORDER BY L2Distance(vec, [toFloat32(0.0), toFloat32(0.0)]) ASC LIMIT 1
+SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1;
 DROP TABLE tab_scann_l2_val;
 
 -- Test 18: cosineDistance rejects zero-magnitude indexed vectors.

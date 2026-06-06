@@ -797,15 +797,17 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
         result.rows.push_back(static_cast<UInt64>(idx));
         if (result.distances)
         {
-            /// ScaNN distances must be converted to match ClickHouse function semantics:
-            /// - cosineDistance: ScaNN returns -dot(a_norm, b_norm) = -cos(θ); ClickHouse = 1 - cos(θ)
-            /// - L2Distance:     ScaNN returns squared L2; ClickHouse = sqrt(squared L2)
-            /// - dotProduct:     ScaNN returns -dot(a, b);  ClickHouse = dot(a, b)
+            /// ScaNN distances must be stored in the representation expected by
+            /// optimizeVectorSearchSecondPass, which applies sqrt(_distance) for
+            /// L2Distance (because usearch/hnsw returns squared L2).
+            /// - cosineDistance: ScaNN returns -dot(a_norm, b_norm); store as 1 - cos(θ)
+            /// - L2Distance:     ScaNN returns squared L2; store as-is (optimizer applies sqrt)
+            /// - dotProduct:     ScaNN returns -dot(a, b); store as dot(a, b)
             float converted;
             if (index_params.distance_name == "cosineDistance")
                 converted = 1.0f + dist;
             else if (index_params.distance_name == "L2Distance")
-                converted = std::sqrt(std::max(0.0f, dist));
+                converted = std::max(0.0f, dist); /// keep squared; optimizer wraps in sqrt
             else /// dotProduct
                 converted = -dist;
             result.distances->push_back(converted);
