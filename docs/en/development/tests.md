@@ -7,8 +7,6 @@ title: 'Testing ClickHouse'
 doc_type: 'guide'
 ---
 
-# Testing ClickHouse
-
 ## Test types {#test-types}
 
 There are following tests in ClickHouse:
@@ -555,9 +553,6 @@ Configuration is in `uncrustify.cfg` in the sources root.
 It is less tested than `clang-format`.
 
 `CLion` has its own code formatter that has to be tuned for our code style.
-
-We also use `codespell` to find typos in code.
-It is automated as well.
 
 ## Test coverage {#test-coverage}
 

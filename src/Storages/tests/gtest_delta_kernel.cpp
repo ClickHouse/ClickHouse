@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <DataTypes/DataTypeString.h>
+
 #if USE_DELTA_KERNEL_RS
 
 #include <base/scope_guard.h>
@@ -9,8 +11,6 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Common/logger_useful.h>
-
-#include <DataTypes/DataTypeString.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -86,6 +86,23 @@ TEST(DeltaLakeMetadata, GetFieldValueNullableDateTime64)
 {
     auto nullable_datetime64_type = std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeDateTime64>(6, "UTC"));
     ASSERT_NO_THROW(DB::DeltaLakeMetadata::getFieldValue("2024-01-15 10:30:45.123456", nullable_datetime64_type));
+}
+
+/// varchar(n) and char(n) are valid Delta Lake column types emitted by Spark/Databricks.
+/// They must map to String, ignoring the length constraint, since it is a SQL-layer annotation
+/// only — the underlying Parquet encoding is identical to a plain string column.
+TEST(DeltaLakeMetadata, GetSimpleTypeByNameVarchar)
+{
+    auto type = DB::DeltaLakeMetadata::getSimpleTypeByName("varchar(256)");
+    ASSERT_NE(type, nullptr);
+    ASSERT_EQ(type->getTypeId(), DB::TypeIndex::String);
+}
+
+TEST(DeltaLakeMetadata, GetSimpleTypeByNameChar)
+{
+    auto type = DB::DeltaLakeMetadata::getSimpleTypeByName("char(1)");
+    ASSERT_NE(type, nullptr);
+    ASSERT_EQ(type->getTypeId(), DB::TypeIndex::String);
 }
 
 #endif

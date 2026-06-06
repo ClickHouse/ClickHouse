@@ -32,6 +32,9 @@
 #include <Columns/ColumnSet.h>
 
 #include <Storages/StorageSet.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/StorageSharedSetJoin.h>
+#endif
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -416,9 +419,9 @@ size_t ScopeStack::getColumnLevel(const std::string & name)
     throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: {}", name);
 }
 
-void ScopeStack::addColumn(ColumnWithTypeAndName column)
+void ScopeStack::addColumn(ColumnConstPtr column, DataTypePtr type, std::string name)
 {
-    const auto & node = stack[0].actions_dag.addColumn(std::move(column));
+    const auto & node = stack[0].actions_dag.addColumn(std::move(column), std::move(type), std::move(name));
     stack[0].index->addNode(&node);
 
     for (size_t j = 1; j < stack.size(); ++j)
@@ -555,7 +558,7 @@ std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPt
     const auto * as_literal = ast->as<ASTLiteral>();
     if (as_literal)
     {
-        assert(!as_literal->unique_column_name.empty());
+        chassert(!as_literal->unique_column_name.empty());
         child_column_name = as_literal->unique_column_name;
     }
 
@@ -1006,31 +1009,25 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             }
             else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set)
             {
-                ColumnWithTypeAndName column;
-                column.type = std::make_shared<DataTypeSet>();
+                auto type = std::make_shared<DataTypeSet>();
+                std::string name;
 
                 /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
                 ///  so that sets with the same literal representation do not fuse together (they can have different types).
                 const bool is_constant_set = typeid_cast<const FutureSetFromSubquery *>(prepared_set.get()) == nullptr;
                 if (is_constant_set)
-                    column.name = data.getUniqueName("__set");
+                    name = data.getUniqueName("__set");
                 else
-                    column.name = child->getColumnName();
+                    name = child->getColumnName();
 
-                if (!data.hasColumn(column.name))
+                if (!data.hasColumn(name))
                 {
-                    auto column_set = ColumnSet::create(1, prepared_set);
-                    /// If prepared_set is not empty, we have a set made with literals.
-                    /// Create a const ColumnSet to make constant folding work
-                    if (is_constant_set)
-                        column.column = ColumnConst::create(std::move(column_set), 1);
-                    else
-                        column.column = std::move(column_set);
-                    data.addColumn(column);
+                    ColumnConstPtr column = ColumnConst::create(ColumnSet::create(1, prepared_set), 0);
+                    data.addColumn(std::move(column), type, name);
                 }
 
-                argument_types.push_back(column.type);
-                argument_names.push_back(column.name);
+                argument_types.push_back(std::move(type));
+                argument_names.push_back(std::move(name));
             }
             else if (identifier && (functionIsJoinGet(node.name) || functionIsDictGet(node.name)) && arg == 0)
             {
@@ -1038,23 +1035,24 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 table_id = data.getContext()->resolveStorageID(table_id, Context::ResolveOrdinary);
                 auto column_string = ColumnString::create();
                 column_string->insert(table_id.getDatabaseName() + "." + table_id.getTableName());
-                ColumnWithTypeAndName column(
-                    ColumnConst::create(std::move(column_string), 1),
-                    std::make_shared<DataTypeString>(),
-                    data.getUniqueName("__" + node.name));
-                data.addColumn(column);
-                argument_types.push_back(column.type);
-                argument_names.push_back(column.name);
+                ColumnConstPtr column = ColumnConst::create(std::move(column_string), 1);
+                auto type = std::make_shared<DataTypeString>();
+                auto name = data.getUniqueName("__" + node.name);
+                data.addColumn(std::move(column), type, name);
+                argument_types.push_back(std::move(type));
+                argument_names.push_back(std::move(name));
             }
             else if (data.is_create_parameterized_view && query_parameter)
             {
                 const auto data_type = DataTypeFactory::instance().get(query_parameter->type);
                 /// During analysis for CREATE VIEW of a parameterized view, if parameter is
-                /// used multiple times, column is only added once
+                /// used multiple times, column is only added once.
+                /// The placeholder column carries no runtime value: parameter substitution
+                /// happens later, before the view is actually executed.
                 if (!data.hasColumn(query_parameter->name))
                 {
-                    ColumnWithTypeAndName column(data_type, query_parameter->name);
-                    data.addColumn(column);
+                    ColumnConstPtr column = data_type->createColumnConstWithDefaultValue(0);
+                    data.addColumn(std::move(column), data_type, query_parameter->name);
                 }
 
                 argument_types.push_back(data_type);
@@ -1184,9 +1182,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
          */
         if (existing_column
             && existing_column->column
-            && isColumnConst(*existing_column->column)
-            && existing_column->column->size() == 1
-            && existing_column->column->operator[](0) == value)
+            && existing_column->column->getField() == value)
         {
             const_cast<ASTLiteral &>(literal).unique_column_name = default_name;
         }
@@ -1202,12 +1198,8 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
         return;
     }
 
-    ColumnWithTypeAndName column;
-    column.name = literal.unique_column_name;
-    column.column = type->createColumnConst(1, value);
-    column.type = type;
-
-    data.addColumn(std::move(column));
+    ColumnConstPtr column = type->createColumnConst(1, value);
+    data.addColumn(std::move(column), type, literal.unique_column_name);
 }
 
 FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
@@ -1269,6 +1261,10 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             {
                 if (auto set = data.prepared_sets->findStorage(set_key))
                     return set;
+#if CLICKHOUSE_CLOUD
+                if (StorageSharedSet * storage_shared_set = dynamic_cast<StorageSharedSet *>(table.get()))
+                    return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_shared_set->getSet(data.getContext()), table_id);
+#endif
 
                 if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
                     return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_set->getSet(), table_id);

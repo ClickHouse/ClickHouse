@@ -1,0 +1,5 @@
+<clickhouse>
+    <placement>
+        <availability_zone>clickhouse-test-az</availability_zone>
+    </placement>
+</clickhouse>

@@ -123,6 +123,13 @@ static void appendRightColumns(
     }
 
     bool is_asof_join = table_join.strictness() == JoinStrictness::Asof;
+    /// For `LEFT ANTI` (and `RIGHT ANTI` after `TableJoin::swapSides`), the upstream filter
+    /// in `HashJoinResult::next` has already kept only unmatched rows, so right-side key
+    /// columns must hold defaults rather than left key values (issue #99959).
+    bool is_left_anti_join = table_join.kind() == JoinKind::Left && table_join.strictness() == JoinStrictness::Anti;
+    /// `JoinFeatures::need_filter` is always true for `is_anti_join && left`, so `block.rows()`
+    /// here is the number of unmatched rows. No `filter_ptr` handling is needed.
+    chassert(!is_left_anti_join || properties.need_filter);
     std::vector<size_t> right_keys_to_replicate;
 
     /// Add join key columns from right block if needed.
@@ -133,10 +140,22 @@ static void appendRightColumns(
         if (is_asof_join && right_key.name == table_join.getOnlyClause().key_names_right.back())
             continue;
 
-        const auto & left_column = block.getByName(properties.required_right_keys_sources[i]);
         const auto & right_col_name = table_join.renamedRightColumnName(right_key.name);
-        const auto * filter_ptr = properties.need_filter ? nullptr : &filter;
-        auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column, filter_ptr);
+
+        ColumnWithTypeAndName right_col;
+        if (is_left_anti_join)
+        {
+            /// All rows in the block are unmatched: emit type defaults for the right key.
+            auto column = right_key.type->createColumn();
+            column->insertManyDefaults(block.rows());
+            right_col = ColumnWithTypeAndName(std::move(column), right_key.type, right_col_name);
+        }
+        else
+        {
+            const auto & left_column = block.getByName(properties.required_right_keys_sources[i]);
+            const auto * filter_ptr = properties.need_filter ? nullptr : &filter;
+            right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column, filter_ptr);
+        }
         block.insert(std::move(right_col));
 
         if (!offsets.empty())
@@ -171,7 +190,7 @@ static void appendRightColumns(
     block.erase(block_columns_to_erase);
 }
 
-MutableColumns copyEmptyColumns(const MutableColumns & columns)
+static MutableColumns copyEmptyColumns(const MutableColumns & columns)
 {
     MutableColumns res_columns;
     res_columns.reserve(columns.size());
@@ -180,7 +199,7 @@ MutableColumns copyEmptyColumns(const MutableColumns & columns)
     return res_columns;
 }
 
-void applyShiftAndLimitToOffsets(const IColumn::Offsets & offsets, IColumn::Offsets & out_offsets, UInt64 shift, UInt64 limit)
+static void applyShiftAndLimitToOffsets(const IColumn::Offsets & offsets, IColumn::Offsets & out_offsets, UInt64 shift, UInt64 limit)
 {
     out_offsets.clear();
     out_offsets.resize_fill(offsets.size(), 0);
@@ -500,7 +519,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             /// Copy data from the original columns to preserve columns size in the block.
             rhs_columns.reserve(columns.size());
             for (auto & column : columns)
-                rhs_columns.push_back(column->cut(start_row, num_rhs_rows)->assumeMutable());
+                rhs_columns.push_back(column->cut(prev_offset, num_rhs_rows)->assumeMutable());
 
             if (is_last)
                 columns.clear();

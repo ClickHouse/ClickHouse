@@ -55,6 +55,7 @@ namespace ErrorCodes
     DECLARE(UInt64, bypass_cache_threshold, FILECACHE_BYPASS_THRESHOLD, "Undocumented. Not recommended for use", 0) \
     DECLARE(Bool, write_cache_per_user_id_directory, false, "Internal ClickHouse Cloud setting", 0) \
     DECLARE(Bool, allow_dynamic_cache_resize, false, "Allow dynamic resize of filesystem cache", 0) \
+    DECLARE(UInt64, dynamic_resize_lock_wait_ms, 1000, "Timeout in milliseconds to acquire the dynamic resize exclusive lock before skipping the resize attempt", 0) \
     DECLARE(Double, max_size_ratio_to_total_space, 0, "Ratio of `max_size` to total disk space", 0) \
     DECLARE(Bool, skip_cache_on_disk_failure, false, "If true, bypass filesystem cache operations silently on disk IO errors. If false (default), disk IO errors are propagated as startup failures.", 0) \
     DECLARE(Bool, use_split_cache, false, "Use separation of files to system/data.", 0) \
@@ -62,22 +63,8 @@ namespace ErrorCodes
     DECLARE(UInt64, overcommit_eviction_evict_step, 10 * 1_MiB, "Eviction step in bytes for overcommit eviction policy. Used for keep_free_space_*_ratio settings", 0) \
     DECLARE(Double, check_cache_probability, 0.001, "Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element", 0) \
 
-DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
-
-struct FileCacheSettingsImpl : public BaseSettings<FileCacheSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    FileCacheSettings##TYPE NAME = &FileCacheSettingsImpl ::NAME;
-
-namespace FileCacheSetting
-{
-LIST_OF_FILE_CACHE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FILE_CACHE_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FileCacheSettings, FileCacheSetting)
 
 FileCacheSettings::FileCacheSettings() : impl(std::make_unique<FileCacheSettingsImpl>())
 {
@@ -93,16 +80,9 @@ FileCacheSettings::FileCacheSettings(const FileCacheSettings & settings)
 {
 }
 
-FileCacheSettings::FileCacheSettings(FileCacheSettings && settings) noexcept
-    : impl(std::make_unique<FileCacheSettingsImpl>(std::move(*settings.impl)))
-{
-}
+FileCacheSettings::FileCacheSettings(FileCacheSettings && settings) noexcept = default;
 
-FileCacheSettings & FileCacheSettings::operator=(FileCacheSettings && settings) noexcept
-{
-    impl = std::make_unique<FileCacheSettingsImpl>(std::move(*settings.impl));
-    return *this;
-}
+FileCacheSettings & FileCacheSettings::operator=(FileCacheSettings && settings) noexcept = default;
 
 bool FileCacheSettings::operator==(const FileCacheSettings & settings) const noexcept
 {

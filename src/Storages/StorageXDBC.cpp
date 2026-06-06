@@ -244,7 +244,7 @@ namespace
 
             BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(
                 args.getContext(),
-                args.getContext()->getSettingsRef()[Setting::http_receive_timeout].value,
+                Poco::Timespan(args.getContext()->getSettingsRef()[Setting::http_receive_timeout]),
                 connection_string,
                 args.getContext()->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling].value);
             return std::make_shared<StorageXDBC>(
@@ -264,11 +264,13 @@ namespace
     }
 }
 
+void registerStorageJDBC(StorageFactory & factory);
 void registerStorageJDBC(StorageFactory & factory)
 {
     registerXDBCStorage<JDBCBridgeMixin>(factory, "JDBC");
 }
 
+void registerStorageODBC(StorageFactory & factory);
 void registerStorageODBC(StorageFactory & factory)
 {
     registerXDBCStorage<ODBCBridgeMixin>(factory, "ODBC");

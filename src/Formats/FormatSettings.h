@@ -30,6 +30,7 @@ struct FormatSettings
     bool null_as_default = true;
     bool force_null_for_omitted_fields = false;
     bool decimal_trailing_zeros = false;
+    UInt64 float_precision = 0;
     bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -38,6 +39,9 @@ struct FormatSettings
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 25000;
     UInt64 max_bytes_to_read_for_schema_inference = 32 * 1024 * 1024;
+    /// Internal flag used to surface expensive non-seekable fallbacks only when schema inference
+    /// runs for a known format, not while trying multiple candidate formats during detection.
+    bool log_full_buffer_fallback_during_schema_inference = false;
 
     String column_names_for_schema_inference{};
     String schema_inference_hints{};
@@ -132,7 +136,7 @@ struct FormatSettings
         AUTO, /// First tries to match case-sensitively, if fails, tries to match case-insensitively
     };
 
-    InputFormatColumnMatchingCaseSensitivity input_format_column_matching_case_sensitivity = InputFormatColumnMatchingCaseSensitivity::MATCH_CASE;
+    InputFormatColumnMatchingCaseSensitivity input_format_column_matching_case_sensitivity = InputFormatColumnMatchingCaseSensitivity::AUTO;
 
     UInt64 client_protocol_version = 0;
 
@@ -181,14 +185,23 @@ struct FormatSettings
         bool output_unsupported_types_as_binary = true;
     } arrow{};
 
+    struct AvroSchemaRegistryTimeouts
+    {
+        UInt64 connection_timeout = 1;
+        UInt64 send_timeout = 1;
+        UInt64 receive_timeout = 1;
+    };
+
     struct
     {
         String schema_registry_url;
+        AvroSchemaRegistryTimeouts schema_registry_timeouts;
         String output_codec;
         UInt64 output_sync_interval = 16 * 1024;
         bool allow_missing_fields = false;
         String string_column_pattern;
         UInt64 output_rows_in_file = 1;
+        String output_confluent_subject;
     } avro{};
 
     String bool_true_representation = "true";

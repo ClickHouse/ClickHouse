@@ -1032,7 +1032,7 @@ String addDummyColumnWithRowCount(Block & block, size_t num_rows)
     {
         if (column.column)
         {
-            assert(column.column->size() == num_rows);
+            chassert(column.column->size() == num_rows);
             has_columns = true;
             break;
         }

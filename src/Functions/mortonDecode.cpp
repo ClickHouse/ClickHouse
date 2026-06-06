@@ -7,7 +7,7 @@
 #include <Functions/PerformanceAdaptors.h>
 
 #include <morton-nd/mortonND_LUT.h>
-#if USE_MULTITARGET_CODE && defined(__BMI2__)
+#if defined(__BMI2__)
 #include <morton-nd/mortonND_BMI2.h>
 #endif
 
@@ -20,16 +20,6 @@ namespace DB
         auto col##INDEX = ColumnUInt64::create(); \
         auto & vec##INDEX = col##INDEX->getData(); \
         vec##INDEX.resize(input_rows_count);
-
-#define DECODE(ND, ...) \
-        if (nd == (ND)) \
-        { \
-            for (size_t i = 0; i < input_rows_count; i++) \
-            { \
-                auto res = MortonND_##ND##D_Dec.Decode(col_code->getUInt(i)); \
-                __VA_ARGS__ \
-            } \
-        }
 
 #define MASK(IDX, ...) \
         ((mask) ? shrink(mask->getColumn((IDX)).getUInt(0), std::get<IDX>(__VA_ARGS__)) : std::get<IDX>(__VA_ARGS__))
@@ -170,7 +160,18 @@ namespace DB
     } \
     return ColumnTuple::create(tuple_columns);
 
-DECLARE_DEFAULT_CODE(
+#if !defined(__BMI2__)
+
+#define DECODE(ND, ...) \
+        if (nd == (ND)) \
+        { \
+            for (size_t i = 0; i < input_rows_count; i++) \
+            { \
+                auto res = MortonND_##ND##D_Dec.Decode(col_code->getUInt(i)); \
+                __VA_ARGS__ \
+            } \
+        }
+
 constexpr auto MortonND_2D_Dec = mortonnd::MortonNDLutDecoder<2, 32, 8>();
 constexpr auto MortonND_3D_Dec = mortonnd::MortonNDLutDecoder<3, 21, 8>();
 constexpr auto MortonND_4D_Dec = mortonnd::MortonNDLutDecoder<4, 16, 8>();
@@ -221,10 +222,9 @@ public:
         EXECUTE()
     }
 };
-) // DECLARE_DEFAULT_CODE
 
-#if defined(MORTON_ND_BMI2_ENABLED)
-#undef DECODE
+#else
+
 #define DECODE(ND, ...) \
         if (nd == (ND)) \
         { \
@@ -235,7 +235,6 @@ public:
             } \
         }
 
-DECLARE_AVX2_SPECIFIC_CODE(
 using MortonND_2D = mortonnd::MortonNDBmi<2, uint64_t>;
 using MortonND_3D = mortonnd::MortonNDBmi<3, uint64_t>;
 using MortonND_4D = mortonnd::MortonNDBmi<4, uint64_t>;
@@ -243,8 +242,20 @@ using MortonND_5D = mortonnd::MortonNDBmi<5, uint64_t>;
 using MortonND_6D = mortonnd::MortonNDBmi<6, uint64_t>;
 using MortonND_7D = mortonnd::MortonNDBmi<7, uint64_t>;
 using MortonND_8D = mortonnd::MortonNDBmi<8, uint64_t>;
-class FunctionMortonDecode: public TargetSpecific::Default::FunctionMortonDecode
+class FunctionMortonDecode : public FunctionSpaceFillingCurveDecode<8, 1, 8>
 {
+public:
+    static constexpr auto name = "mortonDecode";
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionMortonDecode>();
+    }
+
+    String getName() const override
+    {
+        return name;
+    }
+
     static UInt64 shrink(UInt64 ratio, UInt64 value)
     {
         switch (ratio)
@@ -274,41 +285,13 @@ class FunctionMortonDecode: public TargetSpecific::Default::FunctionMortonDecode
         EXECUTE()
     }
 };
-)
-#endif // MORTON_ND_BMI2_ENABLED
+
+#endif
 
 #undef DECODE
 #undef MASK
 #undef EXTRACT_VECTOR
 #undef EXECUTE
-
-class FunctionMortonDecode: public TargetSpecific::Default::FunctionMortonDecode
-{
-public:
-    explicit FunctionMortonDecode(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-                                        TargetSpecific::Default::FunctionMortonDecode>();
-
-#if USE_MULTITARGET_CODE && defined(MORTON_ND_BMI2_ENABLED)
-        selector.registerImplementation<TargetArch::x86_64_v3,
-                                        TargetSpecific::x86_64_v3::FunctionMortonDecode>();
-#endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionMortonDecode>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
-};
 
 // NOLINTEND(bugprone-switch-missing-default-case)
 
