@@ -701,8 +701,11 @@ void materializeConstantsForUnionBranches(QueryPlan::Node & root, QueryPlan::Nod
 
         if (frame.next_child < frame.node->children.size())
         {
-            stack.push_back({.node = frame.node->children[frame.next_child]});
+            /// Advance and read the child before pushing: push_back may reallocate the stack and
+            /// invalidate `frame`, so it must not be touched afterwards.
+            auto * child = frame.node->children[frame.next_child];
             ++frame.next_child;
+            stack.push_back({.node = child});
             continue;
         }
 
