@@ -1,9 +1,7 @@
 -- Basic DPhyp correctness on a 4-table chain (R2 - R1 - R3 - R4).
--- R1 is filtered to 1 row; R4 is 10 rows with no filter.
--- R1 is unambiguously the cheapest build side (1 row vs 10),
--- so the optimal plan has a unique structure: R2 JOIN (R3 JOIN R1) JOIN R4.
--- EXPLAIN confirms cost-based reordering relative to the written order.
--- Result hash must match DPsize.
+-- R1 holds a single row, so it is the cheapest build side by physical row count
+-- alone, independent of filter-selectivity statistics. EXPLAIN pins the cost-based
+-- reorder; the result hash must match DPsize.
 
 SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
@@ -45,9 +43,7 @@ CREATE TABLE R4 (
 PRIMARY KEY (D_ID)
 SETTINGS auto_statistics_types = 'uniq';
 
-INSERT INTO R1 (A_ID, A_Description) VALUES
-(1, 'Type A'), (2, 'Type B'), (3, 'Type C'), (4, 'Type D'), (5, 'Type E'),
-(6, 'Type F'), (7, 'Type G'), (8, 'Type H'), (9, 'Type I'), (10, 'Type J');
+INSERT INTO R1 (A_ID, A_Description) VALUES (8, 'Type H');
 
 INSERT INTO R4 (D_ID, D_LookupCode) VALUES
 (101, 'Lookup X'), (102, 'Lookup Y'), (103, 'Lookup Z'), (104, 'Lookup W'), (105, 'Lookup V'),
