@@ -636,3 +636,113 @@ TEST(ColumnsScatter, LowCardinalityPreservesType)
         assertColumnsEqual(*got_full, *ref[s]);
     }
 }
+
+TEST(ColumnsScatter, FallbackArrayMixedNestedRepresentation)
+{
+    // Array(UInt64) goes through scatterFallback because it has no fast-path dispatch
+    // entry. When one chunk has a full nested ColumnUInt64 and another has a
+    // ColumnSparse(UInt64) nested column with the same logical values, the cross-chunk
+    // insertRangeFrom in scatterFallback must not fail due to representation mismatch.
+    // Before the fix, ColumnUInt64::insertRangeFrom asserts-cast on the sparse source
+    // and causes a failure in sanitized builds.
+    constexpr size_t NUM_SHARDS = 3;
+    const size_t N = 8;
+
+    // Chunk 0: full nested data. Each row is a single-element array [[1],[2],...,[N]].
+    auto make_full_array = [](size_t n) -> ColumnPtr
+    {
+        auto data = ColumnUInt64::create();
+        auto offs = ColumnArray::ColumnOffsets::create();
+        for (size_t i = 0; i < n; ++i)
+        {
+            data->insertValue(static_cast<UInt64>(i + 1));
+            offs->insertValue(static_cast<UInt64>(i + 1));
+        }
+        return ColumnArray::create(std::move(data), std::move(offs));
+    };
+
+    // Chunk 1: sparse nested data with identical logical values [[1],[2],...,[N]].
+    // ColumnSparse: values[0] = default (0), values[k] = k for k = 1..N.
+    // All positions 0..N-1 are non-default (listed in offsets).
+    auto make_sparse_array = [](size_t n) -> ColumnPtr
+    {
+        auto vals = ColumnUInt64::create();
+        vals->insertValue(0); // default value at index 0 of vals
+        auto sparse_offs = ColumnUInt64::create();
+        for (size_t i = 0; i < n; ++i)
+        {
+            vals->insertValue(static_cast<UInt64>(i + 1)); // non-default value
+            sparse_offs->insertValue(static_cast<UInt64>(i)); // position i is non-default
+        }
+        auto sparse_nested = ColumnSparse::create(std::move(vals), std::move(sparse_offs), n);
+        auto offs = ColumnArray::ColumnOffsets::create();
+        for (size_t i = 0; i < n; ++i)
+            offs->insertValue(static_cast<UInt64>(i + 1));
+        return ColumnArray::create(std::move(sparse_nested), std::move(offs));
+    };
+
+    auto full_col = make_full_array(N);
+    auto sparse_col = make_sparse_array(N);
+
+    std::vector<std::vector<UInt32>> pids = {randomPids(N, NUM_SHARDS), randomPids(N, NUM_SHARDS)};
+
+    std::vector<const IColumn *> col_ptrs = {full_col.get(), sparse_col.get()};
+    std::vector<std::span<const UInt32>> pid_spans = {pids[0], pids[1]};
+    // Must not throw or produce garbage despite mismatched nested representations.
+    auto got = ColumnsScatter::scatter(col_ptrs, pid_spans, NUM_SHARDS);
+
+    // Oracle: scatter two full-nested arrays with the same values and same pids.
+    auto ref_col0 = make_full_array(N);
+    auto ref_col1 = make_full_array(N);
+    std::vector<const IColumn *> ref_ptrs = {ref_col0.get(), ref_col1.get()};
+    auto ref = referenceScatter(ref_ptrs, pids, NUM_SHARDS);
+
+    ASSERT_EQ(got.size(), NUM_SHARDS);
+    for (size_t s = 0; s < NUM_SHARDS; ++s)
+        assertColumnsEqual(*got[s], *ref[s]);
+}
+
+TEST(ColumnsScatter, ConstColumnStaysCompact)
+{
+    // A homogeneous batch of equal-valued ColumnConst sources must not be
+    // materialized into full columns: scatter() must return ColumnConst per shard,
+    // preserving O(1)-memory behavior for constant-key workloads like GROUP BY
+    // toUInt64(1). Before the fix, the batch was expanded via materializeTransparentWrappers
+    // before the all-const check existed.
+    constexpr size_t NUM_SHARDS = 4;
+    constexpr UInt64 kValue = 99;
+
+    auto make_const = [](size_t n) -> ColumnPtr
+    {
+        auto one = ColumnUInt64::create();
+        one->insertValue(kValue);
+        return ColumnConst::create(std::move(one), n);
+    };
+
+    std::vector<ColumnPtr> cols = {make_const(100), make_const(200), make_const(150)};
+    std::vector<std::vector<UInt32>> pids = {
+        randomPids(100, NUM_SHARDS),
+        randomPids(200, NUM_SHARDS),
+        randomPids(150, NUM_SHARDS),
+    };
+
+    std::vector<const IColumn *> col_ptrs(cols.size());
+    std::vector<std::span<const UInt32>> pid_spans(cols.size());
+    for (size_t b = 0; b < cols.size(); ++b)
+    {
+        col_ptrs[b] = cols[b].get();
+        pid_spans[b] = pids[b];
+    }
+    auto got = ColumnsScatter::scatter(col_ptrs, pid_spans, NUM_SHARDS);
+
+    ASSERT_EQ(got.size(), NUM_SHARDS);
+    size_t total_rows = 0;
+    for (size_t s = 0; s < NUM_SHARDS; ++s)
+    {
+        ASSERT_TRUE(got[s]->isConst()) << "shard " << s << " must remain ColumnConst (no materialization)";
+        for (size_t i = 0; i < got[s]->size(); ++i)
+            ASSERT_EQ((*got[s])[i], Field(UInt64(kValue)));
+        total_rows += got[s]->size();
+    }
+    ASSERT_EQ(total_rows, 100u + 200u + 150u);
+}
