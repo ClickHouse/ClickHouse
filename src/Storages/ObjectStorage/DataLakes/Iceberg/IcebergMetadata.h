@@ -83,7 +83,6 @@ public:
         LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
-    void update(const ContextPtr & local_context) override;
     bool supportsWrites() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
 
@@ -173,7 +172,7 @@ private:
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
-    DB::Iceberg::PersistentTableComponents persistent_components;
+    const DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
