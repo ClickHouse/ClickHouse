@@ -573,6 +573,22 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     if (args.size() == 1)
     {
         std::array<DatabaseDataLakeCatalogType, 3> vended_credentials_catalogs = {DatabaseDataLakeCatalogType::ICEBERG_ONELAKE, DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE, DatabaseDataLakeCatalogType::PAIMON_REST};
+
+        /// Some catalogs manage their own AWS credential provider chain (e.g. Glue uses the
+        /// database `aws_*` settings to authenticate to the catalog API and to drive STS
+        /// assume-role / instance-profile / web-identity providers, refreshed via
+        /// `getCredentialsConfigurationCallback`). For such catalogs the `aws_*` settings are
+        /// not authoritative static table-storage credentials: consuming them here would build
+        /// the S3 client from the raw key pair without the assumed-role/session-token identity
+        /// and would also suppress the provider-chain refresh callback below. So we only fall
+        /// back to static credentials for catalogs whose refresh callback vends storage
+        /// credentials (Unity/REST), which is exactly the case this fallback targets.
+        const bool catalog_manages_provider_chain = catalog->getCatalogType() == DatabaseDataLakeCatalogType::GLUE;
+
+        std::shared_ptr<DataLake::IStorageCredentials> static_credentials;
+        if (!catalog_manages_provider_chain)
+            static_credentials = DataLake::tryGetStaticStorageCredentials(storage_type, settings);
+
         if (table_metadata.hasStorageCredentials())
         {
             LOG_DEBUG(log, "Getting credentials");
@@ -587,7 +603,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                 LOG_DEBUG(log, "Has no credentials");
             }
         }
-        else if (auto static_credentials = DataLake::tryGetStaticStorageCredentials(storage_type, settings))
+        else if (static_credentials)
         {
             LOG_TRACE(log, "Using static credentials from database settings");
             static_credentials->addCredentialsToEngineArgs(args);
