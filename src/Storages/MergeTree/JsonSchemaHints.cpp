@@ -3,6 +3,7 @@
 #include <Columns/ColumnObject.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -97,6 +98,50 @@ JsonSchemaHints parseJsonSchemaHints(const String & hints_json)
 }
 
 
+void validateJsonSchemaHints(
+    const JsonSchemaHints & hints,
+    const StorageMetadataPtr & metadata_snapshot)
+{
+    if (hints.empty())
+        return;
+
+    /// Collect partition key column names.
+    std::unordered_set<String> partition_key_columns;
+    if (metadata_snapshot->hasPartitionKey())
+    {
+        const auto & partition_key = metadata_snapshot->getPartitionKey();
+        for (const auto & col : partition_key.sample_block.getColumnsWithTypeAndName())
+            partition_key_columns.insert(col.name);
+    }
+
+    for (const auto & [column_name, rules] : hints)
+    {
+        for (const auto & rule : rules)
+        {
+            if (rule.when_expression.empty())
+                continue;
+
+            /// Parse the when expression and extract all referenced identifiers.
+            ParserExpressionWithOptionalAlias parser(false);
+            auto ast = parseQuery(parser, rule.when_expression, 0, 0, 0);
+
+            IdentifierNameSet identifiers;
+            ast->collectIdentifierNames(identifiers);
+
+            for (const auto & id : identifiers)
+            {
+                if (!partition_key_columns.contains(id))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "json_schema_hints: `when` expression '{}' references column '{}' "
+                        "which is not part of the partition key. "
+                        "`when` expressions may only reference partition key columns.",
+                        rule.when_expression, id);
+            }
+        }
+    }
+}
+
+
 static bool evaluateWhenExpression(
     const String & when_expr,
     const MergeTreePartition & partition,
@@ -156,6 +201,11 @@ void applyJsonSchemaHints(
             if (!evaluateWhenExpression(rule.when_expression, partition, metadata_snapshot))
                 continue;
 
+            /// Pre-create Dynamic paths for all hinted paths.
+            /// This guarantees each hinted path gets its own ColumnDynamic
+            /// subcolumn (won't be squeezed into shared data).
+            /// Layer 1 auto-narrowing will then store these single-typed
+            /// Dynamic paths as plain typed columns on disk.
             for (const auto & [path, _type_name] : rule.paths)
             {
                 if (column_object->getTypedPaths().contains(path))
@@ -166,7 +216,7 @@ void applyJsonSchemaHints(
                 column_object->tryToAddNewDynamicPath(path);
             }
 
-            break;
+            break; /// First matching rule wins.
         }
     }
 }

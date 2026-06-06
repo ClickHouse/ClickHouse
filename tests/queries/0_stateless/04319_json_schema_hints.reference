@@ -15,3 +15,4 @@
 -- 5. after reattach
 1	10	true	12345
 2	5	false	67890
+-- 6. validation error

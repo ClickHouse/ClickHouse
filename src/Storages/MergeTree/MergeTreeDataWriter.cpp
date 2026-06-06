@@ -673,6 +673,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if (!hints_json.empty())
     {
         auto hints = parseJsonSchemaHints(String(hints_json));
+        validateJsonSchemaHints(hints, metadata_snapshot);
         applyJsonSchemaHints(block, partition, hints, metadata_snapshot);
     }
 

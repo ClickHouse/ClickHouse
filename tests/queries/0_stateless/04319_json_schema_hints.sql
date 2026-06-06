@@ -122,9 +122,32 @@ SELECT '-- 5. after reattach';
 SELECT id, payload.battle_type, payload.win, payload.damage FROM t_hint WHERE action_type = 4 ORDER BY id;
 
 -- ============================================================
+-- 6. Validation: when expression referencing non-partition-key column should fail
+-- ============================================================
+DROP TABLE IF EXISTS t_hint_invalid;
+CREATE TABLE t_hint_invalid
+(
+    id UInt64,
+    action_type Int32,
+    other_col String,
+    payload JSON
+)
+ENGINE = MergeTree
+PARTITION BY action_type
+ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 0,
+    min_rows_for_wide_part = 0,
+    json_schema_hints = '{"payload": [{"when": "other_col = 1", "paths": {"f": "String"}}]}';
+
+SELECT '-- 6. validation error';
+INSERT INTO t_hint_invalid VALUES (1, 1, 'x', '{"f": "hello"}'); -- {serverError BAD_ARGUMENTS}
+
+-- ============================================================
 -- Cleanup
 -- ============================================================
 DROP TABLE IF EXISTS t_hint;
 DROP TABLE IF EXISTS t_hint_in;
 DROP TABLE IF EXISTS t_hint_nomatch;
 DROP TABLE IF EXISTS t_hint_alter;
+DROP TABLE IF EXISTS t_hint_invalid;

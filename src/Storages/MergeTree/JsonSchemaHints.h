@@ -25,10 +25,21 @@ using JsonSchemaHints = std::unordered_map<String, JsonSchemaHintRules>;
 /// Throws on invalid JSON or unknown column references.
 JsonSchemaHints parseJsonSchemaHints(const String & hints_json);
 
+/// Validate that all `when` expressions in hints only reference columns
+/// that appear in the partition key. Throws BAD_ARGUMENTS on violation.
+void validateJsonSchemaHints(
+    const JsonSchemaHints & hints,
+    const StorageMetadataPtr & metadata_snapshot);
+
 /// Evaluate hint rules against partition key values and apply matched hints
-/// to ColumnObject columns in the block. Pre-creates Dynamic paths for
-/// hinted paths, ensuring they get their own ColumnDynamic subcolumn
-/// (instead of potentially falling into shared data).
+/// to ColumnObject columns in the block.
+///
+/// For the matched rule, each hinted path is pre-created as a Dynamic
+/// subcolumn via tryToAddNewDynamicPath, ensuring it gets its own
+/// ColumnDynamic storage (won't be squeezed into shared data by
+/// max_dynamic_paths). Layer 1 auto-narrowing then stores these
+/// homogeneous Dynamic paths as plain typed columns (2 or 4 files
+/// instead of ~10).
 ///
 /// @param block - the data block being written (columns may be mutated)
 /// @param partition - the partition key values for this block
