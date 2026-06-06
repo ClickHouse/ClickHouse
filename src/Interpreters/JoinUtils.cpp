@@ -483,33 +483,43 @@ bool markFloatNaNRowsAsNullImpl(const IColumn & column, PaddedPODArray<UInt8> & 
         return found;
     }
 
+    if (column.isSparse())
+    {
+        /// `ColumnSparse` carries the non-default values in a packed inner column with its own
+        /// row offsets, so the leaf float branch's `data.size() == mutable_null_map.size()`
+        /// invariant does not hold against the sparse representation. Materialise once and
+        /// recurse on the dense form. Direct joins and runtime-filter builds can see sparse
+        /// columns directly; `HashJoin` and `full_sorting_merge` already materialise upstream.
+        ColumnPtr full = column.convertToFullColumnIfSparse();
+        return markFloatNaNRowsAsNullImpl(*full, mutable_null_map, is_null);
+    }
+
     if (const auto * col_const = typeid_cast<const ColumnConst *>(&column))
     {
         /// Direct joins pass the original probe key column without first calling
         /// `convertToFullColumnIfConst`, so a constant `NaN` (e.g. `ON nan = rd.k`) reaches
-        /// this helper as a `ColumnConst(ColumnFloat*(NaN), N)`. Marking all `mutable_null_map`
-        /// entries when the underlying scalar is `NaN` keeps the constant-probe semantics in
-        /// line with the materialized path: every row is treated as never-matching.
-        if (markFloatNaNRowsAsNullImpl(col_const->getDataColumn(), mutable_null_map, is_null))
+        /// this helper as a `ColumnConst(ColumnFloat*(NaN), N)`. The data column has size 1,
+        /// so we cannot recurse with the full-size `mutable_null_map`: the leaf's
+        /// `data.size() == mutable_null_map.size()` `chassert` would trip in debug/ASan.
+        /// Evaluate the scalar into a one-row mask, then spread across rows not excluded by
+        /// `is_null`.
+        PaddedPODArray<UInt8> scalar_mask(1, 0);
+        if (!markFloatNaNRowsAsNullImpl(col_const->getDataColumn(), scalar_mask, /* is_null = */ nullptr) || !scalar_mask[0])
+            return false;
+
+        const size_t size = mutable_null_map.size();
+        if (is_null)
         {
-            /// `markNaNsOfFloatColumn` may have updated only `mutable_null_map[0]` because the
-            /// data column has size 1. Spread the mark across all rows that are not already
-            /// excluded by `is_null`.
-            const size_t size = mutable_null_map.size();
-            if (is_null)
-            {
-                for (size_t i = 1; i < size; ++i)
-                    if (is_null[i] == 0)
-                        mutable_null_map[i] = 1;
-            }
-            else
-            {
-                for (size_t i = 1; i < size; ++i)
+            for (size_t i = 0; i < size; ++i)
+                if (is_null[i] == 0)
                     mutable_null_map[i] = 1;
-            }
-            return true;
         }
-        return false;
+        else
+        {
+            for (size_t i = 0; i < size; ++i)
+                mutable_null_map[i] = 1;
+        }
+        return true;
     }
 
     /// Any other column type (integers, strings, dates, ...) cannot carry a float `NaN`.
@@ -542,6 +552,12 @@ bool joinKeyContainsFloatPayload(const IColumn & column)
 
     if (const auto * col_const = typeid_cast<const ColumnConst *>(&column))
         return joinKeyContainsFloatPayload(col_const->getDataColumn());
+
+    if (column.isSparse())
+    {
+        ColumnPtr full = column.convertToFullColumnIfSparse();
+        return joinKeyContainsFloatPayload(*full);
+    }
 
     return false;
 }

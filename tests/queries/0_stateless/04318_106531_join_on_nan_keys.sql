@@ -351,6 +351,60 @@ SELECT count() FROM l_tnf INNER JOIN r_tnf ON l_tnf.k = r_tnf.k SETTINGS join_al
 DROP TABLE IF EXISTS l_tnf;
 DROP TABLE IF EXISTS r_tnf;
 
+-- A constant `NaN` probe key reaches `markFloatNaNRowsAsNull` as `ColumnConst(ColumnFloat64(NaN), N)`
+-- where `N > 1`. An earlier version of the `ColumnConst` branch recursed into the one-row data
+-- column while keeping the full-size `mutable_null_map`, tripping the leaf branch's
+-- `chassert(data.size() == mutable_null_map.size())` in debug/ASan builds. The branch now evaluates
+-- the scalar into a one-row mask, then spreads the mark across all rows that are not excluded by
+-- `is_null`. Direct joins reject constant `JOIN ON` keys (`NOT_IMPLEMENTED`), so this is exercised
+-- via `hash` (which already materialises `ColumnConst` upstream, but the helper must still survive
+-- a direct call from the runtime-filter path on a constant build column without tripping the assert).
+CREATE TABLE ldc (k Float64, v String) ENGINE = Memory();
+CREATE TABLE rdc (k Float64, w Int32) ENGINE = Memory();
+INSERT INTO ldc VALUES (1.5, 'm-l'), (nan, 'nan-l'), (2.5, 'unmatched');
+INSERT INTO rdc VALUES (1.5, 100);
+
+SET join_algorithm = 'hash';
+SET enable_analyzer = 1;
+
+SELECT '--- hash INNER constant nan probe key ---';
+SELECT v FROM (SELECT ldc.v FROM ldc INNER JOIN rdc ON CAST(nan AS Float64) = rdc.k) ORDER BY v;
+
+SELECT '--- hash LEFT ANTI constant nan probe key ---';
+SELECT v FROM (SELECT ldc.v FROM ldc LEFT ANTI JOIN rdc ON CAST(nan AS Float64) = rdc.k) ORDER BY v;
+
+DROP TABLE IF EXISTS ldc;
+DROP TABLE IF EXISTS rdc;
+SET join_algorithm = 'default';
+
+-- `ColumnSparse` Float64 build-side key (`rs.k`): a sparse representation packs non-default
+-- values into an inner column with row offsets, so an earlier version of the helpers fell
+-- through the type dispatch and never marked `NaN` rows. The runtime-filter build over a
+-- sparse `NaN` key is the most direct exercise: without unwrap, the build side stores a
+-- sparse `NaN` entry into the `Set`, then a probe with the same `NaN` bit pattern is wrongly
+-- pre-filtered out before the join sees it (LEFT ANTI then drops the `NaN` row that should
+-- be kept). The right-side data is 95% default `0.0` and ~5% `NaN`, which forces sparse
+-- serialisation under the default `ratio_of_defaults_for_sparse_serialization = 0.9375`.
+CREATE TABLE ls_dense (k Float64, v String) ENGINE = Memory();
+CREATE TABLE rs_sparse (k Float64) ENGINE = MergeTree() ORDER BY tuple();
+
+INSERT INTO ls_dense VALUES (nan, 'nan-l'), (1.5, 'm'), (2.5, 'unmatched');
+-- 100 rows: 95 default `0.0`, 5 `NaN`. Triggers sparse serialisation for `k`.
+INSERT INTO rs_sparse SELECT if(number < 5, nan, 0.0) FROM numbers(100);
+
+SET join_algorithm = 'hash';
+SET enable_analyzer = 1;
+SET enable_join_runtime_filters = 1;
+
+SELECT '--- hash+rf LEFT ANTI sparse build-side NaN ---';
+SELECT v FROM (SELECT ls_dense.v FROM ls_dense LEFT ANTI JOIN rs_sparse ON ls_dense.k = rs_sparse.k) ORDER BY v;
+
+SET enable_join_runtime_filters = 0;
+SET join_algorithm = 'default';
+
+DROP TABLE IF EXISTS ls_dense;
+DROP TABLE IF EXISTS rs_sparse;
+
 -- `GROUP BY` and `DISTINCT` on `NaN` must remain unchanged (they intentionally
 -- group all NaNs together, unlike `JOIN ON`).
 SELECT '--- GROUP BY nan ---';

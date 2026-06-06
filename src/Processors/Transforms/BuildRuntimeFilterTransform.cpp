@@ -180,6 +180,14 @@ void markNaNRowsImpl(const IColumn & column, IColumn::Filter & nan_mask, const U
             markNaNRowsImpl(tuple->getColumn(i), nan_mask, is_null);
         return;
     }
+    if (column.isSparse())
+    {
+        /// Build-side runtime-filter blocks may arrive sparse (e.g. when the source uses
+        /// sparse serialisation). Materialise once and recurse on the dense form.
+        ColumnPtr full = column.convertToFullColumnIfSparse();
+        markNaNRowsImpl(*full, nan_mask, is_null);
+        return;
+    }
     if (const auto * col_const = typeid_cast<const ColumnConst *>(&column))
     {
         /// Defence-in-depth: the build-side block of a runtime filter does not normally

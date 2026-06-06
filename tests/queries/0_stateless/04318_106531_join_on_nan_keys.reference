@@ -102,6 +102,15 @@ null-l
 unmatched
 --- hash INNER Tuple(Nullable(Float64)) null-safe match w/ NaN trash payload ---
 1
+--- hash INNER constant nan probe key ---
+--- hash LEFT ANTI constant nan probe key ---
+m-l
+nan-l
+unmatched
+--- hash+rf LEFT ANTI sparse build-side NaN ---
+m
+nan-l
+unmatched
 --- GROUP BY nan ---
 1.5	1
 nan	2
