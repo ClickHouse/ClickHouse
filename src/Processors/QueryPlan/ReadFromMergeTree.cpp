@@ -4768,13 +4768,15 @@ namespace
 void ReadFromMergeTree::serialize(Serialization & ctx) const
 {
     /// Serializing the STREAM modifier is not implemented yet, so reject it instead of silently
-    /// reading a plain snapshot with different semantics.
+    /// reading a plain snapshot. (Pinned block boundaries and part-order virtual columns are rejected
+    /// earlier in checkDistributedReadSupported.)
     if (query_info.isStream())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support a distributed read with the STREAM modifier");
 
-    /// Serialization does not yet carry read-in-order, deferred FINAL filters, or a selected
-    /// projection; refuse to distribute reads relying on them rather than read with wrong semantics.
+    /// Needed only for a bucketed read: it is pinned to the coordinator's part list and cannot
+    /// re-derive read-in-order, deferred FINAL filters, a projection, or text index tasks. A
+    /// non-bucket read is rebuilt and re-optimized on the worker, which re-derives them.
     if (distributed_read_bucket_count > 0)
     {
         if (query_info.input_order_info)

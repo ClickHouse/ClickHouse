@@ -264,6 +264,10 @@ public:
 
     const Names & getAllColumnNames() const { return all_column_names; }
 
+    /// True if a coordinator-side snapshot boundary is pinned (e.g. select_sequential_consistency).
+    /// Such a read cannot be distributed: a worker reads from its own snapshot and cannot reproduce it.
+    bool hasPinnedBlockNumbers() const { return max_block_numbers_to_read != nullptr; }
+
     StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }

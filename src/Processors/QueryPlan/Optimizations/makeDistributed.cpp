@@ -49,6 +49,7 @@ void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node);
 void optimizeExchanges(QueryPlan::Node & root);
 void materializeConstantsForUnionBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
+void checkDistributedReadSupported(const QueryPlan::Node & root);
 Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step);
 String dumpQueryPlanShort(const QueryPlan & query_plan);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
@@ -75,6 +76,35 @@ bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
             stack.push_back(child);
     }
     return false;
+}
+
+/// Rejects distributed reads a worker cannot reproduce: a pinned snapshot boundary
+/// (select_sequential_consistency) or the part-order virtual columns `_part_index` /
+/// `_part_starting_offset`. Done at planning time so it fails cleanly before the pipeline is built.
+void checkDistributedReadSupported(const QueryPlan::Node & root)
+{
+    std::vector<const QueryPlan::Node *> stack = {&root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
+        {
+            if (read->hasPinnedBlockNumbers())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "make_distributed_plan does not support a distributed read with a pinned block-number "
+                    "boundary (for example select_sequential_consistency)");
+
+            for (const auto & column : read->getAllColumnNames())
+                if (column == "_part_index" || column == "_part_starting_offset")
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "make_distributed_plan does not support a distributed read exposing the {} virtual column", column);
+        }
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
 }
 
 /// Replaces LogicalJoin step with a subtree like this:
@@ -559,19 +589,26 @@ void optimizeExchanges(QueryPlan::Node & root)
                 {
                     SharedHeader expression_header = frame.node->step->getOutputHeader();
 
+                    const ActionsDAG * dag = nullptr;
+                    if (auto * expr = typeid_cast<ExpressionStep *>(frame.node->step.get()))
+                        dag = &expr->getExpression();
+                    else if (auto * filter = typeid_cast<FilterStep *>(frame.node->step.get()))
+                        dag = &filter->getExpression();
+
+                    bool can_move_gather_up = true;
+
+                    /// Per-block functions (`rowNumberInAllBlocks`, `blockNumber`, `nowInBlock`, ...)
+                    /// depend on the whole block stream; below a gather they would run per shard and
+                    /// produce different values. Keep such a step above the gather.
+                    if (dag && dagContainsNonDeterministicFunction(*dag))
+                        can_move_gather_up = false;
+
                     /// Moving the sorted GatherExchange above the step is only valid if every sort column
                     /// survives the step unchanged - otherwise GatherReceive would merge by a sort
                     /// description that no longer matches the data. Expression/Filter may recompute or
                     /// rename columns, so check their DAG; BuildRuntimeFilter leaves column values intact.
-                    bool can_move_gather_up = true;
-                    if (gather_step->getMaintainSortDescription())
+                    if (can_move_gather_up && gather_step->getMaintainSortDescription())
                     {
-                        const ActionsDAG * dag = nullptr;
-                        if (auto * expr = typeid_cast<ExpressionStep *>(frame.node->step.get()))
-                            dag = &expr->getExpression();
-                        else if (auto * filter = typeid_cast<FilterStep *>(frame.node->step.get()))
-                            dag = &filter->getExpression();
-
                         const auto & sort_description = gather_step->getMaintainSortDescription().value();
                         for (const auto & column : sort_description)
                         {
