@@ -1,0 +1,17 @@
+-- 1. basic hint query
+1	10	true	12345
+2	5	false	67890
+3	100	5
+4	200	10
+-- 2. IN expression hint
+1	6800	ord_001
+2	1200	ord_002
+3	no hint for this
+-- 3. no matching hint
+1	hello
+-- 4. ALTER MODIFY SETTING
+1	60	\N
+2	45	added_by_hint
+-- 5. after reattach
+1	10	true	12345
+2	5	false	67890

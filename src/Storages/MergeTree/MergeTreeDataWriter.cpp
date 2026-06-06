@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
+#include <Storages/MergeTree/JsonSchemaHints.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -92,6 +93,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
     extern const MergeTreeSettingsString exclude_materialize_skip_indexes_on_merge;
+    extern const MergeTreeSettingsString json_schema_hints;
     extern const MergeTreeSettingsUInt64 min_free_disk_bytes_to_perform_insert;
     extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
     extern const MergeTreeSettingsBool optimize_row_order;
@@ -665,6 +667,14 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     const auto & data_settings = data.getSettings();
     const auto & global_settings = context->getSettingsRef();
+
+    /// Apply JSON schema hints if configured.
+    const String hints_json = (*data_settings)[MergeTreeSetting::json_schema_hints];
+    if (!hints_json.empty())
+    {
+        auto hints = parseJsonSchemaHints(String(hints_json));
+        applyJsonSchemaHints(block, partition, hints, metadata_snapshot);
+    }
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 

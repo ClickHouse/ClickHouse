@@ -137,6 +137,7 @@ struct MergeTreeWriterSettings
     size_t min_columns_to_activate_adaptive_write_buffer{};
     size_t adaptive_write_buffer_initial_size{};
     bool compress_per_column_in_compact_parts{};
+    String json_schema_hints;
 };
 
 }

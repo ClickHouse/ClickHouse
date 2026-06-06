@@ -799,6 +799,13 @@ namespace ErrorCodes
     **See Also**
     - [Workload Scheduling](/operations/workload-scheduling.md)
     )", 0) \
+    DECLARE(String, json_schema_hints, "", R"(
+    JSON object specifying per-partition schema hints for JSON columns.
+    When a partition matches a hint rule, the specified paths are initialized
+    with declared types instead of being inferred from data, reducing Dynamic
+    type overhead. Format: {"column": [{"when": "expr", "paths": {"path": "Type"}}]}.
+    The `when` expression may only reference columns from the partition key.
+    )", 0) \
     DECLARE(Milliseconds, background_task_preferred_step_execution_time_ms, 50, R"(
     Target time to execution of one step of merge or mutation. Can be exceeded if
     one step takes longer time
