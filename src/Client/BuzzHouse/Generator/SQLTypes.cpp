@@ -2196,7 +2196,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
 
               if (rg.nextBool())
               {
-                  ntypes = std::optional<uint32_t>(rg.nextBool() ? rg.nextSmallNumber() : rg.randomInt<uint32_t>(1, 100));
+                  ntypes = std::optional<uint32_t>(rg.randomInt<uint32_t>(0, rg.nextBool() ? 10 : 100));
                   if (dyn)
                   {
                       dyn->set_ntypes(ntypes.value());
