@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-replicated-database
+-- Tags: no-parallel
 
 DROP QUOTA IF EXISTS q1_01297, q2_01297, q3_01297, q4_01297, q5_01297, q6_01297, q7_01297, q8_01297, q9_01297,
 q10_01297, q11_01297, q12_01297, q13_01297, q14_01297, q15_01297, q16_01297, q17_01297,q18_01297;
@@ -122,7 +122,7 @@ CREATE QUOTA q1_01297 KEYED BY user_name TO r1_01297;
 CREATE QUOTA q2_01297 FOR 2 MONTH MAX errors = 11, queries = 100, result_rows = 1000, result_bytes = 10000, read_rows = 1001, read_bytes = 10001, execution_time=2.5 TO r1_01297, u1_01297;
 CREATE QUOTA q3_01297 KEYED BY client_key, user_name FOR 0.5 YEAR ERRORS MAX 11, QUERIES MAX 100, FOR 2 MONTH RESULT ROWS MAX 1002;
 CREATE QUOTA q4_01297 FOR 1 WEEK TRACKING ONLY TO ALL EXCEPT u1_01297;
-SELECT name, storage, keys, durations, apply_to_all, apply_to_list, apply_to_except FROM system.quotas WHERE name LIKE 'q%\_01297' ORDER BY name;
+SELECT name, if(storage = 'replicated', 'local_directory', storage), keys, durations, apply_to_all, apply_to_list, apply_to_except FROM system.quotas WHERE name LIKE 'q%\_01297' ORDER BY name;
 
 SELECT '-- system.quota_limits';
 SELECT * FROM system.quota_limits WHERE quota_name LIKE 'q%\_01297' ORDER BY quota_name, duration;

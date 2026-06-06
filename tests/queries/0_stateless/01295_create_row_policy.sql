@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-replicated-database
+-- Tags: no-parallel
 
 DROP ROW POLICY IF EXISTS p1_01295, p2_01295, p3_01295, p4_01295, p5_01295, p6_01295, p7_01295, p8_01295, p9_01295, p10_01295 ON db.table;
 DROP ROW POLICY IF EXISTS p2_01295_renamed ON db.table;
@@ -74,7 +74,7 @@ SELECT '-- system.row_policies';
 CREATE ROW POLICY p1_01295 ON db.table USING a<b AND c>d;
 CREATE ROW POLICY p2_01295 ON db.table USING id=currentUser() AS RESTRICTIVE TO u1_01295;
 CREATE ROW POLICY p3_01295 ON db.table USING 1 AS PERMISSIVE TO ALL EXCEPT r1_01295;
-SELECT name, short_name, database, table, storage, select_filter, is_restrictive, apply_to_all, apply_to_list, apply_to_except from system.row_policies WHERE short_name LIKE 'p%\_01295' ORDER BY name;
+SELECT name, short_name, database, table, if(storage = 'replicated', 'local_directory', storage), select_filter, is_restrictive, apply_to_all, apply_to_list, apply_to_except from system.row_policies WHERE short_name LIKE 'p%\_01295' ORDER BY name;
 DROP ROW POLICY p1_01295, p2_01295, p3_01295 ON db.table;
 
 DROP ROLE r1_01295;
