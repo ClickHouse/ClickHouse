@@ -1460,6 +1460,14 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
     return log_info;
 }
 
+std::vector<KeeperChangelogStatus> KeeperServer::getChangelogsStatus() const
+{
+    auto log_store = state_manager->load_log_store();
+    if (log_store)
+        return static_cast<const KeeperLogStore &>(*log_store).getChangelogsStatus();
+    return {};
+}
+
 bool KeeperServer::requestLeader()
 {
     return isLeader() || raft_instance->request_leadership();
