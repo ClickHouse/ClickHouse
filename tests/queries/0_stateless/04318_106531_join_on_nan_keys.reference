@@ -58,6 +58,31 @@ null-l
 nan-l
 nan-r-side
 unmatched
+--- hash INNER tuple(Float64) ---
+m
+--- hash ANTI tuple(Float64) ---
+nan-l
+unmatched
+--- full_sorting_merge INNER tuple(Float64) ---
+m
+--- hash INNER tuple(Float64, Float64) ---
+m
+--- hash ANTI tuple(Float64, Float64) ---
+nan-l-k1
+nan-l-k2
+unmatched
+--- full_sorting_merge INNER tuple(Float64, Float64) ---
+m
+--- hash INNER tuple(Nullable(Float64)) ---
+m
+null-l
+--- hash ANTI tuple(Nullable(Float64)) ---
+nan-l
+--- hash INNER tuple(LowCardinality(Nullable(Float64))) ---
+m
+null-l
+--- hash ANTI tuple(LowCardinality(Nullable(Float64))) ---
+nan-l
 --- GROUP BY nan ---
 1.5	1
 nan	2

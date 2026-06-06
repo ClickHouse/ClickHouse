@@ -9,7 +9,9 @@
 #include <base/defines.h>
 #include <base/types.h>
 
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -350,46 +352,98 @@ FullMergeJoinCursor::FullMergeJoinCursor(std::vector<size_t> key_indices_, bool 
 namespace
 {
 
-/// If `column` is a float column with at least one `NaN`, return a `NullMap` with the
-/// `NaN` rows marked, OR-folded over the existing `existing_null_map` (may be `nullptr`).
-/// Otherwise return `existing_null_map` unchanged. The result keeps `MergeJoin` from
-/// matching `NaN` keys against each other (issue #106531).
+/// OR-mark `NaN` rows of one float column into `mutable_null_map`. Returns whether any
+/// `NaN` was found. The caller has already verified `column` is the matching `ColumnVector<T>`.
 template <typename T>
-ColumnPtr foldNaNsIntoNullMapImpl(const ColumnPtr & existing_null_map, const ColumnVector<T> & vec)
+bool markNaNsOfFloatColumn(const ColumnVector<T> & vec, NullMap & mutable_null_map)
 {
     const auto & data = vec.getData();
     const size_t size = data.size();
-
-    auto result = ColumnUInt8::create(size, static_cast<UInt8>(0));
-    auto & result_data = result->getData();
-
-    const NullMap * existing_data = nullptr;
-    if (existing_null_map)
-        existing_data = &assert_cast<const ColumnUInt8 &>(*existing_null_map).getData();
+    chassert(mutable_null_map.size() == size);
 
     bool found = false;
     for (size_t i = 0; i < size; ++i)
     {
-        const UInt8 prev = existing_data ? (*existing_data)[i] : UInt8{0};
         const bool nan = isNaN(data[i]);
-        result_data[i] = prev | static_cast<UInt8>(nan);
+        mutable_null_map[i] |= static_cast<UInt8>(nan);
         found = found || nan;
     }
-
-    if (!found)
-        return existing_null_map; /// keep the original, possibly empty, holder
-    return result;
+    return found;
 }
 
-ColumnPtr foldFloatNaNsIntoNullMap(const ColumnPtr & existing_null_map, const IColumn & column)
+bool markNaNRows(const IColumn & column, NullMap & mutable_null_map);
+
+/// Recursively unwrap `Nullable`, `LowCardinality` and `Tuple` and OR-mark every row whose
+/// float payload is `NaN` into `mutable_null_map`. A row is dropped if ANY float element of a
+/// tuple is `NaN`, matching scalar tuple equality semantics (element-wise, with `NaN != NaN`).
+/// Already-NULL rows inside a `Nullable` are left alone for that branch - they are already
+/// excluded from the join via the existing null map.
+bool markNaNRows(const IColumn & column, NullMap & mutable_null_map)
 {
     if (const auto * f32 = typeid_cast<const ColumnFloat32 *>(&column))
-        return foldNaNsIntoNullMapImpl<Float32>(existing_null_map, *f32);
+        return markNaNsOfFloatColumn<Float32>(*f32, mutable_null_map);
     if (const auto * f64 = typeid_cast<const ColumnFloat64 *>(&column))
-        return foldNaNsIntoNullMapImpl<Float64>(existing_null_map, *f64);
+        return markNaNsOfFloatColumn<Float64>(*f64, mutable_null_map);
     if (const auto * bf16 = typeid_cast<const ColumnVector<BFloat16> *>(&column))
-        return foldNaNsIntoNullMapImpl<BFloat16>(existing_null_map, *bf16);
-    return existing_null_map;
+        return markNaNsOfFloatColumn<BFloat16>(*bf16, mutable_null_map);
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+    {
+        /// Outer `Nullable` is already peeled by `setChunk` before this helper runs. This
+        /// branch covers the `Tuple(Nullable(Float))` shape, where a tuple element is itself
+        /// `Nullable`. NULL rows are already in the join's null map, so it is safe to scan
+        /// the nested column directly.
+        return markNaNRows(nullable->getNestedColumn(), mutable_null_map);
+    }
+
+    if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&column))
+    {
+        /// Outer `LowCardinality` is peeled in `setChunk`; this is defence-in-depth for a
+        /// tuple element that is `LowCardinality(Nullable(Float))`.
+        ColumnPtr full = lc->convertToFullColumnIfLowCardinality();
+        return markNaNRows(*full, mutable_null_map);
+    }
+
+    if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
+    {
+        /// Recurse into every element. Tuple equality is element-wise: `(a, b) = (c, d)` iff
+        /// `a = c AND b = d`. With `NaN != NaN`, any `NaN` element breaks equality, so the
+        /// whole tuple row is treated as never-matching.
+        bool found = false;
+        const size_t tuple_size = tuple->tupleSize();
+        for (size_t i = 0; i < tuple_size; ++i)
+            found |= markNaNRows(tuple->getColumn(i), mutable_null_map);
+        return found;
+    }
+
+    /// Any other column type (integers, strings, dates, ...) cannot carry a float `NaN`.
+    return false;
+}
+
+/// If `column` carries a float payload anywhere (top-level, inside `Nullable`,
+/// `LowCardinality`, or `Tuple`) and at least one row has `NaN`, return a fresh `NullMap`
+/// with the `NaN` rows marked, OR-folded over the existing `existing_null_map` (may be
+/// `nullptr`). Otherwise return `existing_null_map` unchanged. The result keeps `MergeJoin`
+/// from matching `NaN` keys against each other (issue #106531).
+ColumnPtr foldFloatNaNsIntoNullMap(const ColumnPtr & existing_null_map, const IColumn & column)
+{
+    const size_t size = column.size();
+
+    auto result = ColumnUInt8::create(size, static_cast<UInt8>(0));
+    auto & result_data = result->getData();
+
+    if (existing_null_map)
+    {
+        const auto & existing_data = assert_cast<const ColumnUInt8 &>(*existing_null_map).getData();
+        chassert(existing_data.size() == size);
+        for (size_t i = 0; i < size; ++i)
+            result_data[i] = existing_data[i];
+    }
+
+    if (!markNaNRows(column, result_data))
+        return existing_null_map; /// no NaN found - keep the original, possibly empty, holder
+
+    return result;
 }
 
 }

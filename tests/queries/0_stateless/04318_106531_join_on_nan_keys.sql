@@ -193,6 +193,93 @@ SETTINGS enable_analyzer = 1, enable_join_runtime_filters = 1, join_algorithm = 
 DROP TABLE IF EXISTS lrf_t;
 DROP TABLE IF EXISTS rrf_t;
 
+-- Tuple-keyed `JOIN ON` regression coverage. The planner can wrap a single key in
+-- `tuple(...)` for null-safe comparison, and a user can write `ON tuple(l.k) = tuple(r.k)`
+-- explicitly. In both cases the key arrives at `extendJoinKeyNullMapWithFloatNaNs`
+-- (HashJoin) and `foldFloatNaNsIntoNullMap` (full_sorting_merge) as a `ColumnTuple`.
+-- Tuple equality is element-wise: `(a, b) = (c, d)` iff `a = c AND b = d`. With
+-- `NaN != NaN`, any `NaN` element breaks equality, so the row must be treated as
+-- never-matching. The fix recurses into `ColumnTuple` (and unwraps inner `Nullable` /
+-- `LowCardinality`) so the whole tuple row is folded into the join's null map.
+DROP TABLE IF EXISTS lt;
+DROP TABLE IF EXISTS rt;
+
+CREATE TABLE lt (k Float64, v String) ENGINE = Memory();
+CREATE TABLE rt (k Float64) ENGINE = Memory();
+INSERT INTO lt VALUES (1.5, 'm'), (nan, 'nan-l'), (2.5, 'unmatched');
+INSERT INTO rt VALUES (1.5), (nan);
+
+SELECT '--- hash INNER tuple(Float64) ---';
+SELECT v FROM (SELECT lt.v FROM lt INNER JOIN rt ON tuple(lt.k) = tuple(rt.k)) ORDER BY v;
+
+SELECT '--- hash ANTI tuple(Float64) ---';
+SELECT v FROM (SELECT lt.v FROM lt ANTI JOIN rt ON tuple(lt.k) = tuple(rt.k)) ORDER BY v;
+
+SET join_algorithm = 'full_sorting_merge';
+SELECT '--- full_sorting_merge INNER tuple(Float64) ---';
+SELECT v FROM (SELECT lt.v FROM lt INNER JOIN rt ON tuple(lt.k) = tuple(rt.k)) ORDER BY v;
+SET join_algorithm = 'default';
+
+DROP TABLE IF EXISTS lt;
+DROP TABLE IF EXISTS rt;
+
+-- Multi-element tuple `JOIN ON` where only ONE element is `NaN`. The whole tuple row
+-- must drop because tuple equality is element-wise.
+CREATE TABLE lt2 (k1 Float64, k2 Float64, v String) ENGINE = Memory();
+CREATE TABLE rt2 (k1 Float64, k2 Float64) ENGINE = Memory();
+INSERT INTO lt2 VALUES (1.5, 2.5, 'm'), (nan, 2.5, 'nan-l-k1'), (3.5, nan, 'nan-l-k2'), (4.5, 5.5, 'unmatched');
+INSERT INTO rt2 VALUES (1.5, 2.5), (nan, 2.5), (3.5, nan);
+
+SELECT '--- hash INNER tuple(Float64, Float64) ---';
+SELECT v FROM (SELECT lt2.v FROM lt2 INNER JOIN rt2 ON tuple(lt2.k1, lt2.k2) = tuple(rt2.k1, rt2.k2)) ORDER BY v;
+
+SELECT '--- hash ANTI tuple(Float64, Float64) ---';
+SELECT v FROM (SELECT lt2.v FROM lt2 ANTI JOIN rt2 ON tuple(lt2.k1, lt2.k2) = tuple(rt2.k1, rt2.k2)) ORDER BY v;
+
+SET join_algorithm = 'full_sorting_merge';
+SELECT '--- full_sorting_merge INNER tuple(Float64, Float64) ---';
+SELECT v FROM (SELECT lt2.v FROM lt2 INNER JOIN rt2 ON tuple(lt2.k1, lt2.k2) = tuple(rt2.k1, rt2.k2)) ORDER BY v;
+SET join_algorithm = 'default';
+
+DROP TABLE IF EXISTS lt2;
+DROP TABLE IF EXISTS rt2;
+
+-- `tuple(Nullable(Float64))` JOIN ON: the tuple element is itself `Nullable`, so the
+-- recursion must walk through the inner `ColumnNullable` to reach the float payload.
+-- Note: tuple equality is NULL-safe in ClickHouse (`tuple(NULL) = tuple(NULL)` matches),
+-- so `null-l` joins on the `(NULL) = (NULL)` row. NaN keys still drop because
+-- `NaN != NaN` per IEEE 754.
+CREATE TABLE ltn (k Nullable(Float64), v String) ENGINE = Memory();
+CREATE TABLE rtn (k Nullable(Float64)) ENGINE = Memory();
+INSERT INTO ltn VALUES (1.5, 'm'), (nan, 'nan-l'), (NULL, 'null-l');
+INSERT INTO rtn VALUES (1.5), (nan), (NULL);
+
+SELECT '--- hash INNER tuple(Nullable(Float64)) ---';
+SELECT v FROM (SELECT ltn.v FROM ltn INNER JOIN rtn ON tuple(ltn.k) = tuple(rtn.k)) ORDER BY v;
+
+SELECT '--- hash ANTI tuple(Nullable(Float64)) ---';
+SELECT v FROM (SELECT ltn.v FROM ltn ANTI JOIN rtn ON tuple(ltn.k) = tuple(rtn.k)) ORDER BY v;
+
+DROP TABLE IF EXISTS ltn;
+DROP TABLE IF EXISTS rtn;
+
+-- `tuple(LowCardinality(Nullable(Float64)))` JOIN ON: the tuple element is wrapped in
+-- both `LowCardinality` and `Nullable`. Both wrappers must be unwrapped recursively.
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE ltlc (k LowCardinality(Nullable(Float64)), v String) ENGINE = Memory();
+CREATE TABLE rtlc (k LowCardinality(Nullable(Float64))) ENGINE = Memory();
+INSERT INTO ltlc VALUES (1.5, 'm'), (nan, 'nan-l'), (NULL, 'null-l');
+INSERT INTO rtlc VALUES (1.5), (nan), (NULL);
+
+SELECT '--- hash INNER tuple(LowCardinality(Nullable(Float64))) ---';
+SELECT v FROM (SELECT ltlc.v FROM ltlc INNER JOIN rtlc ON tuple(ltlc.k) = tuple(rtlc.k)) ORDER BY v;
+
+SELECT '--- hash ANTI tuple(LowCardinality(Nullable(Float64))) ---';
+SELECT v FROM (SELECT ltlc.v FROM ltlc ANTI JOIN rtlc ON tuple(ltlc.k) = tuple(rtlc.k)) ORDER BY v;
+
+DROP TABLE IF EXISTS ltlc;
+DROP TABLE IF EXISTS rtlc;
+
 -- `GROUP BY` and `DISTINCT` on `NaN` must remain unchanged (they intentionally
 -- group all NaNs together, unlike `JOIN ON`).
 SELECT '--- GROUP BY nan ---';
