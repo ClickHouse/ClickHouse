@@ -361,7 +361,11 @@ Aggregator::Params::Params(
     , group_by_each_block_no_merge(group_by_each_block_no_merge_)
     , group_by_two_level_threshold(group_by_two_level_threshold_)
     , group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_)
-    , max_bytes_before_external_group_by(max_bytes_before_external_group_by_)
+    /// In the `group_by_each_block_no_merge` streaming mode the aggregation state is finalized and flushed for
+    /// every block separately, so only a single block is ever held in memory and external (on-disk) aggregation
+    /// is both pointless and incorrect: spilled data from different blocks would be merged together at the end,
+    /// violating the per-block flush contract. Disable it.
+    , max_bytes_before_external_group_by(group_by_each_block_no_merge_ ? 0 : max_bytes_before_external_group_by_)
     , empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_)
     , tmp_data_scope(std::move(tmp_data_scope_))
     , max_threads(max_threads_)

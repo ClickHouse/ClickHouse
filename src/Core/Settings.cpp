@@ -1262,6 +1262,10 @@ See also:
 )", 0) \
     DECLARE(Bool, group_by_each_block_no_merge, false, R"(
 If this setting is enabled, the query with `GROUP BY` will be processed in a streaming fashion: aggregation will be performed, finalized and flushed for every block of data. The results will be incorrect (not fully merged).
+
+The exact output depends on how the input is split into blocks and on the chosen execution plan, so it is not deterministic in general. In particular, the amount of merging that still happens is plan-dependent: an execution plan that aggregates in the order of the sort key (`optimize_aggregation_in_order`) or a distributed second aggregation stage will merge the per-block partial results further. External (on-disk) aggregation is disabled while this setting is enabled, because only one block is kept in memory at a time.
+
+This setting is intended for special cases such as populating a materialized view with `POPULATE`, where the partial results are merged later in the background.
 )", 0) \
     \
     DECLARE(Bool, skip_unavailable_shards, false, R"(
