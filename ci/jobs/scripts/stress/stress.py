@@ -598,7 +598,7 @@ class RandomQueryKiller(ChaosThread):
     def _kill_random_query(self) -> None:
         try:
             result = check_output(
-                "clickhouse client --receive_timeout=10 -q \""
+                "clickhouse client --receive_timeout=5 -q \""
                 "SELECT query_id FROM system.processes "
                 "WHERE query NOT LIKE '%system.processes%' "
                 "AND query NOT LIKE '%KILL QUERY%' "
@@ -611,7 +611,7 @@ class RandomQueryKiller(ChaosThread):
             if query_id:
                 logging.info("Killing random query: %s", query_id)
                 call(
-                    f"clickhouse client --receive_timeout=10 -q \"KILL QUERY WHERE query_id = '{query_id}' ASYNC\" 2>/dev/null",
+                    f"clickhouse client --receive_timeout=5 -q \"KILL QUERY WHERE query_id = '{query_id}' ASYNC\" 2>/dev/null",
                     shell=True,
                     timeout=5,
                 )
@@ -639,7 +639,7 @@ class RandomQueryKiller(ChaosThread):
     def _kill_random_mutation(self) -> None:
         try:
             result = check_output(
-                "clickhouse client --receive_timeout=10 -q \""
+                "clickhouse client --receive_timeout=5 -q \""
                 "SELECT mutation_id, database, table "
                 "FROM system.mutations "
                 "WHERE NOT is_done AND NOT is_killed "
@@ -943,7 +943,7 @@ def execute_bash(full_command, timeout=120):
 
 def make_query_command(query: str) -> str:
     return (
-        f'clickhouse client -q "{query}" --max_untracked_memory=1Gi '
+        f'clickhouse client -q "{query}" --receive_timeout=15 --max_untracked_memory=1Gi '
         "--memory_profiler_step=1Gi --max_memory_usage_for_user=0 --max_memory_usage_in_client=1000000000 "
         "--enable-progress-table-toggle=0"
     )
@@ -972,7 +972,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
         raise ServerDied("clickhouse-server process does not exist")
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
     call_with_retry(
-        f"kill -CONT $(cat {CLICKHOUSE_PID_FILE}) && clickhouse client -q 'SELECT 1 FORMAT Null'"
+        f"kill -CONT $(cat {CLICKHOUSE_PID_FILE}) && clickhouse client --receive_timeout=5 -q 'SELECT 1 FORMAT Null'"
     )
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
@@ -1071,7 +1071,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
     try:
-        query = 'clickhouse client -q "SELECT count() FROM system.processes where elapsed > 300" '
+        query = 'clickhouse client --receive_timeout=30 -q "SELECT count() FROM system.processes where elapsed > 300" '
         output = (
             check_output(query, shell=True, stderr=STDOUT, timeout=30)
             .decode("utf-8")
