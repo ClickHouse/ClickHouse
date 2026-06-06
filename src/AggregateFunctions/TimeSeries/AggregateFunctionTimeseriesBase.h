@@ -192,6 +192,28 @@ public:
         return static_cast<TimestampType>(static_cast<Int64>(result_bits));
     }
 
+    /// Returns whether a sample at `timestamp` cannot contribute to any grid point: too old or too new.
+    bool isSampleOutOfGrid(const TimestampType timestamp) const
+    {
+        /// Compare as Int128 to avoid signed-overflow `TimestampType` when `window` is set near `INT64_MAX`.
+        const Int128 window_end =
+            static_cast<Int128>(static_cast<Int64>(timestamp)) +
+            static_cast<Int128>(static_cast<Int64>(window)) +
+            static_cast<Int128>(static_cast<Int64>(step));
+        return window_end < static_cast<Int128>(static_cast<Int64>(start_timestamp))
+            || timestamp > end_timestamp;
+    }
+
+    /// Returns whether a sample at `timestamp` is past the sliding-window cutoff for grid point `current_timestamp`.
+    bool isSampleOutOfWindow(const TimestampType timestamp, const TimestampType current_timestamp) const
+    {
+        /// Compare as Int128 to avoid signed-overflow `TimestampType` when `window` is set near `INT64_MAX`.
+        const Int128 sum =
+            static_cast<Int128>(static_cast<Int64>(timestamp)) +
+            static_cast<Int128>(static_cast<Int64>(window));
+        return sum <= static_cast<Int128>(static_cast<Int64>(current_timestamp));
+    }
+
     static const State * data(ConstAggregateDataPtr __restrict place)
     {
         return reinterpret_cast<const State *>(place);
@@ -212,7 +234,7 @@ public:
         data(place)->~State();
     }
 
-    void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr __restrict place, TimestampType timestamp, ValueType value) const
+    void ALWAYS_INLINE add(AggregateDataPtr __restrict place, TimestampType timestamp, ValueType value) const
     {
         /// Some Traits (e.g. stats-bucket aligned _over_time variants) want to drop samples falling
         /// in `(start_timestamp - window - step, start_timestamp - step]`, because the bucket-level
@@ -237,6 +259,8 @@ public:
             if (timestamp + window + step < start_timestamp || timestamp > end_timestamp)
                 return;
         }
+        if (isSampleOutOfGrid(timestamp))
+            return;
 
         const size_t index = bucketIndexForTimestamp(timestamp);
         auto & bucket = data(place)->buckets[index];
@@ -449,19 +473,19 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        UInt16 format_version;
+        UInt16 format_version = 0;
         readBinaryLittleEndian(format_version, buf);
 
         if (format_version != FORMAT_VERSION)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with different format version");
 
-        size_t size;
+        size_t size = 0;
         readBinaryLittleEndian(size, buf);
 
         if (size != bucket_count)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot deserialize data with different bucket count");
 
-        size_t buckets_size;
+        size_t buckets_size = 0;
         readBinaryLittleEndian(buckets_size, buf);
 
         if (buckets_size > bucket_count)
@@ -471,7 +495,7 @@ public:
 
         for (size_t i = 0; i < buckets_size; ++i)
         {
-            size_t index;
+            size_t index = 0;
             readBinaryLittleEndian(index, buf);
 
             if (index >= bucket_count)

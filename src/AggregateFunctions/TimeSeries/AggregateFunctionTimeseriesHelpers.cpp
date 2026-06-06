@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 
 /// Extracts integer or decimal parameter value and converts it to decimal with the target scale (scale of the timestamp column)
-Decimal64 normalizeParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
+static Decimal64 normalizeParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
 {
     auto target_scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(target_scale);
 
@@ -70,7 +70,7 @@ Decimal64 normalizeParameter(const std::string & function_name, const std::strin
     }
 }
 
-UInt64 extractIntParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
+static UInt64 extractIntParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
 {
     if (parameter_field.getType() == Field::Types::Decimal64)
     {
@@ -114,7 +114,7 @@ UInt64 extractIntParameter(const std::string & function_name, const std::string 
     }
 }
 
-Float64 extractFloatParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
+static Float64 extractFloatParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
 {
     if (parameter_field.getType() == Field::Types::Decimal64)
     {
@@ -293,6 +293,7 @@ AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name,
 
 }
 
+void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
 {
     /// timeSeriesRateToGrid documentation
