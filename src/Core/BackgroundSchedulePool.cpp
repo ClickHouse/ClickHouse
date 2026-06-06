@@ -329,6 +329,23 @@ void BackgroundSchedulePool::spawnThreadLocked()
 }
 
 
+bool BackgroundSchedulePool::runnableTasksExceedLocked(size_t threshold) const
+{
+    size_t count = 0;
+    for (UInt64 task_type : runnable_task_types)
+    {
+        const auto & group = task_groups.at(task_type);
+        /// Invariant: a group present in runnable_task_types has headroom to run at least one
+        /// more task (it is removed from the list once num_running reaches the per-type cap).
+        chassert(group.num_running < max_parallel_tasks_per_type);
+        count += std::min(group.tasks.size(), max_parallel_tasks_per_type - group.num_running);
+        if (count > threshold)
+            return true;
+    }
+    return false;
+}
+
+
 void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
 {
     std::lock_guard tasks_lock(tasks_mutex);
@@ -345,7 +362,28 @@ void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
 
     max_size = new_threads_count;
     size_metric.changeTo(new_threads_count);
-    /// Threads above the current count are spawned lazily on demand.
+
+    /// Consume already-queued demand with the freshly-raised cap. A saturated pool has no parked
+    /// workers to wake and may receive no further scheduleTask call for a while, so without spawning
+    /// here it would keep executing at the old concurrency until some unrelated future task happens
+    /// to trigger lazy growth. Each newly-spawned worker becomes idle and immediately picks up a
+    /// runnable task (runnable_task_types is non-empty), so we account for it via `spawned`.
+    try
+    {
+        size_t spawned = 0;
+        while (threads.size() < max_size && runnableTasksExceedLocked(idle_threads + spawned))
+        {
+            spawnThreadLocked();
+            ++spawned;
+        }
+    }
+    catch (...)
+    {
+        /// Spawning is best-effort here: if the global thread pool is momentarily exhausted, leave
+        /// the cap raised and let lazy growth in scheduleTask retry later rather than failing the
+        /// config reload.
+        tryLogCurrentException(logger, "Failed to eagerly spawn schedule pool workers after raising the cap");
+    }
 }
 
 
@@ -432,14 +470,17 @@ void BackgroundSchedulePool::scheduleTask(TaskInfo & task_info)
         }
         running_tasks.erase(task_ptr);
 
-        /// Grow the pool lazily: if there are more runnable task groups than parked workers
-        /// available to pick them up, and we have headroom, spawn an extra worker. We compare
-        /// against `runnable_task_types.size()` (not `idle_threads == 0`) because parked workers
-        /// woken by a prior `notify_one` are already "claimed" by previously-enqueued tasks even
-        /// though they have not yet decremented `idle_threads` — otherwise a fast caller can push
-        /// several tasks in a row while seeing `idle_threads > 0` and never spawn the workers
-        /// needed to drain them.
-        if (runnable_task_types.size() > idle_threads && threads.size() < max_size && !shutdown)
+        /// Grow the pool lazily: if there are more runnable tasks than parked workers available to
+        /// pick them up, and we have headroom, spawn an extra worker. Demand is the number of tasks
+        /// that could run right now — counted per group and bounded by `max_parallel_tasks_per_type`
+        /// — not the number of distinct runnable task *types*: a single group (e.g. the same periodic
+        /// task across many replicated tables, or many Kafka/ObjectStorageQueue consumers) can run up
+        /// to `max_parallel_tasks_per_type` tasks at once, so type count would leave such a burst
+        /// stuck at `initial_size`. We compare against `idle_threads` (not `idle_threads == 0`) and,
+        /// crucially, each `scheduleTask` enqueues exactly one task and spawns at most one worker, so
+        /// parked workers woken by a prior `notify_one` — already "claimed" by previously-enqueued
+        /// tasks though they have not yet decremented `idle_threads` — never cause over-spawning.
+        if (runnableTasksExceedLocked(idle_threads) && threads.size() < max_size && !shutdown)
         {
             try
             {
@@ -631,7 +672,25 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
         }
 
         if (found)
-            task->schedule();
+        {
+            try
+            {
+                task->schedule();
+            }
+            catch (...)
+            {
+                /// scheduleTask fails closed (rethrows) when it cannot spawn the very first worker —
+                /// this happens only with `background_schedule_pool_initial_size = 0` and an exhausted
+                /// global thread pool. Letting the exception escape would terminate this delayed thread,
+                /// after which no future scheduleAfter task in this pool could ever be woken. Keep the
+                /// thread alive and retry the task with a small backoff instead. The task is still
+                /// present in `delayed_tasks` (scheduleImpl rolls back before removing it), so we
+                /// re-stamp it rather than leaving a past-due entry that would busy-loop.
+                tryLogCurrentException(logger, "Failed to schedule a delayed task; will retry");
+                static constexpr size_t delayed_task_retry_ms = 100;
+                task->scheduleAfter(delayed_task_retry_ms);
+            }
+        }
     }
 }
 

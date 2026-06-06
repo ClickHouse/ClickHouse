@@ -137,6 +137,57 @@ TEST(BackgroundSchedulePool, LazyGrow)
     pool->join();
 }
 
+/// Many tasks of the *same* task type must also grow the pool past the initial size: a single task
+/// group can run up to max_parallel_tasks_per_type tasks concurrently, so lazy growth must be driven
+/// by the number of runnable tasks, not by the number of distinct runnable task types.
+TEST(BackgroundSchedulePool, LazyGrowSameTaskType)
+{
+    constexpr size_t max_threads = 8;
+    constexpr size_t initial_threads = 1;
+    constexpr size_t num_tasks = max_threads;
+
+    /// max_parallel_tasks_per_type == 0 ⇒ defaults to the pool size, so a single group may run all tasks.
+    auto pool = BackgroundSchedulePool::create(max_threads, initial_threads, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+
+    std::mutex mutex;
+    std::condition_variable all_running;
+    std::condition_variable release_tasks;
+    size_t running = 0;
+    bool release = false;
+
+    /// A single lambda expression ⇒ one closure type ⇒ all tasks share one task group.
+    auto task_body = [&]
+    {
+        std::unique_lock lock(mutex);
+        ++running;
+        if (running == num_tasks)
+            all_running.notify_one();
+        release_tasks.wait(lock, [&] { return release; });
+    };
+
+    std::vector<BackgroundSchedulePoolTaskHolder> tasks;
+    tasks.reserve(num_tasks);
+    for (size_t i = 0; i < num_tasks; ++i)
+        tasks.emplace_back(pool->createTask(StorageID::createEmpty(), "lazy_grow_same_type", task_body));
+
+    for (auto & task : tasks)
+        ASSERT_EQ(task->activateAndSchedule(), true);
+
+    bool all_ran = false;
+    {
+        std::unique_lock lock(mutex);
+        /// All same-type tasks must run concurrently — proves the pool grew past INITIAL_THREADS.
+        /// Bounded wait so a regression fails the test instead of hanging it.
+        all_ran = all_running.wait_for(lock, std::chrono::seconds(60), [&] { return running == num_tasks; });
+        release = true;
+        release_tasks.notify_all();
+    }
+
+    ASSERT_TRUE(all_ran);
+
+    pool->join();
+}
+
 /// Previously leads to UB
 TEST(BackgroundSchedulePool, ScheduleAfterTerminitePool)
 {

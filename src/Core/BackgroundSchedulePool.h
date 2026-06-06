@@ -96,6 +96,12 @@ private:
     /// Spawn a single new worker thread. Must be called with tasks_mutex held.
     void spawnThreadLocked() TSA_REQUIRES(tasks_mutex);
 
+    /// Whether the number of currently runnable tasks exceeds `threshold`. A single task group
+    /// can run up to max_parallel_tasks_per_type tasks at once, so demand is counted per group
+    /// (not as the number of distinct runnable task types). Stops as soon as the threshold is
+    /// passed, so it is cheap on the scheduling hot path. Must be called with tasks_mutex held.
+    bool runnableTasksExceedLocked(size_t threshold) const TSA_REQUIRES(tasks_mutex);
+
     void scheduleTask(TaskInfo & task_info);
 
     /// Schedule task for execution after specified delay from now.
