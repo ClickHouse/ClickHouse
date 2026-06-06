@@ -249,24 +249,40 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
 {
     std::lock_guard lock(mutex);
 
-    /// `Memory` tables do not own patch parts (lightweight update support is provided only by
-    /// engines from the `MergeTree` family) and do not maintain a `_row_exists` deletion mask.
-    /// `APPLY PATCHES` / `APPLY DELETED MASK` are therefore semantic no-ops here: the post-state
-    /// the user is asking for ("all patches applied", "deleted rows physically removed") is
-    /// already satisfied trivially. Filtering them out before constructing the mutation pipeline
-    /// avoids reaching `MutationsInterpreter` with a command set that has no stages to apply to
-    /// the in-memory blocks. The previous code path produced N output blocks with 0 rows each
-    /// (matching the input block count but empty), which then failed the partial-column
-    /// invariant check at the bottom of this function with
+    /// `Memory` tables hold raw column blocks in RAM and have no on-storage analog of
+    /// indices, projections, statistics, TTL expressions, patch parts, or a `_row_exists`
+    /// deletion mask. Mutation commands that exclusively operate on those structures are
+    /// therefore semantic no-ops on `Memory`: the post-state the user is asking for
+    /// (index/projection/statistics materialised, TTL re-evaluated, all patches applied,
+    /// deleted rows physically removed) is already trivially satisfied.
+    ///
+    /// Reaching `MutationsInterpreter` with such a command set produces a pipeline that
+    /// pulls one output block per input block but with zero rows in each, and the
+    /// partial-column path below then fails the per-block row-count invariant with
     /// `Mutation of \`Memory\` table produced incomplete output: block 0 has 0 rows, expected N`.
+    /// Filtering them out before constructing the pipeline avoids that. A real `UPDATE`
+    /// or `DELETE` mixed into the same `ALTER` still executes normally.
     MutationCommands commands_to_run;
     commands_to_run.reserve(commands.size());
     for (const auto & command : commands)
     {
-        if (command.type == MutationCommand::APPLY_PATCHES
-         || command.type == MutationCommand::APPLY_DELETED_MASK)
-            continue;
-        commands_to_run.push_back(command);
+        switch (command.type)
+        {
+            case MutationCommand::APPLY_PATCHES:
+            case MutationCommand::APPLY_DELETED_MASK:
+            case MutationCommand::MATERIALIZE_INDEX:
+            case MutationCommand::MATERIALIZE_PROJECTION:
+            case MutationCommand::MATERIALIZE_STATISTICS:
+            case MutationCommand::MATERIALIZE_TTL:
+            case MutationCommand::DROP_INDEX:
+            case MutationCommand::DROP_PROJECTION:
+            case MutationCommand::DROP_STATISTICS:
+            case MutationCommand::REWRITE_PARTS:
+                continue;
+            default:
+                commands_to_run.push_back(command);
+                break;
+        }
     }
 
     if (commands_to_run.empty())
