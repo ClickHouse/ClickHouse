@@ -1297,7 +1297,7 @@ bool StorageMergeTree::mutationVersionsEquivalent(const MergeTreePartInfo & left
 
     if (left_it != right_it)
     {
-        assert(left.getPartitionId() == right.getPartitionId());
+        chassert(left.getPartitionId() == right.getPartitionId());
 
         auto const & partition_id = left.getPartitionId();
         auto [mutations_it, mutations_end_it] = left_data_version < right_data_version
