@@ -378,7 +378,7 @@ class RunTest:
             hnsw_M = 0
             hnsw_ef_C = 0
 
-        add_index = f"ALTER TABLE {self._table} ADD INDEX vector_index {self._vector_column} TYPE vector_similarity('hnsw','{self._distance_metric}', {self._dimension}, {quantization}, {hnsw_M}, {hnsw_ef_C})"
+        add_index = f"ALTER TABLE {self._table} ADD INDEX vector_index {self._vector_column} TYPE vector_similarity('{index_type}','{self._distance_metric}', {self._dimension}, {quantization}, {hnsw_M}, {hnsw_ef_C})"
         self._chclient.query(add_index)
 
         logger("Materialzing the index")
