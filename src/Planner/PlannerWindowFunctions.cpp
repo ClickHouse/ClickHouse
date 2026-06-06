@@ -171,7 +171,7 @@ void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions
                     return false;
             }
 
-            assert(left[i] == right[i]);
+            chassert(left[i] == right[i]);
         }
 
         /** Note that we check the length last, because we want to put together the

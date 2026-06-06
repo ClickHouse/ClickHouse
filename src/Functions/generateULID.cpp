@@ -61,7 +61,7 @@ public:
 
         vec_res.resize(input_rows_count * ULID_LENGTH);
 
-        ulid_generator generator;
+        ulid_generator generator{};
         ulid_generator_init(&generator, 0);
 
         for (size_t offset = 0, size = vec_res.size(); offset < size; offset += ULID_LENGTH)
