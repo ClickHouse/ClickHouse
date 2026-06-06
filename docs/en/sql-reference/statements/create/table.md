@@ -435,7 +435,13 @@ These codecs are designed to make compression more effective by exploiting speci
 
 #### Chimp {#chimp}
 
-`Chimp(bytes_size)` — A XOR-based floating point compression algorithm in the spirit of `Gorilla`. It improves the compression ratio over `Gorilla` by referencing one of the previous 128 values rather than only the immediately preceding one, and by encoding the number of leading zero bits more compactly. It is particularly effective on datasets where values exhibit local correlation, such as time series, while offering compression and decompression speed comparable to `Gorilla`. Possible `bytes_size` values: 4, 8, the default value is `sizeof(type)` if type is `Float32` or `Float64`. In all other cases, it's 1. For a detailed description of the algorithm, see [Chimp: Efficient Lossless Floating Point Compression for Time Series Databases](https://doi.org/10.14778/3551793.3551852).
+<ExperimentalBadge/>
+
+`Chimp(bytes_size)` — A XOR-based floating point compression algorithm in the spirit of `Gorilla`. It improves the compression ratio over `Gorilla` by referencing one of the previous 128 values rather than only the immediately preceding one, and by encoding the number of leading zero bits more compactly. It is particularly effective on datasets where values exhibit local correlation, such as time series, while offering compression and decompression speed comparable to `Gorilla`. Possible `bytes_size` values are `4` and `8`; when omitted it defaults to `sizeof(type)`, so the column type must be `Float32`/`Float64` (or another 4- or 8-byte type). For a detailed description of the algorithm, see [Chimp: Efficient Lossless Floating Point Compression for Time Series Databases](https://doi.org/10.14778/3551793.3551852).
+
+:::note
+This codec is experimental and requires `SET allow_experimental_codecs = 1` to use.
+:::
 
 #### ALP {#alp}
 

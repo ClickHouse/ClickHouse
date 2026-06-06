@@ -1,7 +1,7 @@
 AES_128_GCM_SIV	150	0	0	1	0	0	Encrypts and decrypts blocks with AES-128 in GCM-SIV mode (RFC-8452).
 AES_256_GCM_SIV	151	0	0	1	0	0	Encrypts and decrypts blocks with AES-256 in GCM-SIV mode (RFC-8452).
 ALP	156	1	0	0	1	1	Adaptive Lossless floating-Point; suitable for time series data.
-Chimp	157	1	0	0	1	0	XOR-based floating-point compression algorithm, particularly effective on datasets where values exhibit local correlation such as time series.
+Chimp	157	1	0	0	1	1	XOR-based floating-point compression algorithm, particularly effective on datasets where values exhibit local correlation such as time series.
 Delta	146	0	0	0	0	0	Preprocessor (should be followed by some compression codec). Stores difference between neighboring values; good for monotonically increasing or decreasing data.
 DoubleDelta	148	1	0	0	0	0	Stores difference between neighboring delta values; suitable for time series data.
 FPC	152	1	0	0	1	0	High Throughput Compression of Double-Precision Floating-Point Data.

@@ -47,6 +47,9 @@ protected:
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
     bool isFloatingPointTimeSeriesCodec() const override { return true; }
+    /// A new on-disk format: keep it behind `allow_experimental_codecs` until there is
+    /// enough compatibility, fuzzing and performance evidence (same as `ALP`).
+    bool isExperimental() const override { return true; }
 
     std::string getDescription() const override
     {
@@ -131,8 +134,11 @@ UInt32 getCompressedHeaderSize(UInt8 data_bytes_size)
 UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 {
     const UInt32 items_count = uncompressed_size / data_bytes_size;
-    static const auto DATA_BIT_LENGTH = getBitLengthOfLength(data_bytes_size);
-    static const Int16 LOG_NO_PREVIOUS_VALUES = log2(data_bytes_size * 16);
+    /// These depend on data_bytes_size, so they must not be cached in `static` locals:
+    /// otherwise the first width seen in the process would be reused for every later width
+    /// (e.g. Chimp(8) after Chimp(4) would under-reserve the output buffer).
+    const auto DATA_BIT_LENGTH = getBitLengthOfLength(data_bytes_size);
+    const Int16 LOG_NO_PREVIOUS_VALUES = log2(data_bytes_size * 16);
     // worst case (for 32-bit value):
     // 2 bits (flag) + 6 bits (previous values index) + 3 bits (no of leading zeroes) + 5 bits(data bit-size) + non-zero data bits.
     const UInt32 max_item_size_bits = 2 + LOG_NO_PREVIOUS_VALUES + LeadingZero::BIT_LENGTH + DATA_BIT_LENGTH + data_bytes_size * 8;
