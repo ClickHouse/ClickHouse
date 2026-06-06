@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: make_distributed_plan requires the analyzer.
+
 -- Regression test: when a distributed read errors mid-flight, the query must terminate with that
 -- error rather than hang. The local in-memory exchanges are cancelled on teardown so tasks waiting
 -- for input do not block forever. max_rows_to_read trips during the distributed read while it is

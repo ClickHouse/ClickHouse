@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: make_distributed_plan requires the analyzer.
+
 -- Regression test: make_distributed_plan rejects aggregations it cannot distribute correctly,
 -- rather than silently running them single-node.
 --   * GROUPING SETS: shuffle scatters by the full key set, so subtotals (over key subsets) would be
