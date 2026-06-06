@@ -87,6 +87,7 @@ namespace ProfileEvents
 {
 extern const Event IcebergIteratorInitializationMicroseconds;
 extern const Event IcebergMetadataUpdateMicroseconds;
+extern const Event IcebergMetadataFilesCacheSkipped;
 extern const Event IcebergTrivialCountOptimizationApplied;
 }
 
@@ -173,6 +174,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     std::optional<String> table_uuid = std::nullopt;
     String raw_metadata_json;
     Poco::JSON::Object::Ptr metadata_object;
+    bool content_cache_hit = false;
 
     /// Probe content cache with the catalog hint UUID (without insert-on-miss).
     /// This is safe because:
@@ -193,6 +195,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
                 if (cached_uuid == normalizeUuid(hint))
                 {
                     /// Hit from a prior validated init: cached JSON belongs to this table.
+                    content_cache_hit = true;
                     raw_metadata_json = std::move(cached);
                     metadata_object = candidate;
                     table_uuid = cached_uuid;
@@ -200,6 +203,11 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
             }
         }
     }
+
+    /// Record Skipped when cache is enabled but no catalog-hint probe happened
+    /// (non-REST tables or REST responses without `table-uuid`).
+    if (!content_cache_hit && !metadata_object && cache_ptr)
+        ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheSkipped);
 
     /// Fetch and parse the metadata file if the cache probe did not succeed.
     if (!metadata_object)
@@ -240,7 +248,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     /// Insert under validated parsed UUID. Use setTableMetadata to avoid the
     /// return-value copy that getOrSetTableMetadata would incur when the key
     /// was already cached (e.g. from a prior init where `table_uuid` matched).
-    if (table_uuid && cache_ptr)
+    if (table_uuid && cache_ptr && !content_cache_hit)
     {
         auto cache_key = IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path);
         cache_ptr->setTableMetadata(cache_key, std::move(raw_metadata_json));
