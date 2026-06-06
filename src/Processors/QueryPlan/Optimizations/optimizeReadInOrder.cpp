@@ -512,14 +512,30 @@ SortingInputOrder buildInputOrderFromSortDescription(
         if (sort_column_description.collator)
             break;
 
-        /// Since sorting key columns are always sorted with
-        // ASC NULLS LAST ("in order") or DESC NULLS FIRST ("reverse")
-        /// supported only this direction, other cases are represented as nulls_direction==-1
-        /// Also actual for floating point values NaN.
-        const auto column_is_nullable = isNullableOrLowCardinalityNullable(sorting_key.data_types[next_sort_key])
+        /// Sorting key columns are always sorted as ASC NULLS LAST ("in order") or
+        /// DESC NULLS FIRST ("reverse"); other NULLS directions are nulls_direction == -1.
+        /// Also actual for floating point values NaN. A monotonic function may reverse the
+        /// key, flipping the side NULLs/NaNs land on, so compare against monotonic_direction.
+        const auto column_has_special_nulls = isNullableOrLowCardinalityNullable(sorting_key.data_types[next_sort_key])
             || isFloat(*removeLowCardinality(sorting_key.data_types[next_sort_key]));
-        if (column_is_nullable && sort_column_description.nulls_direction == -1)
-            break;
+        if (column_has_special_nulls)
+        {
+            int monotonic_direction = 1;
+            if (dag)
+            {
+                const auto * sort_key_node = sorting_key_dag.tryFindInOutputs(sorting_key_column);
+                const auto * order_by_node = dag->tryFindInOutputs(sort_column_description.column_name);
+                if (sort_key_node && order_by_node)
+                {
+                    auto it = matches.find(order_by_node);
+                    if (it != matches.end() && it->second.node == sort_key_node && it->second.monotonicity)
+                        monotonic_direction = it->second.monotonicity->direction;
+                }
+            }
+
+            if (sort_column_description.nulls_direction != monotonic_direction)
+                break;
+        }
 
         /// Direction for current sort key.
         int current_direction = 0;

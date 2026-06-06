@@ -60,6 +60,19 @@ SELECT * FROM test_nullable_int ORDER BY c0 ASC NULLS LAST;
 SELECT * FROM test_nullable_int ORDER BY c0 DESC NULLS FIRST;
 SELECT * FROM test_nullable_int ORDER BY c0 DESC NULLS LAST;
 
+-- Monotonic reversing expression: negate is strictly decreasing, so it flips the key order.
+-- NaN/NULL still sort as the largest value, so the side they land on flips with it.
+-- Read-in-order must honor the requested NULLS direction even through such a function.
+-- Regression for https://github.com/ClickHouse/ClickHouse/pull/106588#discussion_r3367031538
+SELECT * FROM test_lc_float_nan ORDER BY negate(c0) ASC NULLS FIRST;
+SELECT * FROM test_lc_float_nan ORDER BY negate(c0) ASC NULLS LAST;
+SELECT * FROM test_lc_float_nan ORDER BY negate(c0) DESC NULLS FIRST;
+SELECT * FROM test_lc_float_nan ORDER BY negate(c0) DESC NULLS LAST;
+SELECT * FROM test_nullable_float_nan ORDER BY negate(c0) ASC NULLS FIRST;
+SELECT * FROM test_nullable_float_nan ORDER BY negate(c0) ASC NULLS LAST;
+SELECT * FROM test_nullable_float_nan ORDER BY negate(c0) DESC NULLS FIRST;
+SELECT * FROM test_nullable_float_nan ORDER BY negate(c0) DESC NULLS LAST;
+
 -- Legacy ReadInOrderOptimizer path (old analyzer, query plan read-in-order disabled).
 SET enable_analyzer = 0;
 SET query_plan_read_in_order = 0;
@@ -88,6 +101,15 @@ SELECT * FROM test_nullable_int ORDER BY c0 ASC NULLS FIRST;
 SELECT * FROM test_nullable_int ORDER BY c0 ASC NULLS LAST;
 SELECT * FROM test_nullable_int ORDER BY c0 DESC NULLS FIRST;
 SELECT * FROM test_nullable_int ORDER BY c0 DESC NULLS LAST;
+
+SELECT * FROM test_lc_float_nan ORDER BY negate(c0) ASC NULLS FIRST;
+SELECT * FROM test_lc_float_nan ORDER BY negate(c0) ASC NULLS LAST;
+SELECT * FROM test_lc_float_nan ORDER BY negate(c0) DESC NULLS FIRST;
+SELECT * FROM test_lc_float_nan ORDER BY negate(c0) DESC NULLS LAST;
+SELECT * FROM test_nullable_float_nan ORDER BY negate(c0) ASC NULLS FIRST;
+SELECT * FROM test_nullable_float_nan ORDER BY negate(c0) ASC NULLS LAST;
+SELECT * FROM test_nullable_float_nan ORDER BY negate(c0) DESC NULLS FIRST;
+SELECT * FROM test_nullable_float_nan ORDER BY negate(c0) DESC NULLS LAST;
 
 DROP TABLE test_lc_float_nan;
 DROP TABLE test_lc_float32_nan;
