@@ -1,8 +1,12 @@
+#include <Columns/ColumnsScatter.h>
 #include <Columns/IColumn.h>
 #include <Core/ColumnNumbers.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
+#include <Common/MapToRange.h>
 #include <Common/PODArray.h>
+
+#include <array>
 
 namespace DB
 {
@@ -11,7 +15,10 @@ ScatterByPartitionTransform::ScatterByPartitionTransform(SharedHeader header, si
     , output_size(output_size_)
     , key_columns(std::move(key_columns_))
     , hash(0)
-{}
+    , pids(0)
+    , rows_per_shard(output_size_, 0)
+{
+}
 
 IProcessor::Status ScatterByPartitionTransform::prepare()
 {
@@ -144,16 +151,22 @@ void ScatterByPartitionTransform::generateOutputChunks()
         initial = false;
     }
 
-    IColumn::Selector selector(num_rows);
+    pids.resize(num_rows);
+    mapToRange(hash.data(), num_rows, static_cast<UInt32>(output_size), pids.data());
 
-    for (size_t row = 0; row < num_rows; ++row)
-        selector[row] = (static_cast<UInt64>(hash[row]) * output_size) >> 32; /// The "fastrange" method from Daniel Lemire
+    const std::span<const UInt32> pids_span{pids.data(), num_rows};
+    const std::array<std::span<const UInt32>, 1> pids_per_source{pids_span};
 
+    std::fill(rows_per_shard.begin(), rows_per_shard.end(), 0);
+    ColumnsScatter::countRowsPerShard(pids_per_source, rows_per_shard);
+
+    std::array<const IColumn *, 1> source_columns{};
     for (const auto & column : columns)
     {
-        auto filtered_columns = column->scatter(output_size, selector);
+        source_columns[0] = column.get();
+        MutableColumns scattered = ColumnsScatter::scatter(source_columns, pids_per_source, output_size, rows_per_shard);
         for (size_t i = 0; i < output_size; ++i)
-            output_chunks[i].addColumn(std::move(filtered_columns[i]));
+            output_chunks[i].addColumn(std::move(scattered[i]));
     }
 }
 
