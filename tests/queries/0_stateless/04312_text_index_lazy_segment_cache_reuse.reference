@@ -1,0 +1,7 @@
+cardinality lazytok	512
+512
+512
+cold: built segments, missed cache, no hits
+1	1	1
+warm: reused cached segments, built nothing
+1	1	1
