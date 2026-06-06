@@ -142,8 +142,8 @@ bool ReadBufferFromS3::nextImpl()
             * each nextImpl() call we can fill a different buffer.
             */
             impl->set(internal_buffer.begin(), internal_buffer.size());
-            assert(working_buffer.begin() != nullptr);
-            assert(!internal_buffer.empty());
+            chassert(working_buffer.begin() != nullptr);
+            chassert(!internal_buffer.empty());
         }
         else
         {
@@ -173,8 +173,8 @@ bool ReadBufferFromS3::nextImpl()
                 if (use_external_buffer)
                 {
                     impl->set(internal_buffer.begin(), internal_buffer.size());
-                    assert(working_buffer.begin() != nullptr);
-                    assert(!internal_buffer.empty());
+                    chassert(working_buffer.begin() != nullptr);
+                    chassert(!internal_buffer.empty());
                 }
                 else
                 {
@@ -385,8 +385,8 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
             && offset_ < offset)
         {
             pos = working_buffer.end() - (offset - offset_);
-            assert(pos >= working_buffer.begin());
-            assert(pos < working_buffer.end());
+            chassert(pos >= working_buffer.begin());
+            chassert(pos < working_buffer.end());
 
             return getPosition();
         }

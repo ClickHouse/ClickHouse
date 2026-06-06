@@ -195,8 +195,8 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
             && static_cast<size_t>(offset) < file_offset_of_buffer_end)
         {
             pos = working_buffer.end() - (file_offset_of_buffer_end - offset);
-            assert(pos >= working_buffer.begin());
-            assert(pos < working_buffer.end());
+            chassert(pos >= working_buffer.begin());
+            chassert(pos < working_buffer.end());
 
             return getPosition();
         }
