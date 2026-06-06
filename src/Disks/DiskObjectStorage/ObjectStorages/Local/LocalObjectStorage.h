@@ -1,6 +1,5 @@
 #pragma once
 
-#include "config.h"
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
