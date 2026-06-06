@@ -81,14 +81,17 @@ public:
     /// avoid paying deserialization cost for no benefit.
     bool hasBulkFastPath() const { return minmax_actions != nullptr; }
 
-    /// Whether the per-index condition's RPN is a pure conjunction of leaves (no
-    /// FUNCTION_OR). Used to decide if bulk evaluation is precision-preserving when
-    /// running alongside `use_skip_indexes_for_disjunctions`: bulk does not populate
-    /// the partial-disjunction bitset, so any leaves this index owns stay at the
-    /// bitset's `true` default. When the projected per-index condition is AND-only,
-    /// those defaults coincide with the values per-granule evaluation would have
-    /// written, and merge precision is preserved.
-    bool indexConditionHasOnlyConjunctions() const { return condition.hasOnlyConjunctions(); }
+    /// Whether bulk evaluation stays precision-preserving when running alongside
+    /// `use_skip_indexes_for_disjunctions`. Bulk does not populate the partial-disjunction
+    /// bitset, so any leaf this index owns stays at the bitset's `true` default. That default
+    /// matches what per-granule evaluation would have written only when none of this index's
+    /// own leaves participates in a cross-index OR. A pure conjunction satisfies this, and so
+    /// does a foreign disjunction over columns this index does not cover (e.g.
+    /// `t >= c AND (v < a OR v > b)` for a minmax index on `t`): the `t >= c` leaf stays
+    /// outside every OR, so the bulk path prunes by it exactly as the scalar path would, and
+    /// `mergePartialResultsForDisjunctions` handles the foreign OR via the other indexes'
+    /// bitset positions. See `KeyCondition::everyDisjunctionIsOverUnownedLeaves`.
+    bool bulkPreservesDisjunctionPrecision() const { return condition.everyDisjunctionIsOverUnownedLeaves(); }
 
 
     ~MergeTreeIndexConditionMinMax() override = default;

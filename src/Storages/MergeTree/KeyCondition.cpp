@@ -1355,6 +1355,65 @@ bool KeyCondition::hasOnlyConjunctions() const
     return std::ranges::none_of(rpn, [](RPNElement element) { return element.function == RPNElement::FUNCTION_OR; });
 }
 
+bool KeyCondition::everyDisjunctionIsOverUnownedLeaves() const
+{
+    /// Walk the postfix RPN keeping, per pending subexpression, whether it contains a leaf
+    /// owned by this condition. An owned leaf is any atom other than `FUNCTION_UNKNOWN` and the
+    /// `ALWAYS_TRUE` / `ALWAYS_FALSE` constants (those represent neither a per-granule predicate
+    /// this index evaluates nor a position it writes into the partial-disjunction bitset).
+    std::vector<bool> owns_leaf;
+    owns_leaf.reserve(rpn.size());
+
+    for (const auto & element : rpn)
+    {
+        switch (element.function)
+        {
+            case RPNElement::FUNCTION_UNKNOWN:
+            case RPNElement::ALWAYS_TRUE:
+            case RPNElement::ALWAYS_FALSE:
+                owns_leaf.push_back(false);
+                break;
+
+            case RPNElement::FUNCTION_NOT:
+                /// Unary: ownership of the operand is unchanged.
+                if (owns_leaf.empty())
+                    return false;
+                break;
+
+            case RPNElement::FUNCTION_AND:
+            {
+                if (owns_leaf.size() < 2)
+                    return false;
+                const bool a = owns_leaf.back();
+                owns_leaf.pop_back();
+                const bool b = owns_leaf.back();
+                owns_leaf.back() = a || b;
+                break;
+            }
+
+            case RPNElement::FUNCTION_OR:
+            {
+                if (owns_leaf.size() < 2)
+                    return false;
+                const bool a = owns_leaf.back();
+                owns_leaf.pop_back();
+                const bool b = owns_leaf.back();
+                if (a || b)
+                    return false; /// A disjunction crosses an owned leaf.
+                owns_leaf.back() = false;
+                break;
+            }
+
+            default:
+                /// An owned atom leaf (`FUNCTION_IN_RANGE`, `FUNCTION_IN_SET`, polygon, etc.).
+                owns_leaf.push_back(true);
+                break;
+        }
+    }
+
+    return owns_leaf.size() == 1;
+}
+
 
 static Field applyFunctionForField(
     const FunctionBasePtr & func,

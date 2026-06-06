@@ -72,6 +72,7 @@ extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
 extern const Event FilterPartsByVirtualColumnsMicroseconds;
+extern const Event IndexBulkFilteringEvaluatedGranules;
 }
 
 namespace DB
@@ -1984,12 +1985,14 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     /// any pruning benefit. In that case skip bulk entirely and let the generic scalar path
     /// evaluate granules on demand.
     ///
-    /// The disjunction-merge path is compatible with bulk for this index when the projected
-    /// per-index condition is a pure conjunction: bulk does not populate the partial-
-    /// disjunction bitset, but for AND-only index conditions the bitset's `true` default
-    /// matches what per-granule evaluation would have written, so merge precision is
-    /// preserved. We therefore re-enable bulk for minmax in that case even when the outer
-    /// blanket disabled it for the disjunction setting.
+    /// The disjunction-merge path is compatible with bulk for this index when no disjunction
+    /// crosses a leaf this index owns: bulk does not populate the partial-disjunction bitset,
+    /// but for such conditions the bitset's `true` default matches what per-granule evaluation
+    /// would have written, so merge precision is preserved. This covers pure conjunctions and
+    /// also the common observability shape `t >= c AND (v < a OR v > b)` for a minmax index on
+    /// `t`, where the OR is over foreign columns and the index's own `t >= c` leaf stays outside
+    /// it. We re-enable bulk for minmax in that case even when the outer blanket disabled it for
+    /// the disjunction setting. See `KeyCondition::everyDisjunctionIsOverUnownedLeaves`.
     const auto * minmax_index = typeid_cast<const MergeTreeIndexMinMax *>(index_helper.get());
     const auto * minmax_cond = minmax_index ? typeid_cast<const MergeTreeIndexConditionMinMax *>(condition.get()) : nullptr;
     if (minmax_index)
@@ -1999,7 +2002,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             && reader_settings.use_minmax_index_bulk_filtering
             && minmax_cond
             && minmax_cond->hasBulkFastPath()
-            && (!use_skip_indexes_for_disjunctions || minmax_cond->indexConditionHasOnlyConjunctions());
+            && (!use_skip_indexes_for_disjunctions || minmax_cond->bulkPreservesDisjunctionPrecision());
         bulk_filtering = minmax_bulk_applicable;
     }
 
@@ -2133,6 +2136,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 /// chunk size and the memory is released before the next chunk starts.
                 MergeTreeIndexBulkGranulesPtr chunk_granules = index_helper->createIndexBulkGranules();
                 reader.readRange(chunk_begin, chunk_end, chunk_granules);
+
+                /// Observable signal that the vectorized bulk path was actually taken for this
+                /// part (as opposed to silently falling back to the per-granule scalar path).
+                ProfileEvents::increment(ProfileEvents::IndexBulkFilteringEvaluatedGranules, chunk_end - chunk_begin);
 
                 for (size_t local_idx : condition->getPossibleGranules(chunk_granules))
                 {
