@@ -3,6 +3,7 @@
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -230,7 +231,7 @@ void ReadFromRemote::enforceAggregationInOrder(const SortDescription & sort_desc
     DB::enforceAggregationInOrder(stage, &shards, sort_description, *context);
 }
 
-ASTSelectQuery & getSelectQuery(ASTPtr ast)
+static ASTSelectQuery & getSelectQuery(ASTPtr ast)
 {
     if (const auto * explain = ast->as<ASTExplainQuery>())
         ast = explain->getExplainedQuery();
@@ -281,20 +282,17 @@ ASTPtr tryBuildAdditionalFilterAST(
         /// Support for IN. The stored AST from the Set is taken.
         if (WhichDataType(node->result_type).isSet())
         {
-            auto maybe_set = node->column;
-            if (const auto * col_const = typeid_cast<const ColumnConst *>(maybe_set.get()))
-                maybe_set = col_const->getDataColumnPtr();
-
-            if (const auto * col_set = typeid_cast<const ColumnSet *>(maybe_set.get()))
+            const auto & data_column = node->column->getDataColumnPtr();
+            if (const auto * col_set = typeid_cast<const ColumnSet *>(data_column.get()))
                 node_to_ast[node] = col_set->getData()->getSourceAST();
 
             stack.pop();
             continue;
         }
 
-        if (node->column && isColumnConst(*node->column))
+        if (node->column)
         {
-            auto literal = make_intrusive<ASTLiteral>((*node->column)[0]);
+            auto literal = make_intrusive<ASTLiteral>(node->column->getField());
             /// Need to enforce type of the literal, because some type is not comparable to its native type
             /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
             auto casted_literal = makeASTFunction("_CAST", literal, make_intrusive<ASTLiteral>(node->result_type->getName()));
@@ -382,11 +380,8 @@ ASTPtr tryBuildAdditionalFilterAST(
         if (external_tables && isNameOfGlobalInFunction(func_name))
         {
             const auto * second_arg = node->children.at(1);
-            auto maybe_set = second_arg->column;
-            if (const auto * col_const = typeid_cast<const ColumnConst *>(maybe_set.get()))
-                maybe_set = col_const->getDataColumnPtr();
-
-            if (const auto * col_set = typeid_cast<const ColumnSet *>(maybe_set.get()))
+            const auto & data_column = second_arg->column->getDataColumnPtr();
+            if (const auto * col_set = typeid_cast<const ColumnSet *>(data_column.get()))
             {
                 auto future_set = col_set->getData();
                 if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get());
@@ -494,8 +489,37 @@ static void addFilters(
     if (table_expressions.size() != 1)
         return;
 
-    const auto * table_node = table_expressions.front()->as<TableNode>();
-    if (!table_node)
+    /// Extract the storage snapshot, identifier (when available) and alias from the table expression.
+    /// Supported cases:
+    ///   - TableNode (a real table)
+    ///   - TableFunctionNode (e.g. `numbers(3)`, `remote(...)`)
+    ///   - QueryNode wrapping any of the above (one level of subquery)
+    StorageSnapshotPtr table_snapshot;
+    ASTPtr table_identifier_ast;
+    String table_alias;
+
+    auto extract_from_expression = [&](const QueryTreeNodePtr & expr) -> bool
+    {
+        if (const auto * tn = expr->as<TableNode>())
+        {
+            table_snapshot = tn->getStorageSnapshot();
+            table_identifier_ast = tn->toASTIdentifier();
+            table_alias = tn->getAlias();
+            return true;
+        }
+        if (const auto * tfn = expr->as<TableFunctionNode>())
+        {
+            table_snapshot = tfn->getStorageSnapshot();
+            /// Table functions don't have a stable database/table identifier - we only
+            /// need the alias on the receiving side so `setColumnShortName` can strip it.
+            table_identifier_ast = nullptr;
+            table_alias = tfn->getAlias();
+            return true;
+        }
+        return false;
+    };
+
+    if (!extract_from_expression(table_expressions.front()))
     {
         const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
         if (!inner_query_node)
@@ -506,15 +530,14 @@ static void addFilters(
         if (table_expressions.size() != 1)
             return;
 
-        table_node = table_expressions.front()->as<TableNode>();
-        if (!table_node)
+        if (!extract_from_expression(table_expressions.front()))
             return;
     }
 
     TableWithColumnNamesAndTypes table_with_columns(
-        DatabaseAndTableWithAlias(table_node->toASTIdentifier()),
-        table_node->getStorageSnapshot()->getColumns(GetColumnsOptions::Kind::Ordinary));
-    table_with_columns.table.alias = table_node->getAlias();
+        table_identifier_ast ? DatabaseAndTableWithAlias(table_identifier_ast) : DatabaseAndTableWithAlias{},
+        table_snapshot->getColumns(GetColumnsOptions::Kind::Ordinary));
+    table_with_columns.table.alias = table_alias;
 
     bool optimize_final = settings[Setting::enable_optimize_predicate_expression_to_final_subquery];
     bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];

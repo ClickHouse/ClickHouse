@@ -163,7 +163,7 @@ struct IndexesSerializationType
 
     void deserialize(ReadBuffer & buffer, const ISerialization::DeserializeBinaryBulkSettings & settings)
     {
-        SerializationType val;
+        SerializationType val = 0;
         readBinaryLittleEndian(val, buffer);
 
         checkType(val);
@@ -232,7 +232,7 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
     KeysSerializationVersion key_version;
     ColumnUniquePtr global_dictionary;
 
-    IndexesSerializationType index_type;
+    IndexesSerializationType index_type{};
     ColumnPtr additional_keys;
     ColumnPtr null_map;
     UInt64 num_pending_rows = 0;
@@ -330,7 +330,7 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
     if (!stream)
         return;
 
-    UInt64 keys_version;
+    UInt64 keys_version = 0;
     readBinaryLittleEndian(keys_version, *stream);
 
     auto new_state = std::make_shared<DeserializeStateLowCardinality>(keys_version);
@@ -348,7 +348,7 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
         /// body afterwards, for example unused `LowCardinality` alternatives inside
         /// `Variant` or empty nested `LowCardinality` streams. In that case `eof`
         /// is true and we keep `global_dictionary` empty.
-        UInt64 num_keys;
+        UInt64 num_keys = 0;
         readBinaryLittleEndian(num_keys, *stream);
 
         auto keys_type = removeNullable(dictionary_type);
@@ -380,7 +380,7 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
 
             settings.seek_to_start_callback(dictionary_keys_path);
 
-            UInt64 repeated_keys_version;
+            UInt64 repeated_keys_version = 0;
             readBinaryLittleEndian(repeated_keys_version, *stream);
             if (repeated_keys_version != keys_version)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Inconsistent version while resetting LowCardinality dictionary stream");
@@ -651,7 +651,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
     auto read_dictionary = [this, low_cardinality_state, keys_stream]()
     {
-        UInt64 num_keys;
+        UInt64 num_keys = 0;
         readBinaryLittleEndian(num_keys, *keys_stream);
 
         auto keys_type = removeNullable(dictionary_type);
@@ -664,7 +664,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
     auto read_additional_keys = [this, low_cardinality_state, indexes_stream]()
     {
-        UInt64 num_keys;
+        UInt64 num_keys = 0;
         readBinaryLittleEndian(num_keys, *indexes_stream);
 
         auto keys_type = removeNullable(dictionary_type);

@@ -22,8 +22,8 @@ void LogFrequencyLimiterImpl::log(Poco::Message && msg)
 
     time_t now = time(nullptr);
     size_t skipped_similar_messages = 0;
-    bool need_cleanup;
-    bool need_log;
+    bool need_cleanup = false;
+    bool need_log = false;
 
     {
         std::lock_guard lock(mutex);
