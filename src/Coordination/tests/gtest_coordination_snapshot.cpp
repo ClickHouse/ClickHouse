@@ -3,6 +3,7 @@
 #if USE_NURAFT
 #include <Coordination/tests/gtest_coordination_common.h>
 
+#include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/SnapshotableHashTable.h>
@@ -405,8 +406,6 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
     /// Set ACLs on nodes to verify acl_id round-trips through V7 snapshots
     auto acl_id1 = storage.acl_map.convertACLs({{31, "world", "anyone"}});
     auto acl_id2 = storage.acl_map.convertACLs({{1, "digest", "user1:pwd"}});
-    storage.acl_map.addUsage(acl_id1);
-    storage.acl_map.addUsage(acl_id2);
 
     addNode(storage, "/hello1", "world", 1, acl_id1);
     addNode(storage, "/hello2", "somedata", 3, acl_id2);
@@ -765,7 +764,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
 
     Storage storage(500, "", this->keeper_context);
     static constexpr std::string_view path = "/hello";
-    static constexpr DB::ACLId acl_id = 42;
+    DB::ACLId acl_id = storage.acl_map.convertACLs({{1, "digest", "user1:pwd"}});
+    EXPECT_NE(acl_id, 0);
     addNode(storage, std::string{path}, "world", /*ephemeral_owner=*/0, acl_id);
     DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 50, nullptr, this->keeper_context->getWriteSnapshotVersion());
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
@@ -844,7 +844,7 @@ static std::string runFollower(int idx, DB::IKeeperStateMachine & leader, nuraft
     return std::string(follower->getStorageUnsafe().container.getValue("/hello").getData());
 }
 
-static DB::KeeperContextPtr makeMemoryContextForSnapshotApply(const std::string & snapshots_path, const std::string & rocksdb_path)
+static DB::KeeperContextPtr makeMemoryContextForSnapshotApply(const std::string & snapshots_path, const std::string & rocksdb_path, const std::string & log_path = "")
 {
     auto settings = std::make_shared<DB::CoordinationSettings>();
 #if USE_ROCKSDB
@@ -855,6 +855,8 @@ static DB::KeeperContextPtr makeMemoryContextForSnapshotApply(const std::string 
     ctx->setLocalLogsPreprocessed();
     ctx->setDigestEnabled(true);
     ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", snapshots_path));
+    if (!log_path.empty())
+        ctx->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", log_path));
     ctx->setRocksDBDisk(std::make_shared<DB::DiskLocal>("RocksDisk", rocksdb_path));
     ctx->setRocksDBOptions();
     return ctx;
@@ -958,21 +960,30 @@ TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotPreservesPreprocessedTailAboveS
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
+    ChangelogDirTest test("./logs");
 
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
+    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb", "./logs");
+    DB::KeeperLogStore changelog({}, {}, ctx);
+    changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
+    state_machine->setLogStore(&changelog);
 
     auto base_entry = makeCreateEntry(*state_machine, "/committed", "base");
+    changelog.append(base_entry);
     state_machine->pre_commit(1, base_entry->get_buf());
     state_machine->commit(1, base_entry->get_buf());
 
     auto set_entry = makeSetEntry(*state_machine, "/committed", "tail_update");
+    changelog.append(set_entry);
     state_machine->pre_commit(2, set_entry->get_buf());
 
     auto create_tail_entry = makeCreateEntry(*state_machine, "/tail", "tail_create");
+    changelog.append(create_tail_entry);
     state_machine->pre_commit(3, create_tail_entry->get_buf());
+
+    changelog.end_of_append_batch(0, 0);
 
     DB::KeeperMemoryStorage snapshot_storage(500, "", ctx);
     addNode(snapshot_storage, "/committed", "base");
@@ -1000,19 +1011,27 @@ TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotPreservesEphemeralTailForCloseP
 {
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest rocks("./rocksdb");
+    ChangelogDirTest test("./logs");
 
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
+    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb", "./logs");
+    DB::KeeperLogStore changelog({}, {}, ctx);
+    changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
+    state_machine->setLogStore(&changelog);
 
     auto base_entry = makeCreateEntry(*state_machine, "/base", "base");
+    changelog.append(base_entry);
     state_machine->pre_commit(1, base_entry->get_buf());
     state_machine->commit(1, base_entry->get_buf());
 
     static constexpr int64_t session_id = 7;
     auto ephemeral_entry = makeEphemeralCreateEntry(*state_machine, session_id, "/ephemeral", "tail_ephemeral");
+    changelog.append(ephemeral_entry);
     state_machine->pre_commit(2, ephemeral_entry->get_buf());
+
+    changelog.end_of_append_batch(0, 0);
 
     DB::KeeperMemoryStorage snapshot_storage(500, "", ctx);
     addNode(snapshot_storage, "/base", "base");
@@ -1025,6 +1044,7 @@ TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotPreservesEphemeralTailForCloseP
     EXPECT_TRUE(state_machine->apply_snapshot(snapshot));
 
     auto close_entry = makeCloseEntry(*state_machine, session_id);
+    changelog.append(close_entry);
     state_machine->pre_commit(3, close_entry->get_buf());
 
     state_machine->commit(2, ephemeral_entry->get_buf());

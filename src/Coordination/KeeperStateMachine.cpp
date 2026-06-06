@@ -136,16 +136,20 @@ KeeperStateMachine<Storage>::KeeperStateMachine(
 {
 }
 
+void IKeeperStateMachine::setLogStore(KeeperLogStore * log_store_)
+{
+    chassert(!log_store);
+    log_store = log_store_;
+}
 
 template<typename Storage>
 void KeeperStateMachine<Storage>::init()
 {
     /// Do everything without mutexes, no other threads exist.
-    LOG_DEBUG(log, "Totally have {} snapshots", snapshot_manager.totalSnapshots());
     bool has_snapshots = snapshot_manager.totalSnapshots() != 0;
     /// Deserialize latest snapshot from disk
     uint64_t latest_log_index = snapshot_manager.getLatestSnapshotIndex();
-    LOG_DEBUG(log, "Trying to load state machine from snapshot up to log index {}", latest_log_index);
+    LOG_DEBUG(log, "Have {} snapshots, trying to load state machine from snapshot up to log index {}", snapshot_manager.totalSnapshots(), latest_log_index);
 
     if (has_snapshots)
     {
@@ -194,6 +198,47 @@ void KeeperStateMachine<Storage>::init()
     if (!storage)
         storage = std::make_unique<Storage>(
             keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(), superdigest, keeper_context);
+}
+
+template<typename Storage>
+void KeeperStateMachine<Storage>::preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> entries, bool lock_mutex)
+{
+    if (!log_store)
+        /// We're in a unit test or a tool, not keeper server.
+        return;
+
+    if (!entries)
+        entries = log_store->log_entries(start_idx, end_idx);
+
+    if (entries->size() != end_idx - std::min(start_idx, end_idx))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of log entries returned by log store: start_idx={}, end_idx={}, count={}", start_idx, end_idx, entries->size());
+
+    if (entries->empty())
+    {
+        LOG_INFO(log, "No uncommitted log entries to preprocess ({} - {})", start_idx, end_idx);
+        return;
+    }
+
+    LOG_INFO(log, "Preprocessing {} uncommitted log entries ({} - {})", entries->size(), start_idx, end_idx);
+    for (size_t i = 0; i < entries->size(); ++i)
+    {
+        auto & entry = (*entries)[i];
+        uint64_t log_idx = start_idx + i;
+
+        if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
+        {
+            auto request_for_session = parseRequest(entry->get_buf(), /*final=*/false);
+            if (!request_for_session->zxid)
+                request_for_session->zxid = log_idx;
+            request_for_session->log_idx = log_idx;
+
+            preprocess(*request_for_session, lock_mutex);
+        }
+
+        if ((i + 1) % 50000 == 0)
+            LOG_TRACE(log, "Preprocessed {}/{} entries", i + 1, entries->size());
+    }
+    LOG_INFO(log, "Preprocessing done");
 }
 
 namespace
@@ -301,7 +346,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log
 
     try
     {
-        preprocess(*request_for_session);
+        preprocess(*request_for_session, /*lock_mutex=*/ true);
     }
     catch (...)
     {
@@ -485,14 +530,17 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
 }
 
 template<typename Storage>
-std::optional<KeeperDigest> KeeperStateMachine<Storage>::preprocess(const KeeperRequestForSession & request_for_session)
+std::optional<KeeperDigest> KeeperStateMachine<Storage>::preprocess(const KeeperRequestForSession & request_for_session, bool lock_mutex) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     const auto op_num = request_for_session.request->getOpNum();
 
     KeeperDigest digest_after_preprocessing;
     try
     {
-        KEEPER_STORAGE_LOCK_SHARED(lock);
+        ProfiledSharedLock lock(state_machine_storage_mutex, ProfileEvents::KeeperStorageSharedLockWaitMicroseconds, std::defer_lock);
+        if (lock_mutex)
+            lock.lock();
+
         if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
             return storage->getNodesDigest(false, /*lock_transaction_mutex=*/true);
 
@@ -619,7 +667,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
 
     request_for_session->log_idx = log_idx;
 
-    if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session))
+    if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session, /*lock_mutex=*/ true))
         return nullptr;
 
     const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
@@ -722,83 +770,154 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
 template<typename Storage>
 bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
 {
-    LOG_DEBUG(log, "Applying snapshot {}", s.get_last_log_idx());
-
-    bool snapshot_apply_finished = false;
-    SCOPE_EXIT({
-        if (!snapshot_apply_finished)
-            ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplysFailed);
-    });
-
-    const auto validate_snapshot_to_apply = [&](const SnapshotMetadataPtr & current_snapshot_meta)
+    try
     {
-        if (!current_snapshot_meta)
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Required to apply snapshot with last log index {}, but no latest snapshot metadata is available",
-                s.get_last_log_idx());
-        }
-        if (s.get_last_log_idx() > current_snapshot_meta->get_last_log_idx())
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Required to apply snapshot with last log index {}, but last created snapshot was for smaller log index {}",
-                s.get_last_log_idx(),
-                current_snapshot_meta->get_last_log_idx());
-        }
-        if (s.get_last_log_idx() < current_snapshot_meta->get_last_log_idx())
-        {
-            LOG_INFO(
-                log,
-                "A snapshot with a larger last log index ({}) was created, skipping applying snapshot with last log index {}",
-                current_snapshot_meta->get_last_log_idx(),
-                s.get_last_log_idx());
-            return false;
-        }
+        LOG_DEBUG(log, "Applying snapshot {}", s.get_last_log_idx());
 
-        return true;
-    };
+        bool snapshot_apply_finished = false;
+        SCOPE_EXIT({
+            if (!snapshot_apply_finished)
+                ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplysFailed);
+        });
 
-    if constexpr (std::is_same_v<Storage, KeeperMemoryStorage>)
-    {
-        /// Apply received snapshots in three phases to reduce peak memory:
-        /// 1. Under `snapshots_lock`, validate metadata and pin the snapshot file.
-        /// 2. Outside locks, read the file and validate its metadata prefix.
-        /// 3. Under `snapshots_lock` and exclusive storage lock, detach the
-        ///    uncommitted tail, drop old storage, deserialize replacement
-        ///    storage, replay the tail, and publish it.
-        /// Any failure after `storage.reset` is not recoverable, so it terminates.
-        SnapshotFileInfoPtr snapshot_file_info;
+        const auto validate_snapshot_to_apply = [&](const SnapshotMetadataPtr & current_snapshot_meta)
         {
-            std::lock_guard lock(snapshots_lock);
-            if (!validate_snapshot_to_apply(latest_snapshot_meta))
-            {
-                snapshot_apply_finished = true;
-                return true;
-            }
-
-            snapshot_file_info = getSnapshotPinUnlocked(s.get_last_log_idx());
-            if (!snapshot_file_info)
+            if (!current_snapshot_meta)
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Required to apply snapshot with last log index {}, but snapshot file info is not available",
+                    "Required to apply snapshot with last log index {}, but no latest snapshot metadata is available",
                     s.get_last_log_idx());
             }
-        }
+            if (s.get_last_log_idx() > current_snapshot_meta->get_last_log_idx())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Required to apply snapshot with last log index {}, but last created snapshot was for smaller log index {}",
+                    s.get_last_log_idx(),
+                    current_snapshot_meta->get_last_log_idx());
+            }
+            if (s.get_last_log_idx() < current_snapshot_meta->get_last_log_idx())
+            {
+                LOG_INFO(
+                    log,
+                    "A snapshot with a larger last log index ({}) was created, skipping applying snapshot with last log index {}",
+                    current_snapshot_meta->get_last_log_idx(),
+                    s.get_last_log_idx());
+                return false;
+            }
 
-        auto snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(*snapshot_file_info);
-        auto snapshot_meta_from_buffer = snapshot_manager.deserializeSnapshotMetadataFromBuffer(snapshot_buf);
-        if (snapshot_meta_from_buffer->get_last_log_idx() != s.get_last_log_idx())
+            return true;
+        };
+
+        /// If there are uncommitted log entries above the snapshot, we re-preprocess them in the new
+        /// KeeperStorage. This is unusual; normally apply_snapshot is called in order to fast-forward
+        /// follower's state to a log_idx far above the tail of this follower's log_store.
+        uint64_t uncommitted_start_idx = s.get_last_log_idx() + 1;
+        uint64_t uncommitted_end_idx = std::max(storage->getLastUncommittedLogIdx() + 1, uncommitted_start_idx);
+        auto uncommitted_entries = log_store ? log_store->log_entries(uncommitted_start_idx, uncommitted_end_idx) : nullptr;
+
+        if (uncommitted_entries && !uncommitted_entries->empty())
+            LOG_DEBUG(log, "There are {} uncommitted log entries to apply after the snapshot", uncommitted_entries->size());
+
+        if constexpr (std::is_same_v<Storage, KeeperMemoryStorage>)
         {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Required to apply snapshot with last log index {}, but snapshot buffer metadata has last log index {}",
-                s.get_last_log_idx(),
-                snapshot_meta_from_buffer->get_last_log_idx());
-        }
+            /// Apply received snapshots in three phases to reduce peak memory:
+            /// 1. Under `snapshots_lock`, validate metadata and pin the snapshot file.
+            /// 2. Outside locks, read the file and validate its metadata prefix.
+            /// 3. Under `snapshots_lock` and exclusive storage lock, drop old storage, deserialize
+            ///    replacement storage, replay the tail, and publish the storage.
+            /// Any failure after `storage.reset` is not recoverable, so it terminates.
+            SnapshotFileInfoPtr snapshot_file_info;
+            {
+                std::lock_guard lock(snapshots_lock);
+                if (!validate_snapshot_to_apply(latest_snapshot_meta))
+                {
+                    snapshot_apply_finished = true;
+                    return true;
+                }
 
+                snapshot_file_info = getSnapshotPinUnlocked(s.get_last_log_idx());
+                if (!snapshot_file_info)
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Required to apply snapshot with last log index {}, but snapshot file info is not available",
+                        s.get_last_log_idx());
+                }
+            }
+
+            auto snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(*snapshot_file_info);
+            auto snapshot_meta_from_buffer = snapshot_manager.deserializeSnapshotMetadataFromBuffer(snapshot_buf);
+            if (snapshot_meta_from_buffer->get_last_log_idx() != s.get_last_log_idx())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Required to apply snapshot with last log index {}, but snapshot buffer metadata has last log index {}",
+                    s.get_last_log_idx(),
+                    snapshot_meta_from_buffer->get_last_log_idx());
+            }
+
+            {
+                std::lock_guard lock(snapshots_lock);
+                if (!validate_snapshot_to_apply(latest_snapshot_meta))
+                {
+                    snapshot_apply_finished = true;
+                    return true;
+                }
+
+                {
+                    KEEPER_STORAGE_LOCK_EXCLUSIVE(storage_lock);
+
+                    std::optional<uint64_t> latest_snapshot_meta_index_before_reset;
+                    if (latest_snapshot_meta)
+                        latest_snapshot_meta_index_before_reset = latest_snapshot_meta->get_last_log_idx();
+
+                    storage.reset();
+
+                    try
+                    {
+                        auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf);
+                        /// This repeats the pre-reset prefix check deliberately. It
+                        /// catches future divergence between
+                        /// `deserializeSnapshotMetadataFromBuffer` and
+                        /// `deserializeSnapshotFromBuffer`.
+                        if (snapshot_deserialization_result.snapshot_meta->get_last_log_idx() != s.get_last_log_idx())
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR,
+                                "Required to apply snapshot with last log index {}, but fully deserialized snapshot metadata has last log index {}",
+                                s.get_last_log_idx(),
+                                snapshot_deserialization_result.snapshot_meta->get_last_log_idx());
+
+                        snapshot_buf = nullptr;
+                        storage = std::move(snapshot_deserialization_result.storage);
+                        preprocessUncommittedLogEntries(uncommitted_start_idx, uncommitted_end_idx, uncommitted_entries, /*lock_mutex=*/ false);
+                        latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
+
+                        {
+                            std::lock_guard cluster_config_guard(cluster_config_lock);
+                            cluster_config = snapshot_deserialization_result.cluster_config;
+                        }
+                    }
+                    catch (...)
+                    {
+                        LOG_FATAL(
+                            log,
+                            "Failed to apply snapshot {} after dropping old `KeeperMemoryStorage` "
+                            "(latest snapshot metadata index before reset: {}): {}. Terminating to avoid inconsistent Keeper state",
+                            s.get_last_log_idx(),
+                            latest_snapshot_meta_index_before_reset ? std::to_string(*latest_snapshot_meta_index_before_reset) : "(None)",
+                            getCurrentExceptionMessage(true, true, false));
+                        std::terminate();
+                    }
+                }
+
+                snapshot_loader_info.reset();
+                snapshot_loader_info_log_idx = 0;
+                cancelIfHasUnfinishedSnapshotReceive();
+            }
+        }
+        else
         {
             std::lock_guard lock(snapshots_lock);
             if (!validate_snapshot_to_apply(latest_snapshot_meta))
@@ -807,50 +926,36 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
                 return true;
             }
 
+            SnapshotDeserializationResult<Storage> snapshot_deserialization_result
+                = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(s.get_last_log_idx()));
+
             {
                 KEEPER_STORAGE_LOCK_EXCLUSIVE(storage_lock);
-
-                std::optional<uint64_t> latest_snapshot_meta_index_before_reset;
-                if (latest_snapshot_meta)
-                    latest_snapshot_meta_index_before_reset = latest_snapshot_meta->get_last_log_idx();
-
-                auto uncommitted_tail = storage->detachUncommittedStateAfter(s.get_last_log_idx());
-                storage.reset();
+                storage = std::move(snapshot_deserialization_result.storage);
 
                 try
                 {
-                    auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf);
-                    /// This repeats the pre-reset prefix check deliberately. It
-                    /// catches future divergence between
-                    /// `deserializeSnapshotMetadataFromBuffer` and
-                    /// `deserializeSnapshotFromBuffer`.
-                    if (snapshot_deserialization_result.snapshot_meta->get_last_log_idx() != s.get_last_log_idx())
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Required to apply snapshot with last log index {}, but fully deserialized snapshot metadata has last log index {}",
-                            s.get_last_log_idx(),
-                            snapshot_deserialization_result.snapshot_meta->get_last_log_idx());
-
-                    snapshot_buf = nullptr;
-                    snapshot_deserialization_result.storage->applyUncommittedState(std::move(uncommitted_tail));
-                    storage = std::move(snapshot_deserialization_result.storage);
-                    latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
-
-                    {
-                        std::lock_guard cluster_config_guard(cluster_config_lock);
-                        cluster_config = snapshot_deserialization_result.cluster_config;
-                    }
+                    preprocessUncommittedLogEntries(uncommitted_start_idx, uncommitted_end_idx, uncommitted_entries, /*lock_mutex=*/ false);
                 }
                 catch (...)
                 {
+                    /// (Alternatively, we could do preprocessing on snapshot_deserialization_result.storage
+                    ///  before assigning `storage`. Then we wouldn't need to crash if it fails. But
+                    ///  that doesn't seem worth the complexity and error-proneness of making
+                    ///  preprocessUncommittedLogEntries support using different storage instance.)
                     LOG_FATAL(
                         log,
-                        "Failed to apply snapshot {} after dropping old `KeeperMemoryStorage` "
-                        "(latest snapshot metadata index before reset: {}): {}. Terminating to avoid inconsistent Keeper state",
+                        "Failed to apply snapshot {} after dropping old `KeeperRocksDBStorage`: {}. Terminating to avoid inconsistent Keeper state",
                         s.get_last_log_idx(),
-                        latest_snapshot_meta_index_before_reset ? std::to_string(*latest_snapshot_meta_index_before_reset) : "(None)",
                         getCurrentExceptionMessage(true, true, false));
                     std::terminate();
+                }
+
+                latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
+
+                {
+                    std::lock_guard cluster_config_guard(cluster_config_lock);
+                    cluster_config = snapshot_deserialization_result.cluster_config;
                 }
             }
 
@@ -858,44 +963,18 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
             snapshot_loader_info_log_idx = 0;
             cancelIfHasUnfinishedSnapshotReceive();
         }
+
+        ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplys);
+        keeper_context->setLastCommitIndex(s.get_last_log_idx());
+        snapshot_apply_finished = true;
+        return true;
     }
-    else
+    catch (...)
     {
-        std::lock_guard lock(snapshots_lock);
-        if (!validate_snapshot_to_apply(latest_snapshot_meta))
-        {
-            snapshot_apply_finished = true;
-            return true;
-        }
-
-        SnapshotDeserializationResult<Storage> snapshot_deserialization_result
-            = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(s.get_last_log_idx()));
-
-        {
-            KEEPER_STORAGE_LOCK_EXCLUSIVE(storage_lock);
-            /// maybe some logs were preprocessed with log idx larger than the snapshot idx
-            /// we have to apply them to the new storage
-            storage->applyUncommittedState(
-                *snapshot_deserialization_result.storage,
-                snapshot_deserialization_result.snapshot_meta->get_last_log_idx());
-            storage = std::move(snapshot_deserialization_result.storage);
-            latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
-
-            {
-                std::lock_guard cluster_config_guard(cluster_config_lock);
-                cluster_config = snapshot_deserialization_result.cluster_config;
-            }
-        }
-
-        snapshot_loader_info.reset();
-        snapshot_loader_info_log_idx = 0;
-        cancelIfHasUnfinishedSnapshotReceive();
+        tryLogCurrentException(log, "Failed to apply snapshot", LogsLevel::fatal);
+        /// NuRaft exits if we throw from here anyway.
+        std::terminate();
     }
-
-    ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplys);
-    keeper_context->setLastCommitIndex(s.get_last_log_idx());
-    snapshot_apply_finished = true;
-    return true;
 }
 
 

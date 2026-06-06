@@ -80,7 +80,7 @@ ACLId ACLMap::convertACLs(const Coordination::ACLs & acls)
     bool emplaced = acl_to_num.emplace(acls, index).second;
     chassert(emplaced);
     emplaced = num_to_acl.emplace(std::piecewise_construct,
-        std::forward_as_tuple(index), std::forward_as_tuple(std::move(acls), 1)).second;
+        std::forward_as_tuple(index), std::forward_as_tuple(acls, 1)).second;
     chassert(emplaced);
 
     return index;
@@ -131,7 +131,10 @@ void ACLMap::addUsage(ACLId acl_id)
         return;
 
     std::shared_lock shared_lock(map_mutex);
-    num_to_acl.at(acl_id).usage++;
+    auto it = num_to_acl.find(acl_id);
+    if (it == num_to_acl.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ACL with id {} does not exist", acl_id);
+    it->second.usage++;
 }
 
 void ACLMap::removeUsage(ACLId acl_id)

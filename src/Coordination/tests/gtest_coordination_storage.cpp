@@ -125,7 +125,7 @@ TYPED_TEST(CoordinationTest, TestCheckNotExistsRequest)
     }
 }
 
-TYPED_TEST(CoordinationTest, TestReapplyingDeltas)
+TYPED_TEST(CoordinationTest, TestDeterministicPreprocess)
 {
     using namespace DB;
     using namespace Coordination;
@@ -172,7 +172,11 @@ TYPED_TEST(CoordinationTest, TestReapplyingDeltas)
     Storage storage2{500, "", this->keeper_context};
     commit_initial_data(storage2);
 
-    storage1.applyUncommittedState(storage2, initial_zxid);
+    /// preprocess the same requests, expect same results
+    /// (previously this test was testing something completely different here,
+    /// but that code path was removed, and now this test is not very interesting)
+    for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
+        storage2.preprocessRequest(create_request, 1, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/zxid);
 
     const auto commit_unprocessed = [&](Storage & storage)
     {

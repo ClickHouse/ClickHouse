@@ -715,19 +715,6 @@ const KeeperStorageBase::Delta & KeeperStorageBase::DeltaRange::front() const
     return *begin_it;
 }
 
-template <typename Container>
-KeeperStorage<Container>::UncommittedStateForSnapshot::UncommittedStateForSnapshot() = default;
-
-template <typename Container>
-KeeperStorage<Container>::UncommittedStateForSnapshot::~UncommittedStateForSnapshot() = default;
-
-template <typename Container>
-KeeperStorage<Container>::UncommittedStateForSnapshot::UncommittedStateForSnapshot(UncommittedStateForSnapshot &&) noexcept = default;
-
-template <typename Container>
-typename KeeperStorage<Container>::UncommittedStateForSnapshot &
-KeeperStorage<Container>::UncommittedStateForSnapshot::operator=(UncommittedStateForSnapshot &&) noexcept = default;
-
 KeeperStorageBase::KeeperStorageBase(int64_t tick_time_ms, const KeeperContextPtr & keeper_context_, const String & superdigest_)
     : keeper_context(keeper_context_), superdigest(superdigest_), session_expiry_queue(tick_time_ms)
 {}
@@ -1295,118 +1282,10 @@ int64_t KeeperStorageBase::getNextZXID() const
 }
 
 template<typename Container>
-void KeeperStorage<Container>::collectUncommittedTransactionsAfter(
-    int64_t last_log_idx,
-    UncommittedStateForSnapshot & result,
-    std::unordered_set<int64_t> & zxids_to_apply) const
+uint64_t KeeperStorage<Container>::getLastUncommittedLogIdx() const
 {
     std::lock_guard lock(transaction_mutex);
-    for (const auto & transaction : uncommitted_transactions)
-    {
-        if (transaction.log_idx == 0)
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Transaction has log idx equal to 0");
-
-        if (transaction.log_idx <= last_log_idx)
-            continue;
-
-        result.transactions.push_back({transaction.zxid, transaction.nodes_digest, transaction.log_idx});
-        zxids_to_apply.insert(transaction.zxid);
-    }
-}
-
-template<typename Container>
-typename KeeperStorage<Container>::UncommittedStateForSnapshot KeeperStorage<Container>::copyUncommittedStateAfter(int64_t last_log_idx) const
-{
-    UncommittedStateForSnapshot result;
-    std::unordered_set<int64_t> zxids_to_apply;
-    collectUncommittedTransactionsAfter(last_log_idx, result, zxids_to_apply);
-
-    if (zxids_to_apply.empty())
-        return result;
-
-    {
-        std::lock_guard lock(uncommitted_state.deltas_mutex);
-        for (const auto & uncommitted_delta : uncommitted_state.deltas)
-        {
-            if (zxids_to_apply.contains(uncommitted_delta.zxid))
-                result.deltas.push_back(uncommitted_delta);
-        }
-    }
-
-    return result;
-}
-
-template<typename Container>
-void KeeperStorage<Container>::detachMatchingDeltasNoexcept(
-    std::list<Delta> & source,
-    std::list<Delta> & destination,
-    const std::unordered_set<int64_t> & zxids_to_apply) noexcept
-{
-    for (auto it = source.begin(); it != source.end();)
-    {
-        auto current = it++;
-        if (zxids_to_apply.contains(current->zxid))
-            destination.splice(destination.end(), source, current);
-    }
-}
-
-template<typename Container>
-typename KeeperStorage<Container>::UncommittedStateForSnapshot KeeperStorage<Container>::detachUncommittedStateAfter(int64_t last_log_idx)
-{
-    UncommittedStateForSnapshot result;
-    std::unordered_set<int64_t> zxids_to_apply;
-    collectUncommittedTransactionsAfter(last_log_idx, result, zxids_to_apply);
-
-    if (zxids_to_apply.empty())
-        return result;
-
-    {
-        std::lock_guard lock(uncommitted_state.deltas_mutex);
-        detachMatchingDeltasNoexcept(uncommitted_state.deltas, result.deltas, zxids_to_apply);
-    }
-
-    return result;
-}
-
-template<typename Container>
-void KeeperStorage<Container>::applyUncommittedState(UncommittedStateForSnapshot uncommitted_state_for_snapshot)
-{
-    if (uncommitted_state_for_snapshot.empty())
-        return;
-
-    {
-        std::lock_guard lock(transaction_mutex);
-        for (const auto & transaction : uncommitted_state_for_snapshot.transactions)
-            uncommitted_transactions.push_back({transaction.zxid, transaction.nodes_digest, transaction.log_idx});
-    }
-
-    uncommitted_state.applyDeltas(uncommitted_state_for_snapshot.deltas, /*digest=*/nullptr);
-    for (const auto & delta : uncommitted_state_for_snapshot.deltas)
-    {
-        if (const auto * create_delta = std::get_if<CreateNodeDelta>(&delta.operation))
-        {
-            if (create_delta->stat.ephemeralOwner != 0)
-                uncommitted_state.ephemerals[create_delta->stat.ephemeralOwner].emplace(delta.path);
-        }
-        else if (const auto * remove_delta = std::get_if<RemoveNodeDelta>(&delta.operation))
-        {
-            if (remove_delta->stat.ephemeralOwner() != 0)
-                unregisterEphemeralPath(
-                    uncommitted_state.ephemerals, remove_delta->stat.ephemeralOwner(), delta.path, /*throw_if_missing=*/false);
-        }
-        else if (const auto * close_session_delta = std::get_if<CloseSessionDelta>(&delta.operation))
-        {
-            uncommitted_state.ephemerals.erase(close_session_delta->session_id);
-        }
-    }
-
-    uncommitted_state.addDeltas(std::move(uncommitted_state_for_snapshot.deltas));
-}
-
-template<typename Container>
-void KeeperStorage<Container>::applyUncommittedState(KeeperStorage & other, int64_t last_log_idx)
-{
-    other.applyUncommittedState(copyUncommittedStateAfter(last_log_idx));
+    return uncommitted_transactions.empty() ? 0 : uncommitted_transactions.back().log_idx;
 }
 
 KeeperStorageStats::KeeperStorageStats(const KeeperStorageStats & other)
@@ -2675,7 +2554,7 @@ processImpl(const Coordination::ZooKeeperListRecursiveRequest & zk_request, Stor
                 /// (Why `local = true`? `local` means "look at committed state".
                 ///  Read requests always want to look at committed state, from either `process`
                 ///  or `processLocal`. `local = false` is only appropriate during `preprocess`.)
-                if (check_acl && storage.checkACL(child_node.acl_id, Coordination::ACL::Read, session_id, /*local=*/ true))
+                if (check_acl && storage.checkACL(child_node.acl_id, Coordination::ACL::Read, session_id, /*is_local=*/ true))
                 {
                     if (response->children.size() - 1 >= zk_request.children_nodes_limit)
                     {
@@ -2697,7 +2576,7 @@ processImpl(const Coordination::ZooKeeperListRecursiveRequest & zk_request, Stor
                 auto child_path = (current_path_fs / child_name).generic_string();
                 auto child_it = container.find(child_path);
                 chassert(child_it != container.end());
-                if (storage.checkACL(child_it->value.acl_id, Coordination::ACL::Read, session_id, /*local=*/ true))
+                if (storage.checkACL(child_it->value.acl_id, Coordination::ACL::Read, session_id, /*is_local=*/ true))
                 {
                     if (response->children.size() - 1 >= zk_request.children_nodes_limit)
                     {
