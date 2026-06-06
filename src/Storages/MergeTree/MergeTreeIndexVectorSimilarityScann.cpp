@@ -622,7 +622,7 @@ MergeTreeIndexConditionVectorSimilarityScann::MergeTreeIndexConditionVectorSimil
     : parameters(parameters_)
     , index_column(index_column_)
     , index_params(index_params_)
-    , index_fetch_multiplier(context->getSettingsRef()[Setting::vector_search_index_fetch_multiplier])
+    , index_fetch_multiplier(static_cast<double>(context->getSettingsRef()[Setting::vector_search_index_fetch_multiplier]))
     , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
     , is_rescoring(context->getSettingsRef()[Setting::vector_search_with_rescoring])
     , scann_num_leaves_to_search(context->getSettingsRef()[Setting::scann_num_leaves_to_search])
