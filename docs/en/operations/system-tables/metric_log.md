@@ -1790,6 +1790,21 @@ This table can be configured with different schema types using the XML tag `<sch
 
 The `transposed` schema stores data in a format similar to `system.asynchronous_metric_log`, where metrics and events are stored as rows. This schema is useful for low-resource setups because it reduces resource consumption during merges.
 
+**Histograms**
+
+Each row also carries a snapshot of every registered histogram metric in a `histograms` Nested column with fields `metric`, `labels`, `histogram`, `count`, and `sum`. Bucket counts are cumulative since server startup. By default, histograms whose total `count` is zero are not emitted, and zero-counter buckets within an emitted histogram are omitted from the `histogram` map; set `system_metric_log_show_zero_values_in_histograms = 1` (in the default user profile) to keep all histograms and all buckets.
+
+Example query:
+
+```sql
+SELECT h.metric, h.labels, h.histogram, h.count, h.sum
+FROM system.metric_log
+ARRAY JOIN histograms AS h
+WHERE h.metric = 'keeper_response_time_ms' AND h.labels['operation_type'] = 'readonly'
+ORDER BY event_time DESC
+LIMIT 1;
+```
+
 ## See Also {#see-also}
 
 - [metric_log setting](../../operations/server-configuration-parameters/settings.md#metric_log) — Enabling and disabling the setting.

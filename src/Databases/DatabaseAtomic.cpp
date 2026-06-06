@@ -1,5 +1,7 @@
 #include <filesystem>
+#include <thread>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseMetadataDiskSettings.h>
@@ -80,7 +82,7 @@ DatabaseAtomic::DatabaseAtomic(
     , path_to_metadata_symlink(DatabaseCatalog::getMetadataDirPath(name_))
     , db_uuid(uuid)
 {
-    assert(db_uuid != UUIDHelpers::Nil);
+    chassert(db_uuid != UUIDHelpers::Nil);
 }
 
 DatabaseAtomic::DatabaseAtomic(
@@ -112,14 +114,14 @@ String DatabaseAtomic::getTableDataPath(const String & table_name) const
     auto it = table_name_to_path.find(table_name);
     if (it == table_name_to_path.end())
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} not found in database {}", table_name, database_name);
-    assert(it->second != data_path && !it->second.empty());
+    chassert(it->second != data_path && !it->second.empty());
     return it->second;
 }
 
 String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 {
     auto tmp = data_path + DatabaseCatalog::getPathForUUID(query.uuid);
-    assert(tmp != data_path && !tmp.empty());
+    chassert(tmp != data_path && !tmp.empty());
     return tmp;
 }
 
@@ -129,7 +131,7 @@ void DatabaseAtomic::drop(ContextPtr)
     waitDatabaseStarted();
     {
         std::lock_guard lock(mutex);
-        assert(tables.empty());
+        chassert(tables.empty());
     }
 
     auto db_disk = getDisk();
@@ -152,7 +154,7 @@ void DatabaseAtomic::drop(ContextPtr)
 void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::attachTable");
-    assert(relative_table_path != data_path && !relative_table_path.empty());
+    chassert(relative_table_path != data_path && !relative_table_path.empty());
     DetachedTables not_in_use;
     std::lock_guard lock(mutex);
     createDirectoriesUnlocked();
@@ -279,7 +281,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         /// Path can be not set for DDL dictionaries, but it does not matter for StorageDictionary.
         if (it != db.table_name_to_path.end())
             table_data_path_saved = it->second;
-        assert(!table_data_path_saved.empty());
+        chassert(!table_data_path_saved.empty());
         db.tables.erase(table_name_);
         db.table_name_to_path.erase(table_name_);
         if (has_symlink)
@@ -841,7 +843,7 @@ void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid, std::function<
 
     /// Server is shutting down. Do one final cleanup pass — the table may have
     /// become free just before or during shutdown.
-    bool still_tracked;
+    bool still_tracked = false;
     {
         DetachedTables not_in_use;
         {
@@ -870,6 +872,8 @@ void DatabaseAtomic::checkDetachedTableNotInUse(const UUID & uuid)
     assertDetachedTableNotInUse(uuid);
 }
 
+void registerDatabaseAtomic(DatabaseFactory & factory);
+
 void registerDatabaseAtomic(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -885,7 +889,7 @@ void registerDatabaseAtomic(DatabaseFactory & factory)
         DatabaseMetadataDiskSettings database_metadata_disk_settings;
         auto * engine_define = args.create_query.storage;
         chassert(engine_define);
-        database_metadata_disk_settings.loadFromQuery(*engine_define, args.context, args.create_query.attach);
+        database_metadata_disk_settings.loadFromQuery(*engine_define, args.context, isLoadingFromExistingMetadata(args.mode));
 
         return make_shared<DatabaseAtomic>(
             args.database_name, args.metadata_path, args.uuid, args.context, database_metadata_disk_settings);

@@ -37,7 +37,7 @@ namespace
 {
 
 template <class ReturnDataTypeName, class Geometry, class Serializer, class NameHolder>
-class FunctionReadWKB : public IFunction
+class FunctionReadWKB final : public IFunction
 {
 public:
     explicit FunctionReadWKB(UInt32 max_wkb_elements_) : max_wkb_elements(max_wkb_elements_) {}
@@ -119,7 +119,7 @@ struct ReadWKBMultiPolygonNameHolder
     static constexpr const char * name = "readWKBMultiPolygon";
 };
 
-class FunctionReadWKBCommon : public IFunction
+class FunctionReadWKBCommon final : public IFunction
 {
 public:
     enum class WKBTypes
