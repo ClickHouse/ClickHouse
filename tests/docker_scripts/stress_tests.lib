@@ -286,7 +286,7 @@ function start_server()
 
     counter=0
     max_attempt=${1:-6}
-    until clickhouse-client --query "SELECT 1"
+    until clickhouse-client --receive_timeout 30 --query "SELECT 1"
     do
         if [ "$counter" -gt "$max_attempt" ]
         then
@@ -307,7 +307,7 @@ function start_server()
 
 function check_server_start()
 {
-    clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
+    clickhouse-client --receive_timeout 30 --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
         || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
         && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
         >> /test_output/test_results.tsv)

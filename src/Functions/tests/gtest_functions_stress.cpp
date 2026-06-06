@@ -1304,7 +1304,7 @@ struct FunctionsStressTestThread
 
             thread_status->memory_tracker.resetCounters(); // reset the peak
             thread_status->memory_tracker.setHardLimit(MEMORY_LIMIT_BYTES_PER_THREAD);
-            thread_status->untracked_memory.store(0);
+            thread_status->untracked_memory = 0;
 
             randomizeSettings();
 
@@ -1433,7 +1433,7 @@ struct FunctionsStressTestThread
             }
             stats.max(S_TIME_MAX_NS, ns);
 
-            Int64 memory_balance = thread_status->memory_tracker.get() + thread_status->untracked_memory.load();
+            Int64 memory_balance = thread_status->memory_tracker.get() + thread_status->untracked_memory;
             Int64 memory_peak = thread_status->memory_tracker.getPeak();
 
             stats.add(S_MEMORY_BALANCE, memory_balance);
