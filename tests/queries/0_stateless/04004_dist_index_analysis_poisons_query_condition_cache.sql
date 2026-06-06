@@ -13,6 +13,10 @@
 -- non-matching into the condition cache. Subsequent queries then skip those parts.
 
 SET allow_experimental_analyzer = 1;
+-- Disable statistics-based part pruning so that randomized auto_statistics_types
+-- (which may include 'minmax') does not interfere with the query condition cache
+-- population that this test relies on.
+SET use_statistics_for_part_pruning = 0;
 
 DROP TABLE IF EXISTS t_dia_qcc;
 

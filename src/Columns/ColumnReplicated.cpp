@@ -1,6 +1,7 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/WeakHash.h>
 
 namespace DB
@@ -552,7 +553,7 @@ void ColumnReplicated::getIndicesOfNonDefaultRows(Offsets & result_indexes, size
 
 UInt64 ColumnReplicated::getNumberOfDefaultRows() const
 {
-    std::unordered_set<size_t> indexes_of_default_values;
+    UnorderedSetWithMemoryTracking<size_t> indexes_of_default_values;
     for (size_t i = 0; i != nested_column->size(); ++i)
     {
         if (nested_column->isDefaultAt(i))
@@ -637,9 +638,9 @@ bool ColumnReplicated::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnReplicated::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnReplicated::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    Columns source_nested_columns;
+    VectorWithMemoryTracking<ColumnPtr> source_nested_columns;
     source_nested_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
@@ -649,15 +650,30 @@ void ColumnReplicated::takeDynamicStructureFromSourceColumns(const Columns & sou
             source_nested_columns.emplace_back(source_column);
     }
 
-    nested_column->takeDynamicStructureFromSourceColumns(source_nested_columns, max_dynamic_subcolumns);
+    nested_column->chooseDynamicStructureForMerge(source_nested_columns, max_dynamic_subcolumns);
 }
 
-void ColumnReplicated::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+void ColumnReplicated::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(source_column.get()))
-        nested_column->takeDynamicStructureFromColumn(rhs_replicated->nested_column);
+    if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(&source))
+        nested_column->takeExactDynamicStructureFrom(*rhs_replicated->nested_column);
     else
-        nested_column->takeDynamicStructureFromColumn(source_column);
+        nested_column->takeExactDynamicStructureFrom(source);
+}
+
+
+void ColumnReplicated::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+{
+    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
+    nested_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+    {
+        if (const auto * replicated = typeid_cast<const ColumnReplicated *>(source_column.get()))
+            nested_source_columns.push_back(replicated->getNestedColumn());
+        else
+            nested_source_columns.push_back(source_column);
+    }
+    nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
 namespace

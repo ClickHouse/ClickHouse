@@ -43,8 +43,9 @@ public:
     bool onlyNull() const override;
     bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
     bool canBePromoted() const override { return nested_data_type->canBePromoted(); }
-    ColumnPtr createColumnConst(size_t size, const Field & field) const override;
+    MutableColumnConstPtr createColumnConst(size_t size, const Field & field) const override;
     bool hasDynamicSubcolumnsData() const override { return nested_data_type->hasDynamicSubcolumns(); }
+    bool hasDynamicStructure() const override { return nested_data_type->hasDynamicStructure(); }
     std::unique_ptr<SubstreamData>
     getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
     bool supportsSparseSerialization() const override { return nested_data_type->supportsSparseSerialization(); }

@@ -7,7 +7,7 @@ title: 'Projections'
 doc_type: 'reference'
 ---
 
-This article discusses what projections are, how you can use them and various options for manipulating projections.
+This page discusses what projections are, how you can use them and various options for manipulating projections.
 
 ## Overview of projections {#overview}
 
@@ -19,7 +19,7 @@ You can define one or more projections for a table, and during the query analysi
 
 :::note[Disk usage]
 Projections will create internally a new hidden table, this means that more IO and space on disk will be required.
-Example, If the projection has defined a different primary key, all the data from the original table will be duplicated.
+For example, if the projection has defined a different primary key, all the data from the original table will be duplicated.
 :::
 
 You can see more technical details about how projections work internally on this [page](/guides/best-practices/sparse-primary-indexes.md/#option-3-projections).
@@ -29,6 +29,7 @@ You can see more technical details about how projections work internally on this
 ### Example filtering without using primary keys {#example-filtering-without-using-primary-keys}
 
 Creating the table:
+
 ```sql
 CREATE TABLE visits_order
 (
@@ -40,17 +41,20 @@ CREATE TABLE visits_order
 ENGINE = MergeTree()
 PRIMARY KEY user_agent
 ```
+
 Using `ALTER TABLE`, we could add the Projection to an existing table:
+
 ```sql
 ALTER TABLE visits_order ADD PROJECTION user_name_projection (
-SELECT
-*
-ORDER BY user_name
+    SELECT *
+    ORDER BY user_name
 )
 
 ALTER TABLE visits_order MATERIALIZE PROJECTION user_name_projection
 ```
+
 Inserting the data:
+
 ```sql
 INSERT INTO visits_order SELECT
     number,
@@ -61,7 +65,8 @@ FROM numbers(1, 100);
 ```
 
 The Projection will allow us to filter by `user_name` fast even if in the original Table `user_name` was not defined as a `PRIMARY_KEY`.
-At query time ClickHouse determined that less data will be processed if the projection is used, as the data is ordered by `user_name`.
+At query time, ClickHouse determines that less data will be processed if the projection is used, as the data is ordered by `user_name`.
+
 ```sql
 SELECT
     *
@@ -71,6 +76,7 @@ LIMIT 2
 ```
 
 To verify that a query is using the projection, we could review the `system.query_log` table. On the `projections` field we have the name of the projection used or empty if none has been used:
+
 ```sql
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
@@ -155,9 +161,28 @@ It will be empty if no projection has been used:
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
-### Normal projection with `_part_offset` field {#normal-projection-with-part-offset-field}
+### Creating and using projection indexes {#projection-indexes}
 
-Creating a table with a normal projection that utilizes the `_part_offset` field:
+Creating a [projection index](../../../engines/table-engines/mergetree-family/mergetree.md#projection-index):
+
+```sql
+CREATE TABLE events
+(
+    `event_time` DateTime,
+    `event_id` UInt64,
+    `user_id` UInt64,
+    `huge_string` String,
+    PROJECTION order_by_user_id INDEX user_id TYPE basic
+)
+ENGINE = MergeTree()
+ORDER BY (event_id);
+```
+
+<details markdown="1">
+
+<summary>Creating a projection with explicit `_part_offset` field</summary>
+
+Projection indexes can alternatively be created using the following syntax (not recommended):
 
 ```sql
 CREATE TABLE events
@@ -177,13 +202,13 @@ ENGINE = MergeTree()
 ORDER BY (event_id);
 ```
 
+</details>
+
 Inserting some sample data:
 
 ```sql
 INSERT INTO events SELECT * FROM generateRandom() LIMIT 100000;
 ```
-
-#### Using `_part_offset` as a secondary index {#normal-projection-secondary-index}
 
 The `_part_offset` field preserves its value through merges and mutations, making it valuable for secondary indexing. We can leverage this in queries:
 

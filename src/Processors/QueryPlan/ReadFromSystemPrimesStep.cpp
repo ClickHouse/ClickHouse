@@ -127,7 +127,7 @@ ReadFromSystemPrimesStep::ReadFromSystemPrimesStep(
           context_)
     , column_names{column_names_}
     , storage{std::move(storage_)}
-    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context, false).expression}
+    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, {}, context, false).expression}
     , max_block_size{max_block_size_}
     , storage_limits(query_info_.storage_limits)
 {
@@ -206,6 +206,18 @@ Pipe ReadFromSystemPrimesStep::makePipe()
     /// by the query LIMIT/OFFSET when it is safe to push that down.
     std::optional<UInt64> effective_limit = primes_storage.limit;
 
+    /// Calculate how many primes the sieve must generate for `primes(offset, limit, step)`.
+    /// Total primes generated is: `offset + (limit - 1) * step + 1`
+    auto estimate_rows_to_read = [&](UInt64 num_output_rows) -> UInt64
+    {
+        if (num_output_rows == 0)
+            return 0;
+        UInt128 last_prime_index
+            = static_cast<UInt128>(primes_storage.offset) + static_cast<UInt128>(num_output_rows - 1) * primes_storage.step;
+        UInt128 total_primes_to_generate = last_prime_index + 1;
+        return static_cast<UInt64>(std::min<UInt128>(total_primes_to_generate, std::numeric_limits<UInt64>::max()));
+    };
+
     /// Storage-level LIMIT 0 (e.g. `primes(0)`) is an empty table regardless of the WHERE clause.
     if (effective_limit && *effective_limit == 0)
     {
@@ -236,7 +248,14 @@ Pipe ReadFromSystemPrimesStep::makePipe()
         return std::move(intervals);
     };
 
-    /// No-filter path: output is exactly the generated prime sequence, so pushing down query LIMIT/OFFSET is safe.
+    /// Every query without `WHERE` (no filter) uses this path.
+    ///     SELECT * FROM primes(2000)
+    ///     SELECT * FROM primes(5000, 6)
+    ///     SELECT * FROM primes(0, 10, 500)
+    ///     SELECT * FROM primes(2000) LIMIT 10
+    ///     SELECT * FROM system.primes LIMIT 2000
+    ///     SELECT * FROM system.primes
+    /// Since there is no filter step, output is exactly the generated prime sequence, so pushing down query LIMIT/OFFSET is safe.
     if (!filter_actions_dag)
     {
         /// Applying query LIMIT/OFFSET at the source doesn't change results (it is applied later anyway),
@@ -244,7 +263,9 @@ Pipe ReadFromSystemPrimesStep::makePipe()
         apply_query_limit();
 
         if (effective_limit)
-            NumbersLikeUtils::checkLimits(context->getSettingsRef(), static_cast<size_t>(*effective_limit));
+            /// Even if the source LIMIT is small, a large offset or step can still cause the sieve to read many primes, so we check total number of
+            /// primes we end up generating here against `max_rows_to_read` to fail fast if the query is not feasible.
+            NumbersLikeUtils::checkLimits(context->getSettingsRef(), static_cast<size_t>(estimate_rows_to_read(*effective_limit)));
 
         auto source = std::make_shared<PrimesSource>(
             static_cast<UInt64>(max_block_size), primes_storage.offset, effective_limit, primes_storage.step, primes_storage.column_name);
@@ -273,62 +294,30 @@ Pipe ReadFromSystemPrimesStep::makePipe()
         return pipe;
     }
 
-    /// Exact disjoint ranges: the WHERE clause can be represented as a union of intervals in value space.
-    /// We use this optimization only for unbounded sources (`system.primes` / `primes()`), where applying the value
-    /// filter during generation preserves semantics and allows pushing query LIMIT down.
-    if (!primes_storage.limit && extracted_ranges.kind == NumbersLikeUtils::ExtractedRanges::Kind::ExactRanges)
-    {
-        apply_query_limit();
-
-        if (effective_limit)
-            NumbersLikeUtils::checkLimits(context->getSettingsRef(), static_cast<size_t>(*effective_limit));
-
-        auto maybe_intervals = intersect_ranges(extracted_ranges.ranges);
-        if (!maybe_intervals)
-        {
-            add_null_source();
-            return pipe;
-        }
-
-        auto intervals = std::move(*maybe_intervals);
-
-        /// Fast path: offset=0/step=1 means we can use a value-range prime sieve directly.
-        if (primes_storage.offset == 0 && primes_storage.step == 1)
-        {
-            auto source = std::make_shared<PrimesSimpleRangedSource>(
-                static_cast<UInt64>(max_block_size), std::move(intervals), effective_limit, primes_storage.column_name);
-
-            if (effective_limit)
-                source->addTotalRowsApprox(*effective_limit);
-
-            pipe.addSource(std::move(source));
-            return pipe;
-        }
-
-        /// General path: apply the prime-index selection (offset/step) and then the value-interval filter.
-        auto source = std::make_shared<PrimesRangedSource>(
-            static_cast<UInt64>(max_block_size),
-            std::move(intervals),
-            primes_storage.offset,
-            effective_limit,
-            primes_storage.step,
-            primes_storage.column_name);
-
-        if (effective_limit)
-            source->addTotalRowsApprox(*effective_limit);
-
-        pipe.addSource(std::move(source));
-        return pipe;
-    }
-
-    /// Conservative bounds: when exact extraction fails, we may still get safe value bounds (e.g. from `prime < 100`).
-    /// This is useful only for unbounded sources (`system.primes` / `primes()`): without a bound we might generate primes
-    /// indefinitely even if the full filter is bounded.
+    /// We can get some info about the filter condition.
+    /// Case: extracted_ranges.kind == NumbersLikeUtils::ExtractedRanges::Kind::ExactRanges
+    ///     Exact disjoint ranges: the WHERE clause can be represented as a union of intervals in value space.
+    ///     We use this optimization only for unbounded sources (`system.primes` / `primes()`), where applying the value
+    ///     filter during generation preserves semantics and allows pushing query LIMIT down.
     ///
-    /// Query LIMIT is NOT pushed down here: bounds are conservative, so we cannot know how many generated values will
-    /// survive the full filter.
-    if (!primes_storage.limit && !NumbersLikeUtils::isUniverse(extracted_ranges.ranges))
+    /// Case: !NumbersLikeUtils::isUniverse(extracted_ranges.ranges)
+    ///     Conservative bounds: when exact extraction fails, we may still get safe value bounds (e.g. from `prime < 100`).
+    ///     This is useful only for unbounded sources (`system.primes` / `primes()`): without a bound we might generate primes
+    ///     indefinitely even if the full filter is bounded.
+    ///
+    ///     Query LIMIT is NOT pushed down here: bounds are conservative, so we cannot know how many generated values will
+    ///     survive the full filter.
+    if (!primes_storage.limit
+        && (extracted_ranges.kind == NumbersLikeUtils::ExtractedRanges::Kind::ExactRanges
+            || !NumbersLikeUtils::isUniverse(extracted_ranges.ranges)))
     {
+        if (extracted_ranges.kind == NumbersLikeUtils::ExtractedRanges::Kind::ExactRanges)
+            apply_query_limit();
+
+        /// We do not check `NumbersLikeUtils::checkLimits` here because with exact/conservative ranges we do not know
+        /// how many primes the sieve will generate and rely on pipeline runtime check to enforce `max_rows_to_read`.
+        /// We also cannot rely on query limit because it may be arbitrarily large but the actual number of generated
+        /// primes can be small.
         auto maybe_intervals = intersect_ranges(extracted_ranges.ranges);
         if (!maybe_intervals)
         {
@@ -338,27 +327,26 @@ Pipe ReadFromSystemPrimesStep::makePipe()
 
         auto intervals = std::move(*maybe_intervals);
 
-        if (primes_storage.offset == 0 && primes_storage.step == 1)
-        {
-            pipe.addSource(
-                std::make_shared<PrimesSimpleRangedSource>(
-                    static_cast<UInt64>(max_block_size), std::move(intervals), std::nullopt, primes_storage.column_name));
-            return pipe;
-        }
-
+        /// Unbounded sources always have offset=0 and step=1, so we can use the simple value-range sieve directly.
+        chassert(primes_storage.offset == 0 && primes_storage.step == 1);
         pipe.addSource(
-            std::make_shared<PrimesRangedSource>(
-                static_cast<UInt64>(max_block_size),
-                std::move(intervals),
-                primes_storage.offset,
-                std::nullopt,
-                primes_storage.step,
-                primes_storage.column_name));
+            std::make_shared<PrimesSimpleRangedSource>(
+                static_cast<UInt64>(max_block_size), std::move(intervals), effective_limit, primes_storage.column_name));
         return pipe;
     }
 
-    if (effective_limit)
-        NumbersLikeUtils::checkLimits(context->getSettingsRef(), static_cast<size_t>(*effective_limit));
+    /// At the point, we do not know anything about the filter condition but know that it exists.
+
+    /// When we have proper offset or step, in this path, we need to generate all the primes before the offset and
+    /// in between offset and offset + step * limit.
+    /// If we do not have proper offset/step, then we do not have any background prime generation and every prime that is generated
+    /// is checked by the pipeline to enforce `max_rows_to_read`, so we do not need to check it here for offset=0 and step=1 case.
+    /// We do not enter here if source is unbounded because in that case `effective_limit` is always nullopt.
+    if (effective_limit && (primes_storage.offset > 0 || primes_storage.step > 1))
+    {
+        chassert(*effective_limit == *primes_storage.limit);
+        NumbersLikeUtils::checkLimits(context->getSettingsRef(), static_cast<size_t>(estimate_rows_to_read(*effective_limit)));
+    }
 
     /// Fallback: generate primes in prime-index space as defined by storage params and apply the full filter later.
     ///
@@ -367,18 +355,16 @@ Pipe ReadFromSystemPrimesStep::makePipe()
     ///    so pushing down value-space predicates would change semantics;
     ///  - unbounded sources where we cannot extract any useful value restriction from the predicate.
     ///
+    /// We do not push down query LIMIT here even if it is present because without filter information it is not safe to apply it during generation.
+    ///
     /// Examples:
     ///  - `SELECT prime FROM primes(10) WHERE prime > 10;` (bounded source + value predicate)
     ///  - `SELECT prime FROM primes(100) WHERE prime % 10 = 1;` (bounded source + non-interval predicate)
     ///  - `SELECT prime FROM system.primes WHERE prime % 10 = 1 LIMIT 1;` (unbounded source + non-interval predicate)
     ///  - `SELECT prime FROM system.primes WHERE bitAnd(prime, prime + 1) = 0 LIMIT 7;` (unbounded source + non-interval predicate)
-    auto source = std::make_shared<PrimesSource>(
-        static_cast<UInt64>(max_block_size), primes_storage.offset, effective_limit, primes_storage.step, primes_storage.column_name);
-
-    if (effective_limit)
-        source->addTotalRowsApprox(*effective_limit);
-
-    pipe.addSource(std::move(source));
+    pipe.addSource(
+        std::make_shared<PrimesSource>(
+            static_cast<UInt64>(max_block_size), primes_storage.offset, effective_limit, primes_storage.step, primes_storage.column_name));
     return pipe;
 }
 

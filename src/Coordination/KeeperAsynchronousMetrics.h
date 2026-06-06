@@ -24,6 +24,7 @@ private:
     ContextPtr context;
 
     void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) override;
+    void logImpl(AsynchronousMetricValues & new_values) override;
 };
 
 

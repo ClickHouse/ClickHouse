@@ -22,9 +22,9 @@ using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 using WrittenOffsetSubstreams = std::set<std::string>;
 
-Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation);
+Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation, Block * permuted_columns_cache = nullptr);
 
-Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation);
+Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache = nullptr);
 
 /// Writes data part to disk in different formats.
 /// Calculates and serializes primary and skip indices if needed.
@@ -39,13 +39,12 @@ public:
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const VirtualsDescriptionPtr & virtual_columns_,
         const MergeTreeWriterSettings & settings_,
         MergeTreeIndexGranularityPtr index_granularity_);
 
     virtual ~IMergeTreeDataPartWriter();
 
-    virtual void write(const Block & block, const IColumnPermutation * permutation) = 0;
+    virtual void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) = 0;
 
     virtual void finalizeIndexGranularity() = 0;
     virtual void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) = 0;
@@ -80,7 +79,6 @@ protected:
     const MergeTreeIndexGranularityInfo index_granularity_info;
     const MergeTreeSettingsPtr storage_settings;
     const StorageMetadataPtr metadata_snapshot;
-    const VirtualsDescriptionPtr virtual_columns;
     const NamesAndTypesList columns_list;
     const MergeTreeWriterSettings settings;
     const bool with_final_mark;
@@ -108,7 +106,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const NamesAndTypesList & columns_list,
         const ColumnPositions & column_positions,
         const StorageMetadataPtr & metadata_snapshot,
-        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec_,

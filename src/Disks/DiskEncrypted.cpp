@@ -2,6 +2,7 @@
 
 #if USE_SSL
 #include <Disks/DiskFactory.h>
+#include <IO/ReadPipeline.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <IO/FileEncryptionCommon.h>
@@ -424,27 +425,26 @@ void DiskEncrypted::copyFile(
 }
 
 
-std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
+void DiskEncrypted::prepareRead(
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    ReadPipeline & pipeline) const
 {
     if (read_hint && *read_hint > 0)
         read_hint = *read_hint + FileEncryption::Header::kSize;
 
     auto wrapped_path = wrappedPath(path);
-    auto buffer = delegate->readFile(wrapped_path, settings, read_hint);
-    if (buffer->eof())
-    {
-        /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().
-        /// There is no header so we just return `ReadBufferFromString("")`.
-        return std::make_unique<ReadBufferFromFileDecorator>(std::make_unique<ReadBufferFromString>(std::string_view{}), wrapped_path);
-    }
+    delegate->prepareRead(wrapped_path, settings, read_hint, pipeline);
+
     auto encryption_settings = current_settings.get();
-    FileEncryption::Header header = readHeader(*buffer);
-    String key = encryption_settings->findKeyByFingerprint(header.key_fingerprint, path);
-    chassert(settings.local_fs_buffer_size != 0);
-    return std::make_unique<ReadBufferFromEncryptedFile>(path, settings.local_fs_buffer_size, std::move(buffer), key, header);
+    pipeline.needDecryption(
+        path,
+        settings.local_fs_settings.buffer_size,
+        [encryption_settings](UInt128 key_fingerprint, const String & path_for_logs) -> String
+        {
+            return encryption_settings->findKeyByFingerprint(key_fingerprint, path_for_logs);
+        });
 }
 
 size_t DiskEncrypted::getFileSize(const String & path) const
@@ -513,6 +513,7 @@ void DiskEncrypted::applyNewSettings(
     IDisk::applyNewSettings(config, context, config_prefix, disk_map);
 }
 
+void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check);
 void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
 {
     auto creator = [global_skip_access_check](

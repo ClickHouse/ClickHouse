@@ -78,7 +78,9 @@ public:
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
 
     static Int32 parseTableSchema(
-        const Poco::JSON::Object::Ptr & metadata_object, Iceberg::IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
+        const Poco::JSON::Object::Ptr & metadata_object,
+        Iceberg::IcebergSchemaProcessor & schema_processor,
+        LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
     bool supportsWrites() const override { return true; }
@@ -112,7 +114,7 @@ public:
     bool supportsDelete() const override { return true; }
     void mutate(
         const MutationCommands & commands,
-        StorageObjectStorageConfigurationPtr configuration,
+        StoragePtr storage_ptr,
         ContextPtr context,
         const StorageID & storage_id,
         StorageMetadataPtr metadata_snapshot,
@@ -124,7 +126,11 @@ public:
     void modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const override;
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override;
     void checkAlterIsPossible(const AlterCommands & commands) override;
-    void alter(const AlterCommands & params, ContextPtr context) override;
+    void alter(
+        const AlterCommands & params,
+        ContextPtr context,
+        const StorageID & storage_id,
+        std::shared_ptr<DataLake::ICatalog> catalog) override;
 
     Pipe executeCommand(
         const String & command_name,

@@ -20,12 +20,19 @@ struct Base58EncodeTraits
 
     static size_t perform(std::string_view src, UInt8 * dst)
     {
-        return encodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
+        if (src.size() == 32)
+            return encodeBase58_32(reinterpret_cast<const UInt8 *>(src.data()), dst);
+        else if (src.size() == 64)
+            return encodeBase58_64(reinterpret_cast<const UInt8 *>(src.data()), dst);
+        else
+            return encodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
     }
 };
 
 struct Base58DecodeTraits
 {
+    static constexpr bool has_size_optimization = true;
+
     template <typename Col>
     static size_t getBufferSize(Col const & src_column)
     {
@@ -41,6 +48,15 @@ struct Base58DecodeTraits
 
     static std::optional<size_t> perform(std::string_view src, UInt8 * dst)
     {
+        return decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
+    }
+
+    static std::optional<size_t> performWithSizeHint(std::string_view src, UInt8 * dst, size_t expected_size)
+    {
+        if (expected_size == 32)
+            return decodeBase58_32(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
+        if (expected_size == 64)
+            return decodeBase58_64(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
         return decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
     }
 };

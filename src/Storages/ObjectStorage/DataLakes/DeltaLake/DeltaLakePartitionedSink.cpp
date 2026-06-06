@@ -55,6 +55,7 @@ namespace
         auto key_description = KeyDescription::getKeyFromAST(
             partition_by,
             ColumnsDescription(header.getNamesAndTypesList()),
+            {},
             context);
 
         return std::make_unique<HiveStylePartitionStrategy>(
@@ -131,7 +132,7 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
     for (size_t column_index = 0; column_index < columns_size; ++column_index)
     {
         const IColumn * column_to_consume = columns_to_consume[column_index];
-        MutableColumns partition_index_to_column_split = column_to_consume->scatter(
+        auto partition_index_to_column_split = column_to_consume->scatter(
             partitions_size,
             chunk_row_index_to_partition_index);
 

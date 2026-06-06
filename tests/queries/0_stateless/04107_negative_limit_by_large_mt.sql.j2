@@ -1,0 +1,64 @@
+-- { echo }
+
+-- numbers_mt(1M), LIMIT -1 BY g (SortedStream)
+SELECT number, intDiv(number, 100000) AS g FROM numbers_mt(1000000) ORDER BY g, number LIMIT -1 BY g;
+
+-- numbers_mt(1M), ORDER BY number LIMIT -1 BY g
+SELECT number, intDiv(number, 100000) AS g FROM numbers_mt(1000000) ORDER BY number LIMIT -1 BY g;
+
+-- Two-group distribution, numbers_mt(1M), intDiv 500000 (SortedStream)
+SELECT number, intDiv(number, 500000) AS g FROM numbers_mt(1000000) ORDER BY g, number LIMIT -1 BY g;
+-- Two-group distribution, numbers_mt(1M), intDiv 500000
+SELECT number, intDiv(number, 500000) AS g FROM numbers_mt(1000000) ORDER BY number LIMIT -1 BY g;
+
+-- LIMIT -0 BY g on parallel large (SortedStream)
+SELECT number, intDiv(number, 100000) AS g FROM numbers_mt(1000000) ORDER BY g, number LIMIT -0 BY g;
+-- LIMIT -0 BY g on parallel large
+SELECT number, intDiv(number, 100000) AS g FROM numbers_mt(1000000) ORDER BY number LIMIT -0 BY g;
+
+-- All-same-group large, LIMIT -1 BY g (g=0) (SortedStream)
+SELECT number, 0 AS g FROM numbers_mt(100000) ORDER BY g, number LIMIT -1 BY g;
+-- All-same-group large, LIMIT -1 BY g (g=0)
+SELECT number, 0 AS g FROM numbers_mt(100000) ORDER BY number LIMIT -1 BY g;
+
+-- All-same-group large, LIMIT -3 BY g (g=0) (SortedStream)
+SELECT number, 0 AS g FROM numbers_mt(100000) ORDER BY g, number LIMIT -3 BY g;
+-- All-same-group large, LIMIT -3 BY g (g=0)
+SELECT number, 0 AS g FROM numbers_mt(100000) ORDER BY number LIMIT -3 BY g;
+
+-- max_block_size=2, numbers(1000), LIMIT -1 BY g (g=intDiv/100) (SortedStream)
+SET max_block_size = 2;
+SELECT number, intDiv(number, 100) AS g FROM numbers(1000) ORDER BY g, number LIMIT -1 BY g;
+-- max_block_size=2, numbers(1000), LIMIT -1 BY g (g=intDiv/100)
+SELECT number, intDiv(number, 100) AS g FROM numbers(1000) ORDER BY number LIMIT -1 BY g;
+
+-- max_block_size=2, numbers(1000), LIMIT -5 OFFSET -10 BY g (SortedStream)
+SELECT number, intDiv(number, 100) AS g FROM numbers(1000) ORDER BY g, number LIMIT -5 OFFSET -10 BY g;
+-- max_block_size=2, numbers(1000), LIMIT -5 OFFSET -10 BY g
+SELECT number, intDiv(number, 100) AS g FROM numbers(1000) ORDER BY number LIMIT -5 OFFSET -10 BY g;
+
+-- max_block_size=3, numbers(1000), LIMIT -2 OFFSET 3 BY g (SortedStream)
+SET max_block_size = 3;
+SELECT number, intDiv(number, 100) AS g FROM numbers(1000) ORDER BY g, number LIMIT -2 OFFSET 3 BY g;
+-- max_block_size=3, numbers(1000), LIMIT -2 OFFSET 3 BY g
+SELECT number, intDiv(number, 100) AS g FROM numbers(1000) ORDER BY number LIMIT -2 OFFSET 3 BY g;
+SET max_block_size = 65536;
+
+DROP TABLE IF EXISTS test_src;
+CREATE TABLE test_src ENGINE=MergeTree ORDER BY number AS SELECT number FROM numbers(1000000);
+
+{% for clause in ['LIMIT -10 BY g', 'LIMIT -10 OFFSET -10 BY g', 'LIMIT -10 OFFSET 10 BY g', 'LIMIT 10 OFFSET -10 BY g'] -%}
+-- {{ clause }} (SortedStream)
+DROP TABLE IF EXISTS test_dst;
+CREATE TABLE test_dst ENGINE=MergeTree ORDER BY number AS SELECT number FROM (SELECT number, intDiv(number, 100000) AS g FROM test_src ORDER BY g, number {{ clause }});
+SELECT number FROM test_dst ORDER BY number;
+DROP TABLE test_dst;
+
+-- {{ clause }}
+DROP TABLE IF EXISTS test_dst;
+CREATE TABLE test_dst ENGINE=MergeTree ORDER BY number AS SELECT number FROM (SELECT number, intDiv(number, 100000) AS g FROM test_src ORDER BY number {{ clause }});
+SELECT number FROM test_dst ORDER BY number;
+DROP TABLE test_dst;
+
+{% endfor -%}
+DROP TABLE test_src;
