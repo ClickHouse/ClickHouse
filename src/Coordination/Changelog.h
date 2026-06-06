@@ -5,9 +5,11 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/SharedMutex.h>
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <variant>
 #include <unordered_map>
 #include <unordered_set>
@@ -113,6 +115,18 @@ struct ChangelogFileDescription
 };
 
 using ChangelogFileDescriptionPtr = std::shared_ptr<ChangelogFileDescription>;
+
+struct KeeperChangelogStatus
+{
+    uint64_t from_log_index;
+    uint64_t to_log_index;
+    std::optional<uint64_t> last_entry_index;
+    String path;
+    DiskPtr disk;
+    bool is_compressed;
+    bool active;
+    bool is_broken;
+};
 
 class ChangelogWriter;
 
@@ -410,6 +424,8 @@ public:
 
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
+    std::vector<KeeperChangelogStatus> getChangelogsStatus() const;
+
     static ChangelogFileDescriptionPtr getChangelogFileDescription(const std::filesystem::path & path);
 
     static void readChangelog(ChangelogFileDescriptionPtr changelog_description, LogEntryStorage & entry_storage);
@@ -455,13 +471,13 @@ private:
     const bool compress_logs;
     LoggerPtr log;
 
-    std::mutex writer_mutex;
+    mutable std::mutex writer_mutex;
     /// Current writer for changelog file
     ChangelogWriterPtr current_writer;
 
     LogEntryStorage entry_storage;
 
-    uint64_t max_log_id = 0;
+    std::atomic<uint64_t> max_log_id{0};
 
     ConcurrentBoundedQueue<ChangelogFileOperationPtr> changelog_operation_queue{std::numeric_limits<size_t>::max()};
     std::unique_ptr<ThreadFromGlobalPool> background_changelog_operations_thread;
