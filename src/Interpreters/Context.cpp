@@ -3782,11 +3782,6 @@ std::shared_ptr<IWorkloadEntityStorage> Context::getWorkloadEntityStoragePtr() c
     return shared->workload_entity_storage;
 }
 
-IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
-{
-    return *getWorkloadEntityStoragePtr();
-}
-
 WasmModuleManager * Context::initWasmModuleManager()
 {
     std::lock_guard lock(shared->mutex);

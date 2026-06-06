@@ -187,7 +187,9 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
     explicit ResourceTest(size_t thread_count = 1)
         : ResourceTestManager(thread_count, DoNotInitManager)
     {
-        manager = std::make_shared<WorkloadResourceManager>(storage);
+        /// The test owns `storage` on the stack, so pass a non-owning shared_ptr.
+        manager = std::make_shared<WorkloadResourceManager>(
+            std::shared_ptr<IWorkloadEntityStorage>(&storage, [](IWorkloadEntityStorage *) {}));
     }
 
     void query(const String & query_str)
