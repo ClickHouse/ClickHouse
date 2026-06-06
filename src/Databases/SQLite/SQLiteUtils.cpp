@@ -73,6 +73,20 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
     return std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close);
 }
 
+String quoteSQLiteIdentifier(const String & name)
+{
+    String result = "\"";
+    for (char c : name)
+    {
+        if (c == '"')
+            result += "\"\"";
+        else
+            result += c;
+    }
+    result += "\"";
+    return result;
+}
+
 }
 
 #endif

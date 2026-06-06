@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
 extern const int SQLITE_ENGINE_ERROR;
 extern const int UNKNOWN_TABLE;
+extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
 
 SQLiteInputFormat::SQLiteInputFormat(
@@ -90,7 +91,7 @@ void SQLiteInputFormat::readPrefix()
             throw Exception::createDeprecated(fmt::format("Failed to find SQLite {} table", table_name), ErrorCodes::UNKNOWN_TABLE);
     }
 
-    std::string select_query = fmt::format("SELECT * FROM \"{}\";", table_name);
+    std::string select_query = fmt::format("SELECT * FROM {};", quoteSQLiteIdentifier(table_name));
     sqlite3_stmt * stmt_ptr = nullptr;
     int status = sqlite3_prepare_v2(db.get(), select_query.c_str(), static_cast<int>(select_query.size()), &stmt_ptr, nullptr);
     if (status != SQLITE_OK)
@@ -98,6 +99,17 @@ void SQLiteInputFormat::readPrefix()
             fmt::format("Cannot read from SQLite table {}. Error status: {}. Message: {}", table_name, status, sqlite3_errmsg(db.get())),
             ErrorCodes::SQLITE_ENGINE_ERROR);
     stmt.reset(stmt_ptr, sqlite3_finalize);
+
+    /// The structure of the data must be provided explicitly, and the SQLite table is read by
+    /// position. If the widths do not match, `SELECT *` would otherwise either silently drop
+    /// extra SQLite columns or read out-of-range indexes for the missing ones, so reject the
+    /// mismatch here.
+    size_t sqlite_columns = static_cast<size_t>(sqlite3_column_count(stmt.get()));
+    if (sqlite_columns != serializations.size())
+        throw Exception(
+            ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS,
+            "The SQLite table {} has {} column(s), but {} column(s) were provided in the structure",
+            table_name, sqlite_columns, serializations.size());
 }
 
 bool SQLiteInputFormat::readRow(MutableColumns & columns, RowReadExtension & /*ext*/)
@@ -107,11 +119,20 @@ bool SQLiteInputFormat::readRow(MutableColumns & columns, RowReadExtension & /*e
 
     auto errcode = sqlite3_step(stmt.get());
 
-    if (SQLITE_ROW != errcode)
+    if (errcode == SQLITE_DONE)
     {
         continue_read = false;
         return false;
     }
+
+    /// Only SQLITE_DONE marks the clean end of the result set. Any other status (a corrupt or
+    /// truncated database, a VFS I/O error, SQLITE_BUSY, etc.) is a real error and must not be
+    /// turned into a successful EOF that returns a partial result set.
+    if (errcode != SQLITE_ROW)
+        throw Exception::createDeprecated(
+            fmt::format("Cannot read from SQLite table {}. Error status: {}. Message: {}",
+                table_name, errcode, sqlite3_errmsg(db.get())),
+            ErrorCodes::SQLITE_ENGINE_ERROR);
 
     for (size_t i = 0; i < serializations.size(); i++)
     {

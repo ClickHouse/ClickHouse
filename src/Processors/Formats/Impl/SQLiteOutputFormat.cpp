@@ -7,6 +7,7 @@
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
+#include <Databases/SQLite/SQLiteUtils.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
@@ -22,26 +23,6 @@ namespace ErrorCodes
 extern const int SQLITE_ENGINE_ERROR;
 extern const int CANNOT_FSTAT;
 extern const int NOT_IMPLEMENTED;
-}
-
-namespace
-{
-
-/// Quotes an SQLite identifier (a column or table name).
-String quoteSQLiteIdentifier(const String & name)
-{
-    String result = "\"";
-    for (char c : name)
-    {
-        if (c == '"')
-            result += "\"\"";
-        else
-            result += c;
-    }
-    result += "\"";
-    return result;
-}
-
 }
 
 SQLiteOutputFormat::SQLiteOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
@@ -64,7 +45,7 @@ void SQLiteOutputFormat::writePrefix()
 
     int fd = fd_buffer->getFD();
 
-    struct stat file_stat;
+    struct stat file_stat{};
     if (fstat(fd, &file_stat) != 0)
         throw ErrnoException(ErrorCodes::CANNOT_FSTAT, "Cannot fstat the output file of the SQLite output format");
 
@@ -138,9 +119,10 @@ void SQLiteOutputFormat::consume(Chunk chunk)
         for (size_t col = 0; col < num_columns; ++col)
         {
             int index = static_cast<int>(col) + 1;
+            int bind_status = 0;
             if (columns[col]->isNullAt(row))
             {
-                sqlite3_bind_null(insert_stmt.get(), index);
+                bind_status = sqlite3_bind_null(insert_stmt.get(), index);
             }
             else
             {
@@ -148,8 +130,17 @@ void SQLiteOutputFormat::consume(Chunk chunk)
                 serializations[col]->serializeText(*columns[col], row, text_buffer, format_settings);
                 const String & value = text_buffer.str();
                 /// SQLITE_TRANSIENT makes SQLite copy the value before sqlite3_step returns.
-                sqlite3_bind_text(insert_stmt.get(), index, value.data(), static_cast<int>(value.size()), SQLITE_TRANSIENT);
+                bind_status = sqlite3_bind_text(insert_stmt.get(), index, value.data(), static_cast<int>(value.size()), SQLITE_TRANSIENT);
             }
+
+            /// A failed bind (e.g. SQLITE_TOOBIG or out of memory) must not be ignored: otherwise
+            /// sqlite3_step can still succeed and silently insert NULL or a stale value, so the
+            /// exported database would no longer match the ClickHouse block.
+            if (bind_status != SQLITE_OK)
+                throw Exception::createDeprecated(
+                    fmt::format("Cannot bind value to SQLite insert statement. Error status: {}. Message: {}",
+                        bind_status, sqlite3_errmsg(db.get())),
+                    ErrorCodes::SQLITE_ENGINE_ERROR);
         }
 
         int status = sqlite3_step(insert_stmt.get());
