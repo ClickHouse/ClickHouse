@@ -1,8 +1,11 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/ColumnNumbers.h>
+#include <Interpreters/Context.h>
 
 #if USE_EMBEDDED_COMPILER
 #include <llvm/IR/IRBuilder.h>
@@ -12,6 +15,17 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_nullable_array_type;
+}
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 namespace
 {
 
@@ -21,9 +35,14 @@ class FunctionToNullable final : public IFunction
 public:
     static constexpr auto name = "toNullable";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionToNullable>();
+        return std::make_shared<FunctionToNullable>(context);
+    }
+
+    explicit FunctionToNullable(ContextPtr context)
+        : allow_nullable_array_type(context && context->getSettingsRef()[Setting::allow_experimental_nullable_array_type])
+    {
     }
 
     std::string getName() const override
@@ -45,6 +64,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (isArray(arguments[0]) && !allow_nullable_array_type)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} cannot create Nullable(Array) while setting allow_experimental_nullable_array_type is disabled",
+                getName());
+
         return makeNullableOrLowCardinalityNullable(arguments[0]);
     }
 
@@ -64,6 +89,8 @@ public:
     }
 #endif
 
+private:
+    bool allow_nullable_array_type;
 
 };
 

@@ -33,6 +33,12 @@ SELECT throwIf(NOT isNull(arrayZip(
     CAST([1] AS Nullable(Array(Int32))))))
 FORMAT Null;
 
+SELECT throwIf(NOT isNull(
+    materialize(CAST(NULL AS Nullable(Array(Int32))))
+    + materialize(CAST([1] AS Nullable(Array(Int32))))))
+FROM numbers(1)
+FORMAT Null;
+
 SELECT throwIf(NOT isNull(arrayEnumerateDense(
     CAST(NULL AS Nullable(Array(Int32))),
     CAST([1] AS Nullable(Array(Int32))))))

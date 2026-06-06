@@ -1,14 +1,28 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnNullable.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_nullable_array_type;
+}
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 namespace
 {
 
@@ -28,6 +42,7 @@ public:
     explicit FunctionNullIf(ContextPtr context)
         : equals_resolver(FunctionFactory::instance().get("equals", context))
         , if_resolver(FunctionFactory::instance().get("if", context))
+        , allow_nullable_array_type(context && context->getSettingsRef()[Setting::allow_experimental_nullable_array_type])
     {
     }
 
@@ -43,6 +58,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (isArray(arguments[0]) && !allow_nullable_array_type)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} cannot create Nullable(Array) while setting allow_experimental_nullable_array_type is disabled",
+                getName());
+
         return makeNullable(arguments[0]);
     }
 
@@ -69,6 +90,7 @@ public:
 private:
     FunctionOverloadResolverPtr equals_resolver;
     FunctionOverloadResolverPtr if_resolver;
+    bool allow_nullable_array_type;
 };
 
 }

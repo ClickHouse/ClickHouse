@@ -47,6 +47,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
+#include <Functions/array/NullableArrayOffsets.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
@@ -1980,6 +1981,18 @@ class FunctionBinaryArithmetic : public IFunction
             if (!right_const_array)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected Array column, found {}", right_array_column_ptr->getName());
             right_array_column_ptr = right_const_array->convertToFullColumn();
+            right_array_col = assert_cast<const ColumnArray *>(right_array_column_ptr.get());
+        }
+
+        const auto * row_null_map = merged_null_map ? assert_cast<const ColumnUInt8 *>(merged_null_map.get()) : nullptr;
+        if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*left_array_col, row_null_map, input_rows_count))
+        {
+            left_array_column_ptr = std::move(null_rows_empty_array);
+            left_array_col = assert_cast<const ColumnArray *>(left_array_column_ptr.get());
+        }
+        if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*right_array_col, row_null_map, input_rows_count))
+        {
+            right_array_column_ptr = std::move(null_rows_empty_array);
             right_array_col = assert_cast<const ColumnArray *>(right_array_column_ptr.get());
         }
 
