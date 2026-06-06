@@ -1,0 +1,53 @@
+-- 1. compact part roundtrip
+100	0	99
+all_1_1_0	Compact	100
+-- 2. large data multi-granule
+50000	0	49999
+10001
+-- 3. nested JSON Array(JSON)
+1	['{"level":10,"name":"sword"}','{"level":5,"name":"shield"}']
+2	['{"level":8,"name":"bow"}']
+3	['{"level":12,"name":"staff"}','{"level":3,"name":"robe"}','{"level":7,"name":"hat"}']
+-- 3b. after reattach
+1	['{"level":10,"name":"sword"}','{"level":5,"name":"shield"}']
+2	['{"level":8,"name":"bow"}']
+3	['{"level":12,"name":"staff"}','{"level":3,"name":"robe"}','{"level":7,"name":"hat"}']
+-- 4. multi dynamic columns
+500	0	str_99	0
+-- 4b. after reattach
+500	0	str_99	0
+-- 5. INSERT SELECT
+1000	0	999
+-- 6a. after ADD COLUMN
+500	0	499	default_val
+-- 6b. mixed old + new parts
+1000	2
+-- 6c. after DROP Dynamic column
+1000	custom
+-- 7a. before mutation
+1000
+-- 7b. after DELETE
+500	0	499
+-- 7c. after UPDATE
+300
+0	198
+-- 8. SharedVariant overflow (should NOT narrow)
+1	42	Int64
+2	hello	String
+3	3.14	Float64
+-- 8b. after reattach
+1	42	Int64
+2	hello	String
+3	3.14	Float64
+-- 9. Bool narrowing
+1000	500
+-- 9b. after reattach
+1000	500
+-- 10. DateTime narrowing
+1000	2026-01-01 00:00:00	2026-01-01 00:16:39
+-- 11. 90% NULLs
+10000	9000	1000
+0	9990
+-- 11b. after reattach
+10000	9000	1000
+0	9990
