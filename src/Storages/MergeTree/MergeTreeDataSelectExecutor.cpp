@@ -36,6 +36,7 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
