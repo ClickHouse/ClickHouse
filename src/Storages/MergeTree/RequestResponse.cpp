@@ -56,7 +56,7 @@ String ParallelReadRequest::describe() const
 
 ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
 {
-    UInt64 version = 0;
+    UInt64 version;
     readIntBinary(version, in);
     if (version < DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION)
         throw Exception(
@@ -65,12 +65,12 @@ ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in, UInt64 rep
             version,
             DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
-    CoordinationMode mode = {};
-    size_t replica_num = 0;
-    size_t min_marks_per_request = 0;
+    CoordinationMode mode;
+    size_t replica_num;
+    size_t min_marks_per_request;
     RangesInDataPartsDescription description;
 
-    uint8_t mode_candidate = 0;
+    uint8_t mode_candidate;
     readIntBinary(mode_candidate, in);
     mode = validateAndGet(mode_candidate);
     readIntBinary(replica_num, in);
@@ -107,7 +107,7 @@ String ParallelReadResponse::describe() const
 
 void ParallelReadResponse::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
 {
-    UInt64 version = 0;
+    UInt64 version;
     readIntBinary(version, in);
     if (version < DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION)
         throw Exception(
@@ -153,7 +153,7 @@ String InitialAllRangesAnnouncement::describe()
 
 InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
 {
-    UInt64 version = 0;
+    UInt64 version;
     readIntBinary(version, in);
     if (version < DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION)
         throw Exception(
@@ -162,11 +162,11 @@ InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffe
             version,
             DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
-    CoordinationMode mode = {};
+    CoordinationMode mode;
     RangesInDataPartsDescription description;
-    size_t replica_num = 0;
+    size_t replica_num;
 
-    uint8_t mode_candidate = 0;
+    uint8_t mode_candidate;
     readIntBinary(mode_candidate, in);
     mode = validateAndGet(mode_candidate);
     description.deserialize(in, replica_pr_protocol_version);

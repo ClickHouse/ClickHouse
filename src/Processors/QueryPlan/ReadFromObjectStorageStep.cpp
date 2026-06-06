@@ -13,7 +13,6 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -29,7 +28,6 @@ namespace Setting
 
 
 ReadFromObjectStorageStep::ReadFromObjectStorageStep(
-    const StorageID & storage_id_,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
     const Names & columns_to_read,
@@ -44,7 +42,6 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     size_t max_block_size_,
     size_t num_streams_)
     : SourceStepWithFilter(std::make_shared<const Block>(info_.source_header), columns_to_read, query_info_, storage_snapshot_, context_)
-    , storage_id(storage_id_)
     , object_storage(object_storage_)
     , configuration(configuration_)
     , info(std::move(info_))
@@ -113,7 +110,6 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<StorageObjectStorageSource>(
-            storage_id,
             getName(),
             object_storage,
             configuration,

@@ -4,11 +4,6 @@
 -- Previously, `foo.a` on a Kafka table with Tuple(a String, b String) column
 -- failed with UNKNOWN_IDENTIFIER.
 
--- Suppress expected Kafka consumer connection errors from reaching client stderr.
--- The background consumer tries to connect to the non-existent broker and produces
--- Error-level log messages that get forwarded via send_logs_level.
-SET send_logs_level = 'fatal';
-
 DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS mt;
 DROP TABLE IF EXISTS users;
@@ -16,7 +11,7 @@ DROP TABLE IF EXISTS users;
 CREATE TABLE users (foo Tuple(a String, b String))
   ENGINE = Kafka
   SETTINGS
-  kafka_broker_list = 'localhost:10000',
+  kafka_broker_list = 'foo',
   kafka_topic_list = 'foo',
   kafka_group_name = 'foo',
   kafka_format = 'JSONEachRow';

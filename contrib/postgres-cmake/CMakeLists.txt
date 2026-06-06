@@ -56,7 +56,6 @@ set(SRCS
     "${POSTGRES_SOURCE_DIR}/src/port/pgstrcasecmp.c"
     "${POSTGRES_SOURCE_DIR}/src/port/pg_bitutils.c"
     "${POSTGRES_SOURCE_DIR}/src/port/path.c"
-    "${POSTGRES_SOURCE_DIR}/src/port/timingsafe_bcmp.c"
 )
 
 if(NOT OS_DARWIN)

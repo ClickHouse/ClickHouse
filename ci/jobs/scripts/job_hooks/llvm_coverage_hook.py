@@ -40,9 +40,6 @@ def check():
         pr_changed_lines_info = d.get("pr_changed_lines_info", "")
         diff_url = d.get("diff_url", "")
         uncovered_code_url = d.get("uncovered_code_url", "")
-        newly_covered_info = d.get("newly_covered_info", "")
-        newly_covered_url = d.get("newly_covered_url", "")
-        newly_covered_top_files = d.get("newly_covered_top_files", []) or []
 
         if info.pr_number > 0:
             body = (
@@ -58,27 +55,6 @@ def check():
                 if uncovered_code_url:
                     changed_line += f" · [Uncovered code]({uncovered_code_url})"
                 body += changed_line + "\n"
-            if newly_covered_info:
-                # For a tests-only PR: surface what previously-uncovered code the new
-                # test(s) now exercise. The table delta above is typically too small
-                # to be meaningful on its own; this section is the actionable signal.
-                nc_line = f"\n**Newly covered by added/modified tests:** {newly_covered_info}"
-                if newly_covered_url:
-                    nc_line += f" · [Details]({newly_covered_url})"
-                body += nc_line + "\n"
-                if newly_covered_top_files:
-                    body += "\n<details><summary>Top files</summary>\n\n"
-                    for f in newly_covered_top_files:
-                        rel = f.get("rel", "")
-                        lc = int(f.get("lines", 0))
-                        fc = int(f.get("fns", 0))
-                        parts = []
-                        if lc > 0:
-                            parts.append(f"{lc} line(s)")
-                        if fc > 0:
-                            parts.append(f"{fc} function(s)")
-                        body += f"- `{rel}`: {', '.join(parts)}\n"
-                    body += "\n</details>\n"
             links = []
             if coverage_report_url := d.get("coverage_report_url", ""):
                 links.append(f"[Full report]({coverage_report_url})")
