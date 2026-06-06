@@ -56,7 +56,40 @@ SELECT
     (SELECT ifNull(anyOrNull(value), toUInt64(0)) FROM system.events WHERE event = 'UncompressedCacheHits')
     - (SELECT ifNull(anyOrNull(value), toUInt64(0)) FROM auto_uncompressed_cache_events WHERE event = 'UncompressedCacheHits') > 0;
 
+-- Opt-out via `enable_automatic_use_uncompressed_cache = 0`: when automatic use
+-- is disabled and `use_uncompressed_cache` is not explicitly set, the eligible
+-- read keeps the old uncached default and must not produce any cache events.
+-- (`compatibility` below `26.6` maps `enable_automatic_use_uncompressed_cache`
+-- to `false`, so it takes this same path.)
 SYSTEM DROP UNCOMPRESSED CACHE;
+SET enable_automatic_use_uncompressed_cache = 0;
+
+TRUNCATE TABLE auto_uncompressed_cache_events;
+INSERT INTO auto_uncompressed_cache_events
+SELECT event, value
+FROM system.events
+WHERE event IN ('UncompressedCacheHits', 'UncompressedCacheMisses');
+
+SELECT sum(length(value))
+FROM auto_uncompressed_cache
+WHERE id < 50000
+FORMAT Null;
+
+SELECT sum(length(value))
+FROM auto_uncompressed_cache
+WHERE id < 50000
+FORMAT Null;
+
+SELECT
+    (SELECT ifNull(anyOrNull(value), toUInt64(0)) FROM system.events WHERE event = 'UncompressedCacheHits')
+    - (SELECT ifNull(anyOrNull(value), toUInt64(0)) FROM auto_uncompressed_cache_events WHERE event = 'UncompressedCacheHits'),
+    (SELECT ifNull(anyOrNull(value), toUInt64(0)) FROM system.events WHERE event = 'UncompressedCacheMisses')
+    - (SELECT ifNull(anyOrNull(value), toUInt64(0)) FROM auto_uncompressed_cache_events WHERE event = 'UncompressedCacheMisses');
+
+-- Explicit override: an explicit `use_uncompressed_cache = 0` must win even when
+-- automatic use is enabled, and must not produce any cache events.
+SYSTEM DROP UNCOMPRESSED CACHE;
+SET enable_automatic_use_uncompressed_cache = 1;
 SET use_uncompressed_cache = 0;
 
 TRUNCATE TABLE auto_uncompressed_cache_events;
