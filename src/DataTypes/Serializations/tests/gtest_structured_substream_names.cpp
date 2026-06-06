@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/StructuredSubstreamNames.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Core/NamesAndTypes.h>
 #include <Common/escapeForFileName.h>
 
 #include <gtest/gtest.h>
@@ -116,6 +117,33 @@ ISerialization::SubstreamPath makeMapValuesBranchNullMapPath(bool inner_element_
     }
 
     path.push_back({ISerialization::Substream::NullMap});
+    return path;
+}
+
+ISerialization::SubstreamPath makeBucketedMapValuePath(size_t bucket, ISerialization::Substream::Type last_type)
+{
+    ISerialization::SubstreamPath path;
+
+    ISerialization::Substream bucket_substream(ISerialization::Substream::Bucket);
+    bucket_substream.bucket = bucket;
+    path.push_back(bucket_substream);
+
+    path.push_back({ISerialization::Substream::ArrayElements});
+
+    ISerialization::Substream values_element(ISerialization::Substream::TupleElement);
+    values_element.name_of_substream = "values";
+    path.push_back(values_element);
+
+    if (last_type == ISerialization::Substream::ArraySizes)
+    {
+        path.push_back({ISerialization::Substream::NullableElements});
+        path.push_back({ISerialization::Substream::ArraySizes});
+    }
+    else
+    {
+        path.push_back({last_type});
+    }
+
     return path;
 }
 
@@ -315,6 +343,18 @@ TEST(StructuredSubstreamNames, NestedArrayNullableArrayMergeTreeFileNames)
         "c.array.array.nested");
 }
 
+TEST(StructuredSubstreamNames, SubcolumnFileNameUsesStorageType)
+{
+    auto storage_type = DataTypeFactory::instance().get("Array(Nullable(Array(UInt32)))");
+    auto subcolumn_type = DataTypeFactory::instance().get("UInt64");
+    NameAndTypePair subcolumn("c", "size1", storage_type, subcolumn_type);
+    const auto inner_size_path = prefixPath(makeNestedArrayNullableArrayPaths(), 4);
+
+    EXPECT_EQ(
+        ISerialization::getFileNameForStream(subcolumn, inner_size_path, {}),
+        "c.array.array.size0");
+}
+
 TEST(StructuredSubstreamNames, NestedArrayNullableArrayAllSuffixesUnique)
 {
     const auto suffixes = collectStructuredSuffixesForNestedArrayNullableArray();
@@ -382,6 +422,37 @@ TEST(StructuredSubstreamNames, MapValuesBranchNullMapSuffixesAreUnique)
     EXPECT_NE(
         ISerialization::getFileNameForStream("c", outer_path, settings),
         ISerialization::getFileNameForStream("c", inner_path, settings));
+}
+
+TEST(StructuredSubstreamNames, BucketedMapNullableArrayStreamSuffixesAreUnique)
+{
+    auto type = DataTypeFactory::instance().get("Map(String, Nullable(Array(Nullable(UInt32))))");
+
+    ISerialization::SubstreamPath buckets_info_path;
+    buckets_info_path.push_back({ISerialization::Substream::MapBucketsInfo});
+
+    const auto bucket_0_size_path = makeBucketedMapValuePath(0, ISerialization::Substream::ArraySizes);
+    const auto bucket_1_size_path = makeBucketedMapValuePath(1, ISerialization::Substream::ArraySizes);
+    const auto bucket_0_null_path = makeBucketedMapValuePath(0, ISerialization::Substream::NullMap);
+    const auto bucket_1_null_path = makeBucketedMapValuePath(1, ISerialization::Substream::NullMap);
+
+    ISerialization::StreamFileNameSettings settings;
+    settings.column_type = type.get();
+
+    EXPECT_EQ(getStructuredSubstreamNameSuffix(buckets_info_path), ".buckets_info");
+    EXPECT_EQ(getStructuredSubstreamNameSuffix(bucket_0_size_path), ".0.array" + escapeForFileName(".values") + ".array.size0");
+    EXPECT_EQ(getStructuredSubstreamNameSuffix(bucket_1_size_path), ".1.array" + escapeForFileName(".values") + ".array.size0");
+    EXPECT_EQ(getStructuredSubstreamNameSuffix(bucket_0_null_path), ".0.array" + escapeForFileName(".values") + ".null");
+    EXPECT_EQ(getStructuredSubstreamNameSuffix(bucket_1_null_path), ".1.array" + escapeForFileName(".values") + ".null");
+
+    std::set<String> file_names;
+    file_names.insert(ISerialization::getFileNameForStream("c", buckets_info_path, settings));
+    file_names.insert(ISerialization::getFileNameForStream("c", bucket_0_size_path, settings));
+    file_names.insert(ISerialization::getFileNameForStream("c", bucket_1_size_path, settings));
+    file_names.insert(ISerialization::getFileNameForStream("c", bucket_0_null_path, settings));
+    file_names.insert(ISerialization::getFileNameForStream("c", bucket_1_null_path, settings));
+
+    EXPECT_EQ(file_names.size(), 5);
 }
 
 TEST(StructuredSubstreamNames, VariantNestedNullableArrayNullMapSuffixesAreUnique)

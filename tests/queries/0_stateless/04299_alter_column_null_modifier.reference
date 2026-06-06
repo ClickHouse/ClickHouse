@@ -12,3 +12,6 @@ d	Nullable(UInt8)
 e	Nullable(Float64)
 alter_column
 Nullable(Int32)
+nullable_array
+a	Nullable(Array(Int32))
+g	Nullable(Array(Int32))

@@ -11,6 +11,7 @@
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -66,6 +67,26 @@ bool allArgumentsAreConstants(const ColumnsWithTypeAndName & args)
         if (!isColumnConst(*arg.column))
             return false;
     return true;
+}
+
+bool hasNullableArrayArgument(const ColumnsWithTypeAndName & args)
+{
+    for (const auto & arg : args)
+    {
+        const auto * nullable_type = typeid_cast<const DataTypeNullable *>(arg.type.get());
+        if (nullable_type && isArray(nullable_type->getNestedType()))
+            return true;
+    }
+
+    return false;
+}
+
+DataTypePtr makeNullableResultForDefaultNulls(const DataTypePtr & return_type, const ColumnsWithTypeAndName & args)
+{
+    if (isArray(return_type) && hasNullableArrayArgument(args))
+        return makeNullableAllowingArray(return_type);
+
+    return makeNullableSafe(return_type);
 }
 
 ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
@@ -811,7 +832,9 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
             /// return it as-is. For null input rows, the function will be evaluated
             /// over the default values of the nested column and produce the corresponding default result
             /// (e.g. an empty array), instead of failing the type check.
-            return makeNullableSafe(return_type);
+            /// `Nullable(Array)` arguments are the exception: array-returning functions must keep
+            /// the row null map on the returned `Array`.
+            return makeNullableResultForDefaultNulls(return_type, arguments);
         }
     }
 

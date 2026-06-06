@@ -407,7 +407,7 @@ String getNameForSubstreamPath(
 String ISerialization::getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings)
 {
     auto settings_with_type = settings;
-    settings_with_type.column_type = column.type.get();
+    settings_with_type.column_type = column.getTypeInStorage().get();
     return getFileNameForStream(column.getNameInStorage(), path, settings_with_type);
 }
 

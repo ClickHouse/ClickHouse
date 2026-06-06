@@ -60,6 +60,10 @@ String getPathPrefixInRange(const SubstreamPath & path, size_t begin_index, size
             stream_name += ".variant_discr_prefix";
         else if (element.type == Substream::VariantOffsets)
             stream_name += ".variant_offsets";
+        else if (element.type == Substream::Bucket)
+            stream_name += "." + toString(element.bucket);
+        else if (element.type == Substream::MapBucketsInfo)
+            stream_name += ".buckets_info";
     }
     return stream_name;
 }
@@ -207,6 +211,10 @@ String getLegacySubstreamNameSuffix(
             else
                 stream_name += "." + it->variant_element_name + ".null";
         }
+        else if (it->type == Substream::Bucket)
+            stream_name += "." + toString(it->bucket);
+        else if (it->type == Substream::MapBucketsInfo)
+            stream_name += ".buckets_info";
     }
 
     return stream_name;

@@ -2158,12 +2158,22 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
             nullable_array_null_map = ColumnUInt8::create(res->size(), static_cast<UInt8>(0));
         res = ColumnNullable::create(std::move(res), std::move(nullable_array_null_map));
     }
-    else if (output_info.needs_cast)
+    else
     {
-        auto col = castColumn(
-            {std::move(res), output_info.input_type, output_info.name}, output_info.output_type);
-        chassert(col->use_count() == 1);
-        res = IColumn::mutate(std::move(col));
+        if (kind == TypeIndex::Array && nullable_array_null_map && !options.format.null_as_default)
+        {
+            const auto & null_map = assert_cast<const ColumnUInt8 &>(*nullable_array_null_map).getData();
+            if (memchr(null_map.data(), 1, null_map.size()) != nullptr)
+                throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type for column {}", output_info.name);
+        }
+
+        if (output_info.needs_cast)
+        {
+            auto col = castColumn(
+                {std::move(res), output_info.input_type, output_info.name}, output_info.output_type);
+            chassert(col->use_count() == 1);
+            res = IColumn::mutate(std::move(col));
+        }
     }
 
     return res;

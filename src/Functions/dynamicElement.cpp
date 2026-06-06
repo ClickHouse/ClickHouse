@@ -5,12 +5,16 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 #include <memory>
@@ -68,6 +72,19 @@ public:
 
         size_t count_arrays = 0;
         const IDataType * input_type = arguments[0].type.get();
+        bool input_is_nullable_array = false;
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(input_type))
+        {
+            if (!isArray(nullable_type->getNestedType()))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "First argument for function {} must be Variant or Array of Variant. Actual {}",
+                                getName(),
+                                arguments[0].type->getName());
+
+            input_type = nullable_type->getNestedType().get();
+            input_is_nullable_array = true;
+        }
+
         while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(input_type))
         {
             input_type = array->getNestedType().get();
@@ -85,10 +102,13 @@ public:
         for (; count_arrays; --count_arrays)
             return_type = std::make_shared<DataTypeArray>(return_type);
 
+        if (input_is_nullable_array)
+            return makeNullableAllowingArray(return_type);
+
         return return_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {
         const auto & input_arg = arguments[0];
         const IDataType * input_type = input_arg.type.get();
@@ -99,6 +119,51 @@ public:
         {
             input_col = assert_cast<const ColumnConst *>(input_col)->getDataColumnPtr().get();
             input_arg_is_const = true;
+        }
+
+        const bool input_type_is_nullable = input_arg.type->isNullable();
+        if (const auto * nullable_array_column = checkAndGetColumn<ColumnNullable>(input_col))
+        {
+            if (checkAndGetColumn<ColumnArray>(&nullable_array_column->getNestedColumn()))
+            {
+                ColumnsWithTypeAndName nested_arguments = arguments;
+                nested_arguments[0].column = input_arg_is_const
+                    ? ColumnConst::create(nullable_array_column->getNestedColumnPtr(), input_rows_count)
+                    : nullable_array_column->getNestedColumnPtr();
+                nested_arguments[0].type = removeNullable(input_arg.type);
+
+                auto nested_result = executeImpl(nested_arguments, removeNullable(return_type), input_rows_count);
+                if (!return_type->isNullable())
+                    return nested_result;
+
+                auto mutable_nested_result = IColumn::mutate(nested_result->convertToFullColumnIfConst());
+                const size_t num_rows = input_arg_is_const ? input_rows_count : mutable_nested_result->size();
+                if (mutable_nested_result->size() == 1 && num_rows != 1)
+                    mutable_nested_result = mutable_nested_result->cloneResized(num_rows);
+
+                auto null_map = ColumnUInt8::create();
+                auto & null_map_data = null_map->getData();
+                null_map_data.assign(nullable_array_column->getNullMapData().begin(), nullable_array_column->getNullMapData().end());
+                if (null_map_data.size() == 1)
+                    null_map_data.resize_fill(num_rows, nullable_array_column->getNullMapData()[0]);
+                else if (null_map_data.size() != num_rows)
+                    null_map_data.resize_fill(num_rows, 0);
+
+                return ColumnNullable::create(std::move(mutable_nested_result), std::move(null_map));
+            }
+        }
+        else if (input_type_is_nullable)
+        {
+            ColumnsWithTypeAndName nested_arguments = arguments;
+            nested_arguments[0].type = removeNullable(input_arg.type);
+
+            auto nested_result = executeImpl(nested_arguments, removeNullable(return_type), input_rows_count);
+            if (!return_type->isNullable())
+                return nested_result;
+
+            auto null_map = ColumnUInt8::create();
+            null_map->getData().resize_fill(nested_result->size(), 0);
+            return ColumnNullable::create(nested_result->convertToFullColumnIfConst(), std::move(null_map));
         }
 
         Columns array_offsets;

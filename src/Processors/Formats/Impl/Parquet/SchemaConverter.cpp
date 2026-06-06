@@ -282,11 +282,14 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         array.primitive_end = primitive_columns.size();
         array.input_type = std::make_shared<DataTypeArray>(array_element.output_type);
         array.output_type = array.input_type;
+
+        const bool make_nullable_array = levels.size() >= 2
+            && !options.schema_inference_force_not_nullable
+            && (options.schema_inference_force_nullable || !levels[levels.size() - 2].is_array);
         if (!outer_type_hint
             && options.format.schema_inference_allow_nullable_array_type
             && (node.schema_context == SchemaContext::ListTuple || node.schema_context == SchemaContext::ListElement)
-            && levels.size() >= 2
-            && !levels[levels.size() - 2].is_array)
+            && make_nullable_array)
             array.output_type = makeNullableAllowingArray(array.output_type);
         array.nested_columns = {*node.output_idx};
         array.rep = rep;

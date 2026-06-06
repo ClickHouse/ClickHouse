@@ -250,7 +250,10 @@ void registerORCSchemaReader(FormatFactory & factory)
 
     factory.registerAdditionalInfoForSchemaCacheGetter("ORC", [](const FormatSettings & settings)
     {
-        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+        return fmt::format(
+            "schema_inference_make_columns_nullable={};schema_inference_allow_nullable_array_type={}",
+            settings.schema_inference_make_columns_nullable,
+            settings.schema_inference_allow_nullable_array_type);
     });
 }
 

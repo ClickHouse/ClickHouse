@@ -42,7 +42,17 @@ ALTER TABLE t_alter_null ADD COLUMN f Nullable(Int32) NULL; -- { serverError ILL
 ALTER TABLE t_alter_null MODIFY COLUMN c Nullable(Int32) NULL; -- { serverError ILLEGAL_SYNTAX_FOR_DATA_TYPE }
 
 -- A type that cannot be nested inside Nullable is rejected, the same way as in CREATE TABLE.
+SET allow_experimental_nullable_array_type = 0;
 ALTER TABLE t_alter_null ADD COLUMN g Array(Int32) NULL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 ALTER TABLE t_alter_null MODIFY COLUMN a Array(Int32) NULL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SET allow_experimental_nullable_array_type = 1;
+ALTER TABLE t_alter_null ADD COLUMN g Array(Int32) NULL;
+ALTER TABLE t_alter_null MODIFY COLUMN a Array(Int32) NULL;
+
+SELECT 'nullable_array';
+SELECT name, type FROM system.columns
+WHERE database = currentDatabase() AND table = 't_alter_null' AND name IN ('a', 'g')
+ORDER BY name;
 
 DROP TABLE t_alter_null;

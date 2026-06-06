@@ -60,6 +60,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsBool allow_experimental_nullable_array_type;
     extern const SettingsBool allow_experimental_json_lazy_type_hints;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_codecs;
@@ -81,6 +82,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace MergeTreeSetting
@@ -120,16 +122,36 @@ AlterCommand::RemoveProperty removePropertyFromString(const String & property)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove unknown property '{}'", property);
 }
 
-/// Apply the trailing `NULL` / `NOT NULL` column modifier, mirroring the logic in
-/// InterpreterCreateQuery so that ALTER ADD/MODIFY COLUMN behaves like CREATE TABLE.
-void applyNullModifier(DataTypePtr & data_type, const std::optional<bool> & null_modifier)
+void checkNullableArrayIsAllowed(const DataTypePtr & type, const Settings & settings)
+{
+    if (isArray(type) && !settings[Setting::allow_experimental_nullable_array_type])
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Nested type {} cannot be inside Nullable type",
+            type->getName());
+}
+
+/// Apply the trailing `NULL` / `NOT NULL` column modifier with the same setting
+/// gate as `CREATE TABLE`.
+DataTypePtr applyNullModifier(const DataTypePtr & data_type, const std::optional<bool> & null_modifier, const Settings & settings)
 {
     if (!null_modifier)
-        return;
+        return data_type;
     if (data_type->isNullable())
         throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Can't use [NOT] NULL modifier with Nullable type");
     if (*null_modifier)
-        data_type = makeNullable(data_type);
+    {
+        checkNullableArrayIsAllowed(data_type, settings);
+        return makeNullableAllowingArray(data_type);
+    }
+    return data_type;
+}
+
+DataTypePtr getAlterCommandDataType(const AlterCommand & command, const Settings & settings)
+{
+    if (!command.data_type)
+        return nullptr;
+    return applyNullModifier(command.data_type, command.null_modifier, settings);
 }
 
 }
@@ -150,7 +172,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getType())
         {
             command.data_type = data_type_factory.get(ast_col_decl.getType());
-            applyNullModifier(command.data_type, ast_col_decl.null_modifier);
+            command.null_modifier = ast_col_decl.null_modifier;
         }
         if (ast_col_decl.getDefaultExpression())
         {
@@ -208,7 +230,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getType())
         {
             command.data_type = data_type_factory.get(ast_col_decl.getType());
-            applyNullModifier(command.data_type, ast_col_decl.null_modifier);
+            command.null_modifier = ast_col_decl.null_modifier;
         }
 
         if (ast_col_decl.getDefaultExpression())
@@ -546,7 +568,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
     if (type == ADD_COLUMN)
     {
-        ColumnDescription column(column_name, data_type);
+        const auto final_data_type = getAlterCommandDataType(*this, context->getSettingsRef());
+        ColumnDescription column(column_name, final_data_type);
         if (default_expression)
         {
             column.default_desc.kind = default_kind;
@@ -556,7 +579,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             column.comment = *comment;
 
         if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, final_data_type, false, true);
 
         column.ttl = ttl;
 
@@ -634,8 +657,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             }
             else
             {
+                const auto final_data_type = getAlterCommandDataType(*this, context->getSettingsRef());
+
                 if (codec)
-                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true);
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, final_data_type ? final_data_type : column.type, false, true);
 
                 if (comment)
                     column.comment = *comment;
@@ -645,10 +670,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
                 if (data_type)
                 {
-                    column.type = data_type;
+                    column.type = final_data_type;
                     /// Update statistics data type to match the new column type
                     if (!column.statistics.empty())
-                        column.statistics.data_type = data_type;
+                        column.statistics.data_type = final_data_type;
                     /// The type changed, so assume that implicit indices may change too
                     metadata.dropImplicitIndicesForColumn(column_name);
                     metadata.addImplicitIndicesForColumn(column, context);
@@ -1209,9 +1234,10 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (type != MODIFY_COLUMN || data_type == nullptr)
         return false;
 
+    const auto final_data_type = getAlterCommandDataType(*this, context->getSettingsRef());
     for (const auto & column : metadata.columns.getAllPhysical())
     {
-        if (column.name == column_name && !isMetadataOnlyConversion(column.type.get(), data_type.get(), context))
+        if (column.name == column_name && !isMetadataOnlyConversion(column.type.get(), final_data_type.get(), context))
             return true;
     }
     return false;
@@ -1289,7 +1315,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     {
         result.type = MutationCommand::Type::READ_COLUMN;
         result.column_name = column_name;
-        result.data_type = data_type;
+        result.data_type = getAlterCommandDataType(*this, context->getSettingsRef());
     }
     else if (type == DROP_COLUMN)
     {
@@ -1553,8 +1579,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Data type have to be specified for column {} to add", backQuote(column_name));
 
-            validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
-            checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
+            const auto final_data_type = getAlterCommandDataType(command, context->getSettingsRef());
+            validateDataType(final_data_type, DataTypeValidationSettings(context->getSettingsRef()));
+            checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, final_data_type}});
 
             if (virtuals.tryGet(column_name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
@@ -1571,12 +1598,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto & settings = context->getSettingsRef();
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
-                    command.data_type,
+                    final_data_type,
                     !settings[Setting::allow_suspicious_codecs],
                     settings[Setting::allow_experimental_codecs]);
             }
 
-            all_columns.add(ColumnDescription(column_name, command.data_type));
+            all_columns.add(ColumnDescription(column_name, final_data_type));
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
@@ -1604,9 +1631,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (all_columns.hasAlias(column_name))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
+                const auto final_data_type = getAlterCommandDataType(command, context->getSettingsRef());
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
-                    command.data_type,
+                    final_data_type ? final_data_type : all_columns.get(column_name).type,
                     !context->getSettingsRef()[Setting::allow_suspicious_codecs],
                     context->getSettingsRef()[Setting::allow_experimental_codecs]);
             }
@@ -1642,8 +1670,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// So we don't allow to do it for now.
             if (command.data_type)
             {
-                validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
-                checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
+                const auto final_data_type = getAlterCommandDataType(command, context->getSettingsRef());
+                validateDataType(final_data_type, DataTypeValidationSettings(context->getSettingsRef()));
+                checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, final_data_type}});
 
                 const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
@@ -1879,7 +1908,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (!command.data_type) /// it's not ADD COLUMN, because we cannot add column without type
                     data_type_ptr = all_columns.get(column_name).type;
                 else
-                    data_type_ptr = command.data_type;
+                    data_type_ptr = getAlterCommandDataType(command, context->getSettingsRef());
 
                 const auto & final_column_name = column_name;
                 const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
@@ -1899,7 +1928,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
                 const auto & final_column_name = column_name;
                 const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
-                const auto data_type_ptr = command.data_type;
+                const auto data_type_ptr = getAlterCommandDataType(command, context->getSettingsRef());
 
                 default_expr_list->children.emplace_back(setAlias(
                     addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
