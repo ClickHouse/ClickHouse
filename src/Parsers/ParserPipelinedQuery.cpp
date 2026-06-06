@@ -130,7 +130,11 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
 
     ASTPtr tables;
-    if (!ParserTableExpression().parse(pos, tables, expected))
+    /// Disable alias without the `AS` keyword for the leading table expression, exactly as the
+    /// regular `FROM`-first parser does (see `ParserSelectQuery`). Otherwise a query like
+    /// `FROM t SELECT FORMAT JSON` would consume `SELECT` as the table alias (`FROM t AS SELECT`)
+    /// and the pipelined parser would shadow the existing `FROM ... SELECT ...` syntax.
+    if (!ParserTableExpression(/*allow_alias_without_as_keyword*/ false).parse(pos, tables, expected))
         return false;
 
     auto current_query = make_intrusive<ASTSelectQuery>();

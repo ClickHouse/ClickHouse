@@ -5,6 +5,11 @@ FROM numbers(3) SELECT number;
 FROM numbers(3) AS a SELECT a.number ORDER BY number;
 FROM numbers(2) AS l JOIN numbers(2) AS r ON l.number = r.number SELECT l.number ORDER BY l.number;
 
+-- The leading table expression must not consume `SELECT` as an alias without the `AS` keyword,
+-- otherwise `FROM t SELECT` would be silently accepted by the pipelined parser as `SELECT * FROM t AS SELECT`
+-- (returning rows) instead of being handled (and rejected as an empty `SELECT` list) by the regular parser.
+FROM numbers(3) SELECT; -- { clientError SYNTAX_ERROR }
+
 -- EXPLAIN over the same forms must reach the regular SELECT parser too.
 EXPLAIN SYNTAX FROM numbers(3) SELECT number;
 
