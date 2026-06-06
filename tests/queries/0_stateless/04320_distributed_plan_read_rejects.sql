@@ -5,6 +5,9 @@ DROP TABLE IF EXISTS t_read_rejects;
 CREATE TABLE t_read_rejects (x UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_read_rejects SELECT number FROM numbers(200000);
 
+-- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0 (randomized
+-- settings set it nonzero, which would make make_distributed_plan reject the count/sum below).
+SET max_rows_to_group_by = 0;
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0;
 

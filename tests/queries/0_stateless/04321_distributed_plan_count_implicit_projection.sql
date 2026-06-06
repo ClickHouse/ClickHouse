@@ -15,6 +15,8 @@ INSERT INTO t_cnt SELECT number, number FROM numbers(200000);
 
 -- Pin the implicit projection on so the bug path is exercised; the fix disables it for distributed
 -- plans regardless. Without pinning, randomized settings can turn it off and mask the regression.
+-- Pin max_rows_to_group_by to 0 too: distributed aggregation rejects a nonzero limit (randomized).
+SET max_rows_to_group_by = 0;
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 8,
     optimize_use_implicit_projections = 1;
