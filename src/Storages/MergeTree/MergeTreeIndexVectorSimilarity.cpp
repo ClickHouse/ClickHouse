@@ -624,14 +624,14 @@ void MergeTreeIndexGranuleVectorSimilarityFlat::serializeBinary(WriteBuffer & os
 
 void MergeTreeIndexGranuleVectorSimilarityFlat::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
-    UInt64 file_version;
+    UInt64 file_version = 0;
     readIntBinary(file_version, istr);
     if (file_version != FILE_FORMAT_VERSION)
         throw Exception(ErrorCodes::FORMAT_VERSION_TOO_OLD, "Unsupported flat vector similarity index version {}", file_version);
 
-    UInt64 dims;
-    UInt64 bpv;
-    UInt64 count;
+    UInt64 dims = 0;
+    UInt64 bpv = 0;
+    UInt64 count = 0;
     readIntBinary(dims, istr);
     readIntBinary(bpv, istr);
     readIntBinary(count, istr);
