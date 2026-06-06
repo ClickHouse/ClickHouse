@@ -31,6 +31,7 @@ struct FormatSettings
     bool force_null_for_omitted_fields = false;
     bool decimal_trailing_zeros = false;
     bool approximate_numbers_with_decimal_point = false;
+    UInt64 float_precision = 0;
     bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;

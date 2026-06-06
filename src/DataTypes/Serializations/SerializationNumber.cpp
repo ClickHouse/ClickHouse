@@ -19,7 +19,11 @@ namespace DB
 template <typename T>
 void SerializationNumber<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeText(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr, settings.approximate_numbers_with_decimal_point);
+    auto x = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
+    if constexpr (is_floating_point<T>)
+        writeFloatText(x, ostr, settings, settings.approximate_numbers_with_decimal_point);
+    else
+        writeText(x, ostr);
 }
 
 template <typename T>
