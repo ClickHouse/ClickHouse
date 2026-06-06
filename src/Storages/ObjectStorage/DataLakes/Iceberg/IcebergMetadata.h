@@ -83,6 +83,7 @@ public:
         LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
+    void update(const ContextPtr & local_context) override;
     bool supportsWrites() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
 

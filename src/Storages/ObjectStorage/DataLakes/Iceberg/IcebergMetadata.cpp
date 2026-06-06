@@ -87,8 +87,6 @@ namespace ProfileEvents
 {
 extern const Event IcebergIteratorInitializationMicroseconds;
 extern const Event IcebergMetadataUpdateMicroseconds;
-extern const Event IcebergMetadataFilesCacheHits;
-extern const Event IcebergMetadataFilesCacheMisses;
 extern const Event IcebergMetadataFilesCacheSkipped;
 extern const Event IcebergTrivialCountOptimizationApplied;
 }
@@ -179,6 +177,8 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     bool content_cache_hit = false;
 
     /// Probe content cache with the catalog hint UUID (without insert-on-miss).
+    /// `tryGetTableMetadata` increments `IcebergMetadataFilesCacheHits` / `Misses`
+    /// internally, so we don't count here.
     /// This is safe because:
     /// - On miss: we read from storage and insert under the validated parsed UUID.
     /// - On hit: we verify the cached JSON's `table-uuid` field matches the hint.
@@ -197,28 +197,12 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
                 if (cached_uuid == normalizeUuid(hint))
                 {
                     /// Hit from a prior validated init: cached JSON belongs to this table.
-                    ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
                     content_cache_hit = true;
                     raw_metadata_json = std::move(cached);
                     metadata_object = candidate;
                     table_uuid = cached_uuid;
                 }
-                else
-                {
-                    /// Cached entry's UUID mismatches the hint.
-                    ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
-                }
             }
-            else
-            {
-                /// Cached entry missing `table-uuid`.
-                ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
-            }
-        }
-        else
-        {
-            /// No cached entry for this `uuid:path` key.
-            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
         }
     }
     else if (cache_ptr)
@@ -898,6 +882,13 @@ DataLakeMetadataPtr IcebergMetadata::create(
             log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
     auto persistent_components = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr, local_context, log);
     return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, std::move(persistent_components), local_context);
+}
+
+void IcebergMetadata::update(const ContextPtr & local_context)
+{
+    persistent_components.metadata_cache = local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+        ? local_context->getIcebergMetadataFilesCache()
+        : nullptr;
 }
 
 IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
