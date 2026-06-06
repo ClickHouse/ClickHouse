@@ -42,6 +42,11 @@ INSERT INTO test_like_fvv VALUES ('aa', '%'), ('aa', '%%'), ('bb', '%'), ('bb', 
 SELECT haystack, pattern, haystack LIKE pattern, haystack NOT LIKE pattern, match(haystack, pattern) FROM test_like_fvv ORDER BY haystack, pattern;
 DROP TABLE test_like_fvv;
 
+-- A non-constant needle that is a longer run of `%` (e.g. `%%%`) must also be recognized as the
+-- "matches everything" trivial pattern, not only `%` / `%%`.
+SELECT 'anything' LIKE pattern, 'anything' NOT LIKE pattern FROM (SELECT arrayJoin(['%%%', '%%%%%%']) AS pattern);
+SELECT '' LIKE pattern FROM (SELECT arrayJoin(['%%%', '%%%%%%']) AS pattern);
+
 -- `match` trivial pattern shortcut across all argument shapes (const-const, vec-const, const-vec, vec-vec):
 SELECT match('', '.*'), match('', '.*?');
 SELECT match(haystack, '.*'), match(haystack, '.*?') FROM (SELECT arrayJoin(['', 'x']) AS haystack) ORDER BY haystack;
