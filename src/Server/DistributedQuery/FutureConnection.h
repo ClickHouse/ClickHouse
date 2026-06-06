@@ -42,7 +42,7 @@ private:
     static int createEventFd();
 
     /// Wake the epoll waiter via the eventfd after the promise is completed.
-    void notifyWaiter();
+    void notifyWaiter() const;
 
     std::promise<Poco::Net::Socket> promise;
     std::shared_future<Poco::Net::Socket> future;

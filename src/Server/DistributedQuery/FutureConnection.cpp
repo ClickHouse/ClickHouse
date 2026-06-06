@@ -78,7 +78,7 @@ void FutureConnection::cancel(std::exception_ptr exception)
     notifyWaiter();
 }
 
-void FutureConnection::notifyWaiter()
+void FutureConnection::notifyWaiter() const
 {
     uint64_t value = 1;
     ssize_t written = 0;
