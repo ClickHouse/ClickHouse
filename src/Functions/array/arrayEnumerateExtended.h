@@ -13,8 +13,6 @@
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/ColumnsHashing.h>
 
-#include <vector>
-
 
 namespace DB
 {
@@ -143,7 +141,7 @@ ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWith
     Columns array_holders;
     ColumnPtr offsets_column;
     ColumnUInt8::MutablePtr row_null_map;
-    std::vector<const ColumnArray *> array_columns(num_arguments);
+    VectorWithMemoryTracking<const ColumnArray *> array_columns(num_arguments);
     for (size_t i = 0; i < num_arguments; ++i)
     {
         ColumnPtr array_ptr = arguments[i].column->convertToFullColumnIfConst();

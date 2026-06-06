@@ -14,8 +14,6 @@
 #include <Functions/array/NullableArrayOffsets.h>
 #include <Common/assert_cast.h>
 
-#include <vector>
-
 namespace DB
 {
 
@@ -188,7 +186,7 @@ public:
             const DataTypeArray * array_type = nullptr;
             String name;
         };
-        std::vector<ArrayArgument> array_arguments;
+        VectorWithMemoryTracking<ArrayArgument> array_arguments;
         array_arguments.reserve(arguments.size() - 2);
 
         ColumnsWithTypeAndName arrays_data_with_type_and_name; /// for all arrays, the pointers to the internal data column, type and name

@@ -22,8 +22,6 @@
 
 #include <Common/scope_guard_safe.h>
 
-#include <vector>
-
 
 namespace DB
 {
@@ -134,7 +132,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
         ColumnPtr column_array_ptr;
         const ColumnArray * column_array = nullptr;
     };
-    std::vector<ArrayArgument> array_arguments;
+    VectorWithMemoryTracking<ArrayArgument> array_arguments;
     array_arguments.reserve(num_arguments_columns);
 
     for (size_t i = 0; i < num_arguments_columns; ++i)

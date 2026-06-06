@@ -27,8 +27,6 @@
 #include <Functions/array/NullableArrayOffsets.h>
 
 #include <algorithm>
-#include <vector>
-
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 
@@ -508,7 +506,7 @@ public:
                 String name;
                 size_t argument_index = 0;
             };
-            std::vector<ArrayArgument> array_arguments;
+            VectorWithMemoryTracking<ArrayArgument> array_arguments;
             array_arguments.reserve(arguments.size() - 1 - num_fixed_params);
 
             for (size_t i = 1 + num_fixed_params; i < arguments.size(); ++i)

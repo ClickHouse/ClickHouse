@@ -11,8 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-#include <vector>
-
 
 namespace DB
 {
@@ -90,7 +88,7 @@ public:
         Columns holders(num_arguments);
         Columns tuple_columns(num_arguments);
         ColumnUInt8::MutablePtr null_map;
-        std::vector<const ColumnArray *> array_columns(num_arguments);
+        VectorWithMemoryTracking<const ColumnArray *> array_columns(num_arguments);
 
         bool has_unaligned = false;
         size_t unaligned_index = 0;

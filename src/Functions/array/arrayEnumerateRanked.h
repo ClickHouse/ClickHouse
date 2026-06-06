@@ -13,8 +13,6 @@
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-#include <vector>
-
 
 /** The function will enumerate distinct values of the passed multidimensional arrays looking inside at the specified depths.
   * This is very unusual function made as a special order for our dear customer - Metrica web analytics system.
@@ -172,7 +170,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
     VectorWithMemoryTracking<const ColumnArray::Offsets *> offsets_by_depth;
     VectorWithMemoryTracking<ColumnPtr> offsetsptr_by_depth;
-    std::vector<ColumnPtr> argument_columns(num_arguments);
+    VectorWithMemoryTracking<ColumnPtr> argument_columns(num_arguments);
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
