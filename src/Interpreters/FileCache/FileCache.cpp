@@ -1276,9 +1276,9 @@ bool FileCache::doTryReserve(
     file_segment.reserved_size += size;
     chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
 
-    if (!file_segment.getKeyMetadata()->createBaseDirectory())
+    if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
     {
-        failure_reason = "not enough space on device";
+        failure_reason = "Failed to create base directory for key, error: " + ec.message();
         return false;
     }
 
