@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: make_distributed_plan requires the analyzer.
+
 -- Regression test: shuffle-join key types differ on left and right side.
 -- Without casting to a common supertype, the scatter step on each side uses different
 -- hashing because of different physical types, so matching rows are routed to different
