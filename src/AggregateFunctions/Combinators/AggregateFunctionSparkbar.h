@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
+#include <Common/memory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <IO/ReadHelpers.h>
@@ -202,6 +203,30 @@ public:
     {
         for (size_t i = 0; i < width; ++i)
             nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, arena);
+    }
+
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        if (!this->haveSameDefinition(rhs))
+            return false;
+
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
+    {
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        const size_t rhs_align_of_data = rhs_nested->alignOfData();
+        const size_t rhs_size_of_data = ::Memory::alignUp(rhs_nested->sizeOfData(), rhs_align_of_data);
+
+        for (size_t i = 0; i < width; ++i)
+            nested_function->mergeStateFromDifferentVariant(place + i * size_of_data, *rhs_nested, rhs_place + i * rhs_size_of_data, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override

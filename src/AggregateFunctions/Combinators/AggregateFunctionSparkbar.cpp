@@ -146,7 +146,7 @@ public:
 
         if (which.isDate32())
         {
-            Int64 tmp;
+            Int64 tmp = 0;
             const Int32 begin_x = params[n - 2].tryGet<Int64>(tmp) ? static_cast<Int32>(tmp) : static_cast<Int32>(params[n - 2].safeGet<UInt64>());
             const Int32 end_x   = params[n - 1].tryGet<Int64>(tmp) ? static_cast<Int32>(tmp) : static_cast<Int32>(params[n - 1].safeGet<UInt64>());
 
@@ -156,7 +156,7 @@ public:
 
         if (which.isNativeInt() || which.isEnum() || which.isInterval())
         {
-            Int64 tmp;
+            Int64 tmp = 0;
             const Int64 begin_x = params[n - 2].tryGet<Int64>(tmp) ? tmp : static_cast<Int64>(params[n - 2].safeGet<UInt64>());
             const Int64 end_x   = params[n - 1].tryGet<Int64>(tmp) ? tmp : static_cast<Int64>(params[n - 1].safeGet<UInt64>());
 
