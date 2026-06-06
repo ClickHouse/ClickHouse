@@ -7227,6 +7227,7 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::restoreMetadataVersionFromBackup");
     auto zookeeper = getZooKeeper();
     const String table_metadata_path = fs::path(zookeeper_path) / "metadata";
+    const String table_columns_path = fs::path(zookeeper_path) / "columns";
     const String replica_metadata_version_path = fs::path(replica_path) / "metadata_version";
 
     /// The table's metadata version is the version of the /metadata znode.
@@ -7234,12 +7235,33 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
     /// and other replicas restoring the same table.
     Coordination::Stat metadata_stat;
     String metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
+    bool version_was_bumped = false;
     while (metadata_stat.version < metadata_version)
     {
         auto code = zookeeper->trySet(table_metadata_path, metadata_str, metadata_stat.version);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZBADVERSION)
             throw zkutil::KeeperException::fromPath(code, table_metadata_path);
         metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
+        version_was_bumped = true;
+    }
+
+    /// Notify running peer replicas about the new version via the shared replication log.
+    if (version_was_bumped)
+    {
+        String columns_str = zookeeper->get(table_columns_path);
+
+        ReplicatedMergeTreeLogEntryData alter_entry;
+        alter_entry.type = LogEntry::ALTER_METADATA;
+        alter_entry.source_replica = replica_name;
+        alter_entry.metadata_str = metadata_str;
+        alter_entry.columns_str = columns_str;
+        alter_entry.alter_version = metadata_stat.version;
+        alter_entry.create_time = time(nullptr);
+
+        String path_created = zookeeper->create(
+            fs::path(zookeeper_path) / "log/log-", alter_entry.toString(), zkutil::CreateMode::PersistentSequential);
+        LOG_INFO(log, "Created ALTER_METADATA log entry {} to propagate metadata version {} to all replicas",
+                 path_created, metadata_stat.version);
     }
 
     /// This replica has the same structure, so mark the version as applied by it.

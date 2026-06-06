@@ -211,6 +211,82 @@ def test_replicated_database_table_not_created_on_replica(start_cluster):
         replica2.query("DROP DATABASE IF EXISTS repl_db SYNC")
 
 
+def test_restore_table_metadata_version_two_replicas(start_cluster):
+    zk_path = "/clickhouse/tables/test_db/two_r_test"
+
+    replica1.query("CREATE DATABASE IF NOT EXISTS test_db")
+    replica1.query(
+        f"""
+        CREATE TABLE test_db.two_r_test (id UInt64, name Nullable(String))
+        ENGINE = ReplicatedReplacingMergeTree('{zk_path}', '{{replica}}')
+        ORDER BY id
+        """
+    )
+    replica1.query(
+        "INSERT INTO test_db.two_r_test SELECT number, toString(number) FROM numbers(10)"
+    )
+    replica1.query(
+        "ALTER TABLE test_db.two_r_test ADD COLUMN surname Nullable(String) AFTER name"
+    )
+    replica1.query(
+        "INSERT INTO test_db.two_r_test SELECT number, toString(number), toString(number) FROM numbers(10, 10)"
+    )
+    assert (
+        replica1.query(
+            "SELECT metadata_version FROM system.tables WHERE database = 'test_db' AND name = 'two_r_test'"
+        ).strip()
+        == "1"
+    )
+
+    backup_name = new_backup_name()
+    replica1.query(f"BACKUP TABLE test_db.two_r_test TO {backup_name}")
+
+    replica1.query("DROP TABLE test_db.two_r_test SYNC")
+
+    # replica2 joins the same ZK path fresh (stat = 0, in-memory metadata_version = 0).
+    replica2.query("CREATE DATABASE IF NOT EXISTS test_db")
+    replica2.query(
+        f"""
+        CREATE TABLE test_db.two_r_test (id UInt64, name Nullable(String), surname Nullable(String))
+        ENGINE = ReplicatedReplacingMergeTree('{zk_path}', '{{replica}}')
+        ORDER BY id
+        """
+    )
+    assert (
+        replica2.query(
+            "SELECT metadata_version FROM system.tables WHERE database = 'test_db' AND name = 'two_r_test'"
+        ).strip()
+        == "0"
+    )
+
+    replica1.query(f"RESTORE TABLE test_db.two_r_test FROM {backup_name}")
+
+    assert (
+        replica1.query(
+            "SELECT metadata_version FROM system.tables WHERE database = 'test_db' AND name = 'two_r_test'"
+        ).strip()
+        == "1"
+    )
+
+    assert_eq_with_retry(
+        replica2,
+        "SELECT metadata_version FROM system.tables WHERE database = 'test_db' AND name = 'two_r_test'",
+        "1",
+    )
+
+    replica2.query("SYSTEM SYNC REPLICA test_db.two_r_test", timeout=60)
+    replica2.query("OPTIMIZE TABLE test_db.two_r_test FINAL", timeout=120)
+    assert (
+        replica2.query(
+            "SELECT count() FROM system.parts WHERE database = 'test_db' AND table = 'two_r_test' AND active"
+        ).strip()
+        == "1"
+    )
+
+    replica1.query("DROP TABLE test_db.two_r_test SYNC")
+    replica2.query("DROP TABLE test_db.two_r_test SYNC")
+
+
 def test_restore_table_metadata_version_structure_only(start_cluster):
     create_table("t2")
     node.query(
