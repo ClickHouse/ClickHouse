@@ -46,6 +46,18 @@ m
 --- Nullable(Float64) ANTI ---
 nan-l
 null-l
+--- runtime-filter Nullable(Float64) ANTI ---
+nan-l
+null-l
+--- runtime-filter Nullable(Float64) INNER ---
+m
+--- runtime-filter LowCardinality(Nullable(Float64)) ANTI ---
+nan-l
+null-l
+--- runtime-filter Tuple(Float64, Float64) LEFT ANTI ---
+nan-l
+nan-r-side
+unmatched
 --- GROUP BY nan ---
 1.5	1
 nan	2

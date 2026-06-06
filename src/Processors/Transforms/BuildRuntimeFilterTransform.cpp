@@ -1,5 +1,8 @@
 #include <Processors/Transforms/BuildRuntimeFilterTransform.h>
 #include <Processors/Chunk.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/FilterDescription.h>
@@ -95,23 +98,105 @@ IProcessor::Status BuildRuntimeFilterTransform::prepare()
 namespace
 {
 
-/// Drop rows where the float column has `NaN` so the runtime filter never carries any
-/// `NaN` entry. JOIN ON treats `NaN` as never-matching (issue #106531) - if `NaN` were
-/// inserted, the bloom/exact-match would match it bitwise on the probe side and either
-/// (a) wrongly let an INNER probe through, or (b) wrongly exclude a probe `NaN` from an
-/// ANTI/LEFT result. Returns the original column when no `NaN` is found or when the
-/// column type is not float.
+/// `NaN`-detection helpers for `BuildRuntimeFilterTransform`.
+///
+/// JOIN ON treats `NaN` as never-matching (issue #106531). If a `NaN` row were
+/// inserted into the runtime filter, the bloom or exact-match check would match
+/// it bitwise on the probe side and either (a) wrongly let an INNER probe through,
+/// or (b) wrongly exclude a probe `NaN` from an ANTI/LEFT result.
+///
+/// Float keys reach the transform wrapped in `Nullable`, `LowCardinality`, or, for
+/// multi-key LEFT ANTI, a temporary `Tuple`. The helper below recursively unwraps
+/// these layers and OR-s a `nan_mask[i] = 1` for every row whose float payload is
+/// `NaN`. Already-NULL rows do not need to be dropped (they are stored as NULL by
+/// `Set` and are not bitwise-matched), so a `Nullable` wrapper restricts NaN
+/// detection to rows where `null_map[i] == 0`.
+
+void markNaNRowsImpl(const IColumn & column, IColumn::Filter & nan_mask, const UInt8 * is_null);
+
 template <typename T>
-ColumnPtr filterOutNaNsImpl(const ColumnVector<T> & vec)
+void markNaNRowsInVector(const ColumnVector<T> & vec, IColumn::Filter & nan_mask, const UInt8 * is_null)
 {
     const auto & data = vec.getData();
     const size_t size = data.size();
+    chassert(nan_mask.size() == size);
 
-    /// Fast scan for any `NaN`. Common case: there isn't one.
+    if (is_null)
+    {
+        for (size_t i = 0; i < size; ++i)
+            nan_mask[i] |= static_cast<UInt8>(is_null[i] == 0 && isNaN(data[i]));
+    }
+    else
+    {
+        for (size_t i = 0; i < size; ++i)
+            nan_mask[i] |= static_cast<UInt8>(isNaN(data[i]));
+    }
+}
+
+void markNaNRowsImpl(const IColumn & column, IColumn::Filter & nan_mask, const UInt8 * is_null)
+{
+    if (const auto * f32 = typeid_cast<const ColumnFloat32 *>(&column))
+    {
+        markNaNRowsInVector<Float32>(*f32, nan_mask, is_null);
+        return;
+    }
+    if (const auto * f64 = typeid_cast<const ColumnFloat64 *>(&column))
+    {
+        markNaNRowsInVector<Float64>(*f64, nan_mask, is_null);
+        return;
+    }
+    if (const auto * bf16 = typeid_cast<const ColumnVector<BFloat16> *>(&column))
+    {
+        markNaNRowsInVector<BFloat16>(*bf16, nan_mask, is_null);
+        return;
+    }
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+    {
+        /// We only need to consider rows where the value is not NULL; a NULL stored in
+        /// the runtime filter does not bitwise-match anything on the probe side.
+        const auto & null_map = nullable->getNullMapData();
+        markNaNRowsImpl(nullable->getNestedColumn(), nan_mask, null_map.data());
+        return;
+    }
+    if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&column))
+    {
+        /// Materialise once so each row is examined directly. Inspecting the dictionary in
+        /// place would require honouring per-row indexes anyway, so this is the simplest
+        /// correct path. Runtime filters typically build over modest blocks, so the
+        /// allocation is bounded by the chunk size.
+        ColumnPtr full = lc->convertToFullColumnIfLowCardinality();
+        markNaNRowsImpl(*full, nan_mask, is_null);
+        return;
+    }
+    if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
+    {
+        /// A row is dropped if ANY float element of the tuple is `NaN`. For LEFT ANTI
+        /// multi-key joins the tuple is the runtime-filter key, so a single `NaN`
+        /// element makes the row never-matching at the join level.
+        const size_t tuple_size = tuple->tupleSize();
+        for (size_t i = 0; i < tuple_size; ++i)
+            markNaNRowsImpl(tuple->getColumn(i), nan_mask, is_null);
+        return;
+    }
+
+    /// Any other column type (integers, strings, dates, ...) cannot carry a float `NaN`.
+    /// Leave `nan_mask` untouched.
+}
+
+ColumnPtr filterOutNaNs(const ColumnPtr & column)
+{
+    const size_t size = column->size();
+    if (size == 0)
+        return nullptr;
+
+    IColumn::Filter nan_mask(size, 0);
+    markNaNRowsImpl(*column, nan_mask, /* is_null = */ nullptr);
+
+    /// Common case: no `NaN` rows. Avoid allocating a copy.
     bool has_nan = false;
     for (size_t i = 0; i < size; ++i)
     {
-        if (isNaN(data[i]))
+        if (nan_mask[i])
         {
             has_nan = true;
             break;
@@ -120,22 +205,12 @@ ColumnPtr filterOutNaNsImpl(const ColumnVector<T> & vec)
     if (!has_nan)
         return nullptr;
 
-    auto filter = ColumnUInt8::create(size);
-    auto & filter_data = filter->getData();
+    /// Convert drop-mask to keep-mask in place and filter the original column. We filter
+    /// the wrapped column (as opposed to its float payload) so the result preserves the
+    /// `Nullable`/`LowCardinality`/`Tuple` shape `Set::insertFromColumns` expects.
     for (size_t i = 0; i < size; ++i)
-        filter_data[i] = static_cast<UInt8>(!isNaN(data[i]));
-    return vec.filter(filter_data, /* result_size_hint = */ -1);
-}
-
-ColumnPtr filterOutNaNs(const ColumnPtr & column)
-{
-    if (const auto * f32 = typeid_cast<const ColumnFloat32 *>(column.get()))
-        return filterOutNaNsImpl<Float32>(*f32);
-    if (const auto * f64 = typeid_cast<const ColumnFloat64 *>(column.get()))
-        return filterOutNaNsImpl<Float64>(*f64);
-    if (const auto * bf16 = typeid_cast<const ColumnVector<BFloat16> *>(column.get()))
-        return filterOutNaNsImpl<BFloat16>(*bf16);
-    return nullptr;
+        nan_mask[i] = !nan_mask[i];
+    return column->filter(nan_mask, /* result_size_hint = */ -1);
 }
 
 }

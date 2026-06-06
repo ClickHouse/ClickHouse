@@ -132,6 +132,67 @@ DROP TABLE IF EXISTS r32;
 DROP TABLE IF EXISTS ln;
 DROP TABLE IF EXISTS rn;
 
+-- Runtime-filter regression coverage for issue #106531. The runtime filter built
+-- in `BuildRuntimeFilterTransform` was keyed by raw bytes, so a `NaN` row on the
+-- probe side wrongly matched a `NaN` in the filter and either (a) let an INNER
+-- probe through, or (b) excluded a probe `NaN` from a LEFT/ANTI result. The fix
+-- recursively unwraps `Nullable`, `LowCardinality`, and `Tuple` wrappers around
+-- the float key column and drops `NaN` rows before they are inserted.
+
+DROP TABLE IF EXISTS lrf;
+DROP TABLE IF EXISTS rrf;
+
+-- `Nullable(Float64)` ANTI: probe-side `NaN` must remain in the result. Before the
+-- runtime-filter fix, the build-side `NaN` from `rrf` would land in the exclusion
+-- filter and pre-prune the probe-side `nan-l` row, so ANTI returned only `null-l`.
+CREATE TABLE lrf (k Nullable(Float64), v String) ENGINE = Memory();
+CREATE TABLE rrf (k Nullable(Float64)) ENGINE = Memory();
+INSERT INTO lrf VALUES (1.5, 'm'), (nan, 'nan-l'), (NULL, 'null-l');
+INSERT INTO rrf VALUES (1.5), (nan), (NULL);
+
+SELECT '--- runtime-filter Nullable(Float64) ANTI ---';
+SELECT v FROM (SELECT lrf.v FROM lrf ANTI JOIN rrf ON lrf.k = rrf.k)
+ORDER BY v
+SETTINGS enable_analyzer = 1, enable_join_runtime_filters = 1, join_algorithm = 'hash';
+
+SELECT '--- runtime-filter Nullable(Float64) INNER ---';
+SELECT v FROM (SELECT lrf.v FROM lrf INNER JOIN rrf ON lrf.k = rrf.k)
+ORDER BY v
+SETTINGS enable_analyzer = 1, enable_join_runtime_filters = 1, join_algorithm = 'hash';
+
+DROP TABLE IF EXISTS lrf;
+DROP TABLE IF EXISTS rrf;
+
+-- `LowCardinality(Nullable(Float64))` ANTI: same shape with an extra LC wrapper.
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE lrf_lc (k LowCardinality(Nullable(Float64)), v String) ENGINE = Memory();
+CREATE TABLE rrf_lc (k LowCardinality(Nullable(Float64))) ENGINE = Memory();
+INSERT INTO lrf_lc VALUES (1.5, 'm'), (nan, 'nan-l'), (NULL, 'null-l');
+INSERT INTO rrf_lc VALUES (1.5), (nan), (NULL);
+
+SELECT '--- runtime-filter LowCardinality(Nullable(Float64)) ANTI ---';
+SELECT v FROM (SELECT lrf_lc.v FROM lrf_lc ANTI JOIN rrf_lc ON lrf_lc.k = rrf_lc.k)
+ORDER BY v
+SETTINGS enable_analyzer = 1, enable_join_runtime_filters = 1, join_algorithm = 'hash';
+
+DROP TABLE IF EXISTS lrf_lc;
+DROP TABLE IF EXISTS rrf_lc;
+
+-- Multi-key LEFT ANTI: build path wraps both keys into one `Tuple` runtime-filter
+-- key. A `NaN` in any tuple element must drop the row from the filter.
+CREATE TABLE lrf_t (k1 Float64, k2 Float64, v String) ENGINE = Memory();
+CREATE TABLE rrf_t (k1 Float64, k2 Float64) ENGINE = Memory();
+INSERT INTO lrf_t VALUES (1.5, 2.5, 'm'), (nan, 2.5, 'nan-l'), (3.5, nan, 'nan-r-side'), (4.5, 5.5, 'unmatched');
+INSERT INTO rrf_t VALUES (1.5, 2.5), (nan, 2.5), (3.5, nan);
+
+SELECT '--- runtime-filter Tuple(Float64, Float64) LEFT ANTI ---';
+SELECT v FROM (SELECT lrf_t.v FROM lrf_t LEFT ANTI JOIN rrf_t ON lrf_t.k1 = rrf_t.k1 AND lrf_t.k2 = rrf_t.k2)
+ORDER BY v
+SETTINGS enable_analyzer = 1, enable_join_runtime_filters = 1, join_algorithm = 'hash';
+
+DROP TABLE IF EXISTS lrf_t;
+DROP TABLE IF EXISTS rrf_t;
+
 -- `GROUP BY` and `DISTINCT` on `NaN` must remain unchanged (they intentionally
 -- group all NaNs together, unlike `JOIN ON`).
 SELECT '--- GROUP BY nan ---';
