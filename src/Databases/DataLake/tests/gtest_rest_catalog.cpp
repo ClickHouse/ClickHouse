@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <Interpreters/Context.h>
@@ -24,6 +25,14 @@
 #include <string>
 
 using namespace DataLake;
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
 
 namespace
 {
@@ -112,8 +121,7 @@ public:
             return;
         }
 
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-        response.send();
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected request to fake Iceberg REST catalog: {}", request.getURI());
     }
 
 private:
