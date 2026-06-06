@@ -1,5 +1,7 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
+#include <algorithm>
+
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
@@ -481,8 +483,15 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
         writeJSONKey(KEY_SKIPPED_COLUMNS, out);
         writeChar('[', out);
 
+        /// serialization.json is hashed into the part checksums, so the order
+        /// must be deterministic. skipped_columns is a NameSet (hash set) whose
+        /// iteration order is unspecified, which would make otherwise identical
+        /// parts produce different checksums and break replicated merges.
+        std::vector<std::string_view> sorted_skipped(skipped_columns.begin(), skipped_columns.end());
+        std::sort(sorted_skipped.begin(), sorted_skipped.end());
+
         bool first_skipped = true;
-        for (const auto & name : skipped_columns)
+        for (const auto & name : sorted_skipped)
         {
             if (!first_skipped)
                 writeChar(',', out);
