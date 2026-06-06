@@ -4257,9 +4257,14 @@ UInt64 partialAggregateCacheSemanticKey(
     if (hasJoinOrMutableTableInputs(select))
         return 0;
 
-    /// Predicate subqueries may depend on mutable external sources (`WHERE ... IN (SELECT ...)`).
-    /// Their freshness is not represented in the partial aggregate cache key, so disable cache fail-close.
-    if (astContainsSubquery(select.tables()) || astContainsSubquery(select.prewhere()) || astContainsSubquery(select.where()))
+    /// Subqueries may depend on mutable external sources whose freshness is not represented in the per-part PAC key.
+    /// Disable PAC instead of trying to include every scalar subquery input identity/version in the key.
+    if (astContainsSubquery(select.tables())
+        || astContainsSubquery(select.prewhere())
+        || astContainsSubquery(select.where())
+        || astContainsSubquery(select.select())
+        || astContainsSubquery(select.groupBy())
+        || astContainsSubquery(select.having()))
         return 0;
 
     const UInt64 base = calculateCacheKey(select_query);
