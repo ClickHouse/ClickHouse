@@ -73,22 +73,25 @@ static int buf_push(Buffer * b, uint8_t byte) {
 }
 
 // ── COLUMNAR_V1 wire constants ────────────────────────────────────────────────
+// Must match src/Formats/ColumnarV1Wire.h exactly.
 
 #define COL_BYTES      0u
-#define COL_NULL_BYTES 1u
-#define COL_FIXED8     2u
-#define COL_FIXED64    6u
+#define COL_FIXED8     1u
+#define COL_FIXED16    2u
+#define COL_FIXED32    3u
+#define COL_FIXED64    4u
+#define COL_IS_NULLABLE 0x20u
 #define COL_IS_CONST   0x80u
 
 #define HEADER_BYTES   8u
-#define DESC_BYTES    20u
+#define DESC_BYTES    40u  // 5 × uint64_t fields
 
 typedef struct {
-    uint32_t type;
-    uint32_t null_offset;
-    uint32_t offsets_offset;
-    uint32_t data_offset;
-    uint32_t data_size;
+    uint64_t type;
+    uint64_t null_offset;
+    uint64_t offsets_offset;
+    uint64_t data_offset;
+    uint64_t data_size;
 } ColDesc;
 
 // ── Input accessors ───────────────────────────────────────────────────────────
@@ -114,17 +117,16 @@ static ColDesc get_desc(const ColBuf * cb, uint32_t col) {
 }
 
 // Return pointer to string bytes and their length for string column `col`, row `row`.
-// Wire format: null terminator present, len = offsets[idx+1] - offsets[idx] - 1.
+// Wire format: no null terminators; len = offsets[idx+1] - offsets[idx].
 static const uint8_t * str_bytes(const ColBuf * cb, uint32_t col,
                                   uint32_t row, uint32_t * out_len) {
     ColDesc d = get_desc(cb, col);
     uint32_t idx = (d.type & COL_IS_CONST) ? 0u : row;
-    const uint32_t * offs =
-        (const uint32_t *)(cb->base + d.offsets_offset);
-    uint32_t start = offs[idx];
-    uint32_t end   = offs[idx + 1];
-    uint32_t len   = (end > start + 1u) ? end - start - 1u : 0u;
-    *out_len = len;
+    const uint64_t * offs =
+        (const uint64_t *)(cb->base + d.offsets_offset);
+    uint64_t start = offs[idx];
+    uint64_t end   = offs[idx + 1];
+    *out_len = (uint32_t)(end - start);
     return cb->base + d.data_offset + start;
 }
 
@@ -229,16 +231,15 @@ __attribute__((export_name("bytes_reverse_col")))
 Buffer * bytes_reverse_col(Buffer * ptr, uint32_t num_rows) {
     ColBuf cb = parse_input(ptr);
 
-    // Layout: [BufHeader][ColDesc][null_map:u8[N]][offsets:u32[N+1]][data...]
-    // Pre-allocate generously; actual sizes filled in as we append.
+    // Layout: [BufHeader][ColDesc][null_map:u8[N]][offsets:u64[N+1]][data...]
     uint32_t null_base  = HEADER_BYTES + DESC_BYTES;
     uint32_t offs_base  = null_base + num_rows;
-    offs_base = (offs_base + 3u) & ~3u; // align to 4
-    uint32_t data_base  = offs_base + (num_rows + 1u) * 4u;
+    offs_base = (offs_base + 7u) & ~7u;   // align to 8 for uint64 offsets
+    uint32_t data_base  = offs_base + (num_rows + 1u) * 8u;
 
-    // Upper bound on data: same size as input.
+    // Upper bound: reversed strings have the same byte count as input strings.
     ColDesc in_desc = get_desc(&cb, 0);
-    uint32_t max_data = in_desc.data_size + num_rows; // +num_rows for extra '\0's
+    uint32_t max_data = (uint32_t)in_desc.data_size;
     uint32_t total_cap = data_base + max_data;
 
     Buffer * out = clickhouse_create_buffer(total_cap);
@@ -252,9 +253,9 @@ Buffer * bytes_reverse_col(Buffer * ptr, uint32_t num_rows) {
     uint32_t one = 1;
     memcpy(p + 4, &one, 4);
 
-    // Wire the descriptor
+    // Wire the descriptor (null_offset and offsets_offset filled; data_size below)
     ColDesc od = {0};
-    od.type           = COL_NULL_BYTES;
+    od.type           = COL_BYTES | COL_IS_NULLABLE;
     od.null_offset    = null_base;
     od.offsets_offset = offs_base;
     od.data_offset    = data_base;
@@ -262,33 +263,29 @@ Buffer * bytes_reverse_col(Buffer * ptr, uint32_t num_rows) {
     memcpy(p + HEADER_BYTES, &od, DESC_BYTES);
 
     // offsets[0] = 0 (already zero from memset)
-    uint32_t wire_pos = 0;
+    uint64_t wire_pos = 0;
     for (uint32_t i = 0; i < num_rows; ++i) {
         uint32_t len;
         const uint8_t * src = str_bytes(&cb, 0, i, &len);
         uint8_t * null_map = p + null_base;
 
         if (len == 0) {
-            // NULL output
+            // NULL output — no data bytes written
             null_map[i] = 1;
-            // push one '\0' for the empty slot
-            p[data_base + wire_pos] = 0;
-            wire_pos++;
         } else {
             null_map[i] = 0;
-            // reverse copy + null terminator
+            // Reverse-copy bytes (no null terminator — wire format omits them)
             for (uint32_t j = len; j > 0; --j)
                 p[data_base + wire_pos++] = src[j - 1];
-            p[data_base + wire_pos++] = 0; // null terminator
         }
-        // store cumulative offset
-        memcpy(p + offs_base + (i + 1u) * 4u, &wire_pos, 4u);
+        // Store cumulative offset as uint64_t
+        memcpy(p + offs_base + (i + 1u) * 8u, &wire_pos, 8u);
     }
 
     // Patch data_size in descriptor
     od.data_size = wire_pos;
     memcpy(p + HEADER_BYTES, &od, DESC_BYTES);
-    out->size = data_base + wire_pos;
+    out->size = data_base + (uint32_t)wire_pos;
 
     return out;
 }
