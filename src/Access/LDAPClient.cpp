@@ -399,7 +399,14 @@ bool LDAPClient::openConnection(BindMode mode)
             // Once bound, run the user DN search query and update the default value, if asked.
             if (params.user_dn_detection)
             {
-                const auto user_dn_search_results = search(*params.user_dn_detection);
+                /// In `Service` mode `user_dn_detection.base_dn` may contain `{user_name}`
+                /// (e.g. `cn={user_name},ou=users,...`), so an unknown impersonation target
+                /// resolves to a base DN that does not exist in the directory. The directory
+                /// returns `LDAP_NO_SUCH_OBJECT` from the search itself before any entry can
+                /// be enumerated; treat that as the same canonical "user does not exist"
+                /// signal as an empty result so `EXECUTE AS` collapses to `UNKNOWN_USER`
+                /// instead of surfacing a low-level `LDAP_ERROR`.
+                const auto user_dn_search_results = search(*params.user_dn_detection, /*tolerate_no_such_object=*/mode == BindMode::Service);
 
                 if (user_dn_search_results.empty())
                 {
@@ -438,7 +445,7 @@ void LDAPClient::closeConnection() noexcept
     final_user_dn.clear();
 }
 
-LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
+LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params, bool tolerate_no_such_object)
 {
     std::lock_guard lock(ldap_global_mutex);
 
@@ -478,7 +485,10 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
         }
     });
 
-    handleError(ldap_search_ext_s(handle, final_base_dn.c_str(), scope, final_search_filter.c_str(), attrs, 0, nullptr, nullptr, &timeout, params.search_limit, &msgs));
+    const int search_rc = ldap_search_ext_s(handle, final_base_dn.c_str(), scope, final_search_filter.c_str(), attrs, 0, nullptr, nullptr, &timeout, params.search_limit, &msgs);
+    if (tolerate_no_such_object && search_rc == LDAP_NO_SUCH_OBJECT)
+        return result;
+    handleError(search_rc);
 
     for (
          auto * msg = ldap_first_message(handle, msgs);
@@ -722,7 +732,7 @@ void LDAPClient::closeConnection() noexcept
 {
 }
 
-LDAPClient::SearchResults LDAPClient::search(const SearchParams &)
+LDAPClient::SearchResults LDAPClient::search(const SearchParams &, bool)
 {
     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }

@@ -157,7 +157,12 @@ protected:
     MAYBE_NORETURN void handleError(int result_code, String text = "");
     MAYBE_NORETURN bool openConnection(BindMode mode = BindMode::User);
     void closeConnection() noexcept;
-    SearchResults search(const SearchParams & search_params);
+    /// When `tolerate_no_such_object` is set, an `LDAP_NO_SUCH_OBJECT` (rc=32) reply from the
+    /// directory is converted into an empty `SearchResults` instead of an `LDAP_ERROR`. Used
+    /// by the service-bind `user_dn_detection` lookup so a missing user (whose substituted
+    /// `base_dn` does not exist in the directory) collapses to the canonical `UNKNOWN_USER`
+    /// path rather than surfacing a low-level LDAP error to the caller.
+    SearchResults search(const SearchParams & search_params, bool tolerate_no_such_object = false);
 
     const Params params;
 #if USE_LDAP

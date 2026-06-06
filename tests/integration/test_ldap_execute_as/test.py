@@ -20,10 +20,14 @@ module, leaving the LDAP storage's in-memory cache empty, so the first test exer
 the not-yet-logged-in path before any subsequent test materializes those users. The
 tests on `node_with_role_mapping`, `node_bad_lookup_password`,
 `node_with_local_user_precedence`, `node_misconfigured_lookup`,
-`node_with_role_mapping_user_dn`, `node_static_user_dn_detection`, `shard1_node`,
-`shard2_node`, and `node_with_two_ldap_directories` exercise the role-mapping,
+`node_with_role_mapping_user_dn`, `node_static_user_dn_detection`,
+`node_unknown_server_in_directory`,
+`node_user_dn_detection_base_dn_substitution`, `shard1_node`, `shard2_node`,
+and `node_with_two_ldap_directories` exercise the role-mapping,
 misconfiguration, local-vs-LDAP precedence, surfaced-config-error, AD-style
 `{user_dn}` mapping, target-independent `user_dn_detection`,
+unknown-server-in-directory,
+`{user_name}`-in-`base_dn` `LDAP_NO_SUCH_OBJECT`,
 distributed-cache-poisoning, and two-LDAP-directory cache-refresh variants on
 instances that no other test in this module logs into outside of its dedicated
 test, so each instance's LDAP cache state is controlled by exactly one test.
@@ -128,6 +132,23 @@ node_static_user_dn_detection = cluster.add_instance(
 node_unknown_server_in_directory = cluster.add_instance(
     "node_unknown_server_in_directory",
     main_configs=["configs/ldap_unknown_server_in_directory.xml"],
+    user_configs=["configs/users.xml"],
+    stay_alive=True,
+)
+
+# Instance whose `user_dn_detection` is target-specific via `base_dn`
+# (`cn={user_name},ou=users,dc=example,dc=org`) rather than the filter, with a
+# static `(objectClass=person)` filter. The configuration passes
+# `parseLDAPServer` because `{user_name}` is substituted into `base_dn`. For an
+# impersonation target that is not in LDAP, the substituted base DN does not
+# exist in the directory and the search itself returns `LDAP_NO_SUCH_OBJECT`
+# before any entry can be enumerated. Used to verify that the service-bind
+# user_dn_detection path treats `LDAP_NO_SUCH_OBJECT` as the canonical "user
+# not found" signal so `EXECUTE AS not_in_ldap` collapses to `UNKNOWN_USER`
+# instead of surfacing a low-level `LDAP_ERROR` to the caller.
+node_user_dn_detection_base_dn_substitution = cluster.add_instance(
+    "node_user_dn_detection_base_dn_substitution",
+    main_configs=["configs/ldap_user_dn_detection_base_dn_substitution.xml"],
     user_configs=["configs/users.xml"],
     stay_alive=True,
 )
@@ -775,3 +796,47 @@ def test_execute_as_static_user_dn_detection_is_rejected(started_cluster):
     assert "user_dn_detection" in error, error
     assert "{user_name}" in error or "user_name" in error, error
     assert "UNKNOWN_USER" not in error, error
+
+
+def test_execute_as_user_dn_detection_base_dn_substitution_unknown_user(started_cluster):
+    """`clickhouse-gh[bot]` blocker on `src/Access/LDAPClient.cpp`: with
+    target-specific `user_dn_detection` whose `{user_name}` token sits in
+    `base_dn` rather than `search_filter` (e.g.
+    `base_dn=cn={user_name},ou=users,dc=example,dc=org`, `scope=base`, static
+    filter), the substituted base DN does not exist in the directory for an
+    impersonation target that is not in LDAP. The directory returns
+    `LDAP_NO_SUCH_OBJECT` from `ldap_search_ext_s` itself, before any entry can
+    be enumerated, so the search throws `LDAP_ERROR` rather than falling through
+    to the empty-result branch that signals "user not found". The end user sees
+    a low-level LDAP error instead of the canonical `UNKNOWN_USER` for a config
+    that is otherwise valid (the AD-style `cn={user_name}` shape is documented
+    and accepted by `parseLDAPServer`).
+
+    After the fix, the service-mode `user_dn_detection` search treats
+    `LDAP_NO_SUCH_OBJECT` as the canonical "user does not exist in the
+    directory" signal, the same way an empty search result is already treated.
+    `EXECUTE AS not_in_ldap` collapses to `UNKNOWN_USER`, while a known user
+    (`janedoe`) continues to resolve normally.
+    """
+    # Unknown user must surface as `UNKNOWN_USER`, not as a low-level
+    # `LDAP_ERROR` pointing at the missing base DN. The substituted base DN
+    # `cn=definitely_not_in_ldap,ou=users,...` does not exist in the LDAP
+    # fixture, so the directory returns `LDAP_NO_SUCH_OBJECT`.
+    error = node_user_dn_detection_base_dn_substitution.query_and_get_error(
+        "EXECUTE AS definitely_not_in_ldap SELECT 1",
+        user="admin",
+        password="qwerty",
+    )
+    assert "UNKNOWN_USER" in error or "There is no user" in error, error
+    assert "LDAP_ERROR" not in error, error
+    assert "No such object" not in error, error
+
+    # Known user must still resolve through the same `{user_name}`-in-`base_dn`
+    # path: `cn=janedoe,ou=users,...` exists in the directory, so the search
+    # returns the entry and the resolver materializes the user.
+    result = node_user_dn_detection_base_dn_substitution.query(
+        "EXECUTE AS janedoe SELECT 1",
+        user="admin",
+        password="qwerty",
+    )
+    assert result.strip() == "1", result
