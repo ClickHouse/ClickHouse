@@ -971,38 +971,55 @@ void MutationsInterpreter::prepare(bool dry_run)
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             addStageIfNeeded(command.mutation_version, false);
 
-            /// Can't materialize a column that is used in the sort key expression,
+            /// Can't materialize a column that is used in a sorting key expression,
             /// either directly (ORDER BY col) or indirectly (ORDER BY func(col)).
             /// Materializing such a column recalculates its values, which would
-            /// invalidate the sort order of existing data parts.
-            Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-            Names sort_required_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
-            bool used_in_sort_key
-                = std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end()
-                || std::find(sort_required_columns.begin(), sort_required_columns.end(), command.column_name) != sort_required_columns.end();
-
-            /// The sorting key can depend on a subcolumn (e.g. `ORDER BY t.k`), while
-            /// `MATERIALIZE COLUMN t` targets the parent column. Materializing the parent
-            /// recalculates the subcolumn too, so it must be refused as well.
-            if (!used_in_sort_key)
+            /// invalidate the sort order of existing data parts. The same applies to
+            /// the sorting keys of projections: materializing a column used by a
+            /// projection's ORDER BY would leave the already-materialized projection
+            /// parts sorted by stale key values.
+            auto column_used_in_sorting_key = [&](const StorageMetadataPtr & key_metadata) -> bool
             {
+                if (!key_metadata->hasSortingKey())
+                    return false;
+
+                Names sort_columns = key_metadata->getSortingKeyColumns();
+                if (std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end())
+                    return true;
+
+                Names sort_required_columns = key_metadata->getColumnsRequiredForSortingKey();
                 for (const auto & sort_required_column : sort_required_columns)
                 {
-                    auto resolved = columns_desc.getColumnOrSubcolumn(GetColumnsOptions::All, sort_required_column);
-                    if (resolved.isSubcolumn() && resolved.getNameInStorage() == command.column_name)
-                    {
-                        used_in_sort_key = true;
-                        break;
-                    }
-                }
-            }
+                    if (sort_required_column == command.column_name)
+                        return true;
 
-            if (used_in_sort_key)
+                    /// The sorting key can depend on a subcolumn (e.g. `ORDER BY t.k`), while
+                    /// `MATERIALIZE COLUMN t` targets the parent column. Materializing the parent
+                    /// recalculates the subcolumn too, so it must be refused as well.
+                    auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, sort_required_column);
+                    if (resolved && resolved->isSubcolumn() && resolved->getNameInStorage() == command.column_name)
+                        return true;
+                }
+                return false;
+            };
+
+            if (column_used_in_sorting_key(metadata_snapshot))
             {
                 throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                     "Refused to materialize column {} because it is used in the sorting key expression. "
                     "Doing so could break the sort order of existing data",
                     backQuote(command.column_name));
+            }
+
+            for (const auto & projection : projections_desc)
+            {
+                if (projection.metadata && column_used_in_sorting_key(projection.metadata))
+                {
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                        "Refused to materialize column {} because it is used in the sorting key expression "
+                        "of projection {}. Doing so could break the sort order of the projection's existing data",
+                        backQuote(command.column_name), backQuote(projection.name));
+                }
             }
 
             const auto & column = columns_desc.get(command.column_name);

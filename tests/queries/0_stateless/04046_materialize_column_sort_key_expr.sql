@@ -26,3 +26,15 @@ INSERT INTO t_mat_sort_ok (a, c) VALUES (1, 10);
 ALTER TABLE t_mat_sort_ok MATERIALIZE COLUMN b;
 SELECT b FROM t_mat_sort_ok;
 DROP TABLE t_mat_sort_ok;
+
+-- Case 5: Column used in a projection's sort key expression — must be blocked too,
+-- otherwise the already-materialized projection parts would keep stale sort order.
+DROP TABLE IF EXISTS t_mat_sort_projection;
+CREATE TABLE t_mat_sort_projection
+(
+    a Int,
+    c2 DateTime MATERIALIZED now(),
+    PROJECTION p (SELECT * ORDER BY metroHash64(c2))
+) ENGINE = MergeTree() ORDER BY a;
+ALTER TABLE t_mat_sort_projection MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_sort_projection;
