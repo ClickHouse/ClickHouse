@@ -165,3 +165,31 @@ def test_method_preserving_redirect_rejected_with_setting(started_cluster, statu
         server.query(query)
     assert str(status) in str(exc_info.value)
     assert "method-preserving redirect" in str(exc_info.value)
+
+
+def test_url_engine_table_write_accepts_redirect_with_query_setting(started_cluster):
+    # The setting is a query/session-level setting (like max_http_get_redirects
+    # for reads), so it takes effect when supplied in the INSERT query context,
+    # including for an ENGINE = URL table. This proves the PR's promise of URL
+    # table-engine writes following body-consuming redirects, not just the url()
+    # table function.
+    server.query("DROP TABLE IF EXISTS url_post_redirect")
+    server.query(
+        f"CREATE TABLE url_post_redirect (a UInt64) "
+        f"ENGINE = URL('http://localhost:{REDIRECT_PORT}/insert', JSONEachRow)"
+    )
+    try:
+        # Without the setting the redirect is rejected.
+        with pytest.raises(QueryRuntimeException) as exc_info:
+            server.query("INSERT INTO url_post_redirect SELECT 1")
+        assert "302" in str(exc_info.value) or "Moved Temporarily" in str(
+            exc_info.value
+        )
+
+        # With the setting in the INSERT query context the redirect is accepted.
+        server.query(
+            "INSERT INTO url_post_redirect SELECT 1 "
+            "SETTINGS http_allow_redirects_on_post = 1"
+        )
+    finally:
+        server.query("DROP TABLE IF EXISTS url_post_redirect")

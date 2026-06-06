@@ -2328,6 +2328,8 @@ Cloud default value: `10`.
 Allow HTTP 3xx redirect responses for `POST`/`PUT` requests (e.g. when using the URL engine for writes). When enabled, statuses `301`, `302`, and `303` are accepted as success instead of raising an error.
 
 The request body is streamed to the original URL via chunked transfer encoding and cannot be replayed to the redirect target. Use this setting only when you trust the server to fully consume the body before responding with a redirect and to use the `Location` header as a canonical or result URL acknowledging the write. The method-preserving statuses `307` and `308` continue to raise an error even when this setting is enabled, because they explicitly ask the client to repeat the request at a new URL — and ClickHouse cannot replay a streamed body, so a success report would be misleading.
+
+This is a query/session-level setting, like `max_http_get_redirects` for reads: it is read from the context of the `INSERT` query, so supply it in the session (`SET http_allow_redirects_on_post = 1`) or in the `INSERT ... SETTINGS` clause. Placing it in the `SETTINGS` clause of `CREATE TABLE ... ENGINE = URL(...)` has no effect on writes — the engine's table-level `SETTINGS` only configure format settings.
 )", 0) \
     \
     DECLARE(Bool, use_client_time_zone, false, R"(
