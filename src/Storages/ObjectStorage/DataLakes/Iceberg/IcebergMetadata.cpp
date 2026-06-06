@@ -195,19 +195,36 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
                 if (cached_uuid == normalizeUuid(hint))
                 {
                     /// Hit from a prior validated init: cached JSON belongs to this table.
+                    ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
                     content_cache_hit = true;
                     raw_metadata_json = std::move(cached);
                     metadata_object = candidate;
                     table_uuid = cached_uuid;
                 }
+                else
+                {
+                    /// Cached entry's UUID mismatches the hint.
+                    ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
+                }
+            }
+            else
+            {
+                /// Cached entry missing `table-uuid`.
+                ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
             }
         }
+        else
+        {
+            /// No cached entry for this `uuid:path` key.
+            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
+        }
     }
-
-    /// Record Skipped when cache is enabled but no catalog-hint probe happened
-    /// (non-REST tables or REST responses without `table-uuid`).
-    if (!content_cache_hit && !metadata_object && cache_ptr)
+    else if (cache_ptr)
+    {
+        /// No catalog hint provided: non-REST tables or REST responses without
+        /// `table-uuid` perform an unconditional remote read.
         ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheSkipped);
+    }
 
     /// Fetch and parse the metadata file if the cache probe did not succeed.
     if (!metadata_object)
