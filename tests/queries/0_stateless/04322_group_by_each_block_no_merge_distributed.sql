@@ -22,3 +22,14 @@ SELECT sum(c), sum(s) FROM
     FROM cluster('test_cluster_two_shards', numbers(10000)) GROUP BY k
     SETTINGS group_by_each_block_no_merge = 1, max_block_size = 1000
 );
+
+-- External (on-disk) aggregation is disabled while `group_by_each_block_no_merge` is enabled (only one block
+-- is held in memory at a time), so spilling cannot mix data from different blocks. Even with a tiny external
+-- threshold the per-block partial results are clean and the totals are still correct (no row is lost and the
+-- query does not fail).
+SELECT sum(c), sum(s) FROM
+(
+    SELECT number DIV 113 AS k, count() AS c, sum(number) AS s
+    FROM numbers(10000) GROUP BY k
+    SETTINGS group_by_each_block_no_merge = 1, max_block_size = 1000, max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0
+);
