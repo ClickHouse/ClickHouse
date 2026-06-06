@@ -175,7 +175,6 @@ void FileSegment::setQueueIterator(Priority::IteratorPtr iterator)
     auto lk = lock();
     if (queue_iterator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Queue iterator cannot be set twice");
-    chassert(!on_delayed_removal);
     queue_iterator = iterator;
 }
 
@@ -184,17 +183,6 @@ void FileSegment::markDelayedRemovalAndResetQueueIterator()
     auto lk = lock();
     on_delayed_removal = true;
     queue_iterator = {};
-}
-
-void FileSegment::restoreQueueIteratorAfterDelayedRemoval(
-    Priority::IteratorPtr iterator)
-{
-    auto lk = lock();
-    chassert(iterator);
-    chassert(on_delayed_removal);
-    chassert(!queue_iterator);
-    queue_iterator = std::move(iterator);
-    on_delayed_removal = false;
 }
 
 size_t FileSegment::getCurrentWriteOffset() const
@@ -262,8 +250,8 @@ String FileSegment::getOrSetDownloader()
 
 void FileSegment::resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & lock)
 {
-    chassert(isDownloaderUnlocked(lock));
-    chassert(download_state == State::DOWNLOADING);
+    assert(isDownloaderUnlocked(lock));
+    assert(download_state == State::DOWNLOADING);
 
     size_t current_downloaded_size = getDownloadedSize();
     /// range().size() can equal 0 in case of write-though cache.
@@ -390,8 +378,8 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Attempt to write {} bytes to offset: {}, but current write offset is {} ({})",
-                size, offset_in_file, first_non_downloaded_offset, getInfoForLog());
+                "Attempt to write {} bytes to offset: {}, but current write offset is {}",
+                size, offset_in_file, first_non_downloaded_offset);
         }
 
         const size_t current_downloaded_size = getDownloadedSize();
@@ -568,9 +556,9 @@ bool FileSegment::reserve(
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
 
-    size_t current_downloaded_size = 0;
+    size_t current_downloaded_size;
 
-    bool is_file_segment_size_exceeded = false;
+    bool is_file_segment_size_exceeded;
     {
         auto lk = lock();
 
@@ -765,7 +753,7 @@ size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard:
     chassert(downloaded_size <= range().size());
 
     const size_t background_download_max_file_segment_size = cache->getBackgroundDownloadMaxFileSegmentSize();
-    size_t desired_size = 0;
+    size_t desired_size;
     if (downloaded_size >= background_download_max_file_segment_size)
         desired_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
     else
@@ -1029,10 +1017,6 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
         }
     }
 
-    /// A restored queue iterator must clear the delayed-removal state.
-    if (queue_iterator)
-        chassert(!on_delayed_removal);
-
     switch (download_state.load())
     {
         case State::EMPTY:
@@ -1087,7 +1071,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(file_size <= range().size());
             chassert(downloaded_size <= range().size());
 
-            chassert(queue_iterator || on_delayed_removal);
+            chassert(queue_iterator);
             check_iterator(queue_iterator);
             break;
         }

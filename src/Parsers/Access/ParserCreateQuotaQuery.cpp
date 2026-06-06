@@ -142,7 +142,7 @@ namespace
         {
             max_prefix_encountered |= ParserKeyword{Keyword::MAX}.ignore(pos, expected);
 
-            QuotaType quota_type = {};
+            QuotaType quota_type;
             if (!parseQuotaType(pos, expected, quota_type))
                 return false;
 
@@ -156,7 +156,7 @@ namespace
                     return false;
             }
 
-            QuotaValue max_value = 0;
+            QuotaValue max_value;
             if (!parseMaxValue(pos, expected, quota_type, max_value))
                 return false;
 
@@ -298,7 +298,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         if (!key_type)
         {
-            QuotaKeyType new_key_type = {};
+            QuotaKeyType new_key_type;
             if (parseKeyType(pos, expected, new_key_type))
             {
                 key_type = new_key_type;

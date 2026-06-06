@@ -102,15 +102,6 @@ namespace HistogramMetrics
 namespace DB::S3
 {
 
-bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMessage & response)
-{
-    if (status_code != Poco::Net::HTTPResponse::HTTP_BAD_REQUEST)
-        return false;
-    if (!response.has("x-amz-bucket-region"))
-        return false;
-    return !response.get("x-amz-bucket-region").empty();
-}
-
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     std::function<ProxyConfiguration()> per_request_configuration_,
     const String & force_region_,
@@ -174,7 +165,6 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
     if (!endpointOverride.empty())
     {
         static const RE2 region_pattern(R"(^s3[.\-]([a-z0-9\-]+)\.amazonaws\.)");
-        static const RE2 s3express_region_pattern(R"(^s3express(?:-[a-z0-9\-]+)?(?:\.dualstack)?\.([a-z0-9\-]+)\.amazonaws\.)");
         Poco::URI uri(endpointOverride);
         if (uri.getScheme() == "http")
             scheme = Aws::Http::Scheme::HTTP;
@@ -182,9 +172,7 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
         if (force_region.empty())
         {
             String matched_region;
-            if (
-                re2::RE2::PartialMatch(uri.getHost(), region_pattern, &matched_region)
-                || re2::RE2::PartialMatch(uri.getHost(), s3express_region_pattern, &matched_region))
+            if (re2::RE2::PartialMatch(uri.getHost(), region_pattern, &matched_region))
             {
                 boost::algorithm::to_lower(matched_region);
                 region = matched_region;
@@ -202,7 +190,7 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
     }
 }
 
-static ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguration & client_configuration)
+ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguration & client_configuration)
 {
     return ConnectionTimeouts()
         .withConnectionTimeout(Poco::Timespan(client_configuration.connectTimeoutMs * 1000))
@@ -422,7 +410,7 @@ void PocoHTTPClient::makeRequestInternal(
     makeRequestInternalImpl(request, response, readLimiter, writeLimiter);
 }
 
-static String getMethod(const Aws::Http::HttpRequest & request)
+String getMethod(const Aws::Http::HttpRequest & request)
 {
     switch (request.GetMethod())
     {
@@ -663,15 +651,6 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 /// (e.g. If-None-Match: *), not a genuine error.
                 LOG_INFO(log, "Response status: {}, {}", status_code, poco_response.getReason());
             }
-            else if (isS3WrongSigningRegionBadRequest(status_code, poco_response))
-            {
-                /// Wrong signing region: S3 returns 400 and `x-amz-bucket-region`; `getRegionForBucket` recovers.
-                LOG_INFO(
-                    log,
-                    "Response status: {}, {}. Wrong signing region.",
-                    status_code,
-                    poco_response.getReason());
-            }
             else if (Poco::Net::HTTPResponse::HTTP_NOT_FOUND != status_code || !Expect404ResponseScope::is404Expected())
             {
                 /// Error statuses are more important so we show them even if `enable_s3_requests_logging == false`.
@@ -860,9 +839,9 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
     if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
         return requestBearerTokenFromADC();
 
-    chassert(!request_token_path.empty());
-    chassert(!metadata_service.empty());
-    chassert(!service_account.empty());
+    assert(!request_token_path.empty());
+    assert(!metadata_service.empty());
+    assert(!service_account.empty());
 
     Poco::URI url;
     url.setScheme("http");
