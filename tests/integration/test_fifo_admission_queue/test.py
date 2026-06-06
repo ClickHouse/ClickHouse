@@ -886,3 +886,59 @@ def test_secondary_limit_not_rejected_on_early_release(started_cluster):
             f"secondary concurrency limit while holding an admission slot; "
             f"first error: {offending[0]}"
         )
+
+
+def test_secondary_limit_not_rejected_on_early_release_default_wait(started_cluster):
+    """
+    Same regression as `test_secondary_limit_not_rejected_on_early_release`, but for
+    the default `queue_max_wait_ms = 0` path.
+
+    With `queue_max_wait_ms = 0` the FIFO admission wait falls back to
+    `max_execution_time` (then 300s). The secondary-limit checks used to gate their
+    post-handoff wait on `queue_max_wait_ms` directly, so with the default value of
+    `0` they threw `TOO_MANY_SIMULTANEOUS_QUERIES` immediately instead of waiting for
+    the finishing query's `ProcessListEntry` destructor to drain the counter — even
+    though the waiter already held a valid admission slot.
+
+    The fix makes both secondary checks wait on `query_finished` until the shared
+    admission deadline (derived from the effective admission budget) whenever an
+    admission slot was transferred, so the default path waits out the early-release
+    window too. A generous `max_execution_time` bounds the fallback budget so a genuine
+    failure still terminates the test instead of hanging for 300s.
+    """
+    # server config: max_concurrent_queries = 2.
+    limit = 2
+
+    for setting in ("max_concurrent_queries_for_all_users", "max_concurrent_queries_for_user"):
+        prefix = uuid.uuid4().hex[:8]
+        num_queries = 60
+        pool = Pool(num_queries)
+
+        errors = []
+
+        def run_query(i):
+            try:
+                node.query(
+                    "SELECT sum(number) FROM numbers(200000) FORMAT Null",
+                    settings={
+                        setting: limit,
+                        # Default admission wait: queue_max_wait_ms = 0 → falls back to
+                        # max_execution_time for the effective budget.
+                        "queue_max_wait_ms": 0,
+                        "max_execution_time": 60,
+                    },
+                    query_id=f"secdef_{setting}_{prefix}_{i}",
+                )
+            except Exception as e:
+                errors.append(str(e))
+
+        results = [pool.apply_async(run_query, (i,)) for i in range(num_queries)]
+        pool.close()
+        pool.join()
+
+        offending = [e for e in errors if "Too many simultaneous queries" in e]
+        assert not offending, (
+            f"{setting} (default queue_max_wait_ms): {len(offending)}/{num_queries} queries "
+            f"were rejected by the secondary concurrency limit while holding an admission "
+            f"slot; first error: {offending[0]}"
+        )

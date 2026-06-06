@@ -160,19 +160,28 @@ ProcessList::EntryPtr ProcessList::insert(
 
         const auto queue_max_wait_ms = settings[Setting::queue_max_wait_ms].totalMilliseconds();
 
+        /// Effective admission wait budget: queue_max_wait_ms → max_execution_time → default receive timeout (300s).
+        /// This is the timeout used by the FIFO admission wait below, and also by the secondary-limit waits
+        /// (`max_concurrent_queries_for_all_users` / `max_concurrent_queries_for_user`) once an admission slot
+        /// has been transferred to us by a finishing query. Computing a single `admission_deadline` up front
+        /// means the admission wait and the post-handoff secondary waits share one budget, so the total time a
+        /// query can spend in `insert` is bounded by `effective_wait_ms` regardless of how many of these waits
+        /// it goes through.
+        UInt64 effective_wait_ms = queue_max_wait_ms
+            ? queue_max_wait_ms
+            : settings[Setting::max_execution_time].totalMilliseconds();
+
+        if (effective_wait_ms == 0)
+            effective_wait_ms = DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC * 1000;
+
+        const auto admission_deadline = std::chrono::steady_clock::now()
+            + std::chrono::milliseconds(effective_wait_ms);
+
         /// --- FIFO admission control (see ProcessList.h for design overview) ---
         bool needs_admission = !is_unlimited_query && max_size && admission_queue_enabled;
 
         if (needs_admission && admission_running >= max_size)
         {
-            /// Timeout fallback: queue_max_wait_ms → max_execution_time → default receive timeout (300s).
-            UInt64 effective_wait_ms = queue_max_wait_ms
-                ? queue_max_wait_ms
-                : settings[Setting::max_execution_time].totalMilliseconds();
-
-            if (effective_wait_ms == 0)
-                effective_wait_ms = DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC * 1000;
-
             auto is_alive = query_context->getConnectionAliveCheck();
             const auto alive_check_interval_ms = std::clamp(static_cast<UInt64>(
                 query_context->getServerSettings()[ServerSetting::admission_queue_alive_check_interval_ms]),
@@ -207,14 +216,11 @@ ProcessList::EntryPtr ProcessList::insert(
 
             if (is_alive && alive_check_interval_ms > 0)
             {
-                /// Periodic alive-check loop.
-                auto deadline = std::chrono::steady_clock::now()
-                    + std::chrono::milliseconds(effective_wait_ms);
-
+                /// Periodic alive-check loop, bounded by the shared admission deadline.
                 while (!my_turn())
                 {
                     auto now = std::chrono::steady_clock::now();
-                    if (now >= deadline)
+                    if (now >= admission_deadline)
                     {
                         throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                         "Too many simultaneous queries. Maximum: {}. Waited {} ms.",
@@ -223,7 +229,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
                     auto chunk = std::min(
                         std::chrono::milliseconds(alive_check_interval_ms),
-                        std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now));
+                        std::chrono::duration_cast<std::chrono::milliseconds>(admission_deadline - now));
 
                     waiter.cv.wait_for(lock, chunk, my_turn);
 
@@ -236,8 +242,8 @@ ProcessList::EntryPtr ProcessList::insert(
             }
             else
             {
-                /// Simple wait with timeout, no alive check.
-                if (!waiter.cv.wait_for(lock, std::chrono::milliseconds(effective_wait_ms), my_turn))
+                /// Simple wait, bounded by the shared admission deadline, no alive check.
+                if (!waiter.cv.wait_until(lock, admission_deadline, my_turn))
                 {
                     throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                     "Too many simultaneous queries. Maximum: {}. Waited {} ms.",
@@ -341,11 +347,16 @@ ProcessList::EntryPtr ProcessList::insert(
                 /// Rejecting here would fail a waiter that just left the admission queue, whereas the
                 /// legacy `max_size` path keeps such a query waiting until the counter drops. Wait on
                 /// `query_finished` (notified by the destructor) for the in-flight teardown to drain,
-                /// bounded by the same `queue_max_wait_ms` budget, instead of throwing immediately.
-                if (!got_admission_slot
-                    || !queue_max_wait_ms
-                    || !query_finished.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
-                           [&] { return non_internal_processes < limit; }))
+                /// bounded by the remaining admission budget (`admission_deadline`), instead of throwing
+                /// immediately. The deadline is shared with the admission wait above, so the default
+                /// `queue_max_wait_ms = 0` path (which falls back to `max_execution_time` / 300s) waits
+                /// here too instead of failing a just-admitted waiter.
+                if (got_admission_slot
+                    ? !query_finished.wait_until(lock, admission_deadline,
+                          [&] { return non_internal_processes < limit; })
+                    : (!queue_max_wait_ms
+                       || !query_finished.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
+                              [&] { return non_internal_processes < limit; })))
                     throw Exception(
                         ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                         "Too many simultaneous queries for all users. "
@@ -379,11 +390,15 @@ ProcessList::EntryPtr ProcessList::insert(
                     /// Same early-release window as `max_concurrent_queries_for_all_users` above: a
                     /// finishing query that already handed us its admission slot still counts toward
                     /// the per-user counter until its destructor runs. Wait for it to drain instead of
-                    /// rejecting a waiter that just left the admission queue.
-                    if (!got_admission_slot
-                        || !queue_max_wait_ms
-                        || !query_finished.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
-                               [&] { return user_queries < limit; }))
+                    /// rejecting a waiter that just left the admission queue, bounded by the remaining
+                    /// admission budget (`admission_deadline`) so the default `queue_max_wait_ms = 0`
+                    /// path waits here too.
+                    if (got_admission_slot
+                        ? !query_finished.wait_until(lock, admission_deadline,
+                              [&] { return user_queries < limit; })
+                        : (!queue_max_wait_ms
+                           || !query_finished.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
+                                  [&] { return user_queries < limit; })))
                         throw Exception(
                             ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                             "Too many simultaneous queries for user {}. "
