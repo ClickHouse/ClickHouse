@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -20,6 +21,8 @@
 #include <Processors/QueryPlan/GatherExchangeStep.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Columns/ColumnConst.h>
+#include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
 
@@ -44,6 +47,7 @@ void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes,
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node);
 void optimizeExchanges(QueryPlan::Node & root);
+void materializeConstantsForUnionBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step);
 String dumpQueryPlanShort(const QueryPlan & query_plan);
@@ -600,6 +604,94 @@ void optimizeExchanges(QueryPlan::Node & root)
                 }
             }
         }
+
+        stack.pop_back();
+    }
+}
+
+
+/// Wraps every constant column produced by a `UNION` branch in `materialize`, so the branch exposes
+/// a full column instead of a constant.
+static void materializeBranchConstants(QueryPlan::Node & branch, QueryPlan::Nodes & nodes)
+{
+    const auto & header = branch.step->getOutputHeader();
+
+    bool has_constants = false;
+    for (const auto & column : *header)
+    {
+        if (column.column && isColumnConst(*column.column))
+        {
+            has_constants = true;
+            break;
+        }
+    }
+
+    if (!has_constants)
+        return;
+
+    ActionsDAG materialize_dag(header->getColumnsWithTypeAndName());
+    for (auto *& output : materialize_dag.getOutputs())
+    {
+        if (output->column && isColumnConst(*output->column))
+            output = &materialize_dag.materializeNode(*output);
+    }
+
+    makeExpressionNodeOnTopOf(branch, std::move(materialize_dag), nodes, makeDescription("Materialize constants for UNION"));
+}
+
+/// Plan serialization stores only column names and types, so constness is re-derived per step on
+/// deserialize. One `UNION` branch can then end up with a full column (aliased from an exchange,
+/// which produces full columns) while a sibling keeps a freshly computed constant, and the strict
+/// `UnionStep` header check rejects the mismatch. Materialize constants on every branch so all
+/// branches are full and agree.
+///
+/// `IntersectOrExceptStep` has the same check but is not serializable for remote execution, so it
+/// never reaches a distributed fragment; it would need the same treatment once it becomes serializable.
+void materializeConstantsForUnionBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+{
+    struct Frame
+    {
+        QueryPlan::Node * node = nullptr;
+        size_t next_child = 0;
+    };
+
+    std::vector<Frame> stack;
+    stack.push_back({.node = &root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
+        if (frame.next_child < frame.node->children.size())
+        {
+            stack.push_back({.node = frame.node->children[frame.next_child]});
+            ++frame.next_child;
+            continue;
+        }
+
+        auto & node = *frame.node;
+
+        if (typeid_cast<UnionStep *>(node.step.get()))
+        {
+            for (auto * branch : node.children)
+                materializeBranchConstants(*branch, nodes);
+        }
+
+        /// Materializing a branch changed a child output header, so refresh this step's input headers
+        /// to keep the plan consistent up to the root. Update all inputs at once: `UnionStep` rechecks
+        /// its header on every update, so a per-input update would run the check on a half-refreshed set.
+        SharedHeaders child_headers;
+        child_headers.reserve(node.children.size());
+        bool headers_changed = false;
+        for (size_t i = 0; i < node.children.size(); ++i)
+        {
+            auto child_output = node.children[i]->step->getOutputHeader();
+            if (!blocksHaveEqualStructure(*node.step->getInputHeaders()[i], *child_output))
+                headers_changed = true;
+            child_headers.push_back(std::move(child_output));
+        }
+        if (headers_changed)
+            node.step->updateInputHeaders(std::move(child_headers));
 
         stack.pop_back();
     }
