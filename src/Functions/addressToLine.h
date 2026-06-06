@@ -87,7 +87,10 @@ protected:
     {
         const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-        if (const auto * object = symbol_index.thisObject())
+        /// Resolve the object that actually contains the address. The trace stores absolute
+        /// virtual addresses, so a frame may belong to a shared library rather than the main
+        /// binary, and the DWARF lookup has to use that object's `elf` and load base.
+        if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
         {
 #if defined(OS_DARWIN)
             if (!object->dsym)

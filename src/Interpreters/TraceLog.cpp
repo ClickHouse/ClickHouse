@@ -158,7 +158,10 @@ namespace
         {
             const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-            if (const auto * object = symbol_index.thisObject())
+            /// Resolve the object that actually contains the address. The trace stores absolute
+            /// virtual addresses, so a frame may belong to a shared library rather than the main
+            /// binary, and the DWARF lookup has to use that object's `elf` and load base.
+            if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
             {
                 auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
                 if (!std::filesystem::exists(object->name))
