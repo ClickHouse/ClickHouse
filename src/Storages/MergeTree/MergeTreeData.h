@@ -451,7 +451,7 @@ public:
             Coalescing          = 8,
         };
 
-        Mode mode;
+        Mode mode{};
 
         /// For Collapsing and VersionedCollapsing mode.
         String sign_column;
@@ -1749,7 +1749,7 @@ protected:
     struct PartBackupEntries
     {
         String part_name;
-        UInt128 part_checksum; /// same as MinimalisticDataPartChecksums::hash_of_all_files
+        UInt128 part_checksum{}; /// same as MinimalisticDataPartChecksums::hash_of_all_files
         BackupEntries backup_entries;
     };
     using PartsBackupEntries = std::vector<PartBackupEntries>;

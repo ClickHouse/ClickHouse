@@ -117,7 +117,7 @@ Pipe YTsaurusSourceFactory::createPipe(
     if (yt_node_type == YTsaurusNodeType::STATIC_TABLE)
     {
         auto rows_count = client->getTableNumberOfRows(cypress_path);
-        size_t max_streams_allowed;
+        size_t max_streams_allowed = 0;
 
         if (!max_streams)
             max_streams_allowed = settings[YTsaurusSetting::max_streams];

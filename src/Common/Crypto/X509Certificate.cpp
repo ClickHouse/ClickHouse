@@ -56,7 +56,7 @@ X509Certificate::X509Certificate(const std::string & path)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed for file {}: {}", path, getOpenSSLErrors());
 }
 
-X509Certificate::List readCertificatesFromBIO(const BIO_ptr & bio, const std::string & source_description)
+static X509Certificate::List readCertificatesFromBIO(const BIO_ptr & bio, const std::string & source_description)
 {
     X509Certificate::List certs;
 

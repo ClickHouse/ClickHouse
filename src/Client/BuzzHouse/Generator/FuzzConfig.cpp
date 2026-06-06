@@ -238,7 +238,7 @@ static std::function<void(const JSONObjectType &)> parseErrorCodes(std::unordere
 
         for (auto word : std::views::split(String(value.getString()), delim))
         {
-            uint32_t result;
+            uint32_t result = {};
             const std::string_view sv(word.begin(), word.end());
             const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
 
@@ -1211,6 +1211,16 @@ String FuzzConfig::tableGetRandomProjection(const uint64_t rand_val, const Strin
     return tableGetRandomSystemName(rand_val, "projections", database, table);
 }
 
+uint32_t FuzzConfig::tableCountConstraints(const String & database, const String & table)
+{
+    return tableCountSystemRows("constraints", database, table);
+}
+
+String FuzzConfig::tableGetRandomConstraint(const uint64_t rand_val, const String & database, const String & table)
+{
+    return tableGetRandomSystemName(rand_val, "constraints", database, table);
+}
+
 void FuzzConfig::validateClickHouseHealth()
 {
     if (processServerQuery(
@@ -1229,8 +1239,9 @@ void FuzzConfig::validateClickHouseHealth()
                 " countIf(message ILIKE concat('%','REPLICA','_ALREADY','_EXISTS','%')),"
                 " countIf(message ILIKE concat('%','LOGICAL','_ERROR','%')),"
                 " countIf(message ILIKE concat('%','CORRUPTED','_DATA','%')),"
-                " countIf(message ILIKE concat('%','CHECKSUM','_DOESNT','_MATCH','%'))],"
-                "[toUInt64(3),toUInt64(8),toUInt64(10),toUInt64(11),toUInt64(12)])) AS t"
+                " countIf(message ILIKE concat('%','CHECKSUM','_DOESNT','_MATCH','%')),"
+                " countIf(message ILIKE concat('%','DATA','_AFTER','_MERGE','_DIFF','_FROM','_EXPECTED','%'))],"
+                "[toUInt64(3),toUInt64(8),toUInt64(10),toUInt64(11),toUInt64(12),toUInt64(13)])) AS t"
                 " FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60)) tlog)"
                 " UNION ALL "
                 "(SELECT count() x, 4 y FROM clusterAllReplicas(default, \"system\".\"clusters\")"
@@ -1245,6 +1256,9 @@ void FuzzConfig::validateClickHouseHealth()
                 " WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) GROUP BY part_name HAVING count() > 10) tx)"
                 " UNION ALL "
                 "(SELECT count() x, 9 y FROM \"system\".\"replication_queue\" WHERE \"last_exception\" != '')"
+                " UNION ALL "
+                "(SELECT count() x, 14 y FROM \"system\".\"replication_queue\""
+                " WHERE \"last_exception\" != '' AND \"num_tries\" > 5)"
                 ") tx ORDER BY y SETTINGS use_query_cache = 0, use_query_condition_cache = 0 INTO OUTFILE '{}' TRUNCATE FORMAT "
                 "TabSeparated;",
                 fuzzer_out_file.generic_string())))
@@ -1264,7 +1278,9 @@ void FuzzConfig::validateClickHouseHealth()
                "replication queue exception(s)",
                "LOGICAL_ERROR(s) in text_log",
                "CORRUPTED_DATA(s) in text_log",
-               "CHECKSUM_DOESNT_MATCH error(s) in text_log"};
+               "CHECKSUM_DOESNT_MATCH error(s) in text_log",
+               "DATA_AFTER_MERGE_DIFF_FROM_EXPECTED error(s) in text_log",
+               "stuck replication queue task(s) (>5 retries)"};
         static const DB::Strings detail_queries = {
             R"(SELECT "database", "table", "name" FROM "system"."detached_parts" WHERE startsWith("name", 'broken') LIMIT 3)",
             R"(SELECT "database", "table", "lost_part_count" FROM "system"."replicas" WHERE "lost_part_count" > 0 LIMIT 3)",
@@ -1277,7 +1293,9 @@ void FuzzConfig::validateClickHouseHealth()
             R"(SELECT "database", "table", "last_exception" FROM "system"."replication_queue" WHERE "last_exception" != '' LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3)",
-            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3)"};
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'DATA', '_AFTER', '_MERGE', '_DIFF', '_FROM', '_EXPECTED', '%') ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "database", "table", "type", "last_exception", "num_tries" FROM "system"."replication_queue" WHERE "last_exception" != '' AND "num_tries" > 5 ORDER BY "num_tries" DESC LIMIT 3)"};
 
         while (std::getline(infile, buf) && !buf.empty() && i < health_errors.size())
         {
@@ -1336,7 +1354,7 @@ void FuzzConfig::comparePerformanceResults(const String & oracle_name, Performan
             {
                 if (val.minimum < server.metrics.at(key)
                     && server.metrics.at(key) > static_cast<uint64_t>(
-                           static_cast<double>(peer.metrics.at(key)) * (1 + (static_cast<double>(val.threshold) / 100.0f))))
+                           static_cast<double>(peer.metrics.at(key)) * (1 + (static_cast<double>(val.threshold) / 100.0))))
                 {
                     throw DB::Exception(
                         DB::ErrorCodes::BUZZHOUSE,

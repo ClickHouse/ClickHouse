@@ -26,6 +26,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Core/UUID.h>
 
 
 namespace DB
