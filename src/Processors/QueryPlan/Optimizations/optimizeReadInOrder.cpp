@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ActionsDAG.h>
@@ -427,7 +428,7 @@ const ActionsDAG::Node * addMonotonicChain(ActionsDAG & dag, const ActionsDAG::N
         if (child == match->monotonicity->child_node)
             args.push_back(addMonotonicChain(dag, match->monotonicity->child_node, match->monotonicity->child_match, input_name));
         else
-            args.push_back(&dag.addColumn({child->column, child->result_type, child->result_name}));
+            args.push_back(&dag.addColumn(child->column, child->result_type, child->result_name));
     }
 
     return &dag.addFunction(node->function_base, std::move(args), node->result_name);
@@ -683,7 +684,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
         {
             const ActionsDAG::Node * output = nullptr;
             if (info.fixed_column)
-                output = &virtual_row_dag.addColumn({info.fixed_column->column, info.fixed_column->result_type, info.fixed_column->result_name});
+                output = &virtual_row_dag.addColumn(info.fixed_column->column, info.fixed_column->result_type, info.fixed_column->result_name);
             else
             {
                 if (info.monotonic)
