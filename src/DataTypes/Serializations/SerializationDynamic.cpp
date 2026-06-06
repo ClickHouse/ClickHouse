@@ -6,11 +6,13 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnNullable.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -54,6 +56,11 @@ struct SerializeBinaryBulkStateDynamic : public ISerialization::SerializeBinaryB
     std::vector<ISerialization::SerializeBinaryBulkStatePtr> flattened_states;
     ISerialization::SerializeBinaryBulkStatePtr flattened_indexes_state;
 
+    /// For narrowed serialization only.
+    DataTypePtr narrowed_type;
+    SerializationPtr narrowed_serialization;
+    ISerialization::SerializeBinaryBulkStatePtr narrowed_state;
+
     explicit SerializeBinaryBulkStateDynamic(SerializationDynamic::SerializationVersion structure_version_)
         : structure_version(structure_version_)
     {
@@ -79,6 +86,54 @@ struct DeserializeBinaryBulkStateDynamic : public ISerialization::DeserializeBin
     }
 };
 
+/// Check if a Dynamic column can be narrowed to a single concrete type.
+/// Returns the concrete type (NOT Nullable) if narrowable, nullptr otherwise.
+/// A column is narrowable if it has exactly one non-empty, non-SharedVariant variant
+/// (possibly with NULLs). Empty columns and all-null columns are not narrowable.
+/// When there are NULLs, the serialized type will be wrapped in Nullable.
+static DataTypePtr getNarrowedType(const ColumnDynamic & column_dynamic, bool & has_nulls)
+{
+    const auto & variant_column = column_dynamic.getVariantColumn();
+    has_nulls = false;
+
+    /// Try without NULLs first.
+    auto single_variant_discr = variant_column.getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls();
+    if (!single_variant_discr)
+    {
+        /// Try with NULLs allowed.
+        auto single_variant_with_nulls = variant_column.getGlobalDiscriminatorOfOneNoneEmptyVariant();
+        if (!single_variant_with_nulls)
+            return nullptr;
+
+        /// Don't narrow if the only non-empty variant is SharedVariant.
+        if (*single_variant_with_nulls == column_dynamic.getSharedVariantDiscriminator())
+            return nullptr;
+
+        /// Don't narrow empty columns.
+        if (variant_column.empty())
+            return nullptr;
+
+        has_nulls = true;
+        const auto & variants = assert_cast<const DataTypeVariant &>(
+            *column_dynamic.getVariantInfo().variant_type).getVariants();
+        return variants.at(*single_variant_with_nulls);
+    }
+
+    auto global_discr = variant_column.globalDiscriminatorByLocal(*single_variant_discr);
+
+    /// Don't narrow if the only non-empty variant is SharedVariant.
+    if (global_discr == column_dynamic.getSharedVariantDiscriminator())
+        return nullptr;
+
+    /// Don't narrow empty columns.
+    if (variant_column.empty())
+        return nullptr;
+
+    const auto & variants = assert_cast<const DataTypeVariant &>(
+        *column_dynamic.getVariantInfo().variant_type).getVariants();
+    return variants.at(global_discr);
+}
+
 void SerializationDynamic::enumerateStreams(
     EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
@@ -94,6 +149,47 @@ void SerializationDynamic::enumerateStreams(
     /// If column is nullptr and we don't have deserialize state yet, nothing to enumerate as we don't have any variants.
     if (!settings.enumerate_dynamic_streams || (!column_dynamic && !deserialize_state))
         return;
+
+    /// Check if this column can be narrowed (write path) or was narrowed (read path).
+    bool is_narrowed = false;
+    DataTypePtr narrowed_type;
+
+    if (deserialize_state)
+    {
+        auto * structure_state = checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(deserialize_state->structure_state);
+        if (structure_state->structure_version.value == SerializationVersion::NARROWED)
+        {
+            is_narrowed = true;
+            narrowed_type = structure_state->narrowed_type;
+        }
+    }
+    else if (column_dynamic)
+    {
+        bool has_nulls = false;
+        narrowed_type = getNarrowedType(*column_dynamic, has_nulls);
+        if (narrowed_type)
+        {
+            is_narrowed = true;
+            if (has_nulls)
+                narrowed_type = std::make_shared<DataTypeNullable>(narrowed_type);
+        }
+    }
+
+    if (is_narrowed && narrowed_type)
+    {
+        /// For narrowed format, enumerate only the concrete type's streams under DynamicData.
+        /// This skips all Variant sub-streams (discriminators, SharedVariant, etc.).
+        auto narrowed_serialization = narrowed_type->getSerialization(serialization_info_settings);
+
+        settings.path.push_back(Substream::DynamicData);
+        auto narrowed_data = SubstreamData(narrowed_serialization)
+                              .withType(narrowed_type)
+                              .withSerializationInfo(data.serialization_info);
+        settings.path.back().data = narrowed_data;
+        narrowed_serialization->enumerateStreams(settings, callback, narrowed_data);
+        settings.path.pop_back();
+        return;
+    }
 
     const auto & variant_type = column_dynamic ? column_dynamic->getVariantInfo().variant_type : checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(deserialize_state->structure_state)->variant_type;
     auto variant_serialization = variant_type->getSerialization(serialization_info_settings);
@@ -116,7 +212,7 @@ SerializationDynamic::SerializationVersion::SerializationVersion(UInt64 version)
 
 void SerializationDynamic::SerializationVersion::checkVersion(UInt64 version)
 {
-    if (version != V1 && version != V2 && version != FLATTENED && version != V3)
+    if (version != V1 && version != V2 && version != FLATTENED && version != V3 && version != NARROWED)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version for Dynamic structure serialization: {}", version);
 }
 
@@ -158,6 +254,17 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
     if (settings.native_format && settings.format_settings && settings.format_settings->native.use_flattened_dynamic_and_json_serialization)
         structure_version = SerializationVersion(SerializationVersion::FLATTENED);
 
+    /// Check if column can be narrowed: all values share a single concrete type (possibly with NULLs).
+    /// Only apply narrowing for MergeTree disk storage, not for Native format.
+    DataTypePtr narrowed_type;
+    bool narrowed_has_nulls = false;
+    if (structure_version.value != SerializationVersion::FLATTENED && !settings.native_format)
+    {
+        narrowed_type = getNarrowedType(column_dynamic, narrowed_has_nulls);
+        if (narrowed_type)
+            structure_version = SerializationVersion(SerializationVersion::NARROWED);
+    }
+
     /// Write selected structure serialization version.
     writeBinaryLittleEndian(static_cast<UInt64>(structure_version.value), *stream);
 
@@ -188,6 +295,89 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
         settings.path.pop_back();
 
         dynamic_state->flattened_column = std::move(flattened_column);
+        state = std::move(dynamic_state);
+        return;
+    }
+
+    if (structure_version.value == SerializationVersion::NARROWED)
+    {
+        /// When there are NULLs, store as Nullable(T) to preserve NULL positions.
+        /// When no NULLs, store as T directly.
+        DataTypePtr storage_type = narrowed_has_nulls
+            ? std::make_shared<DataTypeNullable>(narrowed_type)
+            : narrowed_type;
+
+        /// Write the storage type (includes Nullable wrapper if applicable).
+        encodeDataType(storage_type, *stream);
+
+        /// Write row count.
+        const auto & variant_column = column_dynamic.getVariantColumn();
+        size_t total_rows = variant_column.size();
+        size_t data_rows = total_rows - (narrowed_has_nulls ? variant_column.getNumberOfDefaultRows() : 0);
+        writeVarUInt(total_rows, *stream);
+
+        /// Write statistics if needed.
+        if (settings.write_statistics == SerializeBinaryBulkSettings::StatisticsMode::PREFIX)
+        {
+            writeBinary(true, *stream);
+            writeVarUInt(data_rows, *stream);
+        }
+        else if (settings.write_statistics == SerializeBinaryBulkSettings::StatisticsMode::PREFIX_EMPTY)
+        {
+            writeBinary(false, *stream);
+        }
+        else if (settings.write_statistics == SerializeBinaryBulkSettings::StatisticsMode::SUFFIX)
+        {
+            dynamic_state->recalculate_statistics = true;
+            dynamic_state->statistics.variants_statistics[narrowed_type->getName()] = data_rows;
+        }
+
+        /// Build the column to serialize.
+        /// If has NULLs: construct a ColumnNullable from the variant data + null map derived from discriminators.
+        /// If no NULLs: use the variant data column directly.
+        dynamic_state->narrowed_type = storage_type;
+        dynamic_state->narrowed_serialization = storage_type->getSerialization(serialization_info_settings);
+
+        settings.path.push_back(Substream::DynamicData);
+        if (narrowed_has_nulls)
+        {
+            auto single_global_discr = *variant_column.getGlobalDiscriminatorOfOneNoneEmptyVariant();
+            const auto & data_column = variant_column.getVariantByGlobalDiscriminator(single_global_discr);
+
+            /// Build null map: 1 where discriminator is NULL_DISCR, 0 otherwise.
+            auto null_map_column = ColumnUInt8::create(total_rows);
+            auto & null_map_data = null_map_column->getData();
+            const auto & discriminators = variant_column.getLocalDiscriminators();
+            const auto & variant_offsets = variant_column.getOffsets();
+
+            /// Build a full-size data column with defaults at NULL positions.
+            auto full_data_column = data_column.cloneEmpty();
+            full_data_column->reserve(total_rows);
+            for (size_t i = 0; i < total_rows; ++i)
+            {
+                if (discriminators[i] == ColumnVariant::NULL_DISCRIMINATOR)
+                {
+                    null_map_data[i] = 1;
+                    full_data_column->insertDefault();
+                }
+                else
+                {
+                    null_map_data[i] = 0;
+                    full_data_column->insertFrom(data_column, variant_offsets[i]);
+                }
+            }
+
+            auto nullable_column = ColumnNullable::create(std::move(full_data_column), std::move(null_map_column));
+            dynamic_state->narrowed_serialization->serializeBinaryBulkStatePrefix(*nullable_column, settings, dynamic_state->narrowed_state);
+        }
+        else
+        {
+            auto single_local_discr = *variant_column.getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls();
+            const auto & data_column = variant_column.getVariantByLocalDiscriminator(single_local_discr);
+            dynamic_state->narrowed_serialization->serializeBinaryBulkStatePrefix(data_column, settings, dynamic_state->narrowed_state);
+        }
+        settings.path.pop_back();
+
         state = std::move(dynamic_state);
         return;
     }
@@ -313,6 +503,20 @@ void SerializationDynamic::deserializeBinaryBulkStatePrefix(
         return;
     }
 
+    if (structure_state_typed->structure_version.value == SerializationVersion::NARROWED)
+    {
+        /// For narrowed format, read the prefix for the concrete type's serialization.
+        auto narrowed_serialization = structure_state_typed->narrowed_type->getSerialization(serialization_info_settings);
+        dynamic_state->variant_serialization = narrowed_serialization;
+
+        settings.path.push_back(Substream::DynamicData);
+        narrowed_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_state->variant_state, cache);
+        settings.path.pop_back();
+
+        state = std::move(dynamic_state);
+        return;
+    }
+
     dynamic_state->variant_serialization = structure_state_typed->variant_type->getSerialization(serialization_info_settings);
 
     settings.path.push_back(Substream::DynamicData);
@@ -368,6 +572,43 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             }
 
             structure_state->flattened_indexes_type = getSmallestIndexesType(num_types + 1); /// +1 for NULL index.
+        }
+        else if (structure_state->structure_version.value == SerializationVersion::NARROWED)
+        {
+            /// Read the narrowed concrete type.
+            structure_state->narrowed_type = decodeDataType(*structure_stream);
+
+            /// Read row count (no NULLs in narrowed format).
+            readVarUInt(structure_state->narrowed_total_rows, *structure_stream);
+
+            /// Read statistics if needed.
+            if (settings.object_and_dynamic_read_statistics)
+            {
+                bool has_statistics = false;
+                readBinary(has_statistics, *structure_stream);
+                if (has_statistics)
+                {
+                    ColumnDynamic::Statistics statistics;
+                    size_t data_rows = 0;
+                    readVarUInt(data_rows, *structure_stream);
+                    /// Use inner type name for statistics (unwrap Nullable).
+                    DataTypePtr inner_type = structure_state->narrowed_type->isNullable()
+                        ? assert_cast<const DataTypeNullable &>(*structure_state->narrowed_type).getNestedType()
+                        : structure_state->narrowed_type;
+                    statistics.variants_statistics[inner_type->getName()] = data_rows;
+                    statistics.variants_statistics[ColumnDynamic::getSharedVariantTypeName()] = 0;
+                    structure_state->statistics = std::make_shared<const ColumnDynamic::Statistics>(std::move(statistics));
+                }
+            }
+
+            /// Construct a variant_type with the inner type + SharedVariant for compatibility.
+            /// If narrowed_type is Nullable(T), the variant should contain T (not Nullable(T)).
+            DataTypePtr inner_type = structure_state->narrowed_type->isNullable()
+                ? assert_cast<const DataTypeNullable &>(*structure_state->narrowed_type).getNestedType()
+                : structure_state->narrowed_type;
+            DataTypes variants = {inner_type, ColumnDynamic::getSharedVariantDataType()};
+            structure_state->variant_type = std::make_shared<DataTypeVariant>(variants);
+            structure_state->num_dynamic_types = 1;
         }
         else
         {
@@ -463,6 +704,29 @@ void SerializationDynamic::serializeBinaryBulkStateSuffix(
         return;
     }
 
+    if (dynamic_state->structure_version.value == SerializationVersion::NARROWED)
+    {
+        /// Write statistics in suffix if needed.
+        if (dynamic_state->recalculate_statistics)
+        {
+            settings.path.push_back(Substream::DynamicStructure);
+            auto * stream = settings.getter(settings.path);
+            settings.path.pop_back();
+
+            if (!stream)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Dynamic column structure during serialization of binary bulk state suffix");
+
+            writeBinary(true, *stream);
+            writeVarUInt(dynamic_state->statistics.variants_statistics[dynamic_state->narrowed_type->getName()], *stream);
+        }
+
+        /// Write suffix for the narrowed type.
+        settings.path.push_back(Substream::DynamicData);
+        dynamic_state->narrowed_serialization->serializeBinaryBulkStateSuffix(settings, dynamic_state->narrowed_state);
+        settings.path.pop_back();
+        return;
+    }
+
     /// Write statistics in suffix if needed.
     if (settings.write_statistics == SerializeBinaryBulkSettings::StatisticsMode::SUFFIX)
     {
@@ -531,6 +795,54 @@ void SerializationDynamic::serializeBinaryBulkWithMultipleStreamsAndCountTotalSi
             serialization->serializeBinaryBulkWithMultipleStreams(*dynamic_state->flattened_column->columns[i], 0, 0, settings, dynamic_state->flattened_states[i]);
         }
         settings.path.pop_back();
+        return;
+    }
+
+    if (dynamic_state->structure_version.value == SerializationVersion::NARROWED)
+    {
+        const auto & variant_column = column_dynamic.getVariantColumn();
+        auto single_discr = *variant_column.getGlobalDiscriminatorOfOneNoneEmptyVariant();
+        const auto & data_column = variant_column.getVariantByGlobalDiscriminator(single_discr);
+        bool has_nulls = !variant_column.getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls().has_value();
+        size_t total_rows = variant_column.size();
+
+        settings.path.push_back(Substream::DynamicData);
+        if (has_nulls)
+        {
+            /// Build Nullable column matching the row order.
+            auto null_map_column = ColumnUInt8::create(total_rows);
+            auto & null_map_data = null_map_column->getData();
+            const auto & discriminators = variant_column.getLocalDiscriminators();
+            const auto & variant_offsets = variant_column.getOffsets();
+
+            auto full_data_column = data_column.cloneEmpty();
+            full_data_column->reserve(total_rows);
+            for (size_t i = 0; i < total_rows; ++i)
+            {
+                if (discriminators[i] == ColumnVariant::NULL_DISCRIMINATOR)
+                {
+                    null_map_data[i] = 1;
+                    full_data_column->insertDefault();
+                }
+                else
+                {
+                    null_map_data[i] = 0;
+                    full_data_column->insertFrom(data_column, variant_offsets[i]);
+                }
+            }
+
+            auto nullable_column = ColumnNullable::create(std::move(full_data_column), std::move(null_map_column));
+            dynamic_state->narrowed_serialization->serializeBinaryBulkWithMultipleStreams(
+                *nullable_column, 0, 0, settings, dynamic_state->narrowed_state);
+        }
+        else
+        {
+            dynamic_state->narrowed_serialization->serializeBinaryBulkWithMultipleStreams(
+                data_column, 0, 0, settings, dynamic_state->narrowed_state);
+        }
+        settings.path.pop_back();
+
+        total_size_of_variants += data_column.size();
         return;
     }
 
@@ -620,6 +932,78 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
         settings.path.pop_back();
 
         unflattenDynamicColumn(std::move(flattened_column), column_dynamic);
+        column = std::move(mutable_column);
+        return;
+    }
+
+    if (structure_state->structure_version.value == SerializationVersion::NARROWED)
+    {
+        /// Set up the column's variant structure to match the narrowed type.
+        if (mutable_column->empty())
+        {
+            column_dynamic.setMaxDynamicPaths(structure_state->num_dynamic_types);
+            column_dynamic.setVariantType(structure_state->variant_type);
+            column_dynamic.setStatistics(structure_state->statistics);
+        }
+
+        size_t total_rows = structure_state->narrowed_total_rows;
+        bool stored_as_nullable = structure_state->narrowed_type->isNullable();
+        DataTypePtr inner_type = stored_as_nullable
+            ? assert_cast<const DataTypeNullable &>(*structure_state->narrowed_type).getNestedType()
+            : structure_state->narrowed_type;
+
+        /// Read the stored column (either T or Nullable(T)).
+        ColumnPtr stored_column = structure_state->narrowed_type->createColumn();
+        settings.path.push_back(Substream::DynamicData);
+        dynamic_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(
+            stored_column, 0, total_rows, settings, dynamic_state->variant_state, cache);
+        settings.path.pop_back();
+
+        /// Reconstruct the ColumnVariant.
+        /// variant_type is (inner_type, SharedVariant) — inner_type is at global index 0.
+        auto & variant_column = column_dynamic.getVariantColumn();
+        auto data_discr = variant_column.localDiscriminatorByGlobal(0);
+        auto & discriminators = variant_column.getLocalDiscriminators();
+        auto & offsets_col = variant_column.getOffsets();
+        auto & variant_data = variant_column.getVariantByLocalDiscriminator(data_discr);
+
+        if (stored_as_nullable)
+        {
+            /// Unpack Nullable: null map tells us which rows are NULL,
+            /// nested column has the actual data (with defaults at NULL positions).
+            const auto & nullable_col = assert_cast<const ColumnNullable &>(*stored_column);
+            const auto & null_map = nullable_col.getNullMapData();
+            const auto & nested_col = nullable_col.getNestedColumn();
+            size_t base_offset = variant_data.size();
+
+            for (size_t i = 0; i < total_rows; ++i)
+            {
+                if (null_map[i])
+                {
+                    discriminators.push_back(ColumnVariant::NULL_DISCRIMINATOR);
+                    offsets_col.push_back(0);
+                }
+                else
+                {
+                    variant_data.insertFrom(nested_col, i);
+                    discriminators.push_back(data_discr);
+                    offsets_col.push_back(base_offset);
+                    ++base_offset;
+                }
+            }
+        }
+        else
+        {
+            /// No NULLs — all rows map to variant 0.
+            size_t base_offset = variant_data.size();
+            variant_data.insertRangeFrom(*stored_column, 0, stored_column->size());
+            for (size_t i = 0; i < total_rows; ++i)
+            {
+                discriminators.push_back(data_discr);
+                offsets_col.push_back(base_offset + i);
+            }
+        }
+
         column = std::move(mutable_column);
         return;
     }

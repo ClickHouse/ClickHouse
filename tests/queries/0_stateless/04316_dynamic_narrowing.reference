@@ -1,0 +1,65 @@
+-- 1. homogeneous Int64 roundtrip
+1000	0	999
+-- 2. two homogeneous parts (Int64 + String)
+2000
+Int64	1000
+String	1000
+-- 3. after merge
+2000
+Int64	1000
+String	1000
+0
+1
+2
+str_0
+str_1
+str_10
+-- 4. NULLs + Int64
+900	300	600
+1	899
+-- 5. all NULLs
+100	100
+-- 6. single row
+1	42	Int64
+-- 7. empty insert
+0
+-- 8a. before detach
+500	0	499
+-- 8b. after attach
+500	0	499
+-- 9. mixed narrowed + non-narrowed parts
+200
+Int64	150
+String	50
+-- 9b. after merge
+200
+Int64	150
+String	50
+-- 10. four typed parts
+Date	100
+Float64	100
+Int64	100
+String	100
+-- 10b. after merge
+Date	100
+Float64	100
+Int64	100
+String	100
+400
+-- 11a. JSON partitioned by action_type
+3	2
+4	3
+1	10	true	12345
+2	5	false	67890
+3	10	true	11111
+4	100	5
+5	200	10
+-- 11b. JSON after reattach
+1	10	true	12345
+2	5	false	67890
+3	10	true	11111
+4	100	5
+5	200	10
+-- 12. Array(Dynamic)
+1	[1,2,3]
+2	[10,20]

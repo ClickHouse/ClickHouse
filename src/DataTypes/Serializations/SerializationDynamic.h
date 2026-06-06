@@ -51,6 +51,18 @@ public:
             ///
             /// This serialization is used in Native format only for easier support for Dynamic type in clients.
             FLATTENED = 3,
+            /// NARROWED serialization:
+            /// Used when all values in the Dynamic column share a single concrete type (no type mixing).
+            /// Bypasses the Variant wrapper entirely, storing data as a plain typed column.
+            /// - DynamicStructure stream:
+            ///     <version = NARROWED>
+            ///     <concrete type name in binary encoding>
+            ///     <number of rows>
+            ///     <number of null rows>
+            ///     <statistics> (only in MergeTree serialization)
+            /// - DynamicData stream: contains only the concrete type's serialization (no discriminators,
+            ///     no SharedVariant, no Variant wrapper). File count per path: 2 instead of ~10.
+            NARROWED = 5,
         };
 
         Value value;
@@ -161,6 +173,10 @@ private:
         /// For flattened serialization only.
         DataTypes flattened_data_types;
         DataTypePtr flattened_indexes_type;
+
+        /// For narrowed serialization only.
+        DataTypePtr narrowed_type;
+        size_t narrowed_total_rows{};
 
         explicit DeserializeBinaryBulkStateDynamicStructure(UInt64 structure_version_)
             : structure_version(structure_version_)
