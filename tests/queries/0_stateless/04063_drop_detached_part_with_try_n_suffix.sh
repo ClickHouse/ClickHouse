@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
+# Tags: no-object-storage, no-shared-merge-tree
 
 # Regression test for parsing detached part names with the _tryN suffix.
 # The bug caused BAD_DATA_PART_NAME when trying to drop such parts.
+#
+# The leftover "_tryN" directories are produced here with a filesystem-level "cp -r" of the
+# original detached part directory. On object storage this only copies the local metadata, so all
+# copies alias the same remote blobs; dropping the copies then removes blobs the original still
+# references, and the subsequent "ATTACH PARTITION ALL" fails because the data is gone. The bug
+# under test (detached part name parsing) is storage-agnostic, so the test runs on local disk only.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
