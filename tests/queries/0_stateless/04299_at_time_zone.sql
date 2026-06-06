@@ -52,5 +52,6 @@ SELECT dt AT TIME ZONE tz FROM (SELECT toDateTime('2001-02-16 20:38:40', 'UTC') 
 SELECT 'x' AT TIME ZONE 'UTC';   -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT 1 AT FOO;                  -- { clientError SYNTAX_ERROR }
 
--- backward-compat of the new AT keyword: `at` / `local` as alias and column name
-SELECT 1 AS at, number AS local FROM numbers(1);
+-- backward-compat: `at` and `local` must remain usable as column names and aliases
+SELECT at, local FROM (SELECT 1 AS at, 2 AS local);
+SELECT 1 AS at, 2 AS local;

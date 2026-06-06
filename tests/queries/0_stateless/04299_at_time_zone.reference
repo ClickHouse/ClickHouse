@@ -12,4 +12,5 @@ SELECT toTimeZone(toTimeZone(dt, \'A\'), \'B\')
 SELECT toTimeZone(t, tz)\nFROM x
 SELECT a * toTimeZone(ts, \'UTC\')
 2001-02-16 20:38:40
-1	0
+1	2
+1	2
