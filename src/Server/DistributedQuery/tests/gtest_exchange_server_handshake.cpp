@@ -122,4 +122,66 @@ TEST(ExchangeServerHandshake, MismatchedVersionRejectedBeforeParsingBody)
         << "Expected PROTOCOL_VERSION_MISMATCH, got: " << caught_message;
 }
 
+namespace
+{
+    /// A connected loopback socket pair; both ends are valid open sockets.
+    std::pair<Poco::Net::StreamSocket, Poco::Net::StreamSocket> makeConnectedPair()
+    {
+        Poco::Net::ServerSocket listener(Poco::Net::SocketAddress("127.0.0.1", 0));
+        Poco::Net::StreamSocket client(listener.address());
+        Poco::Net::StreamSocket server_side = listener.acceptConnection();
+        listener.close();
+        return {std::move(client), std::move(server_side)};
+    }
+}
+
+/// A second producer connection for the same stream (a reconnect or duplicate `SourceHello`) must not
+/// drop the first socket: a consumer calling `getConnection` afterwards still gets a ready connection.
+TEST(ExchangeConnectionsRendezvous, DuplicateProducerKeepsFirstSocket)
+{
+    auto connections = std::make_shared<ExchangeConnections>();
+    auto [client_1, server_1] = makeConnectedPair();
+    auto [client_2, server_2] = makeConnectedPair();
+
+    connections->addConnection("query", "stream", server_1);
+    connections->addConnection("query", "stream", server_2);
+
+    auto future = connections->getConnection("query", "stream");
+    EXPECT_TRUE(future->isReady());
+    EXPECT_NO_THROW(future->getSocket());
+}
+
+/// The rendezvous completes when the consumer arrives before the producer.
+TEST(ExchangeConnectionsRendezvous, ConsumerBeforeProducer)
+{
+    auto connections = std::make_shared<ExchangeConnections>();
+    auto [client, server] = makeConnectedPair();
+
+    auto future = connections->getConnection("query", "stream");
+    EXPECT_FALSE(future->isReady());
+
+    connections->addConnection("query", "stream", server);
+    EXPECT_TRUE(future->isReady());
+    EXPECT_NO_THROW(future->getSocket());
+}
+
+/// A second consumer for the same stream (e.g. from a task started twice) must be rejected with a
+/// cancelled future, and must not disturb the first consumer's rendezvous.
+TEST(ExchangeConnectionsRendezvous, DuplicateConsumerRejected)
+{
+    auto connections = std::make_shared<ExchangeConnections>();
+    auto [client, server] = makeConnectedPair();
+
+    auto first = connections->getConnection("query", "stream");
+    auto second = connections->getConnection("query", "stream");
+
+    EXPECT_TRUE(second->isReady());
+    EXPECT_ANY_THROW(second->getSocket());
+    EXPECT_FALSE(first->isReady());
+
+    connections->addConnection("query", "stream", server);
+    EXPECT_TRUE(first->isReady());
+    EXPECT_NO_THROW(first->getSocket());
+}
+
 #endif

@@ -39,6 +39,18 @@ StatelessTaskExecutor::StatelessTaskExecutor()
 
 StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path)
 {
+    /// `unique_task_id` is unique per task, so a repeated start (e.g. a coordinator retry) is the same
+    /// task. Running it twice would double-write exchanges and temp files and orphan the original from
+    /// cancel/forget, so treat a duplicate start as a no-op.
+    {
+        std::lock_guard lock(tasks_mutex);
+        if (tasks.contains(unique_task_id))
+        {
+            LOG_WARNING(getLogger("StatelessTaskExecutor"), "Ignoring duplicate start for already running task {}", unique_task_id);
+            return Result::Ok;
+        }
+    }
+
     ContextPtr global_context = Context::getGlobalContextInstance();
     ContextMutablePtr query_context = Context::createCopy(global_context);
     query_context->makeQueryContext();
@@ -65,7 +77,12 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
 
     {
         std::lock_guard lock(tasks_mutex);
-        tasks[unique_task_id] = task_state;
+        /// If two starts of the same id race, keep the first; overwriting would orphan the running task.
+        if (!tasks.try_emplace(unique_task_id, task_state).second)
+        {
+            LOG_WARNING(getLogger("StatelessTaskExecutor"), "Ignoring duplicate start for already running task {}", unique_task_id);
+            return Result::Ok;
+        }
     }
 
     /// Callback for periodic cancellation check

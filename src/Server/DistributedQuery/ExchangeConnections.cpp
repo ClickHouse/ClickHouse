@@ -30,23 +30,20 @@ void ExchangeConnections::addConnection(const String & query_id, const String & 
         return;
     }
 
-    /// Check if a FutureConnection already exists (getConnection was called first)
-    if (auto it = pending_connections.find(connection_key); it != pending_connections.end())
-    {
-        /// getConnection was called first, set the socket on the existing FutureConnection
-        it->second->setSocket(socket);
-        pending_connections.erase(it);
+    auto & slot = pending_connections[connection_key];
 
-    }
-    else
+    /// One producer per stream. A duplicate (reconnect or repeated `SourceHello`) must not drop the
+    /// first socket: close the new one and keep the original.
+    if (slot.socket_delivered)
     {
-        /// getConnection hasn't been called yet, create a new FutureConnection
-        /// and keep it in the map until getConnection is called
-        auto & element = pending_connections[connection_key];
-        chassert(!element);
-        element = std::make_shared<FutureConnection>();
-        element->setSocket(socket);
+        LOG_WARNING(log, "Dropping duplicate connection for query id {} exchange stream {}", query_id, exchange_stream_id);
+        socket.close();
+        return;
     }
+
+    /// Deliver the socket: wakes a consumer that is already waiting, or stays ready until one takes it.
+    slot.future->setSocket(socket);
+    slot.socket_delivered = true;
 }
 
 FutureConnectionPtr ExchangeConnections::getConnection(const String & query_id, const String & exchange_stream_id)
@@ -67,22 +64,22 @@ FutureConnectionPtr ExchangeConnections::getConnection(const String & query_id, 
         return future_connection;
     }
 
-    if (auto it = pending_connections.find(connection_key); it != pending_connections.end())
+    auto & slot = pending_connections[connection_key];
+
+    /// One consumer per stream. A duplicate (e.g. a task started twice) must not get the same
+    /// socket; reject it with a cancelled future.
+    if (slot.consumer_assigned)
     {
-        /// addConnection was called first, get the existing FutureConnection
-        auto result = it->second;
-        pending_connections.erase(it);
-        return result;
+        LOG_WARNING(log, "Refusing duplicate consumer for query id {} exchange stream {}", query_id, exchange_stream_id);
+        auto cancelled = std::make_shared<FutureConnection>();
+        cancelled->cancel(std::make_exception_ptr(
+            Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Duplicate exchange consumer, query id {} stream {}", query_id, exchange_stream_id)));
+        return cancelled;
     }
-    else
-    {
-        /// addConnection hasn't been called yet, create a new FutureConnection
-        /// It will be populated by addConnection later
-        auto & element = pending_connections[connection_key];
-        chassert(!element);
-        element = std::make_shared<FutureConnection>();
-        return element;
-    }
+
+    slot.consumer_assigned = true;
+    /// Ready already if the producer connected first; otherwise `addConnection` wakes the waiter.
+    return slot.future;
 }
 
 void ExchangeConnections::cleanupQuery(const String & query_id)
@@ -106,7 +103,7 @@ void ExchangeConnections::cleanupQuery(const String & query_id)
         {
             if (it->first.first == query_id)
             {
-                to_cancel.push_back(it->second);
+                to_cancel.push_back(it->second.future);
                 it = pending_connections.erase(it);
             }
             else
@@ -121,7 +118,7 @@ void ExchangeConnections::cleanupQuery(const String & query_id)
 
     auto exception = std::make_exception_ptr(
         Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Exchange connection cancelled, query id {}", query_id));
-    /// `cancel` is a no-op if the connection already paired (FutureConnection completes at most once).
+    /// `cancel` is a no-op if the connection already paired (`FutureConnection` completes at most once).
     for (auto & future : to_cancel)
         future->cancel(exception);
 }
@@ -136,7 +133,7 @@ void ExchangeConnections::removePendingStreams(const String & query_id, const st
             auto it = pending_connections.find(std::make_pair(query_id, exchange_stream_id));
             if (it != pending_connections.end())
             {
-                to_cancel.push_back(it->second);
+                to_cancel.push_back(it->second.future);
                 pending_connections.erase(it);
             }
         }
@@ -149,7 +146,7 @@ void ExchangeConnections::removePendingStreams(const String & query_id, const st
 
     auto exception = std::make_exception_ptr(
         Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Exchange connection cancelled, query id {}", query_id));
-    /// `cancel` is a no-op if the connection already paired (FutureConnection completes at most once).
+    /// `cancel` is a no-op if the connection already paired (`FutureConnection` completes at most once).
     for (auto & future : to_cancel)
         future->cancel(exception);
 }

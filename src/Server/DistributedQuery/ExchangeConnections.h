@@ -52,7 +52,17 @@ public:
 private:
     std::mutex mutex;
     using ConnectionKey = std::pair<String, String>; /// query_id, exchange_stream_id
-    using ConnectionsMap = std::unordered_map<ConnectionKey, FutureConnectionPtr, boost::hash<ConnectionKey>>;
+    /// One rendezvous per exchange stream: the producer provides the socket (`addConnection`) and the
+    /// consumer takes the future (`getConnection`), in either order. The flags let a duplicate be
+    /// rejected instead of dropping the socket or handing it to two readers. Released by
+    /// `removePendingStreams` or `cleanupQuery`.
+    struct ConnectionSlot
+    {
+        FutureConnectionPtr future = std::make_shared<FutureConnection>();
+        bool socket_delivered = false;   /// a producer connection has provided its socket
+        bool consumer_assigned = false;  /// a consumer has taken the future
+    };
+    using ConnectionsMap = std::unordered_map<ConnectionKey, ConnectionSlot, boost::hash<ConnectionKey>>;
     ConnectionsMap pending_connections;
     /// Queries that have been cleaned up. Late add/get for these query ids must not
     /// (re)create pending entries — otherwise the entry would have no owner and leak.
