@@ -129,7 +129,7 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent_)
     , memory_tracker(&parent->memory_tracker, VariableContext::Scope, /*log_peak_memory_usage_in_destructor*/ false)
     , shared_data(parent->getSharedData())
 {
-    assert(effective_group_stopwatch.elapsed() == 0);
+    chassert(effective_group_stopwatch.elapsed() == 0);
 }
 
 // c-tor for method createForFlushAsyncInsertQuery
@@ -144,7 +144,7 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_)
     , performance_counters(VariableContext::Process, &parent->performance_counters)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
 {
-    assert(effective_group_stopwatch.elapsed() == 0);
+    chassert(effective_group_stopwatch.elapsed() == 0);
 
     shared_data.query_is_canceled_predicate = [this] () -> bool {
         if (auto context_locked = query_context.lock())
