@@ -1,6 +1,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_set>
+#include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
@@ -281,7 +282,9 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     else if (configuration->supportsFileIterator())
     {
         auto iter = configuration->iterate(
-            filter_actions_dag, file_progress_callback, query_settings.list_object_keys_size, storage_metadata, local_context);
+            filter_actions_dag,
+            filter_actions_dag ? std::function<void(FileProgress)>{} : file_progress_callback,
+            query_settings.list_object_keys_size, storage_metadata, local_context);
 
         if (filter_actions_dag)
         {
@@ -291,7 +294,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 virtual_columns,
                 hive_columns,
                 configuration->getNamespace(),
-                local_context);
+                local_context,
+                file_progress_callback);
         }
         return iter;
     }
