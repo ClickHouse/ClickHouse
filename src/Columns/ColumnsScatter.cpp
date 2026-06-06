@@ -1,5 +1,7 @@
 #include <Columns/ColumnsScatter.h>
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -299,6 +301,49 @@ template <typename DecimalT>
 // Correct but allocating; used only for column types without a fast path.
 // Does not use rows_per_shard (IColumn::scatter computes counts internally).
 
+/// Deep-normalize a column for the fallback scatter path: strip Const, Sparse, and
+/// Replicated at every nesting level (including inside ColumnArray data and ColumnTuple
+/// elements), preserving LowCardinality. This is required before calling IColumn::scatter
+/// + insertRangeFrom across source chunks: IColumn::scatter preserves the nested
+/// representation of each source, and insertRangeFrom uses assert_cast on the concrete
+/// nested type, so mismatched nested representations across chunks (e.g. full
+/// ColumnUInt64 nested inside one Array chunk vs ColumnSparse(UInt64) inside another)
+/// cause assert_cast failures in release builds or UB in sanitized builds.
+ColumnPtr deepNormalizeForFallback(ColumnPtr col)
+{
+    col = col->convertToFullColumnIfConst();
+    col = col->convertToFullColumnIfReplicated();
+    col = col->convertToFullColumnIfSparse();
+
+    if (col->getDataType() == TypeIndex::Array)
+    {
+        const auto & arr = assert_cast<const ColumnArray &>(*col);
+        auto new_data = deepNormalizeForFallback(arr.getDataPtr());
+        if (new_data.get() == arr.getDataPtr().get())
+            return col;
+        return ColumnArray::create(std::move(new_data), arr.getOffsetsPtr());
+    }
+
+    if (col->getDataType() == TypeIndex::Tuple)
+    {
+        const auto & tup = assert_cast<const ColumnTuple &>(*col);
+        const auto & src_cols = tup.getColumns();
+        Columns normalized(src_cols.size());
+        bool changed = false;
+        for (size_t i = 0; i < src_cols.size(); ++i)
+        {
+            normalized[i] = deepNormalizeForFallback(src_cols[i]);
+            if (normalized[i].get() != src_cols[i].get())
+                changed = true;
+        }
+        if (!changed)
+            return col;
+        return ColumnTuple::create(std::move(normalized));
+    }
+
+    return col;
+}
+
 [[nodiscard]] MutableColumns scatterFallback(
     std::span<const IColumn * const> source_columns,
     std::span<const std::span<const UInt32>> pids_per_source,
@@ -306,7 +351,26 @@ template <typename DecimalT>
 {
     const size_t num_shards = rows_per_shard.size();
 
-    // Create empty destinations from the first source column.
+    /// Deep-normalize all source columns before scattering. Top-level
+    /// Const/Sparse/Replicated wrappers are already stripped by the public scatter()
+    /// entry point for the normal dispatch path, but the fallback is also reached from
+    /// the UInt32 overflow guard (with un-normalized sources) and from scatterDispatch
+    /// for types such as ColumnArray whose nested data can differ in representation
+    /// across chunks. Without normalization, IColumn::scatter preserves the nested
+    /// representation of each source and the subsequent insertRangeFrom across
+    /// mismatched concrete nested types causes assert_cast failures.
+    absl::InlinedVector<ColumnPtr, SCATTER_INLINE_SOURCES> norm_holder;
+    absl::InlinedVector<const IColumn *, SCATTER_INLINE_SOURCES> norm_ptrs;
+    norm_holder.reserve(source_columns.size());
+    norm_ptrs.reserve(source_columns.size());
+    for (const IColumn * col : source_columns)
+    {
+        norm_holder.push_back(deepNormalizeForFallback(col->getPtr()));
+        norm_ptrs.push_back(norm_holder.back().get());
+    }
+    source_columns = std::span<const IColumn * const>(norm_ptrs.data(), norm_ptrs.size());
+
+    // Create empty destinations from the (normalized) first source column.
     MutableColumns dst(num_shards);
     for (size_t s = 0; s < num_shards; ++s)
         dst[s] = source_columns[0]->cloneEmpty();
@@ -456,6 +520,60 @@ MutableColumns scatter(
         chassert(probe.getDataType() == source_columns[b]->getDataType());
 #endif
 
+    /// Guard against UInt32 per-shard row-count overflow. The fast kernels reserve and
+    /// size their destinations from UInt32 counts, but the write pointers still emit
+    /// every row; if a single flush routed more than UINT32_MAX rows to one shard the
+    /// count would wrap and the kernels would write out of bounds. No shard can hold
+    /// more rows than the whole batch, so when the batch exceeds UINT32_MAX rows fall
+    /// back to the size_t-safe per-source path (its destinations grow dynamically).
+    /// This guard runs before wrapper materialization: expanding `ColumnConst` sources
+    /// (O(1) bytes) into full columns just to immediately fall back is wasteful, and
+    /// `scatterFallback` performs its own deep normalization for the overflow path.
+    {
+        const auto total_rows = std::accumulate(
+            pids_per_source.begin(), pids_per_source.end(), size_t{0}, [](auto sum, const auto & pids) { return sum + pids.size(); });
+        if (total_rows > std::numeric_limits<UInt32>::max()) [[unlikely]]
+        {
+            absl::InlinedVector<UInt32, SCATTER_INLINE_SHARDS> shard_count_placeholder(num_shards, 0);
+            return scatterFallback(source_columns, pids_per_source, std::span<const UInt32>(shard_count_placeholder.data(), num_shards));
+        }
+    }
+
+    /// Fast compact path for a homogeneous batch of equal-valued `ColumnConst` sources.
+    /// `ColumnConst::scatter` expands the constant into one value per row per shard,
+    /// but when all sources carry the same constant value, shard s only needs
+    /// `ColumnConst(value, rows_per_shard[s])` — no materialization required. This
+    /// preserves the O(1)-memory behavior the legacy per-chunk scatter had for
+    /// constant-key workloads (e.g. `GROUP BY toUInt64(1)`) and avoids expanding large
+    /// const-heavy batches that `BufferedShardByHashTransform` accumulates before a flush.
+    const bool all_const = std::all_of(
+        source_columns.begin(), source_columns.end(), [](const IColumn * c) { return c->isConst(); });
+    if (all_const)
+    {
+        const auto & probe_data = assert_cast<const ColumnConst &>(*source_columns[0]).getDataColumn();
+        const bool all_same_value = std::all_of(
+            source_columns.begin() + 1, source_columns.end(),
+            [&probe_data](const IColumn * c)
+            {
+                return probe_data.compareAt(0, 0, assert_cast<const ColumnConst &>(*c).getDataColumn(), 1) == 0;
+            });
+        if (all_same_value)
+        {
+            absl::InlinedVector<UInt32, SCATTER_INLINE_SHARDS> rps_buf;
+            std::span<const UInt32> rps = rows_per_shard;
+            if (rps.empty())
+            {
+                rps_buf.resize(num_shards, 0);
+                countRowsPerShard(pids_per_source, std::span<UInt32>(rps_buf.data(), num_shards));
+                rps = std::span<const UInt32>(rps_buf.data(), num_shards);
+            }
+            MutableColumns dst(num_shards);
+            for (size_t s = 0; s < num_shards; ++s)
+                dst[s] = source_columns[0]->cloneResized(rps[s]);
+            return dst;
+        }
+    }
+
     /// Source columns at one position are only guaranteed to share the same logical
     /// type, not the same concrete representation: a position can mix a materialized
     /// column with a `ColumnConst`/`ColumnSparse`/`ColumnReplicated` (e.g. after
@@ -487,22 +605,6 @@ MutableColumns scatter(
             full_ptrs.push_back(materialized.back().get());
         }
         source_columns = std::span<const IColumn * const>(full_ptrs.data(), num_sources);
-    }
-
-    /// Guard against UInt32 per-shard row-count overflow. The fast kernels reserve and
-    /// size their destinations from UInt32 counts, but the write pointers still emit
-    /// every row; if a single flush routed more than UINT32_MAX rows to one shard the
-    /// count would wrap and the kernels would write out of bounds. No shard can hold
-    /// more rows than the whole batch, so when the batch exceeds UINT32_MAX rows fall
-    /// back to the size_t-safe per-source path (its destinations grow dynamically).
-    {
-        const auto total_rows = std::accumulate(
-            pids_per_source.begin(), pids_per_source.end(), size_t{0}, [](auto sum, const auto & pids) { return sum + pids.size(); });
-        if (total_rows > std::numeric_limits<UInt32>::max()) [[unlikely]]
-        {
-            absl::InlinedVector<UInt32, SCATTER_INLINE_SHARDS> shard_count_placeholder(num_shards, 0);
-            return scatterFallback(source_columns, pids_per_source, std::span<const UInt32>(shard_count_placeholder.data(), num_shards));
-        }
     }
 
     /// Row counts provided by caller — skip the per-call pids re-scan.
