@@ -109,8 +109,13 @@ for forbidden in lzma gzip; do
     ${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${ATTACH_TABLE}"
     # Rewrite `ENGINE = IcebergLocal('...', 'Parquet')` to
     # `ENGINE = IcebergLocal('...', 'Parquet', 'lzma'/'gzip')` to simulate
-    # pre-fix metadata carrying the forbidden value.
+    # pre-fix metadata carrying the forbidden value. Assert the rewrite
+    # actually fired before short ATTACH runs, otherwise this test would
+    # silently stop exercising the backward-compat path if the on-disk CREATE
+    # serialization ever changes formatting.
     sed -i "s|, 'Parquet')|, 'Parquet', '${forbidden}')|" "${METADATA_ABS}"
+    grep -qF ", 'Parquet', '${forbidden}')" "${METADATA_ABS}" \
+        || { echo "REWRITE_FAILED: metadata at ${METADATA_ABS} did not gain the forbidden compression argument"; cat "${METADATA_ABS}"; }
     ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${ATTACH_TABLE}" 2>&1 \
         | grep -c "not supported by data lake engines" || true
     ${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${ATTACH_TABLE}"
