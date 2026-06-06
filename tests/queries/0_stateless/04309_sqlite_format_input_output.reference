@@ -14,5 +14,9 @@
 --- read a database created directly by the sqlite3 CLI, selecting a table by name ---
 cat	4
 spider	8
+--- a table name with a double quote is escaped and read correctly ---
+hello
+--- a structure with a wrong number of columns is rejected ---
+INCORRECT_NUMBER_OF_COLUMNS
 --- writing to a non-file is not supported ---
 NOT_IMPLEMENTED

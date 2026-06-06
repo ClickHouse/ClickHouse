@@ -32,6 +32,19 @@ ${CLICKHOUSE_LOCAL} --query "
     SELECT * FROM file('${DB_FILE}', SQLite, 'name String, legs UInt8') ORDER BY name
     SETTINGS input_format_sqlite_table_name = 'animals'"
 
+echo "--- a table name with a double quote is escaped and read correctly ---"
+sqlite3 "$DB_FILE" "CREATE TABLE \"a\"\"b\"(value TEXT); INSERT INTO \"a\"\"b\" VALUES ('hello');"
+${CLICKHOUSE_LOCAL} --query "
+    SELECT * FROM file('${DB_FILE}', SQLite, 'value String')
+    SETTINGS input_format_sqlite_table_name = 'a\"b'"
+
+echo "--- a structure with a wrong number of columns is rejected ---"
+${CLICKHOUSE_LOCAL} --query "
+    SELECT * FROM file('${DB_FILE}', SQLite, 'value String, extra String')
+    SETTINGS input_format_sqlite_table_name = 'a\"b'" 2>&1 | grep -o "INCORRECT_NUMBER_OF_COLUMNS" | head -n 1
+
+rm -f "$DB_FILE"
+
 echo "--- writing to a non-file is not supported ---"
 ${CLICKHOUSE_LOCAL} --query "SELECT 1 AS x FORMAT SQLite" 2>&1 | grep -o "NOT_IMPLEMENTED" | head -n 1
 
