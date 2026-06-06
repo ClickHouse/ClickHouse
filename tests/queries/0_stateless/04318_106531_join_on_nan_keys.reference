@@ -100,6 +100,8 @@ m
 nan-l
 null-l
 unmatched
+--- hash INNER Tuple(Nullable(Float64)) null-safe match w/ NaN trash payload ---
+1
 --- GROUP BY nan ---
 1.5	1
 nan	2

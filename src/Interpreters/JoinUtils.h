@@ -110,13 +110,16 @@ void extendJoinKeyNullMapWithFloatNaNs(
 /// avoid scanning purely integer/string/date keys for `NaN`.
 bool joinKeyContainsFloatPayload(const IColumn & column);
 
-/// OR-mark every row whose float payload is `NaN` into `mutable_null_mask`. The mask must
-/// already be sized to `column.size()`. Recurses into `Nullable`, `LowCardinality` and
-/// `Tuple` so `tuple(NaN)`, `Nullable(Float)` and `Tuple(LowCardinality(Nullable(Float)))`
-/// are all covered. A `Tuple` row is marked if ANY float element is `NaN` (matches scalar
-/// tuple equality semantics: `(a, b) = (c, d)` iff `a = c AND b = d`, so any `NaN` element
-/// breaks equality). Returns whether any new `NaN` was found.
-bool markFloatNaNRowsAsNull(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_mask);
+/// OR-mark every row whose float payload is `NaN` into `mutable_null_map`. The mask must
+/// already be sized to `column.size()`. Recurses into `Nullable`, `LowCardinality`,
+/// `Tuple` and `ColumnConst` so `tuple(NaN)`, `Nullable(Float)`,
+/// `Tuple(LowCardinality(Nullable(Float)))` and a constant `NaN` probe key are all covered.
+/// A `Tuple` row is marked if ANY float element is `NaN` (matches scalar tuple equality
+/// semantics: `(a, b) = (c, d)` iff `a = c AND b = d`, so any `NaN` element breaks
+/// equality). Already-NULL rows of a `Nullable` are left alone, so a `Nullable(Float)` with
+/// arbitrary trash payload bytes for NULL rows does not produce false positives. Returns
+/// whether any new `NaN` was found.
+bool markFloatNaNRowsAsNull(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_map);
 
 /// Throw an exception if join condition column is not UIint8
 void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,

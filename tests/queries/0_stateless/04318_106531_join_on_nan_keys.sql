@@ -327,6 +327,30 @@ DROP TABLE IF EXISTS ldn;
 DROP TABLE IF EXISTS rdn;
 SET join_algorithm = 'default';
 
+-- `Tuple(Nullable(Float64))` null-safe match with trash `NaN` payload bytes for NULL rows.
+-- A `ColumnNullable` may carry arbitrary bytes in its nested column for rows where the
+-- null map says NULL. If those bytes happen to be a `NaN` bit pattern, an earlier version
+-- of `markFloatNaNRowsAsNull` would mark the row in the join's null map and silently break
+-- null-safe tuple equality (`tuple(NULL) = tuple(NULL)` is supposed to match).
+-- The `CAST(if(... NULL : nan), Nullable(Float64))` source ensures the nested payload
+-- under NULL slots is `NaN`, not the default `0`. Expected match count: 1 (the NULL row).
+-- Bug shape: 0 (the NULL row's tuple gets wrongly marked as never-matching).
+-- The `MergeJoinTransform` path has a pre-existing limitation with `Tuple(Nullable(Float))`
+-- when a `NaN` is also present in the chunk and is out of scope here, so this case is
+-- restricted to `hash`.
+DROP TABLE IF EXISTS l_tnf;
+DROP TABLE IF EXISTS r_tnf;
+CREATE TABLE l_tnf (k Tuple(Nullable(Float64))) ENGINE = Memory();
+CREATE TABLE r_tnf (k Tuple(Nullable(Float64))) ENGINE = Memory();
+INSERT INTO l_tnf SELECT tuple(CAST(if(number = 0, NULL, nan) AS Nullable(Float64))) FROM numbers(2);
+INSERT INTO r_tnf SELECT tuple(CAST(if(number = 0, NULL, nan) AS Nullable(Float64))) FROM numbers(2);
+
+SELECT '--- hash INNER Tuple(Nullable(Float64)) null-safe match w/ NaN trash payload ---';
+SELECT count() FROM l_tnf INNER JOIN r_tnf ON l_tnf.k = r_tnf.k SETTINGS join_algorithm = 'hash';
+
+DROP TABLE IF EXISTS l_tnf;
+DROP TABLE IF EXISTS r_tnf;
+
 -- `GROUP BY` and `DISTINCT` on `NaN` must remain unchanged (they intentionally
 -- group all NaNs together, unlike `JOIN ON`).
 SELECT '--- GROUP BY nan ---';

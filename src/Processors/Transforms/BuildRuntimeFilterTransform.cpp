@@ -1,5 +1,6 @@
 #include <Processors/Transforms/BuildRuntimeFilterTransform.h>
 #include <Processors/Chunk.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
@@ -9,6 +10,7 @@
 #include <Columns/IColumn.h>
 #include <Common/NaNUtils.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/JoinUtils.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 
@@ -178,6 +180,30 @@ void markNaNRowsImpl(const IColumn & column, IColumn::Filter & nan_mask, const U
             markNaNRowsImpl(tuple->getColumn(i), nan_mask, is_null);
         return;
     }
+    if (const auto * col_const = typeid_cast<const ColumnConst *>(&column))
+    {
+        /// Defence-in-depth: the build-side block of a runtime filter does not normally
+        /// arrive as a `ColumnConst`, but unwrapping it keeps the helper consistent with the
+        /// `JoinCommon` shared helpers (used by the direct-join path) and avoids silently
+        /// missing a constant `NaN` key.
+        IColumn::Filter scalar_mask(1, 0);
+        markNaNRowsImpl(col_const->getDataColumn(), scalar_mask, /* is_null = */ nullptr);
+        if (scalar_mask[0])
+        {
+            const size_t size = nan_mask.size();
+            if (is_null)
+            {
+                for (size_t i = 0; i < size; ++i)
+                    nan_mask[i] |= static_cast<UInt8>(is_null[i] == 0);
+            }
+            else
+            {
+                for (size_t i = 0; i < size; ++i)
+                    nan_mask[i] = 1;
+            }
+        }
+        return;
+    }
 
     /// Any other column type (integers, strings, dates, ...) cannot carry a float `NaN`.
     /// Leave `nan_mask` untouched.
@@ -187,6 +213,11 @@ ColumnPtr filterOutNaNs(const ColumnPtr & column)
 {
     const size_t size = column->size();
     if (size == 0)
+        return nullptr;
+
+    /// Type-only fast path: most runtime-filter keys are integer / string / date and never
+    /// carry a `NaN`. Skip the per-row allocation in that case.
+    if (!JoinCommon::joinKeyContainsFloatPayload(*column))
         return nullptr;
 
     IColumn::Filter nan_mask(size, 0);
