@@ -146,6 +146,11 @@ public:
         size_t operator()(const HerdCoalescingKey & key) const;
     };
 
+    /// Opaque handle returned to the herd "executor" by `startAsyncInsert`. The executor passes it back to
+    /// `finishAsyncInsert` to wake its own waiters. Defined in the .cpp so the synchronization primitives stay there.
+    struct HerdCoalescingToken;
+    using HerdCoalescingTokenPtr = std::shared_ptr<HerdCoalescingToken>;
+
     struct Entry
     {
         Chunks chunks;
@@ -197,11 +202,13 @@ public:
     size_t recordQueryRun(const Key & key);
 
     /// Thundering-herd coalescing for the streaming insert path. The first query for a key becomes the "executor" and
-    /// startAsyncInsert returns true; concurrent identical queries wait (bounded by `timeout`, or unbounded if `std::nullopt`)
-    /// for the executor's finishAsyncInsert and return false. Waiters that time out drop the stale token so the degraded state
-    /// does not persist for the key (the next query becomes a fresh executor).
-    bool startAsyncInsert(const HerdCoalescingKey & key, std::optional<std::chrono::milliseconds> timeout);
-    void finishAsyncInsert(const HerdCoalescingKey & key);
+    /// startAsyncInsert returns a non-null token; concurrent identical queries wait (bounded by `timeout`) for the
+    /// executor's finishAsyncInsert and return nullptr. Waiters that time out drop the stale token so the degraded state
+    /// does not persist for the key (the next query becomes a fresh executor). The executor must pass the returned token
+    /// back to finishAsyncInsert: waking is keyed on the token itself, not the map, so a waiter that times out and removes
+    /// a stale map entry cannot strand other waiters still blocked on that token.
+    HerdCoalescingTokenPtr startAsyncInsert(const HerdCoalescingKey & key, std::chrono::milliseconds timeout);
+    void finishAsyncInsert(const HerdCoalescingTokenPtr & token);
 
     /// For debugging and system tables
     std::vector<QueryResultCache::Cache::KeyMapped> dump() const;

@@ -1670,14 +1670,14 @@ static BlockIO executeQueryImpl(
         context->setCanUseQueryResultCache(can_use_query_result_cache);
         QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
 
-        /// Set only when this query is the herd "executor" (see `QueryResultCache::startAsyncInsert` below). Released in
-        /// finalize/exception callbacks after `finalizeWriteInQueryResultCache`
-        std::shared_ptr<QueryResultCache::HerdCoalescingKey> async_insert_key_to_finish;
+        /// Non-null only when this query is the herd "executor" (see `QueryResultCache::startAsyncInsert` below). The token is
+        /// passed back to `finishAsyncInsert` from the finalize/exception callbacks to wake waiters.
+        QueryResultCache::HerdCoalescingTokenPtr async_insert_token_to_finish;
 
         /// This `SCOPE_EXIT` covers failures before the finalize/exception callbacks are installed.
         SCOPE_EXIT({
-            if (async_insert_key_to_finish && query_result_cache)
-                query_result_cache->finishAsyncInsert(*async_insert_key_to_finish);
+            if (async_insert_token_to_finish && query_result_cache)
+                query_result_cache->finishAsyncInsert(async_insert_token_to_finish);
         });
 
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
@@ -1742,20 +1742,19 @@ static BlockIO executeQueryImpl(
 
                 /// Thundering herd (streaming path): concurrent identical `SELECT`s share one in-flight
                 /// computation via `QueryResultCache::startAsyncInsert` / `finishAsyncInsert`.
-                /// Wait cap: `query_cache_herd_wait_timeout` (`0` = unbounded wait in `startAsyncInsert`).
-                if (qrc_key && settings[Setting::enable_writes_to_query_cache] && settings[Setting::enable_reads_from_query_cache])
+                /// Wait cap: `query_cache_herd_wait_timeout`; `0` disables coalescing entirely (each query
+                /// executes independently, as before this feature was introduced).
+                const UInt64 herd_wait_ms = settings[Setting::query_cache_herd_wait_timeout].totalMilliseconds();
+                if (qrc_key && herd_wait_ms > 0 && settings[Setting::enable_writes_to_query_cache] && settings[Setting::enable_reads_from_query_cache])
                 {
-                    const UInt64 herd_wait_ms = settings[Setting::query_cache_herd_wait_timeout].totalMilliseconds();
-                    const std::optional<std::chrono::milliseconds> herd_wait_timeout
-                        = herd_wait_ms > 0 ? std::optional(std::chrono::milliseconds(herd_wait_ms)) : std::nullopt;
                     const QueryResultCache::HerdCoalescingKey herd_key{
                         qrc_key->ast_hash,
                         qrc_key->user_id,
                         qrc_key->current_user_roles,
                         settings[Setting::query_cache_share_between_users]};
-                    if (query_result_cache->startAsyncInsert(herd_key, herd_wait_timeout))
-                        // Set to indicate that this query is the herd "executor".
-                        async_insert_key_to_finish = std::make_shared<QueryResultCache::HerdCoalescingKey>(herd_key);
+                    if (auto token = query_result_cache->startAsyncInsert(herd_key, std::chrono::milliseconds(herd_wait_ms)))
+                        /// This query is the herd "executor".
+                        async_insert_token_to_finish = std::move(token);
                     else
                         skip_execution = get_result_from_query_result_cache();
                 }
@@ -1977,18 +1976,21 @@ static BlockIO executeQueryImpl(
             auto finish_callback_finalize_pipeline = [
                                      query_result_cache_usage,
                                      query_result_cache,
-                                     async_insert_key_to_finish,
+                                     async_insert_token_to_finish,
                                      // Need to be cached, since will be changed after complete()
                                      pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
             {
-                auto finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
-                /// Unblock herd waiters only after streaming finalized (including cache write skip paths).
-                if (async_insert_key_to_finish)
-                {
-                    query_result_cache->finishAsyncInsert(*async_insert_key_to_finish);
-                    async_insert_key_to_finish.reset();
-                }
-                return finalized_info;
+                /// Unblock herd waiters once streaming is finalized. Use a scope guard so that waiters are notified even if
+                /// `finalizeQueryPipelineBeforeLogging` throws while writing into the query result cache (compression,
+                /// allocation, `cache.set`); otherwise the exception bypasses this callback and waiters block until timeout.
+                SCOPE_EXIT({
+                    if (async_insert_token_to_finish)
+                    {
+                        query_result_cache->finishAsyncInsert(async_insert_token_to_finish);
+                        async_insert_token_to_finish.reset();
+                    }
+                });
+                return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
             };
 
             /// The finish callback logs the query result
@@ -2011,12 +2013,12 @@ static BlockIO executeQueryImpl(
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_tcl_executor, query_span, query_result_cache, async_insert_key_to_finish](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_tcl_executor, query_span, query_result_cache, async_insert_token_to_finish](bool log_error) mutable
             {
-                if (async_insert_key_to_finish)
+                if (async_insert_token_to_finish)
                 {
-                    query_result_cache->finishAsyncInsert(*async_insert_key_to_finish);
-                    async_insert_key_to_finish.reset();
+                    query_result_cache->finishAsyncInsert(async_insert_token_to_finish);
+                    async_insert_token_to_finish.reset();
                 }
 
                 if (implicit_tcl_executor->transactionRunning())
@@ -2042,7 +2044,7 @@ static BlockIO executeQueryImpl(
             res.finish_callbacks.push_back(std::move(finish_callback));
             res.exception_callbacks.push_back(std::move(exception_callback));
             /// Callbacks now own `finishAsyncInsert`; disarm `SCOPE_EXIT` above.
-            async_insert_key_to_finish.reset();
+            async_insert_token_to_finish.reset();
         }
     }
     catch (...)
