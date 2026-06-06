@@ -386,7 +386,12 @@ void block_qsort(T* left0, T* right0, Compare comp) {
 
 		int nleft = 0;
 		int nright = 0;
-		int left_offs, right_offs;
+		// ClickHouse modification: initialize both offsets. When the median-of-medians
+		// pivot is the maximum of the range, `nleft` stays 0, the `else` branch that
+		// assigns `right_offs` never runs, and the post-loop cleanup below reads it
+		// uninitialized (proven with MemorySanitizer).
+		// Reported upstream: https://github.com/chkas/blqsort/issues/2
+		int left_offs = 0, right_offs = 0;
 
 		while (right >= left) {
 			int blsz = std::min(BLSZ, right - left + 1);
