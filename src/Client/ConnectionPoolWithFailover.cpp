@@ -209,7 +209,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     size_t min_entries = skip_unavailable_endpoints.value() ? 0 : 1;
 
     size_t max_tries = settings[Setting::connections_with_failover_max_tries];
-    size_t max_entries;
+    size_t max_entries = 0;
     if (pool_mode == PoolMode::GET_ALL)
     {
         min_entries = nested_pools.size();
