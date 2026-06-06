@@ -19,6 +19,18 @@ These rules reuse query parameter feature for query matching which allow substit
 
 The rules are being applied in the order of their creation.
 
+A `{name:Type}` placeholder uses the query parameter syntax, but here `Type` is a small matching vocabulary rather than an ordinary ClickHouse data type. The supported placeholder types are:
+
+| Type | Matches |
+|------|---------|
+| `String` | a string literal |
+| `Int` | an integer literal |
+| `Expression` | an expression |
+| `ExpressionList` | a list of expressions |
+| `Subquery` | a subquery |
+
+A placeholder with any other type (for example `{x:UInt64}` or `{d:Date}`) is rejected at `CREATE RULE` / `ALTER RULE` time, because it would be stored but never match any query.
+
 Every `{name:Type}` placeholder referenced by a rule's result template must also appear in its source template, and a placeholder must not be repeated within the source template. Such rules are rejected at `CREATE RULE` / `ALTER RULE` time.
 
 ## Syntax {#syntax}

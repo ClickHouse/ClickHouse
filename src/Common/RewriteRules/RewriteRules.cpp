@@ -1,8 +1,11 @@
 #include <Common/RewriteRules/RewriteRules.h>
 #include <algorithm>
+#include <array>
+#include <optional>
 #include <unordered_set>
 #include <Core/Settings.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
@@ -18,11 +21,26 @@ namespace ErrorCodes
     extern const int REWRITE_RULE_ALREADY_EXISTS;
     extern const int REWRITE_RULE_DUPLICATED_QUERY_PARAMETER;
     extern const int REWRITE_RULE_UNKNOWN_QUERY_PARAMETER;
+    extern const int REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE;
     extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
+    /// The placeholder types understood by the rewrite-rule matcher
+    /// (`RewriteRulesASTTraversal.cpp`). A rule placeholder uses the `{name:Type}`
+    /// query-parameter syntax, but `Type` is a small custom matching vocabulary
+    /// rather than an ordinary ClickHouse data type: `String` and `Int` capture
+    /// literals, `Expression`/`ExpressionList` capture expression subtrees and
+    /// `Subquery` captures a subquery. A placeholder with any other type (e.g.
+    /// `{x:UInt64}` or `{d:Date}`) would be stored but never match a literal query,
+    /// silently turning the rule into a no-op, so such types are rejected at DDL time.
+    bool isSupportedQueryParameterType(std::string_view type)
+    {
+        static constexpr std::array supported{"String", "Int", "Expression", "ExpressionList", "Subquery"};
+        return std::find(supported.begin(), supported.end(), type) != supported.end();
+    }
+
     /// Collects the names of all `{name:Type}` placeholders (`ASTQueryParameter`)
     /// reachable from `ast`, recording duplicates encountered along the way.
     void collectQueryParameters(const ASTPtr & ast, std::unordered_set<String> & names, std::vector<String> & duplicates)
@@ -36,6 +54,26 @@ namespace
         }
         for (const auto & child : ast->children)
             collectQueryParameters(child, names, duplicates);
+    }
+
+    /// Returns the first placeholder in `ast` whose type is not understood by the
+    /// matcher, as a `{name, type}` pair, or `std::nullopt` if all are supported.
+    std::optional<std::pair<String, String>> findUnsupportedQueryParameter(const ASTPtr & ast)
+    {
+        if (!ast)
+            return {};
+        if (const auto * query_parameter = ast->as<ASTQueryParameter>())
+        {
+            auto type = query_parameter->type;
+            trimLeft(type);
+            trimRight(type);
+            if (!isSupportedQueryParameterType(type))
+                return std::make_pair(query_parameter->name, query_parameter->type);
+        }
+        for (const auto & child : ast->children)
+            if (auto found = findUnsupportedQueryParameter(child))
+                return found;
+        return {};
     }
 
     /// Validates a rule's source/result templates at DDL time so that invalid rule
@@ -56,6 +94,17 @@ namespace
                 ErrorCodes::REWRITE_RULE_DUPLICATED_QUERY_PARAMETER,
                 "Rewrite rule `{}` has a duplicate query parameter `{}` in its source template",
                 query.rule_name, source_duplicates.front());
+
+        /// A placeholder in the source template whose type the matcher does not
+        /// understand (anything other than `String`, `Int`, `Expression`,
+        /// `ExpressionList` or `Subquery`) would be stored but never match any query,
+        /// silently turning the rule into a no-op. Reject such types up front.
+        if (auto unsupported = findUnsupportedQueryParameter(query.source_query))
+            throw Exception(
+                ErrorCodes::REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE,
+                "Rewrite rule `{}` uses query parameter `{}` with unsupported type `{}` in its source template. "
+                "Supported placeholder types are: String, Int, Expression, ExpressionList, Subquery",
+                query.rule_name, unsupported->first, unsupported->second);
 
         if (!query.rewrite())
             return;
