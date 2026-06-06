@@ -148,7 +148,7 @@ function fuzz
     server_bg_pid=$!
     for _ in {1..30}
     do
-        if clickhouse-client --query "select 1"
+        if clickhouse-client --receive_timeout=5 --query "select 1"
         then
             break
         fi
@@ -203,7 +203,7 @@ function fuzz
         # to freeze, and the fuzzer will fail. In debug build, it can take a lot of time.
         for _ in {1..180}
         do
-            if clickhouse-client --query "select 1"
+            if clickhouse-client --receive_timeout=5 --query "select 1"
             then
                 break
             fi
@@ -299,7 +299,7 @@ function fuzz
 
     for _ in {1..100}
     do
-        if clickhouse-client --query "SELECT 1" 2> err
+        if clickhouse-client --receive_timeout=5 --query "SELECT 1" 2> err
         then
             server_died=0
             break

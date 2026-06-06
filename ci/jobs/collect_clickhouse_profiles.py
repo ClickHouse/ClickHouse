@@ -178,7 +178,7 @@ def wait_for_server_ready(proc, server_dir, port, log_file):
         # window would otherwise produce hundreds of identical `Run command`
         # lines; emit a progress heartbeat every 30s instead.
         res, out, _ = Shell.get_res_stdout_stderr(
-            f'{server_dir}/clickhouse-client --port {port} --query "select 1"'
+            f'{server_dir}/clickhouse-client --port {port} --receive_timeout=5 --query "select 1"'
         )
         if out.strip() == "1":
             elapsed = time.monotonic() - start

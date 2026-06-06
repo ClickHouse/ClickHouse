@@ -117,6 +117,16 @@ S3RequestSettings::S3RequestSettings(
         auto path = fmt::format("{}.{}{}", config_prefix, setting_name_prefix, field.getName());
 
         bool updated = S3::setValueFromConfig(config, path, field);
+
+        /// The storage class option has two interchangeable names: `storage_class_name` (the canonical
+        /// request setting) and `storage_class` (used by the BACKUP command and historical disk configs,
+        /// e.g. `s3_storage_class`). Accept both so configurations are interchangeable. See issue #68551.
+        if (!updated && field.getName() == "storage_class_name")
+        {
+            auto legacy_path = fmt::format("{}.{}storage_class", config_prefix, setting_name_prefix);
+            updated = S3::setValueFromConfig(config, legacy_path, field);
+        }
+
         if (!updated)
         {
             auto setting_name = "s3_" + field.getName();
@@ -133,7 +143,12 @@ S3RequestSettings::S3RequestSettings(const NamedCollection & collection, const D
     auto values = impl->allMutable();
     for (auto & field : values)
     {
-        const auto path = field.getName();
+        auto path = field.getName();
+
+        /// `storage_class` is an interchangeable alias for `storage_class_name` (see issue #68551).
+        if (!collection.has(path) && field.getName() == "storage_class_name" && collection.has("storage_class"))
+            path = "storage_class";
+
         if (collection.has(path))
         {
             auto which = field.getValue().getType();

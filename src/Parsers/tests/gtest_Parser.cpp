@@ -2,6 +2,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
+#include <Parsers/Access/ParserCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -342,6 +343,33 @@ INSTANTIATE_TEST_SUITE_P(ParserAttachUserQuery, ParserTest,
         {
             "ATTACH USER user1 IDENTIFIED WITH sha256_hash BY '2CC4880302693485717D34E06046594CFDFE425E3F04AA5A094C4AABAB3CB0BF'",  //for users created in older releases that sha256_password has no salt
             "^$"
+        }
+})));
+
+// ATTACH MASKING POLICY (used when RESTORE-ing a backup) must parse without an UPDATE clause,
+// unlike CREATE / ALTER. See ParserCreateMaskingPolicy::parseImpl.
+INSTANTIATE_TEST_SUITE_P(ParserAttachMaskingPolicyQuery, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserCreateMaskingPolicy>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+        {
+            "ATTACH MASKING POLICY p ON db.t TO ALL",
+            "ATTACH MASKING POLICY p ON db.t TO ALL"
+        }
+})));
+
+// In CREATE / ALTER mode the UPDATE clause is still mandatory, so omitting it must fail to parse.
+INSTANTIATE_TEST_SUITE_P(ParserCreateMaskingPolicyQuery, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserCreateMaskingPolicy>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+        {
+            "CREATE MASKING POLICY p ON db.t UPDATE email = '***' TO ALL",
+            "CREATE MASKING POLICY p ON db.t UPDATE email = '***' TO ALL"
+        },
+        {
+            "CREATE MASKING POLICY p ON db.t TO ALL",
+            nullptr  // missing UPDATE clause
         }
 })));
 

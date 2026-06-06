@@ -728,9 +728,9 @@ void alter(
     {
         auto log = getLogger("IcebergMutations");
 
-        int last_version;
+        int last_version = 0;
         String metadata_path;
-        CompressionMethod compression_method;
+        CompressionMethod compression_method = CompressionMethod::None;
         if (!catalog)
         {
             auto last_version_info = getLatestOrExplicitMetadataFileAndVersion(

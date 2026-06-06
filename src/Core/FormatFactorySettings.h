@@ -1114,6 +1114,8 @@ If the data rendered in Pretty formats arrived in multiple chunks, even after a 
 )", 0) \
     DECLARE(String, output_format_pretty_grid_charset, "UTF-8", R"(
 Charset for printing grid borders. Available charsets: ASCII, UTF-8 (default).
+
+In interactive mode, `clickhouse-client` automatically switches to `ASCII` when the terminal does not support UTF-8 (as determined by the `LC_ALL`, `LC_CTYPE` and `LANG` environment variables), unless this setting is specified explicitly.
 )", 0) \
     DECLARE(UInt64, output_format_pretty_display_footer_column_names, true, R"(
 Display column names in the footer if there are many table rows.
