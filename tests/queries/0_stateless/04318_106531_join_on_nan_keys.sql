@@ -280,6 +280,53 @@ SELECT v FROM (SELECT ltlc.v FROM ltlc ANTI JOIN rtlc ON tuple(ltlc.k) = tuple(r
 DROP TABLE IF EXISTS ltlc;
 DROP TABLE IF EXISTS rtlc;
 
+-- `SET join_algorithm = 'direct'` on a `MergeTree`-keyed right side (`DirectKeyValueJoin`
+-- + `DirectJoinMergeTreeEntity`). The direct path builds the right lookup with `IN` and
+-- maps found rows back via `ColumnsHashing`, so without the fix two `NaN` keys with
+-- identical bit patterns wrongly match for `INNER`/`LEFT SEMI` and suppress the row for
+-- `LEFT ANTI`. The fix folds `NaN` rows into the not-found path inside `joinBlock`.
+CREATE TABLE ld (k Float64, v String) ENGINE = Memory();
+CREATE TABLE rd (k Float64, w Int32) ENGINE = MergeTree() ORDER BY k;
+INSERT INTO ld VALUES (1.5, 'm'), (nan, 'nan-l'), (2.5, 'unmatched');
+INSERT INTO rd VALUES (1.5, 100), (nan, 9999);
+
+SET join_algorithm = 'direct';
+SET enable_analyzer = 1;
+
+SELECT '--- direct INNER Float64 ---';
+SELECT v FROM (SELECT ld.v FROM ld INNER JOIN rd ON ld.k = rd.k) ORDER BY v;
+
+SELECT '--- direct LEFT Float64 ---';
+SELECT v, r_w FROM (SELECT ld.v, rd.w AS r_w FROM ld LEFT JOIN rd ON ld.k = rd.k) ORDER BY v;
+
+SELECT '--- direct LEFT SEMI Float64 ---';
+SELECT v FROM (SELECT ld.v FROM ld LEFT SEMI JOIN rd ON ld.k = rd.k) ORDER BY v;
+
+SELECT '--- direct LEFT ANTI Float64 ---';
+SELECT v FROM (SELECT ld.v FROM ld LEFT ANTI JOIN rd ON ld.k = rd.k) ORDER BY v;
+
+DROP TABLE IF EXISTS ld;
+DROP TABLE IF EXISTS rd;
+
+-- `direct` over `Nullable(Float64)` keys: the probe column is `Nullable(Float64)`, so the
+-- recursion must walk through the inner `ColumnNullable` to reach the float payload.
+CREATE TABLE ldn (k Nullable(Float64), v String) ENGINE = Memory();
+CREATE TABLE rdn (k Float64, w Int32) ENGINE = MergeTree() ORDER BY k;
+INSERT INTO ldn VALUES (1.5, 'm'), (nan, 'nan-l'), (NULL, 'null-l'), (2.5, 'unmatched');
+INSERT INTO rdn VALUES (1.5, 100), (nan, 9999);
+
+SET join_algorithm = 'direct';
+
+SELECT '--- direct INNER Nullable(Float64) ---';
+SELECT v FROM (SELECT ldn.v FROM ldn INNER JOIN rdn ON ldn.k = rdn.k) ORDER BY v;
+
+SELECT '--- direct LEFT ANTI Nullable(Float64) ---';
+SELECT v FROM (SELECT ldn.v FROM ldn LEFT ANTI JOIN rdn ON ldn.k = rdn.k) ORDER BY v;
+
+DROP TABLE IF EXISTS ldn;
+DROP TABLE IF EXISTS rdn;
+SET join_algorithm = 'default';
+
 -- `GROUP BY` and `DISTINCT` on `NaN` must remain unchanged (they intentionally
 -- group all NaNs together, unlike `JOIN ON`).
 SELECT '--- GROUP BY nan ---';

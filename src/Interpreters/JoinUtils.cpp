@@ -394,34 +394,6 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
 namespace
 {
 
-/// Quick type-only walk: does `column` (post `extractNestedColumnsAndNullMap` peeling) carry
-/// any float payload at all? Recurses into `Nullable`, `LowCardinality` and `Tuple`. Used to
-/// avoid allocating a fresh null map for purely integer/string/date keys.
-bool containsFloatPayload(const IColumn & column)
-{
-    if (typeid_cast<const ColumnFloat32 *>(&column)
-        || typeid_cast<const ColumnFloat64 *>(&column)
-        || typeid_cast<const ColumnVector<BFloat16> *>(&column))
-        return true;
-
-    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
-        return containsFloatPayload(nullable->getNestedColumn());
-
-    if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&column))
-        return containsFloatPayload(*lc->getDictionary().getNestedColumn());
-
-    if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
-    {
-        const size_t tuple_size = tuple->tupleSize();
-        for (size_t i = 0; i < tuple_size; ++i)
-            if (containsFloatPayload(tuple->getColumn(i)))
-                return true;
-        return false;
-    }
-
-    return false;
-}
-
 /// Mark `NaN` rows of one float key column into `mutable_null_map`. Returns whether any
 /// `NaN` was found. The caller has already verified `column` is the matching `ColumnVector<T>`.
 template <typename T>
@@ -442,15 +414,34 @@ bool markNaNsOfFloatColumn(const ColumnVector<T> & vec, PaddedPODArray<UInt8> & 
     return found;
 }
 
-bool markNaNRows(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_map);
+}
 
-/// Recursively unwrap `Nullable`, `LowCardinality` and `Tuple` and OR-mark every row whose
-/// float payload is `NaN` into `mutable_null_map`. A row is dropped if ANY float element of a
-/// tuple is `NaN`, matching scalar tuple equality semantics (element-wise, with `NaN != NaN`).
-/// Already-NULL rows inside a `Nullable` are left alone for that branch - they are already
-/// excluded from the join via the existing null map. Non-float leaves (integers, strings,
-/// dates, ...) cannot carry a float `NaN` and leave `mutable_null_map` untouched.
-bool markNaNRows(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_map)
+bool joinKeyContainsFloatPayload(const IColumn & column)
+{
+    if (typeid_cast<const ColumnFloat32 *>(&column)
+        || typeid_cast<const ColumnFloat64 *>(&column)
+        || typeid_cast<const ColumnVector<BFloat16> *>(&column))
+        return true;
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+        return joinKeyContainsFloatPayload(nullable->getNestedColumn());
+
+    if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&column))
+        return joinKeyContainsFloatPayload(*lc->getDictionary().getNestedColumn());
+
+    if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
+    {
+        const size_t tuple_size = tuple->tupleSize();
+        for (size_t i = 0; i < tuple_size; ++i)
+            if (joinKeyContainsFloatPayload(tuple->getColumn(i)))
+                return true;
+        return false;
+    }
+
+    return false;
+}
+
+bool markFloatNaNRowsAsNull(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_map)
 {
     if (const auto * f32 = typeid_cast<const ColumnFloat32 *>(&column))
         return markNaNsOfFloatColumn<Float32>(*f32, mutable_null_map);
@@ -466,7 +457,7 @@ bool markNaNRows(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_ma
         /// element-level null map is already folded into the join null map by the caller (see
         /// `extractNestedColumnsAndNullMap` for `Nullable(Tuple(...))`), so it is safe to scan
         /// the nested column directly: rows that are NULL are anyway treated as never-matching.
-        return markNaNRows(nullable->getNestedColumn(), mutable_null_map);
+        return markFloatNaNRowsAsNull(nullable->getNestedColumn(), mutable_null_map);
     }
 
     if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&column))
@@ -474,7 +465,7 @@ bool markNaNRows(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_ma
         /// `LowCardinality` is recursively removed during key materialization, so this branch
         /// is defence-in-depth for the rare path where it survives (e.g. tuple element).
         ColumnPtr full = lc->convertToFullColumnIfLowCardinality();
-        return markNaNRows(*full, mutable_null_map);
+        return markFloatNaNRowsAsNull(*full, mutable_null_map);
     }
 
     if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
@@ -485,14 +476,12 @@ bool markNaNRows(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_ma
         bool found = false;
         const size_t tuple_size = tuple->tupleSize();
         for (size_t i = 0; i < tuple_size; ++i)
-            found |= markNaNRows(tuple->getColumn(i), mutable_null_map);
+            found |= markFloatNaNRowsAsNull(tuple->getColumn(i), mutable_null_map);
         return found;
     }
 
     /// Any other column type (integers, strings, dates, ...) cannot carry a float `NaN`.
     return false;
-}
-
 }
 
 void extendJoinKeyNullMapWithFloatNaNs(
@@ -518,13 +507,13 @@ void extendJoinKeyNullMapWithFloatNaNs(
     bool any_changes = false;
     for (const auto * column : key_columns)
     {
-        if (!containsFloatPayload(*column))
+        if (!joinKeyContainsFloatPayload(*column))
             continue;
 
         const size_t size = column->size();
         auto * mutable_null_map = ensure_mutable_null_map(size);
 
-        any_changes |= markNaNRows(*column, *mutable_null_map);
+        any_changes |= markFloatNaNRowsAsNull(*column, *mutable_null_map);
     }
 
     if (any_changes)

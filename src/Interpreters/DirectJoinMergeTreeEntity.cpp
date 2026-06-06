@@ -10,6 +10,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/PreparedSets.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -20,6 +21,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageSnapshot.h>
+#include <Common/PODArray.h>
 #include <Common/logger_useful.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/ColumnsHashing.h>
@@ -240,25 +242,49 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
     auto & selector_data = selector->getData();
     selector_data.reserve(num_keys);
 
+    /// Treat float `NaN` keys as never-matching, mirroring the `HashJoin` / `FullSortingMergeJoin`
+    /// fix for `JOIN ON`. Per `IEEE 754` / SQL `JOIN ON` semantics `NaN != NaN`, but
+    /// `ColumnsHashing` compares the key payload bitwise, so two `NaN` keys with identical bit
+    /// patterns wrongly match. Force every probe row whose key holds a `NaN` to the not-found
+    /// path (sentinel selector + `null_map = false`) so the controlling shape - default right
+    /// columns for `LEFT`, dropped row for `INNER` / `LEFT SEMI`, kept row for `LEFT ANTI` -
+    /// matches the `HashJoin` path exactly. Recurses into `Nullable` / `LowCardinality` /
+    /// `Tuple` like `JoinCommon::extendJoinKeyNullMapWithFloatNaNs` does on the hash path.
+    PaddedPODArray<UInt8> nan_mask;
+    bool any_nan = false;
+    if (JoinCommon::joinKeyContainsFloatPayload(*keys[0].column))
+    {
+        nan_mask.resize_fill(num_keys, 0);
+        any_nan = JoinCommon::markFloatNaNRowsAsNull(*keys[0].column, nan_mask);
+    }
+
     for (size_t i = 0; i < num_keys; ++i)
     {
-        auto find_result = key_getter.findKey(key_to_rows, i, pool);
-
-        if (find_result.isFound())
+        if (any_nan && nan_mask[i])
         {
-            /// Key found, add all matching row indices
-            const auto & matching_rows = find_result.getMapped();
-            for (size_t row_idx : matching_rows)
-            {
-                selector_data.push_back(row_idx);
-                out_null_map.push_back(true);
-            }
+            selector_data.push_back(num_found_rows);
+            out_null_map.push_back(false);
         }
         else
         {
-            /// Key not found: use sentinel index pointing to default values appended below
-            selector_data.push_back(num_found_rows);
-            out_null_map.push_back(false);
+            auto find_result = key_getter.findKey(key_to_rows, i, pool);
+
+            if (find_result.isFound())
+            {
+                /// Key found, add all matching row indices
+                const auto & matching_rows = find_result.getMapped();
+                for (size_t row_idx : matching_rows)
+                {
+                    selector_data.push_back(row_idx);
+                    out_null_map.push_back(true);
+                }
+            }
+            else
+            {
+                /// Key not found: use sentinel index pointing to default values appended below
+                selector_data.push_back(num_found_rows);
+                out_null_map.push_back(false);
+            }
         }
 
         out_offsets.push_back(selector_data.size());

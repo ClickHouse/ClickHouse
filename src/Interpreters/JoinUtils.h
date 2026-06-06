@@ -105,6 +105,19 @@ void extendJoinKeyNullMapWithFloatNaNs(
     ColumnPtr & null_map_holder,
     ConstNullMapPtr & null_map);
 
+/// Quick type-only walk: does `column` (post `extractNestedColumnsAndNullMap` peeling) carry
+/// any float payload at all? Recurses into `Nullable`, `LowCardinality` and `Tuple`. Used to
+/// avoid scanning purely integer/string/date keys for `NaN`.
+bool joinKeyContainsFloatPayload(const IColumn & column);
+
+/// OR-mark every row whose float payload is `NaN` into `mutable_null_mask`. The mask must
+/// already be sized to `column.size()`. Recurses into `Nullable`, `LowCardinality` and
+/// `Tuple` so `tuple(NaN)`, `Nullable(Float)` and `Tuple(LowCardinality(Nullable(Float)))`
+/// are all covered. A `Tuple` row is marked if ANY float element is `NaN` (matches scalar
+/// tuple equality semantics: `(a, b) = (c, d)` iff `a = c AND b = d`, so any `NaN` element
+/// breaks equality). Returns whether any new `NaN` was found.
+bool markFloatNaNRowsAsNull(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_mask);
+
 /// Throw an exception if join condition column is not UIint8
 void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,
                        const Block & block_right, const String & condition_name_right);

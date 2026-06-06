@@ -83,6 +83,23 @@ m
 null-l
 --- hash ANTI tuple(LowCardinality(Nullable(Float64))) ---
 nan-l
+--- direct INNER Float64 ---
+m
+--- direct LEFT Float64 ---
+m	100
+nan-l	0
+unmatched	0
+--- direct LEFT SEMI Float64 ---
+m
+--- direct LEFT ANTI Float64 ---
+nan-l
+unmatched
+--- direct INNER Nullable(Float64) ---
+m
+--- direct LEFT ANTI Nullable(Float64) ---
+nan-l
+null-l
+unmatched
 --- GROUP BY nan ---
 1.5	1
 nan	2
