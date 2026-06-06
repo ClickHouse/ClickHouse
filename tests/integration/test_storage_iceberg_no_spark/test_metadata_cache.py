@@ -88,7 +88,7 @@ def test_metadata_cache(started_cluster_iceberg_no_spark):
     table = catalog.create_table(
         identifier=table_name,
         schema=schema,
-        location=f"s3://warehouse-rest/data",
+        location=f"s3://warehouse-rest/data/{root_namespace}/test_metadata_cache",
         partition_spec=partition_spec,
         sort_order=sort_order,
     )

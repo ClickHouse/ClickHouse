@@ -196,11 +196,31 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
                 String cached_uuid = normalizeUuid(candidate->getValue<String>(f_table_uuid));
                 if (cached_uuid == normalizeUuid(hint))
                 {
-                    /// Hit from a prior validated init: cached JSON belongs to this table.
-                    content_cache_hit = true;
-                    raw_metadata_json = std::move(cached);
-                    metadata_object = candidate;
-                    table_uuid = cached_uuid;
+                    /// Also verify the cached JSON's `location` field encodes this table's
+                    /// root path.  A stale hint equal to another table's UUID would match on
+                    /// UUID alone; the location check prevents accepting that table's metadata
+                    /// when both tables happen to share the same relative metadata path.
+                    const String & table_root = configuration->getPathForRead().path;
+                    bool location_ok = true;
+                    if (!table_root.empty() && candidate->has(f_location))
+                    {
+                        const String & cached_location = candidate->getValue<String>(f_location);
+                        /// `cached_location` is the full URI (e.g. "s3://bucket/ns/table");
+                        /// `table_root` is the path portion ("bucket/ns/table").
+                        /// Accept only when table_root is a suffix of cached_location.
+                        location_ok = cached_location.size() >= table_root.size()
+                            && cached_location.compare(
+                                   cached_location.size() - table_root.size(),
+                                   table_root.size(), table_root) == 0;
+                    }
+                    if (location_ok)
+                    {
+                        /// Hit from a prior validated init: cached JSON belongs to this table.
+                        content_cache_hit = true;
+                        raw_metadata_json = std::move(cached);
+                        metadata_object = candidate;
+                        table_uuid = cached_uuid;
+                    }
                 }
             }
         }
