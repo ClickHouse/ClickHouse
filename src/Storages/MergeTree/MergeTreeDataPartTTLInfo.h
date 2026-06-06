@@ -64,11 +64,8 @@ struct MergeTreeDataPartTTLInfos
     void write(WriteBuffer & out) const;
     void update(const MergeTreeDataPartTTLInfos & other_infos);
 
-    /// Has any TTLs which are not calculated on completely expired parts.
-    bool hasAnyNonFinishedTTLs() const;
-
-    /// Same as `hasAnyNonFinishedTTLs`, but restricted to the TTL kinds that
-    /// actually contribute to `part_max_ttl`: the table rows TTL, column TTLs,
+    /// Returns true if any TTL entry that contributes to `part_max_ttl` is
+    /// still unfinished. Restricted to the table rows TTL, column TTLs,
     /// rows-where TTLs, and `GROUP BY` TTLs. `moves_ttl` and `recompression_ttl`
     /// entries are deliberately excluded because they never set
     /// `ttl_finished = true` and do not call `updatePartMinMaxTTL`, so they

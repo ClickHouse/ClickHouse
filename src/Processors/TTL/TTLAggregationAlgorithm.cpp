@@ -311,9 +311,23 @@ void TTLAggregationAlgorithm::finalize(const MutableDataPartPtr & data_part) con
     ///      after the TTL pipeline runs, so it is still zero at this point.
     ///
     ///  (4) `new_ttl_info.max == 0`, rows survived, but no surviving row had
-    ///      a non-zero TTL watermark that passed the `WHERE` filter. Fall back
-    ///      to `old_ttl_info` to preserve the per-part watermark across the
-    ///      merge.
+    ///      a non-zero TTL watermark. In `GROUP_BY` mode the only practical
+    ///      trigger is a TTL expression that evaluates to zero on every
+    ///      surviving row (e.g. `TTL toDateTime(0) GROUP BY ...`); ordinary
+    ///      `DateTime`/`Date`/`DateTime64` columns containing real timestamps
+    ///      cannot produce zero. `Nullable(DateTime)` cannot reach this case
+    ///      because `ITTLAlgorithm::getTimestampByIndex` does not handle
+    ///      `ColumnNullable` and raises `LOGICAL_ERROR` earlier. `WHERE`
+    ///      clauses are not parsed for `GROUP_BY` TTL (`TTLDescription`
+    ///      populates them only for `DELETE` mode), so the `where_column`
+    ///      short-circuit in `execute` always lets rows through. Fall back to
+    ///      `old_ttl_info` to preserve the per-part watermark across the
+    ///      merge, but if `old_ttl_info` carries an expired range from a prior
+    ///      merge, mark it finished so `hasAnyNonFinishedRowsAffectingTTLs`
+    ///      cannot keep the scheduler re-picking the same part forever
+    ///      (issue #105647). Defense in depth: no regression test is added
+    ///      because constructing the trigger requires an artificial TTL
+    ///      expression that does not represent real user data.
     TTLInfo info_to_write = new_ttl_info;
     info_to_write.ttl_finished = isTTLExpired(info_to_write.max);
 
@@ -341,8 +355,11 @@ void TTLAggregationAlgorithm::finalize(const MutableDataPartPtr & data_part) con
         return;
     }
 
-    data_part->ttl_infos.group_by_ttl[description.result_column] = old_ttl_info;
-    data_part->ttl_infos.updatePartMinMaxTTL(old_ttl_info.min, old_ttl_info.max);
+    TTLInfo fallback = old_ttl_info;
+    if (fallback.max != 0 && isTTLExpired(fallback.max))
+        fallback.ttl_finished = true;
+    data_part->ttl_infos.group_by_ttl[description.result_column] = fallback;
+    data_part->ttl_infos.updatePartMinMaxTTL(fallback.min, fallback.max);
 }
 
 }

@@ -270,45 +270,6 @@ time_t MergeTreeDataPartTTLInfos::getMinimalUnfinishedRowsAffectingTTL() const
     return min;
 }
 
-bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedTTLs() const
-{
-    auto has_non_finished_ttl = [] (const TTLInfoMap & map) -> bool
-    {
-        for (const auto & [name, info] : map)
-        {
-            if (info.max && !info.finished())
-                return true;
-        }
-        return false;
-    };
-
-    /// `table_ttl` is the per-part TTL info for the table-level rows TTL.
-    /// When the table has no rows TTL, this struct is left in its default
-    /// (zero) state, where `finished()` returns false. Treating that as a
-    /// non-finished TTL would defeat the gate for tables that only have
-    /// `GROUP BY` or column TTLs (issue #105647). Only consult the flag if
-    /// the table actually advanced the per-part rows-TTL bounds.
-    if (table_ttl.max && !table_ttl.finished())
-        return true;
-
-    if (has_non_finished_ttl(columns_ttl))
-        return true;
-
-    if (has_non_finished_ttl(rows_where_ttl))
-        return true;
-
-    if (has_non_finished_ttl(moves_ttl))
-        return true;
-
-    if (has_non_finished_ttl(recompression_ttl))
-        return true;
-
-    if (has_non_finished_ttl(group_by_ttl))
-        return true;
-
-    return false;
-}
-
 bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedRowsAffectingTTLs() const
 {
     auto has_non_finished_ttl = [] (const TTLInfoMap & map) -> bool

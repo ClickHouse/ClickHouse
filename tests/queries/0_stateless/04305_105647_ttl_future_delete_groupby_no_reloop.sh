@@ -116,6 +116,6 @@ FINAL=$($CLICKHOUSE_CLIENT --query "
       AND merge_reason IN ('TTLDropMerge', 'TTLDeleteMerge')
 ")
 
-echo $((FINAL - SNAPSHOT))
+echo $(( ${FINAL:-0} - ${SNAPSHOT:-0} ))
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE $TABLE"
