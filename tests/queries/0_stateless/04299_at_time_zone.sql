@@ -16,7 +16,7 @@ SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
 -- AT LOCAL must equal toTimeZone(expr, timeZone())
 SELECT (TIMESTAMP '2001-02-16 20:38:40' AT LOCAL) = toTimeZone(TIMESTAMP '2001-02-16 20:38:40', timeZone());
 
--- Timezone expression can be any expression, not just a literal
+-- zone can be any constant string expression (non-constant columns require allow_nonconst_timezone_arguments=1)
 SELECT TIMESTAMP '2001-02-16 20:38:40' AT TIME ZONE concat('America', '/', 'Denver');
 
 -- Precedence: AT TIME ZONE binds tighter than + (matching PostgreSQL)
