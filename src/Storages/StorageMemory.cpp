@@ -249,19 +249,21 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
 {
     std::lock_guard lock(mutex);
 
-    /// `Memory` tables hold raw column blocks in RAM and have no on-storage analog of
-    /// indices, projections, statistics, TTL expressions, patch parts, or a `_row_exists`
-    /// deletion mask. Mutation commands that exclusively operate on those structures are
-    /// therefore semantic no-ops on `Memory`: the post-state the user is asking for
-    /// (index/projection/statistics materialised, TTL re-evaluated, all patches applied,
-    /// deleted rows physically removed) is already trivially satisfied.
-    ///
-    /// Reaching `MutationsInterpreter` with such a command set produces a pipeline that
-    /// pulls one output block per input block but with zero rows in each, and the
-    /// partial-column path below then fails the per-block row-count invariant with
+    /// Filter mutation commands that have no per-row data effect on a `Memory` engine.
+    /// `Memory` keeps raw column blocks in RAM and has no on-storage analog of skip
+    /// indices, projections, statistics, patch parts, the `_row_exists` deletion mask,
+    /// or rewritten parts. Reaching `MutationsInterpreter` with such a command set
+    /// produces a pipeline that returns one zero-row block per input block, after which
+    /// the partial-column path below fails the per-block row-count invariant with
     /// `Mutation of \`Memory\` table produced incomplete output: block 0 has 0 rows, expected N`.
-    /// Filtering them out before constructing the pipeline avoids that. A real `UPDATE`
-    /// or `DELETE` mixed into the same `ALTER` still executes normally.
+    /// A real `UPDATE` / `DELETE` / `MATERIALIZE COLUMN` mixed into the same `ALTER` still
+    /// executes normally.
+    ///
+    /// Only the kinds that can actually reach this method are filtered:
+    ///   - `DROP INDEX` / `DROP PROJECTION` / `DROP STATISTICS` are rejected earlier by
+    ///     `StorageMemory::checkAlterIsPossible`, never reach `mutate`.
+    ///   - `MATERIALIZE TTL` is rejected by `MutationsInterpreter::prepare` during
+    ///     pre-mutation validation when there is no TTL on the table, never reaches `mutate`.
     MutationCommands commands_to_run;
     commands_to_run.reserve(commands.size());
     for (const auto & command : commands)
@@ -273,10 +275,6 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
             case MutationCommand::MATERIALIZE_INDEX:
             case MutationCommand::MATERIALIZE_PROJECTION:
             case MutationCommand::MATERIALIZE_STATISTICS:
-            case MutationCommand::MATERIALIZE_TTL:
-            case MutationCommand::DROP_INDEX:
-            case MutationCommand::DROP_PROJECTION:
-            case MutationCommand::DROP_STATISTICS:
             case MutationCommand::REWRITE_PARTS:
                 continue;
             default:

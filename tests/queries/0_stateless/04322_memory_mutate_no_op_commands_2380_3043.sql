@@ -17,21 +17,25 @@ SELECT 'after parens:', count(), groupArray(id), groupArray(value) FROM (SELECT 
 ALTER TABLE t_mem_2380 APPLY PATCHES;
 SELECT 'after bare:', count(), groupArray(id), groupArray(value) FROM (SELECT * FROM t_mem_2380 ORDER BY id);
 
--- APPLY DELETED MASK is also a no-op on Memory.
+-- APPLY DELETED MASK is a no-op on `Memory`.
 ALTER TABLE t_mem_2380 APPLY DELETED MASK;
 SELECT 'after deleted mask:', count(), groupArray(id), groupArray(value) FROM (SELECT * FROM t_mem_2380 ORDER BY id);
 
--- MATERIALIZE STATISTICS ALL is a no-op on Memory.
+-- MATERIALIZE STATISTICS ALL is a no-op on `Memory`.
 ALTER TABLE t_mem_2380 MATERIALIZE STATISTICS ALL;
 SELECT 'after stats all:', count(), groupArray(id), groupArray(value) FROM (SELECT * FROM t_mem_2380 ORDER BY id);
 
--- MATERIALIZE INDEX on a non-existent index is a no-op on Memory.
-ALTER TABLE t_mem_2380 MATERIALIZE INDEX nonex;
+-- MATERIALIZE INDEX on a non-existent index is a no-op on `Memory`.
+ALTER TABLE t_mem_2380 MATERIALIZE INDEX nonex SETTINGS send_logs_level = 'error';
 SELECT 'after mat index:', count(), groupArray(id), groupArray(value) FROM (SELECT * FROM t_mem_2380 ORDER BY id);
 
--- MATERIALIZE PROJECTION on a non-existent projection is a no-op on Memory.
-ALTER TABLE t_mem_2380 MATERIALIZE PROJECTION nonex;
+-- MATERIALIZE PROJECTION on a non-existent projection is a no-op on `Memory`.
+ALTER TABLE t_mem_2380 MATERIALIZE PROJECTION nonex SETTINGS send_logs_level = 'error';
 SELECT 'after mat proj:', count(), groupArray(id), groupArray(value) FROM (SELECT * FROM t_mem_2380 ORDER BY id);
+
+-- REWRITE PARTS is a no-op on `Memory` (no parts to rewrite).
+ALTER TABLE t_mem_2380 REWRITE PARTS;
+SELECT 'after rewrite parts:', count(), groupArray(id), groupArray(value) FROM (SELECT * FROM t_mem_2380 ORDER BY id);
 
 -- Mixed: APPLY PATCHES alongside a real UPDATE must still execute the UPDATE.
 ALTER TABLE t_mem_2380 UPDATE value = upper(value) WHERE id = 1, APPLY PATCHES SETTINGS mutations_sync = 1;
