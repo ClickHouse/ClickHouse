@@ -9,6 +9,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <base/scope_guard.h>
 #include <limits>
 
 namespace DB::ErrorCodes
@@ -181,28 +182,6 @@ struct MemoryLimitGuard
     }
 };
 
-struct CurrentThreadMemoryTrackerParentGuard
-{
-    MemoryTracker & tracker;
-    MemoryTracker * prev_parent;
-    Int64 prev_hard_limit;
-
-    CurrentThreadMemoryTrackerParentGuard()
-        : tracker(CurrentThread::get().memory_tracker)
-        , prev_parent(tracker.getParent())
-        , prev_hard_limit(tracker.getHardLimit())
-    {
-    }
-
-    ~CurrentThreadMemoryTrackerParentGuard()
-    {
-        CurrentThread::flushUntrackedMemory();
-        tracker.resetCounters();
-        tracker.setHardLimit(prev_hard_limit);
-        tracker.setParent(prev_parent);
-    }
-};
-
 /// Set hard limit just above the current amount so the next big allocation overshoots.
 void clampHardLimitJustAboveCurrent()
 {
@@ -256,18 +235,30 @@ TEST(AllocationInterceptors, GlobalMemoryLimitExceededOnlyIncrementsForGlobalTra
     MainThreadStatus::getInstance();
 
     MemoryLimitGuard limit_guard;
-    CurrentThreadMemoryTrackerParentGuard parent_guard;
+    auto & thread_tracker = CurrentThread::get().memory_tracker;
+    MemoryTracker query_tracker(&total_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor=*/ false);
+    MemoryTracker * prev_parent = thread_tracker.getParent();
+    Int64 prev_hard_limit = thread_tracker.getHardLimit();
+    const auto reset_test_counters = [&]
+    {
+        total_memory_tracker.resetCounters();
+        thread_tracker.resetCounters();
+        query_tracker.resetCounters();
+        CurrentThread::getProfileEvents().resetCounters();
+    };
 
     CurrentThread::flushUntrackedMemory();
 
-    auto & thread_tracker = CurrentThread::get().memory_tracker;
-    MemoryTracker query_tracker(&total_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor=*/ false);
+    SCOPE_EXIT({
+        CurrentThread::flushUntrackedMemory();
+        reset_test_counters();
+        thread_tracker.setHardLimit(prev_hard_limit);
+        thread_tracker.setParent(prev_parent);
+    });
+
     thread_tracker.setParent(&query_tracker);
 
-    total_memory_tracker.resetCounters();
-    thread_tracker.resetCounters();
-    query_tracker.resetCounters();
-    CurrentThread::getProfileEvents().resetCounters();
+    reset_test_counters();
 
     query_tracker.setHardLimit(query_tracker.get() + 1024);
     EXPECT_THROW({
@@ -276,10 +267,7 @@ TEST(AllocationInterceptors, GlobalMemoryLimitExceededOnlyIncrementsForGlobalTra
     EXPECT_EQ(1, CurrentThread::getProfileEvents()[ProfileEvents::QueryMemoryLimitExceeded]);
     EXPECT_EQ(0, CurrentThread::getProfileEvents()[ProfileEvents::GlobalMemoryLimitExceeded]);
 
-    total_memory_tracker.resetCounters();
-    thread_tracker.resetCounters();
-    query_tracker.resetCounters();
-    CurrentThread::getProfileEvents().resetCounters();
+    reset_test_counters();
 
     total_memory_tracker.setHardLimit(total_memory_tracker.get() + 1024);
     EXPECT_THROW({
@@ -287,11 +275,6 @@ TEST(AllocationInterceptors, GlobalMemoryLimitExceededOnlyIncrementsForGlobalTra
     }, DB::Exception);
     EXPECT_EQ(1, CurrentThread::getProfileEvents()[ProfileEvents::QueryMemoryLimitExceeded]);
     EXPECT_EQ(1, CurrentThread::getProfileEvents()[ProfileEvents::GlobalMemoryLimitExceeded]);
-
-    total_memory_tracker.resetCounters();
-    thread_tracker.resetCounters();
-    query_tracker.resetCounters();
-    CurrentThread::getProfileEvents().resetCounters();
 }
 
 TEST(AllocationInterceptors, MinAllocSizeToThrowDoesNotAffectMalloc)
