@@ -28,8 +28,18 @@ typedef enum {
     E_NOT_NEIGHBORS = 11,
     E_RES_MISMATCH = 12,
     E_MEMORY = 13,
-    E_MEMORY_BOUNDS = 14
+    E_MEMORY_BOUNDS = 14,
+    E_OPTION_INVALID = 15
 } H3ErrorCodes;
+
+/* Containment modes for polygonToCellsExperimental (see H3 C API). */
+typedef enum {
+    CONTAINMENT_CENTER = 0,
+    CONTAINMENT_FULL = 1,
+    CONTAINMENT_OVERLAPPING = 2,
+    CONTAINMENT_OVERLAPPING_BBOX = 3,
+    CONTAINMENT_INVALID = 4
+} ContainmentMode;
 
 #define H3_VERSION_MAJOR 4
 #define H3_VERSION_MINOR 4
@@ -184,6 +194,13 @@ H3Error maxPolygonToCellsSize(const GeoPolygon *geoPolygon, int res,
                               uint32_t flags, int64_t *out);
 H3Error polygonToCells(const GeoPolygon *geoPolygon, int res,
                        uint32_t flags, H3Index *out);
+H3Error maxPolygonToCellsSizeExperimental(const GeoPolygon *geoPolygon, int res,
+                                          uint32_t flags, int64_t *out);
+H3Error polygonToCellsExperimental(const GeoPolygon *geoPolygon, int res,
+                                   uint32_t flags, int64_t size, H3Index *out);
+
+/* Error description */
+const char *describeH3Error(H3Error err);
 
 #ifdef __cplusplus
 }

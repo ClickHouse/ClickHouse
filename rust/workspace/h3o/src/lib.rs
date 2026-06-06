@@ -11,6 +11,7 @@ use std::panic;
 use h3o::CellIndex;
 use h3o::DirectedEdgeIndex;
 use h3o::Resolution;
+use h3o::geom::ContainmentMode;
 
 // ---------------------------------------------------------------------------
 // C-compatible type definitions matching h3api.h
@@ -22,6 +23,7 @@ type H3Error = u32;
 const E_SUCCESS: H3Error = 0;
 const E_FAILED: H3Error = 1;
 const E_MEMORY_BOUNDS: H3Error = 14;
+const E_OPTION_INVALID: H3Error = 15;
 const MAX_CELL_BNDRY_VERTS: usize = 10;
 
 #[repr(C)]
@@ -946,6 +948,86 @@ pub unsafe extern "C" fn getIcosahedronFaces(h3: H3Index, out: *mut i32) -> H3Er
 // Polygon operations
 // ---------------------------------------------------------------------------
 
+/// Map H3 `polygonToCellsExperimental` flags to `h3o` containment modes:
+/// 0 = `CONTAINMENT_CENTER`, 1 = `CONTAINMENT_FULL`, 2 = `CONTAINMENT_OVERLAPPING`.
+/// Returns `None` for any other value.
+///
+/// The H3 C library also defines `3 = CONTAINMENT_OVERLAPPING_BBOX`, a
+/// deliberately over-inclusive mode that selects every cell whose *bounding
+/// box* overlaps the shape. `h3o` has no equivalent: its closest mode
+/// (`ContainmentMode::Covers`) is `IntersectsBoundary` plus the
+/// fully-covered-by-a-single-cell case, which produces a strict subset of the
+/// bounding-box result. Rather than silently return a different (smaller) set
+/// for mode 3 — which would break the "result set is preserved" guarantee of
+/// this backend swap — we reject it here so callers receive an explicit error.
+fn containment_mode_from_flags(flags: u32) -> Option<ContainmentMode> {
+    match flags {
+        0 => Some(ContainmentMode::ContainsCentroid),
+        1 => Some(ContainmentMode::ContainsBoundary),
+        2 => Some(ContainmentMode::IntersectsBoundary),
+        _ => None,
+    }
+}
+
+/// Build an `h3o` tiler for the given C polygon, resolution and containment
+/// mode. Returns `None` if the resolution is invalid or the geometry is
+/// rejected by `h3o`.
+unsafe fn build_polygon_tiler(
+    geo_polygon: *const GeoPolygon,
+    res: i32,
+    mode: ContainmentMode,
+) -> Option<h3o::geom::Tiler> {
+    let resolution = try_resolution(res)?;
+    let geo_poly = c_polygon_to_geo(&*geo_polygon);
+    let mut tiler = h3o::geom::TilerBuilder::new(resolution)
+        .containment_mode(mode)
+        .disable_radians_conversion()
+        .build();
+    if tiler.add(geo_poly).is_err() {
+        return None;
+    }
+    Some(tiler)
+}
+
+unsafe fn max_polygon_to_cells_size_impl(
+    geo_polygon: *const GeoPolygon,
+    res: i32,
+    mode: ContainmentMode,
+    out: *mut i64,
+) -> H3Error {
+    let Some(tiler) = build_polygon_tiler(geo_polygon, res, mode) else {
+        return E_FAILED;
+    };
+    let count = tiler.coverage_size_hint();
+    *out = if count > i64::MAX as usize { i64::MAX } else { count as i64 };
+    E_SUCCESS
+}
+
+unsafe fn polygon_to_cells_impl(
+    geo_polygon: *const GeoPolygon,
+    res: i32,
+    mode: ContainmentMode,
+    max_count: usize,
+    out: *mut H3Index,
+) -> H3Error {
+    let Some(tiler) = build_polygon_tiler(geo_polygon, res, mode) else {
+        return E_FAILED;
+    };
+    // The caller allocates `max_count` slots (from the matching
+    // `maxPolygonToCellsSize*` call). Producing more cells means the two
+    // backend calls disagree or the buffer is too small; surface that as
+    // `E_MEMORY_BOUNDS` rather than silently truncating or overflowing.
+    let mut count = 0usize;
+    for cell in tiler.into_coverage() {
+        if count >= max_count {
+            return E_MEMORY_BOUNDS;
+        }
+        *out.add(count) = u64::from(cell);
+        count += 1;
+    }
+    E_SUCCESS
+}
+
 /// H3Error maxPolygonToCellsSize(const GeoPolygon *geoPolygon, int res,
 ///                               uint32_t flags, int64_t *out)
 ///
@@ -956,6 +1038,11 @@ pub unsafe extern "C" fn getIcosahedronFaces(h3: H3Index, out: *mut i32) -> H3Er
 /// `catch_unwind` so any future panic in geometry code is converted to
 /// `E_FAILED` and surfaces as a normal ClickHouse exception rather than
 /// crossing the FFI boundary and aborting the server.
+///
+/// The non-experimental API only supports the default containment mode, so
+/// reject `flags != 0` explicitly (matching the H3 C library, which returns an
+/// error for any flag here and only honors containment modes through the
+/// `*Experimental` variants).
 #[no_mangle]
 pub unsafe extern "C" fn maxPolygonToCellsSize(
     geo_polygon: *const GeoPolygon,
@@ -963,35 +1050,13 @@ pub unsafe extern "C" fn maxPolygonToCellsSize(
     flags: u32,
     out: *mut i64,
 ) -> H3Error {
-    panic::catch_unwind(|| max_polygon_to_cells_size_impl(geo_polygon, res, flags, out))
-        .unwrap_or(E_FAILED)
-}
-
-unsafe fn max_polygon_to_cells_size_impl(
-    geo_polygon: *const GeoPolygon,
-    res: i32,
-    flags: u32,
-    out: *mut i64,
-) -> H3Error {
-    // Only the default containment mode (`flags == 0`) is implemented.
-    // Reject anything else explicitly so callers cannot silently get
-    // default-mode results when asking for a non-default flag.
     if flags != 0 {
         return E_FAILED;
     }
-    let Some(resolution) = try_resolution(res) else {
-        return E_FAILED;
-    };
-    let geo_poly = c_polygon_to_geo(&*geo_polygon);
-    let mut tiler = h3o::geom::TilerBuilder::new(resolution)
-        .disable_radians_conversion()
-        .build();
-    if tiler.add(geo_poly).is_err() {
-        return E_FAILED;
-    }
-    let count = tiler.coverage_size_hint();
-    *out = if count > i64::MAX as usize { i64::MAX } else { count as i64 };
-    E_SUCCESS
+    panic::catch_unwind(|| {
+        max_polygon_to_cells_size_impl(geo_polygon, res, ContainmentMode::ContainsCentroid, out)
+    })
+    .unwrap_or(E_FAILED)
 }
 
 /// H3Error polygonToCells(const GeoPolygon *geoPolygon, int res,
@@ -1007,45 +1072,103 @@ pub unsafe extern "C" fn polygonToCells(
     flags: u32,
     out: *mut H3Index,
 ) -> H3Error {
-    panic::catch_unwind(|| polygon_to_cells_impl(geo_polygon, res, flags, out))
-        .unwrap_or(E_FAILED)
-}
-
-unsafe fn polygon_to_cells_impl(
-    geo_polygon: *const GeoPolygon,
-    res: i32,
-    flags: u32,
-    out: *mut H3Index,
-) -> H3Error {
-    // See `maxPolygonToCellsSize` — non-default containment modes are not
-    // implemented yet, so reject `flags != 0` instead of silently ignoring.
     if flags != 0 {
         return E_FAILED;
     }
-    let Some(resolution) = try_resolution(res) else {
-        return E_FAILED;
-    };
-    let geo_poly = c_polygon_to_geo(&*geo_polygon);
-    let mut tiler = h3o::geom::TilerBuilder::new(resolution)
-        .disable_radians_conversion()
-        .build();
-    if tiler.add(geo_poly).is_err() {
-        return E_FAILED;
-    }
-    // The caller allocates exactly `coverage_size_hint` slots via
-    // `maxPolygonToCellsSize`, so producing more cells here means the two
-    // backend calls disagree. Surface that as an error rather than
-    // silently truncating the result set.
-    let max_size = tiler.coverage_size_hint();
-    let mut count = 0usize;
-    for cell in tiler.into_coverage() {
-        if count >= max_size {
+    // The caller sized the buffer with `maxPolygonToCellsSize` /
+    // `coverage_size_hint`, so use the same hint as the capacity bound.
+    panic::catch_unwind(|| {
+        let Some(tiler) = build_polygon_tiler(geo_polygon, res, ContainmentMode::ContainsCentroid)
+        else {
             return E_FAILED;
+        };
+        let max_size = tiler.coverage_size_hint();
+        let mut count = 0usize;
+        for cell in tiler.into_coverage() {
+            if count >= max_size {
+                return E_MEMORY_BOUNDS;
+            }
+            *out.add(count) = u64::from(cell);
+            count += 1;
         }
-        *out.add(count) = u64::from(cell);
-        count += 1;
+        E_SUCCESS
+    })
+    .unwrap_or(E_FAILED)
+}
+
+/// H3Error maxPolygonToCellsSizeExperimental(const GeoPolygon *geoPolygon,
+///                                           int res, uint32_t flags, int64_t *out)
+///
+/// Experimental variant honoring the containment mode encoded in `flags`
+/// (see `containment_mode_from_flags`). Used by the `h3PolygonToCellsWithContainment`
+/// ClickHouse function. Wrapped in `catch_unwind` like `maxPolygonToCellsSize`.
+#[no_mangle]
+pub unsafe extern "C" fn maxPolygonToCellsSizeExperimental(
+    geo_polygon: *const GeoPolygon,
+    res: i32,
+    flags: u32,
+    out: *mut i64,
+) -> H3Error {
+    let Some(mode) = containment_mode_from_flags(flags) else {
+        return E_OPTION_INVALID;
+    };
+    panic::catch_unwind(|| max_polygon_to_cells_size_impl(geo_polygon, res, mode, out))
+        .unwrap_or(E_FAILED)
+}
+
+/// H3Error polygonToCellsExperimental(const GeoPolygon *geoPolygon, int res,
+///                                    uint32_t flags, int64_t size, H3Index *out)
+///
+/// Experimental variant honoring the containment mode encoded in `flags`. The
+/// `size` argument is the number of `H3Index` slots the caller allocated in
+/// `out` (obtained from `maxPolygonToCellsSizeExperimental`); producing more
+/// cells returns `E_MEMORY_BOUNDS`. Wrapped in `catch_unwind` like `polygonToCells`.
+#[no_mangle]
+pub unsafe extern "C" fn polygonToCellsExperimental(
+    geo_polygon: *const GeoPolygon,
+    res: i32,
+    flags: u32,
+    size: i64,
+    out: *mut H3Index,
+) -> H3Error {
+    let Some(mode) = containment_mode_from_flags(flags) else {
+        return E_OPTION_INVALID;
+    };
+    if size < 0 {
+        return E_MEMORY_BOUNDS;
     }
-    E_SUCCESS
+    let max_count = size as usize;
+    panic::catch_unwind(|| polygon_to_cells_impl(geo_polygon, res, mode, max_count, out))
+        .unwrap_or(E_FAILED)
+}
+
+/// const char *describeH3Error(H3Error err)
+///
+/// Returns a static, null-terminated description of an `H3Error` code,
+/// matching the strings used by the H3 C library. Returned pointers are
+/// `'static` (string literals) so the caller never frees them.
+#[no_mangle]
+pub extern "C" fn describeH3Error(err: H3Error) -> *const c_char {
+    let msg: &'static [u8] = match err {
+        0 => b"Success\0",
+        1 => b"The operation failed but a more specific error is not available\0",
+        2 => b"Argument was outside of acceptable range\0",
+        3 => b"Latitude or longitude arguments were outside of acceptable range\0",
+        4 => b"Resolution argument was outside of acceptable range\0",
+        5 => b"H3Index cell argument was not valid\0",
+        6 => b"H3Index directed edge argument was not valid\0",
+        7 => b"H3Index undirected edge argument was not valid\0",
+        8 => b"H3Index vertex argument was not valid\0",
+        9 => b"Pentagon distortion was encountered\0",
+        10 => b"Duplicate input was encountered in the arguments\0",
+        11 => b"H3Index cell arguments were not neighbors\0",
+        12 => b"H3Index cell arguments had incompatible resolutions\0",
+        13 => b"Necessary memory allocation failed\0",
+        14 => b"Bounds of provided memory were not large enough\0",
+        15 => b"Mode or flags argument was not valid for the operation\0",
+        _ => b"Unknown H3 error code\0",
+    };
+    msg.as_ptr() as *const c_char
 }
 
 unsafe fn c_polygon_to_geo(poly: &GeoPolygon) -> geo::Polygon<f64> {

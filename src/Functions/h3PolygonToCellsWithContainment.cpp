@@ -61,16 +61,22 @@ LatLng toH3LatLng(const SphericalPointInRadians & point)
 {
     throw Exception(
         ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-        "The argument 'flags' ({}) of function {} is invalid (must be 0..3: "
-        "0=CONTAINMENT_CENTER, 1=CONTAINMENT_FULL, 2=CONTAINMENT_OVERLAPPING, "
-        "3=CONTAINMENT_OVERLAPPING_BBOX)",
+        "The argument 'flags' ({}) of function {} is invalid (must be 0..2: "
+        "0=CONTAINMENT_CENTER, 1=CONTAINMENT_FULL, 2=CONTAINMENT_OVERLAPPING). "
+        "Mode 3 (CONTAINMENT_OVERLAPPING_BBOX) is not supported by the h3o backend, "
+        "which has no bounding-box containment mode",
         toString(flags),
         function_name);
 }
 
 void validateContainmentFlag(Int64 flags, std::string_view function_name)
 {
-    if (flags < 0 || flags >= static_cast<Int64>(CONTAINMENT_INVALID))
+    /// The h3o backend implements only the CENTER/FULL/OVERLAPPING containment
+    /// modes (0..2). `CONTAINMENT_OVERLAPPING_BBOX` (3) is rejected because h3o
+    /// has no bounding-box mode and would otherwise silently return a different
+    /// (smaller) result set; see `containment_mode_from_flags` in
+    /// `rust/workspace/h3o/src/lib.rs`.
+    if (flags < 0 || flags >= static_cast<Int64>(CONTAINMENT_OVERLAPPING_BBOX))
         throwInvalidContainmentFlag(flags, function_name);
 }
 
@@ -359,9 +365,10 @@ REGISTER_FUNCTION(h3PolygonToCellsWithContainment)
         .description =
             "Returns the hexagons (at specified resolution) covering the provided geometry, "
             "using H3's experimental algorithm with selectable containment mode. "
-            "Flags: 0=CONTAINMENT_CENTER, 1=CONTAINMENT_FULL, 2=CONTAINMENT_OVERLAPPING, "
-            "3=CONTAINMENT_OVERLAPPING_BBOX. The flags argument is passed to the H3 API as UInt32; "
-            "use integer literals (0..3) or toUInt32. Other native integer types are converted with an accurate cast. See H3 docs.",
+            "Flags: 0=CONTAINMENT_CENTER, 1=CONTAINMENT_FULL, 2=CONTAINMENT_OVERLAPPING. "
+            "Mode 3 (CONTAINMENT_OVERLAPPING_BBOX) is not supported by the h3o backend. "
+            "The flags argument is passed as UInt32; use integer literals (0..2) or toUInt32. "
+            "Other native integer types are converted with an accurate cast. See H3 docs.",
         .syntax = "h3PolygonToCellsWithContainment(geometry, resolution, flags)",
         .introduced_in = {26, 6},
         .category = FunctionDocumentation::Category::Geo});
