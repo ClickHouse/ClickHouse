@@ -72,8 +72,6 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
         max = x;
 }
 
-}
-
 #if defined(OS_LINUX) && __has_include(<linux/sock_diag.h>)
 
 /// For one connection pool group, observe each tracked socket's rmem/wmem into the
@@ -138,6 +136,8 @@ void updateHTTPConnectionPoolTCPBufferMetrics(
 }
 
 #endif
+
+}
 
 ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,
@@ -292,7 +292,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
 
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;
@@ -526,7 +526,7 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
     DetachedPartsStats current_values{};
     MutationStats current_mutation_stats{};
 
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
     {
         if (db.second->isExternal())
             continue;

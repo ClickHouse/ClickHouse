@@ -448,7 +448,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
 
     const bool requires_eviction = probationary_eviction_info->requiresEviction();
     /// FIXME: const_cast is a bad practice.
-    const_cast<EvictionInfo &>(eviction_info).add(std::move(probationary_eviction_info));
+    const_cast<EvictionInfo &>(eviction_info).addOrUpdate(std::move(probationary_eviction_info));
     if (requires_eviction)
     {
         /// If not enough space - we need to "downgrade" lowest priority entries

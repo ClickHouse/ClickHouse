@@ -66,7 +66,7 @@ WebObjectStorage::loadFiles(const String & path, const std::unique_lock<SharedMu
             readText(file_name, *metadata_buf);
             assertChar('\t', *metadata_buf);
 
-            bool is_directory;
+            bool is_directory = false;
             readBoolText(is_directory, *metadata_buf);
             size_t size = 0;
             if (!is_directory)

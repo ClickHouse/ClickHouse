@@ -208,7 +208,7 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<Re
             }
 
             /// Check min_ratio constraint
-            if (constraints->min_ratio > 0.0)
+            if (constraints->min_ratio > 0.0f)
             {
                 UInt64 min_bytes_from_ratio = static_cast<UInt64>(constraints->min_ratio * (static_cast<Float32>(*total_space)));
                 if (free_bytes_after < min_bytes_from_ratio)
@@ -260,7 +260,7 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<Re
 
 static UInt64 getTotalSpaceByName(const String & name, const String & disk_path, UInt64 keep_free_space_bytes)
 {
-    struct statvfs fs;
+    struct statvfs fs{};
     if (name == "default") /// for default disk we get space from path/data/
         fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
     else
@@ -284,7 +284,7 @@ std::optional<UInt64> DiskLocal::getAvailableSpace() const
         return 0;
     /// we use f_bavail, because part of b_free space is
     /// available for superuser only and for system purposes
-    struct statvfs fs;
+    struct statvfs fs{};
     if (name == "default") /// for default disk we get space from path/data/
         fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
     else
@@ -404,25 +404,25 @@ void DiskLocal::prepareRead(
     ///     throws `CANNOT_SEEK_THROUGH_FILE`;
     ///   - O_DIRECT when `page_cache_block_size` is not aligned to the direct
     ///     IO sector size (additional check below).
-    bool use_page_cache = settings.use_page_cache_for_local_disks && settings.page_cache
-        && settings.local_fs_method != LocalFSReadMethod::io_uring
-        && settings.local_fs_method != LocalFSReadMethod::pread_fake_async
-        && settings.local_fs_method != LocalFSReadMethod::pread_threadpool
-        && settings.local_fs_method != LocalFSReadMethod::mmap;
+    bool use_page_cache = settings.use_page_cache_for_local_disks && settings.page_cache_settings.cache
+        && settings.local_fs_settings.method != LocalFSReadMethod::io_uring
+        && settings.local_fs_settings.method != LocalFSReadMethod::pread_fake_async
+        && settings.local_fs_settings.method != LocalFSReadMethod::pread_threadpool
+        && settings.local_fs_settings.method != LocalFSReadMethod::mmap;
 
     {
         /// Use the same estimated size basis as createReadBufferFromFileBase:
         /// read_hint first, then file_size. A large file with a small read_hint
         /// won't trigger O_DIRECT, so page cache remains safe.
         size_t estimated_size = read_hint.value_or(file_size);
-        if (use_page_cache && settings.direct_io_threshold
-            && estimated_size >= settings.direct_io_threshold
-            && settings.page_cache_settings.page_cache_block_size % DEFAULT_AIO_FILE_BLOCK_SIZE != 0)
+        if (use_page_cache && settings.local_fs_settings.direct_io_threshold
+            && estimated_size >= settings.local_fs_settings.direct_io_threshold
+            && settings.page_cache_settings.block_size % DEFAULT_AIO_FILE_BLOCK_SIZE != 0)
             use_page_cache = false;
     }
 
     if (use_page_cache)
-        pipeline.needMemoryCache(settings.page_cache, "local:", settings.page_cache_settings);
+        pipeline.needMemoryCache("local:", settings.page_cache_settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -600,7 +600,7 @@ SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
 void DiskLocal::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & disk_map)
 {
     String new_disk_path;
-    UInt64 new_keep_free_space_bytes;
+    UInt64 new_keep_free_space_bytes = 0;
 
     loadDiskLocalConfig(name, config, config_prefix, context, new_disk_path, new_keep_free_space_bytes);
 
@@ -672,9 +672,9 @@ try
 {
     ReadSettings read_settings;
     /// Proper disk read checking requires direct io
-    read_settings.direct_io_threshold = 1;
+    read_settings.local_fs_settings.direct_io_threshold = 1;
     auto buf = readFile(disk_checker_path, read_settings, {});
-    UInt32 magic_number;
+    UInt32 magic_number = 0;
     readIntBinary(magic_number, *buf);
     if (buf->eof())
         return magic_number;
@@ -851,7 +851,7 @@ void DiskLocal::startupImpl()
 
 struct stat DiskLocal::stat(const String & path) const
 {
-    struct stat st;
+    struct stat st{};
     auto full_path = fs::path(disk_path) / path;
     if (::stat(full_path.string().c_str(), &st) == 0)
         return st;
@@ -872,6 +872,7 @@ ObjectStoragePtr DiskLocal::getObjectStorage()
     return std::make_shared<LocalObjectStorage>(settings_object_storage);
 }
 
+void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check);
 void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
 {
     auto creator = [global_skip_access_check](
@@ -883,7 +884,7 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
         bool, bool) -> DiskPtr
     {
         String path;
-        UInt64 keep_free_space_bytes;
+        UInt64 keep_free_space_bytes = 0;
         loadDiskLocalConfig(name, config, config_prefix, context, path, keep_free_space_bytes);
 
         for (const auto & [disk_name, disk_ptr] : map)
