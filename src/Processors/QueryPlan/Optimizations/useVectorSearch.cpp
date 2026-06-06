@@ -183,12 +183,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
                 continue;
 
             /// Read value from column
-            const ColumnPtr & column = child->column;
-            const auto * literal_column = typeid_cast<const ColumnConst *>(column.get());
-            if (!literal_column || literal_column->size() != 1)
-                continue;
-            Field field;
-            literal_column->get(0, field);
+            Field field = child->column->getField();
             Field::Types::Which field_type = field.getType();
             if (field_type != Field::Types::Array)
                 continue;
