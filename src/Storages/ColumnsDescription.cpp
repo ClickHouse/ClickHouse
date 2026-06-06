@@ -1464,6 +1464,83 @@ void detectRecursiveDefaultCycles(
     }
 }
 
+void validateNoCyclicAliasesAfterExpansionImpl(
+    const String & alias_name,
+    const ASTPtr & expanded_alias_expression,
+    const ColumnsDescription & columns,
+    ContextPtr context)
+{
+    if (!expanded_alias_expression)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected expanded alias expression");
+
+    NameSet alias_names;
+    alias_names.reserve(columns.size() + 1);
+    for (const auto & column : columns)
+        if (column.default_desc.kind == ColumnDefaultKind::Alias && column.default_desc.expression)
+            alias_names.insert(column.name);
+
+    alias_names.insert(alias_name);
+
+    enum class Color
+    {
+        White,
+        Gray,
+        Black,
+    };
+
+    std::unordered_map<String, ASTPtr> alias_to_expression;
+    alias_to_expression.reserve(alias_names.size());
+    alias_to_expression.emplace(alias_name, expanded_alias_expression);
+
+    auto get_alias_expression = [&](const String & vertex) -> ASTPtr
+    {
+        if (auto it = alias_to_expression.find(vertex); it != alias_to_expression.end())
+            return it->second;
+
+        const auto & column = columns.get(vertex);
+        auto expression = cloneAndExpandColumnDefaultExpression(column.default_desc, columns, context);
+        auto [it, inserted] = alias_to_expression.emplace(vertex, std::move(expression));
+        chassert(inserted);
+        return it->second;
+    };
+
+    std::unordered_map<String, Color> colors;
+    colors.reserve(alias_names.size());
+
+    Strings dfs_stack;
+    dfs_stack.reserve(alias_names.size());
+
+    std::function<void(const String &)> dfs = [&](const String & vertex)
+    {
+        auto & color = colors[vertex];
+        if (color == Color::Black)
+            return;
+        if (color == Color::Gray)
+        {
+            auto it = std::find(dfs_stack.begin(), dfs_stack.end(), vertex);
+            Strings cycle;
+            if (it != dfs_stack.end())
+                cycle.assign(it, dfs_stack.end());
+            else
+                cycle.emplace_back(vertex);
+            throwDefaultCycleException(cycle);
+        }
+
+        color = Color::Gray;
+        dfs_stack.push_back(vertex);
+
+        NameSet dependencies;
+        collectAliasDependenciesFromAST(get_alias_expression(vertex), alias_names, dependencies);
+        for (const auto & dependency : dependencies)
+            dfs(dependency);
+
+        dfs_stack.pop_back();
+        color = Color::Black;
+    };
+
+    dfs(alias_name);
+}
+
 NameSet getDefaultColumnNames(const ASTPtr & default_expr_list, const ColumnsDescription & columns)
 {
     NameSet table_column_names;
@@ -1602,6 +1679,15 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default
 void expandColumnMatchersInExpression(ASTPtr & expression, const ColumnsDescription & columns, ContextPtr context)
 {
     expandColumnMatchersImpl(expression, columns, context);
+}
+
+void validateNoCyclicAliasesAfterExpansion(
+    const String & alias_name,
+    const ASTPtr & expanded_alias_expression,
+    const ColumnsDescription & columns,
+    ContextPtr context)
+{
+    validateNoCyclicAliasesAfterExpansionImpl(alias_name, expanded_alias_expression, columns, context);
 }
 
 ASTPtr cloneAndExpandColumnDefaultExpression(const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context)

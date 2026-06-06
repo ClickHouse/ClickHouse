@@ -4090,6 +4090,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
                 {
                     auto alias_expression_ast = column_default->expression->clone();
                     expandColumnMatchersInExpression(alias_expression_ast, columns_description, scope.context);
+                    validateNoCyclicAliasesAfterExpansion(column_name_and_type.name, alias_expression_ast, columns_description, scope.context);
                     auto alias_expression = buildQueryTree(alias_expression_ast, scope.context);
                     auto column_node = std::make_shared<ColumnNode>(column_name_and_type, std::move(alias_expression), table_expression_node);
                     node_map.emplace(column_name_and_type.name, column_node);

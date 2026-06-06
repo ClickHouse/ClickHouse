@@ -329,6 +329,7 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
 
 ASTPtr cloneAndExpandColumnDefaultExpression(const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context);
 ASTPtr cloneAndExpandColumnDefaultExpressionWithAliases(const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context);
+void validateNoCyclicAliasesAfterExpansion(const String & alias_name, const ASTPtr & expanded_alias_expression, const ColumnsDescription & columns, ContextPtr context);
 void expandColumnMatchersInExpression(ASTPtr & expression, const ColumnsDescription & columns, ContextPtr context);
 void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const ColumnsDescription & columns, ContextPtr context);
 
