@@ -1031,7 +1031,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     if (algorithm == JoinAlgorithm::PARTIAL_MERGE ||
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE)
     {
-        if (MergeJoin::isSupported(analyzed_join))
+        if (MergeJoin::isSupported(analyzed_join, *right_sample_block))
             return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
     }
 
@@ -1129,7 +1129,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             }
         }
 
-        if (MergeJoin::isSupported(analyzed_join))
+        if (MergeJoin::isSupported(analyzed_join, *right_sample_block))
             return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }

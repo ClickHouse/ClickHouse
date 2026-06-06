@@ -52,6 +52,8 @@ public:
     IBlocksStreamPtr getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
+    /// Also rejects float JOIN keys; callers with `right_sample_block` should prefer this overload.
+    static bool isSupported(const std::shared_ptr<TableJoin> & table_join, const Block & right_sample_block);
     static bool isSupported(JoinKind kind, JoinStrictness strictness);
 
 private:

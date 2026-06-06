@@ -110,6 +110,12 @@ void extendJoinKeyNullMapWithFloatNaNs(
 /// avoid scanning purely integer/string/date keys for `NaN`.
 bool joinKeyContainsFloatPayload(const IColumn & column);
 
+/// Same idea but inspecting the static `DataTypePtr` rather than a runtime column. Used in
+/// places that need the answer at JOIN-construction time, before any block has arrived.
+/// Recurses into `Nullable`, `LowCardinality` and `Tuple` and returns true if any leaf is
+/// `Float32` / `Float64` / `BFloat16`.
+bool joinKeyTypeContainsFloatPayload(const IDataType & type);
+
 /// OR-mark every row whose float payload is `NaN` into `mutable_null_map`. The mask must
 /// already be sized to `column.size()`. Recurses into `Nullable`, `LowCardinality`,
 /// `Tuple` and `ColumnConst` so `tuple(NaN)`, `Nullable(Float)`,

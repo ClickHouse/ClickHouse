@@ -616,6 +616,20 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_
     key_names_left.insert(key_names_left.end(), onexpr.key_names_left.begin(), onexpr.key_names_left.end());
     key_names_right.insert(key_names_right.end(), onexpr.key_names_right.begin(), onexpr.key_names_right.end());
 
+    /// `partial_merge` cannot express `NaN != NaN` through its sort-then-merge comparator.
+    for (const auto & key_name : onexpr.key_names_right)
+    {
+        const auto & key_type = right_sample_block.getByName(key_name).type;
+        if (key_type && JoinCommon::joinKeyTypeContainsFloatPayload(*key_type))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "MergeJoin (`partial_merge` algorithm) does not support float JOIN keys. "
+                "Float column '{}' has type '{}' and `NaN = NaN` cannot be expressed by a "
+                "sort-then-merge comparator. Use `hash`, `parallel_hash`, `grace_hash` or "
+                "`full_sorting_merge` instead.",
+                key_name, key_type->getName());
+    }
+
     addConditionJoinColumn(right_sample_block, JoinTableSide::Right);
     JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys, right_columns_to_add);
 
@@ -1277,6 +1291,23 @@ void MergeJoin::addConditionJoinColumn(Block & block, JoinTableSide block_side) 
 bool MergeJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 {
     return isSupported(table_join->kind(), table_join->strictness()) && table_join->oneDisjunct();
+}
+
+bool MergeJoin::isSupported(const std::shared_ptr<TableJoin> & table_join, const Block & right_sample_block)
+{
+    if (!isSupported(table_join))
+        return false;
+
+    /// Float JOIN keys cannot be expressed by a sort-then-merge comparator; see constructor.
+    for (const auto & key_name : table_join->getOnlyClause().key_names_right)
+    {
+        if (!right_sample_block.has(key_name))
+            continue;
+        const auto & key_type = right_sample_block.getByName(key_name).type;
+        if (key_type && JoinCommon::joinKeyTypeContainsFloatPayload(*key_type))
+            return false;
+    }
+    return true;
 }
 
 bool MergeJoin::isSupported(JoinKind kind, JoinStrictness strictness)
