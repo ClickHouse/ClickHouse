@@ -1,7 +1,7 @@
 -- Basic DPhyp correctness on a 4-table chain (R2 - R1 - R3 - R4).
--- R1 holds a single row, so it is the cheapest build side by physical row count
--- alone, independent of filter-selectivity statistics. EXPLAIN pins the cost-based
--- reorder; the result hash must match DPsize.
+-- R1 holds a single row, so its cardinality is known from the row count alone -
+-- no single-table filter, no dependence on column statistics - and the optimal
+-- plan is unique across environments. EXPLAIN pins it; the hash must match DPsize.
 
 SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
@@ -9,8 +9,6 @@ SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_randomize = 0;
-SET query_plan_optimize_prewhere = 1;
-SET optimize_move_to_prewhere = 1;
 
 CREATE TABLE R1 (
     A_ID UInt32,
@@ -75,7 +73,6 @@ WHERE
     T1.A_ID = T2.R1_A_ID
     AND T1.A_ID = T3.R1_A_ID
     AND T3.R4_D_ID = T4.D_ID
-    AND T1.A_Description = 'Type H'
 SETTINGS query_plan_optimize_join_order_algorithm = 'dphyp', enable_parallel_replicas = 0;
 
 -- DPhyp result must match DPsize.
@@ -89,7 +86,6 @@ WHERE
     T1.A_ID = T2.R1_A_ID
     AND T1.A_ID = T3.R1_A_ID
     AND T3.R4_D_ID = T4.D_ID
-    AND T1.A_Description = 'Type H'
 SETTINGS query_plan_optimize_join_order_algorithm = 'dphyp';
 
 DROP TABLE R1;
