@@ -5566,11 +5566,11 @@ Possible values:
 - Positive integer >= 0.
 )", 0) \
     DECLARE(Seconds, query_cache_herd_wait_timeout, 300, R"(
-Maximum time in seconds for a `SELECT` to wait when another concurrent identical query is already computing the same [query cache](../query-cache.md) entry (thundering herd coalescing). After this, the waiting query proceeds and may execute duplicate work. `0` means wait without a deadline until the in-flight query finishes, `SYSTEM CLEAR QUERY CACHE`, or another wake.
+Maximum time in seconds for a `SELECT` to wait when another concurrent identical query is already computing the same [query cache](../query-cache.md) entry (thundering herd coalescing). After this, the waiting query proceeds and may execute duplicate work.
 
 Possible values:
 
-- `0` — Unbounded wait (subject to query cancellation and server limits).
+- `0` — Disable thundering herd coalescing. Each concurrent identical query executes independently, as before this feature was introduced. This is the compatibility value for versions before 26.6.
 - Positive integer — Maximum wait time in seconds.
 )", 0) \
     DECLARE(Bool, query_cache_compress_entries, true, R"(
