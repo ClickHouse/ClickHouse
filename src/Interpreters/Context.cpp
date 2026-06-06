@@ -43,6 +43,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Server/ServerType.h>
 #include <Storages/MarkCache.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyIndexCache.h>
 #include <Common/JemallocCacheArena.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MovesList.h>
@@ -260,6 +261,8 @@ namespace CurrentMetrics
     extern const Metric IndexMarkCacheFiles;
     extern const Metric MarkCacheBytes;
     extern const Metric MarkCacheFiles;
+    extern const Metric UniqueKeyIndexCacheBytes;
+    extern const Metric UniqueKeyIndexCacheEntries;
     extern const Metric UncompressedCacheBytes;
     extern const Metric UncompressedCacheCells;
     extern const Metric IndexUncompressedCacheBytes;
@@ -279,6 +282,7 @@ namespace Setting
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool cloud_mode;
     extern const SettingsBool enable_filesystem_cache;
     extern const SettingsBool enable_filesystem_cache_log;
     extern const SettingsBool enable_filesystem_cache_on_write_operations;
@@ -548,6 +552,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable ResourceManagerPtr resource_manager;
     mutable UncompressedCachePtr uncompressed_cache TSA_GUARDED_BY(mutex);            /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache TSA_GUARDED_BY(mutex);                            /// Cache of marks in compressed files.
+    mutable UniqueKeyIndexCachePtr unique_key_index_cache TSA_GUARDED_BY(mutex);               /// RocksDB-compatible block cache over CacheBase for the UNIQUE KEY index (nullptr when RocksDB unavailable or disabled).
     mutable PrimaryIndexCachePtr primary_index_cache TSA_GUARDED_BY(mutex);
     mutable SystemAllocatedMemoryHolderPtr untracked_memory_holder TSA_GUARDED_BY(mutex);
     mutable OnceFlag load_marks_threadpool_initialized;
@@ -1566,17 +1571,20 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
             (*settings)[Setting::ast_fuzzer_runs].value);
 
     /// Make setting's name ordered
-    auto obsolete_settings = settings->getChangedAndObsoleteNames();
-
-    if (!obsolete_settings.empty())
+    if (!(*settings)[Setting::cloud_mode])
     {
-        bool single_element = obsolete_settings.size() == 1;
-        constexpr auto message_format_string
-            = "Obsolete setting{} [{}]{} changed. Please check 'SELECT * FROM system.settings WHERE changed AND is_obsolete' and read the "
-              "changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md";
-        String settings_list = fmt::format("'{}'", fmt::join(obsolete_settings, "', '"));
-        common_warnings[Context::WarningType::OBSOLETE_SETTINGS]
-            = PreformattedMessage::create(message_format_string, single_element ? "" : "s", settings_list, single_element ? " is" : " are");
+        auto obsolete_settings = settings->getChangedAndObsoleteNames();
+
+        if (!obsolete_settings.empty())
+        {
+            bool single_element = obsolete_settings.size() == 1;
+            constexpr auto message_format_string
+                = "Obsolete setting{} [{}]{} changed. Please check 'SELECT * FROM system.settings WHERE changed AND is_obsolete' and read the "
+                  "changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md";
+            String settings_list = fmt::format("'{}'", fmt::join(obsolete_settings, "', '"));
+            common_warnings[Context::WarningType::OBSOLETE_SETTINGS]
+                = PreformattedMessage::create(message_format_string, single_element ? "" : "s", settings_list, single_element ? " is" : " are");
+        }
     }
 
     return common_warnings;
@@ -4010,6 +4018,87 @@ void Context::clearMarkCache() const
         cache->clear();
 
     JemallocCacheArena::purge();
+}
+
+void Context::setUniqueKeyIndexCache(
+    [[maybe_unused]] const String & cache_policy,
+    [[maybe_unused]] size_t max_cache_size_in_bytes,
+    [[maybe_unused]] double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->unique_key_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "UNIQUE KEY index cache has been already created.");
+
+#if USE_ROCKSDB
+    if (max_cache_size_in_bytes == 0)
+        return; /// Explicit opt-out — callers get nullptr from getUniqueKeyIndexCache.
+
+    shared->unique_key_index_cache = std::make_shared<UniqueKeyIndexCache>(
+        cache_policy,
+        CurrentMetrics::UniqueKeyIndexCacheBytes,
+        CurrentMetrics::UniqueKeyIndexCacheEntries,
+        max_cache_size_in_bytes,
+        size_ratio);
+#endif
+    /// !USE_ROCKSDB: index cache is never registered; silently accept the
+    /// call so startup works on non-RocksDB builds. `getUniqueKeyIndexCache`
+    /// returns nullptr.
+}
+
+void Context::updateUniqueKeyIndexCacheConfiguration(
+    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
+    [[maybe_unused]] size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+#if USE_ROCKSDB
+    size_t size = config.getUInt64("unique_key_index_cache_size_bytes", 1ULL << 30);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered UNIQUE KEY index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+
+    if (!shared->unique_key_index_cache)
+    {
+        if (size == 0)
+            return; /// Stay disabled until reload requests a non-zero size.
+        /// Construct on the first reload that requests a non-zero size, so
+        /// `unique_key_index_cache_size_bytes` is reversible rather than a
+        /// one-way disable for the process lifetime.
+        shared->unique_key_index_cache = std::make_shared<UniqueKeyIndexCache>(
+            config.getString("unique_key_index_cache_policy", "SLRU"),
+            CurrentMetrics::UniqueKeyIndexCacheBytes,
+            CurrentMetrics::UniqueKeyIndexCacheEntries,
+            size,
+            config.getDouble("unique_key_index_cache_size_ratio", 0.5));
+        LOG_INFO(shared->log, "Enabled UNIQUE KEY index cache at {} via reload-config",
+                 formatReadableSizeWithBinarySuffix(size));
+        return;
+    }
+
+    const size_t before = shared->unique_key_index_cache->GetCapacity();
+    shared->unique_key_index_cache->setMaxSizeInBytes(size);
+    if (size != before)
+        LOG_INFO(shared->log, "Reconfigured UNIQUE KEY index cache from {} to {}",
+                 formatReadableSizeWithBinarySuffix(before), formatReadableSizeWithBinarySuffix(size));
+#endif
+}
+
+UniqueKeyIndexCachePtr Context::getUniqueKeyIndexCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->unique_key_index_cache;
+}
+
+void Context::clearUniqueKeyIndexCache() const
+{
+#if USE_ROCKSDB
+    UniqueKeyIndexCachePtr cache = getUniqueKeyIndexCache();
+    if (cache)
+        cache->clear();
+#endif
 }
 
 ThreadPool & Context::getLoadMarksThreadpool() const
@@ -6476,7 +6565,7 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
     {
         std::lock_guard lock(shared->mutex);
         if (shared->storage_azure_settings)
-            shared->storage_azure_settings->loadFromConfig(config, /* config_prefix */"configuration.disks.", getSettingsRef());
+            shared->storage_azure_settings->loadFromConfig(config, /* config_prefix */"storage_configuration.disks", getSettingsRef());
     }
 
 }
