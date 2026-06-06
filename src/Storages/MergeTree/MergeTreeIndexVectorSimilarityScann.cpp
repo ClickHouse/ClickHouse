@@ -262,6 +262,8 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
     }
 
     /// For cosine distance, normalize vectors to unit length in place.
+    /// Reject zero-magnitude vectors: cosineDistance([0,...], x) = NaN in exact mode,
+    /// but after normalization ScaNN would report a finite distance instead.
     if (params.distance_name == "cosineDistance")
     {
         for (size_t i = 0; i < num_vectors; ++i)
@@ -270,12 +272,12 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
             float sq_norm = 0.0f;
             for (size_t d = 0; d < padded_dim; ++d)
                 sq_norm += v[d] * v[d];
-            if (sq_norm > 0.0f)
-            {
-                const float inv = 1.0f / std::sqrt(sq_norm);
-                for (size_t d = 0; d < padded_dim; ++d)
-                    v[d] *= inv;
-            }
+            if (sq_norm == 0.0f)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Zero-magnitude vector is not allowed for vector_similarity('scann', 'cosineDistance', ...) index");
+            const float inv = 1.0f / std::sqrt(sq_norm);
+            for (size_t d = 0; d < padded_dim; ++d)
+                v[d] *= inv;
         }
     }
 
@@ -592,6 +594,16 @@ void MergeTreeIndexAggregatorVectorSimilarityScann::update(
             if (!std::isfinite(dst[d]))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Vector for vector_similarity('scann', ...) index must not contain non-finite values (NaN or Inf)");
+
+        if (params.distance_name == "cosineDistance")
+        {
+            float sq_norm = 0.0f;
+            for (size_t d = 0; d < dims; ++d)
+                sq_norm += dst[d] * dst[d];
+            if (sq_norm == 0.0f)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Zero-magnitude vector is not allowed for vector_similarity('scann', 'cosineDistance', ...) index");
+        }
     }
 
     granule->num_vectors += rows_read;
@@ -701,15 +713,16 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
     }
 
     /// Normalize for cosine distance (same as build-time normalization).
+    /// Reject zero-magnitude query vectors for the same reason as at index build time.
     if (index_params.distance_name == "cosineDistance")
     {
         float sq_norm = 0.0f;
         for (float v : query) sq_norm += v * v;
-        if (sq_norm > 0.0f)
-        {
-            const float inv = 1.0f / std::sqrt(sq_norm);
-            for (float & v : query) v *= inv;
-        }
+        if (sq_norm == 0.0f)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Zero-magnitude query vector is not allowed for vector_similarity('scann', 'cosineDistance', ...)");
+        const float inv = 1.0f / std::sqrt(sq_norm);
+        for (float & v : query) v *= inv;
     }
 
     /// Run search.

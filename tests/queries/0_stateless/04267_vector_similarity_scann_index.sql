@@ -402,3 +402,23 @@ SELECT abs(dist_idx - dist_exact) < 0.01 FROM
     SETTINGS use_skip_indexes = 0
 ) AS t2;
 DROP TABLE tab_scann_l2_val;
+
+-- Test 18: cosineDistance rejects zero-magnitude indexed vectors.
+SELECT '18. cosineDistance rejects zero-magnitude indexed vector';
+DROP TABLE IF EXISTS tab_scann_cosine_zero;
+CREATE TABLE tab_scann_cosine_zero (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'cosineDistance', 2))
+    ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_scann_cosine_zero VALUES (0, [0.0, 0.0]); -- { serverError INCORRECT_DATA }
+DROP TABLE tab_scann_cosine_zero;
+
+-- Test 19: cosineDistance rejects zero-magnitude query vectors.
+SELECT '19. cosineDistance rejects zero-magnitude query vector';
+DROP TABLE IF EXISTS tab_scann_cosine_zero_q;
+CREATE TABLE tab_scann_cosine_zero_q (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'cosineDistance', 2))
+    ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_scann_cosine_zero_q SELECT toInt32(number), [toFloat32(number + 1), toFloat32(0.0)] FROM numbers(2000);
+OPTIMIZE TABLE tab_scann_cosine_zero_q FINAL;
+WITH [toFloat32(0.0), toFloat32(0.0)] AS ref
+SELECT id FROM tab_scann_cosine_zero_q ORDER BY cosineDistance(vec, ref) ASC LIMIT 1
+SETTINGS use_skip_indexes = 1; -- { serverError INCORRECT_DATA }
+DROP TABLE tab_scann_cosine_zero_q;

@@ -42,3 +42,5 @@
 0
 17. L2Distance optimized plan returns correct distance value (not double-sqrt)
 1
+18. cosineDistance rejects zero-magnitude indexed vector
+19. cosineDistance rejects zero-magnitude query vector
