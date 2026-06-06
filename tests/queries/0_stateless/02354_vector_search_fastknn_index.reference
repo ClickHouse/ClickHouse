@@ -1,0 +1,12 @@
+-- b1: nearest neighbour of a row is itself
+<dbpedia:Honda>
+<dbpedia:Pizza>
+-- b1_projected: nearest neighbour of a row is itself
+<dbpedia:Honda>
+<dbpedia:Pizza>
+-- both quantizations return the requested number of rows
+4
+4
+-- the fastknn index is used
+1
+1
