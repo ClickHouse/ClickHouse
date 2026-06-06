@@ -9,26 +9,26 @@ namespace DB
 {
 
 /// Parsed schema hint: a "when" condition and a map of path → type name.
-struct JsonSchemaHintRule
+struct JSONSchemaHintRule
 {
     String when_expression;
     std::unordered_map<String, String> paths; /// path → ClickHouse type name
 };
 
 /// Parsed schema hints for a single JSON column.
-using JsonSchemaHintRules = std::vector<JsonSchemaHintRule>;
+using JSONSchemaHintRules = std::vector<JSONSchemaHintRule>;
 
 /// All schema hints: column name → list of rules.
-using JsonSchemaHints = std::unordered_map<String, JsonSchemaHintRules>;
+using JSONSchemaHints = std::unordered_map<String, JSONSchemaHintRules>;
 
 /// Parse the json_schema_hints setting string into structured form.
 /// Throws on invalid JSON or unknown column references.
-JsonSchemaHints parseJsonSchemaHints(const String & hints_json);
+JSONSchemaHints parseJSONSchemaHints(const String & hints_json);
 
 /// Validate that all `when` expressions in hints only reference columns
 /// that appear in the partition key. Throws BAD_ARGUMENTS on violation.
-void validateJsonSchemaHints(
-    const JsonSchemaHints & hints,
+void validateJSONSchemaHints(
+    const JSONSchemaHints & hints,
     const StorageMetadataPtr & metadata_snapshot);
 
 /// Evaluate hint rules against partition key values and apply matched hints
@@ -45,10 +45,10 @@ void validateJsonSchemaHints(
 /// @param partition - the partition key values for this block
 /// @param hints - parsed schema hints
 /// @param metadata_snapshot - table metadata (for partition key expression)
-void applyJsonSchemaHints(
+void applyJSONSchemaHints(
     Block & block,
     const MergeTreePartition & partition,
-    const JsonSchemaHints & hints,
+    const JSONSchemaHints & hints,
     const StorageMetadataPtr & metadata_snapshot);
 
 }

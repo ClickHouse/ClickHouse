@@ -4,7 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
-#include <Storages/MergeTree/JsonSchemaHints.h>
+#include <Storages/MergeTree/JSONSchemaHints.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -672,9 +672,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     const String hints_json = (*data_settings)[MergeTreeSetting::json_schema_hints];
     if (!hints_json.empty())
     {
-        auto hints = parseJsonSchemaHints(String(hints_json));
-        validateJsonSchemaHints(hints, metadata_snapshot);
-        applyJsonSchemaHints(block, partition, hints, metadata_snapshot);
+        auto hints = parseJSONSchemaHints(String(hints_json));
+        validateJSONSchemaHints(hints, metadata_snapshot);
+        applyJSONSchemaHints(block, partition, hints, metadata_snapshot);
     }
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());

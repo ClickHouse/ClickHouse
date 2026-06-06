@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/JsonSchemaHints.h>
+#include <Storages/MergeTree/JSONSchemaHints.h>
 
 #include <Columns/ColumnObject.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -23,9 +23,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-JsonSchemaHints parseJsonSchemaHints(const String & hints_json)
+JSONSchemaHints parseJSONSchemaHints(const String & hints_json)
 {
-    JsonSchemaHints result;
+    JSONSchemaHints result;
 
     if (hints_json.empty())
         return result;
@@ -55,7 +55,7 @@ JsonSchemaHints parseJsonSchemaHints(const String & hints_json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "json_schema_hints: value for column '{}' must be an array of rules", column_name);
 
-        JsonSchemaHintRules rules;
+        JSONSchemaHintRules rules;
         for (unsigned int i = 0; i < rules_arr->size(); ++i)
         {
             auto rule_obj = rules_arr->getObject(i);
@@ -63,7 +63,7 @@ JsonSchemaHints parseJsonSchemaHints(const String & hints_json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "json_schema_hints: each rule must be a JSON object");
 
-            JsonSchemaHintRule rule;
+            JSONSchemaHintRule rule;
 
             if (rule_obj->has("when"))
                 rule.when_expression = rule_obj->getValue<String>("when");
@@ -98,8 +98,8 @@ JsonSchemaHints parseJsonSchemaHints(const String & hints_json)
 }
 
 
-void validateJsonSchemaHints(
-    const JsonSchemaHints & hints,
+void validateJSONSchemaHints(
+    const JSONSchemaHints & hints,
     const StorageMetadataPtr & metadata_snapshot)
 {
     if (hints.empty())
@@ -180,10 +180,10 @@ static bool evaluateWhenExpression(
 }
 
 
-void applyJsonSchemaHints(
+void applyJSONSchemaHints(
     Block & block,
     const MergeTreePartition & partition,
-    const JsonSchemaHints & hints,
+    const JSONSchemaHints & hints,
     const StorageMetadataPtr & metadata_snapshot)
 {
     for (const auto & [column_name, rules] : hints)
