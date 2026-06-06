@@ -37,10 +37,10 @@ SETTINGS
     -- Set well above realistic CI pool pressure so this test never trips either gate.
     -- max_number_of_merges_with_ttl_in_pool: per-table override of the
     -- server-wide default (2). Without this, parallel sibling tests in
-    -- flaky-check can exhaust the pool; `MergeSelectorApplier::chooseMergesFrom`
-    -- then skips `tryChooseTTLMerge` and the assertion's
-    -- `merge_reason IN ('TTLDropMerge', 'TTLDeleteMerge')` filter misses it.
-    -- min_parts_to_merge_at_once: closes the `tryChooseRegularMerge` fallback
+    -- flaky-check can exhaust the pool; \`MergeSelectorApplier::chooseMergesFrom\`
+    -- then skips \`tryChooseTTLMerge\` and the assertion's
+    -- \`merge_reason IN ('TTLDropMerge', 'TTLDeleteMerge')\` filter misses it.
+    -- min_parts_to_merge_at_once: closes the \`tryChooseRegularMerge\` fallback
     -- so it cannot fold this small test's parts and mask a missing TTL fold.
     max_number_of_merges_with_ttl_in_pool = 100,
     min_parts_to_merge_at_once = 100;
