@@ -5605,6 +5605,13 @@ Possible values:
 
 - Any string
 )", 0) \
+    DECLARE(UInt64, vector_query_plan_cache_max_size_in_bytes, 0, R"(The maximum amount of memory (in bytes) the current user may allocate in the vector query plan cache. 0 means unlimited. )", 0) \
+    DECLARE(UInt64, vector_query_plan_cache_max_entries, 0, R"("The maximum number of query results the current user may store in the vector query plan cache. 0 means unlimited.)", 0) \
+    DECLARE(Bool, vector_query_plan_cache, false, R"("Enable Vector Query plan cache.)", 0) \
+    DECLARE(Bool, vector_use_cast, false, R"("Enable CAST in query.)", 0) \
+    DECLARE(Bool, vector_query_plan_cache_only_vector, false, R"("VectorQueryPlanCache parse only vector.)", 0) \
+    DECLARE(Seconds, vector_query_plan_cache_ttl, 60, R"("After this time in seconds entries in the vector query plan cache become stale)", 0) \
+    DECLARE(String, vector_query_plan_cache_tag, "", R"("A string which acts as a label for vector query plan cache entries.)", 0) \
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \

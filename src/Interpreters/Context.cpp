@@ -567,6 +567,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable TextIndexPostingsCachePtr text_index_postings_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index posting lists.
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
+    mutable VectorQueryPlanCachePtr vector_query_plan_cache TSA_GUARDED_BY(mutex);    /// Cache of vector query plan.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
 #if USE_AVRO
@@ -962,6 +963,16 @@ struct ContextSharedPart : boost::noncopyable
         });
 
         FileCacheFactory::instance().clear();
+
+        /// Destroy query plan cache before background executors shutdown to avoid use-after-free
+        /// when cached plans keep MergeTree storages alive.
+        VectorQueryPlanCachePtr delete_vector_query_plan_cache;
+        {
+            std::lock_guard lock(mutex);
+            delete_vector_query_plan_cache = std::move(vector_query_plan_cache);
+        }
+        // Reset outside the lock to keep destructor work from blocking other shutdown steps.
+        delete_vector_query_plan_cache.reset();
 
         NamedCollectionFactory::instance().shutdown();
 
@@ -3885,7 +3896,10 @@ QueryStatusPtr Context::getProcessListElement() const
         return {};
     if (auto res = process_list_elem.lock())
         return res;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Weak pointer to process_list_elem expired during query execution, it's a bug");
+    /// Weak pointer expired - this can happen when restoring query plan from cache.
+    /// The original process_list_elem was destroyed but the cached plan still references the context.
+    /// Return nullptr instead of throwing to allow graceful degradation.
+    return {};
 }
 
 QueryStatusPtr Context::getProcessListElementSafe() const
@@ -4611,6 +4625,50 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
         cache->clear(tag);
 }
 
+void Context::setVectorQueryPlanCache(size_t max_size_in_bytes, size_t max_entries)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->vector_query_plan_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "vector Query plan cache has been already created.");
+
+    shared->vector_query_plan_cache = std::make_shared<VectorQueryPlanCache>(max_size_in_bytes, max_entries, DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES, DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
+}
+
+void Context::updateVectorQueryPlanCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->vector_query_plan_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "vector Query plan cache was not created yet.");
+
+    size_t size = config.getUInt64("vector_query_plan_cache.max_size_in_bytes", DEFAULT_VECTOR_QUERY_PLAN_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("vector_query_plan_cache.max_entries", DEFAULT_VECTOR_QUERY_PLAN_CACHE_MAX_ENTRIES);
+    size_t max_entry_size_in_bytes = config.getUInt64("vector_query_plan_cache.max_entry_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
+    size_t max_entry_size_in_rows = config.getUInt64("vector_query_plan_cache.max_entry_rows_in_rows", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered vector query plan cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->vector_query_plan_cache->updateConfiguration(size, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
+}
+
+VectorQueryPlanCachePtr Context::getVectorQueryPlanCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->vector_query_plan_cache;
+}
+
+void Context::clearVectorQueryPlanCache(const std::optional<String> & tag) const
+{
+    VectorQueryPlanCachePtr cache = getVectorQueryPlanCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear(tag);
+}
+
 void Context::clearCaches() const
 {
     std::lock_guard lock(shared->mutex);
@@ -4670,6 +4728,16 @@ void Context::setCanUseQueryResultCache(bool can_use_query_result_cache_)
 bool Context::getCanUseQueryResultCache() const
 {
     return can_use_query_result_cache;
+}
+
+void Context::setCanUseVectorQueryPlanCache(bool can_use_vector_query_plan_cache_)
+{
+    can_use_vector_query_plan_cache = can_use_vector_query_plan_cache_;
+}
+
+bool Context::getCanUseVectorQueryPlanCache() const
+{
+    return can_use_vector_query_plan_cache;
 }
 
 void Context::setAsynchronousMetrics(AsynchronousMetrics * asynchronous_metrics_)

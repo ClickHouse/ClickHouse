@@ -19,6 +19,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
+#include <Interpreters/Cache/VectorQueryPlanCache.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
@@ -367,6 +368,7 @@ protected:
     mutable bool need_recalculate_access = true;
     String current_database;
     bool can_use_query_result_cache = false;
+    bool can_use_vector_query_plan_cache = false;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -1457,6 +1459,16 @@ public:
     void clearQueryResultCache(const std::optional<String> & tag) const;
     bool getCanUseQueryResultCache() const;
     void setCanUseQueryResultCache(bool can_use_query_result_cache_);
+
+    /// Query plan cache is independent from query result cache.
+    std::shared_ptr<VectorQueryPlanCache> getVectorQueryPlanCache() const;
+    /// Initialize query plan cache (separate from query result cache).
+    void setVectorQueryPlanCache(size_t max_size_in_bytes, size_t max_entries);
+    /// Update query plan cache configuration from config.
+    void updateVectorQueryPlanCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    void clearVectorQueryPlanCache(const std::optional<String> & tag) const;
+    bool getCanUseVectorQueryPlanCache() const;
+    void setCanUseVectorQueryPlanCache(bool can_use_vector_query_plan_cache_);
 
 #if USE_AVRO
     void setIcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);

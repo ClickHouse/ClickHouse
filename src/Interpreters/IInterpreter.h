@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages//IStorage_fwd.h>
+#include <Interpreters/Cache/VectorQueryPlanCache.h>
 
 namespace DB
 {
@@ -42,6 +43,18 @@ public:
     static void checkStorageSupportsTransactionsIfNeeded(const StoragePtr & storage, ContextPtr context, bool is_readonly_query = false);
 
     virtual ~IInterpreter() = default;
+
+    void setVectorQueryString(String vector_query_string) { vector_query_string_ = vector_query_string; }
+    const String & getVectorQueryString() const { return vector_query_string_; }
+    
+    void setVectorQueryPlanCacheWriter(std::shared_ptr<VectorQueryPlanCache::Writer> vector_query_plan_cache_writer) { vector_query_plan_cache_writer_ = vector_query_plan_cache_writer; }
+    const std::shared_ptr<VectorQueryPlanCache::Writer> & getVectorQueryPlanCacheWriter() const { return vector_query_plan_cache_writer_; }
+    
+    bool is_internal = false;
+    bool is_select = false;
+private:
+    String vector_query_string_;
+    std::shared_ptr<VectorQueryPlanCache::Writer> vector_query_plan_cache_writer_;
 };
 
 }

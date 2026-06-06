@@ -65,6 +65,9 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/VectorQueryParameters.h>
+#include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/VectorQueryPlanCache.h>
 #include <Common/ProfileEvents.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <QueryPipeline/printPipeline.h>
@@ -199,6 +202,13 @@ namespace Setting
     extern const SettingsUInt64Auto insert_quorum;
     extern const SettingsBool insert_quorum_parallel;
     extern const SettingsBool ignore_format_null_for_explain;
+    extern const SettingsBool vector_query_plan_cache;
+    extern const SettingsBool vector_query_plan_cache_only_vector;
+    extern const SettingsBool vector_use_cast;
+    extern const SettingsSeconds vector_query_plan_cache_ttl;
+    extern const SettingsUInt64 vector_query_plan_cache_max_size_in_bytes;
+    extern const SettingsUInt64 vector_query_plan_cache_max_entries;
+    extern const SettingsMilliseconds query_cache_min_query_duration;
 }
 
 namespace ServerSetting
@@ -240,6 +250,196 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
         ast.checkSize(settings[Setting::max_ast_elements]);
 }
 
+static bool getResultFromQueryResultCache(
+    const QueryResultCachePtr & query_cache,
+    const ASTPtr & ast,
+    const ContextPtr & context,
+    const std::optional<Settings> & settings_copy,
+    bool can_use_query_result_cache,
+    QueryResultCacheUsage & query_result_cache_usage,
+    BlockIO & res,
+    const LoggerPtr & logger)
+{
+    chassert(!can_use_query_result_cache || settings_copy.has_value());
+
+    if (!ast || !query_cache || !can_use_query_result_cache || !settings_copy || !(*settings_copy)[Setting::use_query_cache])
+        return false;
+
+    QueryResultCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getClientInfo().current_query_id, context->getUserID(), context->getCurrentRoles(), false);
+    QueryResultCacheReader reader = query_cache->createReader(key);
+    if (!reader.hasCacheEntryForKey())
+        return false;
+
+    QueryPipeline pipeline;
+    pipeline.readFromQueryResultCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
+    res.pipeline = std::move(pipeline);
+    query_result_cache_usage = QueryResultCacheUsage::Read;
+    LOG_DEBUG(logger, "Restore QueryPipeline from query_cache");
+    return true;
+}
+
+struct VectorQueryPlanCacheRestoreResult
+{
+    ASTPtr ast;
+    std::unique_ptr<QueryPlan> cached_plan;
+    String vector_query_for_plan_cache;
+    String new_query;
+    std::optional<Settings> settings_copy;
+    QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
+    bool vector_ast_restored = false;
+    bool skip_ast_processing = false;
+    bool query_result_cache_hit = false;
+    bool can_use_query_result_cache = false;
+    bool is_select = false;
+};
+
+static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
+    const char * begin,
+    const char * end,
+    const ContextPtr & context,
+    const Settings & settings,
+    bool internal,
+    const QueryResultCachePtr & query_result_cache,
+    const VectorQueryPlanCachePtr & vector_query_plan_cache,
+    BlockIO & res,
+    const LoggerPtr & logger)
+{
+    VectorQueryPlanCacheRestoreResult result;
+    VectorQueryParameters parameterizer;
+
+    const bool vector_use_cast = settings[Setting::vector_use_cast];
+    const bool enable_vector_query_plan_cache = settings[Setting::vector_query_plan_cache];
+
+    if (enable_vector_query_plan_cache)
+    {
+        const bool vector_query_plan_cache_only_vector = settings[Setting::vector_query_plan_cache_only_vector];
+        VectorQueryParameters::NormalizedQueryResult parameterized_result;
+        try
+        {
+            parameterized_result = parameterizer.normalizeQueryAndExtractParams(begin,
+                end, vector_query_plan_cache_only_vector, vector_use_cast);
+            if (parameterized_result.hash == 0 || parameterized_result.params.empty())
+                result.vector_query_for_plan_cache.assign(begin, end);
+            else
+            {
+                result.is_select = true;
+                result.vector_query_for_plan_cache = parameterized_result.normalized_sql;
+                result.new_query = parameterized_result.new_sql;
+                // LOG_ERROR(logger, "vector_query_for_plan_cache={}", result.vector_query_for_plan_cache);
+                if (vector_query_plan_cache && !internal)
+                {
+                    chassert(!result.vector_query_for_plan_cache.empty());
+
+                    VectorQueryPlanCache::Key key(
+                        result.vector_query_for_plan_cache,
+                        context->getCurrentDatabase(),
+                        settings,
+                        context->getUserID(),
+                        context->getCurrentRoles());
+                    VectorQueryPlanCache::Reader reader = vector_query_plan_cache->createReader(key);
+
+                    // Counts ast_size into QueryPlanCacheReadBytes (separate from plan_size counted in hasCacheEntryForKey below).
+                    const bool ast_cache_entry_exists = reader.hasAstCacheEntryForKey(true);
+                    bool parsed_cache_parameters = false;
+                    if (ast_cache_entry_exists)
+                    {
+                        auto cached_ast = reader.getAst();
+                        result.ast = std::move(cached_ast);
+                        auto cached_ast_literal_positions = reader.getAstLiteralPositions();
+                        parsed_cache_parameters = parameterizer.parseNormalizedParamsWithAST(
+                            parameterized_result,
+                            &cached_ast_literal_positions,
+                            vector_query_plan_cache_only_vector);
+                        const bool ast_parameters_restored = parsed_cache_parameters
+                            && parameterizer.applyParametersByASTLiteralPositions(
+                                result.ast,
+                                parameterized_result,
+                                cached_ast_literal_positions);
+                        if (ast_parameters_restored)
+                        {
+                            // LOG_ERROR(logger, "Restore AST from vector_query_plan_cache({})", result.new_query);
+                            result.vector_ast_restored = true;
+                            result.skip_ast_processing = true;
+                            result.can_use_query_result_cache = query_result_cache != nullptr
+                                && settings[Setting::use_query_cache] && !internal 
+                                && context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+                                && (result.ast->as<ASTSelectQuery>() || result.ast->as<ASTSelectWithUnionQuery>());
+                            if (result.can_use_query_result_cache)
+                                result.settings_copy = settings;
+
+                            result.query_result_cache_hit = getResultFromQueryResultCache(
+                                query_result_cache,
+                                result.ast,
+                                context,
+                                result.settings_copy,
+                                result.can_use_query_result_cache,
+                                result.query_result_cache_usage,
+                                res,
+                                logger);
+                        }
+                        else
+                        {
+                            // LOG_ERROR(logger, "Failed to restore AST from query_plan_cache({})", result.new_query);
+                            result.ast.reset();
+                            parsed_cache_parameters = false;
+                        }
+                    }
+
+                    if (!result.query_result_cache_hit)
+                    {
+                        // Counts plan_size into QueryPlanCacheReadBytes (separate from ast_size counted in hasAstCacheEntryForKey above).
+                        if (reader.hasCacheEntryForKey(true))
+                        {
+                            result.cached_plan = reader.getPlan();
+                            auto cached_plan_constant_bindings = reader.getPlanConstantBindings();
+                            if (!parsed_cache_parameters && parameterized_result.parsed_params.empty())
+                            {
+                                parsed_cache_parameters = parameterizer.parseNormalizedParamsWithPlan(
+                                    parameterized_result,
+                                    &cached_plan_constant_bindings,
+                                    vector_query_plan_cache_only_vector);
+                            }
+                            parameterizer.replaceConstantsInQueryPlan(
+                                *result.cached_plan,
+                                parameterized_result,
+                                cached_plan_constant_bindings,
+                                vector_query_plan_cache_only_vector);
+                            // LOG_ERROR(logger, "Restore QueryPlan from query_plan_cache({})", result.new_query);
+                            result.skip_ast_processing = true;
+                        }
+                    }
+                }
+            }
+        }
+        catch (...)
+        {
+            result = VectorQueryPlanCacheRestoreResult{};
+            result.vector_query_for_plan_cache.assign(begin, end);
+            // LOG_ERROR(logger, "normalizeQueryAndExtractParams failed: {}", getCurrentExceptionMessage(false));
+        }
+    }
+    else if (vector_use_cast)
+    {
+        result.new_query = parameterizer.rewriteVectorLiteralsToCasts(begin, end);
+    }
+
+    return result;
+}
+
+struct CacheProbeOutput
+{
+    String new_query;
+    String vector_query_for_plan_cache;
+    std::optional<Settings> settings_copy;
+    QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
+    bool is_select = false;
+    bool enable_vector_query_plan_cache = false;
+    bool skip_ast_processing = false;
+    bool can_use_query_result_cache = false;
+    bool query_result_cache_entry_exists = false;
+    ASTPtr ast;
+    std::unique_ptr<QueryPlan> cached_plan;
+};
 
 /// Log query into text log (not into system table).
 static void logQuery(const String & query, ContextPtr context, bool internal, QueryProcessingStage::Enum stage)
@@ -1082,6 +1282,159 @@ private:
 
 using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactionControlExecutor>;
 
+/// Try to fully execute a query from caches (query result cache or query plan cache).
+/// If successful, returns a complete (ASTPtr, BlockIO) with pipeline/callbacks set up, allowing
+/// executeQueryImpl to return early. Otherwise returns nullopt and fills `output` with
+/// the cache probe results for the normal execution path.
+static std::optional<BlockIO> tryExecuteFromCache(
+    const char * begin,
+    const char * end,
+    ContextMutablePtr context,
+    bool internal,
+    QueryProcessingStage::Enum stage,
+    const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
+    const Stopwatch & start_watch,
+    const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
+    ImplicitTransactionControlExecutorPtr implicit_tcl_executor,
+    CacheProbeOutput & output)
+{
+    const Settings & settings = context->getSettingsRef();
+    const bool enable_vector_query_plan_cache = settings[Setting::vector_query_plan_cache];
+    auto logger = getLogger("executeQuery");
+    QueryResultCachePtr query_result_cache = context->getQueryResultCache();
+    VectorQueryPlanCachePtr vector_query_plan_cache = context->getVectorQueryPlanCache();
+    BlockIO res;
+
+    auto cache_result = tryRestoreFromQueryPlanCache(
+        begin, end, context, settings, internal,
+        query_result_cache, vector_query_plan_cache, res, logger);
+
+    const char * new_begin = cache_result.new_query.empty() ? begin : cache_result.new_query.data();
+    const char * new_end = cache_result.new_query.empty() ? end : cache_result.new_query.data() + cache_result.new_query.size();
+
+    output.new_query = std::move(cache_result.new_query);
+    output.vector_query_for_plan_cache = std::move(cache_result.vector_query_for_plan_cache);
+    output.settings_copy = std::move(cache_result.settings_copy);
+    output.query_result_cache_usage = cache_result.query_result_cache_usage;
+    output.is_select = cache_result.is_select;
+    output.enable_vector_query_plan_cache = enable_vector_query_plan_cache;
+    output.skip_ast_processing = cache_result.skip_ast_processing;
+    output.can_use_query_result_cache = cache_result.can_use_query_result_cache;
+    output.query_result_cache_entry_exists = cache_result.query_result_cache_hit;
+    output.ast = std::move(cache_result.ast);
+    output.cached_plan = std::move(cache_result.cached_plan);
+
+    const bool has_cached_result = output.query_result_cache_entry_exists;
+    const bool has_cached_plan = output.cached_plan != nullptr;
+
+    if (!has_cached_result && !has_cached_plan)
+        return std::nullopt;
+
+    ASTPtr ast = output.ast;
+    if (!ast)
+        return std::nullopt;
+
+    if (has_cached_plan)
+    {
+        auto optimization_settings = QueryPlanOptimizationSettings(context);
+        auto build_pipeline_settings = BuildQueryPipelineSettings(context);
+        // LOG_ERROR(logger, "use plan success");
+
+        auto query_cached_builder = output.cached_plan->buildQueryPipeline(optimization_settings, build_pipeline_settings, false);
+        // LOG_ERROR(logger, "buildQueryPipeline success");
+        res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_cached_builder));
+
+        StreamLocalLimits limits;
+        limits.mode = LimitsMode::LIMITS_CURRENT;
+        limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
+        if (stage == QueryProcessingStage::Complete && res.pipeline.pulling())
+        {
+            auto quota = context->getQuota();
+            res.pipeline.setLimitsAndQuota(limits, quota);
+        }
+        
+    }
+
+    size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
+    String query(new_begin, new_end);
+    String query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
+    UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+    InterpreterSetQuery::applySettingsFromQuery(ast, context);
+
+    logQuery(query_for_logging, context, internal, stage);
+
+    /// Load external tables if they were provided
+    context->initializeExternalTablesIfSet();
+    /// reset Input callbacks if query is not INSERT SELECT
+    context->resetInputCallbacks();
+
+    ProcessList::EntryPtr process_list_entry;
+    if (!internal && !ast->as<ASTShowProcesslistQuery>())
+    {
+        process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, ast.get(), context, start_watch.getStart(), false);
+        context->setProcessListElement(process_list_entry->getQueryStatus());
+    }
+
+    if (process_list_entry)
+    {
+        if (process_list_entry->getQueryStatus()->isKilled())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                "Query '{}' is killed in pending state", process_list_entry->getQueryStatus()->getInfo().client_info.current_query_id);
+    }
+
+    res.process_list_entries.push_back(process_list_entry);
+    auto & pipeline = res.pipeline;
+
+    if (pipeline.pulling() || pipeline.completed())
+    {
+        pipeline.setProgressCallback(context->getProgressCallback());
+        pipeline.setProcessListElement(context->getProcessListElement());
+    }
+    else if (pipeline.pushing())
+    {
+        pipeline.setProcessListElement(context->getProcessListElement());
+    }
+
+    QueryResultCacheUsage query_result_cache_usage = output.query_result_cache_usage;
+    QueryLogElement elem = logQueryStart(
+        query_start_time, context, query_for_logging, normalized_query_hash, ast, pipeline,
+        nullptr, internal, String{}, String{}, false);
+
+    auto finish_callback_finalize_pipeline = [
+        query_result_cache_usage,
+        // Need to be cached, since will be changed after complete()
+        pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
+    {
+        return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+    };
+    auto finish_callback = [elem, context, ast, implicit_tcl_executor, 
+                                query_result_cache_usage, internal,
+                                pulling_pipeline = pipeline.pulling(),
+                                logger, query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
+    {
+        
+        logQueryFinishImpl(elem, context, ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, finish_time);
+        if (implicit_tcl_executor->transactionRunning())
+        {
+            implicit_tcl_executor->commit(context);
+        }
+    };
+
+    auto exception_callback =
+        [start_watch, elem, context, ast, internal, query_span](bool log_error) mutable
+    {
+        if (auto txn = context->getCurrentTransaction())
+            txn->onException();
+        logQueryException(elem, context, start_watch, ast, query_span, internal, log_error);
+    };
+    
+    res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
+    res.finish_callbacks.push_back(std::move(finish_callback));
+    res.exception_callbacks.push_back(std::move(exception_callback));
+
+    output.cached_plan.reset();
+    return std::move(res);
+}
 
 static BlockIO executeQueryImpl(
     const char * begin,
@@ -1136,269 +1489,297 @@ static BlockIO executeQueryImpl(
     if (internal || client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         max_query_size = 0;
 
+    CacheProbeOutput cache_output;
+    if (auto cached_result = tryExecuteFromCache(
+            begin, end, context, internal, stage,
+            query_start_time, start_watch, query_span, implicit_tcl_executor, cache_output))
+    {
+        return std::move(*cached_result);
+    }
+    const bool enable_vector_query_plan_cache = cache_output.enable_vector_query_plan_cache;
+    const bool is_select = cache_output.is_select;
+    const bool skip_ast_processing = cache_output.skip_ast_processing;
+    bool can_use_query_result_cache = cache_output.can_use_query_result_cache;
+    bool query_result_cache_entry_exists = cache_output.query_result_cache_entry_exists;
+    String vector_query_for_plan_cache = std::move(cache_output.vector_query_for_plan_cache);
+    std::optional<Settings> settings_copy = std::move(cache_output.settings_copy);
+    QueryResultCacheUsage query_result_cache_usage = cache_output.query_result_cache_usage;
+    out_ast = std::move(cache_output.ast);
+
+    auto logger = getLogger("executeQuery");
+    QueryResultCachePtr query_result_cache = context->getQueryResultCache();
+    VectorQueryPlanCachePtr vector_query_plan_cache = context->getVectorQueryPlanCache();
+    BlockIO res;
+    std::shared_ptr<VectorQueryPlanCache::Writer> vector_query_plan_cache_writer;
+
+    const char * new_begin = cache_output.new_query.empty() ? begin : cache_output.new_query.data();
+    const char * new_end = cache_output.new_query.empty() ? end : cache_output.new_query.data() + cache_output.new_query.size();
     String query;
     String query_for_logging;
     UInt64 normalized_query_hash = 0;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
     /// Parse the query from string.
-    try
+    if (!out_ast)
     {
-        if (stage == QueryProcessingStage::QueryPlan)
+        try
         {
-            /// Do not parse Query
-            /// Increment ProfileEvents::Query here because Interpreter is not created.
-            ProfileEvents::increment(ProfileEvents::Query);
-        }
-        else if (settings[Setting::dialect] == Dialect::kusto && !internal)
-        {
-            if (!settings[Setting::allow_experimental_kusto_dialect])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for Kusto Query Engine (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
-            ParserKQLStatement parser(end, settings[Setting::allow_settings_after_format_in_insert]);
-            /// TODO: parser should fail early when max_query_size limit is reached.
-            out_ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-        }
-        else if (settings[Setting::dialect] == Dialect::prql && !internal)
-        {
-            if (!settings[Setting::allow_experimental_prql_dialect])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'allow_experimental_prql_dialect')");
-            ParserPRQLQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-        }
-        else if (settings[Setting::dialect] == Dialect::promql && !internal)
-        {
-            if (!settings[Setting::allow_experimental_time_series_table])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'allow_experimental_time_series_table')");
-            ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
-            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-        }
-        else if (settings[Setting::dialect] == Dialect::polyglot && !internal)
-        {
-            /// Pass through to `ParserPolyglotQuery` which handles SET queries
-            /// internally (via the standard parser) even when the feature gate
-            /// is off.  This lets users recover from misconfigured profiles
-            /// (e.g. `SET dialect = 'clickhouse'`) without being locked out.
-            ParserPolyglotQuery parser(
-                max_query_size,
-                settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks],
-                settings[Setting::polyglot_dialect],
-                end,
-                settings[Setting::allow_experimental_polyglot_dialect]);
-            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-        }
-        else
-        {
-            ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
-            /// TODO: parser should fail early when max_query_size limit is reached.
-            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-
-#ifndef NDEBUG
-            try
+            if (stage == QueryProcessingStage::QueryPlan)
             {
-                /// Verify that AST formatting is consistent:
-                /// If you format AST, parse it back, you get the same AST, and if you format it again, you get the same string.
-                std::string_view original_query{begin, static_cast<size_t>(end - begin)};
+                /// Do not parse Query
+                /// Increment ProfileEvents::Query here because Interpreter is not created.
+                ProfileEvents::increment(ProfileEvents::Query);
+            }
+            else if (settings[Setting::dialect] == Dialect::kusto && !internal)
+            {
+                if (!settings[Setting::allow_experimental_kusto_dialect])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for Kusto Query Engine (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
+                ParserKQLStatement parser(new_end, settings[Setting::allow_settings_after_format_in_insert]);
+                /// TODO: parser should fail early when max_query_size limit is reached.
+                out_ast = parseKQLQuery(parser, new_begin, new_end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            }
+            else if (settings[Setting::dialect] == Dialect::prql && !internal)
+            {
+                if (!settings[Setting::allow_experimental_prql_dialect])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'allow_experimental_prql_dialect')");
+                ParserPRQLQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            }
+            else if (settings[Setting::dialect] == Dialect::promql && !internal)
+            {
+                if (!settings[Setting::allow_experimental_time_series_table])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'allow_experimental_time_series_table')");
+                ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+                out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            }
+            else if (settings[Setting::dialect] == Dialect::polyglot && !internal)
+            {
+                /// Pass through to `ParserPolyglotQuery` which handles SET queries
+                /// internally (via the standard parser) even when the feature gate
+                /// is off.  This lets users recover from misconfigured profiles
+                /// (e.g. `SET dialect = 'clickhouse'`) without being locked out.
+                ParserPolyglotQuery parser(
+                    max_query_size,
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks],
+                    settings[Setting::polyglot_dialect],
+                    new_end,
+                    settings[Setting::allow_experimental_polyglot_dialect]);
+                out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            }
+            else
+            {
+                ParserQuery parser(new_end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+                /// TODO: parser should fail early when max_query_size limit is reached.
+                out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-                auto format_ast = [](ASTPtr ast)
-                {
-                    return ast->formatWithPossiblyHidingSensitiveData(
-                        /*max_length=*/0,
-                        /*one_line=*/true,
-                        /*show_secrets=*/true,
-                        /*print_pretty_type_names=*/false,
-                        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-                        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
-                };
-
-                String formatted1 = format_ast(out_ast);
-
-                /// The query can become more verbose after formatting, so:
-                size_t size_t_max = -1;
-                size_t new_max_query_size = 0;
-                if (max_query_size == 0)
-                    new_max_query_size = 0;
-                else if (max_query_size > (size_t_max - 1000) / 2)
-                    new_max_query_size = size_t_max;
-                else
-                    new_max_query_size = 1000 + 2 * max_query_size;
-
-                ASTPtr ast2;
-                try
-                {
-                    ast2 = parseQuery(
-                        parser,
-                        formatted1.data(),
-                        formatted1.data() + formatted1.size(),
-                        "",
-                        new_max_query_size,
-                        settings[Setting::max_parser_depth],
-                        settings[Setting::max_parser_backtracks]);
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() == ErrorCodes::SYNTAX_ERROR)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
-                            formatted1, original_query);
-                    else
-                        throw;
-                }
-
-                chassert(ast2);
-
-                if (out_ast->getTreeHash(false) != ast2->getTreeHash(false))
-                {
-                    WriteBufferFromOwnString ast_tree1;
-                    WriteBufferFromOwnString ast_tree2;
-                    out_ast->dumpTree(ast_tree1);
-                    ast2->dumpTree(ast_tree2);
-
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting: the original AST:\n{}\n differs from the result of parsing back formatted AST:\n{}\n",
-                        ast_tree1.str(), ast_tree2.str());
-                }
-
-                String formatted2 = format_ast(ast2);
-
-                if (formatted1 != formatted2)
-                {
-                    struct ASTDifference
+        #ifndef NDEBUG
+                    try
                     {
-                        enum class Type : uint8_t
+                        /// Verify that AST formatting is consistent:
+                        /// If you format AST, parse it back, you get the same AST, and if you format it again, you get the same string.
+                        std::string_view original_query{begin, static_cast<size_t>(end - begin)};
+
+                        auto format_ast = [](ASTPtr ast)
                         {
-                            ID,
-                            FORMAT
+                            return ast->formatWithPossiblyHidingSensitiveData(
+                                /*max_length=*/0,
+                                /*one_line=*/true,
+                                /*show_secrets=*/true,
+                                /*print_pretty_type_names=*/false,
+                                /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+                                /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
                         };
 
-                        ASTPtr lhs;
-                        ASTPtr rhs;
-                        Type type;
-                    };
+                        String formatted1 = format_ast(out_ast);
 
-                    const auto search_difference_in_asts = [&](this const auto & self, ASTPtr lhs, ASTPtr rhs) -> std::optional<ASTDifference>
-                    {
-                        if (lhs->getID() != rhs->getID())
-                            return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::ID});
+                        /// The query can become more verbose after formatting, so:
+                        size_t size_t_max = -1;
+                        size_t new_max_query_size = 0;
+                        if (max_query_size == 0)
+                            new_max_query_size = 0;
+                        else if (max_query_size > (size_t_max - 1000) / 2)
+                            new_max_query_size = size_t_max;
+                        else
+                            new_max_query_size = 1000 + 2 * max_query_size;
 
-                        size_t size_children = std::min(lhs->children.size(), rhs->children.size());
-                        for (size_t i = 0; i < size_children; ++i)
+                        ASTPtr ast2;
+                        try
                         {
-                            const auto & child_lhs = lhs->children[i];
-                            const auto & child_rhs = rhs->children[i];
-                            if (auto difference = self(child_lhs, child_rhs))
-                            {
-                                /// In case the format strings are different, use parent nodes for a better debug output.
-                                if (difference->type == ASTDifference::Type::FORMAT)
-                                    return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::ID});
-
-                                return difference;
-                            }
+                            ast2 = parseQuery(
+                                parser,
+                                formatted1.data(),
+                                formatted1.data() + formatted1.size(),
+                                "",
+                                new_max_query_size,
+                                settings[Setting::max_parser_depth],
+                                settings[Setting::max_parser_backtracks]);
+                        }
+                        catch (const Exception & e)
+                        {
+                            if (e.code() == ErrorCodes::SYNTAX_ERROR)
+                                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                    "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
+                                    formatted1, original_query);
+                            else
+                                throw;
                         }
 
-                        if (format_ast(lhs) != format_ast(rhs))
-                            return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::FORMAT});
+                        chassert(ast2);
 
-                        return std::nullopt;
-                    };
+                        if (out_ast->getTreeHash(false) != ast2->getTreeHash(false))
+                        {
+                            WriteBufferFromOwnString ast_tree1;
+                            WriteBufferFromOwnString ast_tree2;
+                            out_ast->dumpTree(ast_tree1);
+                            ast2->dumpTree(ast_tree2);
 
-                    /// Try to find the problematic part of the AST (it's not guaranteed to find it correctly though)
-                    if (auto difference = search_difference_in_asts(out_ast, ast2))
-                    {
-                        auto [lhs, rhs, _] = difference.value();
+                            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Inconsistent AST formatting: the original AST:\n{}\n differs from the result of parsing back formatted AST:\n{}\n",
+                                ast_tree1.str(), ast_tree2.str());
+                        }
 
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                        "Inconsistent AST formatting between '{}' and '{}' in the query:\n{}\n"
-                                        "Formatted as:\n{}\nParsed and formatted back as:\n{}\n"
-                                        "Difference formatted as:\n{}\n{}\nDifference parsed and formatted back as:\n{}\n{}",
-                                        lhs->getID(), rhs->getID(),
-                                        original_query,
-                                        formatted1, formatted2,
-                                        format_ast(lhs), lhs->dumpTree(),
-                                        format_ast(rhs), rhs->dumpTree());
+                        String formatted2 = format_ast(ast2);
+
+                        if (formatted1 != formatted2)
+                        {
+                            struct ASTDifference
+                            {
+                                enum class Type : uint8_t
+                                {
+                                    ID,
+                                    FORMAT
+                                };
+
+                                ASTPtr lhs;
+                                ASTPtr rhs;
+                                Type type;
+                            };
+
+                            const auto search_difference_in_asts = [&](this const auto & self, ASTPtr lhs, ASTPtr rhs) -> std::optional<ASTDifference>
+                            {
+                                if (lhs->getID() != rhs->getID())
+                                    return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::ID});
+
+                                size_t size_children = std::min(lhs->children.size(), rhs->children.size());
+                                for (size_t i = 0; i < size_children; ++i)
+                                {
+                                    const auto & child_lhs = lhs->children[i];
+                                    const auto & child_rhs = rhs->children[i];
+                                    if (auto difference = self(child_lhs, child_rhs))
+                                    {
+                                        /// In case the format strings are different, use parent nodes for a better debug output.
+                                        if (difference->type == ASTDifference::Type::FORMAT)
+                                            return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::ID});
+
+                                        return difference;
+                                    }
+                                }
+
+                                if (format_ast(lhs) != format_ast(rhs))
+                                    return std::make_optional(ASTDifference{lhs, rhs, ASTDifference::Type::FORMAT});
+
+                                return std::nullopt;
+                            };
+
+                            /// Try to find the problematic part of the AST (it's not guaranteed to find it correctly though)
+                            if (auto difference = search_difference_in_asts(out_ast, ast2))
+                            {
+                                auto [lhs, rhs, _] = difference.value();
+
+                                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                                "Inconsistent AST formatting between '{}' and '{}' in the query:\n{}\n"
+                                                "Formatted as:\n{}\nParsed and formatted back as:\n{}\n"
+                                                "Difference formatted as:\n{}\n{}\nDifference parsed and formatted back as:\n{}\n{}",
+                                                lhs->getID(), rhs->getID(),
+                                                original_query,
+                                                formatted1, formatted2,
+                                                format_ast(lhs), lhs->dumpTree(),
+                                                format_ast(rhs), rhs->dumpTree());
+                            }
+                            else
+                            {
+                                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                                "Inconsistent AST formatting in the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
+                                                original_query, formatted1, formatted2);
+
+                            }
+
+                        }
                     }
-                    else
+                    catch (const Exception & e)
                     {
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                        "Inconsistent AST formatting in the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
-                                        original_query, formatted1, formatted2);
-
+                        /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under the debug build.
+                        if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                            throw;
                     }
-
-                }
+        #endif
             }
-            catch (const Exception & e)
+
+            const char * query_end = new_end;
+
+            if (out_ast)
             {
-                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under the debug build.
-                if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
-                    throw;
+                if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
+                    query_end = insert_query->data;
             }
-#endif
-        }
 
-        const char * query_end = end;
-
-        if (out_ast)
-        {
-            if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
-                query_end = insert_query->data;
-        }
-
-        /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters.
-        /// The visitor handles parameterized views internally: it substitutes parameters in
-        /// DDL parts (database, table, columns, storage, targets) while preserving placeholders
-        /// in the SELECT body, which form the view's parameterizable interface.
-        bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
-        if (out_ast && probably_has_params)
-        {
-            ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
-            visitor.visit(out_ast);
-            if (visitor.getNumberOfReplacedParameters())
-                query = out_ast->formatWithSecretsOneLine();
+            /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+            /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters.
+            /// The visitor handles parameterized views internally: it substitutes parameters in
+            /// DDL parts (database, table, columns, storage, targets) while preserving placeholders
+            /// in the SELECT body, which form the view's parameterizable interface.
+            bool probably_has_params = find_first_symbols<'{'>(new_begin, new_end) != new_end;
+            if (out_ast && probably_has_params)
+            {
+                ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
+                visitor.visit(out_ast);
+                if (visitor.getNumberOfReplacedParameters())
+                    query = out_ast->formatWithSecretsOneLine();
+                else
+                    query.assign(new_begin, query_end);
+            }
             else
-                query.assign(begin, query_end);
-        }
-        else
-        {
-            /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
-            query.assign(begin, query_end);
-        }
+            {
+                /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
+                query.assign(new_begin, query_end);
+            }
 
-        /// Wipe any sensitive information (e.g. passwords) from the query.
-        /// MUST go before any modification (except for prepared statements,
-        /// since it substitute parameters and without them query does not contain
-        /// parameters), to keep query as-is in query_log and server log.
-        if (out_ast && out_ast->hasSecretParts())
-        {
-            /// IAST::formatForLogging() wipes secret parts in AST and then calls wipeSensitiveDataAndCutToLength().
-            query_for_logging = out_ast->formatForLogging(log_queries_cut_to_length);
+            /// Wipe any sensitive information (e.g. passwords) from the query.
+            /// MUST go before any modification (except for prepared statements,
+            /// since it substitute parameters and without them query does not contain
+            /// parameters), to keep query as-is in query_log and server log.
+            if (out_ast && out_ast->hasSecretParts())
+            {
+                /// IAST::formatForLogging() wipes secret parts in AST and then calls wipeSensitiveDataAndCutToLength().
+                query_for_logging = out_ast->formatForLogging(log_queries_cut_to_length);
+            }
+            else
+            {
+                query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
+            }
+
+            normalized_query_hash = normalizedQueryHash(query_for_logging, false);
         }
-        else
+        catch (...)
         {
+            /// Anyway log the query.
+            if (query.empty())
+                query.assign(new_begin, std::min(static_cast<size_t>(new_end - new_begin), max_query_size));
+
             query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
+            logQuery(query_for_logging, context, internal, stage);
+
+            normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal);
+            throw;
         }
-
-        normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-    }
-    catch (...)
-    {
-        /// Anyway log the query.
-        if (query.empty())
-            query.assign(begin, std::min(static_cast<size_t>(end - begin), max_query_size));
-
-        query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
-        logQuery(query_for_logging, context, internal, stage);
-
-        normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal);
-        throw;
     }
 
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
     QueryMetadataCachePtr query_metadata_cache;
-    BlockIO res;
+    
     String query_database;
     String query_table;
 
@@ -1437,43 +1818,47 @@ static BlockIO executeQueryImpl(
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
-
-            if (settings[Setting::enforce_strict_identifier_format])
+            if (!skip_ast_processing)
             {
-                WriteBufferFromOwnString buf;
-                IAST::FormatSettings enforce_strict_identifier_format_settings(true);
-                enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
-                out_ast->format(buf, enforce_strict_identifier_format_settings);
+                if (settings[Setting::enforce_strict_identifier_format])
+                {
+                    WriteBufferFromOwnString buf;
+                    IAST::FormatSettings enforce_strict_identifier_format_settings(true);
+                    enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
+                    out_ast->format(buf, enforce_strict_identifier_format_settings);
+                }
+            
+                if (auto * insert_query = out_ast->as<ASTInsertQuery>())
+                    insert_query->tail = std::move(istr);
+            
+
+                if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
+                {
+                    query_database = query_with_table_output->getDatabase();
+                    query_table = query_with_table_output->getTable();
+                }
+                
+
+                /// Propagate WITH statement to children ASTSelect.
+                if (settings[Setting::enable_global_with_statement])
+                {
+                    ApplyWithGlobalVisitor::visit(out_ast);
+                }
+
+                {
+                    SelectIntersectExceptQueryVisitor::Data data{settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
+                    SelectIntersectExceptQueryVisitor{data}.visit(out_ast);
+                }
+
+                {
+                    /// Normalize SelectWithUnionQuery
+                    NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
+                    NormalizeSelectWithUnionQueryVisitor{data}.visit(out_ast);
+                }
+
+                /// Check the limits.
+                checkASTSizeLimits(*out_ast, settings);
             }
-
-            if (auto * insert_query = out_ast->as<ASTInsertQuery>())
-                insert_query->tail = std::move(istr);
-
-            if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
-            {
-                query_database = query_with_table_output->getDatabase();
-                query_table = query_with_table_output->getTable();
-            }
-
-            /// Propagate WITH statement to children ASTSelect.
-            if (settings[Setting::enable_global_with_statement])
-            {
-                ApplyWithGlobalVisitor::visit(out_ast);
-            }
-
-            {
-                SelectIntersectExceptQueryVisitor::Data data{settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
-                SelectIntersectExceptQueryVisitor{data}.visit(out_ast);
-            }
-
-            {
-                /// Normalize SelectWithUnionQuery
-                NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
-                NormalizeSelectWithUnionQueryVisitor{data}.visit(out_ast);
-            }
-
-            /// Check the limits.
-            checkASTSizeLimits(*out_ast, settings);
         }
 
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
@@ -1511,7 +1896,9 @@ static BlockIO executeQueryImpl(
                     async_insert_enabled |= insert_table->areAsynchronousInsertsEnabled();
             }
         }
-
+        // Clear the query plan cache for the target table when processing DROP, ALTER, INSERT, DELETE, UPDATE statements.
+        if (enable_vector_query_plan_cache && vector_query_plan_cache && !is_select)
+            vector_query_plan_cache->invalidateByQuery(out_ast, context);
         if (insert_query && insert_query->select)
         {
             /// Prepare Input storage before executing interpreter if we already got a buffer with data.
@@ -1557,7 +1944,6 @@ static BlockIO executeQueryImpl(
 
         bool async_insert = false;
         auto * queue = context->tryGetAsynchronousInsertQueue();
-        auto logger = getLogger("executeQuery");
 
         if (insert_query && async_insert_enabled)
         {
@@ -1662,66 +2048,75 @@ static BlockIO executeQueryImpl(
                 http_continue_callback();
         }
 
-        QueryResultCachePtr query_result_cache = context->getQueryResultCache();
-        const bool can_use_query_result_cache = query_result_cache != nullptr && settings[Setting::use_query_cache] && !internal
-            && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
-            && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
-        context->setCanUseQueryResultCache(can_use_query_result_cache);
-        QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
-
-        /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
-        /// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
-        /// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
-        /// another overflow mode.
-        if (settings[Setting::use_query_cache] && (settings[Setting::read_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::read_overflow_mode_leaf] != OverflowMode::THROW
-            || settings[Setting::group_by_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::sort_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::result_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::timeout_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::set_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::join_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::transfer_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::distinct_overflow_mode] != OverflowMode::THROW))
-            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE, "use_query_cache and overflow_mode != 'throw' cannot be used together");
-
-        /// If the query runs with "use_query_cache = 1", we first probe if the query result cache already contains the query result (if
-        /// yes: return result from cache). If doesn't, we execute the query normally and write the result into the query result cache. Both
-        /// steps use a hash of the AST, the current database and the settings as cache key. Unfortunately, the settings are in some places
-        /// internally modified between steps 1 and 2 (= during query execution) - this is silly but hard to forbid. As a result, the hashes
-        /// no longer match and the cache is rendered ineffective. Therefore make a copy of the settings and use it for steps 1 and 2.
-        std::optional<Settings> settings_copy;
-        if (can_use_query_result_cache)
-            settings_copy = settings;
-
+        if (!can_use_query_result_cache)
+        {
+            can_use_query_result_cache = query_result_cache != nullptr && settings[Setting::use_query_cache] && !internal
+                && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+                && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
+            context->setCanUseQueryResultCache(can_use_query_result_cache);
+            /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
+            /// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
+            /// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
+            /// another overflow mode.
+            if (settings[Setting::use_query_cache] && (settings[Setting::read_overflow_mode] != OverflowMode::THROW
+                || settings[Setting::read_overflow_mode_leaf] != OverflowMode::THROW
+                || settings[Setting::group_by_overflow_mode] != OverflowMode::THROW
+                || settings[Setting::sort_overflow_mode] != OverflowMode::THROW
+                || settings[Setting::result_overflow_mode] != OverflowMode::THROW
+                || settings[Setting::timeout_overflow_mode] != OverflowMode::THROW
+                || settings[Setting::set_overflow_mode] != OverflowMode::THROW
+                || settings[Setting::join_overflow_mode] != OverflowMode::THROW
+                || settings[Setting::transfer_overflow_mode] != OverflowMode::THROW
+                || settings[Setting::distinct_overflow_mode] != OverflowMode::THROW))
+                throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE, "use_query_cache and overflow_mode != 'throw' cannot be used together");
+            /// If the query runs with "use_query_cache = 1", we first probe if the query result cache already contains the query result (if
+            /// yes: return result from cache). If doesn't, we execute the query normally and write the result into the query result cache. Both
+            /// steps use a hash of the AST, the current database and the settings as cache key. Unfortunately, the settings are in some places
+            /// internally modified between steps 1 and 2 (= during query execution) - this is silly but hard to forbid. As a result, the hashes
+            /// no longer match and the cache is rendered ineffective. Therefore make a copy of the settings and use it for steps 1 and 2.
+            if (can_use_query_result_cache)
+                settings_copy = settings;
+        }
         if (!async_insert)
         {
             /// If it is a non-internal SELECT, and passive (read) use of the query result cache is enabled, and the cache knows the query,
             /// then set a pipeline with a source populated by the query result cache.
-            auto get_result_from_query_result_cache = [&]()
+            // auto get_result_from_query_result_cache = [&]()
+            // {
+            //     if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
+            //     {
+            //         QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
+            //         QueryResultCacheReader reader = query_result_cache->createReader(key);
+
+            //         if (reader.hasCacheEntryForKey())
+            //         {
+            //             result_details.query_cache_entry_created_at = reader.entryCreatedAt();
+            //             result_details.query_cache_entry_expires_at = reader.entryExpiresAt();
+
+            //             QueryPipeline pipeline;
+            //             pipeline.readFromQueryResultCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
+            //             res.pipeline = std::move(pipeline);
+            //             query_result_cache_usage = QueryResultCacheUsage::Read;
+
+            //             return true;
+            //         }
+            //     }
+            //     return false;
+            // };
+            if (!query_result_cache_entry_exists)
             {
-                if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
-                {
-                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
-                    QueryResultCacheReader reader = query_result_cache->createReader(key);
+                query_result_cache_entry_exists = getResultFromQueryResultCache(
+                    query_result_cache,
+                    out_ast,
+                    context,
+                    settings_copy,
+                    can_use_query_result_cache,
+                    query_result_cache_usage,
+                    res,
+                    logger);
+            }
 
-                    if (reader.hasCacheEntryForKey())
-                    {
-                        result_details.query_cache_entry_created_at = reader.entryCreatedAt();
-                        result_details.query_cache_entry_expires_at = reader.entryExpiresAt();
-
-                        QueryPipeline pipeline;
-                        pipeline.readFromQueryResultCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
-                        res.pipeline = std::move(pipeline);
-                        query_result_cache_usage = QueryResultCacheUsage::Read;
-
-                        return true;
-                    }
-                }
-                return false;
-            };
-
-            if (!get_result_from_query_result_cache())
+            if (!query_result_cache_entry_exists)
             {
                 /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
                 if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !(out_ast && out_ast->as<ASTTransactionControl>()))
@@ -1801,6 +2196,12 @@ static BlockIO executeQueryImpl(
 
                 if (interpreter)
                 {
+                    interpreter->is_internal = internal;
+                    if (enable_vector_query_plan_cache)
+                    {
+                        interpreter->is_select = is_select;
+                        interpreter->setVectorQueryString(vector_query_for_plan_cache.empty() ? query : vector_query_for_plan_cache);
+                    }
                     if (!interpreter->ignoreLimits())
                     {
                         limits.mode = LimitsMode::LIMITS_CURRENT;
@@ -1822,6 +2223,11 @@ static BlockIO executeQueryImpl(
                     }
 
                     res = interpreter->execute();
+                    if (is_select && enable_vector_query_plan_cache && !VectorQueryPlanCache::containsSubquery(out_ast))
+                    {
+                        vector_query_plan_cache_writer = interpreter->getVectorQueryPlanCacheWriter();
+                    }
+                }
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
                     if (checkCanWriteQueryResultCache(out_ast, context))
@@ -1863,7 +2269,6 @@ static BlockIO executeQueryImpl(
                             if (settings[Setting::enable_reads_from_query_cache])
                                 result_details.query_cache_entry_expires_at = expires_at;
                     }
-                }
             }
         }
 
@@ -1934,13 +2339,32 @@ static BlockIO executeQueryImpl(
             /// Also make possible for caller to log successful query finish and exception during execution.
 
             /// The prepare callback flushes pipeline progress and resets the pipeline
-            auto finish_callback_finalize_pipeline = [
-                                     query_result_cache_usage,
-                                     // Need to be cached, since will be changed after complete()
-                                     pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
+            std::function<QueryPipelineFinalizedInfo(QueryPipeline &&)> finish_callback_finalize_pipeline = [
+                                    query_result_cache_usage,
+                                    // Need to be cached, since will be changed after complete()
+                                    pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
             {
                 return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
             };
+
+            // If plan cache was used, wrap the callback:
+            if (vector_query_plan_cache_writer)
+            {
+                auto original = std::move(finish_callback_finalize_pipeline);
+                finish_callback_finalize_pipeline = [writer = std::move(vector_query_plan_cache_writer), cb = std::move(original)](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
+                {
+                    auto result = cb(std::move(query_pipeline));
+                    try
+                    {
+                        writer->finalizeWrite();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(getLogger("executeQuery"), "Failed to finalize vector query plan cache write");
+                    }
+                    return result;
+                };
+            }
 
             /// The finish callback logs the query result
             auto finish_callback = [elem,

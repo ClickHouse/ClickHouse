@@ -56,6 +56,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"unique_key_max_encoded_size", 256, 256, "New setting: maximum size (bytes) of the order-preserving binary encoding of a single UNIQUE KEY row"},
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
             {"query_plan_max_set_size_for_projection_match", 0, 10000, "Added new setting that bounds the cost of content-hashing IN-clause sets in the projection matcher (today: aggregate projection). Sets larger than the limit are treated as non-matching. Zero disables content-hash comparison entirely (compatibility value: projection match never succeeds for nodes with IN-sets)."},
+            {"vector_query_plan_cache_tag", "", "", "New setting for labeling vector query plan cache settings."},
+            {"vector_query_plan_cache", "", "", "New setting to enable/disable vector Query plan cache."},
+            {"vector_use_cast", "", "", "New setting to enable/disable CAST with no cached vector query plans."},
+            {"vector_query_plan_cache_only_vector", "", "", "New setting to parse only vector VectorQueryPlan."},
+            {"vector_query_plan_cache_max_size_in_bytes", 0, DEFAULT_VECTOR_QUERY_PLAN_CACHE_MAX_SIZE, "Introduced vector query plan cache. The maximum amount of memory (in bytes) the current user may allocate in the vector query plan cache. 0 means unlimited."},
+            {"vector_query_plan_cache_max_entries", 0, DEFAULT_VECTOR_QUERY_PLAN_CACHE_MAX_ENTRIES, "Introduced vector query plan cache. The maximum number of query results the current user may store in the vector query plan cache. 0 means unlimited."},
+            {"vector_query_plan_cache_ttl", 60, 60, "Introduced vector query plan cache. After this time in seconds entries in the vector query plan cache become stale."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
