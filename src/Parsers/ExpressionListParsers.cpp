@@ -373,7 +373,10 @@ bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 {
     return ParserList(
         std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword, is_table_function, allow_trailing_commas),
-        std::make_unique<ParserToken>(TokenType::Comma))
+        std::make_unique<ParserToken>(TokenType::Comma),
+        true,                  /// allow_empty
+        ',',                   /// result_separator
+        allow_trailing_commas) /// allow_trailing_separator: leave pos after ',' when element parse fails
         .parse(pos, node, expected);
 }
 
@@ -1025,6 +1028,75 @@ public:
 
     bool parse(IParser::Pos & pos, Expected & /*expected*/, Action & /*action*/) override
     {
+        /// Aliased-column trailing-comma detection.
+        ///
+        /// When an aliased expression like `1 AS a` precedes a trailing comma,
+        /// `ParserList::parseUtil` consumes the comma as a separator and then calls
+        /// `parse_element()` starting at `FROM`.  The non-aliased path is handled
+        /// below (ExpressionLayer sees the comma itself), but for the aliased path
+        /// we must detect the pattern here — at the very first token of the new
+        /// element — and return false so that `parseUtil` treats the comma as
+        /// trailing.
+        ///
+        /// We apply the same heuristics as the comma-based check below: if any of
+        /// those heuristics say "FROM is a column name", we let parsing proceed
+        /// normally; otherwise we return false.
+        if (allow_trailing_commas && isCurrentElementEmpty() && elements.empty())
+        {
+            auto test_pos = pos;
+            Expected test_expected;
+
+            if (ParserKeyword(Keyword::FROM).ignore(test_pos, test_expected))
+            {
+                bool is_column = false;
+
+                if (test_pos.isValid() && test_pos->type != TokenType::Semicolon)
+                {
+                    /// Comma after FROM → FROM is a column name
+                    if (test_pos->type == TokenType::Comma)
+                        is_column = true;
+
+                    /// Second FROM → first FROM is a column name (e.g. `from FROM t`)
+                    if (!is_column && ParserKeyword(Keyword::FROM).ignore(test_pos, test_expected))
+                        is_column = true;
+
+                    /// Explicit alias after FROM not followed by a table-ref token
+                    /// → FROM is a column name (e.g. `SELECT from AS x FROM t`)
+                    if (!is_column)
+                    {
+                        auto alias_test_pos = test_pos;
+                        Expected alias_test_expected;
+                        if (ParserAlias(false).ignore(alias_test_pos, alias_test_expected))
+                        {
+                            const auto next_type = alias_test_pos->type;
+                            const bool is_table_ref_start =
+                                next_type == TokenType::OpeningRoundBracket
+                                || next_type == TokenType::Dot;
+                            if (!is_table_ref_start)
+                                is_column = true;
+                        }
+                    }
+
+                    /// Operator after FROM → FROM is a column name in an expression
+                    /// (e.g. `SELECT from + 1, FROM t`)
+                    if (!is_column)
+                    {
+                        for (const auto & [op_str, _] : ParserExpressionImpl::operators_table)
+                        {
+                            if (parseOperator(test_pos, op_str, test_expected))
+                            {
+                                is_column = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (!is_column)
+                    return false;
+            }
+        }
+
         if (pos->type == TokenType::Comma)
         {
             finished = true;
@@ -1061,9 +1133,21 @@ public:
                 if (ParserKeyword(Keyword::FROM).ignore(test_pos, test_expected))
                     return true;
 
-                /// If we parse an explicit alias to FROM, then it was a name of a column
-                if (ParserAlias(false).ignore(test_pos, test_expected))
-                    return true;
+                /// If we parse an explicit alias to FROM, then it was a name of a column.
+                /// But don't treat a table function name or qualified table name as an alias.
+                {
+                    auto alias_test_pos = test_pos;
+                    Expected alias_test_expected;
+                    if (ParserAlias(false).ignore(alias_test_pos, alias_test_expected))
+                    {
+                        const auto next_type = alias_test_pos->type;
+                        const bool is_table_ref_start =
+                            next_type == TokenType::OpeningRoundBracket  /// table function: name(
+                            || next_type == TokenType::Dot;              /// qualified name: db.table
+                        if (!is_table_ref_start)
+                            return true;
+                    }
+                }
 
                 /// If we parse an operator after FROM then it was a name of a column
                 auto cur_op = ParserExpressionImpl::operators_table.begin();
