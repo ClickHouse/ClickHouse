@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -12,7 +11,7 @@ namespace
 {
 
 /// Dump the structure of type and column.
-class FunctionDumpColumnStructure final : public IFunction
+class FunctionDumpColumnStructure : public IFunction
 {
 public:
     static constexpr auto name = "dumpColumnStructure";

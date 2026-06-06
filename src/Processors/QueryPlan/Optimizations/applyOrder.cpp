@@ -39,7 +39,7 @@ struct SortingProperty
     SortScope sort_scope = SortScope::Stream;
 };
 
-static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
+SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(parent->step.get()))
         return {read_from_merge_tree->getSortDescription(), SortingProperty::SortScope::Stream};

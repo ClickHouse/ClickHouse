@@ -1,5 +1,4 @@
 #include <Storages/StorageURL.h>
-#include <Columns/ColumnConst.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -19,7 +18,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -545,8 +543,6 @@ Chunk StorageURLSource::generate()
     return {};
 }
 
-void StorageURLSource::onFinish() { parser_shared_resources->finishStream(); }
-
 std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource::getFirstAvailableURIAndReadBuffer(
     std::vector<String>::const_iterator & option,
     const std::vector<String>::const_iterator & end,
@@ -567,7 +563,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> last_skipped_empty_res;
     for (; option != end; ++option)
     {
-        bool skip_url_not_found_error = glob_url && read_settings.http_settings.skip_not_found_url_for_globs && option == std::prev(end);
+        bool skip_url_not_found_error = glob_url && read_settings.http_skip_not_found_url_for_globs && option == std::prev(end);
         auto request_uri = Poco::URI(*option, context_->getSettingsRef()[Setting::enable_url_encoding]);
 
         for (const auto & [param, value] : params)
@@ -1997,7 +1993,6 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
 }
 
 
-void registerStorageURL(StorageFactory & factory);
 void registerStorageURL(StorageFactory & factory)
 {
     factory.registerStorage(

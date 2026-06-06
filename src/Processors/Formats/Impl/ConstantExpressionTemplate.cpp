@@ -161,7 +161,7 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
         }
 
         WhichDataType type_info{nested_type};
-        Field::Types::Which field_type = {};
+        Field::Types::Which field_type;
 
         /// Promote integers to 64 bit types
         if (type_info.isNativeUInt())

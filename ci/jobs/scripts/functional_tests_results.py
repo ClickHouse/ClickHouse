@@ -1,9 +1,6 @@
 import dataclasses
 import re
-import runpy
-import signal
 import traceback
-from pathlib import Path
 from typing import List, Optional
 
 from praktika.result import Result
@@ -14,46 +11,9 @@ UNKNOWN_SIGN = "[ UNKNOWN "
 SKIPPED_SIGN = "[ SKIPPED "
 NOT_FAILED_SIGN = "[ NOT_FAILED "
 HUNG_SIGN = "Found hung queries in processlist"
+STOP_TESTING_SIGN = "Stopping tests, terminating all processes"
+STOP_TESTING_SIGN2 = "Server does not respond to health check"
 DATABASE_SIGN = "Database: "
-
-# Pick up the runner exit codes straight from `tests/clickhouse-test` so
-# the contract has a single source of truth.
-_clickhouse_test = Path(__file__).resolve().parents[3] / "tests" / "clickhouse-test"
-_clickhouse_test_globals = runpy.run_path(str(_clickhouse_test))
-STOP_TESTING_EXIT_CODE = _clickhouse_test_globals["STOP_TESTING_EXIT_CODE"]
-GLOBAL_TIME_LIMIT_EXIT_CODE = _clickhouse_test_globals["GLOBAL_TIME_LIMIT_EXIT_CODE"]
-
-# Exit codes that mean the run was aborted mid-flight, so per-test results
-# (if any) are incomplete and we cannot trust which test "caused" the
-# failure. `STOP_TESTING_EXIT_CODE` is the in-band signal — the parent
-# raised `StopTesting` and reached the outer handler. The kill-by-signal
-# variants cover the out-of-band cases where the parent was killed before
-# it could exit through that handler (currently reachable via the
-# worker -> parent SIGTERM feedback loop in `stop_tests`: each worker the
-# parent terminates re-broadcasts SIGTERM to the whole process group via
-# `killpg`, hitting the parent before it can `sys.exit(STOP_TESTING_EXIT_CODE)`;
-# also covers external kills like job-level timeouts and runner shutdown).
-#
-# Both `128 + N` (bash's convention when its child died from signal N) and
-# the negative form `-N` are included: `Shell.run` wraps the command in
-# `bash -c`, so most kills surface as `128 + N` via bash's exit status, but
-# `Shell._check_timeout` calls `os.killpg` on the whole group, so the
-# wrapper bash can itself die from the signal — and Python's
-# `subprocess.Popen.returncode` reports that as `-N`, not `128 + N`.
-#
-# Exit code 1 is deliberately NOT in this set: it is set by end-of-run
-# checks (final hung-check, `runner_process_killed`, `total_tests_run == 0`)
-# that run AFTER all tests have finished. Per-test results in that case are
-# complete and authoritative and must not be demoted.
-ABORTED_RUN_EXIT_CODES = frozenset(
-    {
-        STOP_TESTING_EXIT_CODE,
-        128 + signal.SIGTERM,  # 143
-        128 + signal.SIGKILL,  # 137
-        -signal.SIGTERM,  # -15
-        -signal.SIGKILL,  # -9
-    }
-)
 
 SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
 
@@ -81,6 +41,7 @@ class FTResultsProcessor:
         success: int
         test_results: List[Result]
         hung: bool = False
+        stop_testing: bool = False
         retries: bool = False
         success_finish: bool = False
         test_end: bool = True
@@ -96,6 +57,7 @@ class FTResultsProcessor:
         failed = 0
         success = 0
         hung = False
+        stop_testing = False
         retries = False
         success_finish = False
         test_results = []
@@ -113,6 +75,8 @@ class FTResultsProcessor:
                 if HUNG_SIGN in line:
                     hung = True
                     break
+                if STOP_TESTING_SIGN in line or STOP_TESTING_SIGN2 in line:
+                    stop_testing = True
                 if RETRIES_SIGN in line:
                     retries = True
 
@@ -203,6 +167,7 @@ class FTResultsProcessor:
             success=success,
             test_results=test_results,
             hung=hung,
+            stop_testing=stop_testing,
             success_finish=success_finish,
             retries=retries,
         )
@@ -223,7 +188,7 @@ class FTResultsProcessor:
             test_results.append(
                 Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
             )
-        elif runner_exit_code in ABORTED_RUN_EXIT_CODES:
+        elif s.stop_testing:
             state = Result.Status.FAIL
             failed_results = [r for r in test_results if r.is_failure()]
             if len(failed_results) > 1:
@@ -238,21 +203,6 @@ class FTResultsProcessor:
                 # Single test failed - sequential run, this test is the culprit.
                 failed_results[0].status = Result.Status.ERROR
             test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
-        elif runner_exit_code == GLOBAL_TIME_LIMIT_EXIT_CODE:
-            # The run stopped gracefully because the global time limit was
-            # reached. This is the *expected* stop condition for the flaky and
-            # targeted checks, which rerun the selected tests until the time
-            # budget is exhausted - not a failure. Real test failures and hung
-            # queries are still reported through the branches above (they set
-            # `state` to FAIL regardless), so here we only add an informational
-            # leaf and leave `state` as computed from the parsed results.
-            test_results.append(
-                Result(
-                    "Global time limit reached",
-                    Result.Status.OK,
-                    info="Stopped after reaching the time budget - the expected stop condition for this check.",
-                )
-            )
         elif not s.success_finish:
             state = Result.Status.ERROR
             info = "The test runner was terminated unexpectedly"
@@ -268,9 +218,7 @@ class FTResultsProcessor:
         # nothing to blame. The synthetic leaf is added only when the parser
         # found nothing - otherwise the real failure already explains the result
         # and a duplicate entry is just noise.
-        # `GLOBAL_TIME_LIMIT_EXIT_CODE` is excluded: it is a graceful, expected
-        # stop (handled above), not a failure, even though it is non-zero.
-        if runner_exit_code not in (None, 0, GLOBAL_TIME_LIMIT_EXIT_CODE):
+        if runner_exit_code is not None and runner_exit_code != 0:
             if state == Result.Status.OK:
                 state = Result.Status.FAIL
                 test_results.append(

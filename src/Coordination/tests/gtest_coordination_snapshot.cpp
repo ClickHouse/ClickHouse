@@ -50,12 +50,10 @@ public:
     std::unique_ptr<DB::ReadBufferFromFileBase> readObject( /// NOLINT
         const DB::StoredObject & object,
         const DB::ReadSettings & read_settings,
-        std::optional<size_t> read_hint,
-        bool use_external_buffer,
-        bool restrict_seek) const override
+        std::optional<size_t> read_hint) const override
     {
         ++read_count;
-        return DB::LocalObjectStorage::readObject(object, read_settings, read_hint, use_external_buffer, restrict_seek);
+        return DB::LocalObjectStorage::readObject(object, read_settings, read_hint);
     }
 };
 

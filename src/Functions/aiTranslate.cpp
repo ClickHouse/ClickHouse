@@ -17,9 +17,9 @@ class FunctionAiTranslate final : public FunctionBaseAI
 public:
     static constexpr auto name = "aiTranslate";
 
-    explicit FunctionAiTranslate(ContextPtr context_) : FunctionBaseAI(context_) {}
+    explicit FunctionAiTranslate(ContextPtr context) : FunctionBaseAI(context) {}
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiTranslate>(context_); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiTranslate>(context); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -54,11 +54,14 @@ private:
     size_t promptArgumentIndex() const override { return prompt_arg_index; }
     size_t temperatureArgumentIndex() const override { return temp_arg_idx; }
 
-    void checkSanityBeforeExecuteImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    void checkSanityBeforeExecuteImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        auto target_language = arguments[target_language_arg_index].column->getDataAt(0);
-        if (target_language.find_first_not_of(" \t\n\r") == std::string_view::npos)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "aiTranslate: 'target_language' must not be empty");
+        if (input_rows_count)
+        {
+            auto target_language = arguments[target_language_arg_index].column->getDataAt(0);
+            if (target_language.find_first_not_of(" \t\n\r") == std::string_view::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "aiTranslate: 'target_language' must not be empty");
+        }
     }
 
     String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const override
@@ -89,7 +92,7 @@ Translates the given text into the specified target language using an LLM provid
 
 Additional style or dialect instructions may be passed as a fourth argument (e.g. `'keep technical terms untranslated'`).
 
-The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
+The first argument is a named collection that specifies the provider, model, endpoint, and API key.
 )",
         .syntax = "aiTranslate(collection, text, target_language[, instructions[, temperature]])",
         .arguments = {
