@@ -16,3 +16,6 @@ Test 6: CREATE/DROP FUNCTION is not rewritten ON CLUSTER
 Test 7: SYSTEM query is not rewritten ON CLUSTER
 Test 7 verification: SYSTEM query does NOT contain ON CLUSTER
 1
+Test 8: implicit DROP/TRUNCATE TABLE of a temporary table stays local
+Test 8 verification: TRUNCATE emptied the session table	1
+Test 8 verification: DROP removed the session table	1

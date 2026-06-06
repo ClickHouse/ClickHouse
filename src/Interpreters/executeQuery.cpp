@@ -1496,24 +1496,46 @@ static BlockIO executeQueryImpl(
                 {
                     target_is_temporary = drop_query->isTemporary();
 
+                    /// `DROP TABLE t` / `TRUNCATE TABLE t` with an omitted database may target a
+                    /// session-local temporary (external) table: `InterpreterDropQuery` resolves the
+                    /// name via `tryResolveStorageID(..., ResolveExternal)` even without the explicit
+                    /// `TEMPORARY` keyword. Such a statement must operate on the session table and stay
+                    /// local, so treat it as temporary when the name resolves to a temporary table.
+                    auto resolves_to_temporary = [&](const StorageID & table_id)
+                    {
+                        return table_id.database_name.empty()
+                            && static_cast<bool>(context->tryResolveStorageID(table_id, Context::ResolveExternal));
+                    };
+
                     /// A multi-table `DROP TABLE a.t1, b.t2` keeps its targets in `database_and_tables`
                     /// while `getDatabase` stays empty, so inspect every listed table and skip auto-fill
-                    /// if any of them lives in a `Replicated` database.
+                    /// if any of them lives in a `Replicated` database or resolves to a temporary table.
                     if (drop_query->database_and_tables)
                     {
                         const auto & list = drop_query->database_and_tables->as<ASTExpressionList &>();
                         for (const auto & child : list.children)
                         {
                             const auto * identifier = child->as<ASTTableIdentifier>();
-                            if (identifier && is_replicated_database(identifier->getDatabaseName()))
+                            if (!identifier)
+                                continue;
+                            if (is_replicated_database(identifier->getDatabaseName()))
                             {
                                 target_is_replicated_database = true;
+                                break;
+                            }
+                            if (resolves_to_temporary(StorageID(*identifier)))
+                            {
+                                target_is_temporary = true;
                                 break;
                             }
                         }
                     }
                     else
+                    {
                         target_is_replicated_database = is_replicated_database(drop_query->getDatabase());
+                        if (!target_is_temporary && resolves_to_temporary(StorageID(*drop_query)))
+                            target_is_temporary = true;
+                    }
                 }
                 else if (const auto * query_with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
                 {

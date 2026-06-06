@@ -80,3 +80,18 @@ SELECT count() = 0 FROM system.query_log WHERE current_database = currentDatabas
   AND type = 'QueryFinish'
   AND query LIKE 'SYSTEM DROP MARK CACHE%'
   AND query LIKE '%ON CLUSTER%';
+
+SELECT 'Test 8: implicit DROP/TRUNCATE TABLE of a temporary table stays local';
+-- `DROP TABLE t` and `TRUNCATE TABLE t` with an omitted database resolve to a session-local
+-- temporary table even without the explicit `TEMPORARY` keyword. Auto-fill must not inject
+-- ON CLUSTER for them, otherwise the statement would be routed through distributed DDL and the
+-- session table would be left untouched. Verify the operations actually affect the session table.
+CREATE TEMPORARY TABLE test_auto_fill_implicit_temp (id UInt32) ENGINE = Memory;
+INSERT INTO test_auto_fill_implicit_temp VALUES (1), (2);
+TRUNCATE TABLE test_auto_fill_implicit_temp;
+SELECT 'Test 8 verification: TRUNCATE emptied the session table', count() = 0 FROM test_auto_fill_implicit_temp;
+DROP TABLE test_auto_fill_implicit_temp;
+-- The table was actually dropped from the session, so re-creating it must succeed.
+CREATE TEMPORARY TABLE test_auto_fill_implicit_temp (id UInt32) ENGINE = Memory;
+SELECT 'Test 8 verification: DROP removed the session table', 1;
+DROP TEMPORARY TABLE test_auto_fill_implicit_temp;
