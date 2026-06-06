@@ -20,3 +20,8 @@ SELECT 1e18::Float64, 1e9::Float32 SETTINGS output_format_approximate_numbers_wi
 SELECT number::Decimal(2) FROM numbers(2) SETTINGS output_format_approximate_numbers_with_decimal_point=0;
 SELECT number::Decimal(2) FROM numbers(2) SETTINGS output_format_approximate_numbers_with_decimal_point=1;
 SELECT 1.50::Decimal(10, 2), 1::Decimal(10, 2) SETTINGS output_format_approximate_numbers_with_decimal_point=1;
+
+-- JSON output must stay valid: the forced decimal point is not applied to numbers in JSON, otherwise a bare `1.`
+-- would not be a valid JSON number with the default output_format_json_quote_decimals=0.
+SELECT 1::Decimal(10, 2) AS d, 1::Float64 AS f FORMAT JSONEachRow SETTINGS output_format_approximate_numbers_with_decimal_point=1;
+SELECT 1::Decimal(10, 2) AS d FORMAT JSONEachRow SETTINGS output_format_approximate_numbers_with_decimal_point=1, output_format_json_quote_decimals=1;
