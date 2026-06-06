@@ -861,14 +861,23 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
         if (auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(storage.get()))
         {
             String metadata_version_path;
+            String legacy_metadata_version_path;
             {
                 std::lock_guard lock{mutex};
-                metadata_version_path = BackupUtils::getMetadataVersionPathInBackup(table_infos.at(table_name).metadata_path_in_backup);
+                const auto & table_info = table_infos.at(table_name);
+                metadata_version_path = BackupUtils::getMetadataVersionPathInBackup(table_info.metadata_path_in_backup);
+                legacy_metadata_version_path = fs::path(table_info.data_path_in_backup) / "table_metadata_version.txt";
             }
 
-            if (backup->fileExists(metadata_version_path))
+            /// New location: next to the .sql file. Fall back to the old location (inside the data
+            /// directory) for backups created by older versions of ClickHouse.
+            String effective_path = backup->fileExists(metadata_version_path)      ? metadata_version_path
+                                  : backup->fileExists(legacy_metadata_version_path) ? legacy_metadata_version_path
+                                  : String{};
+
+            if (!effective_path.empty())
             {
-                auto buf = backup->readFile(metadata_version_path);
+                auto buf = backup->readFile(effective_path);
                 String metadata_version_str;
                 readStringUntilEOF(metadata_version_str, *buf);
                 replicated_storage->restoreMetadataVersionFromBackup(parse<Int32>(metadata_version_str));

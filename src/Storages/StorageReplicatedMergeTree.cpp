@@ -7241,8 +7241,9 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
         auto code = zookeeper->trySet(table_metadata_path, metadata_str, metadata_stat.version);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZBADVERSION)
             throw zkutil::KeeperException::fromPath(code, table_metadata_path);
+        if (code == Coordination::Error::ZOK)
+            version_was_bumped = true;
         metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
-        version_was_bumped = true;
     }
 
     /// Notify running peer replicas about the new version via the shared replication log.
@@ -7255,7 +7256,7 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
         alter_entry.source_replica = replica_name;
         alter_entry.metadata_str = metadata_str;
         alter_entry.columns_str = columns_str;
-        alter_entry.alter_version = metadata_stat.version;
+        alter_entry.alter_version = metadata_version;
         alter_entry.create_time = time(nullptr);
 
         String path_created = zookeeper->create(
