@@ -649,67 +649,73 @@ namespace
 /// time, so it is regenerated deterministically from this seed rather than stored. If this generator ever changes,
 /// the flat granule FILE_FORMAT_VERSION must be bumped and existing indexes rebuilt.
 constexpr UInt64 RANDOM_PROJECTION_SEED = 0x9E3779B97F4A7C15ULL;
-constexpr double RANDOM_PROJECTION_PI = 3.14159265358979323846;
 
-/// Deterministic standard-normal generator (splitmix64 + Box-Muller), independent of the standard library so the
-/// projection is reproducible across platforms and build versions.
-class DeterministicGaussian
+/// Number of (sign-flip + Walsh-Hadamard) rounds. Three rounds of HD approximate a random rotation well, so the
+/// resulting sign bits behave as random-hyperplane hashes (angular LSH).
+constexpr int PROJECTION_ROUNDS = 3;
+
+/// Smallest power of two >= n.
+inline size_t projectionPaddedSize(size_t n)
 {
-public:
-    explicit DeterministicGaussian(UInt64 seed) : state(seed) {}
+    size_t p = 1;
+    while (p < n)
+        p <<= 1;
+    return p;
+}
 
-    double next()
-    {
-        if (has_cached)
-        {
-            has_cached = false;
-            return cached;
-        }
-        const double u1 = std::max(nextUniform(), 1e-300);
-        const double u2 = nextUniform();
-        const double radius = std::sqrt(-2.0 * std::log(u1));
-        const double angle = 2.0 * RANDOM_PROJECTION_PI * u2;
-        cached = radius * std::sin(angle);
-        has_cached = true;
-        return radius * std::cos(angle);
-    }
+/// In-place Walsh-Hadamard transform (n must be a power of two), O(n log n), add/sub only.
+inline void walshHadamardTransform(float * a, size_t n)
+{
+    for (size_t len = 1; len < n; len <<= 1)
+        for (size_t i = 0; i < n; i += (len << 1))
+            for (size_t j = i; j < i + len; ++j)
+            {
+                const float u = a[j];
+                const float v = a[j + len];
+                a[j] = u + v;
+                a[j + len] = u - v;
+            }
+}
 
-private:
-    UInt64 nextU64()
+/// A fast structured random projection: PROJECTION_ROUNDS blocks of (random ±1 diagonal) * Walsh-Hadamard, replacing
+/// a dense d*d Gaussian matrix (O(d*d) per vector) with an O(d log d) transform. Returns the concatenated sign-flip
+/// diagonals (PROJECTION_ROUNDS * padded entries, each +-1), generated deterministically from the fixed seed.
+std::vector<float> generateRandomProjection(size_t dimensions)
+{
+    const size_t padded = projectionPaddedSize(dimensions);
+    std::vector<float> sign_flips(static_cast<size_t>(PROJECTION_ROUNDS) * padded);
+
+    /// splitmix64 bit stream -> +-1
+    UInt64 state = RANDOM_PROJECTION_SEED;
+    for (auto & value : sign_flips)
     {
         UInt64 z = (state += 0x9E3779B97F4A7C15ULL);
         z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
         z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-        return z ^ (z >> 31);
+        z = z ^ (z >> 31);
+        value = (z & 1) ? 1.0f : -1.0f;
     }
-    double nextUniform() { return static_cast<double>(nextU64() >> 11) * (1.0 / 9007199254740992.0); }
-
-    UInt64 state;
-    bool has_cached = false;
-    double cached = 0.0;
-};
-
-/// Generates the d*d random projection matrix (row-major, Gaussian entries = random hyperplanes).
-std::vector<float> generateRandomProjection(size_t dimensions)
-{
-    std::vector<float> projection(dimensions * dimensions);
-    DeterministicGaussian gaussian(RANDOM_PROJECTION_SEED);
-    for (auto & value : projection)
-        value = static_cast<float>(gaussian.next());
-    return projection;
+    return sign_flips;
 }
 
-/// out = projection * x  (`out` and `x` have `dimensions` elements; `projection` is row-major d*d).
+/// Projects `x` (dimensions elements) using the structured transform into `work` (size = padded). The first
+/// `dimensions` entries of `work` are the projected coordinates whose signs form the code. `work` must have at least
+/// `padded` (= sign_flips.size() / PROJECTION_ROUNDS) elements.
 template <typename T>
-void applyRandomProjection(const float * projection, const T * x, size_t dimensions, float * out)
+void applyRandomProjection(const std::vector<float> & sign_flips, const T * x, size_t dimensions, float * work)
 {
+    const size_t padded = sign_flips.size() / PROJECTION_ROUNDS;
     for (size_t i = 0; i < dimensions; ++i)
+        work[i] = static_cast<float>(x[i]);
+    for (size_t i = dimensions; i < padded; ++i)
+        work[i] = 0.0f;
+
+    for (int round = 0; round < PROJECTION_ROUNDS; ++round)
     {
-        const float * row = projection + i * dimensions;
-        float acc = 0.0f;
-        for (size_t j = 0; j < dimensions; ++j)
-            acc += row[j] * static_cast<float>(x[j]);
-        out[i] = acc;
+        const float * flip = sign_flips.data() + static_cast<size_t>(round) * padded;
+        for (size_t i = 0; i < padded; ++i)
+            work[i] *= flip[i];
+        walshHadamardTransform(work, padded);
     }
 }
 
@@ -748,6 +754,7 @@ namespace
 
 /// Sign-binarize `rows` vectors from `column_array` into packed bit-codes appended to `codes`.
 /// If `projection` is non-empty ('b1_projected'), each vector is randomly projected before sign-binarizing.
+/// The projected path is O(d log d) per vector (Walsh-Hadamard) and is parallelized over the build thread pool.
 template <typename Column>
 void quantizeRowsToBinary(
     const ColumnArray * column_array, const ColumnArray::Offsets & offsets,
@@ -760,24 +767,27 @@ void quantizeRowsToBinary(
         if (offsets[row + 1] - offsets[row] != dimensions)
             throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
 
-    codes.resize((num_vectors + rows) * bytes_per_vector);
+    const size_t base = num_vectors;
+    codes.resize((base + rows) * bytes_per_vector);
+    num_vectors = base + rows;
 
-    std::vector<float> projected_vec;
-    if (!projection.empty())
-        projected_vec.resize(dimensions);
+    const bool projected = !projection.empty();
+    const size_t padded = projected ? projection.size() / PROJECTION_ROUNDS : 0;
 
-    for (size_t row = 0; row < rows; ++row)
+    /// Encode one row into its (disjoint) packed code slot. `work` is a per-thread scratch buffer of `padded` floats,
+    /// used only on the projected path.
+    auto encode_row = [&](size_t row, float * work)
     {
         const size_t start = (row == 0) ? 0 : offsets[row - 1];
         const typename Column::ValueType * src = &data[start];
         checkVectorIsSane(src, dimensions, unum::usearch::scalar_kind_t::b1x8_k, ErrorCodes::INCORRECT_DATA, "indexed vector");
 
-        char * dst = reinterpret_cast<char *>(codes.data() + num_vectors * bytes_per_vector);
-        if (!projection.empty())
+        char * dst = reinterpret_cast<char *>(codes.data() + (base + row) * bytes_per_vector);
+        if (projected)
         {
             /// 'b1_projected': project, then sign-binarize the projected (Float32) vector.
-            applyRandomProjection(projection.data(), src, dimensions, projected_vec.data());
-            unum::usearch::cast_gt<unum::usearch::f32_t, unum::usearch::b1x8_t>::try_(reinterpret_cast<const char *>(projected_vec.data()), dimensions, dst);
+            applyRandomProjection(projection, src, dimensions, work);
+            unum::usearch::cast_gt<unum::usearch::f32_t, unum::usearch::b1x8_t>::try_(reinterpret_cast<const char *>(work), dimensions, dst);
         }
         else if constexpr (std::is_same_v<Column, ColumnBFloat16>)
             unum::usearch::cast_gt<unum::usearch::bf16_bits_t, unum::usearch::b1x8_t>::try_(reinterpret_cast<const char *>(src), dimensions, dst);
@@ -788,7 +798,50 @@ void quantizeRowsToBinary(
             static_assert(std::is_same_v<Column, ColumnFloat64>);
             unum::usearch::cast_gt<unum::usearch::f64_t, unum::usearch::b1x8_t>::try_(reinterpret_cast<const char *>(src), dimensions, dst);
         }
-        ++num_vectors;
+    };
+
+    auto throw_if_killed = []
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            if (auto query_status = query_context->getProcessListElementSafe())
+                query_status->throwIfKilled();
+    };
+
+    size_t threads_count = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
+    if (threads_count == 0)
+        threads_count = getNumberOfCPUCoresToUse();
+
+    /// Only the projected path is expensive enough to be worth parallelizing; the raw-sign path is cheap.
+    static constexpr size_t min_rows_for_parallel = 256;
+    const size_t num_threads = (projected && rows >= min_rows_for_parallel) ? std::min(threads_count, rows) : 1;
+
+    if (num_threads <= 1)
+    {
+        std::vector<float> work(padded);
+        throw_if_killed();
+        for (size_t row = 0; row < rows; ++row)
+            encode_row(row, work.data());
+    }
+    else
+    {
+        const size_t per_thread = (rows + num_threads - 1) / num_threads;
+        auto & pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
+        for (size_t t = 0; t < num_threads; ++t)
+        {
+            const size_t begin = t * per_thread;
+            if (begin >= rows)
+                break;
+            const size_t end = std::min(rows, begin + per_thread);
+            runner.enqueueAndKeepTrack([&encode_row, &throw_if_killed, padded, begin, end]
+            {
+                throw_if_killed();
+                std::vector<float> work(padded);
+                for (size_t row = begin; row < end; ++row)
+                    encode_row(row, work.data());
+            });
+        }
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
 }
 
@@ -861,8 +914,8 @@ MergeTreeIndexConditionVectorSimilarityFlat::MergeTreeIndexConditionVectorSimila
 {
     static constexpr auto MAX_INDEX_FETCH_MULTIPLIER = 1000.0;
     if (!std::isfinite(index_fetch_multiplier)
-        || index_fetch_multiplier <= 0.0 || index_fetch_multiplier > MAX_INDEX_FETCH_MULTIPLIER
-        || (parameters && !std::isfinite(index_fetch_multiplier * static_cast<double>(parameters->limit))))
+        || index_fetch_multiplier <= 0.0f || static_cast<double>(index_fetch_multiplier) > MAX_INDEX_FETCH_MULTIPLIER
+        || (parameters && !std::isfinite(static_cast<double>(index_fetch_multiplier) * static_cast<double>(parameters->limit))))
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}", MAX_INDEX_FETCH_MULTIPLIER);
 }
 
@@ -901,20 +954,21 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
 
     size_t limit = parameters->limit;
     if (parameters->additional_filters_present || is_rescoring)
-        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * index_fetch_multiplier), max_limit);
+        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * static_cast<double>(index_fetch_multiplier)), max_limit);
 
     const size_t num_vectors = granule->num_vectors;
     const size_t bytes_per_vector = granule->bytes_per_vector;
     limit = std::min(limit, num_vectors);
 
     /// Quantize the (full-precision) reference vector to the same packed-bit representation as the index.
-    /// For 'b1_projected', project the query with the same fixed-seed matrix used at build time before sign-binarizing.
+    /// For 'b1_projected', project the query with the same fixed-seed transform used at build time before sign-binarizing.
     std::vector<UInt8> query_code(bytes_per_vector);
     if (projected)
     {
         const std::vector<float> projection = generateRandomProjection(granule->dimensions);
-        std::vector<float> projected_query(granule->dimensions);
-        applyRandomProjection(projection.data(), parameters->reference_vector.data(), granule->dimensions, projected_query.data());
+        const size_t padded = projection.size() / PROJECTION_ROUNDS;
+        std::vector<float> projected_query(padded);
+        applyRandomProjection(projection, parameters->reference_vector.data(), granule->dimensions, projected_query.data());
         unum::usearch::cast_gt<unum::usearch::f32_t, unum::usearch::b1x8_t>::try_(
             reinterpret_cast<const char *>(projected_query.data()), granule->dimensions, reinterpret_cast<char *>(query_code.data()));
     }
@@ -958,6 +1012,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
         }
     };
 
+    /// Hops on the vector index build threadpool
     size_t threads_count = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
     if (threads_count == 0)
         threads_count = getNumberOfCPUCoresToUse();
