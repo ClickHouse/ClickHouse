@@ -37,7 +37,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -501,7 +500,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & compression_method,
     ContextPtr context)
 {
-    CompressionMethod method = {};
+    CompressionMethod method;
     if (use_table_fd)
         method = chooseCompressionMethod("", compression_method);
     else
@@ -565,7 +564,7 @@ namespace
             }
 
             String path;
-            struct stat file_stat{};
+            struct stat file_stat;
 
             do
             {
@@ -747,7 +746,7 @@ namespace
                 }
 
                 const auto & archive = archive_info.paths_to_archives[current_archive_index];
-                struct stat file_stat{};
+                struct stat file_stat;
                 file_stat = getFileStat(archive, false, -1, "File");
                 if (file_stat.st_size == 0)
                 {
@@ -912,7 +911,7 @@ namespace
             if (!context->getSettingsRef()[Setting::schema_inference_use_cache_for_file])
                 return std::nullopt;
 
-            struct stat file_stat{};
+            struct stat file_stat;
             auto & schema_cache = StorageFile::getSchemaCache(context);
             auto get_last_mod_time = [&]() -> std::optional<time_t>
             {
@@ -1160,7 +1159,7 @@ bool StorageFile::parallelizeOutputAfterReading(ContextPtr context) const
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
-    struct stat buf{};
+    struct stat buf;
     int res = fstat(table_fd_, &buf);
     if (-1 == res)
         throw ErrnoException(ErrorCodes::CANNOT_FSTAT, "Cannot execute fstat");
@@ -1570,7 +1569,7 @@ Chunk StorageFileSource::generate()
 
             if (!read_buf)
             {
-                struct stat file_stat{};
+                struct stat file_stat;
                 file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
                 current_file_size = file_stat.st_size;
                 current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
@@ -1763,8 +1762,6 @@ Chunk StorageFileSource::generate()
     return {};
 }
 
-void StorageFileSource::onFinish() { parser_shared_resources->finishStream(); }
-
 void StorageFileSource::addNumRowsToCache(const String & path, size_t num_rows) const
 {
     auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext());
@@ -1860,7 +1857,7 @@ void StorageFile::read(
     }
     else
     {
-        const std::vector<std::string> * p = nullptr;
+        const std::vector<std::string> * p;
 
         if (archive_info.has_value())
             p = &archive_info->paths_to_archives;
@@ -2396,7 +2393,6 @@ void StorageFile::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextP
         args[0] = make_intrusive<ASTLiteral>(format_name);
 }
 
-void registerStorageFile(StorageFactory & factory);
 void registerStorageFile(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures storage_features{
