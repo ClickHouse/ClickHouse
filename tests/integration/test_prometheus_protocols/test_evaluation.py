@@ -488,6 +488,19 @@ def test_function_over_time():
         ],
     )
 
+    # step (15s) > window (10s): the sample at 140 is outside grid point 150's window (140, 150], so 150 must be empty.
+    do_query_test(
+        "last_over_time(test[10s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[120, "1"], [135, "3"], [195, "5"], [210, "8"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',3),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',8)]",
+            ]
+        ],
+    )
+
     do_query_test(
         "idelta(test[45s])[120s:15s]",
         210,

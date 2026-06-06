@@ -20,3 +20,11 @@ all_1_2_1	v2	UInt64	['TDigest','Uniq','MinMax']	4	0	6
 all_1_2_1	v3	String	['Uniq']	4	\N	\N
 200000
 3	4	4
+Basic auto-added to all suitable columns
+a	['TDigest','Uniq','MinMax','Basic']
+b	['Uniq','MinMax','Basic']
+c	['Uniq','MinMax','Basic']
+d	['Uniq','MinMax','Basic']
+s	['Uniq','Basic']
+basic disabled -> not added
+a	['TDigest','Uniq','MinMax']

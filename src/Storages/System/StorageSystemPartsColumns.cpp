@@ -73,6 +73,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"estimates.min",                              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Estimated minimum value of the column."},
         {"estimates.max",                              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Estimated maximum value of the column."},
         {"estimates.cardinality",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated cardinality of the column."},
+        {"estimates.null_count",                       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated number of NULL values in the column."},
         {"serialization_kind",                         std::make_shared<DataTypeString>(), "Kind of serialization of a column"},
         {"substreams",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of substreams to which column is serialized"},
         {"filenames",                                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of files for each substream of a column respectively"},
@@ -317,6 +318,15 @@ void StorageSystemPartsColumns::processNextStorage(
                 auto estimate_it = find_estimate(column.name);
                 if (estimate_it != estimates->end() && estimate_it->second.estimated_cardinality.has_value())
                     columns[res_index++]->insert(estimate_it->second.estimated_cardinality.value());
+                else
+                    columns[res_index++]->insertDefault();
+            }
+
+            if (columns_mask[src_index++])
+            {
+                auto estimate_it = find_estimate(column.name);
+                if (estimate_it != estimates->end() && estimate_it->second.estimated_null_count.has_value())
+                    columns[res_index++]->insert(estimate_it->second.estimated_null_count.value());
                 else
                     columns[res_index++]->insertDefault();
             }

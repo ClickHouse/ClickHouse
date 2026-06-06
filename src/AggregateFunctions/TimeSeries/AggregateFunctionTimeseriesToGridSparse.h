@@ -142,22 +142,24 @@ public:
             /// near `INT64_MIN` and `step` was near `INT64_MAX`, triggering UBSAN.
             const TimestampType current_timestamp = Base::timestampAtIndex(i);
 
-            /// Current bucket has a value?
+            /// Update the most recent sample from this bucket.
             if (!nulls[i])
             {
                 has_previous_value = true;
                 previous_value = values[i];
                 previous_timestamp = timestamps[i];
             }
-            else if (has_previous_value && !Base::isSampleOutOfWindow(previous_timestamp, current_timestamp))
+
+            /// The most recent sample may be within the staleness window or not.
+            if (has_previous_value && !Base::isSampleOutOfWindow(previous_timestamp, current_timestamp))
             {
-                /// Use the previous value if the current timestamp is missing and the previous one is not stale
                 values[i] = previous_value;
                 nulls[i] = 0;
             }
             else
             {
                 values[i] = ValueType{};
+                nulls[i] = 1;
             }
         }
     }

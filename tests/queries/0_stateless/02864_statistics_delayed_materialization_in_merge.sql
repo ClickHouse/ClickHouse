@@ -36,3 +36,34 @@ SELECT 'After truncate, insert, and materialize';
 SELECT replaceRegexpAll(explain, '__table1\.', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE b < 10 and a < 10) WHERE explain LIKE '%Prewhere%'; -- checks a first, then b (statistics used)
 
 DROP TABLE tab;
+
+-- Asymmetric merge with `basic`: part 1 has the stat file via explicit MATERIALIZE,
+-- part 2 is inserted with `materialize_statistics_on_insert = 0` (no stat file). After
+-- OPTIMIZE FINAL the merged part must still have `basic` because `MergeTask` rebuilds
+-- missing stats from the data stream (see `MergeTask::createMergedStream`).
+DROP TABLE IF EXISTS tab_basic;
+CREATE TABLE tab_basic (
+    id UInt64,
+    value Nullable(Int64)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS auto_statistics_types = '';
+
+SET materialize_statistics_on_insert = 0;
+INSERT INTO tab_basic SELECT number, if(number % 2 = 0, NULL, number) FROM numbers(100);
+ALTER TABLE tab_basic ADD STATISTICS value TYPE basic;
+ALTER TABLE tab_basic MATERIALIZE STATISTICS value;
+INSERT INTO tab_basic SELECT number + 100, if(number % 3 = 0, NULL, number + 100) FROM numbers(100);
+
+SELECT 'Basic: part 1 has it, part 2 does not (asymmetric)';
+SELECT name, statistics FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'tab_basic' AND active AND column = 'value'
+ORDER BY name;
+
+OPTIMIZE TABLE tab_basic FINAL;
+
+SELECT 'Basic: merged part has it (rebuilt during merge)';
+SELECT name, statistics FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'tab_basic' AND active AND column = 'value'
+ORDER BY name;
+
+DROP TABLE tab_basic;
