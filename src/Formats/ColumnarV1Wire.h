@@ -259,6 +259,11 @@ inline uint64_t buildColDescriptor(
     // ── Array column → COL_COMPLEX ────────────────────────────────────────────
     if (const auto * arr_col = typeid_cast<const ColumnArray *>(col))
     {
+        if (typeid_cast<const ColumnNullable *>(&arr_col->getData()))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: nested Nullable inside Array is not supported in COL_COMPLEX; "
+                "use a flat nullable column or a different format");
+
         desc.type           = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u);
         desc.null_offset    = 0;
         desc.offsets_offset = 0;  // unused for Array; outer offsets are at data_offset
@@ -278,6 +283,14 @@ inline uint64_t buildColDescriptor(
     // ── Tuple column → COL_COMPLEX (no outer offsets, fields concatenated) ───
     if (const auto * tup_col = typeid_cast<const ColumnTuple *>(col))
     {
+        for (const auto & field : tup_col->getColumns())
+        {
+            if (typeid_cast<const ColumnNullable *>(field.get()))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: nested Nullable inside Tuple is not supported in COL_COMPLEX; "
+                    "use a flat nullable column or a different format");
+        }
+
         desc.type           = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u);
         desc.null_offset    = 0;
         desc.offsets_offset = 0;
@@ -329,7 +342,11 @@ inline uint64_t buildColDescriptor(
     if      (wire_elem_size == 1) base_type = COL_FIXED8  | (is_nullable ? COL_IS_NULLABLE : 0u);
     else if (wire_elem_size == 2) base_type = COL_FIXED16 | (is_nullable ? COL_IS_NULLABLE : 0u);
     else if (wire_elem_size == 4) base_type = COL_FIXED32 | (is_nullable ? COL_IS_NULLABLE : 0u);
-    else                          base_type = COL_FIXED64 | (is_nullable ? COL_IS_NULLABLE : 0u);
+    else if (wire_elem_size == 8) base_type = COL_FIXED64 | (is_nullable ? COL_IS_NULLABLE : 0u);
+    else
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "COLUMNAR_V1: unsupported fixed-width element size {} bytes; supported: 1, 2, 4, 8",
+            wire_elem_size);
 
     desc.type = base_type | (is_const ? COL_IS_CONST : 0u);
     if (is_nullable)
@@ -573,6 +590,10 @@ inline MutableColumnPtr readColumnFromDesc(
     {
         if (is_nullable_wire && desc.null_offset)
         {
+            if (desc.null_offset + static_cast<uint64_t>(rows_to_dec) > buf.size())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: null map out of bounds: offset={}, rows={}, buf={}",
+                    desc.null_offset, rows_to_dec, buf.size());
             // Null map: 1=null, 0=non-null — identical to ColumnNullable layout; direct copy.
             auto null_col = ColumnUInt8::create(rows_to_dec);
             std::memcpy(null_col->getData().data(), buf.data() + desc.null_offset, rows_to_dec);
@@ -585,6 +606,15 @@ inline MutableColumnPtr readColumnFromDesc(
 
     if (raw_type == COL_BYTES)
     {
+        if (desc.offsets_offset + static_cast<uint64_t>(rows_to_dec + 1) * 8u > buf.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_BYTES offsets array out of bounds: offset={}, rows={}, buf={}",
+                desc.offsets_offset, rows_to_dec, buf.size());
+        if (desc.data_offset + desc.data_size > buf.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_BYTES data out of bounds: offset={}, size={}, buf={}",
+                desc.data_offset, desc.data_size, buf.size());
+
         const uint64_t * wire_offsets = reinterpret_cast<const uint64_t *>(buf.data() + desc.offsets_offset);
         const uint8_t  * data         = buf.data() + desc.data_offset;
         auto col_str = ColumnString::create();
@@ -596,6 +626,10 @@ inline MutableColumnPtr readColumnFromDesc(
         {
             uint64_t wire_end   = wire_offsets[i + 1];
             uint64_t wire_start = wire_offsets[i];
+            if (wire_start > wire_end || wire_end > desc.data_size)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_BYTES invalid string offsets at row {}: [{}, {}), data_size={}",
+                    i, wire_start, wire_end, desc.data_size);
             uint64_t str_len    = wire_end - wire_start;
             chars.resize(ch_pos + str_len);
             std::memcpy(chars.data() + ch_pos, data + wire_start, str_len);
@@ -606,6 +640,14 @@ inline MutableColumnPtr readColumnFromDesc(
     }
     else if (raw_type == COL_FIXED8)
     {
+        if (base_type->getSizeOfValueInMemory() != 1)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_FIXED8 type width mismatch: declared type has {} bytes",
+                base_type->getSizeOfValueInMemory());
+        if (desc.data_offset + static_cast<uint64_t>(rows_to_dec) > buf.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_FIXED8 data out of bounds: offset={}, rows={}, buf={}",
+                desc.data_offset, rows_to_dec, buf.size());
         // Use base_type so Int8, Bool, etc. round-trip correctly (not just UInt8).
         auto inner = base_type->createColumn();
         inner->insertManyDefaults(rows_to_dec);
@@ -615,6 +657,14 @@ inline MutableColumnPtr readColumnFromDesc(
     }
     else if (raw_type == COL_FIXED16)
     {
+        if (base_type->getSizeOfValueInMemory() != 2)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_FIXED16 type width mismatch: declared type has {} bytes",
+                base_type->getSizeOfValueInMemory());
+        if (desc.data_offset + static_cast<uint64_t>(rows_to_dec) * 2u > buf.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_FIXED16 data out of bounds: offset={}, rows={}, buf={}",
+                desc.data_offset, rows_to_dec, buf.size());
         auto inner = base_type->createColumn();
         inner->insertManyDefaults(rows_to_dec);
         std::memcpy(const_cast<char *>(inner->getRawData().data()),
@@ -623,6 +673,14 @@ inline MutableColumnPtr readColumnFromDesc(
     }
     else if (raw_type == COL_FIXED32)
     {
+        if (base_type->getSizeOfValueInMemory() != 4)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_FIXED32 type width mismatch: declared type has {} bytes",
+                base_type->getSizeOfValueInMemory());
+        if (desc.data_offset + static_cast<uint64_t>(rows_to_dec) * 4u > buf.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_FIXED32 data out of bounds: offset={}, rows={}, buf={}",
+                desc.data_offset, rows_to_dec, buf.size());
         auto inner = base_type->createColumn();
         inner->insertManyDefaults(rows_to_dec);
         std::memcpy(const_cast<char *>(inner->getRawData().data()),
@@ -631,7 +689,11 @@ inline MutableColumnPtr readColumnFromDesc(
     }
     else if (raw_type == COL_FIXED64)
     {
-        if (desc.data_offset + rows_to_dec * 8u > buf.size())
+        if (base_type->getSizeOfValueInMemory() != 8)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_FIXED64 type width mismatch: declared type has {} bytes",
+                base_type->getSizeOfValueInMemory());
+        if (desc.data_offset + static_cast<uint64_t>(rows_to_dec) * 8u > buf.size())
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED64 data out of bounds: offset={}, rows={}, buf={}",
                 desc.data_offset, rows_to_dec, buf.size());
