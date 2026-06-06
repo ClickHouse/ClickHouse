@@ -212,6 +212,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         }
         if (database->shouldReplicateQuery(getContext(), current_query_ptr))
         {
+            context_->checkAccess(AccessType::DROP_TABLE, table_id);
             ddl_guard->releaseTableLock();
             return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
         }
