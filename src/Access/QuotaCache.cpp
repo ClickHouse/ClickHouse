@@ -33,16 +33,27 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
 String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool throw_if_client_key_empty) const
 {
     const auto & params = enabled.params;
-    auto mask_address = [this](Poco::Net::IPAddress addr) -> String
+    auto mask_address = [this](const Poco::Net::IPAddress & addr) -> String
     {
         using Family = Poco::Net::IPAddress::Family;
-        /// An IPv4-mapped IPv6 address (such as `::ffff:192.0.2.10`) represents an IPv4 client.
-        /// Normalize it to a native IPv4 address so that `IPV4_PREFIX_BITS` is applied and such
-        /// clients share quota buckets with plain IPv4 clients, instead of falling into the IPv6
-        /// branch and being masked by `IPV6_PREFIX_BITS` (which would collapse all mapped IPv4
-        /// addresses together for a wide enough prefix).
+        /// An IPv4-mapped IPv6 address (such as `::ffff:192.0.2.10`) represents an IPv4 client,
+        /// so it is governed by `IPV4_PREFIX_BITS` and never by `IPV6_PREFIX_BITS`.
         if (addr.family() == Family::IPv6 && addr.isIPv4Mapped())
-            addr = Poco::Net::IPAddress(reinterpret_cast<const char *>(addr.addr()) + 12, 4);
+        {
+            /// A /0 prefix is also valid: it puts every IP into a single shared bucket.
+            if (quota->ipv4_prefix_bits)
+            {
+                /// Normalize to a native IPv4 address so that masked mapped clients share quota
+                /// buckets with plain IPv4 clients.
+                Poco::Net::IPAddress native(reinterpret_cast<const char *>(addr.addr()) + 12, 4);
+                Poco::Net::IPAddress mask(static_cast<unsigned>(*quota->ipv4_prefix_bits), Family::IPv4);
+                return (native & mask).toString();
+            }
+            /// No IPv4 prefix configured: keep the original representation to preserve the
+            /// pre-prefix-bits quota key. In particular, do not let `IPV6_PREFIX_BITS` mask an
+            /// IPv4 client.
+            return addr.toString();
+        }
 
         const auto fam = addr.family();
         /// A /0 prefix is also valid: it puts every IP into a single shared bucket.

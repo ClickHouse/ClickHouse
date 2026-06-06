@@ -14,3 +14,5 @@ exceeded
 1	0.0.0.0
 --- Test IPv4-mapped IPv6 forwarded address is masked by IPV4_PREFIX_BITS ---
 1.2.0.0
+--- Test IPv4-mapped IPv6 forwarded address is not masked by IPV6_PREFIX_BITS without IPV4_PREFIX_BITS ---
+::ffff:1.2.3.4
