@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, no-flaky-check
+# Tags: race, zookeeper, no-flaky-check
 # no-flaky-check: This test deliberately provokes logical errors via concurrent
 # ALTER and INSERT. Re-running it many times under sanitizers blows the 180s
 # per-test budget and reliably triggers an exception in debug builds, which is the bug being documented.
@@ -35,9 +35,16 @@ function report_error()
         exit 1
     fi
 
+    # `UNFINISHED` errors mean a pending `ALTER`/mutation could not be awaited because the
+    # table or replica was shut down (e.g. a concurrent `DROP TABLE` at teardown or a server
+    # restart triggered by another parallel test). These are benign races, not the logical
+    # errors this test is documenting (a genuine bug surfaces as `NOT_FOUND_COLUMN_IN_BLOCK`,
+    # `DUPLICATE_COLUMN`, etc., none of which mention shutdown), so we ignore them too.
     if [[ -n "${ERROR}" \
         && ! "${ERROR}" =~ "You can retry this error" \
-        && ! "${ERROR}" =~ "Please retry this query" ]]
+        && ! "${ERROR}" =~ "Please retry this query" \
+        && ! "${ERROR}" =~ "table shutdown was called" \
+        && ! "${ERROR}" =~ "was shut down" ]]
     then
         echo "${ERROR}"
     fi
