@@ -40,5 +40,5 @@ SELECT m.keys, m.values, m.values.*;
 WITH [1, 2, 3] AS arr SELECT arr.*; -- { serverError UNSUPPORTED_METHOD }
 
 SELECT getSubcolumn([1, 2, 3], 'size0');
-SELECT getSubcolumn([1, 2, 3], materialize('size0')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT getSubcolumn([1, 2, 3], materialize('size0')); -- { serverError ILLEGAL_COLUMN }
 SELECT getSubcolumn([1, 2, 3], 'aaa'); -- { serverError ILLEGAL_COLUMN }

@@ -61,7 +61,7 @@ SELECT caseWithExpression(
     NULL
 ); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-SELECT caseWithExpression('C', 'A', true, 'B', false); -- { serverError BAD_ARGUMENTS }
+SELECT caseWithExpression('C', 'A', true, 'B', false); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 SELECT caseWithExpression(1, assumeNotNull(materialize(NULL)), 1, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
