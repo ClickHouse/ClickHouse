@@ -2584,6 +2584,16 @@ void ClientBase::processParsedSingleQuery(
             getClientConfiguration().setString("database", new_database);
             /// If the connection initiates the reconnection, it uses its variable.
             connection->setDefaultDatabase(new_database);
+            /// `database` can also travel as a per-query setting (e.g. when `--database` or a
+            /// config/named-connection database was mirrored into the settings packet that ships with
+            /// every query). Keep it in sync with the interactive `USE`; otherwise the stale value
+            /// would keep being sent and override the database just selected. Only update it when it
+            /// was actually set, so we don't introduce a sticky `database` setting for clients that
+            /// rely solely on the connection's default database.
+            if (cmd_settings->isChanged("database"))
+                cmd_settings->set("database", new_database);
+            if (client_context->getSettingsRef().isChanged("database"))
+                client_context->setSetting("database", new_database);
         }
     }
 
