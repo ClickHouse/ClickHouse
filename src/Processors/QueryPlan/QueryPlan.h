@@ -92,7 +92,9 @@ public:
     QueryPlan();
     ~QueryPlan();
     QueryPlan(QueryPlan &&) noexcept;
-    QueryPlan & operator=(QueryPlan &&) noexcept;
+    /// Not noexcept: move-assignment appends the QueryPlanResourceHolder, which allocates and can
+    /// throw. The move constructor stays noexcept because it steals the holder instead of appending.
+    QueryPlan & operator=(QueryPlan &&); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
     void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlanPtr> plans);
     void addStep(QueryPlanStepPtr step);
@@ -179,6 +181,7 @@ public:
     static QueryPlan extractSubplan(Node * root, Nodes & nodes);
 
     Node * getRootNode() const { return root; }
+    void replaceRootNode(Node * new_root) { root = new_root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
     void replaceNodeWithPlan(Node * node, QueryPlan plan);
     void replaceNodeWithPlan(Node * node, QueryPlan plan, SharedHeader expected_header);

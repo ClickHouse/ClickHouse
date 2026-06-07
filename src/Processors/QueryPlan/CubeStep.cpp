@@ -37,6 +37,8 @@ CubeStep::CubeStep(const SharedHeader & input_header_, Aggregator::Params params
 {
 }
 
+ProcessorPtr addGroupingSetForTotals(SharedHeader header, const Names & keys, bool use_nulls, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number);
+
 ProcessorPtr addGroupingSetForTotals(SharedHeader header, const Names & keys, bool use_nulls, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number)
 {
     ActionsDAG dag(header->getColumnsWithTypeAndName());
@@ -55,9 +57,9 @@ ProcessorPtr addGroupingSetForTotals(SharedHeader header, const Names & keys, bo
         }
     }
 
-    auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, grouping_set_number), 1);
+    ColumnConst::Ptr grouping_col = ColumnConst::create(ColumnUInt64::create(1, grouping_set_number), 0);
     const auto * grouping_node = &dag.addColumn(
-        {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
+        std::move(grouping_col), std::make_shared<DataTypeUInt64>(), "__grouping_set");
 
     grouping_node = &dag.materializeNode(*grouping_node);
     outputs.insert(outputs.begin(), grouping_node);
