@@ -19,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_USAGE_OF_INPUT;
-    extern const int LOGICAL_ERROR;
 }
 
 StorageInput::StorageInput(const StorageID & table_id, const ColumnsDescription & columns_)
@@ -96,14 +95,6 @@ void StorageInput::readImpl(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    /// Catches CTE inlining: AST guard runs before, this catches after.
-    if (was_read_added)
-        throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT,
-            "Table function `input` can only be read once per query because it is a one-shot stream from the client. "
-            "To reference the data multiple times, wrap `input` in a `MATERIALIZED` CTE "
-            "and enable the `enable_materialized_cte` setting (without the setting `MATERIALIZED` is just a hint and the CTE is still inlined): "
-            "`SETTINGS enable_materialized_cte = 1 WITH cte AS MATERIALIZED (SELECT ... FROM input(...)) ...`.");
-
     storage_snapshot->check(column_names);
     auto sample_block = std::make_shared<const Block>(storage_snapshot->metadata->getSampleBlock());
     Pipe input_source_pipe;
@@ -127,7 +118,6 @@ void StorageInput::readImpl(
         *this);
 
     query_plan.addStep(std::move(reading));
-    was_read_added = true;
 }
 
 void ReadFromInput::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -142,7 +132,11 @@ void ReadFromInput::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "Input stream is not initialized, input() must be used only in INSERT SELECT query");
 
     if (storage.was_pipe_used)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to read from input() twice.");
+        throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT,
+            "Table function `input` can only be read once per query because it is a one-shot stream from the client. "
+            "To reference the data multiple times, wrap `input` in a `MATERIALIZED` CTE "
+            "and enable the `enable_materialized_cte` setting (without the setting `MATERIALIZED` is just a hint and the CTE is still inlined): "
+            "`SETTINGS enable_materialized_cte = 1 WITH cte AS MATERIALIZED (SELECT ... FROM input(...)) ...`.");
 
     pipeline.init(std::move(storage.pipe));
     storage.was_pipe_used = true;

@@ -36,6 +36,5 @@ private:
     bool was_pipe_initialized = false;
     bool was_pipe_used = false;
     bool is_input_initialized = false;
-    bool was_read_added = false;
 };
 }
