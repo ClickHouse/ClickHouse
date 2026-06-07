@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstring>
 #include <ranges>
 #include <string_view>
 #include <vector>
@@ -719,6 +720,56 @@ void applyRandomProjection(const std::vector<float> & sign_flips, const T * x, s
     }
 }
 
+/// TurboQuant (MSE), 2 bits per coordinate. After the random projection the coordinates are ~zero-mean Gaussian,
+/// so we normalize each vector to unit coordinate std and apply the FIXED Lloyd-Max 4-level quantizer for the unit
+/// Gaussian. This is data-oblivious - no sampling, no learned codebook, only the fixed projection seed (exactly like
+/// 'b1_projected', which is the 1-bit/sign case). 2 bits/coordinate -> dimensions/4 bytes per vector.
+constexpr float TURBOQUANT_THRESHOLDS[3] = {-0.9816f, 0.0f, 0.9816f};       /// decision boundaries for unit Gaussian
+constexpr float TURBOQUANT_LEVELS[4] = {-1.5104f, -0.4528f, 0.4528f, 1.5104f}; /// reconstruction levels
+
+inline UInt8 turboQuantizeCoord(float x)
+{
+    if (x < TURBOQUANT_THRESHOLDS[0]) return 0;
+    if (x < TURBOQUANT_THRESHOLDS[1]) return 1;
+    if (x < TURBOQUANT_THRESHOLDS[2]) return 2;
+    return 3;
+}
+
+/// Project `x`, normalize to unit coordinate std, 2-bit quantize, and pack into `dst` (dimensions/4 bytes).
+/// `work` is a scratch buffer of `padded` floats (padded = projection.size() / PROJECTION_ROUNDS).
+template <typename T>
+void encodeTurboQuant(const std::vector<float> & projection, const T * x, size_t dimensions, float * work, char * dst)
+{
+    applyRandomProjection(projection, x, dimensions, work);
+
+    double sumsq = 0.0;
+    for (size_t i = 0; i < dimensions; ++i)
+        sumsq += static_cast<double>(work[i]) * static_cast<double>(work[i]);
+    /// normalized coord = work[i] / std, std = sqrt(sumsq / dimensions) -> multiply by sqrt(dimensions / sumsq)
+    const float inv_std = (sumsq > 0.0) ? static_cast<float>(std::sqrt(static_cast<double>(dimensions) / sumsq)) : 0.0f;
+
+    const size_t code_bytes = dimensions / 4;
+    std::memset(dst, 0, code_bytes);
+    for (size_t i = 0; i < dimensions; ++i)
+    {
+        const UInt8 code = turboQuantizeCoord(work[i] * inv_std);
+        dst[i >> 2] |= static_cast<char>(code << ((i & 3u) * 2u));
+    }
+}
+
+/// Squared-L2 between a dequantized query (`query_levels`, `dimensions` floats) and a packed 2-bit code.
+inline float turboQuantDistance(const float * query_levels, const char * code, size_t dimensions)
+{
+    float acc = 0.0f;
+    for (size_t i = 0; i < dimensions; ++i)
+    {
+        const UInt8 c = (static_cast<UInt8>(code[i >> 2]) >> ((i & 3u) * 2u)) & 3u;
+        const float diff = query_levels[i] - TURBOQUANT_LEVELS[c];
+        acc += diff * diff;
+    }
+    return acc;
+}
+
 }
 
 MergeTreeIndexAggregatorVectorSimilarityFlat::MergeTreeIndexAggregatorVectorSimilarityFlat(
@@ -727,14 +778,16 @@ MergeTreeIndexAggregatorVectorSimilarityFlat::MergeTreeIndexAggregatorVectorSimi
     UInt64 dimensions_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
-    bool projected_)
+    bool projected_,
+    bool turboquant_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , dimensions(dimensions_)
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
     , projected(projected_)
-    , bytes_per_vector(dimensions_ / 8)
+    , turboquant(turboquant_)
+    , bytes_per_vector(turboquant_ ? dimensions_ / 4 : dimensions_ / 8) /// 2 bits/coord for turboquant, else 1 bit
 {
 }
 
@@ -759,7 +812,7 @@ template <typename Column>
 void quantizeRowsToBinary(
     const ColumnArray * column_array, const ColumnArray::Offsets & offsets,
     size_t dimensions, size_t bytes_per_vector, std::vector<UInt8> & codes, size_t & num_vectors, size_t rows,
-    const std::vector<float> & projection)
+    const std::vector<float> & projection, bool turboquant)
 {
     const auto & data = typeid_cast<const Column &>(column_array->getData()).getData();
 
@@ -783,7 +836,12 @@ void quantizeRowsToBinary(
         checkVectorIsSane(src, dimensions, unum::usearch::scalar_kind_t::b1x8_k, ErrorCodes::INCORRECT_DATA, "indexed vector");
 
         char * dst = reinterpret_cast<char *>(codes.data() + (base + row) * bytes_per_vector);
-        if (projected)
+        if (turboquant)
+        {
+            /// 'turboquant': project, normalize, 2-bit Lloyd-Max quantize, pack 2 bits/coord.
+            encodeTurboQuant(projection, src, dimensions, work, dst);
+        }
+        else if (projected)
         {
             /// 'b1_projected': project, then sign-binarize the projected (Float32) vector.
             applyRandomProjection(projection, src, dimensions, work);
@@ -811,9 +869,9 @@ void quantizeRowsToBinary(
     if (threads_count == 0)
         threads_count = getNumberOfCPUCoresToUse();
 
-    /// Only the projected path is expensive enough to be worth parallelizing; the raw-sign path is cheap.
+    /// Only the projected/turboquant paths are expensive enough to be worth parallelizing; raw-sign is cheap.
     static constexpr size_t min_rows_for_parallel = 256;
-    const size_t num_threads = (projected && rows >= min_rows_for_parallel) ? std::min(threads_count, rows) : 1;
+    const size_t num_threads = ((projected || turboquant) && rows >= min_rows_for_parallel) ? std::min(threads_count, rows) : 1;
 
     if (num_threads <= 1)
     {
@@ -880,18 +938,18 @@ void MergeTreeIndexAggregatorVectorSimilarityFlat::update(const Block & block, s
     if (!data_type_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float32|Float64|BFloat16)");
 
-    /// For 'b1_projected', build the (deterministic) random projection once and reuse it across all blocks/rows.
-    if (projected && projection.empty())
+    /// For 'b1_projected' and 'turboquant', build the (deterministic) random projection once and reuse it.
+    if ((projected || turboquant) && projection.empty())
         projection = generateRandomProjection(dimensions);
 
     const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
     WhichDataType which(nested_type_index);
     if (which.isFloat32())
-        quantizeRowsToBinary<ColumnFloat32>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection);
+        quantizeRowsToBinary<ColumnFloat32>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, turboquant);
     else if (which.isFloat64())
-        quantizeRowsToBinary<ColumnFloat64>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection);
+        quantizeRowsToBinary<ColumnFloat64>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, turboquant);
     else if (which.isBFloat16())
-        quantizeRowsToBinary<ColumnBFloat16>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection);
+        quantizeRowsToBinary<ColumnBFloat16>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, turboquant);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
 
@@ -903,11 +961,13 @@ MergeTreeIndexConditionVectorSimilarityFlat::MergeTreeIndexConditionVectorSimila
     const String & index_column_,
     unum::usearch::metric_kind_t metric_kind_,
     bool projected_,
+    bool turboquant_,
     ContextPtr context)
     : parameters(parameters_)
     , index_column(index_column_)
     , metric_kind(metric_kind_)
     , projected(projected_)
+    , turboquant(turboquant_)
     , index_fetch_multiplier(context->getSettingsRef()[Setting::vector_search_index_fetch_multiplier])
     , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
     , is_rescoring(context->getSettingsRef()[Setting::vector_search_with_rescoring])
@@ -960,10 +1020,25 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
     const size_t bytes_per_vector = granule->bytes_per_vector;
     limit = std::min(limit, num_vectors);
 
-    /// Quantize the (full-precision) reference vector to the same packed-bit representation as the index.
-    /// For 'b1_projected', project the query with the same fixed-seed transform used at build time before sign-binarizing.
+    /// Quantize the (full-precision) reference vector to the same packed representation as the index.
+    /// For 'b1_projected'/'turboquant', project the query with the same fixed-seed transform used at build time.
     std::vector<UInt8> query_code(bytes_per_vector);
-    if (projected)
+    std::vector<float> query_levels; /// turboquant only: the dequantized query, used by the squared-L2 scan
+    if (turboquant)
+    {
+        const std::vector<float> projection = generateRandomProjection(granule->dimensions);
+        const size_t padded = projection.size() / PROJECTION_ROUNDS;
+        std::vector<float> work(padded);
+        encodeTurboQuant(projection, parameters->reference_vector.data(), granule->dimensions,
+                         work.data(), reinterpret_cast<char *>(query_code.data()));
+        query_levels.resize(granule->dimensions);
+        for (size_t i = 0; i < granule->dimensions; ++i)
+        {
+            const UInt8 c = (query_code[i >> 2] >> ((i & 3u) * 2u)) & 3u;
+            query_levels[i] = TURBOQUANT_LEVELS[c];
+        }
+    }
+    else if (projected)
     {
         const std::vector<float> projection = generateRandomProjection(granule->dimensions);
         const size_t padded = projection.size() / PROJECTION_ROUNDS;
@@ -981,11 +1056,15 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
     if (limit == 0 || num_vectors == 0)
         return {};
 
-    /// usearch's punned metric computes Hamming over b1x8 codes using AVX popcount.
-    unum::usearch::metric_punned_t metric(granule->dimensions, granule->metric_kind, granule->scalar_kind);
+    /// usearch's punned metric computes Hamming over b1x8 codes using AVX popcount (not used for turboquant,
+    /// which uses its own dequantized squared-L2).
+    unum::usearch::metric_punned_t metric;
+    if (!turboquant)
+        metric = unum::usearch::metric_punned_t(granule->dimensions, granule->metric_kind, granule->scalar_kind);
 
     const char * base = reinterpret_cast<const char *>(granule->codes.data());
     const char * query = reinterpret_cast<const char *>(query_code.data());
+    const size_t dims = granule->dimensions;
 
     /// Exhaustive scan. Unlike HNSW search (O(log N) per query, fine single-threaded), a flat scan is O(N) and the
     /// index-analysis phase only parallelizes across parts, so a single large part would otherwise scan single-threaded.
@@ -1008,7 +1087,10 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
             /// Check cancellation periodically (not per vector - that lookup would itself dominate the cheap Hamming).
             if ((i & 0xFFFFu) == 0)
                 throw_if_killed();
-            scored[i] = {static_cast<float>(metric(base + i * bytes_per_vector, query)), static_cast<UInt32>(i)};
+            const float dist = turboquant
+                ? turboQuantDistance(query_levels.data(), base + i * bytes_per_vector, dims)
+                : static_cast<float>(metric(base + i * bytes_per_vector, query));
+            scored[i] = {dist, static_cast<UInt32>(i)};
         }
     };
 
@@ -1066,6 +1148,7 @@ MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
     bool projected_,
+    bool turboquant_,
     UsearchHnswParams usearch_hnsw_params_)
     : IMergeTreeIndex(index_)
     , method(method_)
@@ -1073,6 +1156,7 @@ MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
     , projected(projected_)
+    , turboquant(turboquant_)
     , usearch_hnsw_params(usearch_hnsw_params_)
 {
 }
@@ -1087,7 +1171,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexVectorSimilarity::createIndexGranule() co
 MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator() const
 {
     if (method == "fastknn")
-        return std::make_shared<MergeTreeIndexAggregatorVectorSimilarityFlat>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, projected);
+        return std::make_shared<MergeTreeIndexAggregatorVectorSimilarityFlat>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, projected, turboquant);
     return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 }
 
@@ -1100,7 +1184,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
 {
     const String & index_column = index.column_names[0];
     if (method == "fastknn")
-        return std::make_shared<MergeTreeIndexConditionVectorSimilarityFlat>(parameters, index_column, metric_kind, projected, context);
+        return std::make_shared<MergeTreeIndexConditionVectorSimilarityFlat>(parameters, index_column, metric_kind, projected, turboquant, context);
     return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(parameters, index_column, metric_kind, context);
 }
 
@@ -1116,25 +1200,37 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
     UsearchHnswParams usearch_hnsw_params;
 
     bool projected = false;
+    bool turboquant = false;
 
     /// Optional parameters:
     const bool has_six_args = (args.size() == 6);
     if (has_six_args)
     {
         const String quantization = args[3].safeGet<String>();
-        scalar_kind = quantizationToScalarKind.at(quantization);
         usearch_hnsw_params = {.connectivity  = args[4].safeGet<UInt64>(),
                                .expansion_add = args[5].safeGet<UInt64>()};
 
-        /// Special handling for binary quantization:
-        if (scalar_kind == unum::usearch::scalar_kind_t::b1x8_k)
-            metric_kind = unum::usearch::metric_kind_t::hamming_k;
+        /// 'turboquant' (fastknn only) is not a usearch scalar_kind: it stores its own 2-bit codes and uses a
+        /// dequantized squared-L2 scan. Keep the metric as the requested distance (cosineDistance -> cos_k).
+        if (quantization == "turboquant")
+        {
+            turboquant = true;
+            scalar_kind = unum::usearch::scalar_kind_t::f32_k; /// unused by the turboquant scan
+        }
+        else
+        {
+            scalar_kind = quantizationToScalarKind.at(quantization);
 
-        /// 'b1_projected' shares 'b1' storage and the Hamming metric, but additionally projects vectors before signing.
-        projected = (quantization == "b1_projected");
+            /// Special handling for binary quantization:
+            if (scalar_kind == unum::usearch::scalar_kind_t::b1x8_k)
+                metric_kind = unum::usearch::metric_kind_t::hamming_k;
+
+            /// 'b1_projected' shares 'b1' storage and the Hamming metric, but projects vectors before signing.
+            projected = (quantization == "b1_projected");
+        }
     }
 
-    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, method, dimensions, metric_kind, scalar_kind, projected, usearch_hnsw_params);
+    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, method, dimensions, metric_kind, scalar_kind, projected, turboquant, usearch_hnsw_params);
 }
 
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */)
@@ -1177,19 +1273,35 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
 
     if (has_six_args)
     {
-        if (!quantizationToScalarKind.contains(args[3].safeGet<String>()))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Fourth argument (quantization) of vector similarity index is not supported. Supported quantizations are: {}", joinByComma(quantizationToScalarKind));
+        const String quantization = args[3].safeGet<String>();
+        const bool is_turboquant = (quantization == "turboquant");
 
-        if (is_fastknn && quantizationToScalarKind.at(args[3].safeGet<String>()) != unum::usearch::scalar_kind_t::b1x8_k)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "The 'fastknn' method currently supports only 'b1' (binary) and 'projected' quantization");
+        if (!is_turboquant && !quantizationToScalarKind.contains(quantization))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Fourth argument (quantization) of vector similarity index is not supported. Supported quantizations are: {} (and 'turboquant' for the 'fastknn' method)", joinByComma(quantizationToScalarKind));
 
-        /// More checks for binary quantization
-        if (quantizationToScalarKind.at(args[3].safeGet<String>()) == unum::usearch::scalar_kind_t::b1x8_k)
+        if (is_turboquant)
         {
+            /// 'turboquant': fastknn-only, cosine distance, dimension multiple of 4 (2 bits/coord -> 4 codes/byte).
+            if (!is_fastknn)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "'turboquant' quantization is only supported by the 'fastknn' method");
             if (distanceFunctionToMetricKind.at(args[1].safeGet<String>()) != unum::usearch::metric_kind_t::cos_k)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Binary quantization in vector similarity index can only be used with the cosine distance as distance function");
-            if (args[2].safeGet<UInt64>() % 8 != 0)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Binary quantization in vector similarity index requires that the dimension is a multiple of 8");
+                throw Exception(ErrorCodes::INCORRECT_DATA, "'turboquant' quantization can only be used with the cosine distance as distance function");
+            if (args[2].safeGet<UInt64>() % 4 != 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "'turboquant' quantization requires that the dimension is a multiple of 4");
+        }
+        else
+        {
+            if (is_fastknn && quantizationToScalarKind.at(quantization) != unum::usearch::scalar_kind_t::b1x8_k)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "The 'fastknn' method currently supports only 'b1', 'b1_projected', and 'turboquant' quantization");
+
+            /// More checks for binary quantization
+            if (quantizationToScalarKind.at(quantization) == unum::usearch::scalar_kind_t::b1x8_k)
+            {
+                if (distanceFunctionToMetricKind.at(args[1].safeGet<String>()) != unum::usearch::metric_kind_t::cos_k)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Binary quantization in vector similarity index can only be used with the cosine distance as distance function");
+                if (args[2].safeGet<UInt64>() % 8 != 0)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Binary quantization in vector similarity index requires that the dimension is a multiple of 8");
+            }
         }
 
         /// Call Usearch's own parameter validation method for HNSW-specific parameters (the flat method ignores them).

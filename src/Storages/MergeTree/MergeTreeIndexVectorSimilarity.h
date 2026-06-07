@@ -216,7 +216,8 @@ struct MergeTreeIndexAggregatorVectorSimilarityFlat final : IMergeTreeIndexAggre
         UInt64 dimensions_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
-        bool projected_);
+        bool projected_,
+        bool turboquant_);
 
     ~MergeTreeIndexAggregatorVectorSimilarityFlat() override = default;
 
@@ -230,6 +231,7 @@ struct MergeTreeIndexAggregatorVectorSimilarityFlat final : IMergeTreeIndexAggre
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     const bool projected;          /// 'b1_projected' quantization: random-project before sign-binarizing
+    const bool turboquant;         /// 'turboquant' quantization: random-project, then 2-bit Lloyd-Max per coordinate
     size_t bytes_per_vector = 0;
     size_t num_vectors = 0;
     std::vector<UInt8> codes;
@@ -245,6 +247,7 @@ public:
         const String & index_column_,
         unum::usearch::metric_kind_t metric_kind_,
         bool projected_,
+        bool turboquant_,
         ContextPtr context);
 
     ~MergeTreeIndexConditionVectorSimilarityFlat() override = default;
@@ -259,6 +262,7 @@ private:
     const String index_column;
     const unum::usearch::metric_kind_t metric_kind;
     const bool projected;          /// 'b1_projected' quantization: random-project the query before sign-binarizing
+    const bool turboquant;         /// 'turboquant' quantization: random-project + 2-bit Lloyd-Max
     const float index_fetch_multiplier;
     const size_t max_limit;
     const bool is_rescoring;
@@ -275,6 +279,7 @@ public:
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
         bool projected_,
+        bool turboquant_,
         UsearchHnswParams usearch_hnsw_params_);
 
     ~MergeTreeIndexVectorSimilarity() override = default;
@@ -291,6 +296,7 @@ private:
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     const bool projected;        /// fastknn + 'b1_projected' quantization (random projection before sign)
+    const bool turboquant;       /// fastknn + 'turboquant' quantization (random projection + 2-bit Lloyd-Max)
     const UsearchHnswParams usearch_hnsw_params;
 };
 
