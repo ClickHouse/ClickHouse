@@ -109,6 +109,13 @@ bool shouldSkipShardOnInsert(const Settings & settings, int exception_code)
     if (!settings[Setting::skip_unavailable_shards])
         return false;
 
+    /// `LOGICAL_ERROR` denotes a local invariant violation (an impossible job layout, a missing
+    /// connection pool, an empty connection) rather than an error reported by the shard. Never
+    /// silence it as a shard skip, even in the catch-all `unavailable_or_exception_before_processing`
+    /// mode, otherwise genuine programming/configuration errors would be hidden and rows silently dropped.
+    if (exception_code == ErrorCodes::LOGICAL_ERROR)
+        return false;
+
     const SkipUnavailableShardsMode mode = settings[Setting::skip_unavailable_shards_mode];
     switch (mode)
     {
