@@ -3,7 +3,6 @@
 #if USE_LIBPNG
 
 #include <png.h>
-#include <vector>
 
 #include <IO/WriteBuffer.h>
 #include <Common/Exception.h>
@@ -50,13 +49,6 @@ void PNGWriter::writeImage(const unsigned char * pixels)
     if (initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PNG writer can encode only one image");
 
-    /// Build the row pointers before `setjmp`, so that this object is in scope (and thus destroyed during
-    /// stack unwinding) if a callback longjmps back and we throw from the handler below.
-    std::vector<png_bytep> row_pointers(height);
-    const size_t row_bytes = width * channels;
-    for (size_t y = 0; y < height; ++y)
-        row_pointers[y] = const_cast<png_bytep>(pixels + y * row_bytes);
-
     png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, this, &PNGWriter::errorCallback, &PNGWriter::warningCallback);
     if (!png_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to create libpng write struct");
@@ -94,7 +86,14 @@ void PNGWriter::writeImage(const unsigned char * pixels)
     png_set_compression_level(png_ptr, PNG_COMPRESSION_LEVEL);
 
     png_write_info(png_ptr, info_ptr);
-    png_write_image(png_ptr, row_pointers.data());
+
+    /// Write the image one row at a time, pointing directly into the tightly packed pixel buffer.
+    /// This avoids materializing a separate table of per-row pointers, whose size would be proportional
+    /// to the user-controlled image height and would not be accounted by the memory tracker.
+    const size_t row_bytes = width * channels;
+    for (size_t y = 0; y < height; ++y)
+        png_write_row(png_ptr, const_cast<png_bytep>(pixels + y * row_bytes));
+
     png_write_end(png_ptr, info_ptr);
 
     initialized = true;

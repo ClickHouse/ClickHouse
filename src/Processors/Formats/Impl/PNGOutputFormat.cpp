@@ -71,6 +71,14 @@ void PNGOutputFormat::finalizeImpl()
     }
 }
 
+void PNGOutputFormat::resetFormatterImpl()
+{
+    /// Reusable output paths (e.g. `MessageQueueSink`) finalize one image and then reuse this
+    /// formatter for the next message. Clear the accumulated pixels and the implicit coordinate
+    /// cursor so the next image starts from scratch instead of carrying over stale state.
+    serializer->reset();
+}
+
 void registerOutputFormatPNG(FormatFactory & factory);
 void registerOutputFormatPNG(FormatFactory & factory)
 {
