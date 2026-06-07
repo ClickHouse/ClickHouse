@@ -289,11 +289,11 @@ void DatabaseAtomic::dropDetachedTable(
         snapshot_detached_tables.erase(table_name);
     }
 
+    LOG_TRACE(log, "Table {} ready for remove.", table_name);
+    DatabaseCatalog::instance().enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, table_metadata_path_drop, sync);
+
     try
     {
-        LOG_TRACE(log, "Table {} ready for remove.", table_name);
-        DatabaseCatalog::instance().enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, table_metadata_path_drop, sync);
-
         dependency_cleanup();
 
         /// Metadata is already moved to `metadata_dropped`, so removing detached flag is safe.
