@@ -1783,7 +1783,7 @@ You can build an end-to-end pipeline that continuously syncs data from a Paimon 
 
 **Step 1 — Create the Paimon source table with incremental read and metadata refresh enabled.**
 
-The example below uses `PaimonLocal`. Replace the engine with `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, or the `Paimon` alias as appropriate for your storage backend:
+The example below uses `PaimonLocal`. Replace the engine with `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, or the auto-detecting `Paimon` engine as appropriate for your storage backend:
 
 ```sql
 SET allow_experimental_paimon_storage_engine = 1;
@@ -1797,7 +1797,7 @@ SETTINGS
     paimon_replica_name = '{replica}',
     paimon_metadata_refresh_interval_sec = 1;
 
--- S3 storage (Paimon is an alias for PaimonS3)
+-- S3 storage (the `Paimon` engine defaults to the S3 implementation when no `disk` is specified)
 CREATE TABLE paimon_mv_source
 ENGINE = Paimon('http://minio:9000/bucket/path/to/table', 'access_key', 'secret_key')
 SETTINGS
