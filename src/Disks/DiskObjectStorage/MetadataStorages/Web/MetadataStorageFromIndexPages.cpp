@@ -4,6 +4,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/logger_useful.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -13,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <Common/re2.h>
 
+#include <optional>
 #include <unordered_set>
 
 namespace DB
@@ -38,6 +40,113 @@ namespace Setting
 
 namespace
 {
+    /// Decode the HTML entities that commonly appear in `href`/`src` attribute values so the
+    /// extracted URL matches what a browser would actually request. For example, index pages
+    /// frequently render signed download links as `href="part.tsv?x=1&amp;token=..."`; without
+    /// decoding, the literal `&amp;` would be sent to the server and the final `GET` would fail.
+    /// Handles the named entities relevant to URLs plus numeric (`&#...;`) and hex (`&#x...;`)
+    /// references; unrecognized entities are left untouched.
+    std::string decodeHTMLEntities(const std::string & input)
+    {
+        if (input.find('&') == std::string::npos)
+            return input;
+
+        std::string result;
+        result.reserve(input.size());
+
+        size_t i = 0;
+        while (i < input.size())
+        {
+            if (input[i] != '&')
+            {
+                result += input[i];
+                ++i;
+                continue;
+            }
+
+            const size_t semicolon = input.find(';', i + 1);
+            /// Entity references are short; if there is no nearby `;`, treat `&` as a literal.
+            if (semicolon == std::string::npos || semicolon - i > 12)
+            {
+                result += input[i];
+                ++i;
+                continue;
+            }
+
+            const std::string entity = input.substr(i + 1, semicolon - i - 1);
+            std::optional<UInt32> code_point;
+
+            if (entity == "amp")
+                code_point = '&';
+            else if (entity == "lt")
+                code_point = '<';
+            else if (entity == "gt")
+                code_point = '>';
+            else if (entity == "quot")
+                code_point = '"';
+            else if (entity == "apos")
+                code_point = '\'';
+            else if (entity.size() > 2 && (entity[0] == '#') && (entity[1] == 'x' || entity[1] == 'X'))
+            {
+                UInt32 value = 0;
+                bool valid = true;
+                for (size_t j = 2; j < entity.size() && valid; ++j)
+                {
+                    const char c = entity[j];
+                    UInt32 digit = 0;
+                    if (c >= '0' && c <= '9')
+                        digit = static_cast<UInt32>(c - '0');
+                    else if (c >= 'a' && c <= 'f')
+                        digit = static_cast<UInt32>(c - 'a' + 10);
+                    else if (c >= 'A' && c <= 'F')
+                        digit = static_cast<UInt32>(c - 'A' + 10);
+                    else
+                        valid = false;
+                    if (valid)
+                        value = value * 16 + digit;
+                }
+                if (valid)
+                    code_point = value;
+            }
+            else if (entity.size() > 1 && entity[0] == '#')
+            {
+                UInt32 value = 0;
+                bool valid = true;
+                for (size_t j = 1; j < entity.size() && valid; ++j)
+                {
+                    const char c = entity[j];
+                    if (c >= '0' && c <= '9')
+                        value = value * 10 + static_cast<UInt32>(c - '0');
+                    else
+                        valid = false;
+                }
+                if (valid)
+                    code_point = value;
+            }
+
+            if (!code_point)
+            {
+                result += input[i];
+                ++i;
+                continue;
+            }
+
+            char utf8_bytes[4];
+            const size_t num_bytes = UTF8::convertCodePointToUTF8(static_cast<int>(*code_point), utf8_bytes, sizeof(utf8_bytes));
+            if (num_bytes == 0)
+            {
+                /// Code point cannot be encoded; keep the original entity verbatim.
+                result.append(input, i, semicolon - i + 1);
+            }
+            else
+                result.append(utf8_bytes, num_bytes);
+
+            i = semicolon + 1;
+        }
+
+        return result;
+    }
+
     bool shouldSkipHrefCandidate(const std::string & url_candidate)
     {
         if (url_candidate.empty() || url_candidate.starts_with('#'))
@@ -251,7 +360,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
     re2::StringPiece href_match;
     while (re2::RE2::FindAndConsume(&href_input, href_regex, &href_match))
     {
-        std::string url_candidate(href_match.data(), href_match.size());
+        std::string url_candidate = decodeHTMLEntities(std::string(href_match.data(), href_match.size()));
 
         if (shouldSkipHrefCandidate(url_candidate))
             continue;
