@@ -554,12 +554,12 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
         context_mutable->setSetting("parallel_replicas_support_projection", Field{false});
     }
 
-    if (settings[Setting::max_execution_time_leaf].value > 0)
+    if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
     {
         /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'
         /// with 'timeout_overflow_mode_leaf'
-        context_mutable->setSetting("max_execution_time", Field{settings[Setting::max_execution_time_leaf]});
-        context_mutable->setSetting("timeout_overflow_mode", Field{settings[Setting::timeout_overflow_mode_leaf]});
+        context_mutable->setSetting("max_execution_time", static_cast<Field>(settings[Setting::max_execution_time_leaf]));
+        context_mutable->setSetting("timeout_overflow_mode", static_cast<Field>(settings[Setting::timeout_overflow_mode_leaf]));
     }
 
     return context_mutable;
