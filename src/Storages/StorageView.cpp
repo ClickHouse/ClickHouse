@@ -52,6 +52,7 @@
 #include <Interpreters/processColumnTransformers.h>
 #include <Parsers/QueryParameterVisitor.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -217,6 +218,21 @@ void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID 
     if (const auto & with_expr = select.with(); with_expr && !with_expr->children.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Cannot INSERT into view {} because its query contains a WITH clause",
+            view_id.getFullTableName());
+
+    /// `FINAL` changes the read row-set for collapsing/replacing engines, but the insert path
+    /// forwards rows untouched. Accepting it would silently ignore the modifier on writes.
+    if (select.final())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains FINAL",
+            view_id.getFullTableName());
+
+    /// A `SETTINGS` clause (e.g. `additional_table_filters`) can change which rows the view reads,
+    /// but it is not applied on the insert path. Rejecting it keeps the "pass-through projection"
+    /// contract honest instead of silently ignoring read-time semantics on writes.
+    if (const auto & settings_ast = select.settings(); settings_ast)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains a SETTINGS clause",
             view_id.getFullTableName());
 
     /// If the view has a WHERE clause with identifiers, we need to ensure they can be evaluated.
@@ -463,6 +479,12 @@ public:
 
             where_actions_ = ExpressionAnalyzer(where_clone, syntax, context).getActions(false, true);
             where_column_name_ = where_clone->getColumnName();
+
+            /// The `WHERE` predicate may contain set-dependent functions such as `a IN (SELECT ...)`.
+            /// Without building those sets first, `FunctionIn` sees a not-ready set and throws a
+            /// logical error instead of enforcing the constraint. Build them once here, mirroring
+            /// `CheckConstraintsTransform`.
+            VirtualColumnUtils::buildSetsForDAG(where_actions_->getActionsDAG(), context);
         }
 
         addInterpreterContext(std::move(insert_context));
