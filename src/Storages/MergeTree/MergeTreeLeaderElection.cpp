@@ -229,10 +229,29 @@ void MergeTreeLeaderElection::run()
             }
             else if (parsed.status == LeaseParseStatus::Ok && parsed.leader_id == leader_id)
             {
-                /// We are the current leader. Renew the lease.
-                LOG_TRACE(log, "Renewing leader lease at '{}'", lease_path);
-                was_renewal_attempt = true;
-                became_leader = tryWriteLease(/* if_match= */ etag, /* if_none_match= */ "");
+                /// The remote lease still carries our `leader_id`. Only renew it while we are
+                /// actually serving as the local leader. If a previous takeover-sync callback
+                /// threw, the catch handler cleared `is_leader`/`writes_enabled` locally, yet the
+                /// remote lease kept our id. Renewing it here would let a node that cannot complete
+                /// takeover monopolize the lease: it would keep the lease alive (so healthy
+                /// followers never observe it expire) while never enabling writes itself, livelocking
+                /// failover. By not renewing, the lease ages out and another node — or this one, via
+                /// the expiry branch below on a later heartbeat — can claim it and retry takeover.
+                if (is_leader.load(std::memory_order_acquire))
+                {
+                    LOG_TRACE(log, "Renewing leader lease at '{}'", lease_path);
+                    was_renewal_attempt = true;
+                    became_leader = tryWriteLease(/* if_match= */ etag, /* if_none_match= */ "");
+                }
+                else
+                {
+                    LOG_WARNING(log,
+                        "Remote lease at '{}' still carries our leader id, but this node is not "
+                        "serving as leader (a previous takeover sync likely failed). Not renewing, "
+                        "so the lease can expire and another node can take over.",
+                        lease_path);
+                    became_leader = false;
+                }
             }
             else if (parsed.status == LeaseParseStatus::ParseError
                      || parsed.timestamp < now - session_timeout_seconds
@@ -278,6 +297,15 @@ void MergeTreeLeaderElection::run()
         if (stopped.load(std::memory_order_acquire))
             return;
 
+        /// If we are not (or no longer) the writable leader, disable writes *before* flipping
+        /// `is_leader` below. Otherwise a concurrent `INSERT` could load the old `is_leader == true`,
+        /// then this task flips `is_leader` to false, and the `INSERT` still loads the old
+        /// `writes_enabled == true` and passes `assertIsLeaderAndWritable`. Clearing `writes_enabled`
+        /// first (matching the ordering in `stop` and the catch handler) makes the loss path fail
+        /// closed at the entry gate.
+        if (!became_leader)
+            writes_enabled.store(false, std::memory_order_release);
+
         bool was_leader = is_leader.exchange(became_leader, std::memory_order_acq_rel);
 
         if (became_leader && !was_leader)
@@ -308,10 +336,7 @@ void MergeTreeLeaderElection::run()
         }
         else if (!became_leader && was_leader)
         {
-            /// Block user writes first, before clearing `is_leader`, so a concurrent
-            /// `INSERT` cannot observe `is_leader == true && writes_enabled == true`
-            /// during the loss path.
-            writes_enabled.store(false, std::memory_order_release);
+            /// `writes_enabled` was already cleared above, before `is_leader` was flipped to false.
             LOG_INFO(log, "Lost leadership for lease at '{}'", lease_path);
             ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLost);
             CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionLeader);
