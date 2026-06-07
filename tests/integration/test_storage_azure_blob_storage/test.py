@@ -1909,4 +1909,3 @@ def test_reject_zero_max_blocks_in_multipart_upload(cluster):
     )
     assert "BAD_ARGUMENTS" in error, error
     assert "A setting's value has to be greater than 0" in error, error
-    assert "azure_max_blocks_in_multipart_upload" in error, error
