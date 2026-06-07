@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <type_traits>
 #include <vector>
 
 /// When built inside ClickHouse, CompressionCodecPco.cpp defines PCODEC_MULTITARGET so the hot
@@ -430,12 +431,18 @@ private:
     void decodeConv1(size_t len)
     {
         using Conv = typename ConvTypeFor<L>::type;
+        using UConv = std::make_unsigned_t<Conv>;
         toggleCenterInPlace(latents.data(), len);
         size_t order = delta_encoding.conv1.weights.size();
-        PcoArray<Conv> weights(order);
+        // The prediction is accumulated in the unsigned counterpart of `Conv` so the
+        // metadata-controlled multiplies and additions wrap in well-defined two's-complement
+        // arithmetic instead of overflowing a signed integer (undefined behavior) on a malformed
+        // stream. This matches the reference's `wrapping_add`/`wrapping_mul` semantics bit-for-bit;
+        // the accumulator is reinterpreted as signed only for the `max(_, 0) >> quantization` clamp.
+        PcoArray<UConv> weights(order);
         for (size_t i = 0; i < order; ++i)
-            weights[i] = static_cast<Conv>(delta_encoding.conv1.weights[i]);
-        Conv bias = static_cast<Conv>(delta_encoding.conv1.bias);
+            weights[i] = static_cast<UConv>(static_cast<Conv>(delta_encoding.conv1.weights[i]));
+        UConv bias = static_cast<UConv>(static_cast<Conv>(delta_encoding.conv1.bias));
         Bitlen quantization = delta_encoding.conv1.quantization;
 
         PcoArray<L> residuals(len + order);
@@ -443,17 +450,25 @@ private:
         std::copy(latents.begin(), latents.begin() + len, residuals.begin() + order);
         for (size_t i = order; i < residuals.size(); ++i)
         {
-            Conv s = bias;
+            UConv s = bias;
             for (size_t j = 0; j < order; ++j)
-                s += weights[j] * static_cast<Conv>(residuals[i - order + j]);
-            Conv clamped = s > Conv{0} ? s : Conv{0};
-            L pred = static_cast<L>(clamped >> quantization);
+            {
+                // Compute the product in 64-bit unsigned (no integer promotion to signed `int`, so no
+                // overflow UB) and truncate back to the accumulator width to keep the modular result.
+                UConv prod = static_cast<UConv>(static_cast<uint64_t>(weights[j]) * static_cast<uint64_t>(residuals[i - order + j]));
+                s = static_cast<UConv>(s + prod);
+            }
+            Conv signed_s = static_cast<Conv>(s); // well-defined modular conversion (C++20)
+            Conv clamped = signed_s > Conv{0} ? signed_s : Conv{0};
+            L pred = static_cast<L>(static_cast<UConv>(clamped) >> quantization);
             residuals[i] = static_cast<L>(residuals[i] + pred);
         }
-        // `residuals[0..order)` is the carried-in delta state; the reconstructed batch values are
-        // `residuals[order..order+len)`. Output those, and carry the trailing `order` of them as the
-        // next batch's state.
-        std::copy(residuals.begin() + order, residuals.begin() + order + len, latents.begin());
+        // The reconstructed batch values are `residuals[0..len)` — the first `order` of which are the
+        // carried-in delta state (this batch's warm-up values). This mirrors the reference's
+        // `latents.copy_from_slice(&residuals[..latents.len()])`; copying from `residuals + order`
+        // would drop those warm-up values and shift the whole batch by `order`. The trailing `order`
+        // reconstructed values become the next batch's delta state.
+        std::copy(residuals.begin(), residuals.begin() + len, latents.begin());
         std::copy(residuals.begin() + len, residuals.begin() + len + order, delta_state.begin());
     }
 };

@@ -18,7 +18,10 @@
   * tmp/pcodec_ref/pco/src/standalone/decompressor.rs + wrapped/{file,chunk,page}_decompressor.rs.
   *
   * Decodes a whole standalone stream into native-endian values written to `out`.
-  * The source buffer MUST have at least `OVERSHOOT_PADDING` readable slack bytes after `src_len`.
+  * The source buffer MUST have at least `DECODE_BATCH_OVERSHOOT` readable slack bytes after
+  * `src_len`: the batch hot loops read positionally and only verify the reader position once per
+  * batch (see `decodeChunk`), so they may read that many bytes past the logical end before the
+  * `checkInBounds` catches a truncated or malformed stream.
   */
 namespace DB::Pcodec
 {
@@ -166,7 +169,11 @@ void decodeChunk(BitReader & reader, const ChunkMeta & meta, size_t n, uint8_t *
     // When the secondary latent variable is a single zero-width bin, every secondary value is the
     // same constant and it contributes nothing to the page body. Skip decoding it entirely and fold
     // the constant into the join — a large win for exactly-quantized / exact-multiple data.
-    bool sec_const = sec_ptr && sec_ptr->n_bins <= 1 && sec_ptr->bytes_per_offset == 0;
+    // This shortcut is only valid when the secondary is *not* delta-encoded: with `secondary_uses_delta`
+    // a one-bin zero-width body still decodes to a non-constant sequence through the page delta state,
+    // so in that case the secondary must be decoded normally.
+    bool sec_const = sec_ptr && sec_ptr->n_bins <= 1 && sec_ptr->bytes_per_offset == 0
+        && meta.forLatentVar(LatentVarKey::Secondary).variant == DeltaEncodingVariant::None;
     L sec_c = (sec_const && !sec_ptr->state_lowers.empty()) ? sec_ptr->state_lowers[0] : L{0};
     LatentVarDecoder<L> * sec_decode = sec_const ? nullptr : sec_ptr;
 
@@ -312,6 +319,26 @@ inline size_t decodeChunkByType(BitReader & reader, uint8_t type_byte, uint8_t f
             meta.secondary_var = readChunkLatentVarMeta(reader, l_bits);
         reader.drainEmptyByte("pcodec: nonzero bits at end of chunk metadata");
 
+        // A latent variable with no bins makes `AnsSpec::fromWeights` synthesize a single ANS state
+        // and `readBatchPreDelta` take the constant-`lower` fast path, decoding fabricated latents
+        // without consuming any body bits. That is only legitimate when the variable has no body
+        // values (all its latents come from the page delta state, i.e. `n <= latents_per_state`).
+        // Otherwise the stream is malformed; reject it so it fails closed instead of fabricating
+        // values. This never rejects a valid stream: a non-empty latent variable always has >= 1 bin.
+        size_t primary_per_state = meta.forLatentVar(LatentVarKey::Primary).nLatentsPerState();
+        auto reject_empty_with_body = [&](const ChunkLatentVarMeta & var, size_t latents_per_state, const char * msg)
+        {
+            if (var.bins.empty() && n > latents_per_state)
+                throw PcodecError(msg);
+        };
+        if (meta.delta_var)
+            reject_empty_with_body(*meta.delta_var, primary_per_state, "pcodec: empty bins for a non-empty delta latent variable");
+        reject_empty_with_body(meta.primary_var, primary_per_state, "pcodec: empty bins for a non-empty primary latent variable");
+        if (meta.secondary_var)
+            reject_empty_with_body(
+                *meta.secondary_var, meta.forLatentVar(LatentVarKey::Secondary).nLatentsPerState(),
+                "pcodec: empty bins for a non-empty secondary latent variable");
+
         decodeChunk<T>(reader, meta, n, out);
         return sizeof(T);
     };
@@ -335,7 +362,8 @@ inline size_t decodeChunkByType(BitReader & reader, uint8_t type_byte, uint8_t f
 }
 
 /// Decodes a whole standalone `.pco` stream into `out`. Returns the number of bytes written.
-/// `src` must have OVERSHOOT_PADDING readable slack after `src_len`.
+/// `src` must have `DECODE_BATCH_OVERSHOOT` readable slack after `src_len` (the per-batch hot loops
+/// may read that far past the logical end before the once-per-batch `checkInBounds`).
 ///
 /// `expected_width` (in bytes, 0 = unconstrained) is the element width the caller is going to store
 /// through. Every chunk's number-type width must match it: the caller picks the direct/aligned output

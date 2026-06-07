@@ -284,16 +284,13 @@ inline ChunkLatentVarMeta readChunkLatentVarMeta(BitReader & reader, Bitlen late
             reader.checkInBounds();
             throw PcodecError("pcodec: bin offset bits exceeds latent type width");
         }
-        /// The decoded latent is `lower + offset` with `offset` in `[0, 2^offset_bits)`. The encoder
-        /// keeps that within the latent type, so a bin whose top value would overflow `latent_bits`
-        /// is corrupt; rejecting it here stops the offset add in `pcoReadOffsetsImpl` from wrapping.
-        UInt64 max_value = latent_bits >= 64 ? ~UInt64{0} : ((UInt64{1} << latent_bits) - 1);
-        UInt64 max_offset = bin.offset_bits >= 64 ? ~UInt64{0} : ((UInt64{1} << bin.offset_bits) - 1);
-        if (bin.lower > max_value - max_offset)
-        {
-            reader.checkInBounds();
-            throw PcodecError("pcodec: bin range exceeds latent type width");
-        }
+        /// Note: `offset_bits` is the *bit width* used to store a bin's offset, not its exact maximum
+        /// offset, so the full range `[0, 2^offset_bits)` need not fit within the latent type above
+        /// `lower` (e.g. a valid `UInt8` bin with `lower = 200`, `offset_bits = 6` stores offsets only
+        /// up to 55). We therefore do not reject `lower + 2^offset_bits - 1` overflowing the latent
+        /// width — that would reject valid streams, including ones this codec's own encoder produces.
+        /// A corrupt body that supplies an out-of-range offset only makes the `lower + offset` add in
+        /// `pcoReadOffsetsImpl` wrap within the latent type (well-defined, no out-of-bounds access).
     }
     return var;
 }
