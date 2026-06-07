@@ -20,6 +20,8 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO;
 }
 
@@ -52,6 +54,38 @@ public:
         if (allow_custom_error_code_argument)
             return "(NativeNumber, [const String], [const Int8 | Int16 | Int32]) -> UInt8";
         return "(NativeNumber, [const String]) -> UInt8";
+    }
+
+    /// The signature above documents the arity and types, but the legacy diagnostics that this
+    /// function's tests assert (the exact "should be 1 or 2" arity wording and the
+    /// "Third argument ... must be Int8, Int16 or Int32" message) cannot be produced by the
+    /// generic matcher. Keep the authoritative validation here and let the signature serve as documentation.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        const size_t number_of_arguments = arguments.size();
+
+        if (number_of_arguments < 1 || number_of_arguments > (allow_custom_error_code_argument ? 3 : 2))
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be {}",
+                getName(), number_of_arguments, allow_custom_error_code_argument ? "1 or 2 or 3" : "1 or 2");
+
+        if (!isNativeNumber(arguments[0].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument of function {} must be a number (passed: {})", getName(), arguments[0].type->getName());
+
+        if (number_of_arguments > 1 && !isString(arguments[1].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument of function {} must be a string (passed: {})", getName(), arguments[1].type->getName());
+
+        if (allow_custom_error_code_argument && number_of_arguments > 2)
+        {
+            WhichDataType which(arguments[2].type);
+            if (!(which.isInt8() || which.isInt16() || which.isInt32()))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Third argument of function {} must be Int8, Int16 or Int32 (passed: {})", getName(), arguments[2].type->getName());
+        }
+
+        return std::make_shared<DataTypeUInt8>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
