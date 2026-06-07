@@ -282,14 +282,44 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
         for (size_t i = 0; i < rows; ++i)
         {
             auto str = column_string.getDataAt(i);
-            if (str.empty())
+            size_t size = str.size();
+            if (size == 0)
                 data[i] = 0;
-            else if (str.size() <= std::numeric_limits<UInt32>::max())
+#if defined(CRC_INT)
+            else if (size < 8)
+                /// Tiny keys (1..7 bytes) go through a single CRC instruction on the masked
+                /// word, exactly like `StringHashTableHash` for `StringKey8`. This avoids the
+                /// multiply-heavy `hashLessThan8` path inside `StringViewHash` for short strings,
+                /// which otherwise dominates low-cardinality short-string aggregation
+                /// (`group_by_sundy_li`, `if_transform_strings_to_enum`). Keys of 8 bytes or more
+                /// already use the cheap CRC loop in `StringViewHash` and are left unchanged, so
+                /// medium/large keys (e.g. URLs) keep the same hash and bucketing as before.
+                data[i] = hashTinyKey(str.data(), size);
+#endif
+            else if (size <= std::numeric_limits<UInt32>::max())
                 data[i] = static_cast<UInt32>(StringViewHash()(str));
             else
-                data[i] = static_cast<UInt32>(str.size());
+                data[i] = static_cast<UInt32>(size);
         }
     }
+
+#if defined(CRC_INT)
+    /// Hash a 1..7 byte key with a single CRC instruction.
+    /// Reading 8 bytes from the key start is safe: `ColumnString::Chars` is a `PaddedPODArray`
+    /// with at least 15 bytes of right padding, so the load never crosses the allocation end.
+    /// Trailing bytes beyond the key length are masked off, so the result depends only on the
+    /// key content and is independent of neighbouring data.
+    static ALWAYS_INLINE UInt32 hashTinyKey(const char * data, size_t size)
+    {
+        const UInt8 shift = static_cast<UInt8>((-size & 7) * 8);
+        UInt64 word;
+        memcpy(&word, data, sizeof(word));
+        word &= (~UInt64(0) >> shift);
+        size_t res = static_cast<size_t>(-1);
+        res = CRC_INT(static_cast<UInt32>(res), word);
+        return static_cast<UInt32>(res);
+    }
+#endif
 
     auto getKeyHolder(ssize_t row, [[maybe_unused]] Arena & pool) const
     {
