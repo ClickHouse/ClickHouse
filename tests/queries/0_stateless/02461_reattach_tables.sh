@@ -8,20 +8,24 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 MY_CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g')
 
+# Run the query and capture both the client exit code and its output (including trace logs).
+# A non-zero client exit code means the query itself failed, which must be reported as FAIL by the
+# callers instead of being silently treated as "the table was not detached".
 function check_if_detached_impl()
 {
     query="$1"
-    table="$2"
-    ${MY_CLICKHOUSE_CLIENT} \
+    REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} \
         --reattach_tables_before_query_execution=1  \
-        --query "$query" 2>&1 \
-        | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$table"
+        --query "$query" 2>&1)
+    REATTACH_STATUS=$?
 }
 
 function check_if_detached()
 {
     check_if_detached_impl "$1" "$2"
-    if [ $? -eq 0 ]; then
+    if [ "$REATTACH_STATUS" -ne 0 ]; then
+        echo "FAIL (client error: $REATTACH_OUTPUT)"
+    elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$2"; then
         echo "OK"
     else
         echo "FAIL"
@@ -31,10 +35,12 @@ function check_if_detached()
 function check_if_not_detached()
 {
     check_if_detached_impl "$1" "$2"
-    if [ $? -ne 0 ]; then
-        echo "OK"
-    else
+    if [ "$REATTACH_STATUS" -ne 0 ]; then
+        echo "FAIL (client error: $REATTACH_OUTPUT)"
+    elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$2"; then
         echo "FAIL"
+    else
+        echo "OK"
     fi
 }
 
