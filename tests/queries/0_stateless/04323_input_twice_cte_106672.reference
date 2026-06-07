@@ -1,0 +1,9 @@
+--- two CTE refs of input() via CROSS JOIN: rejected
+INVALID_USAGE_OF_INPUT
+--- single CTE ref of input(): allowed
+--- direct input() without CTE: allowed
+--- final rows
+2	ok_single
+3	ok_direct
+--- server alive
+1
