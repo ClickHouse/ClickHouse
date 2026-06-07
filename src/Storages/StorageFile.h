@@ -339,6 +339,12 @@ private:
     std::optional<String> fixed_file_path;
     bool fixed_file_consumed = false;
 
+    /// The file version (`makeFileCacheVersion`) observed when the bucket split was
+    /// decided. Set together with `file_bucket_info`. If the file changed by the time
+    /// this source reads it, the bucket indices are stale and the read fails-close
+    /// rather than returning inconsistent data.
+    std::optional<String> expected_file_cache_version;
+
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;
     NamesAndTypesList requested_virtual_columns;
