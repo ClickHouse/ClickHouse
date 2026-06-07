@@ -143,6 +143,9 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    /// Nullable(Array) inputs need explicit null-map handling in executeImpl, but Variant arguments
+    /// (e.g. partial_offsets) still rely on FunctionBaseVariantAdaptor.
+    bool useDefaultImplementationForVariant() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
