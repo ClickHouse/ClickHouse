@@ -215,8 +215,9 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 
 #if USE_USEARCH || USE_SCANN
     registerCreator("vector_similarity", vectorSimilarityIndexCreator, Documentation{
-        .description = "An approximate nearest-neighbour index over a vector column (built using HNSW), for speeding up `ORDER BY <distance_function>(vector, reference) LIMIT n` queries.",
-        .syntax = "INDEX name vector TYPE vector_similarity('hnsw', 'distance_function', dimensions[, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction]) GRANULARITY g",
+        .description = "An approximate nearest-neighbour index over a vector column (built using HNSW or ScaNN), for speeding up `ORDER BY <distance_function>(vector, reference) LIMIT n` queries.",
+        .syntax = "INDEX name vector TYPE vector_similarity('hnsw', 'distance_function', dimensions[, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction]) GRANULARITY g\n"
+                  "INDEX name vector TYPE vector_similarity('scann', 'distance_function', dimensions) GRANULARITY g",
         .related = {}});
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
