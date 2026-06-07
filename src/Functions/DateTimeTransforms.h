@@ -75,6 +75,27 @@ struct ZeroTransform
     static UInt16 execute(UInt16, const DateLUTImpl &) { return 0; }
 };
 
+/// Returns the factor transform value used by monotonicity analysis (see getMonotonicityForRange).
+///
+/// `Transform::execute` clamps an out-of-range result to a representable Date. For example,
+/// rounding a pre-epoch Date32/DateTime64 down with toMonday/toStartOfMonth/toStartOfYear gives a
+/// day number before 1970-01-01, which is clamped to 1970-01-01 (day 0). That clamp is correct for
+/// the value the function returns, but it is wrong for monotonicity: it collapses every pre-epoch
+/// week/month/year to the same factor, so a function that actually wraps within those periods
+/// (toDayOfWeek, toMonth, toDayOfMonth, ...) would be reported as monotonic and corrupt
+/// index/partition pruning.
+///
+/// `executeExtendedResult` keeps the unclamped, order-preserving extended day number, so prefer it
+/// when the factor transform provides it; otherwise fall back to the plain `execute`.
+template <typename FactorTransform, typename ArgType>
+auto extendedFactorForMonotonicity(ArgType arg, const DateLUTImpl & date_lut)
+{
+    if constexpr (requires { FactorTransform::executeExtendedResult(arg, date_lut); })
+        return FactorTransform::executeExtendedResult(arg, date_lut);
+    else
+        return FactorTransform::execute(arg, date_lut);
+}
+
 template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
 struct ToDateImpl
 {
