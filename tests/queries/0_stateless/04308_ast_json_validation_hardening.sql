@@ -26,3 +26,16 @@ SELECT formatQueryFromJSON('{"type":"Function","name":"count","is_window_functio
 SELECT parseQueryToJSON('GRANT SELECT ON *.* TO user'); -- { serverError BAD_ARGUMENTS }
 SELECT parseQueryToJSON('CREATE USER u'); -- { serverError BAD_ARGUMENTS }
 SELECT parseQueryToJSON('INSERT INTO t VALUES (1)'); -- { serverError BAD_ARGUMENTS }
+
+-- `ShowTablesQuery` has mutually exclusive modes (SHOW DATABASES/CLUSTERS/CLUSTER/FILESYSTEM CACHES/
+-- SETTINGS/MERGES or the default TABLES/DICTIONARIES form). Inconsistent combinations of mode flags
+-- and mode-specific modifiers must be rejected instead of silently formatting as a different query.
+SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","databases":true,"dictionaries":true}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","databases":true,"clusters":true}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","cluster":true}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","cluster_str":"c"}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","changed":true}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","databases":true,"temporary":true}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","cluster":true,"cluster_str":"c","like":"%x%"}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","caches":true,"limit_length":{"type":"Literal","value":{"field_type":"UInt64","value":10}}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","settings":true,"like":"%x%","limit_length":{"type":"Literal","value":{"field_type":"UInt64","value":10}}}'); -- { serverError BAD_ARGUMENTS }

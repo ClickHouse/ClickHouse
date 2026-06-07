@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTShowTablesQuery::clone() const
 {
     auto res = make_intrusive<ASTShowTablesQuery>(*this);
@@ -213,6 +218,60 @@ void ASTShowTablesQuery::readJSON(const Poco::JSON::Object & json)
     setIsOutfileAppend(r.getBool("is_outfile_append"));
     setIsOutfileTruncate(r.getBool("is_outfile_truncate"));
     setIsIntoOutfileWithStdout(r.getBool("is_into_outfile_with_stdout"));
+
+    /// `ASTShowTablesQuery` represents several mutually exclusive query forms (`SHOW DATABASES`,
+    /// `SHOW CLUSTERS`, `SHOW CLUSTER`, `SHOW FILESYSTEM CACHES`, `SHOW SETTINGS`, `SHOW MERGES`,
+    /// or the default `SHOW [TEMPORARY] TABLES`/`DICTIONARIES` form), selected by `formatQueryImpl`
+    /// via an `if`/`else if` chain. Each form accepts only a specific subset of modifiers. Since the
+    /// flags are read independently above, a malformed `clickhouse_json` could set an inconsistent
+    /// combination (e.g. `{"databases":true,"dictionaries":true}`) that would silently format as a
+    /// different, valid-looking query instead of being rejected. Validate that the deserialized AST
+    /// corresponds to exactly one form the parser could have produced.
+    const size_t mode_count = static_cast<size_t>(databases) + clusters + cluster + caches + m_settings + merges;
+    if (mode_count > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`ShowTablesQuery` has mutually exclusive modes, but more than one of "
+            "'databases', 'clusters', 'cluster', 'caches', 'settings', 'merges' is set "
+            "during AST JSON deserialization");
+
+    /// `mode_count == 0` is the default table/dictionary form.
+    const bool table_form = mode_count == 0;
+
+    if (cluster && cluster_str.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`SHOW CLUSTER` requires a non-empty 'cluster_str' during AST JSON deserialization");
+    if (!cluster && !cluster_str.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'cluster_str' is only valid for `SHOW CLUSTER` during AST JSON deserialization");
+
+    if (changed && !m_settings)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'changed' is only valid for `SHOW SETTINGS` during AST JSON deserialization");
+
+    if ((temporary || dictionaries) && !table_form)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'temporary' and 'dictionaries' are only valid for the `SHOW TABLES`/`SHOW DICTIONARIES` "
+            "form during AST JSON deserialization");
+
+    if (from && !table_form)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'from' is only valid for the `SHOW TABLES`/`SHOW DICTIONARIES` form during AST JSON deserialization");
+
+    if (where_expression && !table_form)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'where_expression' is only valid for the `SHOW TABLES`/`SHOW DICTIONARIES` form "
+            "during AST JSON deserialization");
+
+    /// `SHOW CLUSTER` and `SHOW FILESYSTEM CACHES` accept neither a LIKE pattern nor a LIMIT.
+    if ((cluster || caches) && (!like.empty() || not_like || case_insensitive_like))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "LIKE is not valid for `SHOW CLUSTER`/`SHOW FILESYSTEM CACHES` during AST JSON deserialization");
+
+    /// `SHOW SETTINGS` accepts a LIKE pattern but no LIMIT (see `formatQueryImpl`).
+    if ((cluster || caches || m_settings) && limit_length)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "LIMIT is not valid for `SHOW CLUSTER`/`SHOW FILESYSTEM CACHES`/`SHOW SETTINGS` "
+            "during AST JSON deserialization");
 }
 
 }
