@@ -177,9 +177,7 @@ SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELEC
 SELECT (SELECT count() FROM (SELECT a, x FROM test_array_join ARRAY JOIN arr AS x LIMIT 5 BY a SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT a, x FROM test_array_join ARRAY JOIN arr AS x LIMIT 5 BY a SETTINGS optimize_limit_by_in_order = 1));
 DROP TABLE test_array_join;
 
--- Optimized: Merge engine over two MergeTree tables sharing the same sort key.
--- Each child's ReadFromMergeTree reads in PK order, and the single LimitBySortedStreamTransform above
--- ReadFromMerge applies LIMIT BY in streaming mode.
+-- Not optimized: Merge engine
 DROP TABLE IF EXISTS test_merge_part_1;
 DROP TABLE IF EXISTS test_merge_part_2;
 DROP TABLE IF EXISTS test_merge_wrap;

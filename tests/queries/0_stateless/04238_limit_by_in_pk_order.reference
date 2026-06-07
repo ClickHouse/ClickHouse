@@ -193,9 +193,9 @@ LimitBySortedStreamTransform
 SELECT (SELECT count() FROM (SELECT a, x FROM test_array_join ARRAY JOIN arr AS x LIMIT 5 BY a SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT a, x FROM test_array_join ARRAY JOIN arr AS x LIMIT 5 BY a SETTINGS optimize_limit_by_in_order = 1));
 1
 DROP TABLE test_array_join;
--- Optimized: Merge engine over two MergeTree tables sharing the same sort key.
--- Each child's ReadFromMergeTree reads in PK order, and the single LimitBySortedStreamTransform above
--- ReadFromMerge applies LIMIT BY in streaming mode.
+-- Not optimized: the in-order LIMIT BY optimization is intentionally not applied for Merge tables
+-- (children may disagree on sort-key direction), so this falls back to the hash LimitByTransform.
+-- Enabling the setting must not change the result.
 DROP TABLE IF EXISTS test_merge_part_1;
 DROP TABLE IF EXISTS test_merge_part_2;
 DROP TABLE IF EXISTS test_merge_wrap;
@@ -205,8 +205,7 @@ INSERT INTO test_merge_part_1 SELECT number % 500, number % 97, number FROM numb
 INSERT INTO test_merge_part_2 SELECT number % 500 + 500, number % 97, number FROM numbers_mt(5e4);
 CREATE TABLE test_merge_wrap AS test_merge_part_1 ENGINE = Merge(currentDatabase(), '^test_merge_part_[12]$');
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, b, z FROM test_merge_wrap LIMIT 5 BY a SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%';
-LimitBySortedStreamTransform
-LimitBySortedStreamTransform × 2
+LimitByTransform
 SELECT (SELECT count() FROM (SELECT a, b, z FROM test_merge_wrap LIMIT 5 BY a SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT a, b, z FROM test_merge_wrap LIMIT 5 BY a SETTINGS optimize_limit_by_in_order = 1));
 1
 DROP TABLE test_merge_wrap;

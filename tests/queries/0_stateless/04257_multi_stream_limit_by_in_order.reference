@@ -73,9 +73,7 @@ INSERT INTO test_merge_overlap_part_1 SELECT number % 500, number       FROM num
 INSERT INTO test_merge_overlap_part_2 SELECT number % 500, number+50000 FROM numbers(50000);
 CREATE TABLE test_merge_overlap_wrap AS test_merge_overlap_part_1 ENGINE = Merge(currentDatabase(), '^test_merge_overlap_part_[12]$');
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a FROM test_merge_overlap_wrap LIMIT 3 BY a SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitBySortedStreamTransform
-MergingSortedTransform 2 → 1
-LimitBySortedStreamTransform × 2
+LimitByTransform
 SELECT (SELECT count() FROM (SELECT a FROM test_merge_overlap_wrap LIMIT 3 BY a SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT a FROM test_merge_overlap_wrap LIMIT 3 BY a SETTINGS optimize_limit_by_in_order = 1));
 1
 DROP TABLE test_merge_overlap_wrap;
