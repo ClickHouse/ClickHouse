@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, use_jemalloc
+# Tags: no-parallel, no-fasttest, use_jemalloc, no-darwin
 # no-parallel: this test issues `SYSTEM DROP COMPILED EXPRESSION CACHE`, which is process-wide.
 #              Running in parallel with other JIT-using tests would flap their assertions and ours.
 # no-fasttest: requires USE_EMBEDDED_COMPILER, which the fast-test image disables.
 # use_jemalloc: this test asserts on `jemalloc.jit_arena.*` async metrics, which are only
 #               registered when the build has jemalloc.
+# no-darwin: the dedicated JIT arena is disabled on Darwin because switching `thread.arena`
+#            around `CHJIT` currently makes AArch64 target-machine initialization throw
+#            `std::bad_alloc`.
 #
 # Test that JIT compilation populates the dedicated jemalloc JIT arena and the compiled-expression
 # cache, and that `SYSTEM DROP COMPILED EXPRESSION CACHE` reaches its purge path. The cache count
