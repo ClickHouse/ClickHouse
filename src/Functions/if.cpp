@@ -1013,13 +1013,13 @@ private:
             {
                 data_column = const_nullable_arg->getNestedColumnPtr();
                 if (!data_column->empty())
-                    cond_is_null = const_nullable_arg->getNullMapData()[0];
+                    cond_is_null = cond_is_null || const_nullable_arg->getNullMapData()[0];
             }
 
-            if (!data_column->empty())
+            if (!cond_is_null && !data_column->empty())
             {
-                cond_is_true = !cond_is_null && checkAndGetColumn<ColumnUInt8>(*data_column).getBool(0);
-                cond_is_false = !cond_is_null && !cond_is_true;
+                cond_is_true = checkAndGetColumn<ColumnUInt8>(*data_column).getBool(0);
+                cond_is_false = !cond_is_true;
             }
         }
 
