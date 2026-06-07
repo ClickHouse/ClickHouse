@@ -169,11 +169,18 @@ TEST(ThreadPool, LIFOSchedulesOnMostRecentlyIdleThread)
     /// two is on top of the LIFO stack: the relative order in which the two
     /// workers re-park after their jobs finish is an inherent race that no
     /// public API can pin down. What LIFO guarantees deterministically is that
-    /// a sequence of non-overlapping jobs concentrates on a single worker:
-    /// each job runs on the most recently idle thread, which then re-parks as
-    /// the most recently idle thread again, so the next job picks the same one.
-    /// A FIFO or arbitrary wake policy would instead alternate between the two
-    /// idle threads and use both.
+    /// a sequence of non-overlapping jobs concentrates on a single worker.
+    ///
+    /// The `pool.wait()` after each probe is essential: it returns only once the
+    /// probe's worker has re-parked onto the idle stack (the worker holds the
+    /// pool mutex from decrementing `scheduled_jobs` through the idle push, and
+    /// `pool.wait` reacquires it before returning). That worker is therefore the
+    /// most recently idle thread when the next probe is scheduled, so LIFO wakes
+    /// it again — all probes run on a single thread. Without the barrier the next
+    /// probe could be scheduled before the worker re-parks and would be served by
+    /// the other still-idle thread, which is not what is being tested here. A FIFO
+    /// or arbitrary wake policy would instead alternate between the two idle
+    /// threads and use both.
     constexpr size_t probes = 50;
     std::set<std::thread::id> probe_ids;
     for (size_t i = 0; i < probes; ++i)
@@ -193,6 +200,7 @@ TEST(ThreadPool, LIFOSchedulesOnMostRecentlyIdleThread)
             std::unique_lock lock(probe_mutex);
             probe_cv.wait(lock, [&] { return probe_done; });
         }
+        pool.wait();
         probe_ids.insert(probe_thread);
     }
 
