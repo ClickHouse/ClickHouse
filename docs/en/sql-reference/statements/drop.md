@@ -37,6 +37,27 @@ Limitations:
 - If the clause `IF EMPTY` is specified, the server checks the emptiness of the table only on the replica which received the query.
 - Deleting multiple tables at once is not an atomic operation, i.e. if the deletion of a table fails, subsequent tables will not be deleted.
 
+## DROP DETACHED TABLE {#drop-detached-table}
+
+Permanently removes a previously detached table's metadata and data from disk.
+
+The table must be detached first with [`DETACH TABLE`](../../sql-reference/statements/detach.md) before it can be dropped with this statement.
+
+:::note
+This is an experimental feature gated by the setting [`allow_experimental_drop_detached_table`](../../operations/settings/settings.md#allow-experimental-drop-detached-table) (disabled by default).
+:::
+
+Syntax:
+
+```sql
+DROP DETACHED TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
+```
+
+Limitations:
+
+- Only supported for `Atomic` database engine.
+- Cannot be used on detached Views or Dictionaries.
+
 ## DROP DICTIONARY {#drop-dictionary}
 
 Deletes the dictionary.
@@ -150,4 +171,3 @@ DROP NAMED COLLECTION [IF EXISTS] name [on CLUSTER cluster]
 ```sql
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2';
 DROP NAMED COLLECTION foobar;
-```
