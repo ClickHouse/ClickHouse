@@ -175,6 +175,12 @@ FORMAT Null;
 SELECT throwIf(NOT isNull(arrayReduce('sum', CAST(NULL, 'Nullable(Array(UInt8))'))))
 FORMAT Null;
 
+SELECT throwIf(toTypeName(arrayReduce('uniqState', CAST([1, 2], 'Nullable(Array(UInt8))'))) != 'AggregateFunction(uniq, UInt8)')
+FORMAT Null;
+
+SELECT throwIf(isNull(arrayReduce('uniqState', CAST(NULL, 'Nullable(Array(UInt8))'))))
+FORMAT Null;
+
 SELECT throwIf(NOT isNull(arrayReduce('sumIf', CAST([] AS Nullable(Array(Int32))), CAST(NULL AS Nullable(Array(UInt8))))))
 FORMAT Null;
 
@@ -201,6 +207,12 @@ FROM
         CAST([1, 2, 3], 'Nullable(Array(Int32))')
     ]) AS a
 )
+FORMAT Null;
+
+SELECT throwIf(toTypeName(arrayFold((acc, x) -> acc, CAST([1], 'Nullable(Array(UInt8))'), map('k', toUInt8(1)))) != 'Map(String, UInt8)')
+FORMAT Null;
+
+SELECT throwIf(isNull(arrayFold((acc, x) -> acc, CAST(NULL, 'Nullable(Array(UInt8))'), map('k', toUInt8(1)))))
 FORMAT Null;
 
 SELECT throwIf(arrayFold(acc, x -> acc + x, CAST([1, 2, 3], 'Nullable(Array(UInt8))'), 0::UInt64) != 6)

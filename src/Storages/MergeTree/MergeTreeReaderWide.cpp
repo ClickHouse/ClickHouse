@@ -340,7 +340,7 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     ISerialization::SubstreamsCache & cache)
 {
     /// If substream have already been read.
-    if (cache.contains(ISerialization::getSubstreamCacheKey(substream_path, false, name_and_type.type.get())))
+    if (cache.contains(ISerialization::getSubstreamCacheKey(substream_path, false, name_and_type.getTypeInStorage().get())))
         return nullptr;
 
     auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", checksums, storage_settings);
@@ -611,7 +611,7 @@ void MergeTreeReaderWide::readData(
 {
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;
-    deserialize_settings.column_type = name_and_type.type.get();
+    deserialize_settings.column_type = name_and_type.getTypeInStorage().get();
 
     deserializePrefix(serialization, name_and_type, from_mark, current_task_last_mark, deserialize_binary_bulk_state_map, cache, deserialize_states_cache, {});
 

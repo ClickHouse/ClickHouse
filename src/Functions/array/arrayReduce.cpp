@@ -37,6 +37,31 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+
+bool canWrapNullableArrayReduceResultType(const DataTypePtr & type)
+{
+    if (type->isNullable())
+        return true;
+    if (typeid_cast<const DataTypeArray *>(type.get()))
+        return true;
+    return type->canBeInsideNullable();
+}
+
+DataTypePtr applyNullableArrayReduceReturnType(
+    const DataTypePtr & result_type, const ColumnsWithTypeAndName & arguments, size_t first_array_argument_index)
+{
+    for (size_t i = first_array_argument_index; i < arguments.size(); ++i)
+    {
+        if (arguments[i].type->isNullable() && canWrapNullableArrayReduceResultType(result_type))
+            return makeNullableAllowingArray(result_type);
+    }
+    return result_type;
+}
+
+}
+
 /** Applies an aggregate function to array and returns its result.
   * If aggregate function has multiple arguments, then this function can be applied to multiple arrays of the same size.
   *
@@ -68,13 +93,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto result = aggregate_function->getResultType();
-        for (size_t i = 1; i < arguments.size(); ++i)
-        {
-            if (arguments[i].type->isNullable())
-                return makeNullableAllowingArray(result);
-        }
-        return result;
+        return applyNullableArrayReduceReturnType(aggregate_function->getResultType(), arguments, 1);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
@@ -340,13 +359,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto result = resolveAggregateFunction(arguments)->getResultType();
-        for (size_t i = 1; i < arguments.size(); ++i)
-        {
-            if (arguments[i].type->isNullable())
-                return makeNullableAllowingArray(result);
-        }
-        return result;
+        return applyNullableArrayReduceReturnType(resolveAggregateFunction(arguments)->getResultType(), arguments, 1);
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override

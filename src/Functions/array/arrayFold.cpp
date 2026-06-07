@@ -30,6 +30,26 @@ namespace ErrorCodes
 namespace
 {
 
+bool canWrapNullableArrayFoldResultType(const DataTypePtr & type)
+{
+    if (type->isNullable())
+        return true;
+    if (typeid_cast<const DataTypeArray *>(type.get()))
+        return true;
+    return type->canBeInsideNullable();
+}
+
+DataTypePtr applyNullableArrayFoldReturnType(
+    const DataTypePtr & accumulator_type, const ColumnsWithTypeAndName & arguments)
+{
+    for (size_t i = 1; i + 1 < arguments.size(); ++i)
+    {
+        if (arguments[i].type->isNullable() && canWrapNullableArrayFoldResultType(accumulator_type))
+            return makeNullableAllowingArray(accumulator_type);
+    }
+    return accumulator_type;
+}
+
 ColumnPtr materializeNullMapToRowCount(const ColumnPtr & null_map_column, size_t num_rows)
 {
     const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column);
@@ -153,13 +173,7 @@ public:
                     "Return type of lambda function must be the same as the accumulator type, inferred return type of lambda: {}, inferred type of accumulator: {}",
                     lambda_type->getName(), accumulator_type->getName());
 
-        for (size_t i = 1; i + 1 < arguments.size(); ++i)
-        {
-            if (arguments[i].type->isNullable())
-                return makeNullableAllowingArray(accumulator_type);
-        }
-
-        return accumulator_type;
+        return applyNullableArrayFoldReturnType(accumulator_type, arguments);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
