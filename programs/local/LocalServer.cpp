@@ -143,6 +143,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
     extern const ServerSettingsUInt64 max_server_memory_usage;
     extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
+    extern const ServerSettingsUInt64 max_temporary_data_on_disk_size;
     extern const ServerSettingsUInt64 max_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
@@ -453,7 +454,13 @@ void LocalServer::tryInitPath()
 
     global_context->setPath(fs::path(path) / "");
 
-    global_context->setTemporaryStoragePath(fs::path(path) / "tmp" / "", 1_GiB);
+    /// Unlike the regular server, clickhouse-local stores temporary data in the system temporary
+    /// directory by default, which can be small (and is sometimes backed by RAM), so we keep a
+    /// conservative default limit. It can be raised, or lifted entirely with a value of 0, via the
+    /// `max_temporary_data_on_disk_size` server setting.
+    const auto & max_temporary_data_on_disk_size = server_settings[ServerSetting::max_temporary_data_on_disk_size];
+    global_context->setTemporaryStoragePath(
+        fs::path(path) / "tmp" / "", max_temporary_data_on_disk_size.changed ? max_temporary_data_on_disk_size.value : 1_GiB);
     global_context->setFlagsPath(fs::path(path) / "flags" / "");
 
     global_context->setUserFilesPath(""); /// user's files are everywhere
