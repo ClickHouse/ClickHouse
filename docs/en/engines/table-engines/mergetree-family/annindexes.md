@@ -143,7 +143,7 @@ These HNSW-specific parameters are available:
 The default values of all HNSW-specific parameters work reasonably well in the majority of use cases.
 We therefore do not recommend customizing the HNSW-specific parameters.
 
-**ScaNN** (experimental) {#scann}
+#### ScaNN (experimental) {#scann}
 
 [ScaNN](https://github.com/google-research/google-research/tree/master/scann) is Google's Scalable Nearest Neighbors library.
 It uses an IVF (Inverted File Index) partitioning scheme combined with asymmetric hashing for fast approximate search and optional exact reranking.
