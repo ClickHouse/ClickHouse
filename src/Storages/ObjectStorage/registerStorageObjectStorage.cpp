@@ -104,7 +104,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
 }
 
 #if USE_AZURE_BLOB_STORAGE
-void registerStorageAzure(StorageFactory & factory)
+static void registerStorageAzure(StorageFactory & factory)
 {
     factory.registerStorage(AzureDefinition::storage_engine_name, [](const StorageFactory::Arguments & args)
     {
@@ -122,7 +122,7 @@ void registerStorageAzure(StorageFactory & factory)
 #endif
 
 #if USE_AWS_S3
-void registerStorageS3Impl(const String & name, StorageFactory & factory)
+static void registerStorageS3Impl(const String & name, StorageFactory & factory)
 {
     factory.registerStorage(name, [=](const StorageFactory::Arguments & args)
     {
@@ -138,22 +138,22 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
     });
 }
 
-void registerStorageS3(StorageFactory & factory)
+static void registerStorageS3(StorageFactory & factory)
 {
     registerStorageS3Impl(S3Definition::storage_engine_name, factory);
 }
 
-void registerStorageCOS(StorageFactory & factory)
+static void registerStorageCOS(StorageFactory & factory)
 {
     registerStorageS3Impl(COSNDefinition::storage_engine_name, factory);
 }
 
-void registerStorageOSS(StorageFactory & factory)
+static void registerStorageOSS(StorageFactory & factory)
 {
     registerStorageS3Impl(OSSDefinition::storage_engine_name, factory);
 }
 
-void registerStorageGCS(StorageFactory & factory)
+static void registerStorageGCS(StorageFactory & factory)
 {
     registerStorageS3Impl(GCSDefinition::storage_engine_name, factory);
 }
@@ -161,7 +161,7 @@ void registerStorageGCS(StorageFactory & factory)
 #endif
 
 #if USE_HDFS
-void registerStorageHDFS(StorageFactory & factory)
+static void registerStorageHDFS(StorageFactory & factory)
 {
     factory.registerStorage(HDFSDefinition::storage_engine_name, [=](const StorageFactory::Arguments & args)
     {
@@ -178,6 +178,7 @@ void registerStorageHDFS(StorageFactory & factory)
 }
 #endif
 
+void registerStorageObjectStorage(StorageFactory & factory);
 void registerStorageObjectStorage(StorageFactory & factory)
 {
 #if USE_AWS_S3
@@ -205,6 +206,7 @@ void registerStorageObjectStorage(StorageFactory & factory)
 
 #if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
 
+void registerStorageIceberg(StorageFactory & factory);
 void registerStorageIceberg(StorageFactory & factory)
 {
     factory.registerStorage(
@@ -383,6 +385,7 @@ void registerStorageIceberg(StorageFactory & factory)
         });
 }
 
+void registerStoragePaimon(StorageFactory & factory);
 void registerStoragePaimon(StorageFactory & factory)
 {
     auto check_paimon_storage_engine_enabled = [](const StorageFactory::Arguments & args)
@@ -613,6 +616,7 @@ void registerStoragePaimon(StorageFactory & factory)
 
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
+void registerStorageDeltaLake(StorageFactory & factory);
 void registerStorageDeltaLake(StorageFactory & factory)
 {
 #if USE_AWS_S3
@@ -762,6 +766,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
 }
 #endif
 
+void registerStorageHudi(StorageFactory & factory);
 void registerStorageHudi(StorageFactory & factory)
 {
 #if USE_AWS_S3

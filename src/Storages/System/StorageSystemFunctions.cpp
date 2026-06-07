@@ -131,7 +131,7 @@ namespace
 }
 
 
-std::vector<std::pair<String, Int8>> getOriginEnumsValues()
+static std::vector<std::pair<String, Int8>> getOriginEnumsValues()
 {
     return std::vector<std::pair<String, Int8>>{
         {"System", static_cast<Int8>(FunctionOrigin::SYSTEM)},

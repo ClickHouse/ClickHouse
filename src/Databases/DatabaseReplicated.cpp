@@ -471,7 +471,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
     if (shards.empty())
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No active replicas");
 
-    UInt16 default_port;
+    UInt16 default_port = 0;
     if (cluster_auth_info.cluster_secure_connection)
         default_port = getContext()->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT);
     else
@@ -1580,7 +1580,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     String db_name = getDatabaseName();
     String to_db_name = getDatabaseName() + BROKEN_TABLES_SUFFIX;
     String to_db_name_replicated = getDatabaseName() + BROKEN_REPLICATED_TABLES_SUFFIX;
-    if (static_cast<double>(total_tables) * db_settings[DatabaseReplicatedSetting::max_broken_tables_ratio]
+    if (static_cast<double>(total_tables) * static_cast<double>(db_settings[DatabaseReplicatedSetting::max_broken_tables_ratio])
         < static_cast<double>(tables_to_detach.size()))
         throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Too many tables to recreate: {} of {}", tables_to_detach.size(), total_tables);
 
@@ -2610,6 +2610,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     return true;
 }
 
+void registerDatabaseReplicated(DatabaseFactory & factory);
 void registerDatabaseReplicated(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
