@@ -7,3 +7,8 @@ explicit suffix, zero level must match top.tsv:
 0	0
 directory name with braces is matched by **/:
 3	3
+adjacent globstars must not emit a file more than once:
+0	0
+1	1
+2	2
+3	3

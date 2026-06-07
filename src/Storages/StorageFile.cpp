@@ -74,6 +74,7 @@
 #include <filesystem>
 #include <shared_mutex>
 #include <algorithm>
+#include <unordered_set>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -151,8 +152,22 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
+    std::unordered_set<std::string> & matched_paths,
     bool recursive)
 {
+    /// Appends a matched path to the result and counts its bytes, deduplicating by its
+    /// normalized form. Adjacent globstars (e.g. `**/**/*.tsv`) can reach the same filesystem
+    /// entry through both the zero-level branch and the recursive descent, so without this
+    /// guard the query would return duplicate rows and double-count `total_bytes_to_read`.
+    auto add_matched_path = [&](const std::string & path, size_t bytes)
+    {
+        if (matched_paths.emplace(fs::path(path).lexically_normal().string()).second)
+        {
+            total_bytes_to_read += bytes;
+            result.push_back(path);
+        }
+    };
+
     const size_t first_glob_pos = for_match.find_first_of("*?{");
 
     if (first_glob_pos == std::string::npos)
@@ -165,7 +180,7 @@ void listFilesWithRegexpMatchingImpl(
             (void)fs::canonical(path_for_ls + for_match);
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
-            result.push_back(absolute_path.string());
+            add_matched_path(absolute_path.string(), 0);
         }
         catch (const std::exception &) // NOLINT
         {
@@ -207,7 +222,7 @@ void listFilesWithRegexpMatchingImpl(
     /// (`recursive` is `false`) to avoid producing the same results twice.
     if (current_glob == "/**" && looking_for_directory)
         listFilesWithRegexpMatchingImpl(prefix_without_globs + "/", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                        total_bytes_to_read, result, false);
+                                        total_bytes_to_read, result, matched_paths, false);
 
     const fs::directory_iterator end;
     std::error_code ec;
@@ -227,14 +242,14 @@ void listFilesWithRegexpMatchingImpl(
         {
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
-                total_bytes_to_read += it->file_size(ec);
+                const size_t file_size = it->file_size(ec);
                 if (ec)
                 {
                     ec.clear();
                     continue;
                 }
 
-                result.push_back(it->path().string());
+                add_matched_path(it->path().string(), file_size);
             }
         }
         else if (it->is_directory())
@@ -243,12 +258,12 @@ void listFilesWithRegexpMatchingImpl(
             {
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
                                                 looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
-                                                total_bytes_to_read, result, recursive);
+                                                total_bytes_to_read, result, matched_paths, recursive);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result, false);
+                                                total_bytes_to_read, result, matched_paths, false);
         }
     }
 }
@@ -261,8 +276,12 @@ std::vector<std::string> listFilesWithRegexpMatching(
 
     Strings for_match_paths_expanded = expandSelectionGlob(for_match);
 
+    /// Tracks the normalized form of every matched path so that adjacent globstars such as
+    /// `**/**/*.tsv` do not emit the same filesystem entry more than once.
+    std::unordered_set<std::string> matched_paths;
+
     for (const auto & for_match_expanded : for_match_paths_expanded)
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false);
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false);
 
     return result;
 }

@@ -28,4 +28,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT * FROM file('04317/**/top.tsv', 'TSV', 'a UInt8,
 echo "directory name with braces is matched by **/:"
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM file('04317/**/braced.tsv', 'TSV', 'a UInt8, b UInt8') ORDER BY a"
 
+echo "adjacent globstars must not emit a file more than once:"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM file('04317/**/**/*.tsv', 'TSV', 'a UInt8, b UInt8') ORDER BY a"
+
 rm -rf "${USER_FILES_PATH:?}/04317"
