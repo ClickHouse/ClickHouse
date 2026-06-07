@@ -135,10 +135,19 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
     }
 
 #ifndef NDEBUG
-    for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
+    /// The virtual-row boundary check is only meaningful when this merge owns the per-source
+    /// virtual-row conversion (`apply_virtual_row_conversions=true`). When it is false, this
+    /// merge is the outer step over a Union of independent read-in-order subtrees: each subtree
+    /// has its own conversion that is NOT applied here, so `setVirtualRow` falls back to default
+    /// values for any header column that does not match the inner pk_block by name. The resulting
+    /// boundary is meaningless and would always violate the next chunk's real values. Skip it.
+    if (apply_virtual_row_conversions)
     {
-        if (current_inputs[source_num].skip_last_row && !has_collation)
-            rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
+        for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
+        {
+            if (current_inputs[source_num].skip_last_row && !has_collation)
+                rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
+        }
     }
 #endif
 
@@ -175,10 +184,14 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
 
 #ifndef NDEBUG
-    if (is_virtual_row && !has_collation)
-        rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
-    else
-        checkVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num], description, source_num);
+    /// See `initialize` for why we gate on `apply_virtual_row_conversions`.
+    if (apply_virtual_row_conversions)
+    {
+        if (is_virtual_row && !has_collation)
+            rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
+        else
+            checkVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num], description, source_num);
+    }
 #else
     UNUSED(rememberVirtualRowBoundary);
     UNUSED(checkVirtualRowBoundary);
