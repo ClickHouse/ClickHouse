@@ -1625,16 +1625,27 @@ public:
     /// Provides storage disks
     DiskPtr getDisk(const String & name) const;
     using DiskCreator = std::function<DiskPtr(const DisksMap & disks_map)>;
-    DiskPtr getOrCreateDisk(const String & name, DiskCreator creator) const;
+    /// `pending_rollback_owner` is an opaque pointer that uniquely identifies a
+    /// `DiskFromAST::CustomDiskRegistrationScope`. When non-null and the disk does not yet
+    /// exist, the new registration is recorded in the global pending-rollback table
+    /// associated with this owner. When the disk already exists, any prior pending-rollback
+    /// entry for that name is cleared (the caller has just observed it and may commit
+    /// metadata against this disk, so the original validation scope must NOT delete it).
+    /// See `DiskFromAST::CustomDiskRegistrationScope` and issue #63019.
+    DiskPtr getOrCreateDisk(const String & name, DiskCreator creator, const void * pending_rollback_owner = nullptr) const;
 
-    /// Remove a custom disk and its associated single-disk storage policy from the global
-    /// disk/storage-policy selectors. Returns true if the disk was removed.
-    /// Used to roll back custom-disk registrations performed during ALTER validation when
-    /// the validation later throws (e.g. `MODIFY SETTING disk = disk(...)` rejected by the
-    /// storage-policy migration guard). Without rollback, the inline disk's name would
-    /// remain reserved until server restart and would conflict with later valid uses of
-    /// the same name with different settings (issue #63019).
-    bool removeCustomDiskAndStoragePolicy(const String & disk_name) const;
+    /// Atomically check the global pending-rollback table for `disk_name`. If the entry is
+    /// owned by `owner`, remove the disk and its single-disk storage policy from the global
+    /// selectors and erase the entry; return true. Otherwise return false (the caller MUST
+    /// NOT remove the disk: another DDL has observed the registration and may have committed
+    /// metadata against it).
+    /// Used by `~CustomDiskRegistrationScope` to roll back failed ALTER validations.
+    bool removePendingCustomDiskIfOwned(const String & disk_name, const void * owner) const;
+
+    /// Atomically clear the pending-rollback entry for `disk_name` if owned by `owner`.
+    /// The disk and its storage policy stay in the global selectors. Used by
+    /// `CustomDiskRegistrationScope::commit` after the apply path commits its metadata.
+    void clearPendingCustomDiskRegistration(const String & disk_name, const void * owner) const;
 
     StoragePoliciesMap getPoliciesMap() const;
     DisksMap getDisksMap() const;

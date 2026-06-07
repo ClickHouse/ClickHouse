@@ -11,28 +11,31 @@ namespace DB
 
 namespace DiskFromAST
 {
-    /// RAII guard that records custom-disk registrations performed during ALTER validation
-    /// (or any other dry-run that calls `convertCustomDiskField`/`convertCustomDiskSettings`)
-    /// and rolls them back on destruction unless `commit` was called.
+    /// Tracks custom-disk registrations performed during ALTER validation (or any other dry-run that
+    /// calls `convertCustomDiskField`/`convertCustomDiskSettings`) so they can be rolled back when
+    /// the validation later throws, while remaining safe under concurrent DDL.
+    ///
+    /// A registration is only rolled back if no other code path observed it after this scope wrote
+    /// it: every successful `Context::getOrCreateDisk` call for an existing custom disk clears the
+    /// pending-rollback marker for that name (the caller may now commit metadata against this disk,
+    /// so the original validation scope must not delete it). On scope destruction we ask the global
+    /// pending-rollback table whether our marker is still present; if yes, the registration is
+    /// uniquely ours and we remove the disk; if no, another DDL has observed it and we leak the
+    /// name (safe: the disk stays, the existing settings-hash check protects against redefinition).
     ///
     /// Usage at a validation call site (e.g. `MergeTreeData::checkAlterIsPossible`):
     ///
     ///     CustomDiskRegistrationScope disk_scope(local_context);
     ///     DiskFromAST::convertCustomDiskSettings(new_changes, local_context, false, &disk_scope);
     ///     // ... validation that may throw ...
-    ///     // No `disk_scope.commit();` -destructor rolls back any newly-registered disks.
+    ///     // No `disk_scope.commit();` -destructor releases markers and rolls back unobserved ones.
     ///
     /// Usage at the actual apply site (e.g. `MergeTreeData::changeSettings`):
     ///
     ///     CustomDiskRegistrationScope disk_scope(getContext());
     ///     DiskFromAST::convertCustomDiskSettings(new_changes, getContext(), false, &disk_scope);
     ///     // ... apply work ...
-    ///     disk_scope.commit();   /// keep the registrations
-    ///
-    /// Idempotent: a second call to `convertCustomDiskSettings` for the same inline disk
-    /// (already in the disk selector after a prior validation pass) is a no-op for the scope.
-    /// Only NEW registrations are tracked. So a validation pass that succeeds and rolls back,
-    /// followed by a real apply pass, will correctly re-register the disk in the apply scope.
+    ///     disk_scope.commit();   /// keep the registrations; clear all pending-rollback markers
     class CustomDiskRegistrationScope
     {
     public:
@@ -42,11 +45,11 @@ namespace DiskFromAST
         CustomDiskRegistrationScope(const CustomDiskRegistrationScope &) = delete;
         CustomDiskRegistrationScope & operator=(const CustomDiskRegistrationScope &) = delete;
 
-        /// Record a name newly added to the disk selector during this scope.
+        /// Record that this scope freshly registered a custom disk by this name.
         void track(const std::string & disk_name);
 
-        /// Mark the scope as committed; destructor will not roll back.
-        void commit() noexcept { committed = true; }
+        /// Mark the scope as committed and clear all pending-rollback markers we own.
+        void commit() noexcept;
 
     private:
         ContextPtr context;
@@ -62,8 +65,9 @@ namespace DiskFromAST
     /// resulting disk name string. Otherwise (`value` is already a String), validate that the
     /// referenced disk is not a custom disk used by another table.
     ///
-    /// If `scope` is non-null and a NEW custom disk is registered, the disk's name is recorded
-    /// in the scope so it can be rolled back if the surrounding validation later throws.
+    /// If `scope` is non-null and a NEW custom disk is registered, the disk's name is recorded in
+    /// the scope's pending-rollback list. The actual rollback is conditional on no other DDL having
+    /// observed the registration in the meantime; see `CustomDiskRegistrationScope`.
     ///
     /// This must be called for the `disk` setting before passing it to `BaseSettings::applyChanges`
     /// -`SettingFieldString::operator=` calls `Field::safeGet<String>` and throws `BAD_GET` when

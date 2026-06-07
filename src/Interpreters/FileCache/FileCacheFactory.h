@@ -64,6 +64,11 @@ public:
 
     void remove(FileCachePtr cache);
 
+    /// Remove a cache entry by name. Used to roll back a `disk(name = ..., type = cache, ...)`
+    /// registration that was performed as part of an ALTER validation pass and rejected before
+    /// commit (issue #63019). Returns true if an entry was removed.
+    bool removeByName(const std::string & cache_name);
+
     void clear();
 
 private:

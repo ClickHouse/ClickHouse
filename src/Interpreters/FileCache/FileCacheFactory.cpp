@@ -235,6 +235,12 @@ void FileCacheFactory::remove(FileCachePtr cache)
     }
 }
 
+bool FileCacheFactory::removeByName(const std::string & cache_name)
+{
+    std::lock_guard lock(mutex);
+    return caches_by_name.erase(cache_name) > 0;
+}
+
 void FileCacheFactory::clear()
 {
     std::lock_guard lock(mutex);

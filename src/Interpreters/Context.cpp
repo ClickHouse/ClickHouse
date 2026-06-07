@@ -636,6 +636,15 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector TSA_GUARDED_BY(storage_policies_mutex);
     /// Storage policy chooser for MergeTree engines
     mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector TSA_GUARDED_BY(storage_policies_mutex);
+    /// Maps a custom-disk name freshly registered by an in-flight ALTER validation to the
+    /// `CustomDiskRegistrationScope *` that registered it. The scope is used as an opaque
+    /// owner token; it is never dereferenced by `Context`. Cleared in three cases under
+    /// `storage_policies_mutex`: when another caller observes the existing disk via
+    /// `getOrCreateDisk` (the registration is now publicly visible and must not be rolled
+    /// back), when the owning scope commits, or when the owning scope is destroyed and
+    /// rolls back the registration. See `DiskFromAST::CustomDiskRegistrationScope` and
+    /// issue #63019.
+    mutable std::unordered_map<String, const void *> tentative_disk_registrations TSA_GUARDED_BY(storage_policies_mutex);
 
     ServerSettings server_settings;
 
@@ -6327,7 +6336,7 @@ DiskPtr Context::getDisk(const String & name) const
     return disk_selector->get(name);
 }
 
-DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator) const
+DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator, const void * pending_rollback_owner) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
 
@@ -6338,14 +6347,32 @@ DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator) const
     {
         disk = creator(getDisksMap(lock));
         const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
+
+        if (pending_rollback_owner)
+            shared->tentative_disk_registrations[name] = pending_rollback_owner;
+    }
+    else
+    {
+        /// The caller has just observed an existing custom disk by this name. Whoever
+        /// registered it (possibly an in-flight ALTER validation in another thread) MUST NOT
+        /// roll the registration back: the caller may now commit metadata against this
+        /// disk and would otherwise end up referencing a name no longer in the selector.
+        /// Erasing the pending-rollback marker is the way `~CustomDiskRegistrationScope`
+        /// detects this case and chooses to leak the name instead of removing it.
+        shared->tentative_disk_registrations.erase(name);
     }
 
     return disk;
 }
 
-bool Context::removeCustomDiskAndStoragePolicy(const String & disk_name) const
+bool Context::removePendingCustomDiskIfOwned(const String & disk_name, const void * owner) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto it = shared->tentative_disk_registrations.find(disk_name);
+    if (it == shared->tentative_disk_registrations.end() || it->second != owner)
+        return false;
+    shared->tentative_disk_registrations.erase(it);
 
     auto disk_selector = getDiskSelector(lock);
     auto disk = disk_selector->tryGet(disk_name);
@@ -6355,16 +6382,31 @@ bool Context::removeCustomDiskAndStoragePolicy(const String & disk_name) const
         return false;
     }
 
-    /// `Context::getStoragePolicyFromDisk` creates a `__<disk_name>` storage policy alongside
-    /// the disk. Remove it too if it was created. Otherwise the next
-    /// `getStoragePolicyFromDisk(<disk_name>)` would return the stale policy referencing the
-    /// just-removed disk.
+    /// `getStoragePolicyFromDisk` lazily registers a `__<disk_name>` single-disk storage
+    /// policy alongside the disk; remove it too so the next `getStoragePolicyFromDisk` call
+    /// rebuilds a fresh one rather than returning a stale policy referencing the removed disk.
     auto storage_policy_selector = getStoragePolicySelector(lock);
     const String storage_policy_name = StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + disk_name;
     const_cast<StoragePolicySelector *>(storage_policy_selector.get())->remove(storage_policy_name);
 
+    /// `disk(type = cache, name = X, ...)` registers a `FileCache` keyed by `X` in the global
+    /// `FileCacheFactory` while the disk is being constructed (`RegisterDiskCache.cpp`). Drop
+    /// that entry too so a follow-up `CREATE TABLE ... SETTINGS disk = disk(name = X, ...)`
+    /// with DIFFERENT path / settings can re-register cleanly. The factory's no-op-if-absent
+    /// `removeByName` makes this safe for non-cache disks (the entry simply doesn't exist).
+    FileCacheFactory::instance().removeByName(disk_name);
+
     auto removed_disk = const_cast<DiskSelector *>(disk_selector.get())->removeFromDiskMap(disk_name);
     return removed_disk != nullptr;
+}
+
+void Context::clearPendingCustomDiskRegistration(const String & disk_name, const void * owner) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto it = shared->tentative_disk_registrations.find(disk_name);
+    if (it != shared->tentative_disk_registrations.end() && it->second == owner)
+        shared->tentative_disk_registrations.erase(it);
 }
 
 StoragePolicyPtr Context::getStoragePolicy(const String & name) const

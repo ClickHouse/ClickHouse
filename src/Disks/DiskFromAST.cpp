@@ -97,21 +97,26 @@ static std::string getOrCreateCustomDisk(
         disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
     }
 
-    bool newly_registered = false;
+    /// `Context::getOrCreateDisk` records `scope` (used as an opaque owner pointer) in the
+    /// global pending-rollback table when this call newly registers the disk; if the disk
+    /// already exists, it clears any prior pending-rollback marker so a concurrent ALTER
+    /// validation cannot remove a registration that this caller has just observed (and may
+    /// commit metadata against). See `DiskFromAST::CustomDiskRegistrationScope` and issue
+    /// #63019, clickhouse-gh[bot] CR on PR #103818 (TOCTOU race on rollback).
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
         auto result = DiskFactory::instance().create(
             disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
         /// Mark that disk can be used without storage policy.
         result->markDiskAsCustom(disk_settings_hash);
-        newly_registered = true;
         return result;
-    });
+    }, /* pending_rollback_owner */ scope);
 
-    /// If we just added a new custom disk to the global selector AND the caller is running a
-    /// dry-run / validation pass, record the name in the scope so it can be rolled back if
-    /// the validation later throws (issue #63019: `MODIFY SETTING disk = disk(...)` rejected
-    /// by the storage-policy migration guard would otherwise leak the disk name registration).
-    if (scope && newly_registered)
+    /// Always remember the name on the scope. The atomic ownership check at rollback / commit
+    /// time decides whether this scope's destructor removes the disk (still uniquely owned)
+    /// or merely releases its claim (someone else has observed the registration in the
+    /// meantime and may have committed against it). Tracking even when the disk pre-existed
+    /// is a no-op at rollback because the pending-rollback table will not be ours.
+    if (scope)
         scope->track(disk_name);
 
     if (!disk->isCustomDisk())
@@ -237,19 +242,24 @@ DiskFromAST::CustomDiskRegistrationScope::~CustomDiskRegistrationScope() noexcep
 {
     if (committed || registered_disk_names.empty())
         return;
-    /// Roll back any custom disk registrations performed during this scope. Any failure during
-    /// removal is swallowed: this destructor must be `noexcept` because it runs during stack
-    /// unwinding for exception cases. A best-effort log makes a real bug observable.
+    /// For each tracked name, ask `Context::removePendingCustomDiskIfOwned` to atomically
+    /// check the global pending-rollback table and remove the disk only if our scope is still
+    /// the recorded owner. If another DDL has observed this registration in between (its
+    /// `getOrCreateDisk` call cleared our marker), the disk stays in the selector; the leaked
+    /// name is safe because the existing settings-hash check rejects redefinition with
+    /// different settings.
+    /// This destructor must be `noexcept` because it runs during stack unwinding; failures
+    /// are best-effort logged.
     for (const auto & disk_name : registered_disk_names)
     {
         try
         {
-            context->removeCustomDiskAndStoragePolicy(disk_name);
+            context->removePendingCustomDiskIfOwned(disk_name, this);
         }
         catch (...)
         {
             tryLogCurrentException(getLogger("CustomDiskRegistrationScope"),
-                fmt::format("Failed to roll back custom disk registration for {}", disk_name));
+                fmt::format("Failed to release pending custom disk registration for {}", disk_name));
         }
     }
 }
@@ -257,6 +267,27 @@ DiskFromAST::CustomDiskRegistrationScope::~CustomDiskRegistrationScope() noexcep
 void DiskFromAST::CustomDiskRegistrationScope::track(const std::string & disk_name)
 {
     registered_disk_names.push_back(disk_name);
+}
+
+void DiskFromAST::CustomDiskRegistrationScope::commit() noexcept
+{
+    committed = true;
+    /// Drop any pending-rollback markers we still own. The disks stay in the global
+    /// selectors; they have just been committed by the caller's metadata transition and
+    /// are no longer tentative. Markers left behind would prevent a future ALTER validation
+    /// scope (with a fresh `this` pointer) from being correctly tracked.
+    for (const auto & disk_name : registered_disk_names)
+    {
+        try
+        {
+            context->clearPendingCustomDiskRegistration(disk_name, this);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger("CustomDiskRegistrationScope"),
+                fmt::format("Failed to clear pending custom disk registration for {}", disk_name));
+        }
+    }
 }
 
 }
