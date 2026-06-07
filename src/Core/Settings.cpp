@@ -6163,6 +6163,10 @@ Possible values:
 - 1 - Enable
 )", 0) \
     DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0) \
+    DECLARE(Bool, query_plan_optimize_read_in_order_skip_offset, true, R"(
+When reading a `MergeTree` table in primary key order with an `OFFSET`, skip reading leading granules entirely consumed by the offset.
+Only takes effect if setting [`query_plan_read_in_order`](#query_plan_read_in_order) is 1.
+)", 0) \
     DECLARE(Bool, query_plan_aggregation_in_order, true, R"(
 Toggles the aggregation in-order query-plan-level optimization.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.

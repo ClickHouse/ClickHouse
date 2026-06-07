@@ -13,6 +13,11 @@ public:
 
     String getName() const override { return "Offset"; }
 
+    size_t getOffset() const { return offset; }
+
+    /// Used by the read-in-order OFFSET-skip optimization to reduce the offset by the rows skipped on read.
+    void setOffset(size_t offset_) { offset = offset_; }
+
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
