@@ -261,11 +261,11 @@ Nullable(Tuple(Int32, Int32))
 -- argMin(tuple, val): legacy type was Tuple(Nullable(Int32), Nullable(Int32)).
 SELECT toTypeName(argMin(tuple(a, b), c))
 FROM values('a Nullable(Int32), b Nullable(Int32), c Nullable(Int32)', (1, 2, 3), (NULL, 1, 0), (3, 4, 5));
-Nullable(Tuple(Nullable(Int32), Nullable(Int32)))
+Nullable(Tuple(a Nullable(Int32), b Nullable(Int32)))
 -- argMax(tuple, val): legacy type was Tuple(Nullable(Int32), Nullable(Int32)).
 SELECT toTypeName(argMax(tuple(a, b), c))
 FROM values('a Nullable(Int32), b Nullable(Int32), c Nullable(Int32)', (1, 2, 3), (NULL, 1, 0), (3, 4, 5));
-Nullable(Tuple(Nullable(Int32), Nullable(Int32)))
+Nullable(Tuple(a Nullable(Int32), b Nullable(Int32)))
 -- sumMap(nullable tuple): legacy type was Tuple(Array(UInt8), Array(UInt64)).
 SELECT toTypeName(finalizeAggregation(CAST(unhex('0101050700000000000000'), 'AggregateFunction(sumMap, Nullable(Tuple(Array(UInt8), Array(UInt64))))')));
 Nullable(Tuple(Array(UInt8), Array(UInt64)))

@@ -60,7 +60,7 @@ LC(Nullable) simple key, dictGetString != abc, no rewrite (default empty string 
 Composite key, Nullable component, no rewrite (skip to preserve dictGet throw on NULL component) - plan
 SELECT
     __table1.k1 AS k1,
-    dictGetString(\'dict_complex_str\', \'name\', (__table1.k1, __table1.k2)) = \'abc\' AS pred
+    dictGetString(\'dict_complex_str\', \'name\', tuple(\'k1\', \'k2\')(__table1.k1, __table1.k2)) = \'abc\' AS pred
 FROM default.data_complex AS __table1
 ORDER BY __table1.k1 ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
@@ -70,7 +70,7 @@ Composite key, Nullable component, no rewrite (skip to preserve dictGet throw on
 Composite key, LC(Nullable) component, no rewrite (skip to preserve throw) - plan
 SELECT
     __table1.k1 AS k1,
-    dictGetString(\'dict_complex_str\', \'name\', (__table1.k1, __table1.k2)) = \'abc\' AS pred
+    dictGetString(\'dict_complex_str\', \'name\', tuple(\'k1\', \'k2\')(__table1.k1, __table1.k2)) = \'abc\' AS pred
 FROM default.data_complex_lc_nullable AS __table1
 ORDER BY __table1.k1 ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
@@ -80,7 +80,7 @@ Composite key, LC(Nullable) component, no rewrite (skip to preserve throw)
 Composite key, dict declares Nullable key, Nullable data, no rewrite - plan
 SELECT count() AS `count()`
 FROM default.data_complex_nullable_dict_key AS __table1
-WHERE dictGetString(\'dict_complex_nullable_dict_key\', \'name\', (__table1.k1, __table1.k2)) = \'nullhit\'
+WHERE dictGetString(\'dict_complex_nullable_dict_key\', \'name\', tuple(\'k1\', \'k2\')(__table1.k1, __table1.k2)) = \'nullhit\'
 SETTINGS optimize_inverse_dictionary_lookup = 1
 Composite key, dict declares Nullable key, Nullable data, no rewrite
 1
