@@ -33,9 +33,8 @@ class DistributedMergePredicate : public IMergePredicate
     }
 
 public:
-    explicit DistributedMergePredicate(std::optional<PartitionIdsHint> partition_ids_hint_, bool allow_different_projection_sets_ = false)
+    explicit DistributedMergePredicate(std::optional<PartitionIdsHint> partition_ids_hint_)
         : partition_ids_hint(std::move(partition_ids_hint_))
-        , allow_different_projection_sets(allow_different_projection_sets_)
     {
     }
 
@@ -133,7 +132,7 @@ public:
                             left.name, right.name, left_mutation_version, right_mutation_version));
         }
 
-        if (left.projection_names != right.projection_names && !allow_different_projection_sets)
+        if (left.projection_names != right.projection_names)
             return std::unexpected(PreformattedMessage::create(
                     "Parts have different projection sets: {} in '{}' and {} in '{}'",
                     left.projection_names, left.name, right.projection_names, right.name));
@@ -203,10 +202,6 @@ protected:
 
     /// Patch parts that should be applied at merges if apply_patches_on_merge is enabled.
     PatchInfosByPartition patches_by_partition;
-
-    /// When true, parts with different projection sets can still be merged together.
-    /// The missing projections will be rebuilt during merge execution.
-    bool allow_different_projection_sets = false;
 };
 
 }

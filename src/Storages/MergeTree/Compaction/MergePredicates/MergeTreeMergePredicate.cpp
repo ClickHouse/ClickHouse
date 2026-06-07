@@ -1,16 +1,10 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <base/defines.h>
 
 namespace DB
 {
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool materialize_projections_on_merge;
-}
 
 static std::vector<MergeTreePartInfo> getPatchPartInfos(const StorageMergeTree & storage)
 {
@@ -46,8 +40,7 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canMergeParts(
     if (left.is_in_volume_where_merges_avoid || right.is_in_volume_where_merges_avoid)
         return std::unexpected(PreformattedMessage::create("One of parts ({}, {}) lies on volume where merges should be avoided", left.name, right.name));
 
-    if (left.projection_names != right.projection_names
-        && !(*storage.getSettings())[MergeTreeSetting::materialize_projections_on_merge])
+    if (left.projection_names != right.projection_names)
     {
         return std::unexpected(PreformattedMessage::create(
             "Parts have different projection sets: {} in '{}' and {} in '{}'",

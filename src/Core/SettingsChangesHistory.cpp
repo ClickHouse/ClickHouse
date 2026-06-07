@@ -1227,6 +1227,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
         {
             {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup", false, false, "New setting which allows SMT download parts data from replicas instead of S3 on startup"},
+            {"materialize_projections_on_insert", true, true, "New setting"},
+            {"materialize_projections_on_merge", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
@@ -1245,8 +1247,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 1800, "Increase default replica set background update interval to 30 minutes"},
             {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
             {"compress_per_column_in_compact_parts", true, true, "New setting"},
-            {"materialize_projections_on_insert", true, true, "New setting"},
-            {"materialize_projections_on_merge", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {

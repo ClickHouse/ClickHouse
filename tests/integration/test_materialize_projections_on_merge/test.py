@@ -16,10 +16,11 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_replicated_merge_with_different_projection_sets(started_cluster):
+def test_replicated_rebuild_on_merge(started_cluster):
     """When materialize_projections_on_merge is enabled, ReplicatedMergeTree
-    should be able to merge parts that have different projection sets and
-    rebuild the missing projections during merge."""
+    should rebuild projections that are missing from the source parts (e.g.
+    because they were inserted with materialize_projections_on_insert = 0)
+    when those parts are merged."""
 
     node.query("DROP TABLE IF EXISTS t SYNC")
     node.query(
@@ -28,28 +29,31 @@ def test_replicated_merge_with_different_projection_sets(started_cluster):
             PROJECTION p1 (SELECT key, sum(value) GROUP BY key))
         ENGINE = ReplicatedMergeTree('/test_mat_proj_merge/t', '1')
         ORDER BY key
-        SETTINGS materialize_projections_on_merge = 1
+        SETTINGS materialize_projections_on_insert = 0, materialize_projections_on_merge = 1
         """
     )
 
-    # Insert data — these parts will have projection p1
+    # Insert data — these parts have no projection (materialize_projections_on_insert = 0)
     node.query("INSERT INTO t SELECT number, number FROM numbers(3)")
     node.query("INSERT INTO t SELECT number + 10, number FROM numbers(3)")
 
-    # Add a second projection
-    node.query(
-        "ALTER TABLE t ADD PROJECTION p2 (SELECT key, max(value) GROUP BY key)"
+    # No projection parts exist yet
+    assert (
+        node.query(
+            """
+            SELECT count()
+            FROM system.projection_parts
+            WHERE database = currentDatabase() AND table = 't' AND active
+            """
+        ).strip()
+        == "0"
     )
 
-    # Insert more data — these parts will have both p1 and p2
-    node.query("INSERT INTO t SELECT number + 20, number FROM numbers(3)")
-    node.query("INSERT INTO t SELECT number + 30, number FROM numbers(3)")
-
-    # Merge should succeed despite parts having different projection sets
+    # All parts share the same (empty) projection set, so merge is allowed and rebuilds p1
     node.query("OPTIMIZE TABLE t FINAL")
     node.query("SYSTEM SYNC REPLICA t")
 
-    # Verify single merged part with both projections
+    # Verify a single merged part that now has projection p1
     result = node.query(
         """
         SELECT count() AS num_parts,
@@ -58,7 +62,7 @@ def test_replicated_merge_with_different_projection_sets(started_cluster):
         WHERE database = currentDatabase() AND table = 't' AND active
         """
     ).strip()
-    assert result == "1\t['p1','p2']"
+    assert result == "1\t['p1']"
 
     node.query("DROP TABLE t SYNC")
 
