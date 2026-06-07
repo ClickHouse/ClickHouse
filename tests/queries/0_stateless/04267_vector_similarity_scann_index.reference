@@ -44,3 +44,6 @@
 1
 18. cosineDistance rejects zero-magnitude indexed vector
 19. cosineDistance rejects zero-magnitude query vector
+20. Large Float64 cosine vectors: float32 overflow in normalization regression
+0
+0

@@ -269,13 +269,13 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
         for (size_t i = 0; i < num_vectors; ++i)
         {
             float * v = vectors.data() + i * padded_dim;
-            float sq_norm = 0.0f;
+            double sq_norm = 0.0;
             for (size_t d = 0; d < padded_dim; ++d)
-                sq_norm += v[d] * v[d];
-            if (sq_norm == 0.0f)
+                sq_norm += static_cast<double>(v[d]) * static_cast<double>(v[d]);
+            if (sq_norm == 0.0 || !std::isfinite(sq_norm))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Zero-magnitude vector is not allowed for vector_similarity('scann', 'cosineDistance', ...) index");
-            const float inv = 1.0f / std::sqrt(sq_norm);
+            const float inv = static_cast<float>(1.0 / std::sqrt(sq_norm));
             for (size_t d = 0; d < padded_dim; ++d)
                 v[d] *= inv;
         }
@@ -597,10 +597,10 @@ void MergeTreeIndexAggregatorVectorSimilarityScann::update(
 
         if (params.distance_name == "cosineDistance")
         {
-            float sq_norm = 0.0f;
+            double sq_norm = 0.0;
             for (size_t d = 0; d < dims; ++d)
-                sq_norm += dst[d] * dst[d];
-            if (sq_norm == 0.0f)
+                sq_norm += static_cast<double>(dst[d]) * static_cast<double>(dst[d]);
+            if (sq_norm == 0.0 || !std::isfinite(sq_norm))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Zero-magnitude vector is not allowed for vector_similarity('scann', 'cosineDistance', ...) index");
         }
@@ -716,12 +716,12 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
     /// Reject zero-magnitude query vectors for the same reason as at index build time.
     if (index_params.distance_name == "cosineDistance")
     {
-        float sq_norm = 0.0f;
-        for (float v : query) sq_norm += v * v;
-        if (sq_norm == 0.0f)
+        double sq_norm = 0.0;
+        for (float v : query) sq_norm += static_cast<double>(v) * static_cast<double>(v);
+        if (sq_norm == 0.0 || !std::isfinite(sq_norm))
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Zero-magnitude query vector is not allowed for vector_similarity('scann', 'cosineDistance', ...)");
-        const float inv = 1.0f / std::sqrt(sq_norm);
+        const float inv = static_cast<float>(1.0 / std::sqrt(sq_norm));
         for (float & v : query) v *= inv;
     }
 
