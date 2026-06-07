@@ -1,3 +1,9 @@
+-- Tags: no-parallel
+-- ^ Handlers are a global, server-wide namespace, and this test uses fixed handler names. The flaky
+-- check runs several copies of the same test concurrently (`--test-runs N --jobs M`), so without this
+-- tag a `DROP HANDLER IF EXISTS` in one copy removes a handler another copy is about to drop, leading
+-- to `HANDLER_DOESNT_EXIST`. This mirrors how named collection tests (also a global namespace) are tagged.
+
 -- Tests for CREATE/ALTER/DROP HANDLER: parsing, the registry, ambiguity checks,
 -- type validation and the system.handlers introspection table.
 -- Handler names/URLs are globally unique to this test to avoid cross-test interference.
