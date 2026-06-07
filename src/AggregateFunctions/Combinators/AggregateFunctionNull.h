@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
@@ -95,7 +96,7 @@ protected:
 
 public:
     AggregateFunctionNullBase(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionHelper<Derived>(arguments, params, createResultType(nested_function_))
+        : IAggregateFunctionHelper<Derived>(arguments, params, createResultType(nested_function_, arguments))
         , nested_function{nested_function_}
         , prefix_size(result_is_nullable ? nested_function->alignOfData() : 0)
     {
@@ -132,10 +133,27 @@ public:
         nested_function->mergeStateFromDifferentVariant(nestedPlace(place), *rhs_nested, rhs_place + rhs_prefix_size, arena);
     }
 
-    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_function_)
+    static bool hasNullableArrayArgument(const DataTypes & arguments)
+    {
+        for (const auto & argument : arguments)
+        {
+            if (argument->isNullable() && typeid_cast<const DataTypeArray *>(removeNullable(argument).get()))
+                return true;
+        }
+
+        return false;
+    }
+
+    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_function_, const DataTypes & arguments)
     {
         if constexpr (result_is_nullable)
-            return makeNullable(nested_function_->getResultType());
+        {
+            const auto & result_type = nested_function_->getResultType();
+            if (typeid_cast<const DataTypeArray *>(result_type.get()) && hasNullableArrayArgument(arguments))
+                return makeNullableAllowingArray(result_type);
+
+            return makeNullable(result_type);
+        }
         else
             return nested_function_->getResultType();
     }
