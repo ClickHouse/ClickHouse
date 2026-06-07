@@ -52,7 +52,8 @@ bool isDataTypeMapString(const DataTypePtr & in_type, bool optional)
     if (!isMap(type))
         return false;
     const auto * type_map = assert_cast<const DataTypeMap *>(type.get());
-    return isStringOrFixedString(type_map->getKeyType()) && isStringOrFixedString(type_map->getValueType());
+    return isStringOrFixedString(removeLowCardinality(type_map->getKeyType()))
+        && isStringOrFixedString(removeLowCardinality(type_map->getValueType()));
 }
 
 bool isAcceptableString(const DataTypePtr & type, bool optional)
