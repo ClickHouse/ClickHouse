@@ -49,7 +49,29 @@ ALTER TABLE t_04303_corr DELETE
     WHERE exists((SELECT 1 WHERE v < 100))
     SETTINGS mutations_sync = 2; -- { serverError NOT_IMPLEMENTED }
 
+-- Issue #106649 shape: ALTER UPDATE WHERE id IN (subquery joining two
+-- subquery-wrapped derived tables that both project `id`). The mutation path
+-- used to abort with `Logical error: Column identifier id is already
+-- registered`; with the fix, the detached subquery in `PreparedSets` gets
+-- unique `__tableN` aliases per source node and the mutation runs.
+DROP TABLE IF EXISTS gh_04303;
+DROP TABLE IF EXISTS prs_04303;
+DROP TABLE IF EXISTS edges_04303;
+CREATE TABLE gh_04303    (id UInt64, x UInt8) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE prs_04303   (id UInt64)          ENGINE = MergeTree ORDER BY id;
+CREATE TABLE edges_04303 (from_id UInt64, to_id UInt64) ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE gh_04303 UPDATE x = 1 WHERE id IN (
+    SELECT i.id
+    FROM (SELECT id FROM gh_04303)  AS i
+    JOIN edges_04303 AS r           ON r.to_id = i.id
+    JOIN (SELECT id FROM prs_04303) AS pr ON pr.id = r.from_id
+) SETTINGS mutations_sync = 2;
+SELECT count() FROM gh_04303;
+
 DROP TABLE t_04303;
 DROP TABLE test_updates_04303;
 DROP TABLE t_04303_b;
 DROP TABLE t_04303_corr;
+DROP TABLE gh_04303;
+DROP TABLE prs_04303;
+DROP TABLE edges_04303;
