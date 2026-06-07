@@ -977,6 +977,13 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
     Int64 version = block_holder->block.number;
+
+    /// Re-fence leadership immediately before publishing the mutation file on shared storage.
+    /// The caller (`mutate`) checks `assertNotReadonly` at entry, but leadership can be lost while
+    /// waiting in `delayMutationOrThrowIfNeeded` / `tryLockForAlter` before we get here. `entry.commit`
+    /// is a non-transactional write to shared object storage that a new leader would later load and
+    /// apply, so committing it after losing the lease would break the single-writer contract.
+    assertNotReadonly();
     entry.commit(version);
     String mutation_id = entry.file_name;
     if (txn)
@@ -3037,6 +3044,14 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Table {} supports movePartitionToTable only for MergeTree family of table engines. Got {}",
                         getStorageID().getNameForLogs(), dest_table->getName());
+
+    /// `MOVE PARTITION TO TABLE` mutates the destination too: below we delay/throttle inserts on it,
+    /// clone parts into it, allocate destination block numbers, and rename/commit through the
+    /// destination transaction. The source check above does not cover that, so fence the destination
+    /// here — before any destination-side work — so a `leader_election` destination on which this node
+    /// is a follower (or is still in post-failover takeover sync) fails closed rather than publishing
+    /// parts with a stale destination block counter.
+    dest_table_storage->assertNotReadonly();
 
     /// Destination-side UK reject (source-side rejection is centralized in
     /// MergeTreeData::alterPartition).
