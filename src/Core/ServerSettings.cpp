@@ -46,6 +46,11 @@ extern const Metric BackgroundDistributedSchedulePoolSize;
 extern const Metric BackgroundMessageBrokerSchedulePoolSize;
 }
 
+/// Defined in Common/ThreadPool.cpp and hot-reloaded from the server configuration.
+/// Forward-declared here (instead of including Common/ThreadPool.h) to surface the live
+/// value in `system.server_settings` without pulling the heavy header into this translation unit.
+extern std::atomic<int64_t> additional_memory_tracking_per_thread;
+
 namespace DB
 {
 
@@ -1881,6 +1886,9 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
 
             {"abort_on_logical_error", {std::to_string(DB::abort_on_logical_error), ChangeableWithoutRestart::Yes}},
+
+            {"additional_memory_tracking_per_thread",
+             {std::to_string(additional_memory_tracking_per_thread.load(std::memory_order_relaxed)), ChangeableWithoutRestart::Yes}},
 
             {"dns_allow_resolve_names_to_ipv4", {std::to_string(DNSResolver::instance().getFilterIPv4()), ChangeableWithoutRestart::Yes}},
             {"dns_allow_resolve_names_to_ipv6", {std::to_string(DNSResolver::instance().getFilterIPv6()), ChangeableWithoutRestart::Yes}},
