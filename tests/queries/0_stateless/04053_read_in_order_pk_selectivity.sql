@@ -44,6 +44,19 @@ SELECT count() > 0 FROM (
     SETTINGS enable_parallel_replicas = 0, read_in_order_max_primary_key_ratio = 0.5
 ) WHERE explain LIKE '%PartialSortingTransform%';
 
+-- A SQL `LIMIT` lets read-in-order finish early (and with the virtual-row optimization, parts
+-- can be skipped entirely), so even with poor primary key selectivity the guard must NOT fire:
+-- the `query_limit` plumbed into `requestReadingInOrder` keeps read-in-order enabled, and there
+-- is no full sort (no `PartialSortingTransform`). This regresses if the SQL `LIMIT` value is lost
+-- on the way to the read step (`query_limit` becomes 0 and the guard misfires).
+SELECT 'poor_pk_selectivity_with_limit_keeps_in_order';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT * FROM t_read_in_order_pk
+    WHERE path LIKE '%file.log'
+    ORDER BY path LIMIT 10
+    SETTINGS enable_parallel_replicas = 0, read_in_order_max_primary_key_ratio = 0.5
+) WHERE explain LIKE '%PartialSortingTransform%';
+
 -- Verify that results are correct (sorted) when read-in-order is rejected.
 SELECT 'correctness';
 SELECT count() FROM (

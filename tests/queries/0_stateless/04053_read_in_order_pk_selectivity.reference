@@ -2,6 +2,8 @@ poor_pk_selectivity_full_sort
 1
 good_pk_selectivity_in_order
 0
+poor_pk_selectivity_with_limit_keeps_in_order
+0
 correctness
 100000
 setting_disabled
