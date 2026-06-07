@@ -7233,21 +7233,29 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
     /// The table's metadata version is the version of the /metadata znode.
     /// Bump it by re-setting the same content. CAS protects against concurrent ALTERs
     /// and other replicas restoring the same table.
+    ///
+    /// On RESTORE ON CLUSTER multiple replicas may run this concurrently. To avoid duplicate
+    /// ALTER_METADATA log entries we track only whether THIS replica performed the final bump
+    /// (from metadata_version - 1 to metadata_version). ZooKeeper increments the znode version
+    /// by 1 on each successful set, so a successful trySet from version (metadata_version - 1)
+    /// is the unique final bump; all other successful bumps are intermediate and produce no entry.
     Coordination::Stat metadata_stat;
     String metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
-    bool version_was_bumped = false;
+    bool did_final_bump = false;
     while (metadata_stat.version < metadata_version)
     {
         auto code = zookeeper->trySet(table_metadata_path, metadata_str, metadata_stat.version);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZBADVERSION)
             throw zkutil::KeeperException::fromPath(code, table_metadata_path);
-        if (code == Coordination::Error::ZOK)
-            version_was_bumped = true;
+        if (code == Coordination::Error::ZOK && metadata_stat.version + 1 == metadata_version)
+            did_final_bump = true;
         metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
     }
 
     /// Notify running peer replicas about the new version via the shared replication log.
-    if (version_was_bumped)
+    /// Only the replica that performed the final bump creates this entry, so exactly one
+    /// ALTER_METADATA entry is added to the log regardless of how many replicas restore concurrently.
+    if (did_final_bump)
     {
         String columns_str = zookeeper->get(table_columns_path);
 
