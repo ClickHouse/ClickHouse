@@ -4,6 +4,7 @@
 
 #    include <AggregateFunctions/IAggregateFunction.h>
 #    include <Columns/ColumnNullable.h>
+#    include <Columns/ColumnFixedString.h>
 #    include <Columns/ColumnString.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/Native.h>
@@ -69,6 +70,13 @@ ColumnData getColumnData(const IColumn * column, size_t skip_rows)
         result.data = reinterpret_cast<const char *>(string_column->getChars().data());
         result.offset_data = reinterpret_cast<const char *>(string_column->getOffsets().data());
     }
+    else if (WhichDataType(column->getDataType()).isFixedString())
+    {
+        /// Same as String: the JIT comparator computes byte offsets as row_index * n,
+        /// so the data pointer must be to the start of the chars array regardless of skip_rows.
+        const auto * fixed_string_column = assert_cast<const ColumnFixedString *>(column);
+        result.data = reinterpret_cast<const char *>(fixed_string_column->getChars().data());
+    }
     else
     {
         result.data = column->getDataAt(skip_rows).data();
@@ -77,13 +85,13 @@ ColumnData getColumnData(const IColumn * column, size_t skip_rows)
     return result;
 }
 
-llvm::StructType * buildColumnDataStruct(llvm::IRBuilderBase & b)
+static llvm::StructType * buildColumnDataStruct(llvm::IRBuilderBase & b)
 {
     auto * char_ptr_type = b.getInt8Ty()->getPointerTo();
     return llvm::StructType::get(char_ptr_type, char_ptr_type, char_ptr_type);
 }
 
-llvm::StructType * buildStringRefType(llvm::IRBuilderBase &b)
+static llvm::StructType * buildStringRefType(llvm::IRBuilderBase &b)
 {
     auto * data_ptr_type = b.getInt8Ty()->getPointerTo();
     auto * offset_ptr_type = b.getInt8Ty()->getPointerTo();
@@ -91,7 +99,7 @@ llvm::StructType * buildStringRefType(llvm::IRBuilderBase &b)
     return llvm::StructType::get(data_ptr_type, offset_ptr_type, index_type);
 }
 
-llvm::StructType * buildFixedStringType(llvm::IRBuilderBase &b)
+static llvm::StructType * buildFixedStringType(llvm::IRBuilderBase &b)
 {
     auto * data_ptr_type = b.getInt8Ty()->getPointerTo();
     return llvm::StructType::get(data_ptr_type, b.getInt64Ty());
@@ -213,7 +221,7 @@ CompiledFunction compileFunction(CHJIT & jit, const IFunctionBase & function)
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
     auto compiled_function_ptr = reinterpret_cast<JITCompiledFunction>(compiled_module.function_name_to_symbol[function.getName()]);
-    assert(compiled_function_ptr);
+    chassert(compiled_function_ptr);
 
     CompiledFunction result_compiled_function
     {
@@ -558,11 +566,11 @@ CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vec
     auto merge_aggregate_states_function = reinterpret_cast<JITMergeAggregateStatesFunction>(compiled_module.function_name_to_symbol[merge_aggregate_states_functions_name]);
     auto insert_aggregate_states_function = reinterpret_cast<JITInsertAggregateStatesIntoColumnsFunction>(compiled_module.function_name_to_symbol[insert_aggregate_states_functions_name]);
 
-    assert(create_aggregate_states_function);
-    assert(add_into_aggregate_states_function);
-    assert(add_into_aggregate_states_function_single_place);
-    assert(merge_aggregate_states_function);
-    assert(insert_aggregate_states_function);
+    chassert(create_aggregate_states_function);
+    chassert(add_into_aggregate_states_function);
+    chassert(add_into_aggregate_states_function_single_place);
+    chassert(merge_aggregate_states_function);
+    chassert(insert_aggregate_states_function);
 
     ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
     ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, compiled_module.size);
@@ -764,7 +772,7 @@ CompiledSortDescriptionFunction compileSortDescription(
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
     auto comparator_function = reinterpret_cast<JITSortDescriptionFunc>(compiled_module.function_name_to_symbol[sort_description_dump]);
-    assert(comparator_function);
+    chassert(comparator_function);
 
     CompiledSortDescriptionFunction compiled_sort_descriptor_function
     {

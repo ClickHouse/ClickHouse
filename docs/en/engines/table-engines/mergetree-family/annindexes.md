@@ -7,8 +7,6 @@ title: 'Exact and Approximate Vector Search'
 doc_type: 'guide'
 ---
 
-# Exact and approximate vector search
-
 The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, in short: vector search.
 Two general approaches exist for solving vector search:
 - Exact vector search calculates the distance between the given point and all points in the vector space. This ensures the best possible accuracy, i.e. the returned points are guaranteed to be the actual nearest neighbors. Since the vector space is explored exhaustively, exact vector search can be too slow for real-world use.
@@ -94,7 +92,7 @@ ALTER TABLE table ADD INDEX <index_name> vectors TYPE vector_similarity(<type>, 
 ```
 
 Vector similarity indexes are special kinds of skipping indexes (see [here](mergetree.md#table_engine-mergetree-data_skipping-indexes) and [here](../../../optimize/skipping-indexes)).
-Accordingly, above `ALTER TABLE` statement only causes the index to be build for future new data inserted into the table.
+Accordingly, above `ALTER TABLE` statement only causes the index to be built for future new data inserted into the table.
 To build the index for existing data as well, you need to materialize it:
 
 ```sql
@@ -102,10 +100,16 @@ ALTER TABLE table MATERIALIZE INDEX <index_name> SETTINGS mutations_sync = 2;
 ```
 
 Function `<distance_function>` must be
-- `L2Distance`, the [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance), representing the length of a line between two points in Euclidean space, or
-- `cosineDistance`, the [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance), representing the angle between two non-zero vectors.
+- `L2Distance`, the [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance), representing the length of a line between two points in Euclidean space,
+- `cosineDistance`, the [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance), representing the angle between two non-zero vectors, or
+- `dotProduct`, the [dot product](https://en.wikipedia.org/wiki/Dot_product) (inner product), representing the sum of element-wise products of two vectors. Equivalent to `cosineDistance` on normalized data.
 
 For normalized data, `L2Distance` is usually the best choice, otherwise `cosineDistance` is recommended to compensate for scale.
+
+:::note
+For distance functions `L2Distance` and `cosineDistance`, a smaller value means a higher similarity, whereas for `dotProduct`, a higher value means a higher similarity.
+As a result, vector indexes with `L2Distance` and `cosineDistance` can only be used by `SELECT [...] ORDER BY [...] ASC` queries (`ASC` is the default for `ORDER BY`), whereas vector indexes built for `dotProduct` can only be used by `SELECT [...] ORDER BY [...] DESC` queries.
+:::
 
 `<dimensions>` specifies the array cardinality (number of elements) in the underlying column.
 If ClickHouse finds an array with a different cardinality during index creation, the index is discarded and an error is returned.
@@ -581,7 +585,9 @@ If no `GRANULARITY` was specified for vector similarity indexes, the default val
 
 #### Example {#approximate-nearest-neighbor-search-example}
 
-```sql
+Queries:
+
+```sql title="Query"
 CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
@@ -593,9 +599,7 @@ ORDER BY L2Distance(vec, reference_vec) ASC
 LIMIT 3;
 ```
 
-returns
-
-```result
+```result title="Response"
    ┌─id─┬─vec─────┐
 1. │  6 │ [0,2]   │
 2. │  7 │ [0,2.1] │

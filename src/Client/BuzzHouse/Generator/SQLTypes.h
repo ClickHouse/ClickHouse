@@ -587,12 +587,14 @@ class AggregateFunctionType : public SQLType
 {
 public:
     const bool simple;
-    const SQLFunc aggregate;
+    const std::string aggregate;
+    std::vector<AggregateParam> params;
     std::vector<std::unique_ptr<SQLType>> subtypes;
 
-    AggregateFunctionType(const bool s, const SQLFunc aggr, std::vector<std::unique_ptr<SQLType>> subs)
+    AggregateFunctionType(const bool s, std::string aggr, std::vector<AggregateParam> p, std::vector<std::unique_ptr<SQLType>> subs)
         : simple(s)
-        , aggregate(aggr)
+        , aggregate(std::move(aggr))
+        , params(std::move(p))
         , subtypes(std::move(subs))
     {
     }
@@ -613,10 +615,10 @@ public:
 class NestedSubType
 {
 public:
-    uint32_t cname;
+    String cname;
     std::unique_ptr<SQLType> subtype;
 
-    NestedSubType(const uint32_t n, std::unique_ptr<SQLType> s)
+    NestedSubType(const String n, std::unique_ptr<SQLType> s)
         : cname(n)
         , subtype(std::move(s))
     {
@@ -648,7 +650,7 @@ public:
 template <typename T>
 bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, SQLType * tp)
 {
-    LowCardinality * lc;
+    LowCardinality * lc = nullptr;
 
     if (dynamic_cast<const T *>(tp))
     {
@@ -656,7 +658,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     }
     if (inside_nullable)
     {
-        Nullable * nl;
+        Nullable * nl = nullptr;
 
         if ((nl = dynamic_cast<Nullable *>(tp)))
         {
@@ -669,7 +671,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     }
     if (inside_array)
     {
-        ArrayType * at;
+        ArrayType * at = nullptr;
 
         if ((at = dynamic_cast<ArrayType *>(tp)))
         {
@@ -678,8 +680,8 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     }
     if (inside_nested)
     {
-        TupleType * ttp;
-        NestedType * ntp;
+        TupleType * ttp = nullptr;
+        NestedType * ntp = nullptr;
 
         if ((ttp = dynamic_cast<TupleType *>(tp)))
         {

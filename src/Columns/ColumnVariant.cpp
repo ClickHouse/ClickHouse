@@ -824,7 +824,7 @@ std::string_view ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena,
 void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     /// During any serialization/deserialization we should always use global discriminators.
-    Discriminator global_discr;
+    Discriminator global_discr = 0;
     readBinaryLittleEndian<Discriminator>(global_discr, in);
 
     Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
@@ -841,7 +841,7 @@ void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
 
 void ColumnVariant::skipSerializedInArena(ReadBuffer & in) const
 {
-    Discriminator global_discr;
+    Discriminator global_discr = 0;
     readBinaryLittleEndian<Discriminator>(global_discr, in);
 
     if (global_discr == NULL_DISCRIMINATOR)
@@ -881,6 +881,62 @@ void ColumnVariant::updateHashWithValue(size_t n, SipHash & hash) const
     hash.update(global_discr);
     if (global_discr != NULL_DISCRIMINATOR)
         variants[localDiscriminatorByGlobal(global_discr)]->updateHashWithValue(offsetAt(n), hash);
+}
+
+void ColumnVariant::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    const auto & local_discriminators_data = getLocalDiscriminators();
+    size_t num_variants = local_to_global_discriminators.size();
+
+    if (begin == 0 && end == local_discriminators_data.size())
+    {
+        /// Fast path: the range covers the entire column, so each variant's
+        /// range is simply [0, variant.size()) — no need to scan offsets.
+        for (size_t i = 0; i < end; ++i)
+            hash.update(globalDiscriminatorByLocal(local_discriminators_data[i]));
+
+        for (Discriminator global_discr = 0;
+             global_discr < static_cast<Discriminator>(num_variants);
+             ++global_discr)
+        {
+            auto local_discr = global_to_local_discriminators[global_discr];
+            variants[local_discr]->updateHashWithValueRange(0, variants[local_discr]->size(), hash);
+        }
+        return;
+    }
+
+    /// General case: scan discriminators to find first offset and count per variant.
+    /// Within a contiguous row range, offsets for each variant are also contiguous,
+    /// so the sub-column range is [first_offset, first_offset + count).
+    const auto & offsets_data = getOffsets();
+    VectorWithMemoryTracking<size_t> variant_first_offset(num_variants, 0);
+    VectorWithMemoryTracking<size_t> variant_count(num_variants, 0);
+
+    for (size_t i = begin; i < end; ++i)
+    {
+        auto local_discr = local_discriminators_data[i];
+        auto global_discr = globalDiscriminatorByLocal(local_discr);
+        hash.update(global_discr);
+        if (local_discr != NULL_DISCRIMINATOR)
+        {
+            if (variant_count[local_discr] == 0)
+                variant_first_offset[local_discr] = offsets_data[i];
+            ++variant_count[local_discr];
+        }
+    }
+
+    /// Hash each variant's data in global discriminator order.
+    for (Discriminator global_discr = 0; global_discr < static_cast<Discriminator>(num_variants); ++global_discr)
+    {
+        auto local_discr = global_to_local_discriminators[global_discr];
+        if (variant_count[local_discr] > 0)
+        {
+            variants[local_discr]->updateHashWithValueRange(
+                variant_first_offset[local_discr],
+                variant_first_offset[local_discr] + variant_count[local_discr],
+                hash);
+        }
+    }
 }
 
 WeakHash32 ColumnVariant::getWeakHash32() const
@@ -1150,7 +1206,7 @@ ColumnPtr ColumnVariant::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnVariant::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
+    chassert(limit <= indexes.size());
     if (limit == 0)
         return cloneEmpty();
 

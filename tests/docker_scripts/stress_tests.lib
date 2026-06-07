@@ -144,9 +144,6 @@ EOL
 
             <table_function_remote_max_addresses>200</table_function_remote_max_addresses>
 
-            <ast_fuzzer_runs>5</ast_fuzzer_runs>
-            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
-
             <constraints>
                 <max_execution_time>
                     <max>60</max>
@@ -162,7 +159,7 @@ EOL
 
                 <!-- Don't waste cycles testing the old interpreter. Spend time in the analyzer instead -->
                 <enable_analyzer>
-                    <readonly/>
+                    <min>1</min>
                 </enable_analyzer>
 
                 <!-- Prevent stack overflow -->
@@ -187,16 +184,22 @@ EOL
 </clickhouse>
 EOL
 
+    if [[ -n "${ENABLE_SERVER_FUZZER:-}" ]]; then
+        cat > /etc/clickhouse-server/users.d/stress_test_serverfuzz.xml <<EOL
+<clickhouse>
+    <profiles>
+        <default>
+            <ast_fuzzer_runs>5</ast_fuzzer_runs>
+            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
+        </default>
+    </profiles>
+</clickhouse>
+EOL
+    fi
+
     cat > /etc/clickhouse-server/config.d/core.xml <<EOL
 <clickhouse>
-    <core_dump>
-        <!-- 100GiB -->
-        <size_limit>107374182400</size_limit>
-    </core_dump>
-    <!-- NOTE: no need to configure core_path,
-         since clickhouse is not started as daemon (via clickhouse start)
-    -->
-    <core_path>$PWD</core_path>
+    <core_path>/cores</core_path>
 
     <remote_servers>
       <test_cluster_database_replicated>
@@ -227,7 +230,7 @@ function stop_server()
     #
     # Refs: https://github.com/ClickHouse/ClickHouse/issues/72557
     for i in {1..30}; do
-        if clickhouse client -q "SYSTEM STOP DISTRIBUTED SENDS"; then
+        if clickhouse client --receive_timeout=10 -q "SYSTEM STOP DISTRIBUTED SENDS"; then
             break
         fi
     done
@@ -283,7 +286,7 @@ function start_server()
 
     counter=0
     max_attempt=${1:-6}
-    until clickhouse-client --query "SELECT 1"
+    until clickhouse-client --receive_timeout 30 --query "SELECT 1"
     do
         if [ "$counter" -gt "$max_attempt" ]
         then
@@ -304,7 +307,7 @@ function start_server()
 
 function check_server_start()
 {
-    clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
+    clickhouse-client --receive_timeout 30 --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
         || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
         && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
         >> /test_output/test_results.tsv)

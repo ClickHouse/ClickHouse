@@ -1,0 +1,20 @@
+<clickhouse>
+  <profiles>
+    <default>
+<!--      <cloud_mode>1</cloud_mode>-->
+      <default_table_engine>SharedMergeTree</default_table_engine>
+      <cloud_mode_database_engine>2</cloud_mode_database_engine>
+      <cloud_mode_engine>2</cloud_mode_engine>
+
+      <distributed_ddl_output_mode>none</distributed_ddl_output_mode>
+      <database_replicated_always_detach_permanently>1</database_replicated_always_detach_permanently>
+      <database_replicated_allow_replicated_engine_arguments>2</database_replicated_allow_replicated_engine_arguments>
+      <database_replicated_allow_explicit_uuid>3</database_replicated_allow_explicit_uuid>
+
+      <distributed_ddl_task_timeout>120</distributed_ddl_task_timeout>
+
+      <max_memory_usage>0</max_memory_usage>
+
+    </default>
+  </profiles>
+</clickhouse>

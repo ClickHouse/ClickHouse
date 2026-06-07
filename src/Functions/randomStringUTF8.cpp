@@ -25,7 +25,7 @@ namespace
  * ATTENTION: Method generate only assignable code points (excluded 4-13 planes).
  * See https://en.wikipedia.org/wiki/Plane_(Unicode) */
 
-class FunctionRandomStringUTF8 : public IFunction
+class FunctionRandomStringUTF8 final : public IFunction
 {
 public:
     static constexpr auto name = "randomStringUTF8";

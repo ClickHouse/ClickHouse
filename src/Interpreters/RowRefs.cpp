@@ -94,7 +94,7 @@ public:
         const auto & column = assert_cast<const ColumnType &>(asof_column);
         TKey key = column.getElement(row_num);
 
-        assert(!sorted.load(std::memory_order_acquire));
+        chassert(!sorted.load(std::memory_order_acquire));
 
         entries.emplace_back(key, static_cast<UInt32>(row_refs.size()));
         row_refs.emplace_back(RowRef(columns, row_num));
@@ -222,6 +222,11 @@ private:
 }
 
 ColumnsInfo::ColumnsInfo(Columns && columns_) : columns(std::move(columns_))
+{
+    rebuildReplicatedColumns();
+}
+
+void ColumnsInfo::rebuildReplicatedColumns()
 {
     replicated_columns.resize(columns.size());
     for (size_t i = 0; i != columns.size(); ++i)

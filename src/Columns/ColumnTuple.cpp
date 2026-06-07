@@ -409,6 +409,12 @@ void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
         column->updateHashWithValue(n, hash);
 }
 
+void ColumnTuple::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    for (const auto & column : columns)
+        column->updateHashWithValueRange(begin, end, hash);
+}
+
 WeakHash32 ColumnTuple::getWeakHash32() const
 {
     auto s = size();
@@ -586,7 +592,7 @@ int ColumnTuple::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        int res;
+        int res = 0;
         if (collator && columns[i]->isCollationSupported())
             res = columns[i]->compareAtWithCollation(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint, *collator);
         else
@@ -627,7 +633,7 @@ struct ColumnTuple::Less
     {
         for (const auto & column : columns)
         {
-            int res;
+            int res = 0;
             if (collator && column->isCollationSupported())
                 res = column->compareAtWithCollation(a, b, *column, nan_direction_hint, *collator);
             else
@@ -919,7 +925,20 @@ void ColumnTuple::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<C
         VectorWithMemoryTracking<ColumnPtr> elem_source_columns;
         elem_source_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
-            elem_source_columns.push_back(assert_cast<const ColumnTuple &>(*source_column).columns[i]);
+        {
+            if (!source_column)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
+
+            const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column.get());
+            if (!source_tuple)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Tuple, but {}", source_column->getName());
+
+            elem_source_columns.push_back(source_tuple->columns[i]);
+        }
+
+        if (!columns[i])
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of tuple is invalid", i);
+
         columns[i]->takeOrCalculateStatisticsFrom(elem_source_columns);
     }
 }

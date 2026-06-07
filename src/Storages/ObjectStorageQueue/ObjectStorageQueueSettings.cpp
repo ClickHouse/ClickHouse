@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -60,6 +61,7 @@ namespace ErrorCodes
     DECLARE(UInt32, after_processing_retries, 10, "Number of retries for the after_processing action before giving up", 0) \
     DECLARE(String, after_processing_move_uri, "", "S3 bucket URL to move processed files to", 0) \
     DECLARE(String, after_processing_move_prefix, "", "Path prefix to move processed files to", 0) \
+    DECLARE(Bool, after_processing_move_preserve_path, false, "If true, preserve the full source path under after_processing_move_prefix instead of using only the file name", 0) \
     DECLARE(String, after_processing_tag_key, "", "Tag key to tag processed files in the storage", 0) \
     DECLARE(String, after_processing_tag_value, "", "Tag value to tag processed files in the storage", 0) \
     DECLARE(String, after_processing_move_access_key_id, "", "S3 Access Key ID accompanying after_processing_move_uri", 0) \
@@ -72,22 +74,8 @@ namespace ErrorCodes
     OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(M, ALIAS) \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
-DECLARE_SETTINGS_TRAITS(ObjectStorageQueueSettingsTraits, LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(ObjectStorageQueueSettingsTraits, LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS)
-
-struct ObjectStorageQueueSettingsImpl : public BaseSettings<ObjectStorageQueueSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    ObjectStorageQueueSettings##TYPE NAME = &ObjectStorageQueueSettingsImpl ::NAME;
-
-namespace ObjectStorageQueueSetting
-{
-LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(ObjectStorageQueueSettingsTraits, LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS, OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(ObjectStorageQueueSettingsTraits, LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS, ObjectStorageQueueSettings, ObjectStorageQueueSetting)
 
 ObjectStorageQueueSettings::ObjectStorageQueueSettings() : impl(std::make_unique<ObjectStorageQueueSettingsImpl>())
 {
@@ -98,10 +86,7 @@ ObjectStorageQueueSettings::ObjectStorageQueueSettings(const ObjectStorageQueueS
 {
 }
 
-ObjectStorageQueueSettings::ObjectStorageQueueSettings(ObjectStorageQueueSettings && settings) noexcept
-    : impl(std::make_unique<ObjectStorageQueueSettingsImpl>(std::move(*settings.impl)))
-{
-}
+ObjectStorageQueueSettings::ObjectStorageQueueSettings(ObjectStorageQueueSettings && settings) noexcept = default;
 
 void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     MutableColumnsAndConstraints & params,
@@ -110,7 +95,7 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     const StorageObjectStorageQueue & storage) const
 {
     MutableColumns & res_columns = params.res_columns;
-    auto settings_changes_ast = storage.getInMemoryMetadataPtr()->settings_changes;
+    auto settings_changes_ast = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->settings_changes;
     if (!settings_changes_ast)
         return;
 

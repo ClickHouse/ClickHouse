@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -19,6 +20,9 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <IO/ReadBufferFromString.h>
 
 namespace DB
 {
@@ -294,7 +298,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     try
     {
         bool read = true;
-        if (bool default_value = checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf); default_value)
+        if (checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf))
         {
             column.insertDefault();
             read = false;
@@ -312,7 +316,6 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
 
         rollback_on_exception = true;
 
-        skipWhitespaceIfAny(*buf);
         assertDelimiterAfterValue(column_idx);
         return read;
     }
@@ -325,9 +328,35 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         if (rollback_on_exception)
             column.popBack(1);
 
+        buf->rollbackToCheckpoint();
+
+        /// We might hit something like ('{\'key1\':1, \'key2\':10}') which is valid, but escaped text
+        /// for Map/Array/Tuple. Try reading it here rather than falling back to the more expensive
+        /// expression parser.
+        if (!buf->eof() && *buf->position() == '\'')
+        {
+            WhichDataType which(removeNullable(removeLowCardinality(types[column_idx])));
+            if (which.isMap() || which.isArray() || which.isTuple())
+            {
+                String string_value;
+                const bool parsed_string = tryReadQuotedStringWithSQLStyle(string_value, *buf)
+                    && checkDelimiterAfterValue(column_idx);
+
+                if (parsed_string)
+                {
+                    ReadBufferFromString in_buffer(string_value);
+                    if (serializations[column_idx]->tryDeserializeWholeText(column, in_buffer, format_settings))
+                        return true;
+                }
+
+                /// Deserialization failed or delimiter not found after the string
+                /// Rollback and let the SQL parser handle it.
+                buf->rollbackToCheckpoint();
+            }
+        }
+
         /// Switch to SQL parser and don't try to use streaming parser for complex expressions
         /// Note: Throwing exceptions for each expression may be very slow because of stacktraces
-        buf->rollbackToCheckpoint();
         return parseExpression(column, column_idx);
     }
 }
@@ -560,7 +589,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings);
 
     /// Check that we are indeed allowed to insert a NULL.
-    if (value.isNull() && !type.isNullable() && !type.isLowCardinalityNullable())
+    if (value.isNull() && !canContainNull(type))
     {
         if (format_settings.null_as_default)
         {
@@ -578,7 +607,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Instead try to create a column with single element and cast it to the destination type.
     if (type.hasDynamicStructure())
     {
-        auto const_column = value_raw.second->createColumnConst(1, expression_value);
+        ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
         auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
         column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
     }
@@ -765,6 +794,7 @@ void ValuesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::Data
     transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
+void registerInputFormatValues(FormatFactory & factory);
 void registerInputFormatValues(FormatFactory & factory)
 {
     factory.registerInputFormat("Values", [](
@@ -777,6 +807,7 @@ void registerInputFormatValues(FormatFactory & factory)
     });
 }
 
+void registerValuesSchemaReader(FormatFactory & factory);
 void registerValuesSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings)
