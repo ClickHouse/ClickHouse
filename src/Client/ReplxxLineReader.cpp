@@ -375,8 +375,12 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     auto commit_action = [this](char32_t code)
     {
         /// If we allow multiline and there is already something in the input, start a newline.
+        /// Also, when bytes are still queued in the TTY (paste in progress without bracketed
+        /// paste support), fold the embedded newline into the same edit buffer instead of
+        /// committing a partial query and switching to the continuation prompt. This way the
+        /// whole paste lives in a single replxx edit buffer and arrow keys navigate across it.
         /// NOTE: Lexer is only available if we use highlighter.
-        if (highlighter && multiline && !replxx_last_is_delimiter)
+        if (highlighter && !replxx_last_is_delimiter && (multiline || hasInputData()))
             return rx.invoke(Replxx::ACTION::NEW_LINE, code);
         replxx_last_is_delimiter = false;
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
