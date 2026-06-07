@@ -13,7 +13,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
-#include <Functions/FunctionsComparison.h>
+#include <Functions/ComparisonNames.h>
 #include <Common/logger_useful.h>
 #include <fmt/ranges.h>
 
@@ -152,7 +152,7 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
 
 using NodeRawPtr = JoinExpressionActions::NodeRawPtr;
 
-BitSet getExpressionSourcesImpl(std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
+static BitSet getExpressionSourcesImpl(std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
 {
     const auto * node = action.getNode();
     if (auto it = expression_sources.find(node); it != expression_sources.end())
@@ -347,7 +347,7 @@ void JoinActionRef::setSourceRelations(const BitSet & source_relations) const
     }
 }
 
-std::string operatorToFunctionName(JoinConditionOperator op)
+static std::string operatorToFunctionName(JoinConditionOperator op)
 {
     switch (op)
     {
@@ -364,7 +364,7 @@ std::string operatorToFunctionName(JoinConditionOperator op)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal value for JoinConditionOperator: {}", static_cast<Int32>(op));
 }
 
-JoinConditionOperator functionNameToOperator(std::string_view name)
+static JoinConditionOperator functionNameToOperator(std::string_view name)
 {
     using UnderlyingType = std::underlying_type_t<JoinConditionOperator>;
     for (UnderlyingType i = 0; i < static_cast<UnderlyingType>(JoinConditionOperator::Unknown); ++i)

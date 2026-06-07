@@ -33,8 +33,8 @@ StorageSystemSymbols::StorageSystemSymbols(const StorageID & table_id_)
         {"address_begin", std::make_shared<DataTypeUInt64>(), "Start address of the symbol in the binary."},
         {"address_end", std::make_shared<DataTypeUInt64>(), "End address of the symbol in the binary."},
     }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemSymbols::createVirtuals()
@@ -49,7 +49,7 @@ VirtualColumnsDescription StorageSystemSymbols::createVirtuals()
 namespace
 {
 
-class SymbolsBlockSource : public ISource
+class SymbolsBlockSource final : public ISource
 {
 private:
     using Iterator = std::vector<SymbolIndex::Symbol>::const_iterator;

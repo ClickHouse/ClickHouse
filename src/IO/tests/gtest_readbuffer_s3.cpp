@@ -17,8 +17,8 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/Priority.h>
 #include <Poco/ConsoleChannel.h>
@@ -165,7 +165,7 @@ struct ClientFake : DB::S3::Client
 
     Aws::S3::Model::GetObjectOutcome GetObject([[maybe_unused]] const Aws::S3::Model::GetObjectRequest & request) const override
     {
-        assert(getObjectImpl);
+        chassert(getObjectImpl);
         return (*getObjectImpl)(request);
     }
 
@@ -198,7 +198,7 @@ TEST_F(ReadBufferFromS3Test, RetainsSessionWhenPending)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;
-    read_settings.remote_fs_buffer_size = 2;
+    read_settings.remote_fs_settings.buffer_size = 2;
     auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
 
     auto session = std::make_shared<CountedSession>();
@@ -218,7 +218,7 @@ TEST_F(ReadBufferFromS3Test, ReleaseSessionWhenStreamEof)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;
-    read_settings.remote_fs_buffer_size = 10;
+    read_settings.remote_fs_settings.buffer_size = 10;
     auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
 
     auto session = std::make_shared<CountedSession>();
@@ -238,7 +238,7 @@ TEST_F(ReadBufferFromS3Test, ReleaseSessionWhenReadUntilPosition)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;
-    read_settings.remote_fs_buffer_size = 2;
+    read_settings.remote_fs_settings.buffer_size = 2;
     auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
 
     auto session = std::make_shared<CountedSession>();

@@ -214,12 +214,16 @@ def get_response_to_http_api(url):
 def extract_data_from_http_api_response(response):
     if response.status_code != requests.codes.ok:
         print(f"Response: {response.text}")
-        raise Exception(f"Got unexpected status code {response.status_code}")
+        raise Exception(
+            f"Got response with unexpected status code {response.status_code}: {response.text}"
+        )
     response_json = response.json()
-    status = response_json["status"] if "status" in response_json else ""
+    status = response_json.get("status")
     if status != "success":
         print(f"Response: {response.text}")
-        raise Exception(f"Got response with unexpected status: {status}")
+        raise Exception(
+            f"Got response with unexpected status {status}: {response.text}"
+        )
     return json.dumps(response_json["data"])
 
 
@@ -227,9 +231,15 @@ def extract_error_from_http_api_response(response):
     if response.status_code == requests.codes.ok:
         print(f"Response: {response.text}")
         raise Exception(
-            f"Expected an error but succeeded with response {response.text}"
+            f"Expected an error but succeeded with status_code={response.status_code}: {response.text}"
         )
-    return response.text
+    response_json = response.json()
+    status = response_json.get("status")
+    if status != "error":
+        raise Exception(f"Error response missing status=error: {response.text}")
+    if "error" not in response_json:
+        raise Exception(f"Error response missing 'error' field: {response.text}")
+    return response_json["error"]
 
 
 # Returns whether the differences between correspondent values of two HTTP API responses are not greater than `eps`.

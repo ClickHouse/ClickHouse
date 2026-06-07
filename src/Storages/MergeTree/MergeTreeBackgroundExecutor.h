@@ -15,7 +15,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
 
 namespace DB
@@ -254,7 +253,7 @@ private:
     }
 
     std::variant<Policies...> impl;
-    size_t capacity;
+    size_t capacity{};
 };
 
 // Avoid typedef and alias to facilitate forward declaration

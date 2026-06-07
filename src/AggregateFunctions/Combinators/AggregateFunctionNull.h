@@ -107,6 +107,31 @@ public:
         return nested_function->getName();
     }
 
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        if (!this->haveSameDefinition(rhs))
+            return false;
+
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
+    {
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        if constexpr (result_is_nullable)
+            if (getFlag(rhs_place))
+                setFlag(place);
+
+        const size_t rhs_prefix_size = result_is_nullable ? rhs_nested->alignOfData() : 0;
+        nested_function->mergeStateFromDifferentVariant(nestedPlace(place), *rhs_nested, rhs_place + rhs_prefix_size, arena);
+    }
+
     static DataTypePtr createResultType(const AggregateFunctionPtr & nested_function_)
     {
         if constexpr (result_is_nullable)
@@ -174,6 +199,23 @@ public:
                 setFlag(place);
 
         nested_function->merge(nestedPlace(place), nestedPlace(rhs), thread_pool, is_cancelled, arena);
+    }
+
+    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        if constexpr (result_is_nullable)
+            for (size_t i = 1; i < places.size(); ++i)
+                if (getFlag(places[i]))
+                {
+                    setFlag(places[0]);
+                    break;
+                }
+
+        AggregateDataPtrs nested_places(places.size());
+        for (size_t i = 0; i < places.size(); ++i)
+            nested_places[i] = nestedPlace(places[i]);
+
+        nested_function->parallelizeMergeMulti(nested_places, thread_pool, is_cancelled, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override

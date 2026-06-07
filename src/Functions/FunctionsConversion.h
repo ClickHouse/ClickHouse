@@ -4,7 +4,6 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -14,7 +13,6 @@
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/AccurateComparison.h>
@@ -74,6 +72,7 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IPv6ToBinary.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
@@ -1292,13 +1291,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res;
+                        time_t res = 0;
                         parseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                     else
                     {
-                        time_t res;
+                        time_t res = 0;
                         parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
@@ -1319,13 +1318,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res;
+                        time_t res = 0;
                         parseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                     else
                     {
-                        time_t res;
+                        time_t res = 0;
                         parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
@@ -1386,7 +1385,7 @@ struct ConvertThroughParsing
             }
             else
             {
-                bool parsed;
+                bool parsed = false;
 
                 if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64))
                 {
@@ -1404,13 +1403,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res;
+                        time_t res = 0;
                         parsed = tryParseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
-                        time_t res;
+                        time_t res = 0;
                         parsed = tryParseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
@@ -1431,13 +1430,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res;
+                        time_t res = 0;
                         parsed = tryParseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
-                        time_t res;
+                        time_t res = 0;
                         parsed = tryParseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
@@ -1772,6 +1771,18 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
         vec_null_map_to = &col_null_map_to->getData();
     }
 
+    /// Same-width integer conversions are bit-reinterprets; `memcpy` is faster than the compiler-unrolled
+    /// per-element copy at x86-64-v3.
+    if constexpr (std::is_integral_v<FromFieldType> && std::is_integral_v<ToFieldType>
+        && sizeof(FromFieldType) == sizeof(ToFieldType)
+        && !std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
+        && !std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+    {
+        if (input_rows_count > 0)
+            std::memcpy(vec_to.data(), vec_from.data(), input_rows_count * sizeof(ToFieldType));
+        return std::move(col_to);
+    }
+
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         /// Handle NaN/Inf when converting from float to integer
@@ -1835,30 +1846,40 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
 
             i += remaining - 1;
         }
-        /// ARM64 optimized conversion: UInt64 -> Float32
+#endif
         else if constexpr (std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, Float32>)
         {
             const UInt64* __restrict s = &vec_from[i];
             Float32* __restrict d = &vec_to[i];
             size_t remaining = input_rows_count - i;
 
-#if !defined(OS_DARWIN)
+#if defined(__aarch64__) && !defined(OS_DARWIN)
             _Pragma("clang diagnostic push")
             _Pragma("clang diagnostic ignored \"-Wpass-failed\"")
             _Pragma("clang loop vectorize_width(4) interleave_count(2)")
-#endif
             for (size_t j = 0; j < remaining; ++j)
             {
                 double tmp = static_cast<double>(s[j]);
                 d[j] = Float32(tmp);
             }
-#if !defined(OS_DARWIN)
             _Pragma("clang diagnostic pop")
+#elif defined(__x86_64__)
+            /// Prevent auto-vectorization on x86: the compiler's attempt to semi-vectorize
+            /// UInt64->Float32 with AVX2 is slower than scalar code, because there is no
+            /// vector instruction for this conversion before AVX-512.
+            /// Also disable unrolling: with LTO on v3, the compiler unrolls this scalar
+            /// loop 2-4x, bloating the function by ~2KB with no throughput benefit
+            /// (vcvtsi2ss is inherently serial).
+            _Pragma("clang loop vectorize(disable) unroll(disable)")
+            for (size_t j = 0; j < remaining; ++j)
+                d[j] = static_cast<Float32>(s[j]);
+#else
+            for (size_t j = 0; j < remaining; ++j)
+                d[j] = static_cast<Float32>(s[j]);
 #endif
 
             i += remaining - 1;
         }
-#endif
         /// Default: simple static_cast conversion
         else
         {
@@ -2104,7 +2125,7 @@ struct ConvertImpl
 
             const DateLUTImpl * time_zone = nullptr;
 
-            UInt32 scale;
+            UInt32 scale = 0;
 
             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                         || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
@@ -2186,7 +2207,7 @@ struct ConvertImpl
 
             const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
 
-            UInt32 scale;
+            UInt32 scale = 0;
             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                         || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 scale = additions.scale;
@@ -2299,13 +2320,33 @@ struct ConvertImpl
 
                 bool cut_trailing_zeros_align_to_groups_of_thousands = settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
 
-                if (!null_map && arguments.size() > 1)
-                    null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst());
+                if (arguments.size() > 1 && arguments[1].type->isNullable())
+                {
+                    if (auto tz_null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst()))
+                    {
+                        if (null_map)
+                        {
+                            auto & dst = null_map->getData();
+                            const auto & src = tz_null_map->getData();
+                            for (size_t i = 0; i < dst.size(); ++i)
+                                dst[i] |= src[i];
+                        }
+                        else
+                        {
+                            null_map = std::move(tz_null_map);
+                        }
+                    }
+                }
 
                 if (null_map)
                 {
                     for (size_t i = 0; i < size; ++i)
                     {
+                        if (null_map->getData()[i])
+                        {
+                            offsets_to[i] = write_buffer.count();
+                            continue;
+                        }
                         if (!time_zone_column && arguments.size() > 1)
                         {
                             if (!arguments[1].column.get()->getDataAt(i).empty())
@@ -2593,7 +2634,7 @@ struct ConvertImpl
 
             if constexpr (IsDataTypeDecimal<ToDataType>)
             {
-                UInt32 scale;
+                UInt32 scale = 0;
 
                 if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                     || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
@@ -2914,7 +2955,7 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
 #endif
 
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
-class FunctionConvert : public IFunction
+class FunctionConvert final : public IFunction
 {
 public:
     using Monotonic = MonotonicityImpl;
@@ -3428,7 +3469,7 @@ private:
 template <typename ToDataType, typename Name,
     ConvertFromStringExceptionMode exception_mode,
     ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Basic>
-class FunctionConvertFromString : public IFunction
+class FunctionConvertFromString final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -3895,23 +3936,22 @@ struct ToDateMonotonicity
 
             return {.is_monotonic = true, .is_always_monotonic = true};
         }
-        else if (
-            ((left.getType() == Field::Types::UInt64 || left.isNull()) && (right.getType() == Field::Types::UInt64 || right.isNull())
-             && ((left.isNull() || left.safeGet<UInt64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<UInt64>() > DATE_LUT_MAX_DAY_NUM)))
+        constexpr UInt64 max_day_num = std::is_same_v<T, DataTypeDate32> ? DATE_LUT_MAX_EXTEND_DAY_NUM - 1 : DATE_LUT_MAX_DAY_NUM;
+
+        if (((left.getType() == Field::Types::UInt64 || left.isNull()) && (right.getType() == Field::Types::UInt64 || right.isNull())
+             && ((left.isNull() || left.safeGet<UInt64>() <= max_day_num) && (right.isNull() || right.safeGet<UInt64>() > max_day_num)))
             || ((left.getType() == Field::Types::Int64 || left.isNull()) && (right.getType() == Field::Types::Int64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Int64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<Int64>() > DATE_LUT_MAX_DAY_NUM)))
+                && ((left.isNull() || left.safeGet<Int64>() <= static_cast<Int64>(max_day_num)) && (right.isNull() || right.safeGet<Int64>() > static_cast<Int64>(max_day_num))))
             || ((
                 (left.getType() == Field::Types::Float64 || left.isNull())
                 && (right.getType() == Field::Types::Float64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Float64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<Float64>() > DATE_LUT_MAX_DAY_NUM))))
+                && ((left.isNull() || left.safeGet<Float64>() <= static_cast<Float64>(max_day_num)) && (right.isNull() || right.safeGet<Float64>() > static_cast<Float64>(max_day_num)))))
             || !isNativeNumber(type))
         {
             return {};
         }
-        else
-        {
-            return {.is_monotonic = true, .is_always_monotonic = true};
-        }
+
+        return {.is_monotonic = true, .is_always_monotonic = true};
     }
 };
 
@@ -4403,7 +4443,7 @@ using FunctionParseDateTime64BestEffortUSOrNull = FunctionConvertFromString<
     DataTypeDateTime64, NameParseDateTime64BestEffortUSOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffortUS>;
 
 
-class ExecutableFunctionCast : public IExecutableFunction
+class ExecutableFunctionCast final : public IExecutableFunction
 {
 public:
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
@@ -4545,7 +4585,7 @@ private:
 
     WrapperType createStringWrapper(const DataTypePtr & from_type) const;
 
-    WrapperType createFixedStringWrapper(const DataTypePtr & from_type, size_t N) const;
+    WrapperType createFixedStringWrapper(const DataTypePtr & from_type, size_t N, bool requested_result_is_nullable) const;
 
 
     WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind) const;
@@ -4558,7 +4598,7 @@ private:
 
     WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const;
 
-    using ElementWrappers = std::vector<WrapperType>;
+    using ElementWrappers = VectorWithMemoryTracking<WrapperType>;
 
     ElementWrappers getElementWrappers(const DataTypes & from_element_types, const DataTypes & to_element_types) const;
 
@@ -4666,5 +4706,14 @@ FunctionBasePtr createFunctionBaseCast(
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
     CastType cast_type);
+
+FunctionBasePtr createFunctionBaseCast(
+    ContextPtr context,
+    const char * name,
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & return_type,
+    std::optional<CastDiagnostic> diagnostic,
+    CastType cast_type,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
 
 }

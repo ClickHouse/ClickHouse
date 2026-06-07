@@ -20,6 +20,19 @@ _NOISE_PATTERNS = [
     re.compile(r"\babortOnFailedAssertion\s*\("),  # chassert failure handler
 ]
 
+# Stripped line content that carries no executable semantics.
+# lcov sometimes emits DA: entries for these (e.g. for `{` after `else`, or for
+# blank lines between statements), but marking them as "uncovered" is misleading.
+_STRUCTURAL_LINES = frozenset({
+    "",       # blank line
+    "{",      # opening brace
+    "}",      # closing brace
+    "};",     # closing brace + semicolon (struct/class/lambda end)
+    "else",   # bare else keyword (the branch body is on the next line)
+    "else{",  # else immediately followed by brace
+    "else {", # else with space before brace
+})
+
 # Lazily-loaded source file cache: relpath -> list of raw lines
 _source_cache: dict[str, list[str]] = {}
 
@@ -40,6 +53,8 @@ def _is_noise(relpath: str, lineno: int) -> bool:
     if not (1 <= lineno <= len(lines)):
         return False
     text = lines[lineno - 1].strip()
+    if text in _STRUCTURAL_LINES:
+        return True
     return any(p.search(text) for p in _NOISE_PATTERNS)
 
 
@@ -221,7 +236,7 @@ if __name__ == "__main__":
         print(msg)
         r = Result.create_from(
             name="Print Uncovered Code",
-            status=Result.Status.SUCCESS,
+            status=Result.Status.OK,
             info=msg,
         )
         r.set_comment(msg)
@@ -278,16 +293,55 @@ if __name__ == "__main__":
                 else:
                     uncovered.append((active_rel, ln))
 
-    CONTEXT = 2  # lines before/after
+    CONTEXT = 2  # lines before/after each uncovered block
+    # If two uncovered lines are at most MERGE_GAP apart, fold them into a
+    # single block instead of printing two adjacent blocks whose CONTEXT
+    # windows would touch or overlap.  Picked so that nearby uncovered lines
+    # in the same function (e.g. lines 2013, 2018, 2022 of a 10-line body)
+    # render as one contiguous excerpt with the unaffected lines shown as
+    # plain context.
+    MERGE_GAP = 2 * CONTEXT + 2
     MAX_PRINT = 200  # max uncovered lines to print total
 
+    def _merge_blocks(sorted_lines: list[int]) -> list[tuple[int, int]]:
+        """Merge a sorted list of line numbers into (start, end) ranges.
+
+        Two adjacent line numbers are folded into the same range if their gap
+        is at most MERGE_GAP.  Merged ranges may contain lines that are not in
+        the input list — callers must use the original set to decide which
+        lines to mark with `>>` when rendering.
+        """
+        ranges: list[tuple[int, int]] = []
+        start = prev = sorted_lines[0]
+        for ln in sorted_lines[1:]:
+            if ln - prev <= MERGE_GAP:
+                prev = ln
+            else:
+                ranges.append((start, prev))
+                start = prev = ln
+        ranges.append((start, prev))
+        return ranges
+
+    print("=" * 80)
+    print("Changed-lines coverage summary")
+    print("=" * 80)
+    print(
+        "Denominator: lines added/modified by this PR in C/C++ source files that "
+        "LCOV considers coverable (excludes blank lines, braces, comments, "
+        "header-only declarations, and error-path noise such as `LOGICAL_ERROR`, "
+        "`UNREACHABLE()`, `abort()`)."
+    )
+    print(
+        "Numerator: of those coverable lines, the number actually executed by the "
+        "test suite during this coverage run."
+    )
     if total == 0:
         msg = "N/A (no coverable changed lines)"
-        print(f"PR changed-lines coverage: {msg}")
+        print(f"  PR changed C/C++ lines covered by tests: {msg}")
     else:
         pct = 100.0 * covered / total
         msg = f"{pct:.2f}% ({covered}/{total})"
-        print(msg)
+        print(f"  PR changed C/C++ lines covered by tests: {msg}")
 
     if uncovered:
         print("\nUncovered changed code (with context):\n")
@@ -309,30 +363,19 @@ if __name__ == "__main__":
                 print(f"  [source file not found: {abs_path}]")
                 continue
 
-            # sort + deduplicate
-            file_lines = sorted(set(by_file[rel]))
+            uncovered_set = set(by_file[rel])
+            blocks = _merge_blocks(sorted(uncovered_set))
 
-            # merge contiguous lines into blocks
-            blocks = []
-            start = prev = file_lines[0]
-
-            for ln in file_lines[1:]:
-                if ln == prev + 1:
-                    prev = ln
-                else:
-                    blocks.append((start, prev))
-                    start = prev = ln
-            blocks.append((start, prev))
-
-            # print blocks
             for block_start, block_end in blocks:
                 start_line = max(1, block_start - CONTEXT)
                 end_line = min(len(lines), block_end + CONTEXT)
 
                 print(f"\n--- uncovered block {block_start}-{block_end} ---")
 
+                # `>>` marks only the lines actually reported as uncovered; lines
+                # folded into the block by MERGE_GAP are shown as plain context.
                 for i in range(start_line, end_line + 1):
-                    prefix = ">>" if block_start <= i <= block_end else "  "
+                    prefix = ">>" if i in uncovered_set else "  "
                     code = lines[i - 1].rstrip("\n")
                     print(f"{prefix} {i:6d} | {code}")
     else:
@@ -370,7 +413,13 @@ if __name__ == "__main__":
                 new_ln = _remap_line(old_ln, hunks)
                 if new_ln is None:
                     continue  # line was deleted by this PR — expected
-                if c["lines"].get(new_ln, 0) == 0 and not _is_noise(rel, new_ln):
+                # Only report if the current build actually has a DA entry for
+                # new_ln (count == 0 means coverable but not hit).  A missing
+                # entry means the line is not coverable (blank line, comment,
+                # preprocessor directive) — often caused by imprecise line
+                # remapping landing on such a line.
+                curr_cnt = c["lines"].get(new_ln)
+                if curr_cnt is not None and curr_cnt == 0 and not _is_noise(rel, new_ln):
                     lbc_lines.append((rel, new_ln))
 
             for fn, bcnt in b["fns"].items():
@@ -396,23 +445,15 @@ if __name__ == "__main__":
                 print(f"  [source file not found: {abs_path}]")
                 continue
 
-            file_lines = sorted(set(by_file[rel]))
-            blocks = []
-            start = prev = file_lines[0]
-            for ln in file_lines[1:]:
-                if ln == prev + 1:
-                    prev = ln
-                else:
-                    blocks.append((start, prev))
-                    start = prev = ln
-            blocks.append((start, prev))
+            lbc_set = set(by_file[rel])
+            blocks = _merge_blocks(sorted(lbc_set))
 
             for block_start, block_end in blocks:
                 start_line = max(1, block_start - CONTEXT)
                 end_line = min(len(lines), block_end + CONTEXT)
                 print(f"\n--- lost coverage block {block_start}-{block_end} ---")
                 for i in range(start_line, end_line + 1):
-                    prefix = ">>" if block_start <= i <= block_end else "  "
+                    prefix = ">>" if i in lbc_set else "  "
                     code = lines[i - 1].rstrip("\n")
                     print(f"{prefix} {i:6d} | {code}")
     else:
@@ -426,19 +467,46 @@ if __name__ == "__main__":
     lbc_count = len(lbc_lines)
     lbc_fn_count = len(lbc_fns)
 
-    parts = [msg]
+    # Build a self-describing summary line so readers know what each number means.
+    #
+    # The first segment reports how many of the C/C++ lines this PR added/modified
+    # are actually exercised by the test suite under coverage instrumentation
+    # (lines that are not coverable at all — comments, headers without bodies,
+    # blank lines, error paths matched by _NOISE_PATTERNS — are excluded from the
+    # denominator).
+    #
+    # The second segment, if present, reports lines/functions that *were* covered
+    # on the master baseline but are *no longer* covered in this PR build. This
+    # commonly indicates that the PR removed or weakened a test that previously
+    # exercised those branches. See `print_uncovered_code.log` for the full
+    # block-by-block listing.
+    parts: list[str] = []
+    if total == 0:
+        parts.append("Changed C/C++ lines coverable by tests: 0 (nothing to score)")
+    else:
+        parts.append(
+            f"Changed C/C++ lines covered by tests: {covered}/{total} ({pct:.2f}%)"
+        )
+
     if lbc_count > 0 or lbc_fn_count > 0:
-        lbc_details = []
+        lbc_details: list[str] = []
         if lbc_count > 0:
             lbc_details.append(f"{lbc_count} line(s)")
         if lbc_fn_count > 0:
             lbc_details.append(f"{lbc_fn_count} function(s)")
-        parts.append(f"lost baseline coverage: {', '.join(lbc_details)}")
+        parts.append(
+            "Lost baseline coverage "
+            "(was covered on master, now uncovered in this PR): "
+            f"{', '.join(lbc_details)}"
+        )
+    else:
+        parts.append("Lost baseline coverage: none")
+
     full_msg = " | ".join(parts)
 
     r = Result.create_from(
         name="Print Uncovered Code",
-        status=Result.Status.SUCCESS,
+        status=Result.Status.OK,
         info=full_msg,
         with_info_from_results=True,
     )

@@ -129,8 +129,8 @@ StorageNATS::StorageNATS(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals((*nats_settings)[NATSSetting::nats_handle_error_mode]));
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals((*nats_settings)[NATSSetting::nats_handle_error_mode]));
 
     nats_context = addSettings(getContext());
     nats_context->makeQueryContext();
@@ -709,7 +709,7 @@ bool StorageNATS::streamToViews()
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
     auto column_names = block_io.pipeline.getHeader().getNames();
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 
@@ -774,6 +774,7 @@ String StorageNATS::getConsumerName() const
     return getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_consumer_name]);
 }
 
+void registerStorageNATS(StorageFactory & factory);
 void registerStorageNATS(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)

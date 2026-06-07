@@ -11,6 +11,7 @@
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <ranges>
 
@@ -20,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -30,7 +32,7 @@ constexpr size_t arg_input = 0;
 constexpr size_t arg_phrase = 1;
 constexpr size_t arg_tokenizer = 2;
 
-std::vector<String> initializePhraseTokens(const ColumnsWithTypeAndName & arguments, const ITokenizer & tokenizer, std::string_view function_name)
+VectorWithMemoryTracking<String> initializePhraseTokens(const ColumnsWithTypeAndName & arguments, const ITokenizer & tokenizer, std::string_view function_name)
 {
     auto column_phrase = arguments[arg_phrase].column;
 
@@ -45,17 +47,17 @@ std::vector<String> initializePhraseTokens(const ColumnsWithTypeAndName & argume
     auto phrase_str = phrase_field.safeGet<String>();
 
     /// Tokenize the phrase, preserving order (no deduplication).
-    std::vector<String> tokens;
+    VectorWithMemoryTracking<String> tokens;
     tokenizer.stringToTokens(phrase_str.data(), phrase_str.size(), tokens);
     return tokens;
 }
 
 /// KMP style failure array.
 /// For example, phrase "a a b" in input "a a a b" correctly matches at positions 1-3.
-std::vector<size_t> buildFailureFunction(const std::vector<String> & phrase_tokens)
+VectorWithMemoryTracking<size_t> buildFailureFunction(const VectorWithMemoryTracking<String> & phrase_tokens)
 {
     const size_t size = phrase_tokens.size();
-    std::vector<size_t> failure(size, 0);
+    VectorWithMemoryTracking<size_t> failure(size, 0);
 
     size_t k = 0;
     for (size_t i = 1; i < size; ++i)
@@ -75,9 +77,9 @@ std::vector<size_t> buildFailureFunction(const std::vector<String> & phrase_toke
 /// Matcher that checks if all phrase tokens appear consecutively in the input's token stream.
 struct MatchPhraseMatcher
 {
-    explicit MatchPhraseMatcher(const std::vector<String> & phrase_tokens_)
+    MatchPhraseMatcher(const VectorWithMemoryTracking<String> & phrase_tokens_, const VectorWithMemoryTracking<size_t> & failure_)
         : phrase_tokens(phrase_tokens_)
-        , failure(buildFailureFunction(phrase_tokens_))
+        , failure(failure_)
         , match_position(0)
     {
     }
@@ -110,8 +112,8 @@ struct MatchPhraseMatcher
     void reset() { match_position = 0; }
 
 private:
-    const std::vector<String> & phrase_tokens;
-    std::vector<size_t> failure;
+    const VectorWithMemoryTracking<String> & phrase_tokens;
+    const VectorWithMemoryTracking<size_t> & failure;
     size_t match_position;
 };
 
@@ -122,9 +124,10 @@ void executeMatchPhrase(
     PaddedPODArray<UInt8> & col_result,
     size_t input_rows_count,
     const ITokenizer * tokenizer,
-    const std::vector<String> & phrase_tokens)
+    const VectorWithMemoryTracking<String> & phrase_tokens,
+    const VectorWithMemoryTracking<size_t> & failure_table)
 {
-    MatchPhraseMatcher matcher(phrase_tokens);
+    MatchPhraseMatcher matcher(phrase_tokens, failure_table);
 
     col_result.resize(input_rows_count);
 
@@ -163,20 +166,42 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
     if (arguments.size() < 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' requires at least 2 arguments, got {}", name, arguments.size());
 
+    if (!isString(arguments[arg_phrase].type))
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "A value of illegal type was provided as 2nd argument 'phrase' to function '{}'. Expected: const String, got: {}",
+            name,
+            arguments[arg_phrase].type->getName());
+
+    if (!arguments[arg_phrase].column || !isColumnConst(*arguments[arg_phrase].column))
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "A value of illegal type was provided as 2nd argument 'phrase' to function '{}'. Expected: const String, got: {}",
+            name,
+            arguments[arg_phrase].type->getName());
+
+    DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
+
     const auto tokenizer_name = arguments.size() < 3 || !arguments[arg_tokenizer].column ? SplitByNonAlphaTokenizer::getExternalName()
                                                                                          : arguments[arg_tokenizer].column->getDataAt(0);
-    if (tokenizer_name == SparseGramsTokenizer::getExternalName() || tokenizer_name == ArrayTokenizer::getExternalName())
+    auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
+    static const UnorderedSetWithMemoryTracking<ITokenizer::Type> supported_types = {
+        ITokenizer::Type::SplitByNonAlpha,
+        ITokenizer::Type::SplitByString,
+        ITokenizer::Type::AsciiCJK,
+        ITokenizer::Type::Ngrams,
+    };
+    if (!supported_types.contains(tokenizer->getType()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' does not support the '{}' tokenizer.", name, tokenizer_name);
 
-    auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
     auto phrase_tokens = initializePhraseTokens(arguments, *tokenizer, getName());
-    DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
     return std::make_shared<FunctionBaseHasPhrase>(std::move(tokenizer), std::move(phrase_tokens), std::move(argument_types), return_type);
 }
 
 ExecutableFunctionPtr FunctionBaseHasPhrase::prepare(const ColumnsWithTypeAndName &) const
 {
-    return std::make_unique<ExecutableFunctionHasPhrase>(tokenizer, phrase_tokens);
+    auto failure_table = buildFailureFunction(phrase_tokens);
+    return std::make_unique<ExecutableFunctionHasPhrase>(tokenizer, phrase_tokens, std::move(failure_table));
 }
 
 ColumnPtr
@@ -194,9 +219,9 @@ ExecutableFunctionHasPhrase::executeImpl(const ColumnsWithTypeAndName & argument
 
     ColumnPtr col_input = arguments[arg_input].column;
     if (const auto * col_input_string = checkAndGetColumn<ColumnString>(col_input.get()))
-        executeMatchPhrase(*col_input_string, col_result->getData(), input_rows_count, tokenizer.get(), phrase_tokens);
+        executeMatchPhrase(*col_input_string, col_result->getData(), input_rows_count, tokenizer.get(), phrase_tokens, failure_table);
     else if (const auto * col_input_fixedstring = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-        executeMatchPhrase(*col_input_fixedstring, col_result->getData(), input_rows_count, tokenizer.get(), phrase_tokens);
+        executeMatchPhrase(*col_input_fixedstring, col_result->getData(), input_rows_count, tokenizer.get(), phrase_tokens, failure_table);
 
     return col_result;
 }
@@ -204,10 +229,22 @@ ExecutableFunctionHasPhrase::executeImpl(const ColumnsWithTypeAndName & argument
 REGISTER_FUNCTION(HasPhrase)
 {
     FunctionDocumentation::Description description = R"(
-Checks if the haystack contains all tokens from the phrase in consecutive order.
+Checks if the `input` contains all tokens from the `phrase` in consecutive order.
 
-Prior to searching, the function tokenizes both the `input` and the `phrase` arguments using the tokenizer specified as the optional third argument.
-If no tokenizer is specified, by default the `splitByNonAlpha` tokenizer would be used.
+:::note
+Column `input` should have a [text index](../../engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
+If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
+:::
+
+Prior to searching, the function tokenizes both the `input` and the `phrase` arguments using the tokenizer specified for the text index.
+If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
+The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `ngrams`, or `asciiCJK`.
+
+:::note
+When a text index defines a [preprocessor](../../engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
+The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
+This inconsistency is tolerated to improve the usability of full-text search.
+:::
 
 Unlike [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens), `hasPhrase` requires the tokens to appear in the same order
 and without any intervening tokens. For example, `hasPhrase('the quick brown fox', 'quick fox')` returns 0
