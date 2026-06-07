@@ -80,3 +80,12 @@ SELECT 'Truncation when rounding is disabled (batch):';
 WITH arrayJoin([0.5, 1.5, -0.5, -1.5, 2.7, -2.7]) AS x
 SELECT toFloat64(x) AS f, CAST(f, 'Decimal(9, 0)') AS d;
 SET cast_float_to_decimal_uses_rounding = 1;
+
+-- The setting also reaches the float -> `DateTime64`/`Time64` conversion paths
+-- (`toDateTime64`/`toTime64`), which internally cast through Decimal, not only `CAST(... AS Decimal)`.
+SELECT 'Float -> DateTime64 honors the rounding setting:';
+SELECT toDateTime64(2.5, 0, 'UTC') AS rounded;
+SELECT toDateTime64(2.5, 0, 'UTC') AS truncated SETTINGS cast_float_to_decimal_uses_rounding = 0;
+SELECT 'Float -> Time64 honors the rounding setting:';
+SELECT toTime64(2.5, 0) AS rounded;
+SELECT toTime64(2.5, 0) AS truncated SETTINGS cast_float_to_decimal_uses_rounding = 0;

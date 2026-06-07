@@ -46,3 +46,9 @@ Truncation when rounding is disabled (batch):
 -1.5	-1
 2.7	2
 -2.7	-2
+Float -> DateTime64 honors the rounding setting:
+1970-01-01 00:00:03
+1970-01-01 00:00:02
+Float -> Time64 honors the rounding setting:
+00:00:03
+00:00:02

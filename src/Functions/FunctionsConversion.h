@@ -573,9 +573,10 @@ struct ToDateTime64TransformFloat
     static constexpr auto name = "toDateTime64";
 
     const UInt32 scale;
+    const bool round;
 
-    ToDateTime64TransformFloat(UInt32 scale_) /// NOLINT
-        : scale(scale_)
+    ToDateTime64TransformFloat(UInt32 scale_, bool round_ = true) /// NOLINT
+        : scale(scale_), round(round_)
     {}
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
@@ -588,7 +589,7 @@ struct ToDateTime64TransformFloat
 
         from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
         from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
-        return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
+        return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale, round);
     }
 };
 
@@ -686,9 +687,10 @@ struct ToTime64TransformFloat
     static constexpr auto name = "toTime64";
 
     const UInt32 scale;
+    const bool round;
 
-    ToTime64TransformFloat(UInt32 scale_) /// NOLINT
-        : scale(scale_)
+    ToTime64TransformFloat(UInt32 scale_, bool round_ = true) /// NOLINT
+        : scale(scale_), round(round_)
     {}
 
     NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl &) const
@@ -701,7 +703,7 @@ struct ToTime64TransformFloat
 
         from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
         from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
-        return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
+        return convertToDecimal<FromDataType, DataTypeTime64>(from, scale, round);
     }
 };
 
@@ -2071,10 +2073,12 @@ struct ConvertImpl
         {
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count, additions);
+                    arguments, result_type, input_rows_count,
+                    ToDateTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>(additions, settings.cast_float_to_decimal_uses_rounding));
             else
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                    arguments, result_type, input_rows_count, additions);
+                    arguments, result_type, input_rows_count,
+                    ToTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>(additions, settings.cast_float_to_decimal_uses_rounding));
         }
         /// Conversion of DateTime64 to Date or DateTime: discards fractional part.
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
