@@ -5652,10 +5652,10 @@ BoolMask KeyCondition::checkInHyperrectangle(
             };
 
             /// For missing coordinates, assume (-inf, +inf) — we can still prune on the available coordinate.
-            Float64 x_min;
-            Float64 x_max;
-            Float64 y_min;
-            Float64 y_max;
+            Float64 x_min = std::numeric_limits<Float64>::quiet_NaN();
+            Float64 x_max = std::numeric_limits<Float64>::quiet_NaN();
+            Float64 y_min = std::numeric_limits<Float64>::quiet_NaN();
+            Float64 y_max = std::numeric_limits<Float64>::quiet_NaN();
             if (is_x_key_col_present)
             {
                 const auto & range_x = sparse_hyperrectangle[x_sparse_pos];
