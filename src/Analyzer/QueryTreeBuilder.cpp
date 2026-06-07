@@ -520,11 +520,19 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     ///    then limit
     ///
     /// offset = offset + of_expr
+    /// The `least`/`minus` combine math below assumes non-negative values. `limit` / `offset` were
+    /// widened to `Float64` and may now be negative (e.g. `limit=-1` for tail pagination). Combining
+    /// a negative setting with an explicit SQL `LIMIT` via `least` would invert the intended cap, so
+    /// when either setting is negative we keep the query's own `LIMIT`/`OFFSET` and let ClickHouse's
+    /// native negative/fractional support handle them — the setting then only applies when the query
+    /// has no such clause.
+    const bool settings_combinable = limit >= 0 && offset >= 0;
+
     auto select_limit = select_query_typed.limitLength();
     if (select_limit)
     {
-        /// Shortcut
-        if (offset == 0 && limit == 0)
+        /// Shortcut: nothing combinable to fold in, or a negative setting that must pass through.
+        if ((offset == 0 && limit == 0) || !settings_combinable)
         {
             current_query_tree->getLimit() = buildExpression(select_limit, current_context);
         }
@@ -564,17 +572,17 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
     /// Combine offset expression with offset setting into final offset expression
     auto select_offset = select_query_typed.limitOffset();
-    if (select_offset && offset != 0)
+    if (select_offset && offset != 0 && settings_combinable)
     {
         auto function_node = std::make_shared<FunctionNode>("plus");
         function_node->getArguments().getNodes().push_back(buildExpression(select_offset, current_context));
         function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
         current_query_tree->getOffset() = std::move(function_node);
     }
-    else if (offset != 0)
-        current_query_tree->getOffset() = std::make_shared<ConstantNode>(offset);
     else if (select_offset)
         current_query_tree->getOffset() = buildExpression(select_offset, current_context);
+    else if (offset != 0)
+        current_query_tree->getOffset() = std::make_shared<ConstantNode>(offset);
 
     return current_query_tree;
 }

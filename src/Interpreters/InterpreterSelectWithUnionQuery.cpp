@@ -130,14 +130,40 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             const Float64 limit_setting = settings[Setting::limit];
             const Float64 offset_setting = settings[Setting::offset];
 
+            /// The clamp/fold math below assumes non-negative values. `limit` / `offset` were widened
+            /// to `Float` and may now be negative (e.g. `limit=-1` for tail pagination) or fractional.
+            /// When either setting is negative we cannot meaningfully combine it with an explicit SQL
+            /// `LIMIT`/`OFFSET` (`std::min` would invert the intended cap), so we leave the query's own
+            /// clause untouched and let ClickHouse's native negative/fractional support handle the
+            /// literal — the setting then only takes effect when the query has no such clause.
+            const bool settings_combinable = limit_setting >= 0 && offset_setting >= 0;
+
+            /// Decode a `LIMIT`/`OFFSET` literal as `Float64`. The widened settings allow valid
+            /// fractional/negative SQL literals here, so we must not assume a `UInt64` field.
+            auto literal_to_float = [&](const ASTPtr & literal_ast) -> Float64
+            {
+                const Field & value = evaluateConstantExpressionAsLiteral(literal_ast, context)->as<ASTLiteral &>().value;
+                switch (value.getType())
+                {
+                    case Field::Types::UInt64: return static_cast<Float64>(value.safeGet<UInt64>());
+                    case Field::Types::Int64: return static_cast<Float64>(value.safeGet<Int64>());
+                    case Field::Types::Float64: return value.safeGet<Float64>();
+                    default:
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Expected a numeric LIMIT/OFFSET literal, got {}", value.getTypeName());
+                }
+            };
+
             const ASTPtr limit_offset_ast = select_query->limitOffset();
             if (limit_offset_ast)
             {
-                Float64 query_offset = static_cast<Float64>(
-                    evaluateConstantExpressionAsLiteral(limit_offset_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>());
-                Float64 new_limit_offset = offset_setting + query_offset;
-                ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(Field(new_limit_offset));
-                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
+                const Float64 query_offset = literal_to_float(limit_offset_ast);
+                if (settings_combinable && query_offset >= 0)
+                {
+                    ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(Field(offset_setting + query_offset));
+                    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
+                }
+                /// else: keep the query's own OFFSET literal as-is (pass through).
             }
             else if (offset_setting != 0)
             {
@@ -148,19 +174,21 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             const ASTPtr limit_length_ast = select_query->limitLength();
             if (limit_length_ast)
             {
-                Float64 query_limit_length = static_cast<Float64>(
-                    evaluateConstantExpressionAsLiteral(limit_length_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>());
+                const Float64 query_limit_length = literal_to_float(limit_length_ast);
+                if (settings_combinable && query_limit_length >= 0)
+                {
+                    Float64 new_limit_length = 0;
+                    if (offset_setting == 0)
+                        new_limit_length = std::min(query_limit_length, limit_setting);
+                    else if (offset_setting < query_limit_length)
+                        new_limit_length = (limit_setting != 0)
+                            ? std::min(limit_setting, query_limit_length - offset_setting)
+                            : (query_limit_length - offset_setting);
 
-                Float64 new_limit_length = 0;
-                if (offset_setting == 0)
-                    new_limit_length = std::min(query_limit_length, limit_setting);
-                else if (offset_setting < query_limit_length)
-                    new_limit_length = (limit_setting != 0)
-                        ? std::min(limit_setting, query_limit_length - offset_setting)
-                        : (query_limit_length - offset_setting);
-
-                ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(Field(new_limit_length));
-                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
+                    ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(Field(new_limit_length));
+                    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
+                }
+                /// else: keep the query's own LIMIT literal as-is (pass through).
             }
             else if (limit_setting != 0)
             {
