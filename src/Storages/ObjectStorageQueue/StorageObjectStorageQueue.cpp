@@ -60,6 +60,7 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueUnsuccessfulCommits;
     extern const Event ObjectStorageQueueInsertIterations;
     extern const Event ObjectStorageQueueProcessedRows;
+    extern const Event ZooKeeperWatchTriggeredObjectStorageQueue;
 }
 
 
@@ -125,6 +126,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt32 after_processing_retries;
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
     extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
+    extern const ObjectStorageQueueSettingsBool after_processing_move_preserve_path;
     extern const ObjectStorageQueueSettingsString after_processing_move_access_key_id;
     extern const ObjectStorageQueueSettingsString after_processing_move_secret_access_key;
     extern const ObjectStorageQueueSettingsString after_processing_move_connection_string;
@@ -285,6 +287,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         .after_processing_retries = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_retries],
         .after_processing_move_uri = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_uri],
         .after_processing_move_prefix = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_prefix],
+        .after_processing_move_preserve_path = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_preserve_path],
         .after_processing_move_access_key_id = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_access_key_id],
         .after_processing_move_secret_access_key = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_secret_access_key],
         .after_processing_move_connection_string = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_connection_string],
@@ -1179,6 +1182,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "after_processing_retries",
     "after_processing_move_uri",
     "after_processing_move_prefix",
+    "after_processing_move_preserve_path",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
@@ -1212,6 +1216,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "after_processing_retries",
     "after_processing_move_uri",
     "after_processing_move_prefix",
+    "after_processing_move_preserve_path",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
@@ -1521,6 +1526,8 @@ void StorageObjectStorageQueue::alter(
                 after_processing_settings.after_processing_move_uri = change.value.safeGet<String>();
             else if (change.name == "after_processing_move_prefix")
                 after_processing_settings.after_processing_move_prefix = change.value.safeGet<String>();
+            else if (change.name == "after_processing_move_preserve_path")
+                after_processing_settings.after_processing_move_preserve_path = change.value.safeGet<bool>();
             else if (change.name == "after_processing_move_access_key_id")
                 after_processing_settings.after_processing_move_access_key_id = change.value.safeGet<String>();
             else if (change.name == "after_processing_move_secret_access_key")
@@ -1641,6 +1648,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::after_processing_retries] = after_processing_settings.after_processing_retries;
         settings[ObjectStorageQueueSetting::after_processing_move_uri] = after_processing_settings.after_processing_move_uri;
         settings[ObjectStorageQueueSetting::after_processing_move_prefix] = after_processing_settings.after_processing_move_prefix;
+        settings[ObjectStorageQueueSetting::after_processing_move_preserve_path] = after_processing_settings.after_processing_move_preserve_path;
         settings[ObjectStorageQueueSetting::after_processing_move_access_key_id] = after_processing_settings.after_processing_move_access_key_id;
         settings[ObjectStorageQueueSetting::after_processing_move_secret_access_key] = after_processing_settings.after_processing_move_secret_access_key;
         settings[ObjectStorageQueueSetting::after_processing_move_connection_string] = after_processing_settings.after_processing_move_connection_string;
@@ -1820,18 +1828,23 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
                 ///              when the node is first created.
                 std::string dummy_data;
                 Coordination::Stat dummy_stat{};
-                const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, event);
+                Coordination::WatchCallbackPtrOrEventPtr labelled_event{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue};
+                const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, labelled_event);
                 if (!node_exists)
-                    zk->existsWatch(processed_node_path, nullptr, event);
+                    zk->existsWatch(processed_node_path, nullptr, labelled_event);
             }
             else
             {
                 /// Unordered: each file gets its own processed node; watch for its creation.
-                zk->existsWatch(processed_node_path, nullptr, event);
+                zk->existsWatch(
+                    processed_node_path, nullptr,
+                    Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
             }
 
             /// Per-file failed node: watch for creation regardless of mode.
-            zk->existsWatch(failed_node_path, nullptr, event);
+            zk->existsWatch(
+                failed_node_path, nullptr,
+                Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
         });
 
         std::string failure_message;

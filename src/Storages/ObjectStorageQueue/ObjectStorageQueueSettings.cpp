@@ -61,6 +61,7 @@ namespace ErrorCodes
     DECLARE(UInt32, after_processing_retries, 10, "Number of retries for the after_processing action before giving up", 0) \
     DECLARE(String, after_processing_move_uri, "", "S3 bucket URL to move processed files to", 0) \
     DECLARE(String, after_processing_move_prefix, "", "Path prefix to move processed files to", 0) \
+    DECLARE(Bool, after_processing_move_preserve_path, false, "If true, preserve the full source path under after_processing_move_prefix instead of using only the file name", 0) \
     DECLARE(String, after_processing_tag_key, "", "Tag key to tag processed files in the storage", 0) \
     DECLARE(String, after_processing_tag_value, "", "Tag value to tag processed files in the storage", 0) \
     DECLARE(String, after_processing_move_access_key_id, "", "S3 Access Key ID accompanying after_processing_move_uri", 0) \
