@@ -2114,47 +2114,26 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     }
 
     /// (c) Top-level keys that act as substitution sources for `<elem incl="X"/>` references.
-    /// `ConfigProcessor` merges every `config.d/*` file into the main config, so when a user
-    /// keeps their substitution source under `config.d/`, its top-level tags (referenced
-    /// later by `<elem incl="name"/>`) leak into the merged config as unrecognized keys.
-    /// These are substitution sources, not real config sections, so exempt them.
+    /// An `incl` attribute is resolved by `ConfigProcessor` *exclusively* from the
+    /// `<include_from>` source document (see `doIncludesRecursive`: the lookup is
+    /// `getRootNode(include_from)->getNodeByPath(name)`), never from arbitrary top-level keys
+    /// of the merged config. The substitution replaces the *contents* of the referencing
+    /// element while the element keeps its own name, so an `incl` source tag becomes a
+    /// top-level key of the merged config only when the source file is itself merged — i.e.
+    /// when the `<include_from>` source is placed under `config.d/`.
+    ///
+    /// We therefore derive the exemption from the *actual* top-level tags of the parsed
+    /// `<include_from>` source, not from `incl` attribute names: keying off the reference name
+    /// alone would exempt an unrelated top-level key that merely happens to share a name with
+    /// some `incl` reference (even when no such tag exists in the real source), masking exactly
+    /// the typo/misplaced-section class this check is meant to catch.
     ///
     /// The `<include_from>` directive may live in either the main config or the users config
-    /// (or any `*.d/*.xml` fragment merged into them). Scan all standard config files for two
-    /// independent signals and treat both as references:
-    ///   1. `<elem incl="X"/>` attributes anywhere — `X` is the substitution source key.
-    ///   2. `<include_from>` element at the root — its target file's top-level keys are all
-    ///      potential substitution sources, even if not yet referenced.
+    /// (or any `*.d/*` fragment merged into them), so scan all standard config files to collect
+    /// the source paths, then exempt every top-level tag of each parsed source.
     {
         Poco::XML::DOMParser dom_parser;
         std::unordered_set<std::string> include_from_paths;
-
-        auto walk_xml = [&](Poco::XML::Node * node, auto & self) -> void
-        {
-            if (!node)
-                return;
-            if (node->nodeType() == Poco::XML::Node::ELEMENT_NODE)
-            {
-                auto * elem = static_cast<Poco::XML::Element *>(node);
-                if (elem->hasAttribute("incl"))
-                {
-                    /// `incl="X"` is resolved by `ConfigProcessor` via `Poco::XML::Node::getNodeByPath`,
-                    /// whose path syntax separates components with `/` and uses `[N]` for indices
-                    /// (e.g. `servers/server[1]`). Only the first component is the top-level tag that
-                    /// leaks into the merged config, so strip at the first `/` or `[`. Note this is a
-                    /// DOM path, not the dotted `Poco::Util` key syntax used by the `config://` branch,
-                    /// so `.` is a literal name character here and must not be treated as a separator.
-                    String value = elem->getAttribute("incl");
-                    auto sep_pos = value.find_first_of("/[");
-                    if (sep_pos != String::npos)
-                        value.resize(sep_pos);
-                    if (!value.empty())
-                        referenced_keys.insert(value);
-                }
-            }
-            for (auto * child = node->firstChild(); child; child = child->nextSibling())
-                self(child, self);
-        };
 
         auto scan_file = [&](const fs::path & p)
         {
@@ -2175,7 +2154,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 const String root_name = root->nodeName();
                 if (root_name != "clickhouse" && root_name != "yandex")
                     return;
-                walk_xml(doc.get(), walk_xml);
                 /// Pick up a top-level `<include_from>` so we can later parse the source.
                 /// Also resolve `from_env="VAR"` substitutions, which leave `innerText()` empty
                 /// in the raw XML (the value lives in the environment, not the document).
@@ -2222,12 +2200,20 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         if (String resolved_include_from = config.getString("include_from", ""); !resolved_include_from.empty())
             include_from_paths.insert(std::move(resolved_include_from));
 
-        /// Resolve the users config path (mirrors AccessControl::addUsersConfigStorage).
+        /// Resolve the *active* users config path exactly as `AccessControl::addStoragesFromMainConfig`
+        /// does, so we never pull `incl`/`include_from` exemptions from an inactive users config tree
+        /// (which would let a real unknown top-level server-config key slip through):
+        ///   - explicit `<users_config>`: resolve a relative path against the main config dir;
+        ///   - empty `<users_config>` and no `<user_directories>`: the main config doubles as the
+        ///     users config (`config_path`), which is already scanned above;
+        ///   - empty `<users_config>` with `<user_directories>`: there is no users config file at all.
         String users_config_value = config.getString("users_config", "");
+        bool has_user_directories = config.has("user_directories");
         fs::path users_path;
         if (users_config_value.empty())
         {
-            users_path = config_dir / "users.xml";
+            if (!has_user_directories)
+                users_path = config_path;
         }
         else
         {
@@ -2235,11 +2221,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             if (users_path.is_relative() && fs::exists(config_dir / users_path))
                 users_path = config_dir / users_path;
         }
-        /// Scan only the *active* users config and the fragments merged into it. Deriving the
-        /// merge set from the resolved `users_path` (rather than blindly scanning
-        /// `config_dir/users.d`) avoids pulling exemptions from an inactive `users.d` tree when
-        /// `users_config` points elsewhere, which would let a real unknown key slip through.
-        if (users_path != fs::path(config_path))
+        /// Scan the active users config and the fragments merged into it, unless it is the main
+        /// config (already scanned) or there is no separate users config (empty `users_path`).
+        if (!users_path.empty() && users_path != fs::path(config_path))
         {
             scan_file(users_path);
             for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(users_path.string()))
