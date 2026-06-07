@@ -624,27 +624,47 @@ struct ToDateTime64TransformFloat
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
         /// DateTime64 can represent fractional seconds within the boundary second, e.g. 10413791999.1
-        /// is a valid DateTime64(1) value (2299-12-31 23:59:59.1). Derive the bounds from the maximum
-        /// representable native value (capped at Int64::max, so scale 9 — where the calendar maximum does
-        /// not fit — saturates instead of raising DECIMAL_OVERFLOW). Saturated values are produced directly
-        /// in the native domain to avoid Float64 rounding losing the last representable fraction.
+        /// is a valid DateTime64(1) value (2299-12-31 23:59:59.1). Decide overflow without narrowing the
+        /// scaled native bound back to the (possibly 32-bit) float domain: dividing `max_native` by the scale
+        /// in `FromType` rounds the bound to the wrong side and would let out-of-range values pass the `throw`
+        /// check (or clamp in-range ones). Instead compare the whole-second part as an integer and the
+        /// sub-second part in the Float64 domain, which is exact enough at every scale and deterministic
+        /// across architectures. The maximum is capped at Int64::max, so scale 9 — where the calendar maximum
+        /// does not fit — saturates instead of raising DECIMAL_OVERFLOW. Saturated values are produced
+        /// directly in the native domain to avoid Float64 rounding losing the last representable fraction.
         const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
         const DateTime64::NativeType max_native = maxRepresentableDateTime64Native(scale_multiplier);
+        const time_t max_whole_second = maxRepresentableDateTime64WholeSecond(scale_multiplier);
         const DateTime64::NativeType min_native = MIN_DATETIME64_TIMESTAMP * scale_multiplier;
-        const FromType lower_bound = static_cast<FromType>(min_native) / static_cast<FromType>(scale_multiplier);
-        const FromType upper_bound = static_cast<FromType>(max_native) / static_cast<FromType>(scale_multiplier);
+        const DateTime64::NativeType max_fraction = max_native - max_whole_second * scale_multiplier;
+
+        const double from_seconds = static_cast<double>(from);
+        /// The calendar minimum has no sub-second part, so a plain comparison is exact.
+        const bool below = from_seconds < static_cast<double>(MIN_DATETIME64_TIMESTAMP);
+        bool above = false;
+        if (from_seconds > static_cast<double>(max_whole_second))
+        {
+            const double fraction = from_seconds - static_cast<double>(max_whole_second);
+            above = fraction * static_cast<double>(scale_multiplier) > static_cast<double>(max_fraction);
+        }
 
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < lower_bound || from > upper_bound) [[unlikely]]
+            if (below || above) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
 
-        if (from <= lower_bound)
+        if (below)
             return min_native;
-        if (from >= upper_bound)
+        if (above)
             return max_native;
-        return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
+        /// Scale in the Float64 domain instead of via convertToDecimal, whose range check runs in the
+        /// source-float precision: for a Float32 value just below the scale-9 maximum the scaled product is
+        /// indistinguishable from Int64::max at Float32 precision and convertToDecimal would spuriously raise
+        /// DECIMAL_OVERFLOW. Float64 reproduces convertToDecimal exactly for Float64 sources and is strictly
+        /// more faithful for Float32 ones (one native tick is far finer than the Float32 grid at these
+        /// magnitudes), so an in-range value is preserved rather than rejected.
+        return static_cast<DateTime64::NativeType>(from_seconds * static_cast<double>(scale_multiplier));
     }
 };
 
@@ -782,26 +802,39 @@ struct ToTime64TransformFloat
     NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
         /// Time64 can represent fractional seconds within the boundary second, e.g. 3599999.1 is a valid
-        /// Time64(1) value (999:59:59.1). Derive the bounds from the maximum representable native value so
-        /// such values are neither falsely rejected in `throw` mode nor clamped down to the whole second
-        /// otherwise. Saturated values are produced directly in the native domain to avoid Float64 rounding
-        /// losing the last representable fraction.
+        /// Time64(1) value (999:59:59.1). Decide overflow without narrowing the scaled native bound back to
+        /// the (possibly 32-bit) float domain: dividing `max_native` by the scale in `FromType` rounds the
+        /// bound to the wrong side and would let out-of-range values pass the `throw` check (or clamp in-range
+        /// ones). Instead compare the whole-second part as an integer and the sub-second part in the Float64
+        /// domain, which is exact for the narrow Time64 range and deterministic across architectures. The
+        /// range is symmetric, so the magnitude is checked once. Saturated values are produced directly in the
+        /// native domain to avoid Float64 rounding losing the last representable fraction.
         const auto scale_multiplier = DecimalUtils::scaleMultiplier<Time64::NativeType>(scale);
         const Time64::NativeType max_native = maxRepresentableTime64Native(scale_multiplier);
-        const FromType upper_bound = static_cast<FromType>(max_native) / static_cast<FromType>(scale_multiplier);
-        const FromType lower_bound = -upper_bound;
+        const Time64::NativeType max_fraction = max_native - MAX_TIME_TIMESTAMP * scale_multiplier;
+
+        const double from_seconds = static_cast<double>(from);
+        const double magnitude = from_seconds < 0 ? -from_seconds : from_seconds;
+        bool overflow = false;
+        if (magnitude > static_cast<double>(MAX_TIME_TIMESTAMP))
+        {
+            const double fraction = magnitude - static_cast<double>(MAX_TIME_TIMESTAMP);
+            overflow = fraction * static_cast<double>(scale_multiplier) > static_cast<double>(max_fraction);
+        }
 
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < lower_bound || from > upper_bound) [[unlikely]]
+            if (overflow) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
 
-        if (from <= lower_bound)
-            return -max_native;
-        if (from >= upper_bound)
-            return max_native;
-        return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
+        if (overflow)
+            return from_seconds < 0 ? -max_native : max_native;
+        /// Scale in the Float64 domain instead of via convertToDecimal (see the DateTime64 transform): its
+        /// range check runs in the source-float precision and would spuriously raise DECIMAL_OVERFLOW for a
+        /// Float32 value near the maximum. Float64 matches convertToDecimal for Float64 sources and is more
+        /// faithful for Float32 ones.
+        return static_cast<Time64::NativeType>(from_seconds * static_cast<double>(scale_multiplier));
     }
 };
 

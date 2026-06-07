@@ -97,3 +97,11 @@ SELECT CAST(toInt64(10413791999), 'DateTime64(9, \'UTC\')') SETTINGS date_time_o
 SELECT CAST(1e20::Float64, 'DateTime64(9, \'UTC\')') SETTINGS date_time_overflow_behavior='saturate';
 SELECT CAST(toUInt64(10413791999), 'DateTime64(9, \'UTC\')') SETTINGS date_time_overflow_behavior='saturate';
 SELECT CAST(toInt64(10413791999), 'DateTime64(9, \'UTC\')') SETTINGS date_time_overflow_behavior='saturate';
+
+-- Float32 sources must use the exact scaled bound, not one narrowed to Float32 (which rounds to the wrong
+-- side). A Float32 just below the scale-9 maximum is in range and must be preserved: scaling it through the
+-- source-float precision would make it indistinguishable from the maximum and spuriously raise DECIMAL_OVERFLOW.
+SELECT CAST(9223371776::Float32, 'DateTime64(9, \'UTC\')');
+-- A Float32 just past the Time64(1) maximum must overflow rather than be accepted and clamped to the maximum.
+SELECT CAST(3600000::Float32, 'Time64(1)') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(3600000::Float32, 'Time64(1)') SETTINGS date_time_overflow_behavior='saturate';
