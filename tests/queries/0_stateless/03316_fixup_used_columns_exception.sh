@@ -14,8 +14,10 @@ CREATE TABLE test_exception(
 ENGINE=MergeTree
 ORDER BY All" 2>&1) || true
 
-if [[ $create_status == *"required columns: 'All', available columns:"*"'id'"* \
-   || $create_status == *"Unknown expression identifier"*"All"* ]]; then
+# The key expression is now analyzed through the Analyzer (regardless of the
+# `enable_analyzer` setting), so the diagnostic deterministically names the unknown
+# identifier `All` and carries the `UNKNOWN_IDENTIFIER` error code in both analyzer modes.
+if [[ $create_status == *"Unknown expression identifier"*"All"*"UNKNOWN_IDENTIFIER"* ]]; then
     echo "Query got the right exception message."
 else
     echo "Unexpected behavior: $create_status"
