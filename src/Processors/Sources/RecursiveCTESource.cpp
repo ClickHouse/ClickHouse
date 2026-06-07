@@ -468,6 +468,16 @@ public:
         recursive_query_context = recursive_query->as<QueryNode>() ? recursive_query->as<QueryNode &>().getMutableContext() :
             recursive_query->as<UnionNode &>().getMutableContext();
 
+        /// The seed (non-recursive) query keeps its original context, which was
+        /// not rewritten above and therefore still permits parallel replicas.
+        /// The seed runs once, never references the working table, and does not
+        /// reuse a cached GLOBAL JOIN, so the cache-collision hazard that forces
+        /// us to disable parallel replicas for recursive steps does not apply to
+        /// it. Running it with this context (instead of the recursive one) keeps
+        /// the parallel-replicas disable scoped to recursive iterations only.
+        non_recursive_query_context = non_recursive_query->as<QueryNode>() ? non_recursive_query->as<QueryNode &>().getMutableContext() :
+            non_recursive_query->as<UnionNode &>().getMutableContext();
+
         const auto & recursive_query_projection_columns = recursive_query->as<QueryNode>() ? recursive_query->as<QueryNode &>().getProjectionColumns() :
             recursive_query->as<UnionNode &>().computeProjectionColumns();
 
@@ -641,7 +651,11 @@ private:
         const auto & recursive_table_name = recursive_cte_union_node->as<UnionNode &>().getCTEName();
         recursive_query_context->addOrUpdateExternalTable(recursive_table_name, working_temporary_table_holder);
 
-        const auto & interpreter_context = recursive_query_context;
+        /// `recursive_step` was already incremented above, so the seed query is
+        /// step 1 and recursive iterations are step >1. Run the seed with its
+        /// own context (parallel replicas enabled) and the recursive steps with
+        /// the rewritten context (parallel replicas disabled).
+        const auto & interpreter_context = recursive_step > 1 ? recursive_query_context : non_recursive_query_context;
 
         /// recursive_step was already incremented above — `>1` means we are
         /// executing the recursive query (the seed query is step `1`).
@@ -719,6 +733,7 @@ private:
     QueryTreeNodePtr non_recursive_query;
     QueryTreeNodePtr recursive_query;
     ContextMutablePtr recursive_query_context;
+    ContextMutablePtr non_recursive_query_context;
 
     TemporaryTableHolderPtr working_temporary_table_holder;
     StoragePtr working_temporary_table_storage;
