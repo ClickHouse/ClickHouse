@@ -1152,10 +1152,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     // Collect the statistics themselves.
     auto jemalloc_allocated = saveJemallocMetric<size_t>(new_values, "allocated");
     auto jemalloc_active = saveJemallocMetric<size_t>(new_values, "active");
-    auto jemalloc_fragmentation = jemalloc_allocated < jemalloc_active ? jemalloc_active - jemalloc_allocated : 0;
-    new_values["jemalloc.fragmentation"] = {jemalloc_fragmentation,
-        "The difference between `jemalloc.active` and `jemalloc.allocated` — "
-        "represents internal fragmentation in the memory allocator (active pages that are not fully utilized by allocations)."};
+    if (jemalloc_allocated && jemalloc_active)
+    {
+        size_t jemalloc_fragmentation = *jemalloc_allocated < *jemalloc_active ? *jemalloc_active - *jemalloc_allocated : 0;
+        new_values["jemalloc.fragmentation"] = {jemalloc_fragmentation,
+            "The difference between `jemalloc.active` and `jemalloc.allocated` — "
+            "represents internal fragmentation in the memory allocator (active pages that are not fully utilized by allocations)."};
+    }
 
     saveJemallocMetric<size_t>(new_values, "metadata");
     saveJemallocMetric<size_t>(new_values, "metadata_thp");
