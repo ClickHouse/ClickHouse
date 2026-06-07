@@ -290,10 +290,21 @@ String wrapHTTPQuery(
     if (select_expr.empty() && filter_expr.empty() && order_expr.empty())
         return base_query;
 
+    /// `base_query` is embedded as a subquery: `SELECT ... FROM (<base_query>) ...`. A trailing
+    /// semicolon (or trailing whitespace) is legal for a top-level statement but a syntax error
+    /// inside the parentheses, so strip it before wrapping. Other top-level-only suffixes that
+    /// cannot appear inside a subquery (e.g. a `FORMAT` clause) are not wrapped — the output format
+    /// should be selected via the `format` / `output_format` / `default_format` settings when query
+    /// construction is in use.
+    String inner = base_query;
+    while (!inner.empty() && (inner.back() == ';' || inner.back() == ' '
+        || inner.back() == '\t' || inner.back() == '\n' || inner.back() == '\r'))
+        inner.pop_back();
+
     String result = "SELECT ";
     result += select_expr.empty() ? "*" : select_expr;
     result += " FROM (";
-    result += base_query;
+    result += inner;
     result += ")";
     if (!filter_expr.empty())
     {

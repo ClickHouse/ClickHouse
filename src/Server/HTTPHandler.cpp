@@ -774,6 +774,20 @@ void HTTPHandler::processQuery(
         combined_filter += f;
     }
 
+    /// `filter` is a first-class setting, but the filters supplied via the URL path, repeated
+    /// `?filter=` parameters, and unrecognized URL parameters were collected separately above and so
+    /// never passed through `checkSettingsConstraints` (only the `filter` setting value did, back
+    /// when URL/header settings were applied). Run the fully combined value through the constraints
+    /// as a synthetic `filter` change, so a profile that constrains `filter` (e.g. marks it `const`)
+    /// is enforced for every source instead of being bypassed by `?filter=`. We only check the
+    /// constraints here — the combined value is consumed directly when wrapping the query below.
+    if (!combined_filter.empty())
+    {
+        SettingsChanges filter_change;
+        filter_change.setSetting("filter", combined_filter);
+        context->checkSettingsConstraints(filter_change, SettingSource::QUERY);
+    }
+
     /// Compute ORDER BY clause from either `order` (free-form) or `sort` (simple, with +/- prefixes).
     String order_clause;
     if (!settings[Setting::order].value.empty())
