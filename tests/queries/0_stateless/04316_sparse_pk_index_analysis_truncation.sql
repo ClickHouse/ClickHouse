@@ -19,17 +19,17 @@ INSERT INTO t_sparse_pk_truncation VALUES (1, 1), (2, 2), (3, 3), (4, 4);
 EXPLAIN indexes = 1
 SELECT count() FROM t_sparse_pk_truncation
 WHERE c0 <= 1 AND c0 >= 3
-SETTINGS use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 0;
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
 
 SELECT count() FROM t_sparse_pk_truncation
 WHERE c0 <= 1 AND c0 >= 3
-SETTINGS use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 0;
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
 
 EXPLAIN indexes = 1
 SELECT count() FROM t_sparse_pk_truncation
 WHERE c0 <= 1 AND c0 >= 3
-SETTINGS use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 1;
+SETTINGS use_lightweight_primary_key_index_analysis = 1;
 
 SELECT count() FROM t_sparse_pk_truncation
 WHERE c0 <= 1 AND c0 >= 3
-SETTINGS use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 1;
+SETTINGS use_lightweight_primary_key_index_analysis = 1;

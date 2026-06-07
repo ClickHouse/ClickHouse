@@ -3,7 +3,7 @@
 EXPLAIN indexes = 1
 SELECT count() FROM t_sparse_pk_sfc
 WHERE x >= 4 AND x <= 8 AND y >= 4 AND y <= 8
-SETTINGS use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 0;
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -20,12 +20,12 @@ Expression ((Project names + Projection))
           Ranges: 4
 SELECT count() FROM t_sparse_pk_sfc
 WHERE x >= 4 AND x <= 8 AND y >= 4 AND y <= 8
-SETTINGS use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 0;
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
 25
 EXPLAIN indexes = 1
 SELECT count() FROM t_sparse_pk_sfc
 WHERE x >= 4 AND x <= 8 AND y >= 4 AND y <= 8
-SETTINGS use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 1;
+SETTINGS use_lightweight_primary_key_index_analysis = 1;
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
@@ -42,5 +42,5 @@ Expression ((Project names + Projection))
           Ranges: 4
 SELECT count() FROM t_sparse_pk_sfc
 WHERE x >= 4 AND x <= 8 AND y >= 4 AND y <= 8
-SETTINGS use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 1;
+SETTINGS use_lightweight_primary_key_index_analysis = 1;
 25

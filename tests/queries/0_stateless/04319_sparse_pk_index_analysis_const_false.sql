@@ -19,17 +19,17 @@ INSERT INTO t_sparse_pk_const_false SELECT number, number FROM numbers(100);
 EXPLAIN ESTIMATE
 SELECT count() FROM t_sparse_pk_const_false
 WHERE 0
-SETTINGS use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 0;
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
 
 SELECT count() FROM t_sparse_pk_const_false
 WHERE 0
-SETTINGS use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 0;
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
 
 EXPLAIN ESTIMATE
 SELECT count() FROM t_sparse_pk_const_false
 WHERE 0
-SETTINGS use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 1;
+SETTINGS use_lightweight_primary_key_index_analysis = 1;
 
 SELECT count() FROM t_sparse_pk_const_false
 WHERE 0
-SETTINGS use_sparse_lightweight_representation_of_primary_key_for_index_analysis = 1;
+SETTINGS use_lightweight_primary_key_index_analysis = 1;

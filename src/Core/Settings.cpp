@@ -1661,10 +1661,10 @@ Possible values:
 Validate checksums on reading. It is enabled by default and should be always enabled in production. Please do not expect any benefits in disabling this setting. It may only be used for experiments and benchmarks. The setting is only applicable for tables of MergeTree family. Checksums are always validated for other table engines and when receiving data over the network.
 )", 0) \
     \
-    DECLARE(Bool, use_sparse_lightweight_representation_of_primary_key_for_index_analysis, true, R"(
+    DECLARE(Bool, use_lightweight_primary_key_index_analysis, true, R"(
 Optimize primary key index analysis for `MergeTree` tables with long primary keys.
 
-When enabled, the run time of index analysis depends on the complexity of the query's filter (the key columns it actually uses), not on the length of the primary key — so extending the sorting key no longer slows down index analysis for queries that filter on only a few of its columns.
+When enabled, the run time of index analysis mainly depends on the complexity of the query's filter (the key columns it actually uses), not on the length of the primary key — so extending the sorting key has negligible extra overhead on index analysis for queries that filter on only a few of its columns.
 
 Possible values:
 

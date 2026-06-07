@@ -89,7 +89,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
-    extern const SettingsBool use_sparse_lightweight_representation_of_primary_key_for_index_analysis;
+    extern const SettingsBool use_lightweight_primary_key_index_analysis;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
@@ -1630,7 +1630,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     const auto index = part->getIndex();
     const bool use_sparse_pk_representation
-        = settings[Setting::use_sparse_lightweight_representation_of_primary_key_for_index_analysis];
+        = settings[Setting::use_lightweight_primary_key_index_analysis];
 
     size_t num_key_columns = 0;
 
