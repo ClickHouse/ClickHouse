@@ -12,9 +12,15 @@ create table test (json JSON, tuple Tuple(s String)) engine=MergeTree settings m
 insert into test select toJSONString(map('s', repeat('a', 1000))), tuple(repeat('a', 1000)) from numbers(1000000);
 """
 
+# Pin `max_threads`: the server-level `additional_memory_tracking_per_thread`
+# speculatively reserves 4 MiB per pipeline-executor thread, so with the default
+# (core-count) `max_threads` the recorded `memory_usage` grows by a few MiB per thread
+# and crosses the 500 MB assertion on many-core/ASan runners. A small fixed thread count
+# bounds both the reservation and the per-thread read buffers while still exercising the
+# subcolumn-size calculation this test guards.
 query_id_base=$($CLICKHOUSE_CLIENT -q "select rand64()");
-$CLICKHOUSE_CLIENT --query_id=${query_id_base}_1 -q "select json.s from test format Null settings max_result_bytes=0"
-$CLICKHOUSE_CLIENT --query_id=${query_id_base}_2 -q "select tuple.s from test format Null settings max_result_bytes=0"
+$CLICKHOUSE_CLIENT --query_id=${query_id_base}_1 -q "select json.s from test format Null settings max_result_bytes=0, max_threads=4"
+$CLICKHOUSE_CLIENT --query_id=${query_id_base}_2 -q "select tuple.s from test format Null settings max_result_bytes=0, max_threads=4"
 
 $CLICKHOUSE_CLIENT -q """
 system flush logs query_log;

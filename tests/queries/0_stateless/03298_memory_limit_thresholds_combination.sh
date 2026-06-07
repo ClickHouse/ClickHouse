@@ -11,7 +11,13 @@ let limit=300000000
 let near_limit="$limit-1"
 let half_limit="$limit/2"
 
-export common_settings="max_rows_to_read=$numbers_count, max_memory_usage_for_user=$limit"
+# Pin `max_threads=1`: the server-level `additional_memory_tracking_per_thread`
+# speculatively reserves 4 MiB per pipeline-executor thread. With the default
+# (core-count) `max_threads`, that reservation (cores * 4 MiB) is charged against
+# `max_memory_usage_for_user` and pushes the success-side queries over the limit on
+# many-core/debug runners. A single thread keeps the reservation to a fixed 4 MiB,
+# which stays comfortably below the spill thresholds exercised here.
+export common_settings="max_rows_to_read=$numbers_count, max_memory_usage_for_user=$limit, max_threads=1"
 
 $CLICKHOUSE_CLIENT -q 'DROP USER IF EXISTS u03298'
 $CLICKHOUSE_CLIENT -q 'CREATE USER IF NOT EXISTS u03298 IDENTIFIED WITH no_password'
