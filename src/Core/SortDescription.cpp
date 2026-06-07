@@ -11,6 +11,9 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <DataTypes/DataTypeNullable.h>
 
+#include <string_view>
+#include <unordered_set>
+
 #include "config.h"
 
 #if USE_EMBEDDED_COMPILER
@@ -101,6 +104,22 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
     auto res = lhs;
     res.erase(res.begin() + i, res.end());
     return res;
+}
+
+SortDescription getSortPrefixInColumns(const SortDescription & description, const Names & columns)
+{
+    std::unordered_set<std::string_view> column_set(columns.begin(), columns.end());
+
+    SortDescription prefix;
+    for (const auto & sort_column_desc : description)
+    {
+        if (!column_set.contains(sort_column_desc.column_name))
+            break;
+
+        prefix.emplace_back(sort_column_desc);
+    }
+
+    return prefix;
 }
 
 #if USE_EMBEDDED_COMPILER
