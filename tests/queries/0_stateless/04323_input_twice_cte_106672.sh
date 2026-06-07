@@ -36,6 +36,12 @@ echo '{"id": 3, "name": "ok_direct"}' | ${CLICKHOUSE_CURL} -sS \
     "${CLICKHOUSE_URL}&query=${Q3}" \
     --data-binary @-
 
+echo '--- MATERIALIZED CTE workaround with enable_materialized_cte=1: allowed'
+Q4=$(urlencode "INSERT INTO ${TABLE} SETTINGS enable_materialized_cte = 1 WITH data AS MATERIALIZED (SELECT * FROM input('id UInt64, name String')), first_ref AS (SELECT id FROM data), second_ref AS (SELECT name FROM data) SELECT f.id, s.name FROM first_ref f CROSS JOIN second_ref s FORMAT JSONEachRow")
+echo '{"id": 4, "name": "ok_materialized"}' | ${CLICKHOUSE_CURL} -sS \
+    "${CLICKHOUSE_URL}&query=${Q4}" \
+    --data-binary @-
+
 echo '--- final rows'
 ${CLICKHOUSE_CLIENT} --query "SELECT id, name FROM ${TABLE} ORDER BY id"
 

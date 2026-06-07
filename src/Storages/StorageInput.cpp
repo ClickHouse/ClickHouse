@@ -96,15 +96,13 @@ void StorageInput::readImpl(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    /// `input()` is a one-shot client stream and can only be consumed by a single plan source.
-    /// Reject the second add here so we surface a clean user-facing error instead of the
-    /// downstream `LOGICAL_ERROR` in `ReadFromInput::initializePipeline`.
+    /// Catches CTE inlining: AST guard runs before, this catches after.
     if (was_read_added)
         throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT,
-            "Table function input() can only be read once per query. "
-            "It is being referenced more than once, which is not supported because input() is a "
-            "one-shot stream from the client. Avoid referencing the same CTE that contains input() "
-            "from multiple places in the query.");
+            "Table function `input` can only be read once per query because it is a one-shot stream from the client. "
+            "To reference the data multiple times, wrap `input` in a `MATERIALIZED` CTE "
+            "and enable the `enable_materialized_cte` setting (without the setting `MATERIALIZED` is just a hint and the CTE is still inlined): "
+            "`SETTINGS enable_materialized_cte = 1 WITH cte AS MATERIALIZED (SELECT ... FROM input(...)) ...`.");
 
     storage_snapshot->check(column_names);
     auto sample_block = std::make_shared<const Block>(storage_snapshot->metadata->getSampleBlock());
