@@ -68,7 +68,7 @@ inline void readAsIntText(time_t & x, ReadBuffer & istr)
 inline bool tryReadText(
     time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
-    bool res;
+    bool res = false;
     switch (settings.date_time_input_format)
     {
         case FormatSettings::DateTimeInputFormat::Basic:
