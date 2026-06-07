@@ -157,39 +157,19 @@ void SerializationDynamic::enumerateStreams(
     if (!settings.enumerate_dynamic_streams || (!column_dynamic && !deserialize_state))
         return;
 
-    /// Check if this column can be narrowed (write path) or was narrowed (read path).
+    /// Check if this Dynamic column was narrowed (read path only).
+    /// ONLY check deserialize_state, never column data — column data may be
+    /// non-empty during internal sub-path deserialization.
     bool is_narrowed = false;
     DataTypePtr narrowed_type;
 
     if (deserialize_state)
     {
-        /// Read path: check if the on-disk format is NARROWED.
         auto * structure_state = checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(deserialize_state->structure_state);
         if (structure_state->structure_version.value == SerializationVersion::NARROWED)
         {
             is_narrowed = true;
             narrowed_type = structure_state->narrowed_type;
-        }
-    }
-    else if (column_dynamic && !column_dynamic->empty())
-    {
-        /// Write path: detect if the column data is single-typed and can be narrowed.
-        /// Only check when column has data (empty columns are on the read path before deserialization).
-        bool has_nulls = false;
-        narrowed_type = getNarrowedType(*column_dynamic, has_nulls);
-        if (narrowed_type)
-        {
-            is_narrowed = true;
-            if (has_nulls)
-            {
-                if (narrowed_type->canBeInsideNullable())
-                    narrowed_type = std::make_shared<DataTypeNullable>(narrowed_type);
-                else
-                {
-                    is_narrowed = false;
-                    narrowed_type = nullptr;
-                }
-            }
         }
     }
 
@@ -273,10 +253,17 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
         structure_version = SerializationVersion(SerializationVersion::FLATTENED);
 
     /// Check if column can be narrowed: all values share a single concrete type (possibly with NULLs).
-    /// Only apply narrowing for MergeTree disk storage, not for Native format.
+    /// Only apply narrowing when:
+    /// 1. Not in Native format
+    /// 2. Not overriding a FLATTENED version
+    /// 3. Statistics are being written — this means we're in a top-level MergeTree write.
+    ///    Sub-Dynamic columns inside Object shared data use write_statistics=NONE and
+    ///    must NOT be narrowed (their readers expect standard Variant streams).
     DataTypePtr narrowed_type;
     bool narrowed_has_nulls = false;
-    if (structure_version.value != SerializationVersion::FLATTENED && !settings.native_format)
+    if (structure_version.value != SerializationVersion::FLATTENED
+        && !settings.native_format
+        && settings.write_statistics != SerializeBinaryBulkSettings::StatisticsMode::NONE)
     {
         narrowed_type = getNarrowedType(column_dynamic, narrowed_has_nulls);
         if (narrowed_type)
