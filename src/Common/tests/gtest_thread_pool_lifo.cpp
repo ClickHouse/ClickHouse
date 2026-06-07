@@ -80,8 +80,12 @@ TEST(ThreadPool, LIFONotifyWithThreadSelfRemoval)
     }
 }
 
-/// Verify the LIFO contract directly: with a known idle order, the next
-/// scheduled job runs on the most recently idle worker thread.
+/// Verify the LIFO contract directly. Two properties are checked:
+///  - while one worker is busy, a probe job runs on the single idle worker;
+///  - once both workers are idle, a sequence of non-overlapping jobs
+///    concentrates on a single worker instead of spreading across both.
+/// The second property is the deterministic, observable consequence of LIFO
+/// wake-up (a FIFO or arbitrary policy would alternate between the two threads).
 TEST(ThreadPool, LIFOSchedulesOnMostRecentlyIdleThread)
 {
     ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 2, 2, 2);
@@ -147,8 +151,7 @@ TEST(ThreadPool, LIFOSchedulesOnMostRecentlyIdleThread)
     }
     EXPECT_EQ(probe_x_thread, thread_a);
 
-    /// Release the second job; its worker becomes idle and is pushed onto the
-    /// LIFO stack after `thread_a`, so `thread_b` is now the most recently idle.
+    /// Release the second job so both workers become idle.
     {
         std::lock_guard lock(mutex);
         release_b = true;
@@ -158,25 +161,52 @@ TEST(ThreadPool, LIFOSchedulesOnMostRecentlyIdleThread)
     /// `pool.wait` returns only after the worker that completed the last job
     /// has pushed itself onto the idle stack: the worker holds `pool.mutex`
     /// continuously from notifying `job_finished` through the idle push, and
-    /// `pool.wait` reacquires that mutex before returning.
+    /// `pool.wait` reacquires that mutex before returning. So once `pool.wait`
+    /// returns, both workers are parked in the idle stack.
     pool.wait();
 
-    /// Now both threads are idle. The LIFO contract requires that this probe
-    /// runs on `thread_b`, the most recently idle worker.
-    std::thread::id probe_y_thread;
-    bool probe_y_done = false;
-    pool.scheduleOrThrowOnError([&]
+    /// Now both threads are idle. We deliberately do not assert *which* of the
+    /// two is on top of the LIFO stack: the relative order in which the two
+    /// workers re-park after their jobs finish is an inherent race that no
+    /// public API can pin down. What LIFO guarantees deterministically is that
+    /// a sequence of non-overlapping jobs concentrates on a single worker.
+    ///
+    /// The `pool.wait()` after each probe is essential: it returns only once the
+    /// probe's worker has re-parked onto the idle stack (the worker holds the
+    /// pool mutex from decrementing `scheduled_jobs` through the idle push, and
+    /// `pool.wait` reacquires it before returning). That worker is therefore the
+    /// most recently idle thread when the next probe is scheduled, so LIFO wakes
+    /// it again — all probes run on a single thread. Without the barrier the next
+    /// probe could be scheduled before the worker re-parks and would be served by
+    /// the other still-idle thread, which is not what is being tested here. A FIFO
+    /// or arbitrary wake policy would instead alternate between the two idle
+    /// threads and use both.
+    constexpr size_t probes = 50;
+    std::set<std::thread::id> probe_ids;
+    for (size_t i = 0; i < probes; ++i)
     {
-        std::unique_lock lock(mutex);
-        probe_y_thread = std::this_thread::get_id();
-        probe_y_done = true;
-        cv.notify_all();
-    });
-    {
-        std::unique_lock lock(mutex);
-        cv.wait(lock, [&] { return probe_y_done; });
+        std::mutex probe_mutex;
+        std::condition_variable probe_cv;
+        std::thread::id probe_thread;
+        bool probe_done = false;
+        pool.scheduleOrThrowOnError([&]
+        {
+            std::unique_lock lock(probe_mutex);
+            probe_thread = std::this_thread::get_id();
+            probe_done = true;
+            probe_cv.notify_all();
+        });
+        {
+            std::unique_lock lock(probe_mutex);
+            probe_cv.wait(lock, [&] { return probe_done; });
+        }
+        pool.wait();
+        probe_ids.insert(probe_thread);
     }
-    EXPECT_EQ(probe_y_thread, thread_b);
+
+    EXPECT_EQ(probe_ids.size(), 1u)
+        << "LIFO scheduling should concentrate sequential jobs on a single worker, but "
+        << probe_ids.size() << " distinct threads were used";
 
     pool.wait();
 }
