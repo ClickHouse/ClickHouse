@@ -15,7 +15,9 @@ DROP VIEW IF EXISTS v_final;
 DROP VIEW IF EXISTS v_settings;
 DROP VIEW IF EXISTS v_where_in;
 
-CREATE TABLE t_target (a Int32, b String) ENGINE = MergeTree ORDER BY a;
+-- `ReplacingMergeTree` so that `FINAL` is valid at read time and the rejection comes from the
+-- view write path (`NOT_IMPLEMENTED`), not from the engine rejecting `FINAL` (`ILLEGAL_FINAL`).
+CREATE TABLE t_target (a Int32, b String) ENGINE = ReplacingMergeTree ORDER BY a;
 CREATE TABLE t_allowed (a Int32) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_allowed VALUES (1), (2), (3);
 
