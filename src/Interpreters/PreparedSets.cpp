@@ -500,6 +500,17 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     if (external_table_set)
         external_table_set->buildSetInplace(context);
 
+    /// For `GLOBAL IN`, our `source` reads from a temporary external table that the
+    /// `external_table_set` producer is responsible for populating. If the producer's
+    /// in-place build stopped early (e.g. `transfer_overflow_mode = 'break'` or the
+    /// `future_set_from_subquery_skip_inplace_build` failpoint), the producer set is
+    /// not created and that external table is still empty. Building our set now would
+    /// read the empty table, cache an empty set, and skip the delayed fallback. Defer
+    /// to the delayed path instead, which rebuilds the producer plan and fills the
+    /// table before our set is built.
+    if (external_table_set && !external_table_set->get())
+        return;
+
     /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
     /// They will be decorrelated and executed as part of the outer query instead.
     if (source && hasCorrelatedExpressions(source->getRootNode()))
@@ -590,6 +601,16 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
             set_and_key->set = set;
             return set_and_key->set;
         }
+
+        /// No ordered set was returned. If the producer set was not created at all
+        /// (its in-place build stopped early), the temporary `GLOBAL IN` external
+        /// table this set reads from is still empty. Defer to the delayed path
+        /// instead of building an empty ordered set that would be cached and skip
+        /// the fallback. (When the producer set *is* created but simply has no
+        /// explicit elements for index use, the table was populated, so we may
+        /// continue building our own set below.)
+        if (!external_table_set->get())
+            return nullptr;
     }
 
     /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
