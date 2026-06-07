@@ -582,7 +582,13 @@ def test_insert_quorum_with_keeper_fail_during_unknown_status(started_cluster):
                     "SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
                 )
                 concurrent.futures.wait([insert_future])
-                assert insert_future.exception() is not None
+                insert_exception = insert_future.exception()
+                assert insert_exception is not None
+                # The contract preserved by the fix: the client gets UNKNOWN_STATUS_OF_INSERT, not a
+                # different error (e.g. TABLE_IS_READ_ONLY, a raw Keeper error) and not a logical error.
+                assert "UNKNOWN_STATUS_OF_INSERT" in str(insert_exception), str(
+                    insert_exception
+                )
                 assert not zero.contains_in_log("LOGICAL_ERROR")
     finally:
         zero.query(

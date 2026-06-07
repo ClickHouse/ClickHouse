@@ -5795,10 +5795,18 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
         removePartContributionToUncompressedBytesInPatches(part);
     }
 
+    /// A PreActive part can be discarded here by the failed-quorum cleanup while an INSERT is still
+    /// committing it (it has a ZooKeeper node but is not Active locally yet). `waitForPreActivePartsInRange`
+    /// blocks on `preactive_parts_cv` until no such part remains in range, so we must wake it up.
+    const bool was_preactive = part->getState() == DataPartState::PreActive;
+
     modifyPartState(it_part, DataPartState::Deleting, lock);
     asMutableDeletingPart(part)->renameToDetached(prefix, /*ignore_error=*/ replicated);
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
+
+    if (was_preactive)
+        preactive_parts_cv.notify_all();
 }
 
 
