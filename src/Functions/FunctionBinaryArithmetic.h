@@ -3228,14 +3228,15 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         /// Process special case when operation is divideOrNull, intDivOrNull, moduloOrNull or positiveModuloOrNull.
         if (is_division_or_null)
         {
-            if (left_argument.column->onlyNull() || right_argument.column->onlyNull())
+            const bool result_is_array = isArray(removeNullable(result_type));
+            if (!result_is_array && (left_argument.column->onlyNull() || right_argument.column->onlyNull()))
             {
                 auto res = removeNullable(result_type)->createColumn();
                 res->insertManyDefaults(input_rows_count);
                 auto null_map_col = ColumnUInt8::create(input_rows_count, true);
                 return !null_map_col->empty() ? wrapInNullable(std::move(res), std::move(null_map_col)) : makeNullable(std::move(res));
             }
-            else if (result_type->isNullable())
+            else if (!result_is_array && result_type->isNullable())
             {
                 auto null_map_col = ColumnUInt8::create(input_rows_count, false);
                 PaddedPODArray<UInt8> & null_map_data = null_map_col->getData();

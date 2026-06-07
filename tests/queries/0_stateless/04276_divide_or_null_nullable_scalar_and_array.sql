@@ -27,13 +27,28 @@ FORMAT Null;
 SELECT throwIf(divideOrNull(CAST([1, 2] AS Nullable(Array(Int8))), 2) != [0.5, 1])
 FORMAT Null;
 
+SELECT throwIf(isNull(divideOrNull(CAST([1, 2] AS Nullable(Array(Int8))), 0)))
+FORMAT Null;
+
+SELECT throwIf(divideOrNull(CAST([1, 2] AS Nullable(Array(Int8))), 0) != [NULL, NULL])
+FORMAT Null;
+
 SELECT throwIf(NOT isNull(divideOrNull(CAST(NULL AS Nullable(Array(Int8))), 2)))
+FORMAT Null;
+
+SELECT throwIf(NOT isNull(divideOrNull(CAST(NULL AS Nullable(Array(Int8))), 0)))
 FORMAT Null;
 
 SELECT throwIf(toTypeName(intDivOrNull(CAST([5, 7] AS Nullable(Array(Int32))), 2)) != 'Nullable(Array(Nullable(Int32)))')
 FORMAT Null;
 
 SELECT throwIf(intDivOrNull(CAST([5, 7] AS Nullable(Array(Int32))), 2) != [2, 3])
+FORMAT Null;
+
+SELECT throwIf(isNull(intDivOrNull(CAST([5, 7] AS Nullable(Array(Int32))), 0)))
+FORMAT Null;
+
+SELECT throwIf(intDivOrNull(CAST([5, 7] AS Nullable(Array(Int32))), 0) != [NULL, NULL])
 FORMAT Null;
 
 SELECT throwIf(toTypeName(divideOrNull(CAST([1, 2] AS Nullable(Array(Int8))), CAST(2 AS Nullable(UInt8)))) != 'Nullable(Array(Nullable(Float64)))')
