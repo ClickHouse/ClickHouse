@@ -26,6 +26,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageDummy.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -362,27 +364,32 @@ ActionsDAG analyzeExpressionToActionsDAG(
 
         actions.addAliases(rename_pairs);
 
-        /// Append source columns (inputs) to outputs if not already present,
-        /// matching the legacy behavior where the input block columns remained
-        /// visible alongside the aliased expression.
-        std::vector<const ActionsDAG::Node *> inputs_to_add;
-        for (const auto * input : actions.getInputs())
+        /// Rebuild outputs as source columns (inputs) first, then the expression
+        /// aliases — matching the legacy `ExpressionAnalyzer::getActionsDAG(true, false)`
+        /// output order.  The legacy DAG seeded its outputs with all source columns
+        /// (in source order) and only afterwards appended the expression results, so
+        /// the header was `[source columns..., expression aliases...]`.
+        /// `FilterStep`/`ActionsDAG::updateHeader` materialize the result block in
+        /// output order, and the sole caller of this mode
+        /// (`ReadFinalForExternalReplicaStorage`, which keeps the filter column) relies
+        /// on the source-columns-first shape — appending the inputs after the aliases
+        /// would reorder the storage read header.
+        const auto & inputs = actions.getInputs();
+        std::vector<const ActionsDAG::Node *> ordered_outputs;
+        ordered_outputs.reserve(inputs.size() + outputs.size());
+        for (const auto * input : inputs)
         {
-            bool already_in_outputs = false;
-            for (const auto * output : outputs)
-            {
-                if (output == input)
-                {
-                    already_in_outputs = true;
-                    break;
-                }
-            }
-            if (!already_in_outputs)
-                inputs_to_add.push_back(input);
+            ordered_outputs.push_back(input);
             required_names.insert(input->result_name);
         }
-        for (const auto * input : inputs_to_add)
-            outputs.push_back(input);
+        for (const auto * output : outputs)
+        {
+            /// Skip outputs that are themselves source-column inputs: they are already
+            /// added above and must not be duplicated (e.g. a bare-column expression).
+            if (std::find(inputs.begin(), inputs.end(), output) == inputs.end())
+                ordered_outputs.push_back(output);
+        }
+        outputs = std::move(ordered_outputs);
 
         actions.removeUnusedActions(required_names);
     }
