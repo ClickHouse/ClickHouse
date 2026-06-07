@@ -170,9 +170,8 @@ QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
 
 void LimitByStep::applyOrder(SortDescription sort_desc)
 {
-    input_sorted_by_keys = sort_desc.hasPrefix(columns);
-    if (input_sorted_by_keys)
-        sort_description = std::move(sort_desc);
+    input_sorted_by_keys = true;
+    sort_description = std::move(sort_desc);
 }
 
 void registerLimitByStep(QueryPlanStepRegistry & registry);

@@ -1529,6 +1529,10 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
 
         auto order_info = buildInputOrderFromUnorderedKeys(reading, fixed_columns, dag, keys);
 
+        /// The order of BY columns does not matter for LIMIT BY
+        if (getSortPrefixInColumns(order_info.sort_description, keys).size() != keys.size())
+            return {};
+
         if (!canImproveOrderForDistinct(order_info, reading->getInputOrder()))
             return {};
 
