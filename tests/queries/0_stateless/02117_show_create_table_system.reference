@@ -209,6 +209,18 @@ CREATE TABLE system.dictionaries
 )
 ENGINE = SystemDictionaries
 COMMENT 'Contains information about dictionaries.'
+CREATE TABLE system.dictionary_layouts
+(
+    `name` String,
+    `is_complex` UInt8,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
+)
+ENGINE = SystemDictionaryLayouts
+COMMENT 'Contains a list of all available dictionary layouts along with their embedded documentation.'
 CREATE TABLE system.disks
 (
     `name` String,
