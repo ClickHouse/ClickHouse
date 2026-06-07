@@ -274,6 +274,48 @@ CgroupLevelAvailability decideCgroupLevelAvailability(std::string_view max_token
     return {CgroupLevelKind::Finite, available};
 }
 
+uint64_t reclaimableFromCgroupV2Stat(ReadBuffer & buf)
+{
+    /// `memory.stat` is a sequence of "key value\n" lines. We only need the reclaimable
+    /// categories; everything else is skipped. Missing keys keep their `0` initializer.
+    uint64_t active_file = 0;
+    uint64_t inactive_file = 0;
+    uint64_t slab_reclaimable = 0;
+    bool have_active_file = false;
+    bool have_inactive_file = false;
+    bool have_slab_reclaimable = false;
+
+    while (!buf.eof() && !(have_active_file && have_inactive_file && have_slab_reclaimable))
+    {
+        std::string name;
+        readStringUntilWhitespace(name, buf);
+        skipWhitespaceIfAny(buf, true);
+
+        uint64_t value = 0;
+        readIntText(value, buf);
+
+        if (name == "active_file")
+        {
+            active_file = value;
+            have_active_file = true;
+        }
+        else if (name == "inactive_file")
+        {
+            inactive_file = value;
+            have_inactive_file = true;
+        }
+        else if (name == "slab_reclaimable")
+        {
+            slab_reclaimable = value;
+            have_slab_reclaimable = true;
+        }
+
+        skipToNextLineOrEOF(buf);
+    }
+
+    return active_file + inactive_file + slab_reclaimable;
+}
+
 }
 #endif
 
@@ -360,15 +402,23 @@ MemoryWorker::MemoryWorker(
                 {
                     fs::path max_path = current / "memory.max";
                     fs::path current_path = current / "memory.current";
+                    fs::path stat_path = current / "memory.stat";
                     if (fs::exists(max_path) && fs::exists(current_path))
                     {
                         CgroupMemoryLevel level;
                         level.max_path = max_path.string();
                         level.current_path = current_path.string();
+                        /// `memory.stat` lets us discount reclaimable page cache/slab from
+                        /// `memory.current`. If it is missing, the level falls back to treating
+                        /// the raw `memory.current` as usage (stricter, never over-budget).
+                        if (fs::exists(stat_path))
+                            level.stat_path = stat_path.string();
                         try
                         {
                             level.max_buf = std::make_unique<ReadBufferFromFile>(level.max_path);
                             level.current_buf = std::make_unique<ReadBufferFromFile>(level.current_path);
+                            if (!level.stat_path.empty())
+                                level.stat_buf = std::make_unique<ReadBufferFromFile>(level.stat_path);
                         }
                         catch (...)
                         {
@@ -378,6 +428,7 @@ MemoryWorker::MemoryWorker(
                             /// dropping this (possibly tighter) ancestor and overestimating headroom.
                             level.max_buf.reset();
                             level.current_buf.reset();
+                            level.stat_buf.reset();
                             tryLogCurrentException(log, fmt::format("Cannot open cgroup memory files at '{}'", current.string()));
                         }
                         cgroup_memory_levels.push_back(std::move(level));
@@ -601,12 +652,16 @@ std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
     /// the same way `AsynchronousMetrics` reports `CGroupMemoryTotal` / `CGroupMemoryUsed`.
     ///
     /// In cgroup v2, walk all ancestors and compute per-level headroom
-    /// `available_i = memory.max_i - memory.current_i`, then take the minimum. Pairing
-    /// max and current at the *same* level matters: an ancestor's `memory.current`
-    /// includes sibling cgroups under that ancestor, while the leaf's `memory.current`
-    /// does not. Using the leaf's usage against an ancestor's limit would ignore
-    /// siblings and let the dynamic hard limit exceed the ancestor's remaining budget,
-    /// which can still trigger a cgroup OOM kill.
+    /// `available_i = memory.max_i - (memory.current_i - reclaimable_i)`, then take the
+    /// minimum. `reclaimable_i` is the level's reclaimable page cache and slab (from its
+    /// `memory.stat`), which the kernel frees under pressure before OOM-killing; not
+    /// discounting it would treat a warm page cache as usage and could throw
+    /// `MEMORY_LIMIT_EXCEEDED` on read-heavy servers. This mirrors the host-wide
+    /// `MemAvailable` path. Pairing max and current at the *same* level matters: an
+    /// ancestor's `memory.current` includes sibling cgroups under that ancestor, while the
+    /// leaf's `memory.current` does not. Using the leaf's usage against an ancestor's limit
+    /// would ignore siblings and let the dynamic hard limit exceed the ancestor's remaining
+    /// budget, which can still trigger a cgroup OOM kill.
     /// If *no* level has a finite limit, the cgroup has no memory limit at all, and
     /// `/proc/meminfo` (host-wide) is the right source.
     if (cgroups_reader && !cgroup_memory_levels.empty())
@@ -641,11 +696,33 @@ std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
                     else
                         level.current_buf->rewind();
                     readIntText(used, *level.current_buf);
+
+                    /// `memory.current` includes reclaimable page cache and reclaimable slab,
+                    /// which the kernel frees under pressure before OOM-killing. Counting them
+                    /// as usage would shrink the headroom on a read-heavy server with a warm
+                    /// page cache (`memory.current` close to `memory.max`) and could make
+                    /// ClickHouse throw `MEMORY_LIMIT_EXCEEDED` even though most of that memory
+                    /// is reclaimable. Subtract the level's own reclaimable bytes so the
+                    /// headroom mirrors the host-wide `MemAvailable` path. `resident` (the
+                    /// formula's baseline) likewise excludes reclaimable memory, so on a
+                    /// dedicated cgroup `resident + available` converges to `memory.max`.
+                    if (!level.stat_path.empty())
+                    {
+                        if (!level.stat_buf)
+                            level.stat_buf = std::make_unique<ReadBufferFromFile>(level.stat_path);
+                        else
+                            level.stat_buf->rewind();
+                        uint64_t reclaimable = MemoryWorkerHelpers::reclaimableFromCgroupV2Stat(*level.stat_buf);
+                        used = (used > reclaimable) ? (used - reclaimable) : 0;
+                    }
                 }
                 else
                 {
                     /// v1: the only level is the leaf cgroup; use the same usage source as
                     /// `cgroups_reader`. v1 does not traverse the hierarchy.
+                    /// `cgroups_reader->readMemoryUsage` already excludes reclaimable memory
+                    /// (it sums anon + sock + non-reclaimable kernel), so no further adjustment
+                    /// is needed here.
                     used = cgroups_reader->readMemoryUsage();
                 }
 
@@ -662,6 +739,7 @@ std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
                 /// Drop the (possibly corrupt) descriptors so the next tick reopens cleanly.
                 level.max_buf.reset();
                 level.current_buf.reset();
+                level.stat_buf.reset();
                 if (!std::exchange(cgroup_memory_max_warnings_printed, true))
                     tryLogCurrentException(log, "Cannot read cgroup memory limit/current");
             }

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Common/MemoryWorker.h>
 #include <Common/filesystemHelpers.h>
@@ -269,6 +270,42 @@ TEST(DynamicHardLimitCgroupDecision, DecideCgroupLevelAvailability)
 
         auto empty = decideCgroupLevelAvailability("", /* used = */ 0, host_ram);
         ASSERT_EQ(empty.kind, CgroupLevelKind::Unbounded);
+    }
+}
+
+/// The reclaimable term subtracted from a cgroup v2 level's `memory.current` so that warm
+/// page cache and reclaimable slab count as headroom (mirroring `MemAvailable`) rather than
+/// as usage. See `MemoryWorker::readAvailableForDynamicLimit`.
+TEST(DynamicHardLimitCgroupDecision, ReclaimableFromCgroupV2Stat)
+{
+    using namespace MemoryWorkerHelpers;
+
+    /// All three reclaimable categories present: result is their sum.
+    {
+        ReadBufferFromString buf(SAMPLE_FILE[static_cast<uint8_t>(ICgroupsReader::CgroupsVersion::V2)]);
+        ASSERT_EQ(
+            reclaimableFromCgroupV2Stat(buf),
+            /* active_file + inactive_file + slab_reclaimable */ 8717561856ull + 8693084160ull + 1460982504ull);
+    }
+
+    /// Older kernels may omit `slab_reclaimable`; missing keys count as 0.
+    {
+        std::string content = R"(anon 5000000000
+file 1000000000
+active_file 600000000
+inactive_file 400000000
+)";
+        ReadBufferFromString buf(content);
+        ASSERT_EQ(reclaimableFromCgroupV2Stat(buf), /* active_file + inactive_file */ 1000000000ull);
+    }
+
+    /// No reclaimable categories at all: nothing to discount.
+    {
+        std::string content = R"(anon 5000000000
+sock 1000
+)";
+        ReadBufferFromString buf(content);
+        ASSERT_EQ(reclaimableFromCgroupV2Stat(buf), 0ull);
     }
 }
 

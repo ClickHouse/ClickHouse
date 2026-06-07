@@ -64,7 +64,21 @@ namespace MemoryWorkerHelpers
     /// current usage. `host_memory_bytes` filters the cgroup v1 "no limit" sentinel
     /// (`PAGE_COUNTER_MAX`, ~2^63): any value `>= host_memory_bytes` is treated as unbounded.
     /// A `host_memory_bytes` of `0` disables that filter.
+    ///
+    /// `used` is expected to already exclude reclaimable memory (page cache, reclaimable
+    /// slab): the headroom `max - used` then mirrors the kernel's `MemAvailable`, counting
+    /// memory the kernel can reclaim under pressure as still-available. See
+    /// `reclaimableFromCgroupV2Stat`, which `readAvailableForDynamicLimit` subtracts from the
+    /// raw `memory.current` before calling this.
     CgroupLevelAvailability decideCgroupLevelAvailability(std::string_view max_token, uint64_t used, uint64_t host_memory_bytes);
+
+    /// Sum the reclaimable memory reported in a cgroup v2 `memory.stat`: file-backed page
+    /// cache (`active_file` + `inactive_file`) plus reclaimable slab (`slab_reclaimable`).
+    /// These are exactly the categories the kernel frees under memory pressure before
+    /// invoking the OOM killer, so subtracting them from `memory.current` yields a
+    /// `MemAvailable`-like view of what the level actually owns. Missing keys count as `0`
+    /// (older kernels), so the result degrades to a conservative (smaller) reclaimable sum.
+    uint64_t reclaimableFromCgroupV2Stat(ReadBuffer & buf);
 }
 #endif
 
@@ -186,12 +200,18 @@ private:
     /// let `readAvailableForDynamicLimit` compute the headroom minimum from an incomplete set
     /// of ancestors and overestimate it when the dropped ancestor was the tighter one.
     /// `current_path` is empty on cgroup v1 (leaf usage comes from `cgroups_reader`).
+    /// `stat_path` points at the same level's `memory.stat` (cgroup v2 only); it is read to
+    /// subtract reclaimable page cache and slab from `memory.current`, so the level's headroom
+    /// mirrors `MemAvailable` instead of counting warm page cache as usage. It is empty on
+    /// cgroup v1, where leaf usage from `cgroups_reader` already excludes reclaimable memory.
     struct CgroupMemoryLevel
     {
         std::string max_path;
         std::string current_path;
+        std::string stat_path;
         std::unique_ptr<ReadBufferFromFile> max_buf;
         std::unique_ptr<ReadBufferFromFile> current_buf;
+        std::unique_ptr<ReadBufferFromFile> stat_buf;
     };
     std::vector<CgroupMemoryLevel> cgroup_memory_levels;
     [[maybe_unused]] bool cgroup_memory_max_warnings_printed = false;
