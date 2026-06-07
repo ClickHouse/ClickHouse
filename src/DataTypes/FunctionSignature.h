@@ -85,6 +85,13 @@ public:
       */
     DataTypePtr check(const ColumnsWithTypeAndName & args, std::string & out_reason, bool types_only = false) const;
 
+    /// Smallest / largest number of arguments any alternative of this signature accepts;
+    /// `maxArguments` is `std::numeric_limits<size_t>::max()` for a variadic position.
+    size_t minArguments() const;
+    size_t maxArguments() const;
+    /// Whether `num_arguments` is within `[minArguments, maxArguments]`.
+    bool isArgumentCountInRange(size_t num_arguments) const;
+
     std::string toString() const;
 
 private:

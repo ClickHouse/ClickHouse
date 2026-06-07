@@ -480,6 +480,34 @@ public:
         return out.str();
     }
 
+    /// Sentinel for "no upper bound" (a variadic / ellipsis position).
+    static constexpr size_t unbounded = std::numeric_limits<size_t>::max();
+
+    /// Smallest number of arguments this signature can accept: only `Fixed` groups are
+    /// mandatory; `Optional` and `Ellipsis` groups can match zero arguments.
+    size_t minArgs() const
+    {
+        size_t result = 0;
+        for (const auto & group : groups)
+            if (group.type == ArgumentsGroup::Fixed)
+                result += group.elems.size();
+        return result;
+    }
+
+    /// Largest number of arguments this signature can accept; `unbounded` when an
+    /// `Ellipsis` group is present. `Fixed` and `Optional` groups both contribute their size.
+    size_t maxArgs() const
+    {
+        size_t result = 0;
+        for (const auto & group : groups)
+        {
+            if (group.type == ArgumentsGroup::Ellipsis)
+                return unbounded;
+            result += group.elems.size();
+        }
+        return result;
+    }
+
 private:
     bool matchAt(const ColumnsWithTypeAndName & args, Variables & vars,
         size_t group_offset, size_t args_offset, size_t iteration,
@@ -756,6 +784,12 @@ public:
     virtual ~IFunctionSignatureImpl() = default;
     virtual DataTypePtr check(const ColumnsWithTypeAndName & args, Variables & vars, std::string & out_reason) const = 0;
     virtual std::string toString() const = 0;
+
+    /// Smallest / largest argument count the signature can accept; `maxArguments` returns
+    /// `VariadicArguments::unbounded` for a variadic position. Used to surface a
+    /// `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` error when the call is out of this range.
+    virtual size_t minArguments() const = 0;
+    virtual size_t maxArguments() const = 0;
 };
 
 using FunctionSignatureImplPtr = std::shared_ptr<IFunctionSignatureImpl>;
@@ -790,6 +824,9 @@ struct VariadicFunctionSignatureImpl : public IFunctionSignatureImpl
 
         return std::get<DataTypePtr>(return_type->apply(vars, 0, ellipsis_size).value);
     }
+
+    size_t minArguments() const override { return arguments_description.minArgs(); }
+    size_t maxArguments() const override { return arguments_description.maxArgs(); }
 
     std::string toString() const override
     {
@@ -834,6 +871,27 @@ struct AlternativeFunctionSignatureImpl : public IFunctionSignatureImpl
         out_reason = out.str();
 
         return nullptr;
+    }
+
+    size_t minArguments() const override
+    {
+        size_t result = VariadicArguments::unbounded;
+        for (const auto & alternative : alternatives)
+            result = std::min(result, alternative->minArguments());
+        return result;
+    }
+
+    size_t maxArguments() const override
+    {
+        size_t result = 0;
+        for (const auto & alternative : alternatives)
+        {
+            const size_t alt_max = alternative->maxArguments();
+            if (alt_max == VariadicArguments::unbounded)
+                return alt_max;
+            result = std::max(result, alt_max);
+        }
+        return result;
     }
 
     std::string toString() const override
@@ -1487,6 +1545,21 @@ DataTypePtr FunctionSignature::check(const ColumnsWithTypeAndName & args, std::s
     FunctionSignatures::Variables vars;
     vars.types_only = types_only;
     return impl->check(args, vars, out_reason);
+}
+
+size_t FunctionSignature::minArguments() const
+{
+    return impl->minArguments();
+}
+
+size_t FunctionSignature::maxArguments() const
+{
+    return impl->maxArguments();
+}
+
+bool FunctionSignature::isArgumentCountInRange(size_t num_arguments) const
+{
+    return num_arguments >= minArguments() && num_arguments <= maxArguments();
 }
 
 std::string FunctionSignature::toString() const

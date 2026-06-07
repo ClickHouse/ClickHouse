@@ -882,8 +882,17 @@ namespace
             /// `serverError ILLEGAL_COLUMN` test annotations keep working.
             const bool mentions_non_const = reason.find("but it is not constant") != std::string::npos;
 
+            /// Authoritative arity signal: when the call has more or fewer arguments than
+            /// *any* alternative of the signature can accept, this is unambiguously an
+            /// arity error regardless of which per-alternative reason the matcher reported
+            /// (a too-many-arguments alternative and a type-mismatch alternative can both
+            /// appear in the combined reason for a multi-`OR` signature). The string
+            /// heuristic below still handles in-range arity problems the bounds can't see,
+            /// such as a parity requirement (`caseWithExpression`: `4 + n * 2`).
+            const bool argument_count_out_of_range = !sig->isArgumentCountInRange(arguments.size());
+
             int code = ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT;
-            if (mentions_arity && !mentions_type_mismatch && !mentions_non_const)
+            if (argument_count_out_of_range || (mentions_arity && !mentions_type_mismatch && !mentions_non_const))
                 code = ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
             else if (mentions_non_const && !mentions_type_mismatch)
                 code = ErrorCodes::ILLEGAL_COLUMN;
