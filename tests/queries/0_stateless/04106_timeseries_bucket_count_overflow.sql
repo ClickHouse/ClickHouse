@@ -75,12 +75,12 @@ FROM (SELECT arrayJoin(arrayZip(timestamps, values)) AS ts_and_val, ts_and_val.1
 -- `diff / step + (diff % step != 0)` used by the fix cannot overflow because no
 -- intermediate exceeds `diff` itself.
 --
--- Parameters: `start = INT64_MIN`, `end = INT64_MAX - 1`, `step = INT64_MAX`, `window = 0`.
+-- Parameters: `start = INT64_MIN`, `end = INT64_MAX - 1`, `step = INT64_MAX`, `window = INT64_MAX`.
 -- That gives `bucket_count = 3`; the grid points are `[INT64_MIN, -1, INT64_MAX - 1]`.
 -- The inserted positive timestamps (from `ts_data_overflow_idx`) must land in the last
 -- bucket (`index = 2`, SQL 1-based `grid[3]`). Before the fix they landed in `grid[1]`.
 SELECT arrayFirstIndex(x -> x IS NOT NULL,
-    timeSeriesResampleToGridWithStaleness(-9223372036854775808, 9223372036854775806, 9223372036854775807, 0)(timestamp, value)
+    timeSeriesResampleToGridWithStaleness(-9223372036854775808, 9223372036854775806, 9223372036854775807, 9223372036854775807)(timestamp, value)
 ) AS first_non_null_1idx_extreme
 FROM ts_data_overflow_idx;
 
