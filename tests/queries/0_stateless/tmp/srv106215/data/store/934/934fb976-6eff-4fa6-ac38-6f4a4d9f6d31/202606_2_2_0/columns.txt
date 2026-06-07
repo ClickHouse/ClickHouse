@@ -1,0 +1,86 @@
+columns format version: 1
+84 columns:
+`hostname` LowCardinality(String)
+`type` Enum8('QueryStart' = 1, 'QueryFinish' = 2, 'ExceptionBeforeStart' = 3, 'ExceptionWhileProcessing' = 4)
+`event_date` Date
+`event_time` DateTime
+`event_time_microseconds` DateTime64(6)
+`query_start_time` DateTime
+`query_start_time_microseconds` DateTime64(6)
+`query_duration_ms` UInt64
+`read_rows` UInt64
+`read_bytes` UInt64
+`written_rows` UInt64
+`written_bytes` UInt64
+`result_rows` UInt64
+`result_bytes` UInt64
+`memory_usage` UInt64
+`current_database` LowCardinality(String)
+`query` String
+`formatted_query` String
+`normalized_query_hash` UInt64
+`query_kind` LowCardinality(String)
+`databases` Array(LowCardinality(String))
+`tables` Array(LowCardinality(String))
+`columns` Array(LowCardinality(String))
+`partitions` Array(LowCardinality(String))
+`projections` Array(LowCardinality(String))
+`views` Array(LowCardinality(String))
+`exception_code` Int32
+`exception` String
+`stack_trace` String
+`is_initial_query` UInt8
+`connection_address` IPv6
+`connection_port` UInt16
+`user` LowCardinality(String)
+`query_id` String
+`address` IPv6
+`port` UInt16
+`initial_user` LowCardinality(String)
+`initial_query_id` String
+`initial_address` IPv6
+`initial_port` UInt16
+`initial_query_start_time` DateTime
+`initial_query_start_time_microseconds` DateTime64(6)
+`authenticated_user` LowCardinality(String)
+`interface` UInt8
+`is_secure` UInt8
+`os_user` LowCardinality(String)
+`client_hostname` LowCardinality(String)
+`client_name` LowCardinality(String)
+`client_revision` UInt32
+`client_version_major` UInt32
+`client_version_minor` UInt32
+`client_version_patch` UInt32
+`script_query_number` UInt32
+`script_line_number` UInt32
+`http_method` UInt8
+`http_user_agent` LowCardinality(String)
+`http_referer` String
+`forwarded_for` String
+`quota_key` String
+`distributed_depth` UInt64
+`revision` UInt32
+`log_comment` String
+`thread_ids` Array(UInt64)
+`peak_threads_usage` UInt64
+`ProfileEvents` Map(LowCardinality(String), UInt64)
+`Settings` Map(LowCardinality(String), LowCardinality(String))
+`used_aggregate_functions` Array(LowCardinality(String))
+`used_aggregate_function_combinators` Array(LowCardinality(String))
+`used_database_engines` Array(LowCardinality(String))
+`used_data_type_families` Array(LowCardinality(String))
+`used_dictionaries` Array(LowCardinality(String))
+`used_formats` Array(LowCardinality(String))
+`used_functions` Array(LowCardinality(String))
+`used_storages` Array(LowCardinality(String))
+`used_table_functions` Array(LowCardinality(String))
+`used_executable_user_defined_functions` Array(LowCardinality(String))
+`used_sql_user_defined_functions` Array(LowCardinality(String))
+`used_row_policies` Array(LowCardinality(String))
+`used_privileges` Array(LowCardinality(String))
+`missing_privileges` Array(LowCardinality(String))
+`transaction_id` Tuple(UInt64, UInt64, UUID)
+`query_cache_usage` Enum8('Unknown' = 0, 'None' = 1, 'Write' = 2, 'Read' = 3)
+`asynchronous_read_counters` Map(LowCardinality(String), UInt64)
+`is_internal` UInt8

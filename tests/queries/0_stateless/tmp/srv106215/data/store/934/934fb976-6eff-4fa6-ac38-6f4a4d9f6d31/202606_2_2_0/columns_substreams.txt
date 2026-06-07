@@ -1,0 +1,288 @@
+columns substreams version: 1
+84 columns:
+3 substreams for column `hostname`:
+	hostname.dict_prefix
+	hostname.dict
+	hostname
+1 substreams for column `type`:
+	type
+1 substreams for column `event_date`:
+	event_date
+1 substreams for column `event_time`:
+	event_time
+1 substreams for column `event_time_microseconds`:
+	event_time_microseconds
+1 substreams for column `query_start_time`:
+	query_start_time
+1 substreams for column `query_start_time_microseconds`:
+	query_start_time_microseconds
+1 substreams for column `query_duration_ms`:
+	query_duration_ms
+1 substreams for column `read_rows`:
+	read_rows
+1 substreams for column `read_bytes`:
+	read_bytes
+1 substreams for column `written_rows`:
+	written_rows
+1 substreams for column `written_bytes`:
+	written_bytes
+1 substreams for column `result_rows`:
+	result_rows
+1 substreams for column `result_bytes`:
+	result_bytes
+1 substreams for column `memory_usage`:
+	memory_usage
+3 substreams for column `current_database`:
+	current_database.dict_prefix
+	current_database.dict
+	current_database
+2 substreams for column `query`:
+	query.size
+	query
+3 substreams for column `formatted_query`:
+	formatted_query.sparse.idx
+	formatted_query.size
+	formatted_query
+1 substreams for column `normalized_query_hash`:
+	normalized_query_hash
+3 substreams for column `query_kind`:
+	query_kind.dict_prefix
+	query_kind.dict
+	query_kind
+4 substreams for column `databases`:
+	databases.dict_prefix
+	databases.size0
+	databases.dict
+	databases
+4 substreams for column `tables`:
+	tables.dict_prefix
+	tables.size0
+	tables.dict
+	tables
+4 substreams for column `columns`:
+	columns.dict_prefix
+	columns.size0
+	columns.dict
+	columns
+4 substreams for column `partitions`:
+	partitions.dict_prefix
+	partitions.size0
+	partitions.dict
+	partitions
+4 substreams for column `projections`:
+	projections.dict_prefix
+	projections.size0
+	projections.dict
+	projections
+4 substreams for column `views`:
+	views.dict_prefix
+	views.size0
+	views.dict
+	views
+1 substreams for column `exception_code`:
+	exception_code
+2 substreams for column `exception`:
+	exception.size
+	exception
+2 substreams for column `stack_trace`:
+	stack_trace.size
+	stack_trace
+1 substreams for column `is_initial_query`:
+	is_initial_query
+1 substreams for column `connection_address`:
+	connection_address
+1 substreams for column `connection_port`:
+	connection_port
+3 substreams for column `user`:
+	user.dict_prefix
+	user.dict
+	user
+2 substreams for column `query_id`:
+	query_id.size
+	query_id
+1 substreams for column `address`:
+	address
+1 substreams for column `port`:
+	port
+3 substreams for column `initial_user`:
+	initial_user.dict_prefix
+	initial_user.dict
+	initial_user
+2 substreams for column `initial_query_id`:
+	initial_query_id.size
+	initial_query_id
+1 substreams for column `initial_address`:
+	initial_address
+1 substreams for column `initial_port`:
+	initial_port
+1 substreams for column `initial_query_start_time`:
+	initial_query_start_time
+1 substreams for column `initial_query_start_time_microseconds`:
+	initial_query_start_time_microseconds
+3 substreams for column `authenticated_user`:
+	authenticated_user.dict_prefix
+	authenticated_user.dict
+	authenticated_user
+1 substreams for column `interface`:
+	interface
+2 substreams for column `is_secure`:
+	is_secure.sparse.idx
+	is_secure
+3 substreams for column `os_user`:
+	os_user.dict_prefix
+	os_user.dict
+	os_user
+3 substreams for column `client_hostname`:
+	client_hostname.dict_prefix
+	client_hostname.dict
+	client_hostname
+3 substreams for column `client_name`:
+	client_name.dict_prefix
+	client_name.dict
+	client_name
+1 substreams for column `client_revision`:
+	client_revision
+1 substreams for column `client_version_major`:
+	client_version_major
+1 substreams for column `client_version_minor`:
+	client_version_minor
+1 substreams for column `client_version_patch`:
+	client_version_patch
+1 substreams for column `script_query_number`:
+	script_query_number
+1 substreams for column `script_line_number`:
+	script_line_number
+2 substreams for column `http_method`:
+	http_method.sparse.idx
+	http_method
+3 substreams for column `http_user_agent`:
+	http_user_agent.dict_prefix
+	http_user_agent.dict
+	http_user_agent
+3 substreams for column `http_referer`:
+	http_referer.sparse.idx
+	http_referer.size
+	http_referer
+3 substreams for column `forwarded_for`:
+	forwarded_for.sparse.idx
+	forwarded_for.size
+	forwarded_for
+3 substreams for column `quota_key`:
+	quota_key.sparse.idx
+	quota_key.size
+	quota_key
+1 substreams for column `distributed_depth`:
+	distributed_depth
+1 substreams for column `revision`:
+	revision
+3 substreams for column `log_comment`:
+	log_comment.sparse.idx
+	log_comment.size
+	log_comment
+2 substreams for column `thread_ids`:
+	thread_ids.size0
+	thread_ids
+1 substreams for column `peak_threads_usage`:
+	peak_threads_usage
+5 substreams for column `ProfileEvents`:
+	ProfileEvents%2Ekeys.dict_prefix
+	ProfileEvents.size0
+	ProfileEvents%2Ekeys.dict
+	ProfileEvents%2Ekeys
+	ProfileEvents%2Evalues
+7 substreams for column `Settings`:
+	Settings%2Ekeys.dict_prefix
+	Settings%2Evalues.dict_prefix
+	Settings.size0
+	Settings%2Ekeys.dict
+	Settings%2Ekeys
+	Settings%2Evalues.dict
+	Settings%2Evalues
+4 substreams for column `used_aggregate_functions`:
+	used_aggregate_functions.dict_prefix
+	used_aggregate_functions.size0
+	used_aggregate_functions.dict
+	used_aggregate_functions
+4 substreams for column `used_aggregate_function_combinators`:
+	used_aggregate_function_combinators.dict_prefix
+	used_aggregate_function_combinators.size0
+	used_aggregate_function_combinators.dict
+	used_aggregate_function_combinators
+4 substreams for column `used_database_engines`:
+	used_database_engines.dict_prefix
+	used_database_engines.size0
+	used_database_engines.dict
+	used_database_engines
+4 substreams for column `used_data_type_families`:
+	used_data_type_families.dict_prefix
+	used_data_type_families.size0
+	used_data_type_families.dict
+	used_data_type_families
+4 substreams for column `used_dictionaries`:
+	used_dictionaries.dict_prefix
+	used_dictionaries.size0
+	used_dictionaries.dict
+	used_dictionaries
+4 substreams for column `used_formats`:
+	used_formats.dict_prefix
+	used_formats.size0
+	used_formats.dict
+	used_formats
+4 substreams for column `used_functions`:
+	used_functions.dict_prefix
+	used_functions.size0
+	used_functions.dict
+	used_functions
+4 substreams for column `used_storages`:
+	used_storages.dict_prefix
+	used_storages.size0
+	used_storages.dict
+	used_storages
+4 substreams for column `used_table_functions`:
+	used_table_functions.dict_prefix
+	used_table_functions.size0
+	used_table_functions.dict
+	used_table_functions
+4 substreams for column `used_executable_user_defined_functions`:
+	used_executable_user_defined_functions.dict_prefix
+	used_executable_user_defined_functions.size0
+	used_executable_user_defined_functions.dict
+	used_executable_user_defined_functions
+4 substreams for column `used_sql_user_defined_functions`:
+	used_sql_user_defined_functions.dict_prefix
+	used_sql_user_defined_functions.size0
+	used_sql_user_defined_functions.dict
+	used_sql_user_defined_functions
+4 substreams for column `used_row_policies`:
+	used_row_policies.dict_prefix
+	used_row_policies.size0
+	used_row_policies.dict
+	used_row_policies
+4 substreams for column `used_privileges`:
+	used_privileges.dict_prefix
+	used_privileges.size0
+	used_privileges.dict
+	used_privileges
+4 substreams for column `missing_privileges`:
+	missing_privileges.dict_prefix
+	missing_privileges.size0
+	missing_privileges.dict
+	missing_privileges
+6 substreams for column `transaction_id`:
+	transaction_id%2E1.sparse.idx
+	transaction_id%2E1
+	transaction_id%2E2.sparse.idx
+	transaction_id%2E2
+	transaction_id%2E3.sparse.idx
+	transaction_id%2E3
+1 substreams for column `query_cache_usage`:
+	query_cache_usage
+5 substreams for column `asynchronous_read_counters`:
+	asynchronous_read_counters%2Ekeys.dict_prefix
+	asynchronous_read_counters.size0
+	asynchronous_read_counters%2Ekeys.dict
+	asynchronous_read_counters%2Ekeys
+	asynchronous_read_counters%2Evalues
+2 substreams for column `is_internal`:
+	is_internal.sparse.idx
+	is_internal
