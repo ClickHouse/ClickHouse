@@ -37,6 +37,15 @@ Float32 MergeTreeCleanupThread::iterate()
 
     auto storage_settings = storage.getSettings();
 
+    /// Under `leader_election`, every operation below is destructive against shared object
+    /// storage and must only run while we hold a fresh lease. The cleanup thread is started
+    /// and stopped by the leadership callbacks, but a stalled heartbeat can delay the
+    /// leadership-loss callback (which calls `cleanup_thread.stop()`) past the freshness
+    /// threshold while another node legitimately takes over. Re-check leadership here so a
+    /// stale leader fails closed even when its stop callback is delayed.
+    if (!storage.canRunDestructiveCleanup())
+        return 0.0f;
+
     auto shared_lock
         = storage.lockForShare(RWLockImpl::NO_QUERY, (*storage_settings)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
     if (auto lock = time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(

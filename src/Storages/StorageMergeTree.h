@@ -349,6 +349,14 @@ private:
 
     void assertNotReadonly() const;
 
+    /// Whether destructive background cleanup (`clearOldParts*`, `clearOldMutations`, ...)
+    /// is currently allowed. When `leader_election` is off this is always true. When on,
+    /// the cleanup thread is started/stopped by the leadership callbacks, but a stalled
+    /// heartbeat can delay the loss callback past the freshness threshold while another
+    /// node legitimately takes over. `isLeader()` includes that freshness check, so the
+    /// cleanup iteration re-checks it to fail closed even when the stop callback is delayed.
+    bool canRunDestructiveCleanup() const;
+
     friend class MergeTreeSink;
     friend class MergeTreeSinkPatch;
     friend class MergeTreeData;

@@ -3488,6 +3488,17 @@ void StorageMergeTree::assertNotReadonly() const
     }
 }
 
+bool StorageMergeTree::canRunDestructiveCleanup() const
+{
+    /// `isLeader()` returns false once the last successful lease renewal is older than the
+    /// freshness threshold, so a stale leader (whose heartbeat — and therefore its
+    /// leadership-loss callback — stalled) fails closed here even before `cleanup_thread.stop()`
+    /// runs. Note we deliberately use `isLeader()` (lease freshness), not
+    /// `isLeaderAndWritable()`: cleanup must keep running during the short post-failover
+    /// takeover-sync window when `writes_enabled` is still false but the lease is held.
+    return !leader_election_ptr || leader_election_ptr->isLeader();
+}
+
 Pipe StorageMergeTree::alterPartition(
     const StorageMetadataPtr & metadata_snapshot,
     const PartitionCommands & commands,
