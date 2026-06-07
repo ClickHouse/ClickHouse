@@ -1,4 +1,6 @@
+#include <Columns/ColumnConst.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
@@ -499,7 +501,7 @@ private:
         if (arg_needles->type != ActionsDAG::ActionType::COLUMN || !arg_needles->column)
             return;
 
-        if (arg_needles->column->empty() || arg_needles->column->isNullAt(0))
+        if (arg_needles->column->onlyNull())
             return;
 
         Field needles_field = (*arg_needles->column)[0];
@@ -541,11 +543,9 @@ private:
             auto tokenizer_description = tokenizer->getDescription();
 
             /// Add argument with tokenizer definition.
-            ColumnWithTypeAndName arg;
-            arg.type = std::make_shared<DataTypeString>();
-            arg.column = arg.type->createColumnConst(1, Field(tokenizer_description));
-            arg.name = quoteString(tokenizer_description);
-            new_children.push_back(&actions_dag.addColumn(std::move(arg)));
+            auto arg_type = std::make_shared<DataTypeString>();
+            auto arg_column = arg_type->createColumnConst(0, Field(tokenizer_description));
+            new_children.push_back(&actions_dag.addColumn(std::move(arg_column), std::move(arg_type), quoteString(tokenizer_description)));
 
             /// Convert needles to array if they are a string by applying a tokenizer.
             /// For hasPhrase the phrase must stay as a string — tokenization is done inside hasPhrase itself.
@@ -562,11 +562,8 @@ private:
         }
 
         /// Recreate an argument with needles.
-        ColumnWithTypeAndName arg;
-        arg.type = needles_type;
-        arg.column = needles_type->createColumnConst(1, needles_field);
-        arg.name = applyVisitor(FieldVisitorToString(), needles_field);
-        new_children[1] = &actions_dag.addColumn(std::move(arg));
+        auto needles_column = needles_type->createColumnConst(0, needles_field);
+        new_children[1] = &actions_dag.addColumn(std::move(needles_column), needles_type, applyVisitor(FieldVisitorToString(), needles_field));
 
         /// Recreate a function object because we have modified the arguments.
         auto new_function_base = FunctionFactory::instance().get(function_name, context);
