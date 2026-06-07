@@ -55,7 +55,7 @@ DROP DETACHED TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 
 Limitations:
 
-- Only supported for `Atomic` database engine.
+- Only supported for `Atomic` and `Replicated` database engines.
 - Cannot be used on detached Views or Dictionaries.
 
 ## DROP DICTIONARY {#drop-dictionary}
