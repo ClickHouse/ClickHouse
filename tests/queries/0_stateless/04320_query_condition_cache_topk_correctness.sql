@@ -52,13 +52,15 @@ SETTINGS index_granularity = 64,
          min_bytes_for_full_part_storage = 0,
          add_minmax_index_for_numeric_columns = 0;
 
-INSERT INTO tab SELECT rand(), number, number % 1000 FROM numbers(1_000_000);
-
 -- A parallel insert (`max_insert_threads` is randomized in CI) leaves several
 -- parts, and which part a reading thread happens to hold changes the running
--- threshold it sees. Merge into a single part so granule-skip decisions, and thus
--- the QCC population, are deterministic.
-OPTIMIZE TABLE tab FINAL;
+-- threshold it sees, so granule-skip decisions (and the QCC population) would not
+-- be deterministic. Pin a single writer and squash the whole input into one block
+-- so the insert produces exactly one part. This also avoids an `OPTIMIZE ... FINAL`
+-- merge of a 1M-row part with `index_granularity = 64` (≈15k marks), which is the
+-- expensive step that timed out under the debug/sanitizer flaky check.
+INSERT INTO tab SELECT rand(), number, number % 1000 FROM numbers(1_000_000)
+SETTINGS max_insert_threads = 1, max_insert_block_size = 2_000_000, min_insert_block_size_rows = 2_000_000;
 
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
