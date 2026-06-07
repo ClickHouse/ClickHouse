@@ -12,6 +12,11 @@
 #include <Server/WebTerminalRequestHandler.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Access/AccessControl.h>
+#include <Access/SettingsProfile.h>
+#include <Access/SettingsProfileElement.h>
+#include <Access/User.h>
+#include <Access/Role.h>
 #include <boost/algorithm/string/predicate.hpp>
 #if CLICKHOUSE_CLOUD
 #include <Server/CloudReadinessHandler.h>
@@ -44,6 +49,61 @@ namespace Setting
 
 namespace
 {
+
+bool isHttpPathFeatureSettingName(const String & name)
+{
+    return name == "http_allow_database_as_path"
+        || name == "http_allow_table_as_file"
+        || name == "http_allow_filters_as_path";
+}
+
+bool isSettingValueTruthy(const Field & value)
+{
+    switch (value.getType())
+    {
+        case Field::Types::UInt64: return value.safeGet<UInt64>() != 0;
+        case Field::Types::Int64: return value.safeGet<Int64>() != 0;
+        case Field::Types::Bool: return value.safeGet<bool>();
+        case Field::Types::Float64: return value.safeGet<Float64>() != 0;
+        case Field::Types::String:
+        {
+            const auto & str = value.safeGet<String>();
+            return !str.empty() && str != "0" && !boost::iequals(str, "false");
+        }
+        default:
+            return false;
+    }
+}
+
+bool elementsEnableHttpPathFeature(const SettingsProfileElements & elements)
+{
+    for (const auto & element : elements)
+        if (isHttpPathFeatureSettingName(element.setting_name) && element.value && isSettingValueTruthy(*element.value))
+            return true;
+    return false;
+}
+
+/// Routing happens before authentication, so we cannot consult the connecting user's resolved
+/// profile at this point. To still route requests for users that have a path feature enabled only
+/// in their own profile/user/role (and not in the server's default profile), scan the access
+/// entities. The dynamic handler re-checks the features against the authenticated user, so this is
+/// only a routing-time over-approximation. When the feature is not enabled anywhere we deliberately
+/// do NOT claim the request, so unknown paths keep returning a plain pre-auth 404 (`NotFoundHandler`)
+/// instead of the dynamic handler becoming a catch-all. The cheap default-profile check in the
+/// caller short-circuits this scan for the common case where the feature is enabled server-wide.
+bool anyAccessEntityEnablesHttpPathFeature(const AccessControl & access_control)
+{
+    for (const auto & id : access_control.findAll<SettingsProfile>())
+        if (auto profile = access_control.tryRead<SettingsProfile>(id); profile && elementsEnableHttpPathFeature(profile->elements))
+            return true;
+    for (const auto & id : access_control.findAll<User>())
+        if (auto user = access_control.tryRead<User>(id); user && elementsEnableHttpPathFeature(user->settings))
+            return true;
+    for (const auto & id : access_control.findAll<Role>())
+        if (auto role = access_control.tryRead<Role>(id); role && elementsEnableHttpPathFeature(role->settings))
+            return true;
+    return false;
+}
 
 class RedirectRequestHandler : public HTTPRequestHandler
 {
@@ -509,14 +569,18 @@ void addDefaultHandlersFactory(
                 return false;
 
             /// Everything below is the path-as-file extension. Skip it when none of the
-            /// `http_allow_*_as_path`/`as_file` features are enabled in the server's default
-            /// profile, so unknown paths fall through to `NotFoundHandler` (HTTP 404) exactly
-            /// as before this PR. The path features are still gated again per-user inside
-            /// `HTTPHandler::processQuery`; this check is the routing-time approximation.
+            /// `http_allow_*_as_path`/`as_file` features are enabled, so unknown paths fall through to
+            /// `NotFoundHandler` (HTTP 404) exactly as before this PR. The path features are still
+            /// gated again per-user inside `HTTPHandler::processQuery`; this check is the routing-time
+            /// approximation. We first check the server's default profile (cheap, the common case),
+            /// and only if that is off do we scan access entities, so that the feature being enabled
+            /// for a specific profile/user/role still routes here.
             const auto & default_settings = server.context()->getSettingsRef();
             bool path_features_enabled = default_settings[Setting::http_allow_database_as_path]
                 || default_settings[Setting::http_allow_table_as_file]
                 || default_settings[Setting::http_allow_filters_as_path];
+            if (!path_features_enabled)
+                path_features_enabled = anyAccessEntityEnablesHttpPathFeature(server.context()->getAccessControl());
             if (!path_features_enabled)
                 return false;
 

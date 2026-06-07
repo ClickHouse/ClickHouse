@@ -201,6 +201,7 @@ namespace Setting
     extern const SettingsBool ignore_format_null_for_explain;
     extern const SettingsString format;
     extern const SettingsString output_format;
+    extern const SettingsString database;
 }
 
 namespace ServerSetting
@@ -1438,6 +1439,20 @@ static BlockIO executeQueryImpl(
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+
+            /// The `database` setting is documented as equivalent to `USE`. To behave that way it must
+            /// change the database that unqualified names resolve to, not just be stored as a string.
+            /// Apply it here — after all SETTINGS have been resolved — so every protocol (native TCP,
+            /// in-query `SETTINGS database='db'`, and the HTTP `database` URL parameter / header) gets
+            /// the same behavior. Previously only `HTTPHandler` honored it, via a one-off
+            /// `setCurrentDatabase`; the HTTP path additionally resolves a database supplied via the
+            /// URL *path*, which is already applied before we reach here.
+            if (const String & database_setting = settings[Setting::database];
+                !database_setting.empty() && database_setting != context->getCurrentDatabase())
+            {
+                context->setCurrentDatabase(database_setting);
+            }
+
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 
             if (settings[Setting::enforce_strict_identifier_format])
