@@ -1272,8 +1272,71 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     {
         sendRequest(endpoint, request_body);
     }
-    catch (const DB::HTTPException &)
+    catch (const DB::HTTPException & ex)
     {
+        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
+        return false;
+    }
+    return true;
+}
+
+bool RestCatalog::updateSchema(
+    const String & namespace_name,
+    const String & table_name,
+    const String & /*new_metadata_path*/,
+    Poco::JSON::Object::Ptr new_schema,
+    Int32 previous_schema_id) const
+{
+    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
+
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    {
+        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
+        identifier->set("name", table_name);
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        namespaces->add(namespace_name);
+        identifier->set("namespace", namespaces);
+
+        request_body->set("identifier", identifier);
+    }
+
+    {
+        Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
+        requirement->set("type", "assert-current-schema-id");
+        requirement->set("current-schema-id", previous_schema_id);
+
+        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
+        requirements->add(requirement);
+        request_body->set("requirements", requirements);
+    }
+
+    {
+        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
+
+        {
+            Poco::JSON::Object::Ptr add_schema = new Poco::JSON::Object;
+            add_schema->set("action", "add-schema");
+            add_schema->set("schema", new_schema);
+            updates->add(add_schema);
+        }
+
+        {
+            Poco::JSON::Object::Ptr set_current_schema = new Poco::JSON::Object;
+            set_current_schema->set("action", "set-current-schema");
+            set_current_schema->set("schema-id", -1);
+            updates->add(set_current_schema);
+        }
+
+        request_body->set("updates", updates);
+    }
+
+    try
+    {
+        sendRequest(endpoint, request_body);
+    }
+    catch (const DB::HTTPException & ex)
+    {
+        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
         return false;
     }
     return true;
