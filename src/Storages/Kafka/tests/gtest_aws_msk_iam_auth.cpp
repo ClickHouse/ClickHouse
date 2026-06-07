@@ -134,7 +134,7 @@ TEST(AWSMSKIAMAuth, SetupRewritesPresetAWSMSKIAMToOAUTHBEARER)
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
-        // Non-setup exceptions (e.g. missing AWS credentials) are acceptable —
+        // Ok: non-setup exceptions (e.g. missing AWS credentials) are acceptable —
         // config properties are already written before credentials are resolved.
     }
 
@@ -186,7 +186,7 @@ TEST(AWSMSKIAMAuth, SetupAcceptsSameRegionWithCachedContext)
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
-        // Non-region exceptions (e.g. missing AWS credentials) are acceptable.
+        // Ok: non-region exceptions (e.g. missing AWS credentials) are acceptable.
     }
 
     // Context must remain the same object (no replacement).
