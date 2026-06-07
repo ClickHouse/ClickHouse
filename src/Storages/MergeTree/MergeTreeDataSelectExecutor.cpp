@@ -1773,8 +1773,16 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                 if (range.end == marks_count)
                 {
-                    /// Last mark: everything to +inf on the right, so boundaries are never equal.
-                    std::fill(equal_boundaries_mask.begin(), equal_boundaries_mask.end(), 0);
+                    /// Last mark: the right boundary of every key column is +inf. The left and right
+                    /// boundaries are equal only when the left boundary value is also +inf, i.e. when the
+                    /// value at range.begin is NULL (create_field_ref maps NULL to +inf for NULL_LAST
+                    /// ordering). A non-nullable column is never NULL, so its boundaries are never equal.
+                    for (size_t i = 0; i < num_key_columns; ++i)
+                    {
+                        const auto & col = (*index_columns)[i].column;
+                        chassert(col);
+                        equal_boundaries_mask[i] = col->isNullAt(range.begin);
+                    }
 
                     for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
                     {
