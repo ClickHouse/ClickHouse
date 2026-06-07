@@ -3741,6 +3741,9 @@ async function tokenize(query) {
     return result;
 }
 
+/// Regression coverage for this function lives in
+/// `src/Parsers/tests/gtest_play_get_query_under_cursor.cpp` (a port of the token-walking
+/// algorithm on top of the same `DB::Lexer`). Keep the two in sync when changing the logic.
 async function getQueryUnderCursor() {
     const all_queries = query_area.value;
 
@@ -3753,22 +3756,50 @@ async function getQueryUnderCursor() {
     const cursor_position = query_area.selectionStart;
     let current_query_start = 0;
     let current_offset = 0;
+    /// Track the most recently completed non-empty query so that if the cursor
+    /// is past the last `;` (with only whitespace/comments after it, or only
+    /// further delimiter-only segments like `;;`), we run that query instead
+    /// of returning an empty string or a bare delimiter.
+    let last_query_start = -1;
+    let last_query_end = -1;
 
     for (const elem of tokens) {
         if (current_query_start == current_offset && !elem.significant) {
             current_query_start += elem.token.length;
         }
+        const offset_before_token = current_offset;
         current_offset += elem.token.length;
         if (elem.token == ';') {
-            if (current_offset >= cursor_position) {
+            /// If `current_query_start == offset_before_token`, the segment up
+            /// to this `;` has no significant content (only whitespace/comments
+            /// that the leading-skip above has consumed, or nothing at all).
+            /// Treat such a delimiter-only segment as empty: do not run it and
+            /// do not record it as the last completed query.
+            const has_content = current_query_start < offset_before_token;
+            if (has_content && current_offset >= cursor_position) {
                 query_area.setSelectionRange(current_query_start, current_offset);
                 query_area.focus();
                 return all_queries.substring(current_query_start, current_offset);
-            } else {
-                current_query_start = current_offset;
             }
+            if (has_content) {
+                last_query_start = current_query_start;
+                last_query_end = current_offset;
+            }
+            current_query_start = current_offset;
         }
 
+    }
+
+    /// The cursor is past the last `;`. If the tail has no significant content
+    /// (only whitespace/comments, which the leading-skip loop above will have
+    /// advanced `current_query_start` past until it equals `current_offset`),
+    /// fall back to the query that ended at the last `;` rather than returning
+    /// an empty string. This is what handles the "single query ending in `;`
+    /// with the cursor placed after it" case.
+    if (current_query_start === current_offset && current_offset === all_queries.length && last_query_end >= 0) {
+        query_area.setSelectionRange(last_query_start, last_query_end);
+        query_area.focus();
+        return all_queries.substring(last_query_start, last_query_end);
     }
 
     /// Cursor is in the last query (no trailing semicolon).
