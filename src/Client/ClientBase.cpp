@@ -712,6 +712,12 @@ try
             config.terminate_in_destructor_strategy.termination_signal = SIGTERM;
             pager_cmd = ShellCommand::execute(config);
             underlying_buf = &pager_cmd->in;
+
+            /// With `--pager` the result set is written through the pager's stdin pipe rather than
+            /// through `std_out`, so install the cancellation hook here too. Otherwise a stuck or
+            /// slow pager could fill its stdin pipe and the first Ctrl+C would appear to have no
+            /// effect. `pager_cmd` is recreated per query, so the hook does not need to be removed.
+            pager_cmd->in.setCancellationHook([this]() { return query_interrupt_handler.cancelled(); });
         }
         else
         {
