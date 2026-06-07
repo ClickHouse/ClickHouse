@@ -198,7 +198,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
                     "Cannot read all marks from file {}, marks expected {} (bytes size {}), marks read {} (bytes size {})",
                     full_mark_path, marks_count, expected_uncompressed_size, i, reader->count());
 
-            size_t granularity;
+            size_t granularity = 0;
             reader->readStrict(
                 reinterpret_cast<char *>(plain_marks.data() + i * num_columns_in_mark), num_columns_in_mark * sizeof(MarkInCompressedFile));
             readBinaryLittleEndian(granularity, *reader);

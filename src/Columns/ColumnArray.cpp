@@ -275,7 +275,7 @@ std::optional<size_t> ColumnArray::getSerializedValueSize(size_t n, const IColum
 
 void ColumnArray::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    size_t array_size;
+    size_t array_size = 0;
     readBinaryLittleEndian<size_t>(array_size, in);
 
     for (size_t i = 0; i < array_size; ++i)
@@ -286,7 +286,7 @@ void ColumnArray::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::
 
 void ColumnArray::skipSerializedInArena(ReadBuffer & in) const
 {
-    size_t array_size;
+    size_t array_size = 0;
     readBinaryLittleEndian<size_t>(array_size, in);
 
     for (size_t i = 0; i < array_size; ++i)
@@ -439,7 +439,7 @@ int ColumnArray::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan
     size_t min_size = std::min(lhs_size, rhs_size);
     for (size_t i = 0; i < min_size; ++i)
     {
-        int res;
+        int res = 0;
         if (collator)
             res = getData().compareAtWithCollation(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data.get(), nan_direction_hint, *collator);
         else
