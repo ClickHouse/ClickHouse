@@ -5,9 +5,8 @@
 # no-fasttest: requires USE_EMBEDDED_COMPILER, which the fast-test image disables.
 # use_jemalloc: this test asserts on `jemalloc.jit_arena.*` async metrics, which are only
 #               registered when the build has jemalloc.
-# no-darwin: the dedicated JIT arena is disabled on Darwin because switching `thread.arena`
-#            around `CHJIT` currently makes AArch64 target-machine initialization throw
-#            `std::bad_alloc`.
+# no-darwin: Darwin disables the dedicated JIT arena because `thread.arena` routing can make
+#            AArch64 `CHJIT` target-machine initialization throw `std::bad_alloc`.
 #
 # Test that JIT compilation populates the dedicated jemalloc JIT arena and the compiled-expression
 # cache, and that `SYSTEM DROP COMPILED EXPRESSION CACHE` reaches its purge path. The cache count
@@ -45,7 +44,7 @@ echo "cache_count_after_compile $($CLICKHOUSE_CLIENT -q "
 
 # Drop the cache. We do NOT assert here that `CompiledExpressionCacheCount` returns to zero,
 # nor that `jemalloc.jit_arena.active_bytes` returns to its pre-compile value:
-#  - The arena footprint is dominated by the CHJIT singleton's persistent state (`TargetMachine`,
+#  - The arena footprint is dominated by the `CHJIT` singleton's persistent state (`TargetMachine`,
 #    `Subtarget`, `LLVMContext`-uniqued types/constants), held alive via `shared_ptr<CHJIT>` by
 #    every cache entry that compiled against it. A concurrent in-flight compile that lands a
 #    fresh holder between `cache->clear()` and the singleton-slot reset will pin the old

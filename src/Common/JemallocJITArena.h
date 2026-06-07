@@ -6,9 +6,9 @@ namespace DB::JemallocJITArena
 /// Returns the jemalloc arena index dedicated to LLVM/JIT allocations.
 /// Creates the arena on first call (thread-safe via Meyers singleton).
 /// Returns 0 (meaning "use default arena selection") if jemalloc is not available, if the
-/// platform disables the dedicated arena, or if `mallctl("arenas.create", ...)` failed at
-/// first call — in which case an error is logged and `isEnabled` returns false. Passing 0 to
-/// `ScopedJemallocThreadArena` is a documented no-op, so callers do not need to branch on
+/// dedicated arena is disabled on the platform, or if `mallctl("arenas.create", ...)` failed
+/// at first call; in the latter case an error is logged and `isEnabled` returns false. Passing
+/// 0 to `ScopedJemallocThreadArena` is a documented no-op, so callers do not need to branch on
 /// availability.
 ///
 /// LLVM allocates via global `operator new`, so we cannot route its allocations
@@ -23,7 +23,7 @@ unsigned getArenaIndex();
 bool isEnabled();
 
 /// Purge dirty pages only in the JIT arena, returning memory to the OS.
-/// No-op if the arena is not available (`isEnabled()` returns false).
+/// No-op if the arena is not available (`isEnabled` returns false).
 void purge();
 
 }

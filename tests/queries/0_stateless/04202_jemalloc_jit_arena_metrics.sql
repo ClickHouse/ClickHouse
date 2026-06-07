@@ -2,9 +2,8 @@
 -- limits are exposed in `system.asynchronous_metrics`. Both sets of metrics are gated on build
 -- options, so the test compares "metric is exposed" against the build options it depends on.
 
--- The JIT arena is only meaningful when jemalloc and the embedded compiler are built in on a
--- supported platform; `JemallocJITArena::isEnabled` requires all three, and
--- `system.asynchronous_metrics` only emits `jemalloc.jit_arena.*` when `isEnabled` returns true.
+-- Dedicated JIT arena metrics exist only when jemalloc and the embedded compiler are built in
+-- and the platform supports `thread.arena` routing for `CHJIT`.
 WITH
     (SELECT value IN ('ON', '1') FROM system.build_options WHERE name = 'USE_JEMALLOC') AS jemalloc_on,
     (SELECT value IN ('ON', '1') FROM system.build_options WHERE name = 'USE_EMBEDDED_COMPILER') AS jit_on,

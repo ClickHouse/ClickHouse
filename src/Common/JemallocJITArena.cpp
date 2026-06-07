@@ -22,10 +22,13 @@ namespace ProfileEvents
 namespace DB::JemallocJITArena
 {
 
+/// The arena only has JIT callers when `USE_EMBEDDED_COMPILER` is enabled. On Darwin, jemalloc
+/// goes through the zone allocator; switching `thread.arena` while LLVM creates AArch64 `CHJIT`
+/// target-machine state can throw `std::bad_alloc`, so keep JIT allocations on the default arena.
+#if USE_EMBEDDED_COMPILER && !defined(OS_DARWIN)
+
 namespace
 {
-
-#if USE_EMBEDDED_COMPILER && !defined(OS_DARWIN)
 
 struct ArenaState
 {
@@ -63,34 +66,31 @@ const ArenaState & state()
     return s;
 }
 
-#endif
-
 }
 
 unsigned getArenaIndex()
 {
-#if USE_EMBEDDED_COMPILER && !defined(OS_DARWIN)
     return state().index;
-#else
-    return 0;
-#endif
 }
 
 bool isEnabled()
 {
-    /// The arena only has callers when JIT is built in. Without USE_EMBEDDED_COMPILER, nothing
-    /// allocates here; reporting `enabled` would create a useless empty arena and expose a
-    /// permanently-zero metric. Pair the runtime jemalloc check with the compile-time JIT check.
-    ///
-    /// macOS uses jemalloc through the zone allocator. Switching `thread.arena` around LLVM
-    /// target-machine construction currently makes AArch64 `CHJIT` initialization throw
-    /// `std::bad_alloc`, so keep JIT allocations on the default arena there.
-#if USE_EMBEDDED_COMPILER && !defined(OS_DARWIN)
     return state().created;
-#else
-    return false;
-#endif
 }
+
+#else
+
+unsigned getArenaIndex()
+{
+    return 0;
+}
+
+bool isEnabled()
+{
+    return false;
+}
+
+#endif
 
 void purge()
 {
