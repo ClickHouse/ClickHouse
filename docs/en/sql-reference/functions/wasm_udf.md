@@ -207,7 +207,7 @@ LANGUAGE WASM
 FROM 'module_name' [:: 'source_function_name']
 ARGUMENTS ( [name type[, ...]] | [type[, ...]] )
 RETURNS return_type
-[ABI ROW_DIRECT | ABI BUFFERED_V1 | ABI ASSEMBLYSCRIPT]
+[ABI ROW_DIRECT | ABI BUFFERED_V1 | ABI ASSEMBLYSCRIPT | ABI COLUMNAR_V1]
 [DETERMINISTIC]
 [SHA256_HASH 'hex']
 [SETTINGS key = value[, ...]];
@@ -222,6 +222,7 @@ RETURNS return_type
   - `ROW_DIRECT`: Direct type mapping, row-by-row processing
   - `BUFFERED_V1`: Block-based processing with serialization
   - `ASSEMBLYSCRIPT`: Row-by-row processing for modules produced by the [AssemblyScript](https://www.assemblyscript.org) compiler. Numeric types map to AssemblyScript primitives; ClickHouse `String` maps to AssemblyScript `string`.
+  - `COLUMNAR_V1`: Block-based processing with columnar wire format (no serialization overhead)
 - `DETERMINISTIC`: Declares the function as deterministic — always returns the same output for the same input. When specified, ClickHouse may constant-fold calls where all arguments are constants: the function is evaluated once at query analysis time and the result is reused for every row.
 - `SHA256_HASH`: Expected module hash for verification (auto-filled if omitted), can be used to ensure the correct WASM module loaded across different replicas.
 - `SETTINGS`: Per-function settings
@@ -358,6 +359,86 @@ CREATE FUNCTION as_greet
     FROM 'as_example' :: 'greet'
     ARGUMENTS (name String) RETURNS String;
 ```
+
+### ABI COLUMNAR_V1
+
+:::note
+This ABI is experimental and subject to change in future releases.
+:::
+
+:::note
+For most use cases, the `BUFFERED_V1` ABI is recommended as the general-purpose interface. Use `COLUMNAR_V1` only when you need to eliminate serialization overhead for large data blocks.
+:::
+
+A high-performance ABI that passes columnar data directly in WASM linear memory without (de)serialization overhead.
+
+Unlike `BUFFERED_V1`, which serializes each row as a self-contained block, ClickHouse writes entire columns in a compact wire format and passes pointers to the WASM module. The guest code reads columns directly from memory and writes results back in the same format. This eliminates per-row serialization and deserialization costs, which can be significant for large blocks.
+
+The module exports the same buffer allocation functions as `BUFFERED_V1`:
+
+```
+(module
+  ;; Allocate a new buffer of specified size
+  (func (export "clickhouse_create_buffer")
+    (param $size i32)
+    (result i32))
+
+  ;; Free a buffer by its handle
+  (func (export "clickhouse_destroy_buffer")
+    (param $handle i32)
+    (result))
+
+  ;; User-defined function — same signature as BUFFERED_V1
+  (func (export "my_func")
+    (param $input_handle i32)
+    (param $n_rows i32)
+    (result i32))
+)
+```
+
+Input columns are laid out in WASM memory as:
+
+```
+[ColumnarV1Header: 8 bytes]
+[ColDescriptor × num_columns: 40 bytes each]
+[Column data blocks]
+```
+
+The 8-byte header contains two `uint32` fields: `num_rows` then `num_cols`.
+
+Each `ColDescriptor` is exactly 40 bytes and contains five `uint64` fields
+(all byte offsets are absolute from the start of the frame buffer):
+
+- `type` (8 bytes) — column type identifier (see below)
+- `null_offset` (8 bytes) — absolute offset to the `u8[num_rows]` null map (0 if not nullable; 1 = null, 0 = non-null)
+- `offsets_offset` (8 bytes) — absolute offset to the `uint64[num_rows+1]` offsets array (for `COL_BYTES` columns; 0 otherwise)
+- `data_offset` (8 bytes) — absolute offset to the column data block
+- `data_size` (8 bytes) — size of the data block in bytes
+
+Base column types:
+
+- `0` — `COL_BYTES` — variable-length byte strings (`String`); paired with `offsets_offset` array and data block of raw bytes (no null terminators)
+- `1` — `COL_FIXED8` — 1-byte fixed-width scalars (`Int8`, `UInt8`)
+- `2` — `COL_FIXED16` — 2-byte fixed-width scalars (`Int16`, `UInt16`)
+- `3` — `COL_FIXED32` — 4-byte fixed-width scalars (`Int32`, `UInt32`, `Float32`)
+- `4` — `COL_FIXED64` — 8-byte fixed-width scalars (`Int64`, `UInt64`, `Float64`, `DateTime64`)
+- `5` — `COL_COMPLEX` — recursive format for `Array(T)` and `Tuple(T…)`
+- `6` — `COL_VARIANT` — discriminated union (`Variant(…)`)
+
+Modifier flags (OR'd onto the base type):
+
+- `COL_IS_NULLABLE` (`0x20`) — nullable column; `null_offset` carries a `u8[num_rows]` null map
+- `COL_IS_CONST` (`0x80`) — constant column; only 1 row of data is stored; the reader replicates it to the full row count
+
+Example usage:
+
+```sql
+CREATE FUNCTION str_byte_sum
+    LANGUAGE WASM ABI COLUMNAR_V1 FROM 'my_module' :: 'byte_sum'
+    ARGUMENTS (s String) RETURNS UInt64
+    DETERMINISTIC;
+```
+
 
 ### Note for developing UDFs in Rust
 

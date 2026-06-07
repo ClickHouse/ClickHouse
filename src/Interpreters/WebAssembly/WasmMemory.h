@@ -18,6 +18,7 @@ public:
     virtual WasmPtr createBuffer(WasmSizeT size) const = 0;
     virtual void destroyBuffer(WasmPtr handle) const = 0;
     virtual std::span<uint8_t> getMemoryView(WasmPtr handle) const = 0;
+    virtual WasmPtr reallocBuffer(WasmPtr handle, WasmSizeT new_size) const = 0;
 
     virtual ~WasmMemoryManager() = default;
 };

@@ -157,8 +157,13 @@ static void checkCanBeRegistered(const ContextPtr & context, const String & func
 
 static void checkCanBeUnregistered(const ContextPtr & context, const String & function_name)
 {
-    if (FunctionFactory::instance().hasNameOrAlias(function_name) ||
-        AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
+    if (FunctionFactory::instance().hasNameOrAlias(function_name))
+        throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop system function '{}'", function_name);
+
+    /// AggregateFunctionFactory check: skip if the function is a WASM user-defined function
+    /// (dual-registered in AggregateFunctionFactory but lives in the WASM factory).
+    if (AggregateFunctionFactory::instance().hasNameOrAlias(function_name)
+        && !UserDefinedWebAssemblyFunctionFactory::instance().has(function_name))
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop system function '{}'", function_name);
 
     if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) // NOLINT(readability-static-accessed-through-instance)

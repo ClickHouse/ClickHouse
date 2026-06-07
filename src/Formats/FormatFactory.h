@@ -277,6 +277,9 @@ public:
     /// Creates a standalone JSONEachRow output format for debugging or testing.
     OutputFormatPtr getDefaultJSONEachRowOutputFormat(WriteBuffer & buf, const Block & sample) const;
 
+    /// Creates a standalone output format with default settings (no context).
+    OutputFormatPtr getOutputFormatWithDefaultSettings(const String & name, WriteBuffer & buf, const Block & sample) const;
+
     /// Content-Type to set when sending HTTP response with this output format.
     String getContentType(const String & name, const std::optional<FormatSettings> & settings) const;
 

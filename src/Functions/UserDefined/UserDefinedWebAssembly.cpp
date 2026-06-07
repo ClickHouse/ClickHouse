@@ -1,4 +1,5 @@
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
+#include <Formats/ColumnarV1Wire.h>
 #include <Functions/UserDefined/UserDefinedWebAssemblyScriptAbi.h>
 #include <Functions/UserDefined/UserDefinedWebAssemblyTypeHelpers.h>
 
@@ -6,9 +7,15 @@
 #include <base/hex.h>
 
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnTuple.h>
 
 #include <Functions/IFunction.h>
@@ -26,6 +33,7 @@
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 #include <Interpreters/castColumn.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromStringWithMemoryTracking.h>
 
@@ -61,6 +69,7 @@ namespace DB
 {
 
 using namespace WebAssembly;
+using namespace ColumnarV1;
 
 namespace Setting
 {
@@ -237,7 +246,18 @@ public:
         const auto * raw_buffer_ptr = raw_buffer_span.data();
         auto ptr = loadFromWasmMemory<WasmPtr>(raw_buffer_ptr);
         auto size = loadFromWasmMemory<WasmSizeT>(raw_buffer_ptr + sizeof(WasmPtr));
+
+        if (size > 0 && ptr == 0)
+            throw Exception(ErrorCodes::WASM_ERROR,
+                "WebAssembly buffer returned null data pointer with size {}", size);
+
         return compartment->getMemory(ptr, size);
+    }
+
+    WasmPtr reallocBuffer(WasmPtr handle, WasmSizeT new_size) const override
+    {
+        return compartment->invoke<WasmPtr>(
+            "clickhouse_reallocate_buffer", {handle, new_size}, stop_token);
     }
 
 private:
@@ -252,6 +272,14 @@ public:
     explicit UserDefinedWebAssemblyFunctionBufferedV1(Args &&... args) : UserDefinedWebAssemblyFunction(std::forward<Args>(args)...)
     {
         checkSignature();
+        serialization_format = settings.getValue("serialization_format").safeGet<String>();
+        Block input_header;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            String col_name = !argument_names[i].empty() ? argument_names[i] : fmt::format("arg{}", i);
+            input_header.insert(ColumnWithTypeAndName(arguments[i], col_name));
+        }
+        probe_format = FormatFactory::instance().getOutputFormatWithDefaultSettings(serialization_format, probe_null_wb, input_header);
     }
 
     void checkFunction(const WasmFunctionDeclaration & expected) const
@@ -297,8 +325,6 @@ public:
     {
         ProfileEventTimeIncrement<Microseconds> timer_execute(ProfileEvents::WasmTotalExecuteMicroseconds);
 
-        String format_name = settings.getValue("serialization_format").safeGet<String>();
-
         if (num_rows == 0)
             return result_type->createColumn();
         if (num_rows >= std::numeric_limits<WasmSizeT>::max())
@@ -310,24 +336,42 @@ public:
         if (!block.empty())
         {
             ProfileEventTimeIncrement<Microseconds> timer_serialize(ProfileEvents::WasmSerializationMicroseconds);
-            StringWithMemoryTracking input_data;
 
+            std::optional<uint64_t> precomputed = probe_format->precomputeSerializedSize(block, num_rows);
+
+            if (precomputed)
             {
-                WriteBufferFromStringWithMemoryTracking buf(input_data);
-                auto out = context->getOutputFormat(format_name, buf, block.cloneEmpty());
-                formatBlock(out, block);
+                wasm_data = allocateInWasmMemory(wmm.get(), *precomputed);
+                auto wasm_mem = wasm_data.getMemoryView();
+                WriteBufferFromPointer wb(reinterpret_cast<char *>(wasm_mem.data()), *precomputed);
+                auto out = context->getOutputFormat(serialization_format, wb, block.cloneEmpty());
+                // write()+finalize() instead of formatBlock(): formatBlock calls flush()
+                // which triggers out.next() — fatal for WriteBufferFromPointer.
+                // auto_flush defaults to false so neither write() nor finalize() flush.
+                out->write(block);
+                out->finalize();
+                wb.cancel();
             }
-
-            wasm_data = allocateInWasmMemory(wmm.get(), input_data.size());
-            auto wasm_mem = wasm_data.getMemoryView();
-
-            if (wasm_mem.size() != input_data.size())
-                throw Exception(ErrorCodes::WASM_ERROR,
-                    "Cannot allocate buffer of size {}, got {} "
-                    "Maybe '{}' function implementation in WebAssembly module is incorrect",
-                    input_data.size(), wasm_mem.size(), WasmMemoryManagerV01::allocate_function_name);
-
-            std::copy(input_data.data(), input_data.data() + input_data.size(), wasm_mem.begin());
+            else
+            {
+                // Fallback: serialize into a CH-side String, then copy into WASM memory.
+                // WriteBufferForWasmMemory (zero-copy path) cannot be used here because it
+                // invokes clickhouse_create_buffer in the WASM compartment during construction,
+                // which crashes during constant-folding dry-run (executeImplDryRun).
+                StringWithMemoryTracking input_data;
+                {
+                    WriteBufferFromStringWithMemoryTracking buf(input_data);
+                    auto out = context->getOutputFormat(serialization_format, buf, block.cloneEmpty());
+                    formatBlock(out, block);
+                }
+                wasm_data = allocateInWasmMemory(wmm.get(), input_data.size());
+                auto wasm_mem = wasm_data.getMemoryView();
+                if (wasm_mem.size() != input_data.size())
+                    throw Exception(ErrorCodes::WASM_ERROR,
+                        "Cannot allocate WASM buffer of size {}, got {}",
+                        input_data.size(), wasm_mem.size());
+                std::copy(input_data.data(), input_data.data() + input_data.size(), wasm_mem.begin());
+            }
         }
 
         auto result_ptr = compartment->invoke<WasmPtr>(function_name, {wasm_data.getHandle(), static_cast<WasmSizeT>(num_rows)}, stop_token);
@@ -343,7 +387,7 @@ public:
         Block result_header({ColumnWithTypeAndName(result_type->createColumn(), result_type, "result")});
 
         auto pipeline = QueryPipeline(
-            Pipe(context->getInputFormat(format_name, inbuf, result_header, /* max_block_size */ DBMS_DEFAULT_BUFFER_SIZE)));
+            Pipe(context->getInputFormat(serialization_format, inbuf, result_header, /* max_block_size */ DBMS_DEFAULT_BUFFER_SIZE)));
         readSingleBlock(std::make_unique<PullingPipelineExecutor>(pipeline), result_header);
 
         if (result_header.columns() != 1 || result_header.rows() != num_rows)
@@ -356,6 +400,180 @@ public:
         auto result_columns = result_header.mutateColumns();
         return std::move(result_columns[0]);
     }
+
+private:
+    String serialization_format;
+    NullWriteBuffer probe_null_wb;
+    OutputFormatPtr probe_format;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COLUMNAR_V1 ABI
+//
+// Wire format (all offsets are byte offsets from the buffer start):
+//
+//   BufHeader (8 bytes): num_rows:u32, num_cols:u32
+//   ColDescriptor[num_cols] (40 bytes each):
+//     type:u64, null_offset:u64, offsets_offset:u64, data_offset:u64, data_size:u64
+//   Data blocks at the described offsets.
+//
+//   type bits: ColType (0-6) | COL_IS_NULLABLE (0x20) | COL_IS_CONST (0x80)
+//
+//   COL_BYTES  (0): start-based u64 offsets[rows+1] + chars (no null terminators)
+//   COL_FIXED8 (1): u8[rows]
+//   COL_FIXED16(2): u16[rows]
+//   COL_FIXED64(4): u64/f64[rows]
+//   Any type | COL_IS_NULLABLE: null_map[rows] at null_offset, then column data
+//
+// The WASM export is <function_name>_col(i32 buf_handle, i32 num_rows) -> i32.
+// The caller (CH) allocates the input buffer with clickhouse_create_buffer,
+// fills it, then invokes the function.  The function returns a handle to an
+// output buffer (same layout, 1 column) which CH reads and frees.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class UserDefinedWebAssemblyFunctionColumnarV1 : public UserDefinedWebAssemblyFunction
+{
+public:
+    template <typename... Args>
+    explicit UserDefinedWebAssemblyFunctionColumnarV1(Args &&... args)
+        : UserDefinedWebAssemblyFunction(std::forward<Args>(args)...)
+    {
+        // WASM export name matches the registered function name directly
+        col_function_name = function_name;
+        checkSignature();
+    }
+
+    // Direct columnar execution — bypasses RowBinary batching.
+    // Called from FunctionUserDefinedWasm::executeImpl() for ColumnarV1 functions.
+    MutableColumnPtr executeColumnar(
+        WebAssembly::WasmCompartment * compartment,
+        const ColumnsWithTypeAndName & cols,
+        size_t input_rows_count,
+        ContextPtr,
+        StopToken stop_token) const
+    {
+        ProfileEventTimeIncrement<Microseconds> timer(ProfileEvents::WasmTotalExecuteMicroseconds);
+
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        if (input_rows_count >= std::numeric_limits<uint32_t>::max())
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large number of rows: {}", input_rows_count);
+
+        // ── Build the columnar input buffer ──────────────────────────────────
+        const uint32_t num_cols = static_cast<uint32_t>(cols.size());
+        uint64_t cursor = COLUMNAR_HEADER_BYTES + num_cols * COLUMNAR_DESC_BYTES;
+
+        std::vector<ColDescriptor> descs(num_cols); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<const IColumn *> inner_cols(num_cols); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<bool> is_const_flags(num_cols); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<bool> is_nullable_flags(num_cols); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<uint32_t> row_counts(num_cols); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
+        for (uint32_t ci = 0; ci < num_cols; ++ci)
+        {
+            const IColumn * col = cols[ci].column.get();
+            bool is_const = false;
+
+            if (const auto * cc = typeid_cast<const ColumnConst *>(col))
+            {
+                col = &cc->getDataColumn();
+                is_const = true;
+            }
+
+            bool is_nullable = typeid_cast<const ColumnNullable *>(col) != nullptr;
+            uint32_t nrows = is_const ? 1u : static_cast<uint32_t>(input_rows_count);
+
+            is_const_flags[ci] = is_const;
+            is_nullable_flags[ci] = is_nullable;
+            inner_cols[ci] = col;
+            row_counts[ci] = nrows;
+
+            cursor = buildColDescriptor(col, is_const, is_nullable, nrows, cursor, descs[ci]);
+        }
+
+        uint64_t total_buf_size = cursor;
+
+        // ── Allocate buffer in WASM memory ───────────────────────────────────
+        {
+            ProfileEventTimeIncrement<Microseconds> timer_ser(ProfileEvents::WasmSerializationMicroseconds);
+
+            auto wmm = std::make_unique<WasmMemoryManagerV01>(compartment, stop_token);
+            WasmMemoryGuard wasm_input = allocateInWasmMemory(wmm.get(), total_buf_size);
+            auto wasm_mem = wasm_input.getMemoryView();
+
+            // Write header
+            uint32_t n_rows32 = static_cast<uint32_t>(input_rows_count);
+            std::memcpy(wasm_mem.data(),     &n_rows32,  4);
+            std::memcpy(wasm_mem.data() + 4, &num_cols,  4);
+
+            // Write descriptors
+            for (uint32_t ci = 0; ci < num_cols; ++ci)
+                std::memcpy(wasm_mem.data() + COLUMNAR_HEADER_BYTES + ci * COLUMNAR_DESC_BYTES,
+                            &descs[ci], COLUMNAR_DESC_BYTES);
+
+            // Write column data
+            for (uint32_t ci = 0; ci < num_cols; ++ci)
+                writeColData(inner_cols[ci], is_nullable_flags[ci], row_counts[ci],
+                             descs[ci], wasm_mem);
+
+            // ── Invoke WASM ──────────────────────────────────────────────────
+            auto result_ptr = compartment->invoke<WasmPtr>(
+                col_function_name,
+                {wasm_input.getHandle(), static_cast<WasmSizeT>(input_rows_count)},
+                stop_token);
+
+            if (result_ptr == 0)
+                throw Exception(ErrorCodes::WASM_ERROR,
+                    "COLUMNAR_V1 function '{}' returned nullptr", col_function_name);
+
+            WasmMemoryGuard result_guard(wmm.get(), result_ptr);
+
+            // ── Read output ──────────────────────────────────────────────────
+            {
+                ProfileEventTimeIncrement<Microseconds> timer_de(ProfileEvents::WasmDeserializationMicroseconds);
+                auto out_view = result_guard.getMemoryView();
+                return readColumnarOutput(
+                    {out_view.data(), out_view.size()},
+                    result_type,
+                    input_rows_count);
+            }
+        }
+    }
+
+    // executeOnBlock is required by the base class but unused for ColumnarV1
+    // (FunctionUserDefinedWasm calls executeColumnar directly).
+    MutableColumnPtr executeOnBlock(
+        WebAssembly::WasmCompartment * compartment,
+        const Block & block,
+        ContextPtr context,
+        size_t num_rows,
+        StopToken stop_token) const override
+    {
+        ColumnsWithTypeAndName args;
+        args.reserve(block.columns());
+        for (size_t i = 0; i < block.columns(); ++i)
+            args.push_back(block.getByPosition(i));
+        return executeColumnar(compartment, args, num_rows, context, stop_token);
+    }
+
+private:
+    void checkSignature() const
+    {
+        auto decl = wasm_module->getExport(col_function_name);
+        WasmFunctionDeclaration expected("", col_function_name,
+            {WasmValKind::I32, WasmValKind::I32}, WasmValKind::I32);
+        checkFunctionDeclarationMatches(decl, expected);
+        // Also require clickhouse_create_buffer / clickhouse_destroy_buffer
+        checkFunctionDeclarationMatches(
+            wasm_module->getExport(WasmMemoryManagerV01::allocate_function_name),
+            WasmMemoryManagerV01::allocateFunctionDeclaration());
+        checkFunctionDeclarationMatches(
+            wasm_module->getExport(WasmMemoryManagerV01::deallocate_function_name),
+            WasmMemoryManagerV01::deallocateFunctionDeclaration());
+    }
+
+    String col_function_name;
 };
 
 std::unique_ptr<UserDefinedWebAssemblyFunction> UserDefinedWebAssemblyFunction::create(
@@ -379,6 +597,9 @@ std::unique_ptr<UserDefinedWebAssemblyFunction> UserDefinedWebAssemblyFunction::
         case WasmAbiVersion::AssemblyScript:
             return createUserDefinedWebAssemblyFunctionAssemblyScript(
                 wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings), is_deterministic_);
+        case WasmAbiVersion::ColumnarV1:
+            return std::make_unique<UserDefinedWebAssemblyFunctionColumnarV1>(
+                wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings), is_deterministic_);
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", std::to_underlying(abi_type));
@@ -394,6 +615,8 @@ String toString(WasmAbiVersion abi_type)
             return "BUFFERED_V1";
         case WasmAbiVersion::AssemblyScript:
             return "ASSEMBLYSCRIPT";
+        case WasmAbiVersion::ColumnarV1:
+            return "COLUMNAR_V1";
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", std::to_underlying(abi_type));
@@ -401,7 +624,7 @@ String toString(WasmAbiVersion abi_type)
 
 WasmAbiVersion getWasmAbiFromString(const String & str)
 {
-    for (auto abi_type : {WasmAbiVersion::RowDirect, WasmAbiVersion::BufferedV1, WasmAbiVersion::AssemblyScript})
+    for (auto abi_type : {WasmAbiVersion::RowDirect, WasmAbiVersion::BufferedV1, WasmAbiVersion::AssemblyScript, WasmAbiVersion::ColumnarV1})
         if (Poco::toUpper(str) == toString(abi_type))
             return abi_type;
 
@@ -459,6 +682,33 @@ static WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context, W
     return cfg;
 }
 
+static bool computePreserveConstColumns(const ContextPtr & context, const std::shared_ptr<UserDefinedWebAssemblyFunction> & udf)
+{
+    const String fmt = udf->getSettings().getValue("serialization_format").safeGet<String>();
+    StringWithMemoryTracking dummy_buf;
+    WriteBufferFromStringWithMemoryTracking dummy_writer(dummy_buf);
+    Block sample_block;
+    size_t arg_idx = 0;
+    for (const auto & arg : udf->getArguments())
+        sample_block.insert(ColumnWithTypeAndName(arg->createColumn(), arg, "arg" + std::to_string(arg_idx++)));
+    auto format = context->getOutputFormat(fmt, dummy_writer, sample_block);
+    return !format->expectMaterializedColumns() || format->supportsColumnSchema();
+}
+
+static bool computeSupportsColumnSchema(const ContextPtr & context, const std::shared_ptr<UserDefinedWebAssemblyFunction> & udf)
+{
+    const String fmt = udf->getSettings().getValue("serialization_format").safeGet<String>();
+    StringWithMemoryTracking dummy_buf;
+    WriteBufferFromStringWithMemoryTracking dummy_writer(dummy_buf);
+    Block sample_block;
+    size_t arg_idx = 0;
+    for (const auto & arg : udf->getArguments())
+        sample_block.insert(ColumnWithTypeAndName(arg->createColumn(), arg, "arg" + std::to_string(arg_idx++)));
+    auto format = context->getOutputFormat(fmt, dummy_writer, sample_block);
+    return format->supportsColumnSchema();
+}
+
+
 class FunctionUserDefinedWasm final : public IFunction
 {
 public:
@@ -468,6 +718,8 @@ public:
         , function_name(std::move(function_name_))
         , argument_names(user_defined_function->getArgumentNames())
         , context(std::move(context_))
+        , preserve_const_columns(computePreserveConstColumns(context, user_defined_function))
+        , supports_column_schema(computeSupportsColumnSchema(context, user_defined_function))
         , interrupt_source()
         , compartment_pool(
               static_cast<UInt32>(context->getSettingsRef()[Setting::webassembly_udf_max_instances]),
@@ -498,8 +750,15 @@ public:
             if (arguments[i]->equals(*expected_arguments[i]))
                 continue;
 
+            /// When useDefaultImplementationForNulls() returns false (non-nullable return
+            /// types such as Array), CH passes Nullable-wrapped argument types.
+            /// Strip Nullable and retry the exact-match check.
+            const DataTypePtr & stripped = removeNullable(arguments[i]);
+            if (stripped->equals(*expected_arguments[i]))
+                continue;
+
             /// Allow implicit coercions: same kind, i32→i64, any int→any float, f32→f64.
-            auto actual_kind = wasmKindForDataType(arguments[i].get());
+            auto actual_kind = wasmKindForDataType(stripped.get());
             auto expected_kind = wasmKindForDataType(expected_arguments[i].get());
             if (actual_kind && expected_kind && canCoerce(*actual_kind, *expected_kind))
                 continue;
@@ -524,6 +783,14 @@ public:
 
     bool isSuitableForConstantFolding() const override { return user_defined_function->getIsDeterministic(); }
 
+    /// Don't let the framework wrap the result in Nullable when inputs are nullable —
+    /// Array/Tuple return types cannot be inside Nullable.  WASM UDFs handle null
+    /// propagation themselves via COL_IS_NULLABLE on output columns.
+    bool useDefaultImplementationForNulls() const override
+    {
+        return user_defined_function->getResultType()->canBeInsideNullable();
+    }
+
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
@@ -531,6 +798,20 @@ public:
         auto * compartment_ptr = &(*compartment_entry);
         try
         {
+            // COLUMNAR_V1: bypass RowBinary batching, pass columns directly (ColumnConst stays const).
+            if (const auto * cv1 = dynamic_cast<const UserDefinedWebAssemblyFunctionColumnarV1 *>(user_defined_function.get()))
+            {
+                auto stop_token = interrupt_source.get_token();
+                auto result = cv1->executeColumnar(compartment_ptr, arguments, input_rows_count, context, stop_token);
+                auto expected_col = user_defined_function->getResultType()->createColumn();
+                if (!result->structureEquals(*expected_col))
+                    throw Exception(ErrorCodes::WASM_ERROR,
+                        "COLUMNAR_V1: returned column structure {} does not match declared type {}",
+                        result->dumpStructure(),
+                        user_defined_function->getResultType()->getName());
+                return result;
+            }
+
             return execute(compartment_ptr, arguments, input_rows_count);
         }
         catch (...)
@@ -560,48 +841,117 @@ public:
     }
 
 private:
+    /// Estimate total serialized byte size of argument columns for an entire block.
+    /// Used for dynamic block splitting when webassembly_udf_max_input_block_size = 0.
+    /// ColumnConst columns are excluded: they are serialized once per batch (COL_IS_CONST),
+    /// so they contribute a fixed overhead regardless of batch size and must not drive splits.
+    /// Runs in O(1) — reads column metadata, no per-row scanning.
+    size_t estimateTotalSerializedSize(const ColumnsWithTypeAndName & arguments, size_t row_count) const
+    {
+        size_t total = 0;
+        for (const auto & arg : arguments)
+        {
+            const IColumn * col = arg.column.get();
+            if (typeid_cast<const ColumnConst *>(col))
+                continue; // fixed per-batch cost, not per-row
+            if (const auto * s = typeid_cast<const ColumnString *>(col))
+                total += s->getChars().size(); // raw bytes including null terminators
+            else if (arg.type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+                total += arg.type->getSizeOfValueInMemory() * row_count;
+            else
+                total += 256 * row_count; // conservative fallback
+        }
+        return total;
+    }
+
     ColumnPtr execute(WebAssembly::WasmCompartment * compartment, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         MutableColumnPtr result_column = user_defined_function->getResultType()->createColumn();
-        size_t block_size = context->getSettingsRef()[Setting::webassembly_udf_max_input_block_size];
-        if (block_size == 0)
-            block_size = input_rows_count;
 
-        for (size_t start_idx = 0; start_idx < input_rows_count; start_idx += block_size)
+        const size_t fixed_block_size = context->getSettingsRef()[Setting::webassembly_udf_max_input_block_size];
+
+        // When no explicit block size is given, split input dynamically: estimate the total
+        // serialized size once (O(1)) and split only if it would exceed 50% of the WASM
+        // module's actual linear memory. Using actual memory (not the CH-side limit)
+        // prevents OOM when a constant large geometry is materialized N times in the buffer.
+        const size_t wasm_linear_memory = compartment->getLinearMemorySize();
+        const size_t input_budget = (fixed_block_size == 0 && wasm_linear_memory > 0)
+            ? wasm_linear_memory / 2  // 50% for input, leave room for GEOS heap
+            : 0;
+
+        size_t batch_start = 0;
+
+        // Buffers format handles const columns natively; RowBinary/MsgPack need them materialized.
+        const bool buffers_format = user_defined_function->getSettings().getValue("serialization_format").safeGet<String>() == "Buffers";
+        const bool preserve_const = buffers_format;
+
+        auto flush_batch = [&](size_t end_idx)
         {
-            size_t current_block_size = std::min(block_size, input_rows_count - start_idx);
-            auto current_input_block = getArgumentsBlock(arguments, start_idx, current_block_size);
+            if (end_idx <= batch_start)
+                return;
+            size_t batch_size = end_idx - batch_start;
+            auto block = getArgumentsBlock(arguments, batch_start, batch_size, preserve_const);
             auto stop_token = interrupt_source.get_token();
-            auto current_column = user_defined_function->executeOnBlock(compartment, current_input_block, context, current_block_size, stop_token);
+            auto col = user_defined_function->executeOnBlock(compartment, block, context, batch_size, stop_token);
 
-            if (!result_column->structureEquals(*current_column))
+            if (!result_column->structureEquals(*col))
                 throw Exception(
                     ErrorCodes::WASM_ERROR,
                     "Different column types in result blocks: {} and {}",
                     result_column->dumpStructure(),
-                    current_column->dumpStructure());
+                    col->dumpStructure());
 
             if (result_column->empty())
-                result_column = std::move(current_column);
+                result_column = col->assumeMutable();
             else
-                result_column->insertRangeFrom(*current_column, 0, current_column->size());
+                result_column->insertRangeFrom(*col, 0, col->size());
+
+            batch_start = end_idx;
+        };
+
+        if (input_budget > 0)
+        {
+            // O(1) block-level check: only scan per-row when splits are actually needed.
+            // The common case (block fits in budget) pays zero per-row overhead.
+            // When splits are required, use a fixed stride derived from the average row size.
+            size_t total_bytes = estimateTotalSerializedSize(arguments, input_rows_count);
+            if (total_bytes > input_budget)
+            {
+                size_t avg_row_bytes = std::max(size_t(1), total_bytes / input_rows_count);
+                size_t stride = std::max(size_t(1), input_budget / avg_row_bytes);
+                for (size_t row = stride; row < input_rows_count; row += stride)
+                    flush_batch(row);
+            }
         }
+        else if (fixed_block_size > 0)
+        {
+            for (size_t row = fixed_block_size; row < input_rows_count; row += fixed_block_size)
+                flush_batch(row);
+        }
+
+        flush_batch(input_rows_count);
         return result_column;
     }
 
-    Block getArgumentsBlock(const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t length) const
+    Block getArgumentsBlock(const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t length, bool preserve_const) const
     {
         const auto & declared_arguments = user_defined_function->getArguments();
         Block arguments_block;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            ColumnPtr column = arguments[i].column->convertToFullColumnIfConst()->cut(start_idx, length);
+            ColumnPtr column = arguments[i].column;
+            if (!preserve_const)
+                column = column->convertToFullColumnIfConst();
+            column = column->cut(start_idx, length);
             String column_name = i < argument_names.size() && !argument_names[i].empty() ? argument_names[i] : arguments[i].name;
             /// Cast to the declared type so serialization uses the correct width.
             /// Without this, e.g. Int8 passed to an Int32 parameter would be serialized
             /// as 1 byte by RowBinary instead of 4, causing the WASM module to read garbage.
+            /// For formats that support column schema (e.g. ColumnBinary), skip the cast
+            /// to allow type narrowing — the format writes the actual type tag and the
+            /// WASM side casts up as needed.
             const DataTypePtr & declared_type = declared_arguments[i];
-            if (!arguments[i].type->equals(*declared_type))
+            if (!supports_column_schema && !arguments[i].type->equals(*declared_type))
                 column = castColumn(ColumnWithTypeAndName(column, arguments[i].type, column_name), declared_type);
             arguments_block.insert(ColumnWithTypeAndName(column, declared_type, column_name));
         }
@@ -613,6 +963,8 @@ private:
     String function_name;
     Strings argument_names;
     ContextPtr context;
+    bool preserve_const_columns;
+    bool supports_column_schema;
 
     mutable StopSource interrupt_source;
     mutable WasmCompartmentPool compartment_pool;

@@ -594,6 +594,12 @@ struct FormatSettings
         bool escape_special_characters = false;
     } markdown{};
 
+    // ColumnBinary format settings
+    struct
+    {
+        bool disable_preallocation = false;
+    } column_binary{};
+
 };
 
 }

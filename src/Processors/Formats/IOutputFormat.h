@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Core/Block_fwd.h>
 #include <IO/Progress.h>
 #include <Processors/Chunk.h>
@@ -64,7 +66,14 @@ public:
     void finalize();
 
     virtual bool expectMaterializedColumns() const { return true; }
+    virtual bool supportsColumnSchema() const { return false; }
     virtual bool supportsSpecialSerializationKinds() const { return false; }
+
+    /// If the format can predict its total serialized size for a given block, it may implement this
+    /// to allow the output WriteBuffer to preallocate the exact space needed, avoiding reallocation.
+    /// Returns std::nullopt if precomputation is not supported or not beneficial for this chunk.
+    virtual std::optional<uint64_t> precomputeSerializedSize(const Block & /*block*/, size_t /*rows*/) const { return std::nullopt; }
+
 
     void setTotals(const Block & totals);
     void setExtremes(const Block & extremes);

@@ -34,6 +34,9 @@ public:
     /// Get a view of guest memory given a handle and size
     virtual std::span<uint8_t> getMemory(WasmPtr ptr, WasmSizeT size) = 0;
 
+    /// Return total size of the WASM linear memory in bytes
+    virtual size_t getLinearMemorySize() const = 0;
+
     /// Invoke a function expecting to return a single value of specific result type or void, if no return value expected.
     /// If function returns multiple values or different type, an exception is thrown.
     template <typename ResultType>
