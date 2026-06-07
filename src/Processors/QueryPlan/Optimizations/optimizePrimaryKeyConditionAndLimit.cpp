@@ -63,7 +63,7 @@ void rewriteBareColumnFilters(ActionsDAG & dag, std::string & filter_column_name
 
         auto inner_type = removeNullable(removeLowCardinality(bare_node->result_type));
         auto zero_column = bare_node->result_type->createColumnConst(1, inner_type->getDefault());
-        const auto & zero_node = dag.addColumn({zero_column, bare_node->result_type, bare_node->result_name + "__zero"});
+        const auto & zero_node = dag.addColumn(std::move(zero_column), bare_node->result_type, bare_node->result_name + "__zero");
         return &dag.addFunction(ne_resolver, {bare_node, &zero_node}, {});
     };
 
