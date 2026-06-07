@@ -4188,6 +4188,7 @@ static BoolMask forAnySparseHyperrectangle(
     const FieldRef * sparse_left_keys,
     const FieldRef * sparse_right_keys,
     const std::vector<UInt8> & equal_boundaries_mask,
+    size_t full_key_size,
     bool left_bounded,
     bool right_bounded,
     Hyperrectangle & sparse_hyperrectangle,
@@ -4202,6 +4203,7 @@ static BoolMask forAnySparseHyperrectangle(
     const size_t sparse_keys_size = sparse_key_indices.size();
 
     chassert(key_size == key_col_to_sparse_pos.size());
+    chassert(full_key_size >= key_size);
     chassert(sparse_key_indices.size() <= sparse_data_types.size());
     chassert(prefix_size <= key_size);
 
@@ -4236,8 +4238,8 @@ static BoolMask forAnySparseHyperrectangle(
 
     const bool is_key_col_used = (key_col_to_sparse_pos[prefix_size] != -1);
 
-    /// Only one key component left
-    if (prefix_size + 1 == key_size)
+    /// Only one key component left in the whole primary key (not just in the used prefix).
+    if (prefix_size + 1 == full_key_size)
     {
         if (is_key_col_used)
         {
@@ -4317,6 +4319,7 @@ static BoolMask forAnySparseHyperrectangle(
                 sparse_left_keys,
                 sparse_right_keys,
                 equal_boundaries_mask,
+                full_key_size,
                 true,
                 false,
                 sparse_hyperrectangle,
@@ -4346,6 +4349,7 @@ static BoolMask forAnySparseHyperrectangle(
                 sparse_left_keys,
                 sparse_right_keys,
                 equal_boundaries_mask,
+                full_key_size,
                 false,
                 true,
                 sparse_hyperrectangle,
@@ -4431,6 +4435,7 @@ BoolMask KeyCondition::checkInRange(
         sparse_left_keys,
         sparse_right_keys,
         equal_boundaries_mask,
+        /*full_key_size*/ num_key_columns,
         /*left_bounded*/ true,
         /*right_bounded*/ true,
         sparse_key_ranges,
