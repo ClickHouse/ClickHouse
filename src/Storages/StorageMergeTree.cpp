@@ -283,14 +283,20 @@ void StorageMergeTree::flushAndPrepareForShutdown()
 
 void StorageMergeTree::shutdown(bool)
 {
-    if (shutdown_called.exchange(true))
-        return;
-
+    /// Deactivate the periodic refresh tasks unconditionally, before the `shutdown_called` guard.
+    /// A `startup()` racing with `shutdown()` (e.g. when a table is detached while its async startup is
+    /// still in flight) can call `startStatisticsCache` and re-arm `refresh_stats_task` after `shutdown()`
+    /// already ran and set `shutdown_called`. Without deactivating here, the destructor's `shutdown(false)`
+    /// would early-return and leave `refreshStatistics` running concurrently with `~MergeTreeData` destroying
+    /// `cached_estimator`, which is a data race. Deactivation is idempotent, so running it on every call is safe.
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
 
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
+
+    if (shutdown_called.exchange(true))
+        return;
 
     stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
