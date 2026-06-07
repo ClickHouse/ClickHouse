@@ -181,12 +181,21 @@ StoragePtr TableFunctionURL::getStorage(
     const auto & settings = context->getSettingsRef();
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
+
+    /// Listable `*` / `**` path wildcards are expanded by listing HTTP index pages through
+    /// `StorageObjectStorage` (the branch below). `StorageURLCluster` still uses
+    /// `DisclosedGlobIterator` / `parseRemoteDescription` and cannot list index pages, so it must not
+    /// take over such queries via the parallel-replicas path — that would silently fall back to the
+    /// old literal/template expansion and read different (or no) files than the non-cluster path.
+    const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(source);
+
     const bool can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
         && settings[Setting::parallel_replicas_for_cluster_engines]
         && context->canUseTaskBasedParallelReplicas()
         && !context->isDistributed()
         && !is_secondary_query
-        && !is_insert_query;
+        && !is_insert_query
+        && !use_web_wildcard;
 
     if (can_use_parallel_replicas)
     {
@@ -202,7 +211,7 @@ StoragePtr TableFunctionURL::getStorage(
             configuration);
     }
 
-    if (!is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(source))
+    if (use_web_wildcard)
     {
         checkExperimentalURLWildcardFromIndexPages(context);
         auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();

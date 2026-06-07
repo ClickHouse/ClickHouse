@@ -214,9 +214,18 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     if (path.starts_with("/"))
         path = path.substr(1);
 
-    if (include_connection_info)
-        return fs::path(configuration.getDataSourceDescription()) / path;
-    return fs::path(configuration.getNamespace()) / path;
+    std::string result = include_connection_info
+        ? fs::path(configuration.getDataSourceDescription()) / path
+        : fs::path(configuration.getNamespace()) / path;
+
+    /// For web URL shards the same relative path can be produced by different expanded URL options
+    /// (e.g. `http://{host1,host2}/data/**`). Including `read_source_index` keeps schema/count cache
+    /// identity aligned with the scheduling/read identity, so one shard cannot reuse another shard's
+    /// cached schema or row count without reading the correct object.
+    if (object_info.relative_path_with_metadata.read_source_index)
+        result += fmt::format("#read_source_index={}", *object_info.relative_path_with_metadata.read_source_index);
+
+    return result;
 }
 
 std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
@@ -265,7 +274,12 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     std::unique_ptr<IObjectIterator> iterator;
     const auto & reading_path = configuration->getPathForRead();
-    if (reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
+    /// `KeysIterator` carries only path strings and drops `read_source_index`. For web URL shards the
+    /// same relative path can come from different expanded URL options (e.g. `http://{h1,h2}/data/**`),
+    /// so losing the source index would make `WebObjectStorage::readObject` treat all shards as failover
+    /// for that path and silently miss rows. Always use `GlobIterator` for web listings, which preserves
+    /// the source index.
+    if (!match_web_paths_only && reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
     {
         auto paths = expandSelectionGlob(reading_path.path);
         iterator = std::make_unique<KeysIterator>(
@@ -277,7 +291,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     {
         // Try extract _path values from filter, which will allow to use KeysIterator instead of GlobIterator
         std::optional<Strings> paths;
-        if (filter_actions_dag && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
+        if (!match_web_paths_only && filter_actions_dag && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
             paths = VirtualColumnUtils::extractPathValuesFromFilter(
                 filter_actions_dag, local_context, local_context->getSettingsRef()[Setting::s3_path_filter_limit]);
 
@@ -806,8 +820,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
     };
 
+    /// The count-from-cache shortcut builds a `ConstChunkGenerator` without opening the read buffer, so a
+    /// requested `_headers` virtual column (the HTTP response headers of the data `GET`) would have to fall
+    /// back to the metadata-probe headers (usually a `HEAD`), which can differ from the actual `GET`
+    /// response. Skip the shortcut when `_headers` is requested so the real `GET` headers are used.
+    const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
+
     std::optional<size_t> num_rows_from_cache
-        = need_only_count && context_->getSettingsRef()[Setting::use_cache_for_count_from_files] ? try_get_num_rows_from_cache() : std::nullopt;
+        = need_only_count && !headers_requested && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
+        ? try_get_num_rows_from_cache() : std::nullopt;
 
     if (num_rows_from_cache)
     {

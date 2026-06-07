@@ -138,6 +138,19 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
         if (read_source_index)
             writeVarUInt(*read_source_index, out);
     }
+    else if (read_source_index.has_value())
+    {
+        /// Fail closed: downgrading the task to a path-only `ObjectInfo` would make the worker treat all
+        /// web URL shards as failover for that path, reading only the first available source and silently
+        /// missing rows from the other shards. A worker that cannot carry `read_source_index` must not run
+        /// such a task.
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry `read_source_index`, which is required for distributed "
+            "reads of wildcard URL shards (minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX);
+    }
 }
 
 void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)

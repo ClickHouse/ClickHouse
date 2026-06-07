@@ -208,6 +208,15 @@ NameSet getVirtualNamesForFileLikeStorage()
     return getCommonVirtualsForFileLikeStorage().getNameSet();
 }
 
+/// Virtual columns that can only be materialized after the read buffer is opened (e.g. HTTP response
+/// headers exposed as `_headers` for web reads). They are not known during object listing, so they must
+/// not participate in the path/file pre-listing predicate split, where the listing-time block can only
+/// materialize `_path`/`_file`/hive columns/`_idx`.
+static bool isReaderOnlyVirtualColumn(const String & name)
+{
+    return name == "_headers";
+}
+
 std::string_view findHivePartitioningInPath(const String & path)
 {
     auto key_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
@@ -328,7 +337,8 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
-        if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))
+        if (column.name == "_file" || column.name == "_path"
+            || (!common_virtuals.contains(column.name) && !isReaderOnlyVirtualColumn(column.name)))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
@@ -353,7 +363,8 @@ ColumnPtr getFilterByPathAndFileIndexes(
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
-        if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))
+        if (column.name == "_file" || column.name == "_path"
+            || (!common_virtuals.contains(column.name) && !isReaderOnlyVirtualColumn(column.name)))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
