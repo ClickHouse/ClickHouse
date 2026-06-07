@@ -1,5 +1,6 @@
 #include <Disks/DiskFromAST.h>
 #include <Common/assert_cast.h>
+#include <Common/Exception.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -17,6 +18,7 @@
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/logger_useful.h>
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -30,7 +32,8 @@ static std::string getOrCreateCustomDisk(
     const ASTs & disk_args,
     const std::string & serialization,
     ContextPtr context,
-    bool attach)
+    bool attach,
+    DiskFromAST::CustomDiskRegistrationScope * scope)
 {
     std::string default_path = "/etc/metrika.xml";
 
@@ -94,13 +97,22 @@ static std::string getOrCreateCustomDisk(
         disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
     }
 
+    bool newly_registered = false;
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
         auto result = DiskFactory::instance().create(
             disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
         /// Mark that disk can be used without storage policy.
         result->markDiskAsCustom(disk_settings_hash);
+        newly_registered = true;
         return result;
     });
+
+    /// If we just added a new custom disk to the global selector AND the caller is running a
+    /// dry-run / validation pass, record the name in the scope so it can be rolled back if
+    /// the validation later throws (issue #63019: `MODIFY SETTING disk = disk(...)` rejected
+    /// by the storage-policy migration guard would otherwise leak the disk name registration).
+    if (scope && newly_registered)
+        scope->track(disk_name);
 
     if (!disk->isCustomDisk())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -142,6 +154,7 @@ public:
     {
         ContextPtr context;
         bool attach;
+        DiskFromAST::CustomDiskRegistrationScope * scope;
     };
 
     static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
@@ -154,14 +167,14 @@ public:
             const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function->arguments.get());
             const auto & function_args = function_args_expr->children;
             auto disk_setting_string = function->formatWithSecretsOneLine();
-            auto disk_name = getOrCreateCustomDisk(function_args, disk_setting_string, data.context, data.attach);
+            auto disk_name = getOrCreateCustomDisk(function_args, disk_setting_string, data.context, data.attach, data.scope);
             ast = make_intrusive<ASTLiteral>(disk_name);
         }
     }
 };
 
 
-std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, ContextPtr context, bool attach)
+std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, ContextPtr context, bool attach, CustomDiskRegistrationScope * scope)
 {
     if (!isDiskFunction(disk_function_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a disk function");
@@ -169,7 +182,7 @@ std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, Cont
     auto ast = disk_function_ast->clone();
 
     using FlattenDiskConfigurationVisitor = InDepthNodeVisitor<DiskConfigurationFlattener, false>;
-    FlattenDiskConfigurationVisitor::Data data{context, attach};
+    FlattenDiskConfigurationVisitor::Data data{context, attach, scope};
     FlattenDiskConfigurationVisitor{data}.visit(ast);
 
     return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
@@ -187,7 +200,7 @@ void DiskFromAST::ensureDiskIsNotCustom(const std::string & disk_name, ContextPt
             disk_name);
 }
 
-void DiskFromAST::convertCustomDiskField(Field & value, ContextPtr context, bool attach)
+void DiskFromAST::convertCustomDiskField(Field & value, ContextPtr context, bool attach, CustomDiskRegistrationScope * scope)
 {
     CustomType custom;
     ASTPtr value_as_custom_ast = nullptr;
@@ -196,7 +209,7 @@ void DiskFromAST::convertCustomDiskField(Field & value, ContextPtr context, bool
 
     if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
     {
-        auto disk_name = createCustomDisk(value_as_custom_ast, context, attach);
+        auto disk_name = createCustomDisk(value_as_custom_ast, context, attach, scope);
         LOG_DEBUG(getLogger("DiskFromAST"), "Created custom disk {}", disk_name);
         value = disk_name;
     }
@@ -206,13 +219,44 @@ void DiskFromAST::convertCustomDiskField(Field & value, ContextPtr context, bool
     }
 }
 
-void DiskFromAST::convertCustomDiskSettings(SettingsChanges & changes, ContextPtr context, bool attach)
+void DiskFromAST::convertCustomDiskSettings(SettingsChanges & changes, ContextPtr context, bool attach, CustomDiskRegistrationScope * scope)
 {
     for (auto & change : changes)
     {
         if (change.name == "disk")
-            convertCustomDiskField(change.value, context, attach);
+            convertCustomDiskField(change.value, context, attach, scope);
     }
+}
+
+DiskFromAST::CustomDiskRegistrationScope::CustomDiskRegistrationScope(ContextPtr context_)
+    : context(std::move(context_))
+{
+}
+
+DiskFromAST::CustomDiskRegistrationScope::~CustomDiskRegistrationScope() noexcept
+{
+    if (committed || registered_disk_names.empty())
+        return;
+    /// Roll back any custom disk registrations performed during this scope. Any failure during
+    /// removal is swallowed: this destructor must be `noexcept` because it runs during stack
+    /// unwinding for exception cases. A best-effort log makes a real bug observable.
+    for (const auto & disk_name : registered_disk_names)
+    {
+        try
+        {
+            context->removeCustomDiskAndStoragePolicy(disk_name);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger("CustomDiskRegistrationScope"),
+                fmt::format("Failed to roll back custom disk registration for {}", disk_name));
+        }
+    }
+}
+
+void DiskFromAST::CustomDiskRegistrationScope::track(const std::string & disk_name)
+{
+    registered_disk_names.push_back(disk_name);
 }
 
 }

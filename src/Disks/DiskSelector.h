@@ -44,6 +44,12 @@ public:
 
     void addToDiskMap(const String & name, DiskPtr disk);
 
+    /// Remove a disk from the selector by name. Returns the removed disk (so the caller can
+    /// shut it down if needed) or nullptr if no disk with this name was registered.
+    /// Used to roll back custom disk registrations performed during ALTER validation that
+    /// did not commit (e.g. a `MODIFY SETTING disk = disk(...)` rejected by a later guard).
+    DiskPtr removeFromDiskMap(const String & name);
+
     void shutdown();
 
     inline static const String DEFAULT_DISK_NAME = "default";

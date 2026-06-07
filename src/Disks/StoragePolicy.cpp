@@ -586,4 +586,9 @@ void StoragePolicySelector::add(StoragePolicyPtr storage_policy)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StoragePolicy is already present in StoragePolicySelector");
 }
 
+bool StoragePolicySelector::remove(const String & name)
+{
+    return policies.erase(name) > 0;
+}
+
 }

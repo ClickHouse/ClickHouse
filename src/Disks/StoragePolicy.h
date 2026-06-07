@@ -135,6 +135,12 @@ public:
     /// Done by getOrSetStoragePolicyForSingleDisk.
     void add(StoragePolicyPtr storage_policy);
 
+    /// Remove a temporary single-disk storage policy by name. Returns true if a policy was
+    /// removed. Used to roll back the per-disk policy auto-created by
+    /// `Context::getStoragePolicyFromDisk` when the disk registration is itself being rolled
+    /// back during ALTER validation (issue #63019).
+    bool remove(const String & name);
+
 private:
     StoragePoliciesMap policies;
 };

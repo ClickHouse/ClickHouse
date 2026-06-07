@@ -170,3 +170,66 @@ SELECT count(), sum(id) FROM t_63019_uk;
 SELECT id, v, extra FROM t_63019_uk ORDER BY id;
 
 DROP TABLE t_63019_uk;
+
+-- clickhouse-gh[bot] review on PR #103818: `DiskFromAST::convertCustomDiskSettings` is not just a
+-- normalisation step; for an inline `disk(...)` it calls `createCustomDisk`, which mutates the
+-- global disk selector via `Context::getOrCreateDisk`. Several validation paths
+-- (`AlterCommand::apply`, `MergeTreeData::checkAlterIsPossible`, the `UNIQUE KEY` guard,
+-- `checkColumnFilenamesForCollision`) run on metadata copies and can throw AFTER the disk has
+-- been registered (e.g. the storage-policy migration guard rejects the new disk with
+-- `BAD_ARGUMENTS`). Without the rollback scope, the rejected `MODIFY SETTING disk = disk(...)`
+-- ALTER would leave the inline disk's name reserved in the global selector until restart, and a
+-- later valid `CREATE TABLE` reusing the same name with different settings would fail as if
+-- another table already owned it.
+--
+-- This block exercises the rollback: a `MODIFY SETTING disk = disk(name = '63019_rollback_v1',
+-- ...)` ALTER rejected by the storage-policy migration guard must NOT leak `63019_rollback_v1`,
+-- so a subsequent `CREATE TABLE ... SETTINGS disk = disk(name = '63019_rollback_v1', ...)` with
+-- different settings succeeds rather than throwing
+-- "The disk `63019_rollback_v1` is already configured as a custom disk in another table".
+
+DROP TABLE IF EXISTS t_63019_rollback_a;
+DROP TABLE IF EXISTS t_63019_rollback_b;
+
+CREATE TABLE t_63019_rollback_a (a Int32) ENGINE = MergeTree() ORDER BY a
+SETTINGS disk = disk(
+    name = '63019_rollback_a',
+    type = object_storage,
+    object_storage_type = local_blob_storage,
+    path = './63019_rollback_a_objstore/');
+
+INSERT INTO t_63019_rollback_a SELECT number FROM numbers(3);
+SELECT count(), sum(a) FROM t_63019_rollback_a;
+
+-- Try to wrap in a cache layer named `63019_rollback_v1`. The storage-policy migration guard
+-- rejects this with `BAD_ARGUMENTS` (cannot change `disk` to a different storage policy).
+-- Before the rollback scope, `63019_rollback_v1` would be left in the global `DiskSelector` and
+-- the next CREATE below would fail.
+ALTER TABLE t_63019_rollback_a MODIFY SETTING disk = disk(
+    name = '63019_rollback_v1',
+    type = cache,
+    disk = '63019_rollback_a',
+    path = './63019_rollback_v1_data/',
+    max_size = '1Mi'); -- { serverError BAD_ARGUMENTS }
+
+-- The rejected ALTER must not corrupt or alter the table's data.
+SELECT count(), sum(a) FROM t_63019_rollback_a;
+
+-- Now register `63019_rollback_v1` as a fresh table with DIFFERENT settings (different inner
+-- disk path and a different max_size). With the rollback scope this succeeds; without it the
+-- prior leaked registration of `63019_rollback_v1` (with `disk = '63019_rollback_a'` and
+-- `path = './63019_rollback_v1_data/'`) collides on settings hash and throws
+-- "The disk `63019_rollback_v1` is already configured as a custom disk in another table".
+CREATE TABLE t_63019_rollback_b (a Int32) ENGINE = MergeTree() ORDER BY a
+SETTINGS disk = disk(
+    name = '63019_rollback_v1',
+    type = cache,
+    disk = '63019_rollback_a',
+    path = './63019_rollback_v1_other_data/',
+    max_size = '2Mi');
+
+INSERT INTO t_63019_rollback_b SELECT number FROM numbers(2);
+SELECT count(), sum(a) FROM t_63019_rollback_b;
+
+DROP TABLE t_63019_rollback_b;
+DROP TABLE t_63019_rollback_a;

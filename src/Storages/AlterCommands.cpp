@@ -954,6 +954,15 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 settings_from_storage.push_back(change);
         }
 
+        /// Validation-only scope: `AlterCommand::apply` runs on a metadata COPY that will
+        /// be discarded if any later `checkAlterIsPossible` step rejects the ALTER. The
+        /// `effective_settings` instance below is also throwaway; we only need the conversion
+        /// so `BaseSettings::applyChange("disk", value)` does not trip `safeGet<String>` ->
+        /// `BAD_GET` on the still-`CustomType` value. Roll back any custom disks newly
+        /// registered here so a rejected ALTER does not leak the inline disk's name in the
+        /// global `DiskSelector` (issue #63019, bot review).
+        DiskFromAST::CustomDiskRegistrationScope disk_scope(context);
+
         /// Take a copy and convert any inline `disk = disk(...)` setting (a parser-produced
         /// `CustomType` `Field`) to a registered disk-name `String` before applying it to
         /// `effective_settings`. `disk` is registered as `SettingFieldString`, whose
@@ -963,7 +972,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         /// `add_minmax_index_for_*` from effective settings) iterates the table's existing
         /// `settings_from_storage` (issue #63019).
         SettingsChanges effective_changes = settings_from_storage;
-        DiskFromAST::convertCustomDiskSettings(effective_changes, context, /* attach */ false);
+        DiskFromAST::convertCustomDiskSettings(effective_changes, context, /* attach */ false, &disk_scope);
 
         MergeTreeSettings effective_settings;
         bool any_mt_setting = false;

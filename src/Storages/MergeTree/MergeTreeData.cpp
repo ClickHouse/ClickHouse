@@ -4385,6 +4385,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         if (new_metadata.settings_changes)
         {
+            /// Validation-only scope: any custom disk newly registered while normalising
+            /// `new_changes` is rolled back on exit (issue #63019, bot review).
+            DiskFromAST::CustomDiskRegistrationScope disk_scope(local_context);
+
             /// Take a non-const copy so any inline `disk = disk(...)` setting (a parser-
             /// produced `CustomType` `Field`) is converted to a registered disk name
             /// `String` before `safeGet<String>` below. Without this conversion, a
@@ -4392,7 +4396,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             /// would still trip `Bad get: has CustomType, requested String` here on
             /// any later `ALTER` that reaches this validation block (issue #63019).
             SettingsChanges new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
-            DiskFromAST::convertCustomDiskSettings(new_changes, local_context, /* attach */ false);
+            DiskFromAST::convertCustomDiskSettings(new_changes, local_context, /* attach */ false, &disk_scope);
 
             for (const auto & changed : new_changes)
             {
@@ -4817,13 +4821,20 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     {
         const auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
 
+        /// Validation pass: any custom disk registered here will be rolled back on scope
+        /// exit. The actual apply path (`MergeTreeData::changeSettings`) re-registers it.
+        /// Without rollback a `MODIFY SETTING disk = disk(...)` ALTER rejected by the
+        /// storage-policy migration guard at line 4862 below would leak the new disk's
+        /// name in the global `DiskSelector` until restart (issue #63019, bot review).
+        DiskFromAST::CustomDiskRegistrationScope disk_scope(local_context);
+
         /// Take a non-const copy so we can convert any inline `disk = disk(...)` setting (a parser-
         /// produced `CustomType` `Field`) into a registered disk name string. Without this every
         /// subsequent `safeGet<String>`, `MergeTreeSettings::checkCanSet` and `applyChanges` call
         /// in this block would throw `Bad get: has CustomType, requested String` (issue #63019)
         /// when the table was created with `SETTINGS disk = disk(...)`.
         SettingsChanges new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
-        DiskFromAST::convertCustomDiskSettings(new_changes, local_context, /* attach */ false);
+        DiskFromAST::convertCustomDiskSettings(new_changes, local_context, /* attach */ false, &disk_scope);
 
         local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
 
@@ -5044,6 +5055,13 @@ void MergeTreeData::changeSettings(
     {
         bool has_storage_policy_changed = false;
 
+        /// Apply scope: track newly-registered custom disks and roll them back if anything
+        /// in this block throws. Committed only after the metadata transition has been
+        /// committed via `setInMemoryMetadata`, so that a crash in
+        /// `checkStoragePolicy(getStoragePolicyFromDisk(...))` or `existsDirectory(...)` here
+        /// does not leak the new disk's name in the global selector (issue #63019, bot review).
+        DiskFromAST::CustomDiskRegistrationScope disk_scope(getContext());
+
         /// Take a non-const copy so an inline `disk = disk(...)` setting (a `CustomType` `Field`
         /// produced by the parser) is converted to a registered disk name string before any
         /// `safeGet<String>` or `applyChanges` call. This mirrors the pre-processing done by
@@ -5051,7 +5069,7 @@ void MergeTreeData::changeSettings(
         /// path; without it, every ALTER that re-applies the table's settings would throw
         /// `Bad get: has CustomType, requested String` (issue #63019).
         SettingsChanges new_changes = new_settings->as<const ASTSetQuery &>().changes;
-        DiskFromAST::convertCustomDiskSettings(new_changes, getContext(), /* attach */ false);
+        DiskFromAST::convertCustomDiskSettings(new_changes, getContext(), /* attach */ false, &disk_scope);
 
         StoragePolicyPtr new_storage_policy = nullptr;
 
@@ -5133,6 +5151,13 @@ void MergeTreeData::changeSettings(
         }
 
         setInMemoryMetadata(new_metadata);
+
+        /// Metadata transition committed: the new custom disk registration is now referenced
+        /// by the in-memory metadata and must persist for the lifetime of the table. Anything
+        /// thrown after this point (`startBackgroundMovesIfNeeded`, statistics cache restart)
+        /// would leave the metadata pointing at a registered disk; rolling back would corrupt
+        /// state. Mark the scope committed.
+        disk_scope.commit();
 
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
@@ -9217,11 +9242,18 @@ void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetada
     auto settings = getDefaultSettings();
     if (metadata.settings_changes)
     {
+        /// Validation-only scope: any custom disk newly registered here is rolled back on
+        /// exit. The disk is not actually consulted by the column-filename collision check;
+        /// the conversion is only needed so `applyChanges` does not trip
+        /// `SettingFieldString::operator=` -> `safeGet<String>` -> `BAD_GET` on the still-
+        /// `CustomType` value (issue #63019, bot review).
+        DiskFromAST::CustomDiskRegistrationScope disk_scope(getContext());
+
         /// Take a non-const copy so any inline `disk = disk(...)` setting can be normalised to a
         /// registered disk name string before `applyChanges` reaches `SettingFieldString::operator=`
         /// (issue #63019).
         SettingsChanges changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
-        DiskFromAST::convertCustomDiskSettings(changes, getContext(), /* attach */ false);
+        DiskFromAST::convertCustomDiskSettings(changes, getContext(), /* attach */ false, &disk_scope);
         settings->applyChanges(changes);
     }
 

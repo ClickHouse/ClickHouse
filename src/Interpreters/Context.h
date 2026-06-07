@@ -1627,6 +1627,15 @@ public:
     using DiskCreator = std::function<DiskPtr(const DisksMap & disks_map)>;
     DiskPtr getOrCreateDisk(const String & name, DiskCreator creator) const;
 
+    /// Remove a custom disk and its associated single-disk storage policy from the global
+    /// disk/storage-policy selectors. Returns true if the disk was removed.
+    /// Used to roll back custom-disk registrations performed during ALTER validation when
+    /// the validation later throws (e.g. `MODIFY SETTING disk = disk(...)` rejected by the
+    /// storage-policy migration guard). Without rollback, the inline disk's name would
+    /// remain reserved until server restart and would conflict with later valid uses of
+    /// the same name with different settings (issue #63019).
+    bool removeCustomDiskAndStoragePolicy(const String & disk_name) const;
+
     StoragePoliciesMap getPoliciesMap() const;
     DisksMap getDisksMap() const;
     void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);

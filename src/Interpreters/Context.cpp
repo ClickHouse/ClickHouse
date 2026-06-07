@@ -6343,6 +6343,30 @@ DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator) const
     return disk;
 }
 
+bool Context::removeCustomDiskAndStoragePolicy(const String & disk_name) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto disk_selector = getDiskSelector(lock);
+    auto disk = disk_selector->tryGet(disk_name);
+    if (!disk || !disk->isCustomDisk())
+    {
+        /// Defensive: never remove a non-custom (config-defined) disk via this rollback path.
+        return false;
+    }
+
+    /// `Context::getStoragePolicyFromDisk` creates a `__<disk_name>` storage policy alongside
+    /// the disk. Remove it too if it was created. Otherwise the next
+    /// `getStoragePolicyFromDisk(<disk_name>)` would return the stale policy referencing the
+    /// just-removed disk.
+    auto storage_policy_selector = getStoragePolicySelector(lock);
+    const String storage_policy_name = StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + disk_name;
+    const_cast<StoragePolicySelector *>(storage_policy_selector.get())->remove(storage_policy_name);
+
+    auto removed_disk = const_cast<DiskSelector *>(disk_selector.get())->removeFromDiskMap(disk_name);
+    return removed_disk != nullptr;
+}
+
 StoragePolicyPtr Context::getStoragePolicy(const String & name) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
