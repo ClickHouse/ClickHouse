@@ -131,6 +131,7 @@ namespace FailPoints
     extern const char database_replicated_drop_after_removing_keeper_failed[];
     extern const char database_replicated_force_metadata_digest_check[];
     extern const char database_replicated_pause_after_reading_log_pointer[];
+    extern const char database_replicated_pause_after_snapshot_identity_check[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -1927,6 +1928,16 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
             "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
             "(Keeper path identity changed between caller's read and snapshot start)");
     }
+
+    /// Test-only: pause here, after the entry-time identity check has already passed with the
+    /// original `czxid`, but before any metadata or `max_log_ptr` is read below. A test enables
+    /// this failpoint, triggers a snapshot, waits for the pause, runs `DROP DATABASE` + recreate
+    /// so the new database starts with a smaller `max_log_ptr`, then resumes. On resume the
+    /// in-function `max_log_ptr > new_max_log_ptr` rollback guard fires. Unlike
+    /// `database_replicated_pause_after_reading_log_pointer` (which pauses before the entry
+    /// identity check and is therefore caught by it), this failpoint deterministically exercises
+    /// the rollback guard itself, so a regression of that guard is detectable.
+    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_pause_after_snapshot_identity_check);
 
     if (zookeeper->isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST) &&
         zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ) &&
