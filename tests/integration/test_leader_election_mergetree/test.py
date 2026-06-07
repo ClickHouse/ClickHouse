@@ -646,12 +646,51 @@ def test_alter_rejected_under_leader_election(started_cluster):
                 pass
 
 
-# Note: `RENAME TABLE` is overridden in `StorageMergeTree` to throw when
-# `leader_election` is enabled — but only the on-disk rename path
-# (`MergeTreeData::rename`) is intercepted. The default `Atomic` database
-# performs renames in-memory (UUID-stable, no data move), so the override is
-# not reached in the integration test environment. No dedicated test here; the
-# override remains as defensive coverage for the deprecated `Ordinary` engine.
+def test_rename_rejected_under_leader_election(started_cluster):
+    """
+    Regression: `RENAME TABLE` must be rejected under `leader_election` on both
+    the leader and a follower. The rejection lives in
+    `StorageMergeTree::checkTableCanBeRenamed` (not only in `rename`), because
+    the default `Atomic` database renames a table through
+    `checkTableCanBeRenamed` + `renameInMemory` and never calls
+    `StorageMergeTree::rename` — only the deprecated on-disk/`Ordinary` path does.
+    """
+    for n in (node1, node2):
+        ensure_node_up(n)
+    table = "test_rename"
+    new_table = "test_rename_new"
+    try:
+        create_table_on_first_node(node1, table, SHARED_UUID_RENAME)
+        attach_table_on_second_node(node2, table, SHARED_UUID_RENAME)
+        leader, followers = wait_for_leader([node1, node2], table_name=table)
+        follower = followers[0]
+
+        # Leader path: the `leader_election` guard throws `SUPPORT_IS_DISABLED`.
+        # Follower path: `assertNotReadonly` may throw `TABLE_IS_READ_ONLY`
+        # first; both outcomes are acceptable rejections.
+        for node, role, accepted in [
+            (leader, "leader", ("SUPPORT_IS_DISABLED", "leader_election")),
+            (follower, "follower", ("TABLE_IS_READ_ONLY", "SUPPORT_IS_DISABLED", "leader_election")),
+        ]:
+            try:
+                node.query(f"RENAME TABLE {table} TO {new_table}")
+            except Exception as e:
+                msg = str(e)
+                if any(s in msg for s in accepted):
+                    continue
+                raise AssertionError(
+                    f"RENAME on {role}: expected one of {accepted}, got: {msg}"
+                )
+            raise AssertionError(
+                f"RENAME on {role}: expected rejection, query succeeded"
+            )
+    finally:
+        for n in (node1, node2):
+            for t in (table, new_table):
+                try:
+                    n.query(f"DROP TABLE IF EXISTS {t} SYNC")
+                except Exception:
+                    pass
 
 
 def test_local_disk_rejects_leader_election(started_cluster):

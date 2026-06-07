@@ -125,6 +125,12 @@ public:
     /// `relative_data_path` would be updated, so we refuse the rename rather than diverge.
     void rename(const String & new_table_path, const StorageID & new_table_id) override;
 
+    /// The rejection lives here, not only in `rename`, because the default `Atomic` database
+    /// reaches a rename through `checkTableCanBeRenamed` + `renameInMemory` and never calls
+    /// `StorageMergeTree::rename` (only the on-disk/`Ordinary` path does). Overriding this hook
+    /// makes the `leader_election` rejection cover both paths.
+    void checkTableCanBeRenamed(const StorageID & new_name) const override;
+
     void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     /// Reject metadata-mutating ALTERs under `leader_election` before the generic

@@ -687,7 +687,7 @@ void StorageMergeTree::checkAlterIsPossible(const AlterCommands & commands, Cont
     MergeTreeData::checkAlterIsPossible(commands, local_context);
 }
 
-void StorageMergeTree::rename(const String & new_table_path, const StorageID & new_table_id)
+void StorageMergeTree::checkTableCanBeRenamed(const StorageID & /*new_name*/) const
 {
     if (leader_election_ptr)
     {
@@ -695,11 +695,20 @@ void StorageMergeTree::rename(const String & new_table_path, const StorageID & n
         /// at startup. Renaming it on the leader would orphan the followers' lease path
         /// and their cached `relative_data_path` — there is no protocol to broadcast the
         /// new path. Reject rather than silently diverge. Recreate the table to rename.
+        ///
+        /// This check must live here (not only in `rename`) because the default `Atomic`
+        /// database renames a table via `checkTableCanBeRenamed` + `renameInMemory` and
+        /// never calls `StorageMergeTree::rename` — only the on-disk/`Ordinary` path does.
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "RENAME TABLE is not supported under `leader_election` because the data path "
             "is shared between nodes and the lease path is fixed at startup. Followers "
             "would continue to track the old path. Drop and recreate the table instead.");
     }
+}
+
+void StorageMergeTree::rename(const String & new_table_path, const StorageID & new_table_id)
+{
+    checkTableCanBeRenamed(new_table_id);
     MergeTreeData::rename(new_table_path, new_table_id);
 }
 
