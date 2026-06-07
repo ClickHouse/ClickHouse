@@ -7233,29 +7233,21 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
     /// The table's metadata version is the version of the /metadata znode.
     /// Bump it by re-setting the same content. CAS protects against concurrent ALTERs
     /// and other replicas restoring the same table.
-    ///
-    /// On RESTORE ON CLUSTER multiple replicas may run this concurrently. To avoid duplicate
-    /// ALTER_METADATA log entries we track only whether THIS replica performed the final bump
-    /// (from metadata_version - 1 to metadata_version). ZooKeeper increments the znode version
-    /// by 1 on each successful set, so a successful trySet from version (metadata_version - 1)
-    /// is the unique final bump; all other successful bumps are intermediate and produce no entry.
     Coordination::Stat metadata_stat;
     String metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
-    bool did_final_bump = false;
-    while (metadata_stat.version < metadata_version)
+
+    while (metadata_stat.version < metadata_version - 1)
     {
         auto code = zookeeper->trySet(table_metadata_path, metadata_str, metadata_stat.version);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZBADVERSION)
             throw zkutil::KeeperException::fromPath(code, table_metadata_path);
-        if (code == Coordination::Error::ZOK && metadata_stat.version + 1 == metadata_version)
-            did_final_bump = true;
         metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
     }
 
-    /// Notify running peer replicas about the new version via the shared replication log.
-    /// Only the replica that performed the final bump creates this entry, so exactly one
-    /// ALTER_METADATA entry is added to the log regardless of how many replicas restore concurrently.
-    if (did_final_bump)
+    /// Atomically do the final bump and create the ALTER_METADATA log entry so that exactly
+    /// one entry is produced even with concurrent RESTORE ON CLUSTER, and there is no window
+    /// where peers see the bumped /metadata version without a log entry to reload their metadata.
+    if (metadata_stat.version < metadata_version)
     {
         String columns_str = zookeeper->get(table_columns_path);
 
@@ -7267,10 +7259,21 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
         alter_entry.alter_version = metadata_version;
         alter_entry.create_time = time(nullptr);
 
-        String path_created = zookeeper->create(
-            fs::path(zookeeper_path) / "log/log-", alter_entry.toString(), zkutil::CreateMode::PersistentSequential);
-        LOG_INFO(log, "Created ALTER_METADATA log entry {} to propagate metadata version {} to all replicas",
-                 path_created, metadata_stat.version);
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeSetRequest(table_metadata_path, metadata_str, metadata_stat.version));
+        ops.emplace_back(zkutil::makeCreateRequest(
+            fs::path(zookeeper_path) / "log/log-", alter_entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+        Coordination::Responses responses;
+        auto code = zookeeper->tryMulti(ops, responses);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZBADVERSION)
+            throw zkutil::KeeperException(code);
+        if (code == Coordination::Error::ZOK)
+        {
+            const String & path_created = dynamic_cast<const Coordination::CreateResponse &>(*responses[1]).path_created;
+            LOG_INFO(log, "Created ALTER_METADATA log entry {} to propagate metadata version {} to all replicas",
+                     path_created, metadata_version);
+        }
     }
 
     /// This replica has the same structure, so mark the version as applied by it.
