@@ -407,6 +407,78 @@ TEST(ComputeHashInto, DistributionUniformityUInt32K4P64)
 
 
 // ──────────────────────────────────────────────────────────────────────
+// 9b. Power-of-two Fibonacci sharder uniformity (random keys, K=1, P=64).
+//     Mirrors the scatterBlockByHashPow2 path: bucket = (h * 0x9E3779B1) >> 26.
+//     Tests that CRC32C hashes routed through the Fibonacci multiplier are
+//     uniformly distributed across 64 = 2^6 grace_hash buckets.
+// ──────────────────────────────────────────────────────────────────────
+TEST(ComputeHashInto, DistributionPow2FibRandom)
+{
+    constexpr size_t total_rows = 1 << 16; // 65536
+    constexpr size_t num_parts = 64;       // 2^6
+    constexpr UInt32 K = 6;
+    constexpr UInt32 kFibMul = 0x9E3779B1u;
+
+    auto col = ColumnUInt32::create();
+    for (size_t i = 0; i < total_rows; ++i)
+        col->insert(static_cast<UInt64>(rng()));
+
+    std::vector<UInt32> hashes(total_rows);
+    col->computeHashInto(0, total_rows, hashes.data(), true);
+
+    std::vector<size_t> counts(num_parts, 0);
+    for (UInt32 h : hashes)
+        counts[static_cast<UInt32>(h) * kFibMul >> (32u - K)]++;
+
+    const double expected = static_cast<double>(total_rows) / static_cast<double>(num_parts);
+    double chi2 = 0.0;
+    for (size_t p = 0; p < num_parts; ++p)
+    {
+        const double delta = static_cast<double>(counts[p]) - expected;
+        chi2 += (delta * delta) / expected;
+    }
+    // Critical value for chi2 with df=63, p=0.001 is ~103.
+    EXPECT_LT(chi2, 103.0) << "Pow2 Fibonacci sharder is non-uniform for random keys (chi2=" << chi2 << ")";
+}
+
+
+// ──────────────────────────────────────────────────────────────────────
+// 9c. Power-of-two Fibonacci sharder uniformity (sequential keys, P=64).
+//     Sequential integers are the pathological case for plain `hash & mask`
+//     because CRC32C has poor avalanche in the low bits for structured input.
+//     The Fibonacci multiplier must still produce a balanced distribution.
+// ──────────────────────────────────────────────────────────────────────
+TEST(ComputeHashInto, DistributionPow2FibSequential)
+{
+    constexpr size_t total_rows = 1 << 16;
+    constexpr size_t num_parts = 64;
+    constexpr UInt32 K = 6;
+    constexpr UInt32 kFibMul = 0x9E3779B1u;
+
+    auto col = ColumnUInt64::create();
+    for (size_t i = 0; i < total_rows; ++i)
+        col->insert(static_cast<UInt64>(i));
+
+    std::vector<UInt32> hashes(total_rows);
+    col->computeHashInto(0, total_rows, hashes.data(), true);
+
+    std::vector<size_t> counts(num_parts, 0);
+    for (UInt32 h : hashes)
+        counts[static_cast<UInt32>(h) * kFibMul >> (32u - K)]++;
+
+    const double expected = static_cast<double>(total_rows) / static_cast<double>(num_parts);
+    double chi2 = 0.0;
+    for (size_t p = 0; p < num_parts; ++p)
+    {
+        const double delta = static_cast<double>(counts[p]) - expected;
+        chi2 += (delta * delta) / expected;
+    }
+    // Critical value for chi2 with df=63, p=0.001 is ~103.
+    EXPECT_LT(chi2, 103.0) << "Pow2 Fibonacci sharder is non-uniform for sequential keys (chi2=" << chi2 << ")";
+}
+
+
+// ──────────────────────────────────────────────────────────────────────
 // 10. ColumnDecimal: Decimal32 / Decimal64 basic sanity.
 // ──────────────────────────────────────────────────────────────────────
 TEST(ComputeHashInto, ColumnDecimalDistinctHashes)
