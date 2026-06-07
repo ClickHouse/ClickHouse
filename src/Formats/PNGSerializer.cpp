@@ -7,7 +7,9 @@
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/Exception.h>
+#include <Common/PODArray.h>
 #include <Common/assert_cast.h>
 #include <Common/NaNUtils.h>
 #include <Common/StringUtils.h>
@@ -21,6 +23,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_ROWS;
 }
 
 namespace
@@ -67,33 +70,49 @@ namespace
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value kind for PNG pixel component");
     }
 
-    const IDataType * unwrapNullable(const IDataType * type)
+    /// Strip a `LowCardinality` wrapper, if present.
+    const IDataType * removeLowCardinalityType(const IDataType * type)
     {
+        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type))
+            return low_cardinality->getDictionaryType().get();
+        return type;
+    }
+
+    /// Strip `LowCardinality` and `Nullable` wrappers, returning the innermost value type.
+    const IDataType * unwrapType(const IDataType * type)
+    {
+        type = removeLowCardinalityType(type);
         if (type->isNullable())
             return typeid_cast<const DataTypeNullable &>(*type).getNestedType().get();
         return type;
     }
 
+    /// Whether the materialized column for this type is a `ColumnNullable` (after `LowCardinality` is removed).
+    bool isNullableType(const IDataType & type)
+    {
+        return removeLowCardinalityType(&type)->isNullable();
+    }
+
     bool isAllowedPixelType(const IDataType & type)
     {
-        WhichDataType which(*unwrapNullable(&type));
+        WhichDataType which(*unwrapType(&type));
         return which.isNativeInteger() || which.isNativeFloat();
     }
 
     bool isAllowedBoolType(const IDataType & type)
     {
-        return unwrapNullable(&type)->getName() == "Bool";
+        return unwrapType(&type)->getName() == "Bool";
     }
 
     bool isAllowedCoordinateType(const IDataType & type)
     {
-        return WhichDataType(*unwrapNullable(&type)).isNativeInteger();
+        return WhichDataType(*unwrapType(&type)).isNativeInteger();
     }
 
     /// Classify a value column type into a `ValueKind`. The type must have already been validated.
     ValueKind classifyValueKind(const IDataType & type)
     {
-        WhichDataType which(*unwrapNullable(&type));
+        WhichDataType which(*unwrapType(&type));
         if (which.isNativeUInt())
             return ValueKind::UInt;
         if (which.isNativeInt())
@@ -169,7 +188,10 @@ private:
     };
     std::vector<ChannelExtractor> channel_extractors;
 
-    std::vector<UInt8> pixels;
+    /// The image buffer can be large (its size is controlled by user settings), so it uses a
+    /// `PODArray` backed by the ClickHouse allocator. This way its memory is accounted by the
+    /// memory tracker and respects the per-query memory limits.
+    PaddedPODArray<UInt8> pixels;
     std::vector<ColumnPtr> src_columns;
 
     void writePixel(size_t x, size_t y, const UInt8 * components);
@@ -299,8 +321,8 @@ PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_se
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Columns 'x' and 'y' must have an integer type, got '{}' and '{}'",
                 x_type.getName(), y_type.getName());
-        x_nullable = x_type.isNullable();
-        y_nullable = y_type.isNullable();
+        x_nullable = isNullableType(x_type);
+        y_nullable = isNullableType(y_type);
     }
 
     /// Precompute the per-channel extraction plan once, in the order the channels are written.
@@ -308,7 +330,7 @@ PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_se
     auto add_channel = [&](size_t idx, ValueKind kind)
     {
         const auto & type = *header.getByPosition(idx).type;
-        channel_extractors.push_back({idx, kind, type.isNullable()});
+        channel_extractors.push_back({idx, kind, isNullableType(type)});
     };
 
     if (mode == Mode::RGB || mode == Mode::RGBA)
@@ -331,12 +353,18 @@ PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_se
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Image dimensions {}x{} with {} channel(s) overflow the maximum buffer size",
             width, height, channels);
-    pixels.assign(total_bytes, 0);
+    pixels.resize_fill(total_bytes, 0);
 }
 
 void PNGSerializer::Impl::setColumns(const ColumnPtr * columns, size_t num_columns)
 {
-    src_columns.assign(columns, columns + num_columns);
+    /// Materialize the columns so that the per-row reading path works uniformly. This unwraps
+    /// `Const`, `Sparse`, `LowCardinality`, etc., into plain columns; in particular a
+    /// `LowCardinality(Nullable(...))` becomes a `ColumnNullable`, matching the precomputed `nullable` flags.
+    src_columns.clear();
+    src_columns.reserve(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        src_columns.push_back(columns[i]->convertToFullIfNeeded());
 }
 
 void PNGSerializer::Impl::writePixel(size_t x, size_t y, const UInt8 * components)
@@ -392,7 +420,11 @@ void PNGSerializer::Impl::writeRow(size_t row_num)
     {
         /// The image is filled in scanline order; advance x and y incrementally.
         if (implicit_y >= height)
-            return;
+            throw Exception(ErrorCodes::TOO_MANY_ROWS,
+                "The result has more rows than the {}x{} PNG image can hold ({} pixels). "
+                "Use explicit 'x' and 'y' coordinate columns, or increase "
+                "'output_format_image_width'/'output_format_image_height'.",
+                width, height, width * height);
 
         writePixel(implicit_x, implicit_y, components);
 
