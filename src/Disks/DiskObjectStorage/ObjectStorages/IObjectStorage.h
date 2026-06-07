@@ -138,7 +138,18 @@ struct RelativePathWithMetadata
 
     ~RelativePathWithMetadata() = default;
 
-    std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
+    std::string getFileName() const
+    {
+        /// `relative_path` may carry a URL query/fragment for web index listings (e.g.
+        /// "data.tsv.gz?download=1"). They are not part of the file name and would defeat
+        /// extension-based format/compression detection, so strip them here, consistent with how
+        /// direct `url()` reads use `Poco::URI::getPath()`. For other object storages the path never
+        /// contains '?'/'#', so this is a no-op.
+        const auto pos = relative_path.find_first_of("?#");
+        const std::string path_without_query
+            = pos == std::string::npos ? relative_path : relative_path.substr(0, pos);
+        return std::filesystem::path(path_without_query).filename();
+    }
     std::string getPath() const { return relative_path; }
 };
 
