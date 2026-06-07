@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <new>
 #include <type_traits>
 #include <utility>
 
@@ -545,12 +546,24 @@ inline void sort(T * first, T * last, Less less)
         alignas(T) std::byte stack_storage[4096];
         std::size_t stack_cap = 4096 / sizeof(T);
         T * scratch;
-        std::unique_ptr<std::byte[]> heap;
+
+        // The scratch is reinterpreted as `T *` and accessed as `T &`, so the heap allocation must
+        // satisfy `alignof(T)`. Plain `new std::byte[]` only guarantees the default new alignment,
+        // which is insufficient for over-aligned `T` (e.g. `alignas(64)`), so use aligned
+        // `operator new` / `operator delete` with a matching deleter.
+        struct AlignedDelete
+        {
+            void operator()(std::byte * p) const noexcept
+            {
+                ::operator delete[](static_cast<void *>(p), std::align_val_t{alignof(T)});
+            }
+        };
+        std::unique_ptr<std::byte[], AlignedDelete> heap;
         if (stack_cap >= alloc_len)
             scratch = reinterpret_cast<T *>(stack_storage);
         else
         {
-            heap.reset(new std::byte[alloc_len * sizeof(T)]);
+            heap.reset(static_cast<std::byte *>(::operator new[](alloc_len * sizeof(T), std::align_val_t{alignof(T)})));
             scratch = reinterpret_cast<T *>(heap.get());
         }
 
