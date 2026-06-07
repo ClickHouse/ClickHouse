@@ -146,7 +146,12 @@ public:
     bool compile_sort_description = false;
 
     bool hasPrefix(const SortDescription & prefix) const;
-    bool hasPrefix(const Names & prefix) const;
+
+    /// Whether `prefix` matches the leading columns of this sort description and none of those
+    /// columns uses a collator. A collated column is ordered by its collation key rather than by
+    /// value, so rows with equal values are not adjacent; in-order optimizations that rely on
+    /// value equality (e.g. DISTINCT, LIMIT BY) require this property.
+    bool hasPrefixWithoutCollation(const Names & prefix) const;
 };
 
 /// Returns a copy of lhs containing only the prefix of columns matching rhs's columns.

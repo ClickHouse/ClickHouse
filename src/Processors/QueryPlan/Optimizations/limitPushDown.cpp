@@ -176,7 +176,7 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     /// by first applying an `ExpressionTransform`, and this will give quite a bit of speedup as well.
     /// However, if data is somewhat randomly distributed and high cardinality, then each stream will have a hash table
     /// whose size is the number of unique keys, and this can cause OOM.
-    if (!sort->getSortDescription().hasPrefix(limit_by->getColumns()))
+    if (!sort->getSortDescription().hasPrefixWithoutCollation(limit_by->getColumns()))
         return;
 
     const UInt64 length = limit_by->getGroupLength();

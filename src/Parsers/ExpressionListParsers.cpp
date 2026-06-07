@@ -518,7 +518,18 @@ namespace
         bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
         {
             ParserCompoundIdentifier parser(false, true, Highlight::function);
-            return parser.parse(pos, node, expected);
+            if (!parser.parse(pos, node, expected))
+                return false;
+
+            /// Function names containing query parameters (for example, `{x:Identifier}(...)`)
+            /// are not supported.
+            if (node->as<ASTIdentifier>()->isParam())
+            {
+                node = nullptr;
+                return false;
+            }
+
+            return true;
         }
     };
 }
@@ -2996,6 +3007,7 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
     /// OVERLAY(x PLACING y FROM a FOR b)
 
     String function_name = getIdentifierName(identifier);
+    chassert(!function_name.empty());
     String function_name_lowercase = Poco::toLower(function_name);
 
     if (is_table_function)

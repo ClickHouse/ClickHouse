@@ -80,6 +80,11 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
                 if (!columns.contains(sort_column_desc.column_name))
                     break;
 
+                /// A collated column is ordered by its collation key, not by value, so equal
+                /// values are not adjacent. DISTINCT in order relies on equal rows being adjacent.
+                if (sort_column_desc.collator)
+                    break;
+
                 prefix_sort_description.emplace_back(sort_column_desc);
             }
 
@@ -138,13 +143,13 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
     if (auto * limit_by_step = typeid_cast<LimitByStep *>(parent->step.get()))
     {
         if (properties->sort_scope == SortingProperty::SortScope::Global)
-            limit_by_step->applyOrder(properties->sort_description);
+            limit_by_step->applyOrder(properties->sort_description.hasPrefixWithoutCollation(limit_by_step->getColumns()));
     }
 
     if (auto * negative_limit_by_step = typeid_cast<NegativeLimitByStep *>(parent->step.get()))
     {
         if (properties->sort_scope == SortingProperty::SortScope::Global)
-            negative_limit_by_step->applyOrder(properties->sort_description);
+            negative_limit_by_step->applyOrder(properties->sort_description.hasPrefixWithoutCollation(negative_limit_by_step->getColumns()));
     }
 
     if (auto * transforming = dynamic_cast<ITransformingStep *>(parent->step.get()))
