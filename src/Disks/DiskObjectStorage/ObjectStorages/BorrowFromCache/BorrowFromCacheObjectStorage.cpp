@@ -153,7 +153,8 @@ std::unique_ptr<WriteBufferFromFileBase> BorrowFromCacheObjectStorage::writeObje
         CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonOrigin());
 
     chassert(segment_holder->size() == 1);
-    segment_holder->front().getKeyMetadata()->createBaseDirectory(/* throw_if_failed */ true);
+    if (auto ec = segment_holder->front().getKeyMetadata()->createBaseDirectory(); ec)
+        throw std::filesystem::filesystem_error(fmt::format("createBaseDirectory failed for {}", key), ec);
 
     std::string cache_path = segment_holder->front().getPath();
     LOG_TEST(log, "Write object: {} -> {}", object.remote_path, cache_path);
