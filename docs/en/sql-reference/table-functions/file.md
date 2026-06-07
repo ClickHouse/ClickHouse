@@ -1,7 +1,7 @@
 ---
 description: 'A table engine which provides a table-like interface to SELECT from
-  and INSERT into files, similar to the s3 table function. Use `file()` when working
-  with local files, and `s3()` when working with buckets in object storage such as
+  and INSERT into files, similar to the s3 table function. Use `file` when working
+  with local files, and `s3` when working with buckets in object storage such as
   S3, GCS, or MinIO.'
 sidebar_label: 'file'
 sidebar_position: 60
@@ -15,7 +15,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # file Table Function
 
-A table engine which provides a table-like interface to SELECT from and INSERT into files, similar to the [s3](/sql-reference/table-functions/url.md) table function. Use `file()` when working with local files, and `s3()` when working with buckets in object storage such as S3, GCS, or MinIO.
+A table engine which provides a table-like interface to SELECT from and INSERT into files, similar to the [s3](/sql-reference/table-functions/s3.md) table function. Use `file` when working with local files, and `s3` when working with buckets in object storage such as S3, GCS, or MinIO.
 
 The `file` function can be used in `SELECT` and `INSERT` queries to read from or write to files.
 
@@ -84,7 +84,7 @@ As a result, the data is written into the file `test.tsv`:
 
 ### Partitioned write to multiple TSV files {#partitioned-write-to-multiple-tsv-files}
 
-If you specify a `PARTITION BY` expression when inserting data into a table function of type `file()`, then a separate file is created for each partition. Splitting the data into separate files helps to improve performance of read operations.
+If you specify a `PARTITION BY` expression when inserting data into a table function of type `file`, then a separate file is created for each partition. Splitting the data into separate files helps to improve performance of read operations.
 
 ```sql
 INSERT INTO TABLE FUNCTION

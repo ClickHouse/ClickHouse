@@ -168,6 +168,11 @@ struct WasmTimeRuntime::Impl
         config.epoch_interruption(true);
         config.signals_based_traps(false);
         config.wasm_exceptions(true);
+#if !defined(NDEBUG)
+        /// The Cranelift optimizer is prohibitively slow in debug builds and can
+        /// hit debug-only traps while simplifying even small modules.
+        config.cranelift_opt_level(wasmtime::OptLevel::None);
+#endif
         return config;
     }
 

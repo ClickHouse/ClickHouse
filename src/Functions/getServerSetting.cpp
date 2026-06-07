@@ -70,7 +70,21 @@ private:
 
         std::string_view setting_name{column->getDataAt(0)};
 
-        return Context::getGlobalContextInstance()->getServerSettings().get(setting_name);
+        auto global_context = Context::getGlobalContextInstance();
+        const auto & server_settings = global_context->getServerSettings();
+
+        /// Some server settings can be changed at runtime (e.g. memory limits, cache sizes, thread pool sizes).
+        /// In that case the live value held by the component diverges from the value stored in `ServerSettings`,
+        /// which only reflects what was last loaded from the config. `system.server_settings` already returns
+        /// the live value for such settings - mirror that behaviour here.
+        if (auto live = server_settings.tryGetLiveValueAsString(global_context, setting_name))
+        {
+            ServerSettings tmp{server_settings};
+            tmp.set(setting_name, *live);
+            return tmp.get(setting_name);
+        }
+
+        return server_settings.get(setting_name);
     }
 };
 

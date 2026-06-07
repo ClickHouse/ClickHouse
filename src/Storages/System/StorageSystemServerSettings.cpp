@@ -1,13 +1,10 @@
 #include <Core/ServerSettings.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/ServerSettingColumnsParams.h>
 #include <Storages/System/StorageSystemServerSettings.h>
-
-#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -42,13 +39,8 @@ void StorageSystemServerSettings::fillData(MutableColumns & res_columns, Context
     ServerSettings settings;
     settings.loadSettingsFromConfig(config);
 
-    /// Fill in the setting value dynamically.
-    if (zkutil::hasZooKeeperConfig(config))
-    {
-        zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
-        settings.set("keeper_hosts", fmt::format("{}", fmt::join(args.hosts, ",")));
-    }
-
+    /// Runtime-changeable and dynamically-derived values (such as `keeper_hosts`) are filled in by
+    /// `dumpToSystemServerSettingsColumns` via the shared `collectChangeableServerSettings` helper.
     ServerSettingColumnsParams params{res_columns, context};
     settings.dumpToSystemServerSettingsColumns(params);
 }
