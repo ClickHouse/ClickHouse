@@ -102,7 +102,8 @@ auto runWithRetry(
     Op && op) -> decltype(op())
 {
     static constexpr UInt64 max_backoff_ms = 10000;
-    UInt64 backoff_ms = std::max<UInt64>(retry.initial_backoff_ms, 1);
+    /// Cap each individual sleep (including the first) at `max_backoff_ms`.
+    UInt64 backoff_ms = std::min<UInt64>(std::max<UInt64>(retry.initial_backoff_ms, 1), max_backoff_ms);
     UInt64 attempt = 0;
     while (true)
     {
