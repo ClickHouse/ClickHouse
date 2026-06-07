@@ -25,6 +25,28 @@ else
     exit 1
 fi
 
+# Verify that an empty response (`LIMIT 0`) stays empty: snappy honors
+# `compress_empty=false` for HTTP responses, so no framed stream identifier is
+# emitted and no `Content-Encoding: snappy` header is set, matching gzip and the
+# other codecs (see 00302_http_compression).
+EMPTY_BYTES=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_http_compression=1" -H 'Accept-Encoding: snappy' \
+    -d 'SELECT number FROM system.numbers LIMIT 0' | wc -c)
+if [ "$EMPTY_BYTES" -eq 0 ]; then
+    echo "OK: empty snappy response is zero bytes"
+else
+    echo "FAIL: expected zero bytes for empty snappy response, got $EMPTY_BYTES" >&2
+    exit 1
+fi
+
+if ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&enable_http_compression=1" -H 'Accept-Encoding: snappy' \
+    -d 'SELECT number FROM system.numbers LIMIT 0' 2>&1 | grep -q --text '< Content-Encoding: snappy'
+then
+    echo "FAIL: empty snappy response must not set Content-Encoding" >&2
+    exit 1
+else
+    echo "OK: empty snappy response has no Content-Encoding header"
+fi
+
 # Verify request decoding (`Content-Encoding: snappy` on POST body).
 # Round-trip: ask the server to encode a query string into framed snappy via
 # `Accept-Encoding: snappy`, then POST that framed body back as the request body.

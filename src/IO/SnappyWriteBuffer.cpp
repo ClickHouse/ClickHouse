@@ -115,8 +115,12 @@ void SnappyWriteBuffer::nextImpl()
 void SnappyWriteBuffer::finalFlushBefore()
 {
     next();
-    /// Even for empty payloads, emit the stream identifier so the output is a
-    /// valid (zero-data) snappy framed stream rather than an empty byte stream.
+    /// Don't emit anything when no data was ever written and compress_empty is false
+    /// (e.g. HTTP responses, where an empty body must stay zero bytes without a
+    /// Content-Encoding header). Otherwise emit the stream identifier so even empty
+    /// output is a valid (zero-data) snappy framed stream rather than an empty byte stream.
+    if (!header_written && !compress_empty)
+        return;
     if (!header_written)
         writeStreamIdentifier();
 }

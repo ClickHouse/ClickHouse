@@ -202,7 +202,7 @@ std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
     if (method == CompressionMethod::Snappy)
     {
         if (snappy_mode == SnappyMode::Framed)
-            return std::make_unique<SnappyWriteBuffer>(std::forward<WriteBufferT>(nested), buf_size, existing_memory, alignment);
+            return std::make_unique<SnappyWriteBuffer>(std::forward<WriteBufferT>(nested), buf_size, existing_memory, alignment, compress_empty);
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Snappy write compression is only supported in framed mode (SET snappy_mode = 'framed')");
     }
 #endif
