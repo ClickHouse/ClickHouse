@@ -27,8 +27,8 @@ SELECT t1.id, t1.a, hasToken(doc, 'Artistic') as score FROM t_00026 as t1 JOIN t
 SELECT t1.id, t1.a, hasToken(doc, 'Ancient') as score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT hasToken(doc, 'Artistic') as score FROM test_vector_invert_join ORDER BY score DESC LIMIT 5;
 SELECT hasToken(doc, 'Ancient') as score FROM test_vector_invert_join ORDER BY score DESC LIMIT 5;
-SELECT t1.id, t1.a, cosineDistance(t2.vector, [2.,2,2]) as score1, hasToken(t2.doc, 'Social') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC LIMIT 5;
-SELECT t1.id, t1.a, cosineDistance(t2.vector, [1.0,1,1]) as score1, hasToken(t2.doc, 'Ancient') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC LIMIT 5;
+SELECT t1.id, t1.a, cosineDistance(t2.vector, [2.,2,2]) as score1, hasToken(t2.doc, 'Social') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC, t1.a LIMIT 5;
+SELECT t1.id, t1.a, cosineDistance(t2.vector, [1.0,1,1]) as score1, hasToken(t2.doc, 'Ancient') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, CAST('[2.,2,2]','Array(Float32)'))) * 0.6 + hasToken(t2.doc, 'Social') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, CAST('[1.0,1,1]','Array(Float32)'))) * 0.6 + hasToken(t2.doc, 'Ancient') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, [2.,2,2])) * 0.6 + hasToken(t2.doc, 'Social') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
@@ -63,8 +63,8 @@ SELECT t1.id, t1.a, hasToken(doc, 'Artistic') as score FROM t_00026 as t1 JOIN t
 SELECT t1.id, t1.a, hasToken(doc, 'Ancient') as score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT hasToken(doc, 'Artistic') as score FROM test_vector_invert_join ORDER BY score DESC LIMIT 5;
 SELECT hasToken(doc, 'Ancient') as score FROM test_vector_invert_join ORDER BY score DESC LIMIT 5;
-SELECT t1.id, t1.a, cosineDistance(t2.vector, [2.,2,2]) as score1, hasToken(t2.doc, 'Social') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC LIMIT 5;
-SELECT t1.id, t1.a, cosineDistance(t2.vector, [1.0,1,1]) as score1, hasToken(t2.doc, 'Ancient') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC LIMIT 5;
+SELECT t1.id, t1.a, cosineDistance(t2.vector, [2.,2,2]) as score1, hasToken(t2.doc, 'Social') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC, t1.a LIMIT 5;
+SELECT t1.id, t1.a, cosineDistance(t2.vector, [1.0,1,1]) as score1, hasToken(t2.doc, 'Ancient') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, CAST('[2.,2,2]','Array(Float32)'))) * 0.6 + hasToken(t2.doc, 'Social') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, CAST('[1.0,1,1]','Array(Float32)'))) * 0.6 + hasToken(t2.doc, 'Ancient') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, [2.,2,2])) * 0.6 + hasToken(t2.doc, 'Social') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
@@ -99,8 +99,8 @@ SELECT t1.id, t1.a, hasToken(doc, 'Artistic') as score FROM t_00026 as t1 JOIN t
 SELECT t1.id, t1.a, hasToken(doc, 'Ancient') as score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT hasToken(doc, 'Artistic') as score FROM test_vector_invert_join ORDER BY score DESC LIMIT 5;
 SELECT hasToken(doc, 'Ancient') as score FROM test_vector_invert_join ORDER BY score DESC LIMIT 5;
-SELECT t1.id, t1.a, cosineDistance(t2.vector, [2.,2,2]) as score1, hasToken(t2.doc, 'Social') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC LIMIT 5;
-SELECT t1.id, t1.a, cosineDistance(t2.vector, [1.0,1,1]) as score1, hasToken(t2.doc, 'Ancient') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC LIMIT 5;
+SELECT t1.id, t1.a, cosineDistance(t2.vector, [2.,2,2]) as score1, hasToken(t2.doc, 'Social') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC, t1.a LIMIT 5;
+SELECT t1.id, t1.a, cosineDistance(t2.vector, [1.0,1,1]) as score1, hasToken(t2.doc, 'Ancient') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, CAST('[2.,2,2]','Array(Float32)'))) * 0.6 + hasToken(t2.doc, 'Social') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, CAST('[1.0,1,1]','Array(Float32)'))) * 0.6 + hasToken(t2.doc, 'Ancient') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, [2.,2,2])) * 0.6 + hasToken(t2.doc, 'Social') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
@@ -135,8 +135,8 @@ SELECT t1.id, t1.a, hasToken(doc, 'Artistic') as score FROM t_00026 as t1 JOIN t
 SELECT t1.id, t1.a, hasToken(doc, 'Ancient') as score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT hasToken(doc, 'Artistic') as score FROM test_vector_invert_join ORDER BY score DESC LIMIT 5;
 SELECT hasToken(doc, 'Ancient') as score FROM test_vector_invert_join ORDER BY score DESC LIMIT 5;
-SELECT t1.id, t1.a, cosineDistance(t2.vector, [2.,2,2]) as score1, hasToken(t2.doc, 'Social') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC LIMIT 5;
-SELECT t1.id, t1.a, cosineDistance(t2.vector, [1.0,1,1]) as score1, hasToken(t2.doc, 'Ancient') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC LIMIT 5;
+SELECT t1.id, t1.a, cosineDistance(t2.vector, [2.,2,2]) as score1, hasToken(t2.doc, 'Social') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC, t1.a LIMIT 5;
+SELECT t1.id, t1.a, cosineDistance(t2.vector, [1.0,1,1]) as score1, hasToken(t2.doc, 'Ancient') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, CAST('[2.,2,2]','Array(Float32)'))) * 0.6 + hasToken(t2.doc, 'Social') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, CAST('[1.0,1,1]','Array(Float32)'))) * 0.6 + hasToken(t2.doc, 'Ancient') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, [2.,2,2])) * 0.6 + hasToken(t2.doc, 'Social') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
@@ -171,8 +171,8 @@ SELECT t1.id, t1.a, hasToken(doc, 'Artistic') as score FROM t_00026 as t1 JOIN t
 SELECT t1.id, t1.a, hasToken(doc, 'Ancient') as score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT hasToken(doc, 'Artistic') as score FROM test_vector_invert_join ORDER BY score DESC LIMIT 5;
 SELECT hasToken(doc, 'Ancient') as score FROM test_vector_invert_join ORDER BY score DESC LIMIT 5;
-SELECT t1.id, t1.a, cosineDistance(t2.vector, [2.,2,2]) as score1, hasToken(t2.doc, 'Social') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC LIMIT 5;
-SELECT t1.id, t1.a, cosineDistance(t2.vector, [1.0,1,1]) as score1, hasToken(t2.doc, 'Ancient') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC LIMIT 5;
+SELECT t1.id, t1.a, cosineDistance(t2.vector, [2.,2,2]) as score1, hasToken(t2.doc, 'Social') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC, t1.a LIMIT 5;
+SELECT t1.id, t1.a, cosineDistance(t2.vector, [1.0,1,1]) as score1, hasToken(t2.doc, 'Ancient') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, CAST('[2.,2,2]','Array(Float32)'))) * 0.6 + hasToken(t2.doc, 'Social') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, CAST('[1.0,1,1]','Array(Float32)'))) * 0.6 + hasToken(t2.doc, 'Ancient') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, [2.,2,2])) * 0.6 + hasToken(t2.doc, 'Social') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
@@ -207,8 +207,8 @@ SELECT t1.id, t1.a, hasToken(doc, 'Artistic') as score FROM t_00026 as t1 JOIN t
 SELECT t1.id, t1.a, hasToken(doc, 'Ancient') as score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT hasToken(doc, 'Artistic') as score FROM test_vector_invert_join ORDER BY score DESC LIMIT 5;
 SELECT hasToken(doc, 'Ancient') as score FROM test_vector_invert_join ORDER BY score DESC LIMIT 5;
-SELECT t1.id, t1.a, cosineDistance(t2.vector, [2.,2,2]) as score1, hasToken(t2.doc, 'Social') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC LIMIT 5;
-SELECT t1.id, t1.a, cosineDistance(t2.vector, [1.0,1,1]) as score1, hasToken(t2.doc, 'Ancient') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC LIMIT 5;
+SELECT t1.id, t1.a, cosineDistance(t2.vector, [2.,2,2]) as score1, hasToken(t2.doc, 'Social') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC, t1.a LIMIT 5;
+SELECT t1.id, t1.a, cosineDistance(t2.vector, [1.0,1,1]) as score1, hasToken(t2.doc, 'Ancient') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, CAST('[2.,2,2]','Array(Float32)'))) * 0.6 + hasToken(t2.doc, 'Social') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, CAST('[1.0,1,1]','Array(Float32)'))) * 0.6 + hasToken(t2.doc, 'Ancient') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, [2.,2,2])) * 0.6 + hasToken(t2.doc, 'Social') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
@@ -243,8 +243,8 @@ SELECT t1.id, t1.a, hasToken(doc, 'Artistic') as score FROM t_00026 as t1 JOIN t
 SELECT t1.id, t1.a, hasToken(doc, 'Ancient') as score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT hasToken(doc, 'Artistic') as score FROM test_vector_invert_join ORDER BY score DESC LIMIT 5;
 SELECT hasToken(doc, 'Ancient') as score FROM test_vector_invert_join ORDER BY score DESC LIMIT 5;
-SELECT t1.id, t1.a, cosineDistance(t2.vector, [2.,2,2]) as score1, hasToken(t2.doc, 'Social') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC LIMIT 5;
-SELECT t1.id, t1.a, cosineDistance(t2.vector, [1.0,1,1]) as score1, hasToken(t2.doc, 'Ancient') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC LIMIT 5;
+SELECT t1.id, t1.a, cosineDistance(t2.vector, [2.,2,2]) as score1, hasToken(t2.doc, 'Social') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC, t1.a LIMIT 5;
+SELECT t1.id, t1.a, cosineDistance(t2.vector, [1.0,1,1]) as score1, hasToken(t2.doc, 'Ancient') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, CAST('[2.,2,2]','Array(Float32)'))) * 0.6 + hasToken(t2.doc, 'Social') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, CAST('[1.0,1,1]','Array(Float32)'))) * 0.6 + hasToken(t2.doc, 'Ancient') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, [2.,2,2])) * 0.6 + hasToken(t2.doc, 'Social') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
@@ -279,8 +279,8 @@ SELECT t1.id, t1.a, hasToken(doc, 'Artistic') as score FROM t_00026 as t1 JOIN t
 SELECT t1.id, t1.a, hasToken(doc, 'Ancient') as score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT hasToken(doc, 'Artistic') as score FROM test_vector_invert_join ORDER BY score DESC LIMIT 5;
 SELECT hasToken(doc, 'Ancient') as score FROM test_vector_invert_join ORDER BY score DESC LIMIT 5;
-SELECT t1.id, t1.a, cosineDistance(t2.vector, [2.,2,2]) as score1, hasToken(t2.doc, 'Social') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC LIMIT 5;
-SELECT t1.id, t1.a, cosineDistance(t2.vector, [1.0,1,1]) as score1, hasToken(t2.doc, 'Ancient') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC LIMIT 5;
+SELECT t1.id, t1.a, cosineDistance(t2.vector, [2.,2,2]) as score1, hasToken(t2.doc, 'Social') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC, t1.a LIMIT 5;
+SELECT t1.id, t1.a, cosineDistance(t2.vector, [1.0,1,1]) as score1, hasToken(t2.doc, 'Ancient') AS score2 FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score1 DESC, score2 ASC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, CAST('[2.,2,2]','Array(Float32)'))) * 0.6 + hasToken(t2.doc, 'Social') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, CAST('[1.0,1,1]','Array(Float32)'))) * 0.6 + hasToken(t2.doc, 'Ancient') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;
 SELECT t1.id, t1.a, (1 - cosineDistance(t2.vector, [2.,2,2])) * 0.6 + hasToken(t2.doc, 'Social') * 0.4 AS score FROM t_00026 as t1 JOIN test_vector_invert_join as t2 ON t1.id = t2.id ORDER BY score DESC, t1.a LIMIT 5;

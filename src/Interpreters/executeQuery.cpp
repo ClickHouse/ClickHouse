@@ -337,7 +337,6 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                         context->getCurrentRoles());
                     VectorQueryPlanCache::Reader reader = vector_query_plan_cache->createReader(key);
 
-                    // Counts ast_size into QueryPlanCacheReadBytes (separate from plan_size counted in hasCacheEntryForKey below).
                     const bool ast_cache_entry_exists = reader.hasAstCacheEntryForKey(true);
                     bool parsed_cache_parameters = false;
                     if (ast_cache_entry_exists)
@@ -385,7 +384,6 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                     }
                     if (!result.query_result_cache_hit)
                     {
-                        // Counts plan_size into QueryPlanCacheReadBytes (separate from ast_size counted in hasAstCacheEntryForKey above).
                         if (reader.hasCacheEntryForKey(true))
                         {
                             result.cached_plan = reader.getPlan();
@@ -1337,10 +1335,8 @@ static std::optional<BlockIO> tryExecuteFromCache(
     {
         auto optimization_settings = QueryPlanOptimizationSettings(context);
         auto build_pipeline_settings = BuildQueryPipelineSettings(context);
-        // LOG_ERROR(logger, "use plan success");
 
         auto query_cached_builder = output.cached_plan->buildQueryPipeline(optimization_settings, build_pipeline_settings, true);
-        // LOG_ERROR(logger, "buildQueryPipeline success");
         res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_cached_builder));
 
         StreamLocalLimits limits;
