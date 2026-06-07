@@ -492,17 +492,10 @@ Database backup works with both incremental and non-incremental backups.
 
 ```sql
 CREATE DATABASE backup_database
-ENGINE = Backup('database_name_inside_backup', 'backup_destination')
-```
-
-Backup destination can be any valid backup [destination](/operations/backup/disk#configure-backup-destinations-for-disk) like `Disk`, `S3`, `File`.
-
-With `Disk` backup destination, query to create database from backup looks like this:
-
-```sql
-CREATE DATABASE backup_database
 ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))
 ```
+
+The backup destination can be any valid backup [destination](/operations/backup/disk#configure-backup-destinations-for-disk), such as `Disk`, `S3`, or `File`. It is passed as a function, for example `Disk('disk_name', 'backup_name')`.
 
 **Engine Parameters**
 
