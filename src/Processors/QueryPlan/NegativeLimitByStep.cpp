@@ -117,9 +117,9 @@ QueryPlanStepPtr NegativeLimitByStep::deserialize(Deserialization & ctx)
     return std::make_unique<NegativeLimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
 }
 
-void NegativeLimitByStep::applyOrder(SortDescription sort_description)
+void NegativeLimitByStep::applyOrder()
 {
-    in_order = sort_description.hasPrefix(columns);
+    in_order = true;
 }
 
 void registerNegativeLimitByStep(QueryPlanStepRegistry & registry);
