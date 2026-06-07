@@ -120,7 +120,9 @@ public:
     /// shrunk per the mask when one is provided).
     String getSignatureString() const override
     {
-        return "(const UInt | const Tuple, UInt) -> Tuple";
+        /// The `const` modifier applies to the whole first argument; it cannot be repeated
+        /// inside the `|` alternation (the parser only accepts one `const` per argument).
+        return "(const UInt | Tuple, UInt) -> Tuple";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

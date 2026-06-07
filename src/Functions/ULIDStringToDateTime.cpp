@@ -73,6 +73,11 @@ public:
                         arguments[0].type->getName(), getName(), ULID_LENGTH);
             }
         }
+        /// Preserve the legacy rejection of an explicitly provided empty timezone; the DSL
+        /// `DateTime64(3, tz)` type function silently falls back to the server timezone when tz == ''.
+        if (arguments.size() == 2 && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false).empty())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} supports a 2nd argument (optional) that must be a valid time zone", getName());
         return IFunction::getReturnTypeImpl(arguments);
     }
 

@@ -55,6 +55,19 @@ static UInt64 fieldToUInt64(const Field & field)
     return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), field);
 }
 
+/// `DataTypeDateTime64` / `DataTypeTime64` take a `UInt32` scale and validate its maximum
+/// after the conversion. A captured constant above `UINT32_MAX` would wrap before that check
+/// (e.g. `4294967305` becomes `9`), so range-check it here and let the type constructor reject
+/// any remaining out-of-range scale.
+static UInt32 fieldToScale(const Field & field, const std::string & type_function_name)
+{
+    const UInt64 scale = fieldToUInt64(field);
+    if (scale > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Scale {} is out of range for type function {}", scale, type_function_name);
+    return static_cast<UInt32>(scale);
+}
+
 class TypeFunctionLeastSupertype : public ITypeFunction
 {
 public:
@@ -206,7 +219,7 @@ public:
     {
         if (args.empty() || args.size() > 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function DateTime64");
-        const UInt64 scale = fieldToUInt64(args[0].field());
+        const UInt32 scale = fieldToScale(args[0].field(), name());
         if (args.size() == 1)
             return Value(DataTypePtr(std::make_shared<DataTypeDateTime64>(scale)));
         return Value(DataTypePtr(std::make_shared<DataTypeDateTime64>(scale, args[1].field().safeGet<String>())));
@@ -223,7 +236,7 @@ public:
     {
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function Time64");
-        return Value(DataTypePtr(std::make_shared<DataTypeTime64>(fieldToUInt64(args.front().field()))));
+        return Value(DataTypePtr(std::make_shared<DataTypeTime64>(fieldToScale(args.front().field(), name()))));
     }
 
     std::string name() const override { return "Time64"; }
