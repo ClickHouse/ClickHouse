@@ -134,6 +134,20 @@ bool ReadBufferFromRemoteFSGather::readImpl()
                 "offset: {}, buf offset: {}, available: {}, nextimpl offset: {}",
                 file_offset_of_buffer_end, current_buf->getFileOffsetOfBufferEnd(),
                 current_buf->available(), nextimpl_working_buffer_offset));
+
+        /// Diagnostic asserts for the bounds-corruption class of bug tracked in
+        /// `https://github.com/ClickHouse/ClickHouse/issues/104692`. While the
+        /// `SwapHelper` is in scope, `current_buf->buffer()` is the buffer view
+        /// our caller will see after the swap is undone. When
+        /// `use_external_buffer` is set, that range MUST lie inside
+        /// `internal_buffer` (the external buffer the caller handed us). If it
+        /// doesn't, the caller's owned `Memory<>` ends up silently extended
+        /// with bytes from somewhere else.
+        if (use_external_buffer)
+        {
+            chassert(current_buf->buffer().begin() >= internal_buffer.begin());
+            chassert(current_buf->buffer().begin() + current_buf->buffer().size() <= internal_buffer.end());
+        }
     }
 
     return result;

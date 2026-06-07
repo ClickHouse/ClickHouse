@@ -180,12 +180,25 @@ bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const char * s, 
 template <typename T>
 static void appendToStringOrVector(T & s, ReadBuffer & rb, const char * end)
 {
+    /// Diagnostic asserts for the bounds-corruption class of bug tracked in
+    /// `https://github.com/ClickHouse/ClickHouse/issues/104692`. If
+    /// `working_buffer` becomes inverted or extends past the underlying owned
+    /// `Memory<>`, the `s.append` below memcpys an arbitrary span and corrupts
+    /// the destination `String`'s heap arena. The crash then surfaces either at
+    /// the memcpy itself (unmapped source) or much later when the oversized
+    /// `String` is freed.
+    chassert(end >= rb.position());
+    chassert(end <= rb.buffer().end());
+    chassert(rb.position() >= rb.buffer().begin());
     s.append(rb.position(), end - rb.position());
 }
 
 template <>
 inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, ReadBuffer & rb, const char * end)
 {
+    chassert(end >= rb.position());
+    chassert(end <= rb.buffer().end());
+    chassert(rb.position() >= rb.buffer().begin());
     if (rb.isPadded())
         s.insertSmallAllowReadWriteOverflow15(rb.position(), end);
     else
@@ -195,6 +208,9 @@ inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, ReadBuffer & rb, c
 template <>
 inline void appendToStringOrVector(PODArray<char> & s, ReadBuffer & rb, const char * end)
 {
+    chassert(end >= rb.position());
+    chassert(end <= rb.buffer().end());
+    chassert(rb.position() >= rb.buffer().begin());
     s.insert(rb.position(), end);
 }
 

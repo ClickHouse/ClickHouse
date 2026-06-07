@@ -210,6 +210,18 @@ bool ReadBufferFromS3::nextImpl()
         return false;
     }
 
+    /// Diagnostic asserts for the bounds-corruption class of bug tracked in
+    /// `https://github.com/ClickHouse/ClickHouse/issues/104692`. When
+    /// `use_external_buffer` is set, the inner `impl` was told to fill our
+    /// caller-provided `internal_buffer`. If the populated range escapes that
+    /// external buffer, every consumer up the chain
+    /// (`ReadBufferFromRemoteFSGather`, `AsynchronousBoundedReadBuffer`,
+    /// `readMetadataFile`) inherits the corrupt bounds.
+    if (use_external_buffer)
+    {
+        chassert(impl->buffer().begin() >= internal_buffer.begin());
+        chassert(impl->buffer().begin() + impl->buffer().size() <= internal_buffer.end());
+    }
     BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
