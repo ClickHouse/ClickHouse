@@ -248,7 +248,12 @@ inline void swap_if_less(T * base, std::size_t a_pos, std::size_t b_pos, F & is_
     T * right_swap = should_swap ? va : vb;
     Uninit<T> tmp;
     bit_copy(&tmp.value, right_swap);
-    bit_copy(va, left_swap);   // ptr::copy (may overlap when no swap: va==left_swap)
+    // In the no-swap case `left_swap == va`, so this copies an element onto itself. That is
+    // overlapping (in fact identical) storage, where `std::memcpy` is undefined, so use an
+    // overlap-safe move here, matching the original's `ptr::copy` (as opposed to the
+    // non-overlapping `bit_copy` used everywhere else). For a fixed `sizeof(T)` the compiler
+    // lowers this to the same load/store as `memcpy`, so the small-sort network stays branchless.
+    std::memmove(static_cast<void *>(va), static_cast<const void *>(left_swap), sizeof(T));
     bit_copy(vb, &tmp.value);
 }
 
