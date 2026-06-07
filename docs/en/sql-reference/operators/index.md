@@ -186,6 +186,47 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 └───┘
 ```
 
+### ANY / ALL on arrays {#any-all-on-arrays}
+
+In addition to the subquery form described above, the right-hand side of `ANY` / `SOME` / `ALL` can be an array expression (an array literal, an array-typed column, or any expression returning an array). This is the PostgreSQL-style array quantifier syntax. It is recognised at parse time and rewritten to array functions, so no manual rewrite is required:
+
+| Syntax | Rewritten to |
+|--------|--------------|
+| `expr = ANY(arr)` | `has(arr, expr)` |
+| `expr <> ALL(arr)` | `NOT has(arr, expr)` |
+| `expr OP ANY(arr)` (any other comparison operator) | `arrayExists(x -> expr OP x, arr)` |
+| `expr OP ALL(arr)` (any other comparison operator) | `arrayAll(x -> expr OP x, arr)` |
+
+`=` and `<>` are special-cased to `has` / `NOT has` because they have an optimized implementation; the general form falls back to the higher-order `arrayExists` / `arrayAll` functions.
+
+```sql title="Query"
+SELECT
+    3 = ANY([1, 2, 3, 4]) AS in_array,
+    5 < ANY([1, 2, 6])    AS less_than_some,
+    5 > ALL([1, 2, 3])    AS greater_than_all;
+```
+
+```text title="Response"
+┌─in_array─┬─less_than_some─┬─greater_than_all─┐
+│        1 │              1 │                1 │
+└──────────┴────────────────┴──────────────────┘
+```
+
+:::note `NULL` handling differs from the subquery form
+Because the array form is rewritten in the parser (where query settings such as `transform_null_in` are not available, and a per-row array column cannot use the analyzer's null-safe `IN` path), it uses the two-valued semantics of `has` (for `=` / `<>`) and `arrayExists` / `arrayAll` (which fold an unknown `NULL` comparison result to `0`). This can differ from the subquery form, whose `NULL` handling is lowered through `IN` / `NOT IN` and depends on `transform_null_in`:
+
+```sql
+SELECT NULL = ANY([NULL]);   -- has([NULL], NULL)                  -> 1
+SELECT NULL <> ALL([NULL]);  -- NOT has([NULL], NULL)              -> 0
+SELECT NULL < ANY([1]);      -- arrayExists(x -> NULL < x, [1])    -> 0
+SELECT NULL > ALL([1]);      -- arrayAll(x -> NULL > x, [1])       -> 0
+```
+:::
+
+:::note Parsing of ambiguous `any(...)` / `all(...)`
+Because the array form is decided at parse time, an expression of the shape `expr OP any(x)` / `expr OP all(x)` where the parenthesised right-hand side is not a subquery is now interpreted as the array quantifier syntax rather than a call to the `any` / `all` aggregate functions. For example, `sum(number) = any(number)` is rewritten to `has(number, sum(number))` and throws `ILLEGAL_TYPE_OF_ARGUMENT` because the right-hand side is not an array. The common shape `any(x) OP any(y)` (aggregate on both sides) is still parsed as aggregate function calls.
+:::
+
 ## Operators for Working with Dates and Times {#operators-for-working-with-dates-and-times}
 
 ### EXTRACT {#extract}
