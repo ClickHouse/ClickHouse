@@ -643,7 +643,10 @@ public:
 
     /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
     /// This method allows read-only replicas of tables on a shared storage.
+    /// `refreshDataParts` is the background-task entry point: it reschedules itself afterwards.
+    /// `refreshDataPartsOnce` performs a single refresh and is also used by `SYSTEM RESTART DISK`.
     void refreshDataParts(UInt64 interval_milliseconds);
+    void refreshDataPartsOnce(UInt64 interval_milliseconds);
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
@@ -1336,6 +1339,10 @@ public:
 
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
+    /// Last-resort guard for the post-vtable-demotion window of STID 3631-4165;
+    /// derived overrides are always picked in normal operation.
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
+
     /// Schedules job to move parts between disks/volumes and so on.
     bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) override;
     bool areBackgroundMovesNeeded() const;
@@ -1888,6 +1895,12 @@ protected:
     void stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
     BackgroundSchedulePoolTaskHolder refresh_parts_task;
+
+    /// Serializes refreshDataPartsOnce so the background refresh task and SYSTEM RESTART DISK
+    /// cannot scan and load the same new part concurrently (which would throw a duplicate-part
+    /// LOGICAL_ERROR, because the "is this part already present" check and the actual load are
+    /// not done under a single lock).
+    std::mutex refresh_parts_mutex;
 
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
 
