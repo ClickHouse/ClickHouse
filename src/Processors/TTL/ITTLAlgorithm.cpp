@@ -49,7 +49,7 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
     Block block_copy;
     for (const auto & required : expression->getRequiredColumnsWithTypes())
     {
-        auto block_col = block.getByName(required.name);
+        auto block_col = block.getColumnOrSubcolumnByName(required.name);
         if (!block_col.type->equals(*required.type))
         {
             block_col.column = castColumn(block_col, required.type);

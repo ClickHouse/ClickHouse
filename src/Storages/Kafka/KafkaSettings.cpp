@@ -79,9 +79,7 @@ KafkaSettings::KafkaSettings(const KafkaSettings & settings) : impl(std::make_un
 {
 }
 
-KafkaSettings::KafkaSettings(KafkaSettings && settings) noexcept : impl(std::make_unique<KafkaSettingsImpl>(std::move(*settings.impl)))
-{
-}
+KafkaSettings::KafkaSettings(KafkaSettings && settings) noexcept = default;
 
 KafkaSettings::~KafkaSettings() = default;
 
