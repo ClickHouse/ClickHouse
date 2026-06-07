@@ -1224,7 +1224,7 @@ Requirements and constraints:
 
 Behavior on the leader vs. on followers:
 
-- Leader: inserts, `INSERT`-driven merges, mutations, `DETACH`/`ATTACH`/`MOVE`/`REPLACE PARTITION`, `OPTIMIZE` all run normally. Background merges, mutations, moves, and cleanup are active. When leadership is acquired, the leader refreshes its in-memory view of parts from shared storage (loading any parts the previous leader committed) and advances the local block-number counter past anything the previous leader wrote.
+- Leader: inserts, `INSERT`-driven merges, `DETACH`/`ATTACH`/`MOVE`/`REPLACE PARTITION`, and `OPTIMIZE` all run normally; background merges, moves, and cleanup are active. Mutations (`ALTER TABLE ... UPDATE` / `DELETE`) are accepted on the leader **only on disks whose metadata layout provides the hard-link semantics that mutations require**. The recommended `plain_rewritable` layout does **not** support mutations — `MergeTreeData::checkMutationIsPossible` rejects disks without hard links — so a mutation fails even on the leader (see [s3_plain_rewritable](/operations/storing-data.md#s3-plain-rewritable-storage)). When leadership is acquired, the leader refreshes its in-memory view of parts from shared storage (loading any parts the previous leader committed) and advances the local block-number counter past anything the previous leader wrote.
 - Follower: writes and DDL fail with `TABLE_IS_READ_ONLY`. `SELECT` is allowed. Background write tasks are stopped, and any in-flight merges or moves on a node that just lost leadership are actively cancelled to bound the dual-writer window.
 - `DROP TABLE` (on the leader or a follower): always removes only local metadata and intentionally leaves the shared object-storage data intact. A node cannot prove it still holds the lease at the moment it executes `DROP`, so it never deletes the shared data to avoid destroying data owned by another leader. Removing the shared data is an explicit out-of-band operation (for example, deleting the bucket prefix once no instance uses the table).
 
@@ -1270,7 +1270,9 @@ SETTINGS
     leader_election_session_timeout = 30;
 ```
 
-If each instance instead runs a plain `CREATE TABLE` without a shared `UUID`, every instance gets a different prefix and they will neither share data nor contend for the same lease. After startup, exactly one instance becomes the leader and accepts writes; the others become read-only and watch the lease.
+If each instance instead runs a plain `CREATE TABLE` without a shared `UUID`, every instance gets a different prefix and they will neither share data nor contend for the same lease — each instance just becomes the leader of its own independent table (its own lease file), which is almost certainly not what you want.
+
+With the shared-`UUID` setup shown above, all instances point at the same prefix and contend for the same lease file. After startup, exactly one of them becomes the leader and accepts writes; the others become read-only and watch the lease.
 
 Related settings:
 
