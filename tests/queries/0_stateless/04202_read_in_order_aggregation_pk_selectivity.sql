@@ -23,6 +23,7 @@ INSERT INTO t_aio_pk SELECT number FROM numbers(1000000);
 -- the tight memory limit. Reducing `read_in_order_max_primary_key_ratio` to a
 -- value below the actual selectivity (which is 1.0 here, no WHERE clause)
 -- previously disabled read-in-order and caused MEMORY_LIMIT_EXCEEDED.
+SELECT 'aggregation_no_filter';
 SELECT count() FROM (
     SELECT key FROM t_aio_pk GROUP BY key ORDER BY key LIMIT 100
     SETTINGS enable_parallel_replicas = 0,
@@ -32,8 +33,36 @@ SELECT count() FROM (
 );
 
 -- Same for `DISTINCT`-in-order: streaming `DISTINCT` must remain active.
+SELECT 'distinct_no_filter';
 SELECT count() FROM (
     SELECT DISTINCT key FROM t_aio_pk ORDER BY key LIMIT 100
+    SETTINGS enable_parallel_replicas = 0,
+             optimize_distinct_in_order = 1,
+             max_memory_usage = '50Mi',
+             read_in_order_max_primary_key_ratio = 0.1
+);
+
+-- Stronger regression: now add a poor-selectivity filter that the primary key cannot use.
+-- `key % 8192 != 8192` is always true (the result of `key % 8192` is in `0..8191`), so it
+-- selects every row — and every granule — while being opaque to the primary key index. With
+-- this filter `query_info.filter_actions_dag`/`prewhere_info` is set, so `has_filter_for_pk` is
+-- true and the PK-selectivity ratio is 1.0, which exceeds the `0.1` threshold. For a `SortingStep`
+-- this would reject read-in-order; the aggregation-in-order and distinct-in-order paths pass
+-- `apply_pk_selectivity_check = false`, so the streaming algorithm must survive and the query must
+-- still fit in `50Mi`. If those paths ever started applying the guard, these queries would fall
+-- back to batched aggregation/distinct over ~1M groups and exceed the memory limit.
+SELECT 'aggregation_poor_selectivity_filter';
+SELECT count() FROM (
+    SELECT key FROM t_aio_pk WHERE key % 8192 != 8192 GROUP BY key ORDER BY key LIMIT 100
+    SETTINGS enable_parallel_replicas = 0,
+             optimize_aggregation_in_order = 1,
+             max_memory_usage = '50Mi',
+             read_in_order_max_primary_key_ratio = 0.1
+);
+
+SELECT 'distinct_poor_selectivity_filter';
+SELECT count() FROM (
+    SELECT DISTINCT key FROM t_aio_pk WHERE key % 8192 != 8192 ORDER BY key LIMIT 100
     SETTINGS enable_parallel_replicas = 0,
              optimize_distinct_in_order = 1,
              max_memory_usage = '50Mi',

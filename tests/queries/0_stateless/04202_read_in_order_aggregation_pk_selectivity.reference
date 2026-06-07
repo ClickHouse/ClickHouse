@@ -1,2 +1,8 @@
+aggregation_no_filter
 100
+distinct_no_filter
+100
+aggregation_poor_selectivity_filter
+100
+distinct_poor_selectivity_filter
 100
