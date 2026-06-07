@@ -81,6 +81,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 namespace MergeTreeSetting
@@ -1488,6 +1489,17 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
             if (!has_column && command.if_exists)
                 command.ignore = true;
 
+            /// `ADD ENUM VALUES` derives the resulting type by merging against the existing column, so
+            /// the column must be present in the working snapshot. If it is not (e.g. the column is added
+            /// by a preceding `ADD COLUMN` in the same statement, which does not advance the snapshot),
+            /// fail explicitly instead of silently dropping the modification.
+            if (command.add_enum_values && !has_column && !command.ignore)
+                throw Exception(
+                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                    "Cannot ADD ENUM VALUES to column {}: it does not exist in the table. Adding enum values to a "
+                    "column created in the same ALTER statement is not supported.",
+                    backQuote(command.column_name));
+
             if (has_column)
             {
                 const auto & column_from_table = columns.get(command.column_name);
@@ -1557,6 +1569,13 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
                             {
                                 command.data_type = std::make_shared<DataTypeNullable>(command.data_type);
                             }
+
+                            /// Advance the working snapshot so that a subsequent command in the same
+                            /// ALTER statement (e.g. another `ADD ENUM VALUES` on the same column) merges
+                            /// against the already-extended type instead of the original one. Without this,
+                            /// `MODIFY COLUMN x ADD ENUM VALUES('a'), MODIFY COLUMN x ADD ENUM VALUES('b')`
+                            /// would lose `a`, because the commands are applied sequentially afterwards.
+                            columns.modify(command.column_name, [&](ColumnDescription & col) { col.type = command.data_type; });
                         }
                     }
                 }

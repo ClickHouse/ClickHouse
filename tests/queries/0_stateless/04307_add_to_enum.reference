@@ -78,5 +78,10 @@ a
 CREATE TABLE default.enum_shorthand\n(\n    `x` Enum8(\'One\' = 1, \'Two\' = 2, \'Three\' = 3)\n)\nENGINE = Memory
 ======= ENUM8 SHORTHAND OVERFLOW ===============
 ======= OUT OF RANGE VALUE ===============
+======= CHAINED ADD ENUM VALUES IN ONE STATEMENT ===============
+CREATE TABLE default.enum_chained\n(\n    `x` Enum8(\'base\' = 1, \'a\' = 2, \'b\' = 3)\n)\nENGINE = Memory
+base
+a
+b
 ======= ALTER AST VALIDATION ===============
 ======= ADD ENUM VALUES SYNTAX ERRORS ===============
