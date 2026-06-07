@@ -885,7 +885,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 auto res_col = ColumnUInt8::create();
                 const auto * const_node = new_exists_argument->as<ConstantNode>();
                 res_col->getData().push_back(static_cast<UInt8>(const_node->getColumn()->isNullAt(0) ? 0 : 1));
-                ConstantValue const_value(std::move(res_col), std::make_shared<DataTypeUInt8>());
+                ConstantValue const_value(ColumnConst::create(std::move(res_col), 1), std::make_shared<DataTypeUInt8>());
                 auto tme_const_node = std::make_shared<ConstantNode>(std::move(const_value), std::move(node));
                 auto res = tme_const_node->getValueStringRepresentation();
                 node = std::move(tme_const_node);
@@ -1142,6 +1142,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Correlated subqueries are not supported as IN function arguments yet, but found in expression: {}",
                 node->formatASTForErrorMessage());
+
+        /// Edge case when the first argument of IN is scalar subquery.
+        auto first_argument_type = in_first_argument->getNodeType();
+        if (first_argument_type == QueryTreeNodeType::QUERY || first_argument_type == QueryTreeNodeType::UNION)
+        {
+            IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(in_first_argument, &scope /*parent_scope*/);
+            subquery_scope.subquery_depth = scope.subquery_depth + 1;
+
+            evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
+        }
+
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();
 
@@ -1283,16 +1294,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     return ProjectionNames{proj};
                 }
             }
-        }
-
-        /// Edge case when the first argument of IN is scalar subquery.
-        auto first_argument_type = in_first_argument->getNodeType();
-        if (first_argument_type == QueryTreeNodeType::QUERY || first_argument_type == QueryTreeNodeType::UNION)
-        {
-            IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(in_first_argument, &scope /*parent_scope*/);
-            subquery_scope.subquery_depth = scope.subquery_depth + 1;
-
-            evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
         }
 
         /// Validate that the number of columns on the left side of IN matches the number of columns
@@ -1953,13 +1954,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /** Do not perform constant folding if there are aggregate or arrayJoin functions inside function.
               * Example: SELECT toTypeName(sum(number)) FROM numbers(10);
               */
-            if (column && isColumnConst(*column) && !typeid_cast<const ColumnConst *>(column.get())->getDataColumn().isDummy() &&
+            const auto * column_const = column ? typeid_cast<const ColumnConst *>(column.get()) : nullptr;
+            if (column_const && !column_const->getDataColumn().isDummy() &&
                 !hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin") &&
                 /// Sanity check: do not convert large columns to constants
                 column->byteSize() < 1_MiB)
             {
                 /// Replace function node with result constant node
-                constant_node = std::make_shared<ConstantNode>(ConstantValue{ std::move(column), std::move(result_type) }, node, is_deterministic);
+                constant_node = std::make_shared<ConstantNode>(ConstantValue{ column_const->getPtr(), std::move(result_type) }, node, is_deterministic);
             }
         }
 
