@@ -1,4 +1,5 @@
 import os
+import threading
 
 import pytest
 
@@ -210,3 +211,58 @@ def test_ignore_on_cluster_for_replicated_storage(started_cluster):
             retry_count=30,
             sleep_time=1,
         )
+
+
+def test_concurrent_overlapping_create_is_serialized(started_cluster):
+    # Two replicas concurrently create handlers with *different* names but *overlapping* URLs (the same
+    # exact URL, default GET, no protocol). The exact/prefix ambiguity guarantee must hold across replicas:
+    # the two overlapping handlers must never both end up committed. With Keeper-backed storage the
+    # ambiguity check is serialized with the write via optimistic concurrency on the root version, so
+    # exactly one create wins and the other is rejected with AMBIGUOUS_HANDLER.
+    def cleanup():
+        for n in (replica1, replica2):
+            n.query("DROP HANDLER IF EXISTS race_a")
+            n.query("DROP HANDLER IF EXISTS race_b")
+        # Wait for the drops to converge on both replicas before the next round.
+        for n in (replica1, replica2):
+            n.query_with_retry(
+                "SELECT count() FROM system.handlers WHERE url = '/race'",
+                check_callback=lambda res: res.strip() == "0",
+                retry_count=30,
+                sleep_time=0.5,
+            )
+
+    cleanup()
+
+    for _ in range(15):
+        errors = []
+        errors_lock = threading.Lock()
+
+        def create(node, name):
+            try:
+                node.query(f"CREATE HANDLER {name} URL '/race' AS SELECT 1")
+            except Exception as e:  # noqa: BLE001
+                with errors_lock:
+                    errors.append(str(e))
+
+        t1 = threading.Thread(target=create, args=(replica1, "race_a"))
+        t2 = threading.Thread(target=create, args=(replica2, "race_b"))
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        # Exactly one create succeeded; the loser was rejected as ambiguous (never a silent double-commit).
+        assert len(errors) == 1, f"expected exactly one failure, got: {errors}"
+        assert "AMBIGUOUS_HANDLER" in errors[0], errors[0]
+
+        # After convergence both replicas agree that exactly one handler matches the contested URL.
+        for n in (replica1, replica2):
+            n.query_with_retry(
+                "SELECT count() FROM system.handlers WHERE url = '/race'",
+                check_callback=lambda res: res.strip() == "1",
+                retry_count=30,
+                sleep_time=0.5,
+            )
+
+        cleanup()

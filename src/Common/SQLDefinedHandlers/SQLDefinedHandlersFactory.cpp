@@ -21,7 +21,13 @@ namespace ErrorCodes
     extern const int HANDLER_ALREADY_EXISTS;
     extern const int HANDLER_DOESNT_EXIST;
     extern const int AMBIGUOUS_HANDLER;
+    extern const int KEEPER_EXCEPTION;
 }
+
+/// How many times a replicated create/alter re-reads the set and retries when another replica changed it
+/// concurrently. Contention is resolved in one or two rounds in practice; the bound only guards against a
+/// pathological live-lock and is large enough never to reject a legitimate write.
+static constexpr size_t max_replicated_write_attempts = 100;
 
 SQLDefinedHandlersFactory & SQLDefinedHandlersFactory::instance()
 {
@@ -138,9 +144,9 @@ bool urlsOverlap(const SQLDefinedHandler & a, const SQLDefinedHandler & b)
 
 }
 
-void SQLDefinedHandlersFactory::checkAmbiguity(const SQLDefinedHandler & candidate, std::lock_guard<std::mutex> &) const
+void SQLDefinedHandlersFactory::checkAmbiguity(const SQLDefinedHandler & candidate, const SQLDefinedHandlers & handlers)
 {
-    for (const auto & [name, existing] : loaded_handlers)
+    for (const auto & [name, existing] : handlers)
     {
         if (name == candidate.name)
             continue;
@@ -162,6 +168,15 @@ void SQLDefinedHandlersFactory::createFromSQL(const ASTCreateHandlerQuery & quer
     std::lock_guard lock(mutex);
     loadIfNot(lock);
 
+    /// Build first (validates the query and computes the canonical statement), then check ambiguity, then persist.
+    auto handler = makeSQLDefinedHandler(query);
+
+    if (metadata_storage->isReplicated())
+    {
+        createReplicated(query, handler, lock);
+        return;
+    }
+
     if (loaded_handlers.contains(query.handler_name))
     {
         if (query.if_not_exists)
@@ -169,28 +184,48 @@ void SQLDefinedHandlersFactory::createFromSQL(const ASTCreateHandlerQuery & quer
         throw Exception(ErrorCodes::HANDLER_ALREADY_EXISTS, "A handler `{}` already exists", query.handler_name);
     }
 
-    /// Build first (validates), then check ambiguity, then persist.
-    auto handler = makeSQLDefinedHandler(query);
-    checkAmbiguity(*handler, lock);
+    checkAmbiguity(*handler, loaded_handlers);
 
-    try
+    metadata_storage->store(query.handler_name, handler->create_statement, /* replace */ false);
+    loaded_handlers.emplace(query.handler_name, handler);
+    rebuildSnapshot(lock);
+}
+
+void SQLDefinedHandlersFactory::createReplicated(const ASTCreateHandlerQuery & query, const SQLDefinedHandlerPtr & handler, std::lock_guard<std::mutex> & lock)
+{
+    /// Re-read the whole set from Keeper at a known root version, check ambiguity against it, then persist
+    /// the new handler conditionally on that version. If another replica changed the set in between, the
+    /// write is rejected and we retry: this serializes the ambiguity check with the write across replicas,
+    /// so two replicas cannot both commit handlers that overlap under different names.
+    for (size_t attempt = 0; attempt < max_replicated_write_attempts; ++attempt)
     {
-        metadata_storage->store(query.handler_name, handler->create_statement, /* replace */ false);
-    }
-    catch (const Exception & e)
-    {
-        /// With replicated (Keeper) storage another replica may have created the handler concurrently,
-        /// before it appeared in this replica's snapshot. Preserve the idempotent IF NOT EXISTS contract.
-        if (e.code() == ErrorCodes::HANDLER_ALREADY_EXISTS && query.if_not_exists)
+        Int32 version = 0;
+        auto current = metadata_storage->getAll(version);
+
+        if (current.contains(query.handler_name))
         {
-            loaded_handlers = metadata_storage->getAll();
+            loaded_handlers = std::move(current);
+            rebuildSnapshot(lock);
+            if (query.if_not_exists)
+                return;
+            throw Exception(ErrorCodes::HANDLER_ALREADY_EXISTS, "A handler `{}` already exists", query.handler_name);
+        }
+
+        checkAmbiguity(*handler, current);
+
+        if (metadata_storage->store(query.handler_name, handler->create_statement, /* replace */ false, version))
+        {
+            current.emplace(query.handler_name, handler);
+            loaded_handlers = std::move(current);
             rebuildSnapshot(lock);
             return;
         }
-        throw;
+        /// The set changed concurrently (root version mismatch, or the same name was just created on
+        /// another replica): re-read and re-validate.
     }
-    loaded_handlers.emplace(query.handler_name, handler);
-    rebuildSnapshot(lock);
+
+    throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+        "Could not create handler `{}`: the set of handlers kept changing concurrently", query.handler_name);
 }
 
 void SQLDefinedHandlersFactory::removeFromSQL(const ASTDropHandlerQuery & query)
@@ -217,6 +252,12 @@ void SQLDefinedHandlersFactory::updateFromSQL(const ASTCreateHandlerQuery & alte
     std::lock_guard lock(mutex);
     loadIfNot(lock);
 
+    if (metadata_storage->isReplicated())
+    {
+        updateReplicated(alter_query, lock);
+        return;
+    }
+
     if (!loaded_handlers.contains(alter_query.handler_name))
         throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Cannot alter handler `{}`, because it doesn't exist", alter_query.handler_name);
 
@@ -230,7 +271,7 @@ void SQLDefinedHandlersFactory::updateFromSQL(const ASTCreateHandlerQuery & alte
     /// handler so that `loaded_handlers` is never left missing an entry that still exists in storage.
     try
     {
-        checkAmbiguity(*updated, lock);
+        checkAmbiguity(*updated, loaded_handlers);
         metadata_storage->store(alter_query.handler_name, updated->create_statement, true);
     }
     catch (...)
@@ -241,6 +282,42 @@ void SQLDefinedHandlersFactory::updateFromSQL(const ASTCreateHandlerQuery & alte
 
     loaded_handlers.emplace(alter_query.handler_name, updated);
     rebuildSnapshot(lock);
+}
+
+void SQLDefinedHandlersFactory::updateReplicated(const ASTCreateHandlerQuery & alter_query, std::lock_guard<std::mutex> & lock)
+{
+    /// Like createReplicated: re-read the set at a known root version, merge the ALTER onto the
+    /// version-consistent snapshot, check ambiguity, and persist conditionally on that version, retrying
+    /// if another replica changed the set in between.
+    for (size_t attempt = 0; attempt < max_replicated_write_attempts; ++attempt)
+    {
+        Int32 version = 0;
+        auto current = metadata_storage->getAll(version);
+
+        auto it = current.find(alter_query.handler_name);
+        if (it == current.end())
+        {
+            loaded_handlers = std::move(current);
+            rebuildSnapshot(lock);
+            throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Cannot alter handler `{}`, because it doesn't exist", alter_query.handler_name);
+        }
+
+        /// Merge onto the statement from this same version-consistent snapshot (no extra Keeper read).
+        auto updated = metadata_storage->buildUpdatedHandler(it->second->create_statement, alter_query);
+        checkAmbiguity(*updated, current);
+
+        if (metadata_storage->store(alter_query.handler_name, updated->create_statement, /* replace */ true, version))
+        {
+            current[alter_query.handler_name] = updated;
+            loaded_handlers = std::move(current);
+            rebuildSnapshot(lock);
+            return;
+        }
+        /// The set changed concurrently: re-read and re-validate.
+    }
+
+    throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+        "Could not alter handler `{}`: the set of handlers kept changing concurrently", alter_query.handler_name);
 }
 
 void SQLDefinedHandlersFactory::reloadFromSQL()

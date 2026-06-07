@@ -61,8 +61,15 @@ private:
     void rebuildSnapshot(std::lock_guard<std::mutex> & lock);
 
     /// Throws AMBIGUOUS_HANDLER if the candidate would ambiguously match the same request
-    /// as an existing handler (exact/prefix URLs only; regexp cannot be checked).
-    void checkAmbiguity(const SQLDefinedHandler & candidate, std::lock_guard<std::mutex> & lock) const;
+    /// as one of the given handlers (exact/prefix URLs only; regexp cannot be checked).
+    /// The handler with the same name as the candidate is ignored (a handler is never ambiguous with itself).
+    static void checkAmbiguity(const SQLDefinedHandler & candidate, const SQLDefinedHandlers & handlers);
+
+    /// Create/update a handler in replicated (Keeper) storage. The full set is re-read from Keeper and the
+    /// ambiguity check is serialized with the persistent write via optimistic concurrency on the root
+    /// version, so two replicas cannot concurrently commit overlapping handlers under different names.
+    void createReplicated(const ASTCreateHandlerQuery & query, const SQLDefinedHandlerPtr & handler, std::lock_guard<std::mutex> & lock);
+    void updateReplicated(const ASTCreateHandlerQuery & alter_query, std::lock_guard<std::mutex> & lock);
 
     void updateFunc();
 };

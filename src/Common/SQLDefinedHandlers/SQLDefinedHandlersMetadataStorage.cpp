@@ -56,8 +56,16 @@ public:
 
     virtual bool exists(const std::string & path) const = 0;
     virtual std::vector<std::string> list() const = 0;
+    /// List children together with a version token of the whole set (the Keeper root-node data version
+    /// for replicated storage; 0 for local). The version is fed back to `write` to make the cross-replica
+    /// "read set -> check ambiguity -> persist" sequence atomic via optimistic concurrency.
+    virtual std::vector<std::string> list(Int32 & version) const { version = 0; return list(); }
     virtual std::string read(const std::string & path) const = 0;
-    virtual void write(const std::string & path, const std::string & data, bool replace) = 0;
+    /// Persist data. When `expected_root_version >= 0` the write is conditional: it commits only if the
+    /// set has not changed since it was read at that version, otherwise nothing is written and `false` is
+    /// returned so the caller can re-read and retry. With `expected_root_version == -1` the write is
+    /// unconditional. Returns true if the data was written.
+    virtual bool write(const std::string & path, const std::string & data, bool replace, Int32 expected_root_version) = 0;
     virtual void remove(const std::string & path) = 0;
     virtual bool removeIfExists(const std::string & path) = 0;
     virtual bool isReplicated() const = 0;
@@ -112,8 +120,10 @@ public:
         return data;
     }
 
-    void write(const std::string & file_name, const std::string & data, bool replace) override
+    bool write(const std::string & file_name, const std::string & data, bool replace, Int32 /* expected_root_version */) override
     {
+        /// Local storage is single-node: the factory's mutex already serializes writes, so there is no
+        /// version to check (`expected_root_version` is meaningful only for replicated storage).
         if (!replace && fs::exists(getPath(file_name)))
             throw Exception(ErrorCodes::HANDLER_ALREADY_EXISTS, "Metadata file for handler already exists: {}", file_name);
 
@@ -129,6 +139,7 @@ public:
         out.close();
 
         fs::rename(tmp_path, getPath(file_name));
+        return true;
     }
 
     void remove(const std::string & file_name) override
@@ -234,6 +245,18 @@ public:
         return getClient()->getChildren(root_path);
     }
 
+    std::vector<std::string> list(Int32 & version) const override
+    {
+        auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::list");
+        /// Read the children and the root-node version in one snapshot, without touching the background
+        /// update watch (`wait_event`/`root_version`). The version is bumped by every mutation (see
+        /// `bumpVersionRequest`), so conditioning a later write on it detects any concurrent change.
+        Coordination::Stat stat;
+        auto children = getClient()->getChildren(root_path, &stat);
+        version = stat.version;
+        return children;
+    }
+
     bool exists(const std::string & file_name) const override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::exists");
@@ -246,7 +269,7 @@ public:
         return getClient()->get(getPath(file_name));
     }
 
-    void write(const std::string & file_name, const std::string & data, bool replace) override
+    bool write(const std::string & file_name, const std::string & data, bool replace, Int32 expected_root_version) override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::write");
 
@@ -254,6 +277,13 @@ public:
         /// transaction, so the watched root version always advances together with the change. Otherwise a
         /// connection loss between the child mutation and a separate version bump would commit the change
         /// while leaving other replicas unnotified, so they would keep serving a stale set of handlers.
+        ///
+        /// When `expected_root_version >= 0` the bump is conditional on that version: the caller read the
+        /// whole set at that version and validated ambiguity against it, so the write must commit only if
+        /// no other replica changed the set in the meantime. This serializes the ambiguity check with the
+        /// write, closing the race where two replicas concurrently create overlapping handlers (each
+        /// passing its own local ambiguity check). A version mismatch is reported as a non-fatal retry
+        /// signal (`false`), prompting the caller to re-read and re-validate.
         Coordination::Requests requests;
         if (replace)
             /// ALTER must update an existing handler only; using `set` (not create-or-update) prevents a
@@ -261,17 +291,28 @@ public:
             requests.push_back(zkutil::makeSetRequest(getPath(file_name), data, -1));
         else
             requests.push_back(zkutil::makeCreateRequest(getPath(file_name), data, zkutil::CreateMode::Persistent));
-        requests.push_back(bumpVersionRequest());
+        requests.push_back(bumpVersionRequest(expected_root_version));
 
         Coordination::Responses responses;
         auto code = getClient()->tryMulti(requests, responses);
         if (code == Coordination::Error::ZOK)
-            return;
+            return true;
+
+        /// On the optimistic (replicated) path, treat every precondition mismatch as a retry signal: the
+        /// caller will re-read the set and decide. A version mismatch means the set changed; a node
+        /// existence mismatch means the same handler was concurrently created/dropped.
+        if (expected_root_version >= 0
+            && (code == Coordination::Error::ZBADVERSION
+                || (!replace && code == Coordination::Error::ZNODEEXISTS)
+                || (replace && code == Coordination::Error::ZNONODE)))
+            return false;
+
         if (replace && code == Coordination::Error::ZNONODE)
             throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Handler `{}` doesn't exist", file_name);
         if (!replace && code == Coordination::Error::ZNODEEXISTS)
             throw Exception(ErrorCodes::HANDLER_ALREADY_EXISTS, "Metadata file for handler already exists: {}", file_name);
         zkutil::KeeperMultiException::check(code, requests, responses);
+        return false;
     }
 
     void remove(const std::string & file_name) override
@@ -310,9 +351,11 @@ private:
     /// A request that bumps the root node's data version to notify all replicas (including for ALTER,
     /// which only changes child data and would otherwise be invisible to a children-list watch). It is
     /// always issued together with the child mutation in a single `multi`, so the two never diverge.
-    Coordination::RequestPtr bumpVersionRequest() const
+    /// `expected_version == -1` bumps unconditionally; a non-negative value makes the whole transaction
+    /// (and therefore the child mutation) commit only if the set was not changed since it was read.
+    Coordination::RequestPtr bumpVersionRequest(Int32 expected_version = -1) const
     {
-        return zkutil::makeSetRequest(root_path, "", -1);
+        return zkutil::makeSetRequest(root_path, "", expected_version);
     }
 
     zkutil::ZooKeeperPtr getClient() const
@@ -343,7 +386,13 @@ SQLDefinedHandlersMetadataStorage::SQLDefinedHandlersMetadataStorage(std::shared
 
 std::vector<std::string> SQLDefinedHandlersMetadataStorage::listHandlers() const
 {
-    auto paths = storage->list();
+    Int32 ignored_version = 0;
+    return listHandlers(ignored_version);
+}
+
+std::vector<std::string> SQLDefinedHandlersMetadataStorage::listHandlers(Int32 & version) const
+{
+    auto paths = storage->list(version);
     std::vector<std::string> handlers;
     handlers.reserve(paths.size());
     for (const auto & path : paths)
@@ -365,8 +414,14 @@ SQLDefinedHandlerPtr SQLDefinedHandlersMetadataStorage::readHandler(const std::s
 
 SQLDefinedHandlers SQLDefinedHandlersMetadataStorage::getAll() const
 {
+    Int32 ignored_version = 0;
+    return getAll(ignored_version);
+}
+
+SQLDefinedHandlers SQLDefinedHandlersMetadataStorage::getAll(Int32 & version) const
+{
     SQLDefinedHandlers result;
-    for (const auto & handler_name : listHandlers())
+    for (const auto & handler_name : listHandlers(version))
     {
         if (result.contains(handler_name))
             throw Exception(ErrorCodes::HANDLER_ALREADY_EXISTS, "Found duplicate handler `{}`", handler_name);
@@ -390,12 +445,15 @@ SQLDefinedHandlers SQLDefinedHandlersMetadataStorage::getAll() const
 
 SQLDefinedHandlerPtr SQLDefinedHandlersMetadataStorage::buildUpdatedHandler(const ASTCreateHandlerQuery & alter_query) const
 {
-    const auto path = getFileName(alter_query.handler_name);
-    auto statement = storage->read(path);
+    return buildUpdatedHandler(storage->read(getFileName(alter_query.handler_name)), alter_query);
+}
+
+SQLDefinedHandlerPtr SQLDefinedHandlersMetadataStorage::buildUpdatedHandler(const String & base_create_statement, const ASTCreateHandlerQuery & alter_query) const
+{
     const auto & settings = getContext()->getSettingsRef();
 
-    ParserCreateHandlerQuery parser(statement.data() + statement.size());
-    auto ast = parseQuery(parser, statement, "in handler " + path, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    ParserCreateHandlerQuery parser(base_create_statement.data() + base_create_statement.size());
+    auto ast = parseQuery(parser, base_create_statement, "in handler " + alter_query.handler_name, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     auto & create_query = ast->as<ASTCreateHandlerQuery &>();
 
     mergeAlterIntoCreateHandler(create_query, alter_query);
@@ -418,9 +476,9 @@ bool SQLDefinedHandlersMetadataStorage::exists(const std::string & handler_name)
     return storage->exists(getFileName(handler_name));
 }
 
-void SQLDefinedHandlersMetadataStorage::store(const std::string & handler_name, const String & create_statement, bool replace)
+bool SQLDefinedHandlersMetadataStorage::store(const std::string & handler_name, const String & create_statement, bool replace, Int32 expected_root_version)
 {
-    storage->write(getFileName(handler_name), create_statement, replace);
+    return storage->write(getFileName(handler_name), create_statement, replace, expected_root_version);
 }
 
 bool SQLDefinedHandlersMetadataStorage::isReplicated() const
