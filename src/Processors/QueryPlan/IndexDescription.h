@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/MergeTree/MarkRange.h>
-
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -20,6 +20,17 @@ enum class IndexType : uint8_t
     PrimaryKeyExpand,
     Statistics,
     NonIntersectingSplit,
+};
+
+/// Search algorithm used while resolving primary key ranges, for EXPLAIN output.
+/// Mirrors `MarkRanges::SearchAlgorithm`, kept local here so that this header
+/// (pulled in transitively through `IQueryPlanStep.h`) does not drag the heavy
+/// `MarkRange.h` include into many translation units.
+enum class SearchAlgorithm : uint8_t
+{
+    Unknown,
+    BinarySearch,
+    GenericExclusionSearch,
 };
 
 struct DistributedIndexStat
@@ -42,7 +53,7 @@ struct IndexStat
     std::vector<std::string> used_keys = {};
     size_t num_parts_after = 0;
     size_t num_granules_after = 0;
-    MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
+    SearchAlgorithm search_algorithm = {SearchAlgorithm::Unknown};
 
     std::vector<DistributedIndexStat> distributed = {};
 };
@@ -80,13 +91,13 @@ inline const char * indexTypeToString(IndexType type)
     }
 }
 
-inline std::string_view searchAlgorithmToString(MarkRanges::SearchAlgorithm search_algorithm)
+inline std::string_view searchAlgorithmToString(SearchAlgorithm search_algorithm)
 {
     switch (search_algorithm)
     {
-    case MarkRanges::SearchAlgorithm::BinarySearch:
+    case SearchAlgorithm::BinarySearch:
         return "binary search";
-    case MarkRanges::SearchAlgorithm::GenericExclusionSearch:
+    case SearchAlgorithm::GenericExclusionSearch:
         return "generic exclusion search";
     default:
         return "";

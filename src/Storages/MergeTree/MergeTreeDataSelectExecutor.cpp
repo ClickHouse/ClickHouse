@@ -816,6 +816,22 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 }
 
 
+/// Convert the internal `MarkRanges::SearchAlgorithm` to the EXPLAIN-facing
+/// `DB::SearchAlgorithm`, so that `IndexDescription.h` need not include `MarkRange.h`.
+static SearchAlgorithm toExplainSearchAlgorithm(MarkRanges::SearchAlgorithm search_algorithm)
+{
+    switch (search_algorithm)
+    {
+        case MarkRanges::SearchAlgorithm::Unknown:
+            return SearchAlgorithm::Unknown;
+        case MarkRanges::SearchAlgorithm::BinarySearch:
+            return SearchAlgorithm::BinarySearch;
+        case MarkRanges::SearchAlgorithm::GenericExclusionSearch:
+            return SearchAlgorithm::GenericExclusionSearch;
+    }
+}
+
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats)
 {
     auto & metadata_snapshot = filter_context.metadata_snapshot;
@@ -1204,7 +1220,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .used_keys = std::move(description.used_keys),
             .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
             .num_granules_after = sum_marks_pk.load(std::memory_order_relaxed),
-            .search_algorithm = pk_stat.search_algorithm.load(std::memory_order_relaxed)
+            .search_algorithm = toExplainSearchAlgorithm(pk_stat.search_algorithm.load(std::memory_order_relaxed))
         });
     }
 
