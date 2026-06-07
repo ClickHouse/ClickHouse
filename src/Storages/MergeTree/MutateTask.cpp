@@ -2803,8 +2803,12 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
         return false;
 
     /// We need to rewrite statistics because they have different serialization with nullable type.
+    /// `tryGet` returns `nullptr` when the column is not present in the metadata snapshot (for
+    /// example a subcolumn name); in that case we cannot prove there are no statistics, so we
+    /// conservatively refuse to skip the conversion (matching the null-check at the other
+    /// `tryGet(command.column_name)` site above).
     const auto * column_desc = metadata_snapshot->getColumns().tryGet(command.column_name);
-    if (!column_desc->statistics.empty())
+    if (!column_desc || !column_desc->statistics.empty())
         return false;
 
     return true;
