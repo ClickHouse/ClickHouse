@@ -56,14 +56,6 @@ ColumnsDescription StorageSystemQuotas::getColumnsDescription()
             "['user_name', 'client_key'] — Connections with the same client_key share the same quota. If a key isn't provided by a client, the quota is tracked for `user_name`, "
             "['client_key', 'ip_address'] — Connections with the same client_key share the same quota. If a key isn't provided by a client, the quota is tracked for ip_address."
         },
-        {"ipv4_prefix_bits", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
-            "Number of prefix bits for IPv4 address masking. "
-            "Connections from the same subnet share the same quota. Only used when key is `ip_address` or `forwarded_ip_address`."
-        },
-        {"ipv6_prefix_bits", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
-            "Number of prefix bits for IPv6 address masking. "
-            "Connections from the same subnet share the same quota. Only used when key is `ip_address` or `forwarded_ip_address`."
-        },
         {"durations", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()), "Time interval lengths in seconds."},
         {"apply_to_all", std::make_shared<DataTypeUInt8>(),
             "Logical value. It shows which users the quota is applied to. Values: "
@@ -71,7 +63,15 @@ ColumnsDescription StorageSystemQuotas::getColumnsDescription()
             "1 — The quota applies to all users except those listed in apply_to_except."
         },
         {"apply_to_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "List of user names/roles that the quota should be applied to."},
-        {"apply_to_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "List of user names/roles that the quota should not apply to."}
+        {"apply_to_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "List of user names/roles that the quota should not apply to."},
+        {"ipv4_prefix_bits", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
+            "Number of prefix bits for IPv4 address masking. "
+            "Connections from the same subnet share the same quota. Only used when key is `ip_address` or `forwarded_ip_address`."
+        },
+        {"ipv6_prefix_bits", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
+            "Number of prefix bits for IPv6 address masking. "
+            "Connections from the same subnet share the same quota. Only used when key is `ip_address` or `forwarded_ip_address`."
+        }
     };
 }
 
@@ -91,8 +91,6 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr cont
     auto & column_storage = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_key_types = assert_cast<ColumnInt8 &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData()).getData();
     auto & column_key_types_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
-    auto & column_ipv4_prefix_bits = assert_cast<ColumnNullable &>(*res_columns[column_index++]);
-    auto & column_ipv6_prefix_bits = assert_cast<ColumnNullable &>(*res_columns[column_index++]);
     auto & column_durations = assert_cast<ColumnUInt32 &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData()).getData();
     auto & column_durations_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_apply_to_all = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
@@ -100,6 +98,8 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr cont
     auto & column_apply_to_list_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_apply_to_except = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_apply_to_except_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
+    auto & column_ipv4_prefix_bits = assert_cast<ColumnNullable &>(*res_columns[column_index++]);
+    auto & column_ipv6_prefix_bits = assert_cast<ColumnNullable &>(*res_columns[column_index++]);
 
     for (const auto & id : ids)
     {
@@ -124,16 +124,6 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr cont
         }
         column_key_types_offsets.push_back(column_key_types.size());
 
-        if (quota->ipv4_prefix_bits)
-            column_ipv4_prefix_bits.insert(Field(static_cast<UInt64>(*quota->ipv4_prefix_bits)));
-        else
-            column_ipv4_prefix_bits.insertDefault();
-
-        if (quota->ipv6_prefix_bits)
-            column_ipv6_prefix_bits.insert(Field(static_cast<UInt64>(*quota->ipv6_prefix_bits)));
-        else
-            column_ipv6_prefix_bits.insertDefault();
-
         for (const auto & limits : quota->all_limits)
         {
             column_durations.push_back(
@@ -151,6 +141,16 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr cont
         for (const auto & role_name : apply_to_ast->except_names)
             column_apply_to_except.insertData(role_name.data(), role_name.length());
         column_apply_to_except_offsets.push_back(column_apply_to_except.size());
+
+        if (quota->ipv4_prefix_bits)
+            column_ipv4_prefix_bits.insert(Field(static_cast<UInt64>(*quota->ipv4_prefix_bits)));
+        else
+            column_ipv4_prefix_bits.insertDefault();
+
+        if (quota->ipv6_prefix_bits)
+            column_ipv6_prefix_bits.insert(Field(static_cast<UInt64>(*quota->ipv6_prefix_bits)));
+        else
+            column_ipv6_prefix_bits.insertDefault();
     }
 }
 
