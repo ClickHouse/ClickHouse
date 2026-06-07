@@ -163,6 +163,7 @@ void SerializationDynamic::enumerateStreams(
 
     if (deserialize_state)
     {
+        /// Read path: check if the on-disk format is NARROWED.
         auto * structure_state = checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(deserialize_state->structure_state);
         if (structure_state->structure_version.value == SerializationVersion::NARROWED)
         {
@@ -170,15 +171,25 @@ void SerializationDynamic::enumerateStreams(
             narrowed_type = structure_state->narrowed_type;
         }
     }
-    else if (column_dynamic)
+    else if (column_dynamic && !column_dynamic->empty())
     {
+        /// Write path: detect if the column data is single-typed and can be narrowed.
+        /// Only check when column has data (empty columns are on the read path before deserialization).
         bool has_nulls = false;
         narrowed_type = getNarrowedType(*column_dynamic, has_nulls);
         if (narrowed_type)
         {
             is_narrowed = true;
             if (has_nulls)
-                narrowed_type = std::make_shared<DataTypeNullable>(narrowed_type);
+            {
+                if (narrowed_type->canBeInsideNullable())
+                    narrowed_type = std::make_shared<DataTypeNullable>(narrowed_type);
+                else
+                {
+                    is_narrowed = false;
+                    narrowed_type = nullptr;
+                }
+            }
         }
     }
 
