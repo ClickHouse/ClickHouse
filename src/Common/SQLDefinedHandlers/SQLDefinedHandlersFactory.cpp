@@ -89,6 +89,13 @@ bool SQLDefinedHandlersFactory::exists(const std::string & handler_name)
     return loaded_handlers.contains(handler_name);
 }
 
+bool SQLDefinedHandlersFactory::isReplicated()
+{
+    std::lock_guard lock(mutex);
+    loadIfNot(lock);
+    return metadata_storage->isReplicated();
+}
+
 namespace
 {
 

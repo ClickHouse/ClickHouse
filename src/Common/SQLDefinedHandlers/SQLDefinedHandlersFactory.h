@@ -31,6 +31,10 @@ public:
 
     bool exists(const std::string & handler_name);
 
+    /// Whether handlers are backed by replicated (Keeper) storage and therefore kept in sync across
+    /// replicas automatically. Used to strip a redundant ON CLUSTER clause (see removeOnClusterClauseIfNeeded).
+    bool isReplicated();
+
     void createFromSQL(const ASTCreateHandlerQuery & query);
     void removeFromSQL(const ASTDropHandlerQuery & query);
     void updateFromSQL(const ASTCreateHandlerQuery & alter_query);

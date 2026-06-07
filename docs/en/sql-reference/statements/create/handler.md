@@ -62,6 +62,8 @@ Handlers are saved in a storage, which can be a local or Keeper storage, similar
 </query_rules_storage>
 ```
 
+With Keeper storage, handlers are kept in sync across all replicas automatically, so an explicit `ON CLUSTER` clause is redundant and would make every replica try to create the same handler. Enable the `ignore_on_cluster_for_replicated_handler_queries` setting to make `CREATE`, `ALTER` and `DROP HANDLER` ignore `ON CLUSTER` when the storage is replicated, mirroring `ignore_on_cluster_for_replicated_named_collections_queries`.
+
 ## ALTER HANDLER {#alter-handler}
 
 ```sql
@@ -78,7 +80,7 @@ Replaces the handler with a new one. The `ALTER` query can include only a subset
 ## DROP HANDLER {#drop-handler}
 
 ```sql
-DROP [IF EXISTS] HANDLER name
+DROP HANDLER [IF EXISTS] name
 ```
 
 Drops the handler with the specified name.

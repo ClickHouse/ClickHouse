@@ -160,3 +160,53 @@ def test_keeper_storage_replication(started_cluster):
         retry_count=30,
         sleep_time=1,
     )
+
+
+def test_ignore_on_cluster_for_replicated_storage(started_cluster):
+    # With Keeper-backed storage handlers are synchronized automatically, so an ON CLUSTER clause is
+    # redundant: fanning it out makes the second host fail with HANDLER_ALREADY_EXISTS. The
+    # `ignore_on_cluster_for_replicated_handler_queries` setting makes ON CLUSTER a no-op, so the
+    # handler is created once locally and replicated to the other node via Keeper.
+    for n in (replica1, replica2):
+        n.query("DROP HANDLER IF EXISTS on_cluster_repl_h")
+
+    settings = {"ignore_on_cluster_for_replicated_handler_queries": 1}
+
+    replica1.query(
+        "CREATE HANDLER on_cluster_repl_h ON CLUSTER rc URL '/on_cluster_repl' AS SELECT 'ok' FORMAT TSV",
+        settings=settings,
+    )
+
+    # Created exactly once on the initiator and replicated to the other node (not double-created).
+    for n in (replica1, replica2):
+        n.query_with_retry(
+            "SELECT count() FROM system.handlers WHERE name = 'on_cluster_repl_h'",
+            check_callback=lambda res: res.strip() == "1",
+            retry_count=30,
+            sleep_time=1,
+        )
+        assert http_get(n, "on_cluster_repl") == "ok"
+
+    # ALTER and DROP with ON CLUSTER are ignored the same way.
+    replica1.query(
+        "ALTER HANDLER on_cluster_repl_h ON CLUSTER rc AS SELECT 'ok2' FORMAT TSV",
+        settings=settings,
+    )
+    replica2.query_with_retry(
+        "SELECT query FROM system.handlers WHERE name = 'on_cluster_repl_h'",
+        check_callback=lambda res: res.strip() == "SELECT 'ok2' FORMAT TSV",
+        retry_count=30,
+        sleep_time=1,
+    )
+
+    replica1.query(
+        "DROP HANDLER on_cluster_repl_h ON CLUSTER rc",
+        settings=settings,
+    )
+    for n in (replica1, replica2):
+        n.query_with_retry(
+            "SELECT count() FROM system.handlers WHERE name = 'on_cluster_repl_h'",
+            check_callback=lambda res: res.strip() == "0",
+            retry_count=30,
+            sleep_time=1,
+        )

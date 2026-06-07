@@ -5,4 +5,19 @@
         <path>/clickhouse/handlers</path>
         <update_timeout_ms>1000</update_timeout_ms>
     </query_rules_storage>
+
+    <remote_servers>
+        <rc>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica><host>replica1</host><port>9000</port></replica>
+                <replica><host>replica2</host><port>9000</port></replica>
+            </shard>
+            <allow_distributed_ddl_queries>true</allow_distributed_ddl_queries>
+        </rc>
+    </remote_servers>
+
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl_keeper</path>
+    </distributed_ddl>
 </clickhouse>
