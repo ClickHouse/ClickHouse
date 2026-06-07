@@ -25,8 +25,9 @@ SELECT base58Encode(randomString(100)) SETTINGS function_base58_max_input_size =
 --    below the size at which the quadratic cost matters, so this stays fast even with the limit disabled.
 SELECT length(base58Encode(randomString(10001))) > 10001 SETTINGS function_base58_max_input_size = 0;
 
--- 6. The linear base32/base64 functions are never limited and ignore the setting.
-SELECT base64Decode(base64Encode(s)) = s FROM (SELECT randomString(100000) AS s) SETTINGS function_base58_max_input_size = 10;
+-- 6. The linear base32 function is never limited and ignores the setting (base64 is also unaffected, but is
+--    not available in all builds, so it is not exercised here).
+SELECT base32Decode(base32Encode(s)) = s FROM (SELECT randomString(100000) AS s) SETTINGS function_base58_max_input_size = 10;
 
 -- 7. Many in-limit values in a single block must still respect the time limit: cancellation is checked
 --    inside the conversion, not only between pipeline blocks.

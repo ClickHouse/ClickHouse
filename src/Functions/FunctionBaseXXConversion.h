@@ -27,6 +27,7 @@ namespace ErrorCodes
 extern const int ILLEGAL_COLUMN;
 extern const int INCORRECT_DATA;
 extern const int TOO_LARGE_STRING_SIZE;
+extern const int TIMEOUT_EXCEEDED;
 }
 
 template <typename Traits, typename Name>
@@ -41,14 +42,33 @@ struct BaseXXEncode
     template <bool /* with_size_optimization */>
     static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t, size_t max_input_size, const std::function<void()> & check_cancellation)
     {
+        const ColumnString::Offsets & src_offsets = src_column.getOffsets();
+
+        /// Validate the input sizes before allocating the result buffer. getBufferSize() reserves roughly
+        /// twice the whole input, so an oversized block must be rejected with TOO_LARGE_STRING_SIZE before
+        /// the large allocation, otherwise a limit violation could surface as MEMORY_LIMIT_EXCEEDED instead.
+        if constexpr (Traits::max_input_size != 0)
+            if (max_input_size != 0)
+            {
+                size_t prev_src_offset = 0;
+                for (size_t row = 0; row < input_rows_count; ++row)
+                {
+                    size_t src_length = src_offsets[row] - prev_src_offset;
+                    if (src_length > max_input_size)
+                        throw Exception(
+                            ErrorCodes::TOO_LARGE_STRING_SIZE,
+                            "Too large input for function {}: {} bytes, maximum is {} bytes",
+                            name, src_length, max_input_size);
+                    prev_src_offset = src_offsets[row];
+                }
+            }
+
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
         size_t const max_result_size = Traits::getBufferSize(src_column);
 
         dst_data.resize(max_result_size);
         dst_offsets.resize(input_rows_count);
-
-        const ColumnString::Offsets & src_offsets = src_column.getOffsets();
 
         const auto * src = reinterpret_cast<const char *>(src_column.getChars().data());
         auto * dst = dst_data.data();
@@ -60,12 +80,6 @@ struct BaseXXEncode
         {
             size_t current_src_offset = src_offsets[row];
             size_t src_length = current_src_offset - prev_src_offset;
-            if constexpr (Traits::max_input_size != 0)
-                if (max_input_size != 0 && src_length > max_input_size)
-                    throw Exception(
-                        ErrorCodes::TOO_LARGE_STRING_SIZE,
-                        "Too large input for function {}: {} bytes, maximum is {} bytes",
-                        name, src_length, max_input_size);
             size_t encoded_size = Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset], check_cancellation);
             prev_src_offset = current_src_offset;
             current_dst_offset += encoded_size;
@@ -78,6 +92,16 @@ struct BaseXXEncode
     template <bool /* with_size_optimization */>
     static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t, size_t max_input_size, const std::function<void()> & check_cancellation)
     {
+        size_t const N = src_column.getN();
+
+        /// Validate the input size before allocating the result buffer (see processString above).
+        if constexpr (Traits::max_input_size != 0)
+            if (max_input_size != 0 && N > max_input_size)
+                throw Exception(
+                    ErrorCodes::TOO_LARGE_STRING_SIZE,
+                    "Too large input for function {}: {} bytes, maximum is {} bytes",
+                    name, N, max_input_size);
+
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
         size_t const max_result_size = Traits::getBufferSize(src_column);
@@ -88,15 +112,7 @@ struct BaseXXEncode
         const auto * src = reinterpret_cast<const char *>(src_column.getChars().data());
         auto * dst = dst_data.data();
 
-        size_t const N = src_column.getN();
         size_t current_dst_offset = 0;
-
-        if constexpr (Traits::max_input_size != 0)
-            if (max_input_size != 0 && N > max_input_size)
-                throw Exception(
-                    ErrorCodes::TOO_LARGE_STRING_SIZE,
-                    "Too large input for function {}: {} bytes, maximum is {} bytes",
-                    name, N, max_input_size);
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -127,14 +143,48 @@ struct BaseXXDecode
     template <bool with_size_optimization>
     static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size, size_t max_input_size, const std::function<void()> & check_cancellation)
     {
+        const ColumnString::Offsets & src_offsets = src_column.getOffsets();
+
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
-        size_t max_result_size = Traits::getBufferSize(src_column);
+
+        /// Size the result buffer before allocating it. getBufferSize() reserves roughly the whole input, so
+        /// when a size limit is in effect we must not allocate for oversized rows: that could turn a limit
+        /// violation into MEMORY_LIMIT_EXCEEDED. The throwing decoder rejects an oversized row outright; the
+        /// empty-string decoder skips it. base58 output never exceeds the input length, so the buffer can be
+        /// sized from the in-limit rows alone (which, when none are oversized, equals getBufferSize()).
+        size_t max_result_size;
+        if constexpr (Traits::max_input_size != 0)
+        {
+            if (max_input_size != 0)
+            {
+                size_t in_limit_input_size = 0;
+                size_t prev_src_offset = 0;
+                for (size_t row = 0; row < input_rows_count; ++row)
+                {
+                    size_t src_length = src_offsets[row] - prev_src_offset;
+                    if (src_length > max_input_size)
+                    {
+                        if constexpr (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException)
+                            throw Exception(
+                                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                                "Too large input for function {}: {} bytes, maximum is {} bytes",
+                                name, src_length, max_input_size);
+                    }
+                    else
+                        in_limit_input_size += src_length;
+                    prev_src_offset = src_offsets[row];
+                }
+                max_result_size = in_limit_input_size;
+            }
+            else
+                max_result_size = Traits::getBufferSize(src_column);
+        }
+        else
+            max_result_size = Traits::getBufferSize(src_column);
 
         dst_data.resize(max_result_size);
         dst_offsets.resize(input_rows_count);
-
-        const ColumnString::Offsets & src_offsets = src_column.getOffsets();
 
         const auto * src = reinterpret_cast<const char *>(src_column.getChars().data());
         auto * dst = dst_data.data();
@@ -148,14 +198,10 @@ struct BaseXXDecode
             size_t src_length = current_src_offset - prev_src_offset;
             if constexpr (Traits::max_input_size != 0)
             {
+                /// Oversized rows were already rejected above for the throwing decoder; only the
+                /// empty-string decoder reaches here, emitting an empty result for them.
                 if (max_input_size != 0 && src_length > max_input_size)
                 {
-                    if constexpr (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException)
-                        throw Exception(
-                            ErrorCodes::TOO_LARGE_STRING_SIZE,
-                            "Too large input for function {}: {} bytes, maximum is {} bytes",
-                            name, src_length, max_input_size);
-                    /// ReturnEmptyString: emit an empty result for this row.
                     prev_src_offset = current_src_offset;
                     dst_offsets[row] = current_dst_offset;
                     continue;
@@ -191,17 +237,10 @@ struct BaseXXDecode
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
-        size_t max_result_size = Traits::getBufferSize(src_column);
-
-        dst_data.resize(max_result_size);
-        dst_offsets.resize(input_rows_count);
-
-        const auto * src = reinterpret_cast<const char *>(src_column.getChars().data());
-        auto * dst = dst_data.data();
 
         size_t N = src_column.getN();
-        size_t current_dst_offset = 0;
 
+        /// Validate the input size before allocating the result buffer (see processString above).
         if constexpr (Traits::max_input_size != 0)
         {
             if (max_input_size != 0 && N > max_input_size)
@@ -212,12 +251,23 @@ struct BaseXXDecode
                         "Too large input for function {}: {} bytes, maximum is {} bytes",
                         name, N, max_input_size);
                 /// ReturnEmptyString: every row decodes to an empty result.
+                dst_offsets.resize(input_rows_count);
                 for (size_t row = 0; row < input_rows_count; ++row)
                     dst_offsets[row] = 0;
                 dst_data.resize(0);
                 return;
             }
         }
+
+        size_t max_result_size = Traits::getBufferSize(src_column);
+
+        dst_data.resize(max_result_size);
+        dst_offsets.resize(input_rows_count);
+
+        const auto * src = reinterpret_cast<const char *>(src_column.getChars().data());
+        auto * dst = dst_data.data();
+
+        size_t current_dst_offset = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -301,9 +351,16 @@ public:
         /// The generic (variable-length) Base58 conversion is quadratic in the input length and can run
         /// for a long time on a single large value, ignoring the query's time limit (which is only checked
         /// between pipeline blocks). Pass a callback so the conversion can periodically check for cancellation.
+        /// `checkTimeLimit` throws for `KILL QUERY` and for the `throw` overflow mode; for the `break` overflow
+        /// mode it returns `false` instead. There is no meaningful partial result for a single scalar value, so
+        /// a `break` request is turned into a hard stop here as well.
         std::function<void()> check_cancellation;
         if (query_status)
-            check_cancellation = [this] { query_status->checkTimeLimit(); };
+            check_cancellation = [this]
+            {
+                if (!query_status->checkTimeLimit())
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
+            };
 
         size_t expected_size = 0;
         if constexpr (has_size_optimization)

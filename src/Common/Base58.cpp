@@ -678,11 +678,25 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
         ++src;
     }
 
+    /// The inner loop below runs `idx` iterations and `idx` grows with the input, so the total work is
+    /// quadratic. Trigger the cancellation check based on the accumulated inner-loop work rather than the
+    /// number of outer iterations, so the time limit and `KILL QUERY` are honored promptly even when the
+    /// size limit is disabled and `idx` becomes very large. The check is kept at the top of the outer loop
+    /// (not inside the hot inner loop), so the worst-case latency between checks is one inner-loop pass.
+    size_t work_since_check = 0;
+    static constexpr size_t work_per_check = 1ULL << 20;
+
     while (processed < src_length)
     {
-        /// This loop is quadratic in the input length; check for cancellation periodically.
-        if (check_cancellation && (processed & 1023) == 0)
-            check_cancellation();
+        if (check_cancellation)
+        {
+            work_since_check += idx;
+            if (work_since_check >= work_per_check)
+            {
+                check_cancellation();
+                work_since_check = 0;
+            }
+        }
 
         UInt32 carry = *src;
 
@@ -758,11 +772,25 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
         ++src;
     }
 
+    /// The inner loop below runs `idx` iterations and `idx` grows with the input, so the total work is
+    /// quadratic. Trigger the cancellation check based on the accumulated inner-loop work rather than the
+    /// number of outer iterations, so the time limit and `KILL QUERY` are honored promptly even when the
+    /// size limit is disabled and `idx` becomes very large. The check is kept at the top of the outer loop
+    /// (not inside the hot inner loop), so the worst-case latency between checks is one inner-loop pass.
+    size_t work_since_check = 0;
+    static constexpr size_t work_per_check = 1ULL << 20;
+
     while (processed < src_length)
     {
-        /// This loop is quadratic in the input length; check for cancellation periodically.
-        if (check_cancellation && (processed & 1023) == 0)
-            check_cancellation();
+        if (check_cancellation)
+        {
+            work_since_check += idx;
+            if (work_since_check >= work_per_check)
+            {
+                check_cancellation();
+                work_since_check = 0;
+            }
+        }
 
         Int8 digit = map_digits[*src];
         UInt32 carry = digit == -1 ? 0xFFFFFFFFU : static_cast<UInt32>(digit);
