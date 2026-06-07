@@ -806,6 +806,7 @@ size_t getEqualRangeEndAssumeSorted(
 /** Same as above, but sort description aware.
   */
 template <typename TColumns, typename TSortDescription>
+requires requires (const TSortDescription & d) { d.size(); d[0].nulls_direction; }
 size_t getEqualRangeEndAssumeSorted(const TColumns & columns, const TSortDescription & descr, size_t begin, size_t end)
 {
     return detail::equalRangeEndAcrossColumns(
