@@ -85,9 +85,19 @@ bool containsFloat(const DataTypePtr & type)
     return containsType(*type, &WhichDataType::isFloat);
 }
 
-bool containsDecimal(const DataTypePtr & type)
+bool containsColumnedAsDecimal(const DataTypePtr & type)
 {
-    return containsType(*type, &WhichDataType::isDecimal);
+    if (isColumnedAsDecimal(*type))
+        return true;
+
+    bool result = false;
+    type->forEachChild([&](const IDataType & child)
+    {
+        if (!result && isColumnedAsDecimal(child))
+            result = true;
+    });
+
+    return result;
 }
 
 bool containsString(const DataTypePtr & type)
@@ -105,20 +115,26 @@ bool containsVariant(const DataTypePtr & type)
     return containsType(*type, &WhichDataType::isVariant);
 }
 
+bool containsObject(const DataTypePtr & type)
+{
+    return containsType(*type, &WhichDataType::isObject);
+}
+
 /// Replacing a filtered column with a `ColumnConst` is valid only when `equals` proves that all passed values
 /// have the same representation as the constant after conversion to the result type.
 /// For some comparisons in ClickHouse, different stored values can compare equal, e.g. `0.0 = -0.0`,
-/// `Decimal` vs `Float`, `String` vs `FixedString`, or runtime-dispatched `Dynamic` / `Variant` comparisons.
+/// `Decimal` vs `Float`, `String` vs `FixedString`, `Object` / `JSON`,
+/// or runtime-dispatched `Dynamic` / `Variant` comparisons.
 bool canReplaceColumnWithConstantAfterFilter(
     const DataTypePtr & result_type,
     const DataTypePtr & constant_type)
 {
-    if (hasDynamicType(result_type) || containsVariant(result_type) || containsFloat(result_type))
+    if (hasDynamicType(result_type) || containsVariant(result_type) || containsObject(result_type) || containsFloat(result_type))
         return false;
 
     const bool constant_type_is_dynamic = hasDynamicType(constant_type);
 
-    if (containsDecimal(result_type)
+    if (containsColumnedAsDecimal(result_type)
         && (containsFloat(constant_type) || constant_type_is_dynamic))
         return false;
 
@@ -170,7 +186,7 @@ std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
     if (!canReplaceColumnWithConstantAfterFilter(result_column.type, constant_node->result_type))
         return {};
 
-    auto converted = convertFieldToType(*constant_field, *result_column.type, constant_node->result_type.get());
+    auto converted = tryConvertFieldToType(*constant_field, *result_column.type, constant_node->result_type.get());
     if (converted.isNull() && (!constant_field->isNull() || !canContainNull(*result_column.type)))
         return {};
 

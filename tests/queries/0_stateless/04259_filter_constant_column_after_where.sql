@@ -191,6 +191,17 @@ WHERE t = CAST(tuple(1.0), 'Dynamic')
 GROUP BY ALL
 ORDER BY ALL;
 
+SELECT toUnixTimestamp64Nano(dt), count()
+FROM
+(
+    SELECT arrayJoin([
+        toDateTime64('2020-01-01 00:00:00.000000000', 9, 'UTC'),
+        toDateTime64('2020-01-01 00:00:00.000000001', 9, 'UTC')]) AS dt
+)
+WHERE dt = 1577836800.0
+GROUP BY ALL
+ORDER BY ALL;
+
 DROP TABLE IF EXISTS 04259_filter_constant_column_after_where_dynamic;
 
 CREATE TABLE 04259_filter_constant_column_after_where_dynamic
@@ -247,6 +258,26 @@ FROM
 WHERE t = tuple(1)
 GROUP BY ALL
 ORDER BY ALL;
+
+SELECT count()
+FROM
+(
+    SELECT CAST('known', 'Enum(\'known\' = 1)') AS e
+)
+WHERE e = 'missing'
+SETTINGS validate_enum_literals_in_operators = 0;
+
+SET enable_json_type = 1;
+
+SELECT reinterpretAsUInt64(json.a.:Float64)
+FROM
+(
+    SELECT arrayJoin([
+        '{"a": 0.0}'::JSON,
+        '{"a": -0.0}'::JSON]) AS json
+)
+WHERE json = '{"a": 0.0}'::JSON
+ORDER BY reinterpretAsUInt64(json.a.:Float64);
 
 DROP TABLE IF EXISTS 04259_filter_constant_column_after_where_fixed_string;
 
