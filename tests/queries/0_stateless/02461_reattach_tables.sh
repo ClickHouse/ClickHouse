@@ -86,4 +86,8 @@ check_if_detached "WITH t_reattach_cte AS (SELECT * FROM t_reattach_cte) SELECT 
 
 # A CTE defined only in a nested subquery must NOT shadow the same name in an outer FROM clause.
 check_if_detached "SELECT * FROM t_reattach_cte WHERE a IN (WITH t_reattach_cte AS (SELECT 1) SELECT * FROM t_reattach_cte)" "t_reattach_cte"
+
+# A recursive CTE resolves its self-reference through the recursive temporary table, not a real table with the
+# same name, so the real table is NOT read inside the recursive member and must NOT be detached.
+check_if_not_detached "WITH RECURSIVE t_reattach_cte AS (SELECT toUInt64(1) AS a UNION ALL SELECT a + 1 FROM t_reattach_cte WHERE a < 2) SELECT * FROM t_reattach_cte" "t_reattach_cte"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_cte"

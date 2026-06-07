@@ -1163,12 +1163,18 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             /// currently being resolved, so a CTE body may still reference a real table with the same name:
             /// `WITH t AS (SELECT * FROM t) SELECT * FROM t` reads the real table `t` inside the definition.
             /// Therefore the element's own name is not active while walking its own body, but its siblings are.
+            ///
+            /// `WITH RECURSIVE` is the exception: a recursive member resolves a self-reference through the
+            /// recursive temporary table, not a real table with the same name. So for `WITH RECURSIVE` keep
+            /// the element's own name shadowing inside its body, otherwise `WITH RECURSIVE t AS (... FROM t ...)`
+            /// would treat `FROM t` as the real table `t` and `DETACH`/`ATTACH` a table the query does not read.
             for (const auto & with_child : with->children)
             {
                 auto body_ctes = active_ctes;
                 body_ctes.insert(this_level_ctes.begin(), this_level_ctes.end());
-                if (const auto * with_element = with_child->as<ASTWithElement>())
-                    body_ctes.erase(with_element->name);
+                if (!select->recursive_with)
+                    if (const auto * with_element = with_child->as<ASTWithElement>())
+                        body_ctes.erase(with_element->name);
                 collectTablesInQuery(with_child, data, body_ctes);
             }
         }
