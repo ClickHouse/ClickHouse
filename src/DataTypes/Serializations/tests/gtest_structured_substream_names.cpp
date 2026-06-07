@@ -100,6 +100,37 @@ ISerialization::SubstreamPath makeNestedArrayNullableArrayOuterArraySizesPath()
     return path;
 }
 
+ISerialization::SubstreamPath makeNestedArrayNullableArrayDirectInnerArraySizesPath()
+{
+    ISerialization::SubstreamPath path;
+
+    path.push_back({ISerialization::Substream::ArrayElements});
+    path.push_back({ISerialization::Substream::NullableElements});
+
+    ISerialization::Substream named_offsets(ISerialization::Substream::NamedOffsets);
+    named_offsets.name_of_substream = "size1";
+    path.push_back(named_offsets);
+
+    path.push_back({ISerialization::Substream::Regular});
+
+    return path;
+}
+
+ISerialization::SubstreamPath makeNestedArrayNullableArrayDirectElementNullMapPath()
+{
+    ISerialization::SubstreamPath path;
+
+    path.push_back({ISerialization::Substream::ArrayElements});
+
+    ISerialization::Substream named_null_map(ISerialization::Substream::NamedNullMap);
+    named_null_map.name_of_substream = "null";
+    path.push_back(named_null_map);
+
+    path.push_back({ISerialization::Substream::Regular});
+
+    return path;
+}
+
 ISerialization::SubstreamPath makeMapValuesBranchNullMapPath(bool inner_element_null_map)
 {
     ISerialization::SubstreamPath path;
@@ -286,8 +317,8 @@ TEST(StructuredSubstreamNames, NullableArrayTupleElementInnerNullMapSuffixes)
     const auto path_a = makeNullableArrayTupleElementInnerNullMapPaths("a");
     const auto path_b = makeNullableArrayTupleElementInnerNullMapPaths("b");
 
-    EXPECT_EQ(getStructuredSubstreamNameSuffix(path_a), ".array.nested" + escapeForFileName(".a") + ".null");
-    EXPECT_EQ(getStructuredSubstreamNameSuffix(path_b), ".array.nested" + escapeForFileName(".b") + ".null");
+    EXPECT_EQ(getStructuredSubstreamNameSuffix(path_a), ".array" + escapeForFileName(".a") + ".nested.null");
+    EXPECT_EQ(getStructuredSubstreamNameSuffix(path_b), ".array" + escapeForFileName(".b") + ".nested.null");
     EXPECT_NE(getStructuredSubstreamNameSuffix(path_a), getStructuredSubstreamNameSuffix(path_b));
 }
 
@@ -355,6 +386,33 @@ TEST(StructuredSubstreamNames, SubcolumnFileNameUsesStorageType)
         "c.array.array.size0");
 }
 
+TEST(StructuredSubstreamNames, DirectSubcolumnFileNamesMatchStorageStreams)
+{
+    auto storage_type = DataTypeFactory::instance().get("Array(Nullable(Array(UInt32)))");
+
+    {
+        auto subcolumn_type = DataTypeFactory::instance().get("Array(UInt64)");
+        NameAndTypePair subcolumn("c", "size1", storage_type, subcolumn_type);
+        const auto direct_size_path = makeNestedArrayNullableArrayDirectInnerArraySizesPath();
+
+        EXPECT_EQ(getStructuredSubstreamNameSuffix(direct_size_path), ".array.array.size0");
+        EXPECT_EQ(
+            ISerialization::getFileNameForStream(subcolumn, direct_size_path, {}),
+            "c.array.array.size0");
+    }
+
+    {
+        auto subcolumn_type = DataTypeFactory::instance().get("Array(UInt8)");
+        NameAndTypePair subcolumn("c", "null", storage_type, subcolumn_type);
+        const auto direct_null_map_path = makeNestedArrayNullableArrayDirectElementNullMapPath();
+
+        EXPECT_EQ(getStructuredSubstreamNameSuffix(direct_null_map_path), ".array.null");
+        EXPECT_EQ(
+            ISerialization::getFileNameForStream(subcolumn, direct_null_map_path, {}),
+            "c.array.null");
+    }
+}
+
 TEST(StructuredSubstreamNames, NestedArrayNullableArrayAllSuffixesUnique)
 {
     const auto suffixes = collectStructuredSuffixesForNestedArrayNullableArray();
@@ -368,10 +426,10 @@ TEST(StructuredSubstreamNames, NestedArrayNullableArrayTupleInnerNullMapSuffixes
 
     EXPECT_EQ(
         getStructuredSubstreamNameSuffix(path_a),
-        ".array.array.nested" + escapeForFileName(".a") + ".null");
+        ".array.array" + escapeForFileName(".a") + ".nested.null");
     EXPECT_EQ(
         getStructuredSubstreamNameSuffix(path_b),
-        ".array.array.nested" + escapeForFileName(".b") + ".null");
+        ".array.array" + escapeForFileName(".b") + ".nested.null");
     EXPECT_NE(getStructuredSubstreamNameSuffix(path_a), getStructuredSubstreamNameSuffix(path_b));
     EXPECT_NE(
         getStructuredSubstreamNameSuffix(prefixPath(makeNestedArrayNullableArrayPaths(), 2)),

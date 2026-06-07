@@ -102,6 +102,19 @@ String buildStructuredSubstreamNameSuffix(const SubstreamPath & path)
     const size_t path_size = path.size();
     const auto last_type = path.back().type;
 
+    if (last_type == Substream::Regular && path_size >= 2)
+    {
+        const auto named_subcolumn_index = path_size - 2;
+        const auto named_subcolumn_type = path[named_subcolumn_index].type;
+        if (named_subcolumn_type == Substream::NamedOffsets || named_subcolumn_type == Substream::NamedNullMap)
+        {
+            SubstreamPath storage_path = path;
+            storage_path.resize(named_subcolumn_index + 1);
+            storage_path.back() = Substream(named_subcolumn_type == Substream::NamedOffsets ? Substream::ArraySizes : Substream::NullMap);
+            return buildStructuredSubstreamNameSuffix(storage_path);
+        }
+    }
+
     const size_t array_elements_count = countSubstreamsInRange(path, 0, path_size, Substream::ArrayElements);
     const bool has_array_sizes_before_end = pathContainsSubstreamInRange(path, 0, path_size, Substream::ArraySizes);
     const bool has_null_map_before_end = pathContainsSubstreamInRange(path, 0, path_size - 1, Substream::NullMap);

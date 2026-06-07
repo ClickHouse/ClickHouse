@@ -44,6 +44,14 @@ SELECT throwIf(groupArray(arrayMap(
 FROM (SELECT a FROM nested_array_nullable_array ORDER BY id)
 FORMAT Null;
 
+SELECT throwIf(groupArray(a.size1) != [[NULL], [3], [NULL, 0]])
+FROM (SELECT a.size1 FROM nested_array_nullable_array ORDER BY id)
+FORMAT Null;
+
+SELECT throwIf(groupArray(a.null) != [[1], [0], [1, 0]])
+FROM (SELECT a.null FROM nested_array_nullable_array ORDER BY id)
+FORMAT Null;
+
 DROP TABLE nested_array_nullable_array;
 
 SELECT 'ok';
