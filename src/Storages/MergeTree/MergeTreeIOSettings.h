@@ -70,6 +70,8 @@ struct MergeTreeReaderSettings
     /// Per-query running total of bytes written to the columns cache.
     /// Shared across all readers of a single pool so the cap applies to the whole read.
     std::shared_ptr<std::atomic<size_t>> columns_cache_bytes_written_so_far;
+    /// Force reading complete granules, even when the readers could read incomplete granules.
+    bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;
     bool use_prefixes_deserialization_thread_pool = false;
     bool secondary_indices_enable_bulk_filtering = true;
