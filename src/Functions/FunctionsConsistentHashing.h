@@ -43,9 +43,10 @@ public:
     String getSignatureString() const override
     {
         /// executeImpl only supports NativeInteger/IPv4 for the hash value; the second arg
-        /// (number of buckets) is any integer but must be constant.
+        /// (number of buckets) must be a constant native integer — wide (128/256-bit)
+        /// integers are read via getUInt/getInt and would be silently truncated to 64 bits.
         const String ret = DataTypeNumber<typename Impl::ResultType>{}.getName();
-        return "(NativeInteger | IPv4, const Integer) -> " + ret;
+        return "(NativeInteger | IPv4, const NativeInteger) -> " + ret;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

@@ -44,7 +44,9 @@ public:
 
     String getSignatureString() const override
     {
-        return "(NativeNumber) -> UInt8";
+        /// `BFloat16` is not a `NativeNumber` but is accepted by these predicates (matches the
+        /// legacy `isNativeNumber(arg) || isBFloat16(arg)` check); `Decimal` / wide integers stay rejected.
+        return "(NativeNumber | BFloat16) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
