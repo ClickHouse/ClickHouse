@@ -1,6 +1,7 @@
 #include <LocalServer.h>
 
 #include <sys/resource.h>
+#include <exception>
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/logger_useful.h>
@@ -790,7 +791,10 @@ void LocalServer::cleanup()
             /// shutdown would be unbounded. Mirror `Server::main`: log and force-exit.
             LOG_WARNING(&logger(), "Closed connections. But {} remain.", current_connections);
             LOG_WARNING(&logger(), "Will shutdown forcefully.");
-            safeExit(0);
+            /// `cleanup` can run from `SCOPE_EXIT` in `main` while the stack is unwinding from a
+            /// failed query. Force-exiting here bypasses the surrounding `catch`, so preserve a
+            /// nonzero status in that case instead of always reporting success.
+            safeExit(std::uncaught_exceptions() ? 1 : 0);
         }
 
         /// Join the server thread pool to avoid use-after-free of destroyed context in handlers.
