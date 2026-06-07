@@ -145,18 +145,38 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             ASTPtr input_function;
             insert_query->tryFindInputFunction(input_function);
 
-            if (insert_query->select && !insert_query->format.empty() && insert_query->format != "Values"
-                && !insert_query->settings_ast && !insert_query->infile && !input_function)
+            /// The FORMAT belongs to the EXPLAIN output whenever the INSERT reads its data from a
+            /// SELECT (so the FORMAT does not describe any insert input). It must stay on the INSERT
+            /// only when the data comes FROM INFILE or via the `input` table function, where the
+            /// FORMAT is required for the insert input. The output format name (e.g. `Values`) and
+            /// the presence of SETTINGS do not matter here.
+            if (insert_query->select && !insert_query->format.empty() && !insert_query->infile && !input_function)
             {
                 ParserKeyword s_format(Keyword::FORMAT);
+                /// Skip the rewind when another FORMAT keyword follows: the user wrote the explicit
+                /// double-FORMAT form and the first FORMAT genuinely belongs to the INSERT.
                 if (!s_format.checkWithoutMoving(pos, expected))
                 {
-                    /// Rewind past the format name identifier and the FORMAT keyword.
-                    --pos;
-                    --pos;
-                    insert_query->format.clear();
-                    insert_query->data = nullptr;
-                    insert_query->end = nullptr;
+                    /// The rewind is only safe when the INSERT ends exactly with `FORMAT <name>`,
+                    /// i.e. the format name is the last consumed token and the FORMAT keyword the one
+                    /// before it. This is the case for `INSERT ... SELECT ... [SETTINGS ...] FORMAT
+                    /// <name>` (SETTINGS written before the FORMAT stay on the INSERT), but not when
+                    /// SETTINGS follow the FORMAT (allow_settings_after_format_in_insert). Verify the
+                    /// two trailing tokens before rewinding so we never strip a non-FORMAT clause.
+                    Pos format_name = pos;
+                    --format_name;
+                    Pos format_keyword = format_name;
+                    --format_keyword;
+
+                    Pos check = format_keyword;
+                    Expected check_expected;
+                    if (s_format.ignore(check, check_expected) && check == format_name)
+                    {
+                        pos = format_keyword;
+                        insert_query->format.clear();
+                        insert_query->data = nullptr;
+                        insert_query->end = nullptr;
+                    }
                 }
             }
         }
