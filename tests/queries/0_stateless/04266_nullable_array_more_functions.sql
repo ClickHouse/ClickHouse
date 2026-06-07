@@ -174,6 +174,22 @@ SELECT throwIf(NOT isNull(arrayReduceInRanges(
     CAST(NULL AS Nullable(Array(Int32))))))
 FORMAT Null;
 
+WITH arrayFirst(x -> 1, CAST([map('k', toUInt8(1))] AS Nullable(Array(Map(String, UInt8))))) AS m
+SELECT throwIf(toTypeName(m) != 'Map(String, UInt8)' OR NOT mapContains(m, 'k') OR m['k'] != 1)
+FORMAT Null;
+
+WITH arrayLast(x -> 1, CAST([map('a', toUInt8(1)), map('b', toUInt8(2))] AS Nullable(Array(Map(String, UInt8))))) AS m
+SELECT throwIf(toTypeName(m) != 'Map(String, UInt8)' OR NOT mapContains(m, 'b') OR m['b'] != 2)
+FORMAT Null;
+
+WITH arrayFirst(x -> 1, CAST(NULL AS Nullable(Array(Map(String, UInt8))))) AS m
+SELECT throwIf(toTypeName(m) != 'Map(String, UInt8)' OR length(mapKeys(m)) != 0)
+FORMAT Null;
+
+WITH arrayLast(x -> 1, CAST(NULL AS Nullable(Array(Map(String, UInt8))))) AS m
+SELECT throwIf(toTypeName(m) != 'Map(String, UInt8)' OR length(mapKeys(m)) != 0)
+FORMAT Null;
+
 SELECT arrayJoin(CAST([1, 2] AS Nullable(Array(Int32)))); -- { serverError TYPE_MISMATCH }
 
 SELECT x

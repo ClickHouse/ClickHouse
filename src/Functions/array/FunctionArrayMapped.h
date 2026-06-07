@@ -148,9 +148,13 @@ inline NullableArrayArgument unwrapNullableArrayArgumentColumn(
     return result;
 }
 
-inline bool nullMapHasAnyNull(const PaddedPODArray<UInt8> & data)
+inline bool canWrapNullableArrayResultType(const DataTypePtr & type)
 {
-    return std::find(data.begin(), data.end(), static_cast<UInt8>(1)) != data.end();
+    if (type->isNullable())
+        return true;
+    if (typeid_cast<const DataTypeArray *>(type.get()))
+        return true;
+    return type->canBeInsideNullable();
 }
 
 inline DataTypePtr applyNullableArrayReturnType(
@@ -158,31 +162,17 @@ inline DataTypePtr applyNullableArrayReturnType(
 {
     for (size_t i = first_array_argument_index; i < arguments.size(); ++i)
     {
-        if (arguments[i].type->isNullable())
+        if (arguments[i].type->isNullable() && canWrapNullableArrayResultType(return_type))
             return makeNullableAllowingArray(return_type);
     }
     return return_type;
 }
 
 inline ColumnPtr wrapNullableArrayResultIfNeeded(
-    ColumnPtr result, const ColumnPtr & array_null_map, size_t input_rows_count, const DataTypePtr & result_type)
+    ColumnPtr result, const ColumnPtr & array_null_map, size_t /*input_rows_count*/, const DataTypePtr & result_type)
 {
     if (!result_type->isNullable())
-    {
-        if (!array_null_map)
-            return result;
-
-        ColumnPtr materialized_null_map = materializeNullMapToRowCount(array_null_map, input_rows_count);
-        const auto & source_null_map = assert_cast<const ColumnUInt8 &>(*materialized_null_map);
-        if (!nullMapHasAnyNull(source_null_map.getData()))
-            return result;
-
-        auto mutable_result = IColumn::mutate(result->convertToFullColumnIfConst());
-        MutableColumnPtr null_map_col = ColumnUInt8::create();
-        assert_cast<ColumnUInt8 &>(*null_map_col).getData().assign(
-            source_null_map.getData().begin(), source_null_map.getData().end());
-        return ColumnNullable::create(std::move(mutable_result), std::move(null_map_col));
-    }
+        return result;
 
     const size_t num_rows = result->size();
 
