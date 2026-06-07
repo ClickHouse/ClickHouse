@@ -194,8 +194,7 @@ SELECT (SELECT count() FROM (SELECT a, x FROM test_array_join ARRAY JOIN arr AS 
 1
 DROP TABLE test_array_join;
 -- Not optimized: the in-order LIMIT BY optimization is intentionally not applied for Merge tables
--- (children may disagree on sort-key direction), so this falls back to the hash LimitByTransform.
--- Enabling the setting must not change the result.
+-- (children may disagree on sort-key direction), so for now this falls back to the hash LimitByTransform.
 DROP TABLE IF EXISTS test_merge_part_1;
 DROP TABLE IF EXISTS test_merge_part_2;
 DROP TABLE IF EXISTS test_merge_wrap;
