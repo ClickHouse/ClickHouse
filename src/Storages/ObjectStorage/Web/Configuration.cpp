@@ -268,6 +268,16 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
     while (path.path.starts_with('/'))
         path.path.erase(0, 1);
 
+    /// Only the authority part of the URL is passed to `parseURLShardsWithFailover`, so a `|`
+    /// failover template inside the path (e.g. `http://host/data/{bad|good}/**/part*.tsv`) would
+    /// be left untouched and treated as a literal by the glob matcher, silently changing the
+    /// `url` semantics. Reject it explicitly instead.
+    if (path.path.contains('|'))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Failover patterns ('|') in the path are not supported when expanding `url` wildcards "
+            "via HTTP index pages; use it only in the host part of the URL");
+
     url_shards.clear();
     url_shards.reserve(url_shards_with_failover.size());
 
