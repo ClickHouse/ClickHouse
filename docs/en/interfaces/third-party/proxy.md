@@ -7,8 +7,6 @@ title: 'Proxy Servers from Third-party Developers'
 doc_type: 'reference'
 ---
 
-# Proxy servers from third-party developers
-
 ## chproxy {#chproxy}
 
 [chproxy](https://github.com/Vertamedia/chproxy), is an HTTP proxy and load balancer for ClickHouse database.

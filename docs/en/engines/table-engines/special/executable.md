@@ -9,8 +9,6 @@ title: 'Executable and ExecutablePool table engines'
 doc_type: 'reference'
 ---
 
-# Executable and ExecutablePool table engines
-
 The `Executable` and `ExecutablePool` table engines allow you to define a table whose rows are generated from a script that you define (by writing rows to **stdout**). The executable script is stored in the `users_scripts` directory and can read data from any source.
 
 - `Executable` tables: the script is run on every query

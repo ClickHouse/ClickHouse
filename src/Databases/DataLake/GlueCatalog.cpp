@@ -438,6 +438,27 @@ void GlueCatalog::setCredentials(TableMetadata & metadata) const
     }
 }
 
+ICatalog::CredentialsRefreshCallback GlueCatalog::getCredentialsConfigurationCallback(const DB::StorageID & storage_id)
+{
+    /// The AWS SDK credentials provider chain (instance profile, STS assume-role,
+    /// web-identity, etc.) refreshes its cached credentials internally before
+    /// expiry. The bug we are fixing is that `setCredentials` captures the result
+    /// of `GetAWSCredentials` once at table-load time and embeds the access key,
+    /// secret, and session token as static literals in the storage args, so the
+    /// S3 client is pinned to a snapshot that goes stale on long reads. This
+    /// callback re-asks the same provider for current credentials each time
+    /// `ReadBufferFromS3` reports an `ExpiredToken`, letting the read recover.
+    return [this, storage_id]() -> std::shared_ptr<IStorageCredentials>
+    {
+        LOG_DEBUG(log, "Refreshing AWS credentials for {} after expired token", storage_id.getNameForLogs());
+        auto credentials = credentials_provider->GetAWSCredentials();
+        return std::make_shared<S3Credentials>(
+            credentials.GetAWSAccessKeyId(),
+            credentials.GetAWSSecretKey(),
+            credentials.GetSessionToken());
+    };
+}
+
 bool GlueCatalog::empty() const
 {
     auto all_databases = getDatabases("");
@@ -650,6 +671,16 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", response.GetError().GetMessage());
 
     return true;
+}
+
+bool GlueCatalog::updateSchema(
+    const String & namespace_name,
+    const String & table_name,
+    const String & new_metadata_path,
+    Poco::JSON::Object::Ptr /*new_schema*/,
+    Int32 /*previous_schema_id*/) const
+{
+    return updateMetadata(namespace_name, table_name, new_metadata_path, nullptr);
 }
 
 void GlueCatalog::dropTable(const String & namespace_name, const String & table_name) const

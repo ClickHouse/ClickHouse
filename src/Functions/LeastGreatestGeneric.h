@@ -30,7 +30,7 @@ enum class LeastGreatest : uint8_t
 
 
 template <LeastGreatest kind>
-class FunctionLeastGreatestGeneric : public IFunction
+class FunctionLeastGreatestGeneric final : public IFunction
 {
 public:
     static constexpr auto name = kind == LeastGreatest::Least ? "least" : "greatest";
@@ -110,7 +110,7 @@ private:
 };
 
 template <LeastGreatest kind, typename SpecializedFunction>
-class LeastGreatestOverloadResolver : public IFunctionOverloadResolver
+class LeastGreatestOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = kind == LeastGreatest::Least ? "least" : "greatest";
