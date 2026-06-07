@@ -1,0 +1,11 @@
+<1: pause allows current refresh to complete>	5	1	1
+<2: stop cancels the refresh>	0	1
+<2b: start resumes the stopped view>	1
+<3: cancel interrupts current refresh but keeps schedule>	0	1
+<4: refresh triggers out-of-schedule refresh>	43
+<5: refresh all background refreshes all views>	1	1
+<6: stop all background disables all>	2	2
+<7: pause all background disables all>	2	2
+<8: cancel all background keeps views enabled>	2	2
+<9: granted verbs work>
+<9: denied verbs error as expected>
