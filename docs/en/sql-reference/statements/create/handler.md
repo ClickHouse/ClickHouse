@@ -49,6 +49,8 @@ The functions [`currentHandler`](/sql-reference/functions/other-functions#curren
 
 `CREATE HANDLER`, `DROP HANDLER` and `ALTER HANDLER` require the `CREATE HANDLER`, `DROP HANDLER` and `ALTER HANDLER` grants respectively.
 
+Reading the [`system.handlers`](/operations/system-tables/handlers) table requires the `SHOW HANDLERS` grant. Secrets that may be embedded in a handler's query are masked there unless the user is additionally allowed to see secrets (see [`system.handlers`](/operations/system-tables/handlers)).
+
 Invoking a handler does not require any separate grant, but grants are checked as usual during the query invocation, and authentication works in the usual way. To encapsulate access to certain queries, create a [`VIEW` with `SQL SECURITY DEFINER`](/sql-reference/statements/create/view#sql_security) and define a handler that selects from that view.
 
 ## Storage {#storage}

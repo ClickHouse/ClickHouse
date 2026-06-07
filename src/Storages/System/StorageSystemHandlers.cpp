@@ -1,16 +1,29 @@
 #include <Storages/System/StorageSystemHandlers.h>
 
-#include <DataTypes/DataTypeString.h>
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
+#include <Columns/ColumnArray.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
-#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
+#include <Parsers/ASTCreateHandlerQuery.h>
+#include <Parsers/ParserCreateHandlerQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandler.h>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 ColumnsDescription StorageSystemHandlers::getColumnsDescription()
 {
@@ -22,8 +35,8 @@ ColumnsDescription StorageSystemHandlers::getColumnsDescription()
         {"url", std::make_shared<DataTypeString>(), "The URL pattern that the handler matches."},
         {"methods", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Allowed HTTP methods."},
         {"type", std::make_shared<DataTypeString>(), "The handler type (only `query` is supported)."},
-        {"query", std::make_shared<DataTypeString>(), "The SQL query executed by the handler."},
-        {"create_query", std::make_shared<DataTypeString>(), "The CREATE HANDLER statement."},
+        {"query", std::make_shared<DataTypeString>(), "The SQL query executed by the handler. Secrets are hidden unless the user is allowed to see them."},
+        {"create_query", std::make_shared<DataTypeString>(), "The CREATE HANDLER statement. Secrets are hidden unless the user is allowed to see them."},
     };
 }
 
@@ -32,11 +45,18 @@ StorageSystemHandlers::StorageSystemHandlers(const StorageID & table_id_)
 {
 }
 
-void StorageSystemHandlers::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemHandlers::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
+    /// A handler's query and create_query can embed credentials (e.g. for table functions), so reading
+    /// system.handlers is gated by the SHOW HANDLERS privilege, mirroring system.named_collections.
+    if (!context->getAccess()->isGranted(AccessType::SHOW_HANDLERS))
+        return;
+
     auto handlers = SQLDefinedHandlersFactory::instance().getAll();
     if (!handlers)
         return;
+
+    const auto & settings = context->getSettingsRef();
 
     for (const auto & [name, handler] : *handlers)
     {
@@ -65,8 +85,22 @@ void StorageSystemHandlers::fillData(MutableColumns & res_columns, ContextPtr, c
         res_columns[col++]->insert(methods_array);
 
         res_columns[col++]->insert(handler->type);
-        res_columns[col++]->insert(handler->query);
-        res_columns[col++]->insert(handler->create_statement);
+
+        /// The stored statement keeps secrets in clear text (it must be re-executable). Re-parse it and
+        /// re-format it with secret hiding driven by the user's privileges and settings, so a user without
+        /// the secret-display grant sees masked credentials - exactly as in SHOW CREATE TABLE.
+        ParserCreateHandlerQuery parser(handler->create_statement.data() + handler->create_statement.size());
+        auto ast = parseQuery(
+            parser,
+            handler->create_statement,
+            "in handler " + name,
+            0,
+            settings[Setting::max_parser_depth],
+            settings[Setting::max_parser_backtracks]);
+        const auto & create_query = ast->as<const ASTCreateHandlerQuery &>();
+
+        res_columns[col++]->insert(format({context, *create_query.query}));
+        res_columns[col++]->insert(format({context, *ast}));
     }
 }
 
