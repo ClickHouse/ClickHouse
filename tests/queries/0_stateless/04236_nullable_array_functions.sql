@@ -241,6 +241,16 @@ FROM
 )
 FORMAT Null;
 
+SELECT throwIf(groupArray(isNull(arrayROCAUC(a, b))) != [1, 0])
+FROM
+(
+    SELECT arrayJoin([
+        (CAST(NULL AS Nullable(Array(Float64))), CAST([1] AS Nullable(Array(UInt8)))),
+        (CAST([0.1] AS Nullable(Array(Float64))), CAST([1] AS Nullable(Array(UInt8))))
+    ]) AS t, t.1 AS a, t.2 AS b
+)
+FORMAT Null;
+
 SELECT throwIf(groupArray(ifNull(arrayFold(acc, x -> acc + x, a, 0::Int64), -1)) != [-1, 0, 6])
 FROM
 (

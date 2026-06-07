@@ -390,34 +390,35 @@ bool MsgPackVisitor::visit_boolean(bool value)
 
 bool MsgPackVisitor::start_array(size_t size) // NOLINT
 {
-    if (isArray(info_stack.top().type))
+    DataTypePtr type = info_stack.top().type;
+    IColumn * column_ptr = &info_stack.top().column;
+
+    /// Reaching start_array means the value is non-null (visit_nil handles SQL NULL).
+    /// Unwrap Nullable(...) so nested Array/Tuple parsing uses the inner column.
+    if (type->isNullable())
     {
-        auto nested_type = assert_cast<const DataTypeArray &>(*info_stack.top().type).getNestedType();
-        ColumnArray & column_array = assert_cast<ColumnArray &>(info_stack.top().column);
+        auto & nullable_column = assert_cast<ColumnNullable &>(*column_ptr);
+        nullable_column.getNullMapColumn().insertValue(0);
+        type = assert_cast<const DataTypeNullable &>(*type).getNestedType();
+        column_ptr = &nullable_column.getNestedColumn();
+    }
+
+    if (isArray(type))
+    {
+        auto nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
+        ColumnArray & column_array = assert_cast<ColumnArray &>(*column_ptr);
         ColumnArray::Offsets & offsets = column_array.getOffsets();
         IColumn & nested_column = column_array.getData();
         offsets.push_back(offsets.back() + size);
         if (size > 0)
             info_stack.push(Info{nested_column, nested_type, false, size, nullptr});
     }
-    else if (isTuple(removeNullable(info_stack.top().type)))
+    else if (isTuple(type))
     {
-        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*removeNullable(info_stack.top().type));
+        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
         const auto & nested_types = tuple_type.getElements();
         if (size != nested_types.size())
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack array with size {} into Tuple column with {} elements", size, nested_types.size());
-
-        /// If the type is Nullable, reaching start_array means the value
-        /// is non-null (for nulls, the parser calls visit_nil instead).
-        /// So we can safely unwrap the Nullable to work with the inner
-        /// ColumnTuple directly.
-        IColumn * column_ptr = &info_stack.top().column;
-        if (info_stack.top().type->isNullable())
-        {
-            auto & nullable_column = assert_cast<ColumnNullable &>(*column_ptr);
-            nullable_column.getNullMapColumn().insertValue(0);
-            column_ptr = &nullable_column.getNestedColumn();
-        }
 
         ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(*column_ptr);
         /// Push nested columns into stack in reverse order.

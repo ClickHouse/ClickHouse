@@ -1,9 +1,13 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/array/NullableArrayOffsets.h>
 
 
 namespace DB
@@ -138,6 +142,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -152,11 +157,15 @@ public:
                 argument_count,
                 is_pr ? "2 or 3" : "2, 3 or 4");
 
+        bool result_is_nullable = false;
+
         /// Validate 'arr_scores' argument
-        const DataTypeArray * array_scores_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        const DataTypeArray * array_scores_type = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[0].type).get());
         if (!array_scores_type)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument (arr_scores) for function {} must be of type Array", getName());
+
+        result_is_nullable |= arguments[0].type->isNullable();
 
         const auto & nested_array_scores_type = array_scores_type->getNestedType();
         if (!isNativeNumber(nested_array_scores_type))
@@ -167,10 +176,12 @@ public:
                 nested_array_scores_type->getName());
 
         /// Validate 'arr_labels' argument
-        const DataTypeArray * array_labels_type = checkAndGetDataType<DataTypeArray>(arguments[1].type.get());
+        const DataTypeArray * array_labels_type = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[1].type).get());
         if (!array_labels_type)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument (arr_labels) for function {} must be of type Array", getName());
+
+        result_is_nullable |= arguments[1].type->isNullable();
 
         const auto & nested_arary_labels_type = array_labels_type->getNestedType();
         if (!isNativeNumber(nested_arary_labels_type) && !isEnum(nested_arary_labels_type))
@@ -188,13 +199,15 @@ public:
         /// Validate 'arr_partial_offsets' argument
         if (argument_count >= array_partial_offsets_arg_index + 1)
         {
-            const DataTypeArray * array_offsets_type = checkAndGetDataType<DataTypeArray>(arguments[array_partial_offsets_arg_index].type.get());
+            const DataTypeArray * array_offsets_type = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[array_partial_offsets_arg_index].type).get());
             if (!array_offsets_type)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "{} argument (arr_partial_offsets) for function {} must be of type Array",
                     array_partial_offsets_arg_index == 2 ? "Third" : "Fourth",
                     getName());
+
+            result_is_nullable |= arguments[array_partial_offsets_arg_index].type->isNullable();
 
             const auto & nested_array_offsets_type = array_offsets_type->getNestedType();
             /// Last argument (arr_partial_offsets) must be an array of integers
@@ -207,33 +220,61 @@ public:
                     nested_array_offsets_type->getName());
         }
 
-        return std::make_shared<DataTypeFloat64>();
+        auto result_type = std::make_shared<DataTypeFloat64>();
+        if (result_is_nullable)
+            return makeNullable(result_type);
+        return result_type;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeFloat64>(); }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    static const ColumnArray * unwrapNullableArrayColumn(
+        ColumnPtr & holder,
+        ColumnUInt8::MutablePtr & null_map)
+    {
+        if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(holder.get()))
+        {
+            if (!null_map)
+                null_map = ColumnUInt8::create(nullable_column->getNullMapData().begin(), nullable_column->getNullMapData().end());
+            else
+            {
+                auto & null_map_data = null_map->getData();
+                const auto & other_null_map = nullable_column->getNullMapData();
+                for (size_t row = 0; row < null_map_data.size(); ++row)
+                    null_map_data[row] |= other_null_map[row];
+            }
+
+            holder = nullable_column->getNestedColumnPtr();
+        }
+
+        const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(holder.get());
+        if (!column_array)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected Array column, found {}", holder->getName());
+        return column_array;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         size_t argument_count = arguments.size();
 
         ColumnPtr col1 = arguments[0].column->convertToFullColumnIfConst();
         ColumnPtr col2 = arguments[1].column->convertToFullColumnIfConst();
+        ColumnUInt8::MutablePtr null_map;
 
-        const ColumnArray * col_array1 = checkAndGetColumn<ColumnArray>(col1.get());
-        if (!col_array1)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(),
-                getName());
+        const ColumnArray * col_array1 = unwrapNullableArrayColumn(col1, null_map);
+        const ColumnArray * col_array2 = unwrapNullableArrayColumn(col2, null_map);
 
-        const ColumnArray * col_array2 = checkAndGetColumn<ColumnArray>(col2.get());
-        if (!col_array2)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of second argument of function {}",
-                arguments[1].column->getName(),
-                getName());
+        const auto * row_null_map = null_map ? null_map.get() : nullptr;
+        if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*col_array1, row_null_map, input_rows_count))
+        {
+            col1 = std::move(null_rows_empty_array);
+            col_array1 = assert_cast<const ColumnArray *>(col1.get());
+        }
+        if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*col_array2, row_null_map, input_rows_count))
+        {
+            col2 = std::move(null_rows_empty_array);
+            col_array2 = assert_cast<const ColumnArray *>(col2.get());
+        }
 
         if (!col_array1->hasEqualOffsets(*col_array2))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "First two arguments for function {} must be Arrays of equal sizes", getName());
@@ -249,14 +290,8 @@ public:
         if (argument_count == array_partial_offsets_arg_index + 1)
         {
             col_offsets = arguments[array_partial_offsets_arg_index].column->convertToFullColumnIfConst();
-            col_array_offsets = checkAndGetColumn<ColumnArray>(col_offsets.get());
-            if (!col_array_offsets)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal column {} of {} argument of function {}",
-                    arguments[array_partial_offsets_arg_index].column->getName(),
-                    array_partial_offsets_arg_index == 2 ? "third" : "fourth",
-                    getName());
+            col_array_offsets = unwrapNullableArrayColumn(col_offsets, null_map);
+            row_null_map = null_map ? null_map.get() : nullptr;
 
             /// The partial offsets argument must be a column containing 3-elements (PR AUC) or 4-elements (ROC AUC) arrays on each row
             const auto & offsets = col_array_offsets->getOffsets();
@@ -271,6 +306,9 @@ public:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
+                if (row_null_map && row_null_map->getData()[i])
+                    continue;
+
                 auto current = offsets[i];
                 auto previous = i == 0 ? 0 : offsets[i - 1];
                 if (current - previous != array_partial_offsets_size)
@@ -304,6 +342,13 @@ public:
             input_rows_count,
             scale,
             col_array_offsets);
+
+        if (result_type->isNullable())
+        {
+            if (!null_map)
+                null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+            return ColumnNullable::create(std::move(col_res), std::move(null_map));
+        }
 
         return col_res;
     }
