@@ -1317,7 +1317,9 @@ private:
         /// Check if condition is const or null to not create full mask from it.
         if ((isColumnConst(*arguments[0].column) || arguments[0].column->onlyNull()) && !arguments[0].column->empty())
         {
-            bool value = arguments[0].column->getBool(0);
+            /// `onlyNull` columns (e.g. `Const(Nullable(Nothing))`) are treated as the false branch:
+            /// `getBool` would throw on the dummy nested column, but `if(NULL, then, else)` returns `else`.
+            const bool value = !arguments[0].column->onlyNull() && arguments[0].column->getBool(0);
             executeColumnIfNeeded(arguments[1], !value);
             executeColumnIfNeeded(arguments[2], value);
             return;
