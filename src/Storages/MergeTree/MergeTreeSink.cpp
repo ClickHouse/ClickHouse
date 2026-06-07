@@ -226,89 +226,96 @@ void MergeTreeSink::finishDelayedChunk()
 
     for (auto & partition : delayed_chunk->partitions)
     {
-        auto group_switcher = ThreadGroupSwitcher(partition.thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
+        ExecutionStatus status;
+        std::vector<std::string> block_ids_for_log;
 
-        auto retry_times = 0;
-        while (true)
         {
-            partition.temp_part->finalize();
+            auto group_switcher = ThreadGroupSwitcher(partition.thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
-            auto & part = partition.temp_part->part;
-            auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(part->info.getPartitionId(), deduplicate);
-            auto conflicts = commitPart(part, deduplication_hashes);
-
-            if (conflicts.empty())
+            auto retry_times = 0;
+            while (true)
             {
-                partition.temp_part->prewarmCaches();
+                partition.temp_part->finalize();
 
-                StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
+                auto & part = partition.temp_part->part;
+                auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(part->info.getPartitionId(), deduplicate);
+                auto conflicts = commitPart(part, deduplication_hashes);
 
-                auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.thread_group->performance_counters.getPartiallyAtomicSnapshot());
+                if (conflicts.empty())
+                {
+                    partition.temp_part->prewarmCaches();
 
-                PartLog::addNewPart(
-                    storage.getContext(),
-                    PartLog::PartLogEntry(part, partition.thread_group->getGroupElapsedNs(), counters_snapshot),
-                    getDeduplicationBlockIds(deduplication_hashes));
+                    StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
 
-                /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
-                storage.background_operations_assignee.trigger();
-                break;
-            }
+                    block_ids_for_log = getDeduplicationBlockIds(deduplication_hashes);
 
-            ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks, conflicts.size());
+                    /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
+                    storage.background_operations_assignee.trigger();
+                    break;
+                }
 
-            auto result = partition.deduplication_info->deduplicateBlock(
-                conflicts,
-                partition.block_with_partition.partition_id,
-                context);
+                ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks, conflicts.size());
 
-            if (partition.deduplication_info->isAsyncInsert())
-                ProfileEvents::increment(ProfileEvents::DuplicatedAsyncInserts, result.removed_tokens);
-            else
-                ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks, result.removed_tokens);
+                auto result = partition.deduplication_info->deduplicateBlock(
+                    conflicts,
+                    partition.block_with_partition.partition_id,
+                    context);
 
-            LOG_DEBUG(
-                storage.log,
-                "After filtering by collision at {} try,"
-                " removed rows {}/{}"
-                " removed tokets {}/{} from origin block,"
-                " after retry remaining rows: {},"
-                " remaining tokens: {},"
-                " new deduplication info debug: {}",\
-                retry_times,
-                result.removed_rows,
-                partition.deduplication_info->getRows(),
-                result.removed_tokens,
-                partition.deduplication_info->getCount(),
-                result.filtered_block->rows(),
-                result.deduplication_info->getCount(),
-                result.deduplication_info->debug());
+                if (partition.deduplication_info->isAsyncInsert())
+                    ProfileEvents::increment(ProfileEvents::DuplicatedAsyncInserts, result.removed_tokens);
+                else
+                    ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks, result.removed_tokens);
 
-            if (result.filtered_block->rows() == 0)
-            {
                 LOG_DEBUG(
                     storage.log,
-                    "All rows are deduplicated for part with block IDs: {}, skipping the part commit.",
-                    fmt::join(conflicts, ", "));
+                    "After filtering by collision at {} try,"
+                    " removed rows {}/{}"
+                    " removed tokets {}/{} from origin block,"
+                    " after retry remaining rows: {},"
+                    " remaining tokens: {},"
+                    " new deduplication info debug: {}",\
+                    retry_times,
+                    result.removed_rows,
+                    partition.deduplication_info->getRows(),
+                    result.removed_tokens,
+                    partition.deduplication_info->getCount(),
+                    result.filtered_block->rows(),
+                    result.deduplication_info->getCount(),
+                    result.deduplication_info->debug());
 
-                auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.thread_group->performance_counters.getPartiallyAtomicSnapshot());
+                if (result.filtered_block->rows() == 0)
+                {
+                    LOG_DEBUG(
+                        storage.log,
+                        "All rows are deduplicated for part with block IDs: {}, skipping the part commit.",
+                        fmt::join(conflicts, ", "));
 
-                PartLog::addNewPart(
-                    storage.getContext(),
-                    PartLog::PartLogEntry(partition.temp_part->part, partition.thread_group->getGroupElapsedNs(), counters_snapshot),
-                    getDeduplicationBlockIds(deduplication_hashes),
-                    ExecutionStatus(ErrorCodes::INSERT_WAS_DEDUPLICATED, "The part was deduplicated"));
+                    block_ids_for_log = getDeduplicationBlockIds(deduplication_hashes);
+                    status = ExecutionStatus(ErrorCodes::INSERT_WAS_DEDUPLICATED, "The part was deduplicated");
+                    break;
+                }
 
-                break;
+                partition.block_with_partition.block = result.filtered_block;
+                partition.deduplication_info = std::move(result.deduplication_info);
+
+                partition.temp_part = writeNewTempPart(partition.block_with_partition);
+
+                ++retry_times;
             }
-
-            partition.block_with_partition.block = result.filtered_block;
-            partition.deduplication_info = std::move(result.deduplication_info);
-
-            partition.temp_part = writeNewTempPart(partition.block_with_partition);
-
-            ++retry_times;
         }
+
+        /// The `group_switcher` above has to be destroyed before taking the snapshot, so that the
+        /// thread is detached from the group and its final ProfileEvents and elapsed time (taskstats,
+        /// `OSCPUVirtualTimeMicroseconds`, `RealTimeMicroseconds`, ...) are flushed into the group's
+        /// counters. Reading them while the switcher is still alive would undercount the `system.part_log`
+        /// row. This mirrors `ReplicatedMergeTreeSink::finishDelayedPart`.
+        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.thread_group->performance_counters.getPartiallyAtomicSnapshot());
+
+        PartLog::addNewPart(
+            storage.getContext(),
+            PartLog::PartLogEntry(partition.temp_part->part, partition.thread_group->getGroupElapsedNs(), counters_snapshot),
+            block_ids_for_log,
+            status);
     }
 
     delayed_chunk.reset();

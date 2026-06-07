@@ -34,27 +34,35 @@ void MergeTreeSinkPatch::finishDelayedChunk()
 
     for (auto & partition : delayed_chunk->partitions)
     {
-        auto thread_group_switcher = ThreadGroupSwitcher(partition.thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
+        std::vector<std::string> block_ids;
 
-        partition.temp_part->finalize();
+        {
+            auto thread_group_switcher = ThreadGroupSwitcher(partition.thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
-        auto & part = partition.temp_part->part;
+            partition.temp_part->finalize();
 
-        const auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(part->info.getPartitionId(), storage.getDeduplicationLog() != nullptr);
+            auto & part = partition.temp_part->part;
 
-        auto conflicts = commitPart(part, deduplication_hashes);
+            const auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(part->info.getPartitionId(), storage.getDeduplicationLog() != nullptr);
 
-        if (!conflicts.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} was deduplicated. It's a bug", part->name);
+            auto conflicts = commitPart(part, deduplication_hashes);
 
-        StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
+            if (!conflicts.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} was deduplicated. It's a bug", part->name);
 
+            StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
+
+            block_ids = getDeduplicationBlockIds(deduplication_hashes);
+
+            /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
+            storage.background_operations_assignee.trigger();
+        }
+
+        /// The `thread_group_switcher` above has to be destroyed before taking the snapshot, so that the
+        /// thread's final ProfileEvents and elapsed time are flushed into the group's counters (see the
+        /// matching comment in `MergeTreeSink::finishDelayedChunk`).
         auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.thread_group->performance_counters.getPartiallyAtomicSnapshot());
-        auto block_ids = getDeduplicationBlockIds(deduplication_hashes);
-        PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.thread_group->getGroupElapsedNs(), counters_snapshot), block_ids);
-
-        /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
-        storage.background_operations_assignee.trigger();
+        PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(partition.temp_part->part, partition.thread_group->getGroupElapsedNs(), counters_snapshot), block_ids);
     }
 
     delayed_chunk.reset();
