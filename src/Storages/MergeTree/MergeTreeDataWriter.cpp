@@ -1100,7 +1100,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
     }
 
-    if (((*data_settings)[MergeTreeSetting::optimize_row_order] || ((*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by] && !metadata_snapshot->hasSortingKey()))
+    /// The `optimize_row_order_if_no_order_by` setting refers to the parent table having no explicit `ORDER BY`,
+    /// not to the projection's own (often empty) sorting key. A sorted parent table may have unsorted/aggregate
+    /// projections, and we should not broaden the new default to them. Explicit `optimize_row_order` keeps applying
+    /// to projections as before.
+    const bool parent_table_has_sorting_key = parent_part->getMetadataSnapshot()->hasSortingKey();
+    if (((*data_settings)[MergeTreeSetting::optimize_row_order] || ((*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by] && !parent_table_has_sorting_key))
         && data.merging_params.mode
             == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
