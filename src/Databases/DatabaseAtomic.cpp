@@ -283,33 +283,35 @@ void DatabaseAtomic::dropDetachedTable(
         LOG_TRACE(log, "Rename metadata from {} to {} for removing.", table_metadata_path, table_metadata_path_drop);
         db_disk->replaceFile(table_metadata_path, table_metadata_path_drop);
 
-        dependency_cleanup();
-
+        /// Metadata rename is the commit point for dropping a detached table.
+        /// Restart will continue cleanup from the file in `metadata_dropped`.
         table_name_to_path.erase(table_name);
         snapshot_detached_tables.erase(table_name);
     }
 
-    /// If a crash happens at this point, we get stale orphan flag
-    /// but it is better than removing detached flag first and risking table ressurection on restart
-    const auto detached_flag_path = getDetachedPermanentlyFlagPath(table_metadata_path);
-    LOG_TRACE(log, "Deleting {} flag.", detached_flag_path);
     try
     {
+        LOG_TRACE(log, "Table {} ready for remove.", table_name);
+        DatabaseCatalog::instance().enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, table_metadata_path_drop, sync);
+
+        dependency_cleanup();
+
+        /// Metadata is already moved to `metadata_dropped`, so removing detached flag is safe.
+        /// If a crash happens before this removal, we can only get a stale orphan flag.
+        const auto detached_flag_path = getDetachedPermanentlyFlagPath(table_metadata_path);
+        LOG_TRACE(log, "Deleting {} flag.", detached_flag_path);
         db_disk->removeFileIfExists(detached_flag_path);
+
+        if (db_disk->existsFileOrDirectory(getPathSymlink(table_name)))
+        {
+            LOG_TRACE(log, "Remove symlink for {}", table_name);
+            tryRemoveSymlink(table_name);
+        }
     }
     catch (...)
     {
-        // Ok: we don't want to disrupt further cleanup
+        tryLogCurrentException(log, "Cannot finish cleanup after detached table was marked as dropped");
     }
-
-    if (db_disk->existsFileOrDirectory(getPathSymlink(table_name)))
-    {
-        LOG_TRACE(log, "Remove symlink for {}", table_name);
-        tryRemoveSymlink(table_name);
-    }
-
-    LOG_TRACE(log, "Table {} ready for remove.", table_name);
-    DatabaseCatalog::instance().enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, table_metadata_path_drop, sync);
 }
 
 void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
