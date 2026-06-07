@@ -83,6 +83,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
 }
 
 static bool emptyTimezoneAsUTC(const std::string & format_name, const FormatSettings & format_settings)
@@ -1141,6 +1142,7 @@ struct ReadColumnFromArrowColumnSettings
     bool allow_geoparquet_parser;
     bool enable_json_parsing;
     bool empty_timezone_as_utc;
+    bool null_as_default;
 };
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -1418,12 +1420,19 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             }();
 
             DataTypePtr nested_type_hint;
+            const DataTypeArray * array_type_hint = nullptr;
             if (type_hint)
             {
-                const auto * array_type_hint = typeid_cast<const DataTypeArray *>(removeNullable(type_hint).get());
+                array_type_hint = typeid_cast<const DataTypeArray *>(removeNullable(type_hint).get());
                 if (array_type_hint)
                     nested_type_hint = array_type_hint->getNestedType();
             }
+
+            if (array_type_hint && !isNullableOrLowCardinalityNullable(type_hint) && arrow_column->null_count() && !settings.null_as_default)
+                throw Exception(
+                    ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+                    "Cannot convert NULL value to non-Nullable type for column {}",
+                    column_name);
 
             bool is_nested_nullable_column = [&]
             {
@@ -1939,6 +1948,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         .allow_geoparquet_parser = allow_geoparquet_parser,
         .enable_json_parsing = enable_json_parsing,
         .empty_timezone_as_utc = emptyTimezoneAsUTC(format_name, format_settings),
+        .null_as_default = format_settings.null_as_default,
     };
 
     ColumnsWithTypeAndName sample_columns;
@@ -2062,6 +2072,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
         .allow_geoparquet_parser = allow_geoparquet_parser,
         .enable_json_parsing = enable_json_parsing,
         .empty_timezone_as_utc = emptyTimezoneAsUTC(format_name, format_settings),
+        .null_as_default = null_as_default,
     };
 
     Columns columns;

@@ -110,6 +110,20 @@ echo "$result" | grep -F 'arr' | grep -F 'Array(Nullable(Int32))' > /dev/null ||
     exit 1
 }
 
+if $CLICKHOUSE_LOCAL -q "
+SELECT * FROM file('$ARROW_FILE', Arrow, 'arr Array(Int32)')
+SETTINGS input_format_null_as_default = 0
+FORMAT Null
+" 2> "$TMP_DIR/non_nullable_array_arrow.err"; then
+    echo "Expected non-nullable Array(...) Arrow read to reject NULL lists"
+    exit 1
+fi
+grep -F 'CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN' "$TMP_DIR/non_nullable_array_arrow.err" > /dev/null || {
+    echo "Expected CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN for non-nullable Array(...) Arrow read, got:"
+    cat "$TMP_DIR/non_nullable_array_arrow.err"
+    exit 1
+}
+
 result=$($CLICKHOUSE_LOCAL --allow_experimental_nullable_array_type=1 -q "
 DESC file('$ARROW_FILE', Arrow)
 ")
@@ -123,6 +137,20 @@ DESC file('$ORC_FILE', ORC)
 ")
 echo "$result" | grep -F 'arr' | grep -F 'Array(Nullable(Int32))' > /dev/null || {
     echo "Expected non-nullable Array(...) in ORC schema inference with the setting disabled, got: $result"
+    exit 1
+}
+
+if $CLICKHOUSE_LOCAL -q "
+SELECT * FROM file('$ORC_FILE', ORC, 'arr Array(Int32)')
+SETTINGS input_format_null_as_default = 0
+FORMAT Null
+" 2> "$TMP_DIR/non_nullable_array_orc.err"; then
+    echo "Expected non-nullable Array(...) ORC read to reject NULL lists"
+    exit 1
+fi
+grep -F 'CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN' "$TMP_DIR/non_nullable_array_orc.err" > /dev/null || {
+    echo "Expected CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN for non-nullable Array(...) ORC read, got:"
+    cat "$TMP_DIR/non_nullable_array_orc.err"
     exit 1
 }
 

@@ -58,6 +58,7 @@ extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 extern const int THERE_IS_NO_COLUMN;
 extern const int INCORRECT_DATA;
 extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
 }
 
 
@@ -1891,14 +1892,21 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         case orc::LIST:
         {
             DataTypePtr nested_type_hint;
+            const DataTypeArray * array_type_hint = nullptr;
             if (type_hint)
             {
-                const auto * array_type_hint = typeid_cast<const DataTypeArray *>(removeNullable(type_hint).get());
+                array_type_hint = typeid_cast<const DataTypeArray *>(removeNullable(type_hint).get());
                 if (array_type_hint)
                     nested_type_hint = array_type_hint->getNestedType();
             }
 
             const auto * orc_list_column = dynamic_cast<const orc::ListVectorBatch *>(orc_column);
+            if (array_type_hint && !isNullableOrLowCardinalityNullable(type_hint) && orc_list_column->hasNulls && !null_as_default)
+                throw Exception(
+                    ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+                    "Cannot convert NULL value to non-Nullable type for column {}",
+                    column_name);
+
             const auto * orc_nested_column = getNestedORCColumn(orc_list_column);
             const auto * orc_nested_type = orc_type->getSubtype(0);
             auto nested_column = readColumnFromORCColumn(orc_nested_column, orc_nested_type, column_name, false, nested_type_hint);
