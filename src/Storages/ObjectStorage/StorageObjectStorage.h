@@ -63,6 +63,10 @@ public:
 
     String getName() const override;
 
+    /// The concrete data format resolved for this table (after schema/format inference).
+    /// Used by the unified `URL` engine to persist the delegate's inferred format.
+    String getFormatName() const { return configuration->format; }
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,

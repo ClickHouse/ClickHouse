@@ -1,5 +1,7 @@
 #include <Storages/StorageURL.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageFile.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -831,10 +833,10 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
 
 namespace
 {
-    class ReadBufferIterator : public IReadBufferIterator, WithContext
+    class URLReadBufferIterator : public IReadBufferIterator, WithContext
     {
     public:
-        ReadBufferIterator(
+        URLReadBufferIterator(
             const std::vector<String> & urls_to_check_,
             std::optional<String> format_,
             const CompressionMethod & compression_method_,
@@ -1064,7 +1066,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     else
         urls_to_check = {uri};
 
-    ReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
+    URLReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
     return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
@@ -2149,8 +2151,12 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment_,
-        String resolved_url_)
-        : StorageProxy(table_id_), nested(std::move(nested_)), resolved_url(std::move(resolved_url_))
+        String resolved_url_,
+        String resolved_format_)
+        : StorageProxy(table_id_)
+        , nested(std::move(nested_))
+        , resolved_url(std::move(resolved_url_))
+        , resolved_format(std::move(resolved_format_))
     {
         StorageInMemoryMetadata metadata;
         /// `columns_` is empty for a schema-inferred `CREATE TABLE ... ENGINE = URL('file://...')`
@@ -2177,6 +2183,15 @@ public:
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override
     {
         StorageURL::materializeResolvedURLInEngineArgs(args, resolved_url, context);
+
+        /// Persist the delegate's inferred format into the stored `URL(...)` arguments, mirroring
+        /// `StorageURL::addInferredEngineArgsToCreateQuery` for the plain `URL` engine. Without this,
+        /// a `format = auto` URL without a recognizable extension (e.g. `URL('file://.../data')`)
+        /// would be stored without a format, and `ATTACH`/restart would rebuild the delegate with
+        /// `format = auto` and re-read the external resource to rediscover the format even though the
+        /// schema is already persisted — incurring I/O at startup and risking failure or divergence
+        /// if the resource is unavailable or has changed.
+        materializeResolvedFormatInEngineArgs(args);
     }
 
     /// Preserve the `URL` engine's metadata-only rename: a plain `URL` table can be renamed without
@@ -2206,9 +2221,37 @@ public:
     }
 
 private:
+    /// Write `resolved_format` into the persisted `URL(...)` engine arguments (positional form only)
+    /// when it is a concrete format. Mirrors the positional handling in `StorageFile`.
+    void materializeResolvedFormatInEngineArgs(ASTs & args) const
+    {
+        if (resolved_format.empty() || resolved_format == "auto" || args.empty())
+            return;
+
+        /// Only the positional form `URL('url' [, format] [, compression])` is handled here; the
+        /// named-collection / key-value forms already carry an explicit `format=` when needed.
+        const auto * url_literal = args[0]->as<ASTLiteral>();
+        if (!url_literal || url_literal->value.getType() != Field::Types::String)
+            return;
+
+        if (args.size() == 1)
+        {
+            args.push_back(make_intrusive<ASTLiteral>(resolved_format));
+            return;
+        }
+
+        /// The format is the second positional argument; replace it only when it was left as `auto`.
+        if (const auto * format_literal = args[1]->as<ASTLiteral>();
+            format_literal && format_literal->value.getType() == Field::Types::String
+            && format_literal->value.safeGet<String>() == "auto")
+            args[1] = make_intrusive<ASTLiteral>(resolved_format);
+    }
+
     StoragePtr nested;
     /// The `url_base`-resolved URL, materialized into the persisted engine args on creation.
     String resolved_url;
+    /// The delegate's inferred data format, materialized into the persisted engine args on creation.
+    String resolved_format;
 };
 }
 
@@ -2337,8 +2380,27 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
         .is_restore_from_backup = args.is_restore_from_backup,
     };
     auto delegate_storage = it->second.creator_fn(delegate_factory_args);
+
+    /// Resolve the concrete format the delegate inferred (when none was given explicitly), so the
+    /// wrapper can persist it into the stored `URL(...)` arguments and avoid re-inference (and the
+    /// associated external I/O) on `ATTACH`/restart.
+    String resolved_format = configuration.format;
+    if (resolved_format.empty() || resolved_format == "auto")
+    {
+        if (target == URLSchemeTarget::File)
+        {
+            if (const auto * file = typeid_cast<const StorageFile *>(delegate_storage.get()))
+                resolved_format = file->getFormatName();
+        }
+        else if (const auto * object_storage = typeid_cast<const StorageObjectStorage *>(delegate_storage.get()))
+        {
+            resolved_format = object_storage->getFormatName();
+        }
+    }
+
     return std::make_shared<StorageURLSchemeDispatch>(
-        std::move(delegate_storage), args.table_id, args.columns, args.constraints, args.comment, configuration.url);
+        std::move(delegate_storage), args.table_id, args.columns, args.constraints, args.comment,
+        configuration.url, std::move(resolved_format));
 }
 
 void registerStorageURL(StorageFactory & factory);

@@ -82,6 +82,10 @@ public:
 
     std::string getName() const override { return "File"; }
 
+    /// The concrete data format resolved for this table (after schema/format inference).
+    /// Used by the unified `URL` engine to persist the delegate's inferred format.
+    const String & getFormatName() const { return format_name; }
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
