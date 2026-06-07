@@ -28,6 +28,38 @@ namespace ErrorCodes
 extern const int UNSUPPORTED_METHOD;
 }
 
+namespace
+{
+
+/// Recursively replace short identifiers referring to `WITH` literal aliases with the corresponding literals.
+/// This is used for the `eval` table function argument: it is evaluated as a constant expression while the
+/// table function is resolved, which happens before the query normalizer (the usual place where alias
+/// substitution occurs) runs. Subqueries are skipped, because they are separate queries with their own
+/// alias scope and are handled by the select-query traversal.
+void substituteWithLiterals(ASTPtr & ast, const std::map<String, ASTPtr> & literals)
+{
+    if (ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSubquery>())
+        return;
+
+    if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && identifier->isShort())
+    {
+        auto literal_it = literals.find(identifier->shortName());
+        if (literal_it != literals.end())
+        {
+            auto old_alias = ast->tryGetAlias();
+            ast = literal_it->second->clone();
+            /// Reset the alias coming from the `WITH` element, keeping the original alias of the identifier (if any).
+            ast->setAlias(old_alias);
+            return;
+        }
+    }
+
+    for (auto & child : ast->children)
+        substituteWithLiterals(child, literals);
+}
+
+}
+
 ApplyWithSubqueryVisitor::ApplyWithSubqueryVisitor(ContextPtr context_)
     : use_analyzer(context_->getSettingsRef()[Setting::allow_experimental_analyzer])
 {
@@ -148,6 +180,14 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                 }
             }
         }
+    }
+    /// Substitute `WITH` literal aliases into the `eval` table function argument expression.
+    /// `eval`'s argument is evaluated as a constant expression before the query normalizer runs,
+    /// so the normalizer's alias substitution would otherwise be missed (e.g. `WITH 'SELECT 1' AS q SELECT * FROM eval(q)`).
+    else if (func.name == "eval" && func.arguments)
+    {
+        for (auto & argument : func.arguments->children)
+            substituteWithLiterals(argument, data.literals);
     }
     /// Rewrite dictionary name in dictGet*()
     else if (functionIsDictGet(func.name) && !func.arguments->children.empty())
