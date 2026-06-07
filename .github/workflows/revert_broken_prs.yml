@@ -105,7 +105,7 @@ jobs:
             # must not be mistaken for "no failures".
             if ! merge_failed_statuses=$(gh api "repos/$GH_REPO/commits/$sha/status" --jq '
               .statuses[] |
-              select(.state == "failure") |
+              select(.state == "failure" or .state == "error") |
               select((.context | startswith("Performance Comparison")) | not) |
               select((.context | startswith("libFuzzer")) | not) |
               select((.context | startswith("Nightly")) | not) |
@@ -176,8 +176,9 @@ jobs:
               select((.context | startswith("Nightly")) | not) |
               select((.context | startswith("ClickBench")) | not) |
               select(.context != "CH Inc sync" and .context != "Mergeable Check" and .context != "PR" and .context != "MasterCI" and .context != "SQLTest" and .context != "VectorSearchStress" and .context != "ClickHouse Keeper Jepsen") |
-              select(.state == "failure" or .state == "pending") |
+              select(.state == "failure" or .state == "error" or .state == "pending") |
               (if .state == "failure" then .context + " (failed)"
+               elif .state == "error" then .context + " (error)"
                elif .state == "pending" then .context + " (pending)"
                else empty end)
             '); then
@@ -211,9 +212,9 @@ jobs:
             # never completed) on the PR head. A failure on the PR head in an unrelated
             # check does not prove the master failure came from this PR, so without an
             # intersection we treat the master failure as flaky and skip. The PR head names
-            # carry a " (failed)"/" (incomplete)"/" (pending)" suffix that we strip first.
+            # carry a " (failed)"/" (error)"/" (incomplete)"/" (pending)" suffix that we strip first.
             merge_failure_names=$(echo "$merge_failures" | sed '/^$/d' | sort -u)
-            pr_issue_names=$(echo "$pr_issues" | sed -E 's/ \((failed|incomplete|pending)\)$//' | sed '/^$/d' | sort -u)
+            pr_issue_names=$(echo "$pr_issues" | sed -E 's/ \((failed|error|incomplete|pending)\)$//' | sed '/^$/d' | sort -u)
             common_failures=$(comm -12 <(echo "$merge_failure_names") <(echo "$pr_issue_names"))
 
             if [ -z "$common_failures" ]; then
