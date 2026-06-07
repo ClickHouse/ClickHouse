@@ -1596,7 +1596,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     else
         is_ordinary_view = true;
 
-    if (!replace_view && !is_materialized_view && s_temporary.ignore(pos, expected))
+    if ( !is_materialized_view && s_temporary.ignore(pos, expected))
     {
         is_temporary = true;
     }

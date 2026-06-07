@@ -1831,7 +1831,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database && !database)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
 
-    if (create.isTemporary() && create.replace_table)
+    if (create.isTemporary() && (create.replace_table || create.replace_view))
     {
         chassert(!ddl_guard);
         return doCreateOrReplaceTemporaryTable(create, properties, mode);
