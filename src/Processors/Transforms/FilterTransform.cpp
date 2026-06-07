@@ -59,10 +59,10 @@ const ActionsDAG::Node * unwrapAlias(const ActionsDAG::Node * node)
 std::optional<Field> tryGetConstantField(const ActionsDAG::Node * node)
 {
     node = unwrapAlias(node);
-    if (!node->column || !isColumnConst(*node->column) || node->column->empty())
+    if (!node->column || !isColumnConst(*node->column))
         return {};
 
-    return (*node->column)[0];
+    return assert_cast<const ColumnConst &>(*node->column).getField();
 }
 
 bool containsType(const IDataType & type, bool (WhichDataType::* predicate)() const)
