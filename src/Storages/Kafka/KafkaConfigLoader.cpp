@@ -445,7 +445,7 @@ void updateConfigurationFromConfig(
             && !boost::iequals(kafka_config.get("security.protocol"), "SASL_SSL"))
             LOG_WARNING(
                 params.log,
-                "kafka_security_protocol='{}' will be overridden to 'SASL_SSL' — AWS MSK IAM requires SASL_SSL.",
+                "kafka_security_protocol='{}' will be overridden to 'SASL_SSL' - AWS MSK IAM requires SASL_SSL.",
                 kafka_config.get("security.protocol"));
 
         String aws_region = kafka_settings[KafkaSetting::kafka_aws_region].value;

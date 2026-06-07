@@ -49,6 +49,13 @@ TEST(AWSMSKIAMAuth, ExtractRegionGovCloudBroker)
     EXPECT_EQ(extractRegionFromBroker("b-1.cluster.kafka.us-gov-east-1.amazonaws.com"), "us-gov-east-1");
 }
 
+TEST(AWSMSKIAMAuth, ExtractRegionChinaBroker)
+{
+    EXPECT_EQ(extractRegionFromBroker("b-1.cluster.kafka.cn-north-1.amazonaws.com.cn:9098"), "cn-north-1");
+    EXPECT_EQ(extractRegionFromBroker("b-1.cluster.kafka.cn-northwest-1.amazonaws.com.cn"), "cn-northwest-1");
+    EXPECT_EQ(extractRegionFromBroker("b-1.cluster.kafka-serverless.cn-north-1.amazonaws.com.cn:9098"), "cn-north-1");
+}
+
 TEST(AWSMSKIAMAuth, ExtractRegionMixedCaseBroker)
 {
     // DNS is case-insensitive; uppercase/mixed-case hostnames must still work.
@@ -120,8 +127,6 @@ TEST(AWSMSKIAMAuth, SetupRewritesPresetAWSMSKIAMToOAUTHBEARER)
     try
     {
         setupAuthentication(cfg, *config, "us-east-1", "", nullptr, ctx);
-        EXPECT_EQ(cfg.get("sasl.mechanism"), "OAUTHBEARER");
-        EXPECT_EQ(cfg.get("security.protocol"), "SASL_SSL");
     }
     catch (const DB::Exception & e)
     {
@@ -129,8 +134,14 @@ TEST(AWSMSKIAMAuth, SetupRewritesPresetAWSMSKIAMToOAUTHBEARER)
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
-        // Ok: non-setup exceptions (e.g. missing AWS credentials) are acceptable here.
+        // Non-setup exceptions (e.g. missing AWS credentials) are acceptable —
+        // config properties are already written before credentials are resolved.
     }
+
+    // Verify regardless of whether setupAuthentication completed or threw
+    // after writing config (credentials unavailable in test environment).
+    EXPECT_EQ(cfg.get("sasl.mechanism"), "OAUTHBEARER");
+    EXPECT_EQ(cfg.get("security.protocol"), "SASL_SSL");
 }
 
 TEST(AWSMSKIAMAuth, SetupThrowsOnRegionMismatchWithCachedContext)
@@ -152,7 +163,9 @@ TEST(AWSMSKIAMAuth, SetupThrowsOnRegionMismatchWithCachedContext)
 
 TEST(AWSMSKIAMAuth, SetupAcceptsSameRegionWithCachedContext)
 {
-    // Reusing a cached context for the same region must not throw.
+    // Reusing a cached context for the same region must not throw BAD_ARGUMENTS.
+    // The function may throw later (e.g. missing AWS credentials in test env),
+    // but the region-mismatch check must pass.
     auto cached_ctx = std::make_shared<OAuthBearerTokenRefreshContext>();
     cached_ctx->region = "us-east-1";
 
@@ -166,13 +179,18 @@ TEST(AWSMSKIAMAuth, SetupAcceptsSameRegionWithCachedContext)
     }
     catch (const DB::Exception & e)
     {
-        EXPECT_NE(e.code(), DB::ErrorCodes::BAD_ARGUMENTS)
+        // setupAuthentication validates region before creating credentials provider.
+        // If it throws BAD_ARGUMENTS here, the region-reuse logic is broken.
+        ASSERT_NE(e.code(), DB::ErrorCodes::BAD_ARGUMENTS)
             << "Same-region reuse must not throw BAD_ARGUMENTS; got: " << e.message();
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
-        // Ok: non-region exceptions (e.g. missing AWS credentials) are acceptable here.
+        // Non-region exceptions (e.g. missing AWS credentials) are acceptable.
     }
+
+    // Context must remain the same object (no replacement).
+    EXPECT_EQ(ctx, cached_ctx);
 }
 
 TEST(AWSMSKIAMAuth, SetupFailsWhenRegionCannotBeInferred)

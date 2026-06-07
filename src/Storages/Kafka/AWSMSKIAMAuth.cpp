@@ -114,7 +114,7 @@ String extractRegionFromBroker(const String & broker_address)
 
     boost::algorithm::to_lower(broker_host);
 
-    static const RE2 region_pattern(R"(\.kafka(?:-serverless)?\.([a-z0-9-]+)\.(?:vpce\.)?amazonaws\.com$)");
+    static const RE2 region_pattern(R"(\.kafka(?:-serverless)?\.([a-z0-9-]+)\.(?:vpce\.)?amazonaws\.com(?:\.cn)?$)");
     std::string region;
     if (RE2::PartialMatch(broker_host, region_pattern, &region))
         return region;
@@ -135,7 +135,7 @@ void setupAuthentication(
     if (effective_region.empty() && !broker_list.empty())
     {
         size_t start = 0;
-        while (start <= broker_list.size())
+        while (start < broker_list.size())
         {
             size_t comma = broker_list.find(',', start);
             String broker = broker_list.substr(start, comma == String::npos ? String::npos : comma - start);
@@ -143,7 +143,8 @@ void setupAuthentication(
             effective_region = extractRegionFromBroker(broker);
             if (!effective_region.empty())
             {
-                LOG_DEBUG(log, "Auto-detected AWS region '{}' from broker address '{}'", effective_region, broker);
+                if (log)
+                    LOG_DEBUG(log, "Auto-detected AWS region '{}' from broker address '{}'", effective_region, broker);
                 break;
             }
             if (comma == String::npos)
@@ -185,9 +186,9 @@ void setupAuthentication(
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "AWS MSK IAM: cached OAuth context uses region '{}' but broker list '{}' resolves to region '{}'. "
-            "Consumer and producer must connect to MSK clusters in the same AWS region.",
-            context_holder->region, broker_list, effective_region);
+            "AWS MSK IAM: Different regions used: already configured region is '{}' but got another region '{}'. "
+            "Consumer and producer of the same table must connect to MSK clusters in the same AWS region.",
+            context_holder->region, effective_region);
     }
 
     kafka_config.set_oauthbearer_token_refresh_callback(
@@ -211,9 +212,10 @@ void setupAuthentication(
                     return;
                 }
 
+                auto now = std::chrono::system_clock::now();
+
                 String token = generateAWSMSKToken(context->region, credentials);
 
-                auto now = std::chrono::system_clock::now();
                 auto expiry_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                     (now + TOKEN_LIFETIME).time_since_epoch()).count();
 
