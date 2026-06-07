@@ -135,12 +135,8 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
     }
 
 #ifndef NDEBUG
-    /// The virtual-row boundary check is only meaningful when this merge owns the per-source
-    /// virtual-row conversion (`apply_virtual_row_conversions=true`). When it is false, this
-    /// merge is the outer step over a Union of independent read-in-order subtrees: each subtree
-    /// has its own conversion that is NOT applied here, so `setVirtualRow` falls back to default
-    /// values for any header column that does not match the inner pk_block by name. The resulting
-    /// boundary is meaningless and would always violate the next chunk's real values. Skip it.
+    /// Boundary is only meaningful when this merge applies the per-source virtual-row conversion;
+    /// otherwise `setVirtualRow` may fall back to default column values that the next chunk trips.
     if (apply_virtual_row_conversions)
     {
         for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)

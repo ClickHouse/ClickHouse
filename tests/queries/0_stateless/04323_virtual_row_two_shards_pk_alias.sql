@@ -1,14 +1,4 @@
--- Regression test for PR #106654 / STID 2651-3359:
--- Logical error 'Virtual row boundary violated in MergingSortedAlgorithm'.
--- Triggered when `optimize_read_in_order` + `read_in_order_use_virtual_row` are both
--- enabled and the outer SortingStep sits over a Union of read-in-order subtrees that
--- carry their own per-source virtual-row conversions (e.g. a Distributed table with
--- two shards under `distributed_product_mode = 'allow'`). The outer merge had
--- `apply_virtual_row_conversions=false` because no single conversion fits all children;
--- with that flag false, `setVirtualRow` filled any unmatched merge-header column with a
--- default value, and the debug assertion added in PR #106565 caught the resulting boundary
--- violation. The fix gates `rememberVirtualRowBoundary` and `checkVirtualRowBoundary` on
--- `apply_virtual_row_conversions=true`, so meaningless boundaries are no longer compared.
+-- Regression test for STID 2651-3359 (debug assertion added in #106565).
 
 DROP TABLE IF EXISTS local_t;
 DROP TABLE IF EXISTS dist_t_two_shards;
