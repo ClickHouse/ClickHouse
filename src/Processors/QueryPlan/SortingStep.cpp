@@ -111,7 +111,7 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
 }
 
-size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_external_sort)
+static size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_external_sort)
 {
     if (max_bytes_ratio_before_external_sort == 0.)
         return 0;
@@ -289,7 +289,7 @@ void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, c
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
-            return std::make_shared<LimitByTransform>(header, limit_by_group_length, 0, true, limit_by_columns);
+            return std::make_shared<LimitBySortedStreamTransform>(header, limit_by_group_length, 0, limit_by_columns);
         });
 }
 
@@ -710,7 +710,7 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
     SortDescription result_description;
     deserializeSortDescription(result_description, ctx.in);
 
-    UInt64 partition_desc_size;
+    UInt64 partition_desc_size = 0;
     readVarUInt(partition_desc_size, ctx.in);
 
     if (partition_desc_size)
@@ -720,6 +720,7 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
         ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
 }
 
+void registerSortingStep(QueryPlanStepRegistry & registry);
 void registerSortingStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Sorting", SortingStep::deserialize);
