@@ -343,16 +343,7 @@ size_t StorageURLSource::DisclosedGlobIterator::size()
 
 void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
 {
-    const auto & user_info = request_uri.getUserInfo();
-    if (!user_info.empty())
-    {
-        std::size_t n = user_info.find(':');
-        if (n != std::string::npos)
-        {
-            credentials.setUsername(user_info.substr(0, n));
-            credentials.setPassword(user_info.substr(n + 1));
-        }
-    }
+    setCredentialsFromURL(credentials, request_uri);
 }
 
 StorageURLSource::StorageURLSource(

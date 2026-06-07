@@ -111,6 +111,23 @@ inline bool hasPathPrefix(const Poco::URI & candidate, const Poco::URI & prefix)
         == prefix_segments.end();
 }
 
+/// The effective URL for a listed entry inherits the source URL's query/fragment when the entry
+/// itself has none (see `WebObjectStorage::buildURL`). Two entries that differ only by an explicit
+/// vs. inherited query/fragment therefore resolve to the same object, so deduplication has to be
+/// performed on this normalized form rather than on the raw listing token.
+inline String getEffectiveRelativePathForDeduplication(const String & relative, const String & source_url)
+{
+    Poco::URI relative_uri(relative, false);
+    const Poco::URI source_uri(source_url, false);
+
+    if (relative_uri.getRawQuery().empty())
+        relative_uri.setQuery(source_uri.getRawQuery());
+    if (relative_uri.getFragment().empty())
+        relative_uri.setFragment(source_uri.getFragment());
+
+    return relative_uri.toString();
+}
+
 inline String getRelativePathWithQueryAndFragment(const Poco::URI & candidate, const Poco::URI & base)
 {
     if (!hasPathPrefix(candidate, base))

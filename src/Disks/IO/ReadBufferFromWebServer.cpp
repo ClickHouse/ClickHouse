@@ -15,6 +15,8 @@ namespace Setting
 {
     extern const SettingsSeconds http_connection_timeout;
     extern const SettingsSeconds http_receive_timeout;
+    extern const SettingsBool enable_url_encoding;
+    extern const SettingsUInt64 max_http_get_redirects;
 }
 
 namespace ErrorCodes
@@ -91,10 +93,18 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
     connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings[Setting::http_connection_timeout], Poco::Timespan(20, 0)));
     connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings[Setting::http_receive_timeout], Poco::Timespan(20, 0)));
 
+    const bool enable_url_encoding = settings[Setting::enable_url_encoding];
+    const auto max_redirects = settings[Setting::max_http_get_redirects];
+
     std::exception_ptr last_exception;
     for (const auto & url : urls)
     {
-        Poco::URI uri(url);
+        /// Carry the same HTTP request semantics as direct `url()` reads (`StorageURLSource`): honor
+        /// `enable_url_encoding`, follow up to `max_http_get_redirects` redirects, and authenticate with
+        /// credentials parsed from the URL's userinfo (e.g. `http://user:pass@host`).
+        Poco::URI uri(url, enable_url_encoding);
+        Poco::Net::HTTPBasicCredentials url_credentials;
+        setCredentialsFromURL(url_credentials, uri);
         try
         {
             /// External buffer reads require `delay_initialization = true`, which defers the HTTP
@@ -108,11 +118,13 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
                     .withSettings(read_settings)
                     .withTimeouts(connection_timeouts)
                     .withBufSize(buf_size)
+                    .withRedirects(max_redirects)
+                    .withEnableUrlEncoding(enable_url_encoding)
                     .withHostFilter(&context->getRemoteHostFilter())
                     .withHeaders(headers)
                     .withExternalBuf(false)
                     .withDelayInit(false)
-                    .create(credentials);
+                    .create(url_credentials);
             }
 
             auto res = BuilderRWBufferFromHTTP(uri)
@@ -120,11 +132,13 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
                            .withSettings(read_settings)
                            .withTimeouts(connection_timeouts)
                            .withBufSize(buf_size)
+                           .withRedirects(max_redirects)
+                           .withEnableUrlEncoding(enable_url_encoding)
                            .withHostFilter(&context->getRemoteHostFilter())
                            .withHeaders(headers)
                            .withExternalBuf(use_external_buffer)
                            .withDelayInit(true)
-                           .create(credentials);
+                           .create(url_credentials);
 
             if (offset)
                 res->seek(offset, SEEK_SET);

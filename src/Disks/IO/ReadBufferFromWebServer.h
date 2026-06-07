@@ -71,8 +71,6 @@ private:
     ReadSettings read_settings;
     HTTPHeaderEntries headers;
 
-    Poco::Net::HTTPBasicCredentials credentials{};
-
     bool use_external_buffer;
     bool has_pending_first_read_result = false;
     bool pending_first_read_result = false;

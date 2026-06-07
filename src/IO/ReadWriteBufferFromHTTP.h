@@ -251,4 +251,7 @@ public:
     ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_);
 };
 
+/// Fills `credentials` from the userinfo component of `uri` (e.g. `http://user:pass@host`).
+void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri);
+
 }

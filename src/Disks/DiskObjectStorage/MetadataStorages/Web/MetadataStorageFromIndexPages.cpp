@@ -6,6 +6,7 @@
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
@@ -27,6 +28,12 @@ namespace ErrorCodes
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 max_http_index_page_size;
+}
+
+namespace Setting
+{
+    extern const SettingsBool enable_url_encoding;
+    extern const SettingsUInt64 max_http_get_redirects;
 }
 
 namespace
@@ -82,24 +89,13 @@ namespace
         return path;
     }
 
+    using WebIndexPage::getEffectiveRelativePathForDeduplication;
+
     const re2::RE2 & getURLRegex()
     {
         static const re2::RE2 regex(
             R"((https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+|(?:\.\./|\.?/)?[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+))");
         return regex;
-    }
-
-    std::string getEffectiveRelativePathForDeduplication(const std::string & relative, const std::string & source_url)
-    {
-        Poco::URI relative_uri(relative, false);
-        const Poco::URI source_uri(source_url, false);
-
-        if (relative_uri.getRawQuery().empty())
-            relative_uri.setQuery(source_uri.getRawQuery());
-        if (relative_uri.getFragment().empty())
-            relative_uri.setFragment(source_uri.getFragment());
-
-        return relative_uri.toString();
     }
 }
 
@@ -202,15 +198,26 @@ std::vector<std::string> MetadataStorageFromIndexPages::makeListingURLs(const st
 
 std::string MetadataStorageFromIndexPages::readIndexPage(const std::string & url) const
 {
-    Poco::Net::HTTPBasicCredentials credentials{};
+    const auto & settings = object_storage.getContext()->getSettingsRef();
+    const bool enable_url_encoding = settings[Setting::enable_url_encoding];
+
+    /// Carry the same HTTP request semantics as direct `url()` reads: honor `enable_url_encoding`,
+    /// follow up to `max_http_get_redirects` redirects, and authenticate with credentials parsed from
+    /// the URL's userinfo (e.g. `http://user:pass@host`).
+    Poco::URI uri(url, enable_url_encoding);
+    Poco::Net::HTTPBasicCredentials credentials;
+    setCredentialsFromURL(credentials, uri);
+
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(
-        object_storage.getContext()->getSettingsRef(),
+        settings,
         object_storage.getContext()->getServerSettings());
 
-    auto buf = BuilderRWBufferFromHTTP(Poco::URI(url, false))
+    auto buf = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::DISK)
                    .withSettings(object_storage.getContext()->getReadSettings())
                    .withTimeouts(timeouts)
+                   .withRedirects(settings[Setting::max_http_get_redirects])
+                   .withEnableUrlEncoding(enable_url_encoding)
                    .withHostFilter(&object_storage.getContext()->getRemoteHostFilter())
                    .withHeaders(object_storage.getHeaders())
                    .create(credentials);

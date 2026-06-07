@@ -851,4 +851,22 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
     return ptr;
 }
 
+void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri)
+{
+    const auto & user_info = uri.getUserInfo();
+    if (user_info.empty())
+        return;
+
+    const auto n = user_info.find(':');
+    if (n != std::string::npos)
+    {
+        credentials.setUsername(user_info.substr(0, n));
+        credentials.setPassword(user_info.substr(n + 1));
+    }
+    else
+    {
+        credentials.setUsername(user_info);
+    }
+}
+
 }

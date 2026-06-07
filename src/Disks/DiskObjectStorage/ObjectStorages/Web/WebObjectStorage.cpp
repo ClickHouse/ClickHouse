@@ -1,6 +1,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromIndexPages.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Web/OriginComparisonUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <Core/Settings.h>
@@ -67,6 +68,8 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsUInt64 url_wildcard_max_directories_to_read;
+    extern const SettingsBool enable_url_encoding;
+    extern const SettingsUInt64 max_http_get_redirects;
 }
 
 WebObjectStorage::WebObjectStorage(
@@ -114,6 +117,18 @@ bool WebObjectStorage::exists(const std::string & path) const
     return tryGetObjectMetadata(path, /* with_tags */ false).has_value();
 }
 
+std::string WebObjectStorage::getEffectiveRelativePathForKey(
+    const std::string & relative_path, std::optional<size_t> read_source_index) const
+{
+    /// Two listed entries that differ only by an explicit vs. inherited query/fragment resolve to the
+    /// same effective URL in `buildURL`, so deduplication must use the effective form (see thread on
+    /// duplicate reads). Keying by the raw listing token would let the same object be read twice.
+    if (!read_source_index || *read_source_index >= url_shards.size() || url_shards[*read_source_index].empty())
+        return relative_path;
+    const auto & url_option = url_shards[*read_source_index].front();
+    return WebIndexPage::getEffectiveRelativePathForDeduplication(relative_path, url_option.base_url + url_option.query_fragment);
+}
+
 void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     MetadataStorageFromIndexPages metadata_storage(*this);
@@ -133,22 +148,18 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
 
     while (!pending_directories.empty())
     {
-        if (max_keys && children.size() >= max_keys)
-            break;
-
         auto current = pending_directories.front();
         pending_directories.pop_front();
 
         auto entries = metadata_storage.listDirectoryWithMetadata(current.relative_path, current.read_source_index);
         for (const auto & entry : entries)
         {
-            if (max_keys && children.size() >= max_keys)
-                break;
+            const auto effective_relative_path = getEffectiveRelativePathForKey(entry->relative_path, entry->read_source_index);
+            const auto key = fmt::format("{}:{}", entry->read_source_index.value_or(std::numeric_limits<size_t>::max()), effective_relative_path);
 
             if (pathPartEndsWithSlash(entry->relative_path))
             {
-                const auto directory_key = fmt::format("{}:{}", entry->read_source_index.value_or(std::numeric_limits<size_t>::max()), entry->relative_path);
-                if (!known_directories.emplace(directory_key).second)
+                if (!known_directories.emplace(key).second)
                     continue;
 
                 if (max_directories_to_read_for_query && known_directories.size() > max_directories_to_read_for_query)
@@ -163,9 +174,18 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
                 continue;
             }
 
-            const auto file_key = fmt::format("{}:{}", entry->read_source_index.value_or(std::numeric_limits<size_t>::max()), entry->relative_path);
-            if (!known_files.emplace(file_key).second)
+            if (!known_files.emplace(key).second)
                 continue;
+
+            /// `max_keys` (mapped from `glob_expansion_max_elements`) is a hard limit on the number of
+            /// matched files, not a pagination window: web listing has no continuation, so silently
+            /// returning a truncated set would produce incomplete query results. Fail loudly instead.
+            if (max_keys && children.size() >= max_keys)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The number of files matching the URL wildcard exceeds the limit of {}. This limit is "
+                    "controlled by setting `glob_expansion_max_elements`",
+                    max_keys);
 
             children.emplace_back(entry);
         }
@@ -272,13 +292,20 @@ ObjectMetadata WebObjectStorage::getObjectMetadata(const RelativePathWithMetadat
 
 std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const RelativePathWithMetadata & path, bool) const
 {
-    Poco::Net::HTTPBasicCredentials credentials{};
+    const auto & settings = getContext()->getSettingsRef();
+    const bool enable_url_encoding = settings[Setting::enable_url_encoding];
+    const auto max_redirects = settings[Setting::max_http_get_redirects];
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(
-        getContext()->getSettingsRef(),
+        settings,
         getContext()->getServerSettings());
 
     auto get_metadata_from_uri = [&](const Poco::URI & uri) -> std::optional<ObjectMetadata>
     {
+        /// Carry the same HTTP request semantics as direct `url()` reads: credentials from the URL
+        /// userinfo, `max_http_get_redirects`, and `enable_url_encoding`.
+        Poco::Net::HTTPBasicCredentials credentials;
+        setCredentialsFromURL(credentials, uri);
+
         auto create_probe_buffer = [&](const String & method)
         {
             return BuilderRWBufferFromHTTP(uri)
@@ -286,6 +313,8 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
                 .withMethod(method)
                 .withSettings(getContext()->getReadSettings())
                 .withTimeouts(timeouts)
+                .withRedirects(max_redirects)
+                .withEnableUrlEncoding(enable_url_encoding)
                 .withHostFilter(&getContext()->getRemoteHostFilter())
                 .withSkipNotFound(true)
                 .withDelayInit(false)
@@ -308,9 +337,20 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
             }
             catch (const HTTPException & e)
             {
-                if (
-                    e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED
-                    || e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_IMPLEMENTED)
+                /// Many servers/CDNs serve `GET` but reject `HEAD` with a non-`405` status (e.g. webhdfs
+                /// answers `400`, others use `403`). Mirror `ReadWriteBufferFromHTTP::getFileInfo`: treat any
+                /// non-transient `4xx` (plus `501 Not Implemented`) as "HEAD unsupported" and fall back to a
+                /// `GET` probe, while still propagating transient errors so a flaky `HEAD` does not
+                /// permanently disable it for the origin.
+                const auto status = e.getHTTPStatus();
+                const bool head_unsupported =
+                    (status >= 400 && status <= 499
+                        && status != Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS
+                        && status != Poco::Net::HTTPResponse::HTTP_REQUEST_TIMEOUT
+                        && status != Poco::Net::HTTPResponse::HTTP_MISDIRECTED_REQUEST)
+                    || status == Poco::Net::HTTPResponse::HTTP_NOT_IMPLEMENTED;
+
+                if (head_unsupported)
                 {
                     setHeadSupportForOrigin(uri, HeadSupport::Unsupported);
                     response_buf = create_probe_buffer(Poco::Net::HTTPRequest::HTTP_GET);
@@ -351,7 +391,7 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
     {
         try
         {
-            auto metadata = get_metadata_from_uri(Poco::URI(url, false));
+            auto metadata = get_metadata_from_uri(Poco::URI(url, enable_url_encoding));
             if (metadata)
                 return metadata;
             has_not_found = true;
