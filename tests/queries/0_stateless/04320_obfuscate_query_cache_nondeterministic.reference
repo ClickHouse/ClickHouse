@@ -1,0 +1,5 @@
+-- empty seed is non-deterministic: rejected by the query cache by default
+0
+-- non-empty seed is deterministic: cacheable
+8
+1

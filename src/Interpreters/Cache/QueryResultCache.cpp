@@ -54,6 +54,7 @@ namespace Setting
 {
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool extremes;
+    extern const SettingsString obfuscate_seed;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsQueryResultCacheNondeterministicFunctionHandling query_cache_nondeterministic_function_handling;
@@ -87,6 +88,14 @@ struct HasNonDeterministicFunctionsMatcher
 
         if (const auto * function = node->as<ASTFunction>())
         {
+            /// The `obfuscate` table function with an empty seed derives a fresh random seed per execution
+            /// (see `ObfuscateStep`), so its result is non-deterministic and must not be cached. A non-empty
+            /// `obfuscate_seed` makes the output reproducible and therefore cacheable.
+            if (function->name == "obfuscate" && data.context->getSettingsRef()[Setting::obfuscate_seed].value.empty())
+            {
+                data.has_non_deterministic_functions = true;
+                return;
+            }
             if (const auto func = FunctionFactory::instance().tryGet(function->name, data.context))
             {
                 if (!func->isDeterministic())
