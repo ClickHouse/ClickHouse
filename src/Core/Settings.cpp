@@ -1662,13 +1662,13 @@ Validate checksums on reading. It is enabled by default and should be always ena
 )", 0) \
     \
     DECLARE(Bool, use_sparse_lightweight_representation_of_primary_key_for_index_analysis, true, R"(
-Optimize primary key index analysis for tables with many key columns for MergeTree tables.
+Optimize primary key index analysis for `MergeTree` tables with long primary keys.
 
-When enabled, ClickHouse only materializes the primary key columns that are referenced by the WHERE clause during index analysis. This reduces memory usage and speeds up granule selection for tables with long primary keys, where most queries filter on only a few leading columns.
+When enabled, the run time of index analysis depends on the complexity of the query's filter (the key columns it actually uses), not on the length of the primary key — so extending the sorting key no longer slows down index analysis for queries that filter on only a few of its columns.
 
 Possible values:
 
-- 0 — Disabled. All primary key columns are materialized during index analysis.
+- 0 — Disabled. All primary key columns are processed during index analysis.
 - 1 — Enabled.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, use_partition_pruning, true, R"(
