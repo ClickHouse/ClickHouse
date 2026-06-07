@@ -54,10 +54,10 @@ public:
     struct CompiledModule
     {
         /// Size of compiled module code in bytes
-        size_t size;
+        size_t size{};
 
         /// Module identifier. Should not be changed by client
-        uint64_t identifier;
+        uint64_t identifier{};
 
         /// Vector of compiled functions. Should not be changed by client.
         /// It is client responsibility to cast result function to right signature.
