@@ -6352,7 +6352,7 @@ Specifies the current database for the query. Equivalent to issuing `USE <databa
 Specifies the format of the query result when the query has no `FORMAT` clause and no other format override is applied.
 )", 0) \
     DECLARE(String, format, "", R"(
-Overrides the `FORMAT` of the query for both input and output. Wins over the format specified in the query, in the file extension, or in `input_format`/`output_format`.
+Overrides the `FORMAT` of the query for both input and output. Wins over the format specified in the query and in the file extension. The more specific `input_format` and `output_format` settings take precedence over this generic `format` setting for their respective direction.
 )", 0) \
     DECLARE(String, input_format, "", R"(
 Overrides the input format of the query. Wins over the format specified in the query.
