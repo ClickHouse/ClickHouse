@@ -333,7 +333,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     if (!context->getSettingsRef()[Setting::enable_scalar_subquery_optimization] || !useless_literal_types.contains(scalar_type_name)
         || !context->hasQueryContext() || !nearest_query_scope)
     {
-        ConstantValue constant_value{ scalar_column_with_type.column, scalar_type };
+        ConstantValue constant_value{ ConstantValue::wrapToColumnConst(scalar_column_with_type.column), scalar_type };
         auto constant_node = std::make_shared<ConstantNode>(constant_value, node);
 
         if (scalar_column_with_type.column->isNullAt(0))
