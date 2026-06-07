@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -euo pipefail
 
-TABLE_NAME=aggregate_const_keys_after_filter
+TABLE_NAME=aggregate_const_keys_filter_after_aggregation
 
 function cleanup()
 {

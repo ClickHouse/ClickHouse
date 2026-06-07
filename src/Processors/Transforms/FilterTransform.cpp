@@ -98,6 +98,10 @@ bool containsVariant(const DataTypePtr & type)
     return containsType(*type, &WhichDataType::isVariant);
 }
 
+/// Replacing a filtered column with a `ColumnConst` is valid only when `equals` proves that all passed values
+/// have the same representation as the constant after conversion to the result type.
+/// For some comparisons in ClickHouse, different stored values can compare equal, e.g. `0.0 = -0.0`,
+/// `Decimal` vs `Float`, `String` vs `FixedString`, or runtime-dispatched `Dynamic` / `Variant` comparisons.
 bool canReplaceColumnWithConstantAfterFilter(
     const DataTypePtr & result_type,
     const DataTypePtr & constant_type)
@@ -113,6 +117,11 @@ bool canReplaceColumnWithConstantAfterFilter(
 
     if (containsString(result_type)
         && (containsFixedString(constant_type) || constant_type_is_dynamic))
+        return false;
+
+    /// `ColumnConst(Nullable)` has a different physical layout from a filtered full nullable column.
+    /// This optimization preserves the post-filter column layout for nullable columns.
+    if (isNullableOrLowCardinalityNullable(result_type))
         return false;
 
     return true;
@@ -154,15 +163,11 @@ std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
     if (!canReplaceColumnWithConstantAfterFilter(result_column.type, constant_node->result_type))
         return {};
 
-    try
-    {
-        auto converted = convertFieldToTypeOrThrow(*constant_field, *result_column.type, constant_node->result_type.get());
-        return ConstantColumnAfterFilter{*position, std::move(converted)};
-    }
-    catch (Exception &)
-    {
+    auto converted = convertFieldToType(*constant_field, *result_column.type, constant_node->result_type.get());
+    if (converted.isNull() && (!constant_field->isNull() || !canContainNull(*result_column.type)))
         return {};
-    }
+
+    return ConstantColumnAfterFilter{*position, std::move(converted)};
 }
 
 std::vector<ConstantColumnAfterFilter> collectConstantColumnsAfterFilter(
@@ -349,8 +354,6 @@ void FilterTransform::applyConstantColumnsAfterFilter(Columns & columns, size_t 
 
         const auto & type = transformed_header.getByPosition(constant_column.first).type;
         auto column = type->createColumnConst(num_rows, constant_column.second);
-        if (isNullableOrLowCardinalityNullable(type))
-            column = column->convertToFullColumnIfConst();
         columns[constant_column.first] = std::move(column);
     }
 }
