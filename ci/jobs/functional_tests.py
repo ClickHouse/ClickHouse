@@ -743,8 +743,24 @@ def main():
                         strict=True,
                     )
                     CH.clean_logs()
-                    CH.start()
-                    CH.wait_ready()
+                    # Fail closed if the server cannot come back up after the
+                    # binary swap: running tests against a dead server would
+                    # produce `Server died` FAILs that the bugfix inverter
+                    # then flips into a successful reproduction, even though
+                    # the selected binary never became ready. Record an ERROR
+                    # row (preserved by `invert_bugfix_validation_status`) and
+                    # stop before running tests for this build type.
+                    if not (CH.start() and CH.wait_ready()):
+                        startup_error = Result(
+                            name=f"Server startup ({bugfix_bt})",
+                            status=Result.Status.ERROR,
+                            info="Server failed to start after switching to the "
+                            f"{bugfix_bt} binary",
+                        )
+                        startup_error.set_label(bugfix_bt)
+                        test_result.results.append(startup_error)
+                        test_result.status = Result.Status.ERROR
+                        break
 
                     ft_res_processor_bt = FTResultsProcessor(wd=temp_dir)
                     bt_runner_exit_code = run_tests(
