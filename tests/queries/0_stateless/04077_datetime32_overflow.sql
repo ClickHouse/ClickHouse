@@ -29,7 +29,12 @@ SET mutations_sync = 1;
 ALTER TABLE t_ttl_overflow2 MATERIALIZE TTL;
 SELECT count() FROM t_ttl_overflow2;
 SET materialize_ttl_after_modify = 1;
-SET mutations_sync = 0;
+-- Keep `mutations_sync = 2` for the rest of the file so that the implicit
+-- `MATERIALIZE TTL` mutation fired by `MODIFY TTL` (with the default
+-- `materialize_ttl_after_modify = 1`) completes synchronously. Otherwise the
+-- `SELECT count()` right after each `ALTER` could run before the TTL is actually
+-- evaluated and pass spuriously even if the 32-bit overflow path were still live.
+SET mutations_sync = 2;
 DROP TABLE t_ttl_overflow2;
 
 -- Case 3: every `add*` granularity must widen for `Date` columns.
