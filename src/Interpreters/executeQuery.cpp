@@ -400,8 +400,7 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                             parameterizer.replaceConstantsInQueryPlan(
                                 *result.cached_plan,
                                 parameterized_result,
-                                cached_plan_constant_bindings,
-                                vector_query_plan_cache_only_vector);
+                                cached_plan_constant_bindings);
                             LOG_DEBUG(logger, "Restore QueryPlan from query_plan_cache({})", result.new_query);
                             result.skip_ast_processing = true;
                         }
@@ -1340,7 +1339,7 @@ static std::optional<BlockIO> tryExecuteFromCache(
         auto build_pipeline_settings = BuildQueryPipelineSettings(context);
         // LOG_ERROR(logger, "use plan success");
 
-        auto query_cached_builder = output.cached_plan->buildQueryPipeline(optimization_settings, build_pipeline_settings, false);
+        auto query_cached_builder = output.cached_plan->buildQueryPipeline(optimization_settings, build_pipeline_settings, true);
         // LOG_ERROR(logger, "buildQueryPipeline success");
         res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_cached_builder));
 
@@ -1775,7 +1774,7 @@ static BlockIO executeQueryImpl(
             throw;
         }
     }
-
+    
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
     QueryMetadataCachePtr query_metadata_cache;

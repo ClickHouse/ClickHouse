@@ -121,8 +121,7 @@ public:
     void replaceConstantsInQueryPlan(
         QueryPlan & plan,
         NormalizedQueryResult & parameters,
-        const std::vector<VectorQueryPlanCache::PlanConstantBinding> & plan_constant_bindings,
-        bool only_vector = false);
+        const std::vector<VectorQueryPlanCache::PlanConstantBinding> & plan_constant_bindings);
 
     NormalizedQueryResult normalizeQueryAndExtractParams(
         const char * begin,

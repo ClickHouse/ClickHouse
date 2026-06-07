@@ -151,8 +151,6 @@
     M(VectorASTCacheMisses, "Number of times a AST has not been found in the vector query plan cache (and required query computation). Only updated for SELECT queries with SETTING vector_query_plan_cache = 1.", ValueType::Number) \
     M(VectorQueryPlanCacheHits, "Number of times a query plan has been found in the vector query plan cache (and query computation was avoided). Only updated for SELECT queries with SETTING vector_query_plan_cache = 1.", ValueType::Number) \
     M(VectorQueryPlanCacheMisses, "Number of times a query plan has not been found in the vector query plan cache (and required query computation). Only updated for SELECT queries with SETTING vector_query_plan_cache = 1.", ValueType::Number) \
-    M(VectorQueryPlanCacheReadBytes, "The number of (uncompressed) bytes read from the vector query plan cache.", ValueType::Bytes) \
-    M(VectorQueryPlanCacheWrittenBytes, "The number of (uncompressed) bytes saved into the vector query plan cache", ValueType::Bytes) \
     M(CreatedReadBufferOrdinary, "Number of times ordinary read buffer was created for reading data (while choosing among other read methods).", ValueType::Number) \
     M(CreatedReadBufferDirectIO, "Number of times a read buffer with O_DIRECT was created for reading data (while choosing among other read methods).", ValueType::Number) \
     M(CreatedReadBufferDirectIOFailed, "Number of times a read buffer with O_DIRECT was attempted to be created for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.", ValueType::Number) \

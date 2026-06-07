@@ -50,9 +50,7 @@ namespace DB
 
 namespace
 {
-/// Helper functions in this anonymous namespace intentionally stay "dumb":
-/// they do local text/Field conversions and binding lookups, while the
-/// VectorQueryParameters methods orchestrate the end-to-end cache workflow.
+
 auto logger = getLogger("VectorQueryParameters");
 using NodePath = std::vector<UInt32>;
 
@@ -61,8 +59,6 @@ constexpr std::string_view L2DISTANCE_FUNCTION_NAME = "l2distance";
 constexpr std::string_view HASTOKEN_FUNCTION_NAME = "hastoken";
 constexpr std::string_view CAST_FUNCTION_NAME = "cast";
 
-/// Safely convert a DataTypePtr to string for logging purposes.
-/// Returns "nullptr" if the pointer is null to avoid segmentation faults.
 String dataTypePtrToString(const DataTypePtr & type)
 {
     if (!type)
@@ -107,8 +103,7 @@ bool parseStringLiteral(std::string_view literal, Field & result)
     result = std::move(value);
     return true;
 }
-/// Optimized number parsing using fast_float and tryReadIntText for better performance.
-/// Handles sign, underscores, and determines integer vs float based on content.
+
 bool parseNumberLiteralFast(std::string_view literal, Field & result)
 {
     if (literal.empty())
@@ -195,9 +190,6 @@ bool parseNumberLiteralFast(std::string_view literal, Field & result)
     }
 }
 
-/// Efficient alternative to parseArrayLiteralWithTargetType that directly uses
-/// serialization/deserialization mechanism without intermediate column creation.
-/// This function is optimized for high-performance vector query scenarios.
 bool stringToNumericArrayField(std::string_view literal, const DataTypePtr & target_type, Field & result)
 {
     if (!target_type)
@@ -239,6 +231,7 @@ bool stringToNumericArrayField(std::string_view literal, const DataTypePtr & tar
     }
     catch (...)
     {
+        LOG_TRACE(logger, "stringToNumericArrayField error: {}", getCurrentExceptionMessage(false));
         // Any exception during parsing should be caught and return false
         return false;
     }
@@ -350,15 +343,7 @@ bool scopeMatchesStepType(Int32 step_type, const String & scope)
         case 4:
             return scope == "ExpressionStep";
         case 2:
-            return scope == "FilterStep"
-                || scope == "ReadFromMergeTree.FilterActions"
-                || scope == "ReadFromMergeTree.Prewhere"
-                || scope == "ReadFromMergeTree.RowLevelFilter";
-        case 3:
-            // Join predicates may survive either in dedicated join-related steps or
-            // in post-join expression DAGs after optimization. Keep the scope filter
-            // slightly broader so JOIN literals do not get dropped spuriously.
-            return scope.find("Join") != String::npos || scope == "ExpressionStep";
+            return scope == "FilterStep";
         default:
             return false;
     }
@@ -372,10 +357,8 @@ bool candidateMatchesAstLiteral(
 {
     if (!scopeMatchesStepType(position.step_type, candidate.binding.dag_scope))
         return false;
-        
     if (!position.identifier_name.empty() && candidate.identifier_names != position.identifier_name)
         return false;    
-
     const String ast_last_function = getLastFunctionName(position);
     const String ast_second_last_function = getSecondLastFunctionName(position);
 
@@ -412,8 +395,6 @@ bool candidateMatchesAstLiteral(
         if (parameters.parsed_params[ast_index].getType() == Field::Types::String && 
             position.field_type == Field::Types::Array)
         {
-            // Special case: parsed param is String but position expects Array
-            // Try to parse the string as an array using the candidate's target type
             if (candidate.value.getType() != Field::Types::String && candidate.binding.target_type)
             {
                 Field converted;
@@ -431,7 +412,6 @@ bool candidateMatchesAstLiteral(
         {
             return stripOuterQuotes(parameters.params[ast_index].original_string) == candidate.value.safeGet<String>();
         }
-        
         return fieldsEquivalent(parameters.parsed_params[ast_index], candidate.value);
     }
     return false;
@@ -514,41 +494,44 @@ void findActionsDAGAndCollectConstants(
                         last_function_name = function_names[function_size - 1];
                     current_field_name = " ";
                     DataTypePtr result_type;
-                    for (const auto * child : parent_node->children)
+                    if (parent_node)
                     {
-                        switch(child->type)
+                        for (const auto * child : parent_node->children)
                         {
-                            case ActionsDAG::ActionType::INPUT:
-                                input_number++;
-                                current_field_name = getFieldName(child->result_name);
-                                result_type = child->result_type;
-                                break;
-                            case ActionsDAG::ActionType::COLUMN:
-                                column_const_number++;
-                                break;
-                            default:
-                                break;
+                            switch(child->type)
+                            {
+                                case ActionsDAG::ActionType::INPUT:
+                                    input_number++;
+                                    current_field_name = getFieldName(child->result_name);
+                                    result_type = child->result_type;
+                                    break;
+                                case ActionsDAG::ActionType::COLUMN:
+                                    column_const_number++;
+                                    break;
+                                default:
+                                    break;
+                            }
                         }
-                    }
-                    if (input_number > 1 || (column_const_number > 1 && is_comparison_function(last_function_name)))
-                    {
-                        // Set clear flag and return immediately
-                        should_clear_and_return = true;
-                        return;
-                    }
-                    PlanConstantCandidate candidate;
-                    candidate.binding.plan_node_path = plan_node_path;
-                    candidate.binding.parameter_index = 0;
-                    candidate.binding.dag_scope = dag_scope;
-                    candidate.binding.dag_node_index = static_cast<UInt32>(map[node]);
-                    candidate.binding.value_text = applyVisitor(FieldVisitorToString(), value);
-                    candidate.binding.field_type = static_cast<Int32>(value.getType());
-                    candidate.binding.target_type = result_type;
-                    candidate.value = value;
-                    candidate.step_type = step_type;
-                    candidate.function_names = function_names;
-                    candidate.identifier_names = current_field_name;  
-                    out_candidates.push_back(candidate);             
+                        if (input_number > 1 || (column_const_number > 1 && is_comparison_function(last_function_name)))
+                        {
+                            // Set clear flag and return immediately
+                            should_clear_and_return = true;
+                            return;
+                        }
+                        PlanConstantCandidate candidate;
+                        candidate.binding.plan_node_path = plan_node_path;
+                        candidate.binding.parameter_index = 0;
+                        candidate.binding.dag_scope = dag_scope;
+                        candidate.binding.dag_node_index = static_cast<UInt32>(map[node]);
+                        candidate.binding.value_text = applyVisitor(FieldVisitorToString(), value);
+                        candidate.binding.field_type = static_cast<Int32>(value.getType());
+                        candidate.binding.target_type = result_type;
+                        candidate.value = value;
+                        candidate.step_type = step_type;
+                        candidate.function_names = function_names;
+                        candidate.identifier_names = current_field_name;  
+                        out_candidates.push_back(candidate);
+                    }                 
                 }
                 break;
             }
@@ -556,15 +539,17 @@ void findActionsDAGAndCollectConstants(
                 break;
         }
     };
-    
-    for (const auto * node : dag.getOutputs())
+    if (dag_scope == "ExpressionStep" || dag_scope == "FilterStep")
     {
-        std::vector<String> function_names;
-        traverse_node(node, nullptr, function_names);
+        for (const auto * node : dag.getOutputs())
+        {
+            std::vector<String> function_names;
+            traverse_node(node, nullptr, function_names);
 
-        if (should_clear_and_return)
-            out_candidates.clear();
-    }        
+            if (should_clear_and_return)
+                out_candidates.clear();
+        }
+    }       
 }
 
 namespace
@@ -613,8 +598,6 @@ bool parseNormalizedParams(
     const std::vector<Int32> & literal_types,
     bool only_vector)
 {
-    // Keep AST and QueryPlan restore on one parsing path. This prevents subtle
-    // differences where the AST clone sees one Field type and the plan clone sees another.
     parameters.parsed_params.clear();
     parameters.parsed_params.reserve(parameters.params.size());
     for (size_t i = 0; i < parameters.params.size(); ++i)
@@ -635,7 +618,7 @@ bool parseNormalizedParams(
             catch (...)
             {
                 parsed = false;
-                LOG_TRACE(logger, "parse string error,raw={},size={}", raw, raw.size());
+                LOG_TRACE(logger, "parse string error:{},raw={},size={}", getCurrentExceptionMessage(false), raw, raw.size());
             }
         }
         else if (type == Field::Types::Array)
@@ -649,7 +632,7 @@ bool parseNormalizedParams(
                 catch (...)
                 {
                     parsed = false;
-                    LOG_TRACE(logger, "parse string error,raw={},size={}", raw, raw.size());
+                    LOG_TRACE(logger, "parse string error:{},raw={},size={}", getCurrentExceptionMessage(false), raw, raw.size());
                 }
             }
             else
@@ -667,7 +650,6 @@ bool parseNormalizedParams(
     return !parameters.parsed_params.empty();
 }
 }
-
 
 }
 
@@ -700,7 +682,6 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
     UInt32 vector_function_type = 0;
     bool is_comma = false;
     bool vector_complete = false;
-    UInt32 vector_number = 0;
     // Track POSITION function context for parameter reordering
     bool in_position_function = false;
     bool position_saw_in_keyword = false;
@@ -709,7 +690,6 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
     bool is_bare_word = false;
     bool is_dot = false;
     bool is_negative = false;
-    // bool is_before_bare = false;
     bool is_where = false;
 
     while (true)
@@ -722,7 +702,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
         if (vector_function_type && token.type == TokenType::BareWord)
             is_bare_word = true;
         if (token.type == TokenType::BareWord && !vector_function_type
-            && (token.size() == 8 || token.size() == 10 || token.size() == 12))
+            && (token.size() == 8 || token.size() == 10 || token.size() == 14))
         {
             if (tokenMatchesBareWord(token, getFunctionName(FunctionNames::L2DISTANCE)))
                 vector_function_type =  1;
@@ -752,24 +732,15 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
         if (vector_function_type && is_comma && token.type == TokenType::ClosingRoundBracket)
         {
             vector_complete = true;
-            if (vector_function_type < 3 ||
-                    (vector_function_type == 3 &&
-                        (
-                            (is_cast && vector_number == 3) || !is_cast
-                        )
-                    )
-                )
-            {
-                vector_number = 0;
-                vector_function_type = 0;
-                is_comma = false;
-                is_bare_word = false;
-            }
+            vector_function_type = 0;
+            is_comma = false;
+            is_bare_word = false;
         }
         if (is_comma && token.type == TokenType::StringLiteral &&
                 (vector_function_type == 2 ||
-                    (vector_function_type == 1 && is_cast) ||
-                    (vector_function_type == 3 )
+                    (is_cast && 
+                        (vector_function_type == 1 || vector_function_type == 3)
+                    )
                 )
             )
         {
@@ -778,7 +749,6 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
             if (vector_complete || vector_function_type == 2)
                 result.params.emplace_back(String(token.begin, token.size()), ParameterInfo::Type::STRING);
             result.new_sql += std::string(token.begin, token.size());
-            vector_number++;
             vector_complete = false;
             continue;
         }
@@ -792,7 +762,6 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
             Token last_significant = token;
             bool valid = true;
             
-            // Variables to collect array elements when use_cast is false
             std::vector<String> string_array;
             const char * element_start = nullptr;
 
@@ -967,18 +936,10 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
 void VectorQueryParameters::replaceConstantsInQueryPlan(
     QueryPlan & plan,
     NormalizedQueryResult & parameters,
-    const std::vector<VectorQueryPlanCache::PlanConstantBinding> & plan_constant_bindings,
-    bool only_vector)
+    const std::vector<VectorQueryPlanCache::PlanConstantBinding> & plan_constant_bindings)
 {
-    (void) only_vector;
-    // Replacement happens on a cloned QueryPlan from the cache. The cached entry
-    // remains immutable; only the clone owned by the current execution is patched.
-    // Generic constant columns inside ActionsDAG nodes.
     if (plan_constant_bindings.empty() || parameters.params.empty() || parameters.parsed_params.empty())
         return;
-    // Parse the normalized literal tokens only once per VectorQueryParameters instance.
-    // AST restoration and QueryPlan restoration then share the same typed values
-    // instead of reparsing the runtime literals independently.
     auto * root = plan.getRootNode();
     if (!root)
         return;
@@ -1029,14 +990,12 @@ void VectorQueryParameters::replaceConstantsInQueryPlan(
         }
     };
 
-
     // Each binding points to one mutable constant slot inside the cached plan.
     // Rewriting all bindings restores the plan to the runtime literal values of
     // the current execution without rebuilding planner output from scratch.
     //
     // Note that bindings are intentionally heterogeneous: the same ordered runtime
-    // parameter vector may feed a DAG node, a vector-search descriptor, a text
-    // query string, or a LIMIT/OFFSET field depending on the recorded scope.
+    // parameter vector may feed a DAG node.
     for (const auto & plan_constant_binding : plan_constant_bindings)
     {
         auto * node = get_node_by_path(plan_constant_binding.plan_node_path);
@@ -1044,7 +1003,7 @@ void VectorQueryParameters::replaceConstantsInQueryPlan(
         {
             continue;
         }
-
+        
         if (auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
         {
             if (plan_constant_binding.dag_scope != "FilterStep")
@@ -1059,17 +1018,6 @@ void VectorQueryParameters::replaceConstantsInQueryPlan(
             ActionsDAG & dag = expression_step->getExpression();
             apply_bindings_to_dag(dag,  plan_constant_binding.dag_node_index, plan_constant_binding.parameter_index);
         }
-        else if (auto * read_step = typeid_cast<ReadFromMergeTree *>(node->step.get()))
-        {
-            if (plan_constant_binding.dag_scope == "ReadFromMergeTree.FilterActions")
-            {
-                if (const auto & filter_actions = read_step->getFilterActionsDAG())
-                {
-                    ActionsDAG dag = filter_actions->clone();
-                    apply_bindings_to_dag(dag,  plan_constant_binding.dag_node_index, plan_constant_binding.parameter_index);
-                }
-            }
-        }
     }
 }
 
@@ -1077,9 +1025,6 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
     const ASTPtr & query_ast,
     bool only_vector) const
 {
-    // AST traversal is the source of truth for literal types. We keep both the
-    // tree path and the original Field so later restore logic knows not only where
-    // to write but also how to parse each runtime token back into a typed value.
     std::vector<VectorQueryPlanCache::ASTLiteralPosition> positions;
     if (!query_ast)
         return positions;
@@ -1113,7 +1058,7 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
         return child->getID('-');
     };
 
-    UInt32 vector_parameter_number = 0;
+    bool is_vector = true;
 
     std::function<void(const ASTPtr &, std::vector<ASTPtr> &, size_t, NodePath &, std::vector<String> &, String)> collect
         = [&](const ASTPtr & ast, std::vector<ASTPtr> & parent_list, size_t depth, NodePath & path,
@@ -1165,10 +1110,15 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
                     ident_name_list.push_back(ident_node->name());
             }
             parent_list.pop_back();
-            if (last_function_name == getFunctionName(FunctionNames::L2DISTANCE))
+            if (last_function_name == getFunctionName(FunctionNames::L2DISTANCE) || last_function_name == getFunctionName(FunctionNames::COSINEDISTANCE))
             {
-                if (vector_parameter_number)
+                if (static_cast<Int32>(type) != FieldRef::Types::Array)
+                {
+                    can_cache = false;
+                    LOG_DEBUG(logger, "1, last_function_name = {} type = {}",
+                        last_function_name, static_cast<Int32>(type));
                     return;
+                }
             }
             else if (last_function_name == getFunctionName(FunctionNames::HASTOKEN))
             {
@@ -1180,55 +1130,33 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
                     return;
                 }
             }
-            else if (last_function_name == getFunctionName(FunctionNames::COSINEDISTANCE))
-            {
-                if (!vector_parameter_number)
-                {
-                    if (static_cast<Int32>(type) != FieldRef::Types::Array)
-                    {
-                        can_cache = false;
-                        LOG_DEBUG(logger, "3, last_function_name = {} vector_parameter_number = {} type = {}",
-                            last_function_name, vector_parameter_number, static_cast<Int32>(type));
-                        return;
-                    }
-                }
-                else if (vector_parameter_number == 1)
-                {
-                    if (static_cast<Int32>(type) != FieldRef::Types::String)
-                    {
-                        can_cache = false;
-                        LOG_DEBUG(logger, "4, last_function_name = {} vector_parameter_number = {} type = {}",
-                            last_function_name, vector_parameter_number, static_cast<Int32>(type));
-                        return;
-                    }
-                    vector_parameter_number++;
-                }
-                else
-                    return;
-            }
             else if (last_function_name == getFunctionName(FunctionNames::CAST))
             {
                 if (last_second_function_name == getFunctionName(FunctionNames::L2DISTANCE) || last_second_function_name == getFunctionName(FunctionNames::COSINEDISTANCE))
                 {
                     pos.field_type = FieldRef::Types::Array;
-                    if (!vector_parameter_number)
+                    if (is_vector)
                     {
+                        is_vector = false;
                         if (static_cast<Int32>(type) != FieldRef::Types::String)
                         {
                             can_cache = false;
-                            LOG_DEBUG(logger, "5, last_function_name = {} vector_parameter_number = {} type = {}",
-                                last_function_name, vector_parameter_number, static_cast<Int32>(type));
+                            LOG_DEBUG(logger, "3, last_function_name = {} type = {}",
+                                last_function_name, static_cast<Int32>(type));
                             return;
                         }
                     }
                     else
+                    {
+                        is_vector = true;
                         return;
+                    }    
                 }
                 else
                 {
                     can_cache = false;
-                    LOG_DEBUG(logger, "6, last_function_name = {} vector_parameter_number = {} type = {}",
-                            last_function_name, vector_parameter_number, static_cast<Int32>(type));
+                    LOG_DEBUG(logger, "4, last_function_name = {} type = {}",
+                            last_function_name, static_cast<Int32>(type));
                     return;
                 }
             }
@@ -1255,19 +1183,13 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
                     pos.identifier_name = " ";
                 }
             }
-            if (last_function_name == getFunctionName(FunctionNames::COSINEDISTANCE) && vector_parameter_number == 2 && ident_name_list.size() == 2)
-            {
-                ast_path_name += "Identifier-" + ident_name_list[1];
-                pos.identifier_name = ident_name_list[1];
-            }
-            if (ident_name_list.size() >= 1 && !vector_parameter_number &&
+            if (ident_name_list.size() >= 1  &&
                     (last_function_name == getFunctionName(FunctionNames::L2DISTANCE) || last_function_name == getFunctionName(FunctionNames::HASTOKEN) || last_function_name == getFunctionName(FunctionNames::COSINEDISTANCE) ||
                         (is_cast && last_second_function_name == getFunctionName(FunctionNames::L2DISTANCE)) ||
                         (is_cast && last_second_function_name == getFunctionName(FunctionNames::COSINEDISTANCE))
                     )
                 )
             {
-                vector_parameter_number++;
                 ast_path_name += "Identifier-" + ident_name_list[0];
                 pos.identifier_name = ident_name_list[0];
             }
@@ -1312,6 +1234,7 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
                 pos.target_type = target_type;
                 pos.function_list = function_list;
                 pos.ast_path_name = ast_path_name;
+                pos.identifier_name = getFieldName(pos.identifier_name);
                 positions.push_back(pos);
             }
             return;
@@ -1334,11 +1257,7 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
                     )
                 )
             {
-                if (function_name == getFunctionName(FunctionNames::COSINEDISTANCE) || function_name == getFunctionName(FunctionNames::L2DISTANCE))
-                    vector_parameter_number = 0;
                 function_list.push_back(function_name);
-                // Do not extract parameters following COSINEDISTANCE and distance 
-                // (for example, 'fusion_type=rsf' in COSINEDISTANCE('fusion_type=rsf')(vector, doc, [1.0,1,1], 'Ancient') is not extracted).
                 if (function_name != getFunctionName(FunctionNames::COSINEDISTANCE) && function_name != getFunctionName(FunctionNames::L2DISTANCE))
                 {
                     for (size_t i = 0; i < ast->children.size(); ++i)
@@ -1406,9 +1325,6 @@ std::vector<Field> VectorQueryParameters::buildParameterValuesFromAST(
     const ASTPtr & query_ast,
     const std::vector<VectorQueryPlanCache::ASTLiteralPosition> & positions)
 {
-    // When the original AST snapshot is still available, it is the most reliable
-    // source of typed literal values because each ASTLiteral already stores the
-    // exact Field produced by the SQL parser.
     std::vector<Field> values;
     if (!query_ast || positions.empty())
         return values;
@@ -1434,9 +1350,6 @@ bool VectorQueryParameters::applyParametersByASTLiteralPositions(
     if (!query_ast || parameters.params.empty() || positions.empty())
         return false;
 
-    // AST replacement is intentionally performed before QueryPlan replacement on
-    // cache hits that restore both. The parsed Field values are cached in
-    // `parameters.parsed_params` so QueryPlan replacement can reuse them.
     size_t replaced_count = 0;
     const size_t count = std::min(positions.size(), parameters.parsed_params.size());
     // Parameter tokens and literal positions are collected in the same traversal
@@ -1465,12 +1378,6 @@ bool VectorQueryParameters::parseNormalizedParamsWithAST(
         return false;
     if (!positions)
         return false;
-    // Parse every raw token according to the literal type recorded from the
-    // original AST. This avoids guessing types purely from text during cache restore.
-    //
-    // The fallback `converted = raw` is deliberate: some plan-owned replacements
-    // only need the original string form, so we preserve a usable value even when
-    // typed parsing is skipped or fails conservatively.
     std::vector<DataTypePtr> target_types(parameters.params.size());
     std::vector<Int32> literal_types(parameters.params.size(), -1);
 
@@ -1501,11 +1408,9 @@ String VectorQueryParameters::rewriteVectorLiteralsToCasts(
         return new_sql;
     }
 
-
     bool is_cast = false;
     UInt32 vector_function_type = 0;
     bool is_comma = false;
-    UInt32 vector_number = 0;
     bool is_bare_word = false;
 
     while (true)
@@ -1518,7 +1423,7 @@ String VectorQueryParameters::rewriteVectorLiteralsToCasts(
         if (vector_function_type && token.type == TokenType::BareWord)
             is_bare_word = true;
         if (token.type == TokenType::BareWord && !vector_function_type
-            && (token.size() == 8 || token.size() == 10 || token.size() == 12))
+            && (token.size() == 8 || token.size() == 10 || token.size() == 14))
         {
             if (tokenMatchesBareWord(token, getFunctionName(FunctionNames::L2DISTANCE)))
                 vector_function_type =  1;
@@ -1543,29 +1448,19 @@ String VectorQueryParameters::rewriteVectorLiteralsToCasts(
         }
         if (vector_function_type && is_comma && token.type == TokenType::ClosingRoundBracket)
         {
-            if (vector_function_type < 3 ||
-                    (vector_function_type == 3 &&
-                        (
-                            (is_cast && vector_number == 3) || !is_cast
-                        )
-                    )
-                )
-            {
-                vector_number = 0;
-                vector_function_type = 0;
-                is_comma = false;
-                is_bare_word = false;
-            }
+            vector_function_type = 0;
+            is_comma = false;
+            is_bare_word = false;
         }
         if (is_comma && token.type == TokenType::StringLiteral &&
                 (vector_function_type == 2 ||
-                    (vector_function_type == 1 && is_cast) ||
-                    (vector_function_type == 3 )
+                    (is_cast && 
+                        (vector_function_type == 1 || vector_function_type == 3)
+                    )
                 )
             )
         {
             new_sql += std::string(token.begin, token.size());   
-            vector_number++;
             continue;
         }
         /// -------- literal --------
@@ -1632,12 +1527,6 @@ bool VectorQueryParameters::parseNormalizedParamsWithPlan(
         return false;
     if (!plan_constant_bindings)
         return false;
-    // Parse every raw token according to the literal type recorded from the
-    // original AST. This avoids guessing types purely from text during cache restore.
-    //
-    // The fallback `converted = raw` is deliberate: some plan-owned replacements
-    // only need the original string form, so we preserve a usable value even when
-    // typed parsing is skipped or fails conservatively.
     std::vector<DataTypePtr> target_types(parameters.params.size());
     std::vector<Int32> literal_types(parameters.params.size(), -1);
 
@@ -1666,13 +1555,6 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
     const std::vector<VectorQueryPlanCache::ASTLiteralPosition> & ast_literal_positions,
     const NormalizedQueryResult & parameters)
 {
-    // Walk the finished QueryPlan and record every constant location that must be
-    // patched on a cache hit. The collected binding order follows the same runtime
-    // parameter order used during normalization.
-    //
-    // Unlike AST collection, this pass is not based on syntax. It inspects concrete
-    // plan steps and step-owned data structures, then matches each discovered value
-    // back to the ordered `parameters` vector collected from the original AST.
     std::vector<VectorQueryPlanCache::PlanConstantBinding> bindings;
     QueryPlan::Node * root = query_plan.getRootNode();
     if (!root)
@@ -1709,32 +1591,6 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
                 "FilterStep",
                 2,
                 candidates);
-        // JoinStepLogical is not supported temporarily because updatePipeline is not implemented, so an error will occur after restoration.
-        if (typeid_cast<JoinStepLogical *>(node->step.get()))
-            return bindings;
-
-        if (auto * read_step = typeid_cast<ReadFromMergeTree *>(node->step.get()))
-        {
-            // Read steps can own additional filter DAGs that are separate from
-            // the main ExpressionStep / FilterStep chain.
-            if (const auto & filter_actions = read_step->getFilterActionsDAG())
-                findActionsDAGAndCollectConstants(
-                    *filter_actions,
-                    path,
-                    "ReadFromMergeTree.FilterActions",
-                    2,
-                    candidates);
-
-            if (auto prewhere_info = read_step->getPrewhereInfo())
-            {
-                findActionsDAGAndCollectConstants(
-                    prewhere_info->prewhere_actions,
-                    path,
-                    "ReadFromMergeTree.Prewhere",
-                    2,
-                    candidates);
-            }
-        }
 
         for (size_t i = 0; i < node->children.size(); ++i)
         {
@@ -1746,8 +1602,8 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
 
     std::vector<bool> candidate_used(candidates.size(), false);
     bindings.reserve(ast_literal_positions.size());
-
-    for (Int64 ast_index = static_cast<Int64>(ast_literal_positions.size()) - 1; ast_index >= 0; --ast_index)
+    
+    for (size_t ast_index = 0; ast_index < ast_literal_positions.size(); ++ast_index)
     {
         const auto & ast_position = ast_literal_positions[ast_index];
         std::vector<size_t> matched_candidate_indexes;
@@ -1757,7 +1613,7 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
             if (candidate_used[candidate_index])
                 continue;
 
-            if (candidateMatchesAstLiteral(candidates[candidate_index], static_cast<size_t>(ast_index), ast_position, parameters))
+            if (candidateMatchesAstLiteral(candidates[candidate_index], ast_index, ast_position, parameters))
                 matched_candidate_indexes.push_back(candidate_index);
         }
 
@@ -1778,8 +1634,8 @@ std::vector<VectorQueryPlanCache::PlanConstantBinding> VectorQueryParameters::Co
                 ast_position.step_type,
                 ast_position.identifier_name,
                 ast_position.ast_path_name,
-                ast_index < static_cast<Int64>(parameters.params.size()) ? parameters.params[ast_index].original_string : String{},
-                ast_index < static_cast<Int64>(parameters.parsed_params.size()) ? applyVisitor(FieldVisitorToString(), parameters.parsed_params[ast_index]) : String{},
+                ast_index < parameters.params.size() ? parameters.params[ast_index].original_string : String{},
+                ast_index < parameters.parsed_params.size() ? applyVisitor(FieldVisitorToString(), parameters.parsed_params[ast_index]) : String{},
                 function_chain);
             bindings.clear();
             return bindings;

@@ -43,8 +43,6 @@ namespace ProfileEvents
     extern const Event VectorASTCacheMisses;
     extern const Event VectorQueryPlanCacheHits;
     extern const Event VectorQueryPlanCacheMisses;
-    extern const Event VectorQueryPlanCacheReadBytes;
-    extern const Event VectorQueryPlanCacheWrittenBytes;
 }
 
 namespace CurrentMetrics
@@ -531,12 +529,6 @@ void VectorQueryPlanCache::Writer::finalizeWrite()
         needs_rebuild_mappings = !was_finalized.load();
 
         cache.set(key, query_plan_snapshot);
-
-        // Update profile counters for plan/AST payloads stored.
-        if (query_plan_snapshot->plan_cache)
-            ProfileEvents::increment(ProfileEvents::VectorQueryPlanCacheWrittenBytes, query_plan_snapshot->plan_size);
-        if (query_plan_snapshot->ast)
-            ProfileEvents::increment(ProfileEvents::VectorQueryPlanCacheWrittenBytes, query_plan_snapshot->ast_size);
         was_finalized.store(true);
         LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
     } // lock goes out of scope here
@@ -596,8 +588,6 @@ bool VectorQueryPlanCache::Reader::hasCacheEntryForKey(bool update_profile_event
         if (has_entry)
         {
             ProfileEvents::increment(ProfileEvents::VectorQueryPlanCacheHits);
-            // Count plan bytes served from cache. Note: this is separate from AST bytes counted in hasAstCacheEntryForKey.
-            ProfileEvents::increment(ProfileEvents::VectorQueryPlanCacheReadBytes, plan_size);
         }
         else
             ProfileEvents::increment(ProfileEvents::VectorQueryPlanCacheMisses);
@@ -613,9 +603,6 @@ bool VectorQueryPlanCache::Reader::hasAstCacheEntryForKey(bool update_profile_ev
         if (has_entry)
         {
             ProfileEvents::increment(ProfileEvents::VectorASTCacheHits);
-            // Count AST bytes served from cache. Note: this is separate from plan bytes counted in hasCacheEntryForKey.
-            // The caller may check both AST and plan caches; VectorQueryPlanCacheReadBytes accumulates both to track total cache usage.
-            ProfileEvents::increment(ProfileEvents::VectorQueryPlanCacheReadBytes, ast_size);
         }
         else
             ProfileEvents::increment(ProfileEvents::VectorASTCacheMisses);
