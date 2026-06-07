@@ -116,7 +116,14 @@ static DataTypePtr getNarrowedType(const ColumnDynamic & column_dynamic, bool & 
         has_nulls = true;
         const auto & variants = assert_cast<const DataTypeVariant &>(
             *column_dynamic.getVariantInfo().variant_type).getVariants();
-        return variants.at(*single_variant_with_nulls);
+        auto type = variants.at(*single_variant_with_nulls);
+
+        /// Can't wrap in Nullable if the type itself is already Nullable
+        /// or cannot be inside Nullable (e.g., Array(Nullable(String))).
+        if (!type->canBeInsideNullable())
+            return nullptr;
+
+        return type;
     }
 
     auto global_discr = variant_column.globalDiscriminatorByLocal(*single_variant_discr);

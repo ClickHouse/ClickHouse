@@ -47,10 +47,10 @@ JSONSchemaHints parseJSONSchemaHints(const String & hints_json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "json_schema_hints must be a JSON object");
 
-    for (auto col_it = root->begin(); col_it != root->end(); ++col_it)
+    for (auto & [column_name_var, column_value] : *root)
     {
-        String column_name = col_it->first;
-        auto rules_arr = col_it->second.extract<Poco::JSON::Array::Ptr>();
+        String column_name = column_name_var;
+        auto rules_arr = column_value.extract<Poco::JSON::Array::Ptr>();
         if (!rules_arr)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "json_schema_hints: value for column '{}' must be an array of rules", column_name);
@@ -77,10 +77,10 @@ JSONSchemaHints parseJSONSchemaHints(const String & hints_json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "json_schema_hints: 'paths' must be a JSON object");
 
-            for (auto path_it = paths_obj->begin(); path_it != paths_obj->end(); ++path_it)
+            for (auto & [path_name_var, path_value] : *paths_obj)
             {
-                String path_name = path_it->first;
-                String type_name = path_it->second.convert<String>();
+                String path_name = path_name_var;
+                String type_name = path_value.convert<String>();
 
                 /// Validate the type name.
                 DataTypeFactory::instance().get(type_name);
