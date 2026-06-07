@@ -1,8 +1,0 @@
-columns substreams version: 1
-3 columns:
-1 substreams for column `a`:
-	a
-1 substreams for column `b`:
-	b
-1 substreams for column `c`:
-	c
