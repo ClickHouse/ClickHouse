@@ -110,7 +110,7 @@ public:
             return {};
 
         RedisArray scan_keys;
-        RedisIterator next_iterator;
+        RedisIterator next_iterator = 0;
 
         std::tie(next_iterator, scan_keys) = storage.scan(iterator == -1 ? 0 : iterator, pattern, max_block_size);
         iterator = next_iterator;
@@ -147,7 +147,7 @@ private:
     FieldVector::const_iterator it;
 
     /// For full scan
-    RedisIterator iterator;
+    RedisIterator iterator{};
     String pattern;
 
     const size_t max_block_size;
@@ -313,8 +313,8 @@ void ReadFromRedis::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         size_t num_threads = std::min<size_t>(num_streams, keys->size());
         num_threads = std::min<size_t>(num_threads, storage.configuration.pool_size);
 
-        assert(num_keys <= std::numeric_limits<uint32_t>::max());
-        assert(num_threads <= std::numeric_limits<uint32_t>::max());
+        chassert(num_keys <= std::numeric_limits<uint32_t>::max());
+        chassert(num_threads <= std::numeric_limits<uint32_t>::max());
 
         for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
         {
@@ -578,7 +578,7 @@ void StorageRedis::truncate(const ASTPtr & query, const StorageMetadataPtr &, Co
     auto connection = getRedisConnection(pool, configuration);
 
     auto * truncate_query = query->as<ASTDropQuery>();
-    assert(truncate_query != nullptr);
+    chassert(truncate_query != nullptr);
 
     RedisCommand cmd_flush_db("FLUSHDB");
     if (!truncate_query->sync)
@@ -608,7 +608,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
     if (commands.empty())
         return;
 
-    assert(commands.size() == 1);
+    chassert(commands.size() == 1);
 
     auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
     auto physical_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
@@ -651,7 +651,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
         return;
     }
 
-    assert(commands.front().type == MutationCommand::Type::UPDATE);
+    chassert(commands.front().type == MutationCommand::Type::UPDATE);
     auto alter = commands.front().ast();
     if (getColumnToUpdateExpression(*alter).contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
@@ -675,6 +675,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
 }
 
 /// TODO support ttl
+void registerStorageRedis(StorageFactory & factory);
 void registerStorageRedis(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{

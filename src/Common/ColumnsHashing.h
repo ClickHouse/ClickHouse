@@ -17,7 +17,6 @@
 
 #include <Core/Defines.h>
 #include <memory>
-#include <cassert>
 #include <Common/HashTable/Hash.h>
 
 namespace DB
@@ -136,7 +135,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         if (!context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache wasn't created for HashMethodSingleLowCardinalityColumn");
 
-        LowCardinalityDictionaryCache * lcd_cache;
+        LowCardinalityDictionaryCache * lcd_cache = nullptr;
         if constexpr (use_cache)
         {
             lcd_cache = typeid_cast<LowCardinalityDictionaryCache *>(context.get());
@@ -153,7 +152,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         key_columns = {dict};
         const bool is_shared_dict = column->isSharedDictionary();
 
-        typename LowCardinalityDictionaryCache::DictionaryKey dictionary_key;
+        typename LowCardinalityDictionaryCache::DictionaryKey dictionary_key{};
         typename LowCardinalityDictionaryCache::CachedValuesPtr cached_values;
 
         if (is_shared_dict)

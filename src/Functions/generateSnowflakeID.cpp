@@ -4,6 +4,7 @@
 #include <Functions/FunctionsRandom.h>
 #include <Functions/FunctionHelpers.h>
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include <base/types.h>
@@ -110,7 +111,7 @@ SnowflakeIdRange getRangeOfAvailableIds(const SnowflakeId & available, uint64_t 
     }
 
     /// 3. `end = begin + input_rows_count`
-    SnowflakeId end;
+    SnowflakeId end{};
     const uint64_t seq_nums_in_current_timestamp_left = (max_machine_seq_num - begin.machine_seq_num + 1);
     if (input_rows_count >= seq_nums_in_current_timestamp_left)
         /// if sequence numbers in current timestamp is not enough for rows --> depending on how many elements input_rows_count overflows, forward timestamp by at least 1 tick
@@ -132,7 +133,7 @@ struct Data
     SnowflakeId reserveRange(uint64_t machine_id, size_t input_rows_count)
     {
         uint64_t available_snowflake_id = lowest_available_snowflake_id.load();
-        SnowflakeIdRange range;
+        SnowflakeIdRange range{};
         do
         {
             range = getRangeOfAvailableIds(toSnowflakeId(available_snowflake_id), machine_id, input_rows_count);
