@@ -4,11 +4,12 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-# `dup_user` is defined in two separate access storages (`storage_a` and `storage_b`).
-# A full scan over `findAll<User>` emits a row for every storage, so `system.users`
-# must report the user once per storage. The fast path that `system.users` takes for
-# `name = '...'` and `name IN (...)` predicates has to keep the same semantics instead
-# of collapsing the duplicates.
+# `dup_user` is defined in two separate `users_xml` access storages (`storage_a` and
+# `storage_b`). Both storages derive the same generated `UUID` from the user name, so a
+# full scan over `findAll<User>` emits a row for each storage but resolves every row to
+# the first storage. The fast path that `system.users` takes for `name = '...'` and
+# `name IN (...)` predicates has to keep the same semantics instead of attributing the
+# rows to different storages or collapsing the duplicates.
 node = cluster.add_instance(
     "node",
     main_configs=["configs/access_storages.xml"],
