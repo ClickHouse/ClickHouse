@@ -466,6 +466,8 @@ Chunk ArrowIPCBlockInputFormat::readStream()
             case ArrowIPC::flatbuf::MessageHeader_RecordBatch:
             {
                 const auto * batch = msg.header->header_as_RecordBatch();
+                if (batch->length() < 0)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has a negative length {}", batch->length());
                 const size_t num_rows = static_cast<size_t>(batch->length());
 
                 if (need_only_count)
@@ -522,6 +524,8 @@ Chunk ArrowIPCBlockInputFormat::readFile()
         throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a record batch in the Arrow file");
 
     const auto * batch = msg.header->header_as_RecordBatch();
+    if (batch->length() < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has a negative length {}", batch->length());
     const size_t num_rows = static_cast<size_t>(batch->length());
 
     if (need_only_count)
@@ -559,6 +563,7 @@ void ArrowIPCBlockInputFormat::resetParser()
     geo_columns.clear();
     message_reader.reset();
     dictionary_value_fields.clear();
+    dictionaries.clear();
     record_batch_blocks.clear();
     record_batch_current = 0;
     seekable = nullptr;

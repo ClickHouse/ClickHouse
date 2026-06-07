@@ -121,11 +121,18 @@ ColumnPtr RecordBatchDecoder::buildNullMap(const Slice & validity, size_t rows, 
     auto & data = null_map->getData();
 
     /// A field with no nulls may omit the validity bitmap (a zero-length buffer): everything is valid.
-    if (validity.length == 0 || null_count == 0)
+    if (null_count == 0)
     {
         memset(data.data(), 0, rows);
         return null_map;
     }
+
+    /// A non-zero (or unknown, i.e. negative) null count requires the validity bitmap to identify the
+    /// null rows; accepting an absent bitmap here would silently turn malformed nullable data into real values.
+    if (validity.length == 0)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow IPC field declares a null count of {} but omits the validity bitmap", null_count);
 
     checkBufferSize(validity, (rows + 7) / 8, "validity");
     const auto * bits = reinterpret_cast<const uint8_t *>(validity.ptr);
@@ -239,7 +246,18 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
         case TypeKind::Time:
         {
             const Slice values = nextBuffer();
-            /// Both map to DateTime64(unit*3); the raw int64 is exactly the underlying value at that scale.
+            /// Both map to DateTime64(unit*3); the raw value is exactly the underlying value at that scale.
+            /// `time32[s|ms]` stores 4-byte values; `time64`/`timestamp` store 8-byte values.
+            if (type.kind == TypeKind::Time && type.time_bit_width == 32)
+            {
+                checkBufferSize(values, rows * sizeof(int32_t), "time32");
+                auto & data = assert_cast<ColumnDecimal<DateTime64> &>(*column).getData();
+                data.resize(rows);
+                const auto * src = reinterpret_cast<const int32_t *>(values.ptr);
+                for (size_t i = 0; i < rows; ++i)
+                    data[i] = DateTime64(src[i]);
+                break;
+            }
             fillFixed<ColumnDecimal<DateTime64>>(*column, rows, values, 8);
             break;
         }
@@ -398,12 +416,15 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             const int64_t base = arrow_offsets[0];
             auto offsets_col = ColumnUInt64::create(rows);
             auto & offs = offsets_col->getData();
+            /// Offsets must be monotonic non-decreasing: compare each with the previous one, not only `base`.
+            int64_t prev = base;
             for (size_t i = 0; i < rows; ++i)
             {
                 const int64_t end = arrow_offsets[i + 1];
-                if (end < base)
+                if (end < prev)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map has non-monotonic offsets");
                 offs[i] = static_cast<UInt64>(end - base);
+                prev = end;
             }
 
             ColumnPtr entries = decodeField(type.children.at(0));
@@ -440,12 +461,15 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(const ArrowField & field, size
     const int64_t base = read_offset(0);
     auto offsets_col = ColumnUInt64::create(rows);
     auto & offs = offsets_col->getData();
+    /// Offsets must be monotonic non-decreasing: compare each with the previous one, not only `base`.
+    int64_t prev = base;
     for (size_t i = 0; i < rows; ++i)
     {
         const int64_t end = read_offset(i + 1);
-        if (end < base)
+        if (end < prev)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC list has non-monotonic offsets");
         offs[i] = static_cast<UInt64>(end - base);
+        prev = end;
     }
 
     ColumnPtr child = decodeField(field.type.children.at(0));
@@ -456,13 +480,15 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(const ArrowField & field, size
     return ColumnArray::create(child, std::move(offsets_col));
 }
 
-ColumnPtr RecordBatchDecoder::decodeDictionary(const ArrowField & field, size_t rows, const Slice & validity, int64_t null_count)
+ColumnPtr RecordBatchDecoder::decodeDictionary(
+    const ArrowField & field, size_t rows, const Slice & validity, int64_t null_count, bool allow_low_cardinality)
 {
     const Slice indices_slice = nextBuffer();
     ColumnPtr values = registry.get(field.dictionary->id);
     const size_t dict_size = values->size();
 
     const int bits = field.dictionary->index_bit_width;
+    const bool index_is_signed = field.dictionary->index_is_signed;
     const size_t index_size = static_cast<size_t>(bits) / 8;
     checkBufferSize(indices_slice, rows * index_size, "dictionary indices");
 
@@ -494,26 +520,34 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(const ArrowField & field, size_t 
             idx[i] = null_key_index;
             continue;
         }
-        UInt64 v = 0;
+        /// The index buffer may be signed (`DictionaryEncoding::indexType`); a negative index is invalid
+        /// and must be rejected before widening, otherwise it would wrap to a large unsigned key.
+        Int64 v = 0;
         switch (bits)
         {
-            case 8: v = reinterpret_cast<const uint8_t *>(indices_slice.ptr)[i]; break;
-            case 16: v = reinterpret_cast<const uint16_t *>(indices_slice.ptr)[i]; break;
-            case 32: v = reinterpret_cast<const uint32_t *>(indices_slice.ptr)[i]; break;
-            case 64: v = reinterpret_cast<const uint64_t *>(indices_slice.ptr)[i]; break;
+            case 8: v = index_is_signed ? Int64(reinterpret_cast<const int8_t *>(indices_slice.ptr)[i])
+                                        : Int64(reinterpret_cast<const uint8_t *>(indices_slice.ptr)[i]); break;
+            case 16: v = index_is_signed ? Int64(reinterpret_cast<const int16_t *>(indices_slice.ptr)[i])
+                                         : Int64(reinterpret_cast<const uint16_t *>(indices_slice.ptr)[i]); break;
+            case 32: v = index_is_signed ? Int64(reinterpret_cast<const int32_t *>(indices_slice.ptr)[i])
+                                         : Int64(reinterpret_cast<const uint32_t *>(indices_slice.ptr)[i]); break;
+            case 64: v = reinterpret_cast<const int64_t *>(indices_slice.ptr)[i]; break;
             default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unsupported Arrow dictionary index width {}", bits);
         }
-        if (v >= dict_size)
+        if (v < 0 || static_cast<UInt64>(v) >= dict_size)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary index {} out of range (size {})", v, dict_size);
-        idx[i] = v;
+        idx[i] = static_cast<UInt64>(v);
     }
 
     /// Build the LowCardinality column directly from (keys, indexes): the dictionary is deduplicated
     /// once (a handful of values) and the per-row indexes are remapped with a cheap gather — no
     /// materialization of the full column and no per-row hashing. `decodeColumns` reports the matching
-    /// LowCardinality type. For the rare value type that cannot live inside LowCardinality, gather the
-    /// full column instead (the trailing NULL key makes null rows resolve to NULL).
-    if (value_type->canBeInsideLowCardinality())
+    /// LowCardinality type. A dictionary nested inside Array/Map/Tuple/Union is not wrapped as
+    /// LowCardinality by `fieldToCHType` (only top-level fields are), so materialize those to the plain
+    /// value column to keep the decoded column structure consistent with the declared type. For the rare
+    /// value type that cannot live inside LowCardinality, gather the full column too (the trailing NULL
+    /// key makes null rows resolve to NULL).
+    if (allow_low_cardinality && value_type->canBeInsideLowCardinality())
     {
         auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(value_type);
         auto column = low_cardinality_type->createColumn();
@@ -545,6 +579,11 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
     /// FieldNode but no buffers and contribute no Variant element. The rest become Variant elements.
     Columns variant_columns;
     DataTypes variant_types;
+    /// `ColumnVariant` elements cannot be Nullable, so the element-level null map is dropped from the
+    /// stored column. Keep a pointer to it (per local element, nullptr if the child is not nullable) so
+    /// rows that reference a null child value can be translated to the Variant NULL discriminator below,
+    /// instead of silently becoming the nested column's default value.
+    std::vector<const NullMap *> child_null_maps;
     /// Maps an Arrow union type id to a local Variant element index, or -1 for the NULL placeholder.
     std::unordered_map<int, int> type_id_to_local;
     for (size_t child_idx = 0; child_idx < type.children.size(); ++child_idx)
@@ -562,12 +601,18 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
 
         ColumnPtr child_column = decodeField(child);
         DataTypePtr child_type = fieldToCHType(child, settings, /*make_nullable=*/false);
-        /// Variant elements cannot be Nullable; drop any element-level nullability.
+        /// Variant elements cannot be Nullable; remember the null map, then drop the nullability.
+        const NullMap * child_null_map = nullptr;
         if (child_column->isNullable())
-            child_column = assert_cast<const ColumnNullable &>(*child_column).getNestedColumnPtr();
+        {
+            const auto & nullable = assert_cast<const ColumnNullable &>(*child_column);
+            child_null_map = &nullable.getNullMapData();
+            child_column = nullable.getNestedColumnPtr();
+        }
         type_id_to_local[tid] = static_cast<int>(variant_columns.size());
         variant_columns.push_back(std::move(child_column));
         variant_types.push_back(removeNullable(child_type));
+        child_null_maps.push_back(child_null_map);
     }
 
     /// The Variant's global discriminator order is defined by sorting element type names; build the
@@ -602,6 +647,13 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
             const int32_t off = value_offsets[row];
             if (off < 0 || static_cast<size_t>(off) >= variant_columns[local]->size())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow dense union offset {} out of range", off);
+            /// A referenced null value in a nullable child becomes a Variant NULL, not a default value.
+            if (child_null_maps[local] && (*child_null_maps[local])[off])
+            {
+                discr_data[row] = ColumnVariant::NULL_DISCRIMINATOR;
+                off_data[row] = 0;
+                continue;
+            }
             discr_data[row] = static_cast<ColumnVariant::Discriminator>(local);
             off_data[row] = static_cast<ColumnVariant::Offset>(off);
         }
@@ -626,6 +678,13 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
             off_data[row] = 0;
             continue;
         }
+        /// A referenced null value in a nullable child becomes a Variant NULL, not a default value.
+        if (child_null_maps[local] && (*child_null_maps[local])[row])
+        {
+            discr_data[row] = ColumnVariant::NULL_DISCRIMINATOR;
+            off_data[row] = 0;
+            continue;
+        }
         off_data[row] = static_cast<ColumnVariant::Offset>(compact[local]->size());
         compact[local]->insertFrom(*variant_columns[local], row);
         discr_data[row] = static_cast<ColumnVariant::Discriminator>(local);
@@ -634,10 +693,15 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
         std::move(local_discriminators), std::move(offsets), std::move(compact), local_to_global);
 }
 
-ColumnPtr RecordBatchDecoder::decodeField(const ArrowField & field)
+ColumnPtr RecordBatchDecoder::decodeField(const ArrowField & field, bool allow_low_cardinality)
 {
     const flatbuf::FieldNode & node = nextNode();
-    const size_t rows = static_cast<size_t>(node.length());
+    /// `FieldNode::length` is signed IPC metadata; reject a negative (corrupted) length before casting,
+    /// otherwise it would become a huge row count and drive oversized allocations.
+    const int64_t node_length = node.length();
+    if (node_length < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC field node has a negative length {}", node_length);
+    const size_t rows = static_cast<size_t>(node_length);
 
     /// Unions have no validity buffer; handle them before consuming one.
     if (field.type.kind == TypeKind::Union)
@@ -648,7 +712,7 @@ ColumnPtr RecordBatchDecoder::decodeField(const ArrowField & field)
 
     /// Dictionary-encoded fields carry indices here; the values come from a separate DictionaryBatch.
     if (field.dictionary)
-        return decodeDictionary(field, rows, validity, node.null_count());
+        return decodeDictionary(field, rows, validity, node.null_count(), allow_low_cardinality);
 
     ColumnPtr inner = decodeInner(field, rows);
 
@@ -682,10 +746,10 @@ std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns
         DecodedColumn decoded;
         decoded.name = field.name;
         decoded.type = fieldToCHType(field, settings, field.nullable);
-        /// A dictionary-encoded field decodes into a LowCardinality column of its value type.
+        /// A top-level dictionary-encoded field decodes into a LowCardinality column of its value type.
         if (field.dictionary && decoded.type->canBeInsideLowCardinality())
             decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
-        decoded.column = decodeField(field);
+        decoded.column = decodeField(field, /*allow_low_cardinality=*/true);
         result.push_back(std::move(decoded));
     }
 
@@ -741,7 +805,6 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
     {
         const auto * buffer = buffers->Get(static_cast<flatbuffers::uoffset_t>(i));
         validate(buffer->offset(), buffer->length());
-        const char * src = body.data() + buffer->offset();
         const int64_t length = buffer->length();
 
         pos = (pos + 7) & ~size_t(7);
@@ -750,6 +813,8 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
             placements[i] = {pos, 0, nullptr, 0, true};
             continue;
         }
+        /// Form the pointer only for a non-empty buffer; an empty buffer may carry a placeholder offset (e.g. -1).
+        const char * src = body.data() + buffer->offset();
         if (length < 8)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is too small for its length prefix");
 

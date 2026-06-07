@@ -22,6 +22,8 @@ public:
     /// Replaces (or, for delta batches, appends to) the values for a dictionary id.
     void set(int64_t id, ColumnPtr values, bool is_delta);
     ColumnPtr get(int64_t id) const;
+    /// Drops all dictionaries (used when an `IInputFormat` is reset to read another stream).
+    void clear() { dictionaries.clear(); }
 
 private:
     std::unordered_map<int64_t, ColumnPtr> dictionaries;
@@ -65,10 +67,14 @@ private:
     Slice nextBuffer();
     const flatbuf::FieldNode & nextNode();
 
-    ColumnPtr decodeField(const ArrowField & field);
+    /// `allow_low_cardinality` is set only for top-level fields: a dictionary-encoded field decodes into
+    /// a LowCardinality column there, but a dictionary nested inside Array/Map/Tuple/Union is materialized
+    /// to its plain value column (matching the type `fieldToCHType` declares for the nested field).
+    ColumnPtr decodeField(const ArrowField & field, bool allow_low_cardinality = false);
     ColumnPtr decodeInner(const ArrowField & field, size_t rows);
     ColumnPtr decodeUnion(const ArrowField & field, size_t rows);
-    ColumnPtr decodeDictionary(const ArrowField & field, size_t rows, const Slice & validity, int64_t null_count);
+    ColumnPtr decodeDictionary(
+        const ArrowField & field, size_t rows, const Slice & validity, int64_t null_count, bool allow_low_cardinality);
     ColumnPtr buildNullMap(const Slice & validity, size_t rows, int64_t null_count) const;
     ColumnPtr readOffsetsAndChild(const ArrowField & field, size_t rows, bool large);
 

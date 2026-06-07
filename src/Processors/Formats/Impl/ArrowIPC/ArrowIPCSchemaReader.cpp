@@ -6,6 +6,7 @@
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -19,6 +20,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_TYPE;
 }
 
 ArrowIPCSchemaReader::ArrowIPCSchemaReader(ReadBuffer & in_, bool stream_, const FormatSettings & format_settings_)
@@ -60,7 +63,26 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
             memory_buffer = std::make_unique<ReadBufferFromMemory>(file_data.data(), file_data.size());
             seekable = assert_cast<SeekableReadBuffer *>(memory_buffer.get());
         }
-        schema = ArrowIPC::readArrowFileFooter(*seekable, file_size).schema;
+        ArrowIPC::ArrowFileFooter footer = ArrowIPC::readArrowFileFooter(*seekable, file_size);
+        schema = std::move(footer.schema);
+
+        /// Preserve the file row-count optimization that the library schema reader exposes via `CountRows`:
+        /// sum each record batch's length by reading just its (small) metadata message from the footer blocks.
+        ArrowIPC::MessageReader count_reader(*seekable);
+        size_t total_rows = 0;
+        for (const auto & block : footer.record_batch_blocks)
+        {
+            seekable->seek(block.offset, SEEK_SET);
+            ArrowIPC::MessageReader::Message msg;
+            if (!count_reader.readNextMessage(msg) || msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_RecordBatch)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a record batch in the Arrow file");
+            const int64_t length = msg.header->header_as_RecordBatch()->length();
+            if (length < 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has a negative length {}", length);
+            total_rows += static_cast<size_t>(length);
+            count_reader.skipBody(msg.body_length);
+        }
+        num_rows_in_file = total_rows;
     }
 
     /// GeoParquet geometry columns are inferred as their geo type (when the parser is enabled).
@@ -93,10 +115,33 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         else
             make_nullable = field.nullable;
 
-        DataTypePtr type = ArrowIPC::fieldToCHType(field, format_settings, make_nullable);
+        DataTypePtr type;
+        try
+        {
+            type = ArrowIPC::fieldToCHType(field, format_settings, make_nullable);
+        }
+        catch (const Exception & e)
+        {
+            /// `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`: drop a
+            /// top-level column whose Arrow type the reader cannot map, instead of failing inference.
+            if (format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference
+                && (e.code() == ErrorCodes::NOT_IMPLEMENTED || e.code() == ErrorCodes::UNKNOWN_TYPE))
+                continue;
+            throw;
+        }
+
         /// A dictionary-encoded Arrow column is inferred as LowCardinality of its value type.
         if (field.dictionary && type->canBeInsideLowCardinality())
             type = std::make_shared<DataTypeLowCardinality>(type);
+
+        /// `fieldToCHType` only applies the nullability mode to the top-level field; for `0`/`1` apply it
+        /// recursively to nested types too, mirroring the library reader (which would otherwise infer a
+        /// different nested schema for the same file and cache it under the same key).
+        if (make_columns_nullable == 0)
+            type = removeNullableRecursively(type, format_settings);
+        else if (make_columns_nullable == 1)
+            type = makeNullableRecursively(type, format_settings);
+
         result.emplace_back(field.name, type);
     }
     return result;
@@ -104,7 +149,8 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
 
 std::optional<size_t> ArrowIPCSchemaReader::readNumberOrRows()
 {
-    return std::nullopt;
+    /// `ArrowStream` cannot be counted without consuming it; the `Arrow` file count is summed in `readSchema`.
+    return num_rows_in_file;
 }
 
 }

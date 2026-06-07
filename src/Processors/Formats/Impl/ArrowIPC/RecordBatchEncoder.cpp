@@ -24,6 +24,7 @@
 #include <IO/NetUtils.h>
 #include <Core/UUID.h>
 #include <Common/assert_cast.h>
+#include <base/arithmeticOverflow.h>
 
 #include <algorithm>
 
@@ -33,6 +34,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int DECIMAL_OVERFLOW;
 }
 }
 
@@ -59,12 +61,19 @@ bool RecordBatchEncoder::canNativelyEncode(const DataTypePtr & type)
     }
     if (which.isVariant())
     {
-        for (const auto & v : assert_cast<const DataTypeVariant &>(*t).getVariants())
+        const auto & variants = assert_cast<const DataTypeVariant &>(*t).getVariants();
+        /// An Arrow dense-union type id is a signed int8 and the trailing NULL child uses id `size`, so a
+        /// Variant with more than 127 alternatives cannot be represented; let the library writer reject it.
+        if (variants.size() > 127)
+            return false;
+        for (const auto & v : variants)
             if (!canNativelyEncode(v))
                 return false;
         return true;
     }
-    return which.isInt() || which.isUInt() || which.isFloat() || which.isEnum() || which.isDecimal()
+    /// `which.isFloat()` also matches `BFloat16`, which the value encoder does not handle; restrict to the
+    /// 32-/64-bit floats it can encode so other floating-point types fall back to the Apache Arrow library.
+    return which.isInt() || which.isUInt() || which.isFloat32() || which.isFloat64() || which.isEnum() || which.isDecimal()
         || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isString()
         || which.isFixedString() || which.isUUID() || which.isIPv4() || which.isIPv6() || which.isInterval();
 }
@@ -208,7 +217,13 @@ void RecordBatchEncoder::encodeValues(const IColumn & column, const DataTypePtr 
             const auto & data = assert_cast<const ColumnDecimal<DateTime64> &>(column).getData();
             PODArray<Int64> values(num_rows);
             for (size_t i = 0; i < num_rows; ++i)
-                values[i] = data[i].value * factor;
+            {
+                /// Widening to a coarser Arrow unit multiplies the value; guard against silent wraparound,
+                /// matching the Apache Arrow writer which raises `DECIMAL_OVERFLOW` for the same case.
+                if (common::mulOverflow(data[i].value, factor, values[i]))
+                    throw Exception(
+                        ErrorCodes::DECIMAL_OVERFLOW, "Decimal value is too large to convert to the Arrow timestamp scale");
+            }
             appendBuffer(values.data(), num_rows * sizeof(Int64));
             return;
         }
@@ -270,7 +285,26 @@ void RecordBatchEncoder::encodeValues(const IColumn & column, const DataTypePtr 
         case TypeIndex::FixedString:
         {
             const auto & cfs = assert_cast<const ColumnFixedString &>(column);
-            appendBuffer(cfs.getChars().data(), cfs.getChars().size());
+            if (settings.arrow.output_fixed_string_as_fixed_byte_array)
+            {
+                appendBuffer(cfs.getChars().data(), num_rows * cfs.getN());
+                return;
+            }
+            /// `output_fixed_string_as_fixed_byte_array = 0`: the schema advertises a variable-width
+            /// Utf8/Binary, so emit the int32 offsets buffer (each row is exactly N bytes) and the data
+            /// buffer, instead of a single fixed-width values buffer.
+            const size_t n = cfs.getN();
+            PODArray<int32_t> arrow_offsets(num_rows + 1);
+            arrow_offsets[0] = 0;
+            for (size_t i = 0; i < num_rows; ++i)
+            {
+                const UInt64 end = static_cast<UInt64>(i + 1) * n;
+                if (end > static_cast<UInt64>(std::numeric_limits<int32_t>::max()))
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC string offset exceeds 32 bits");
+                arrow_offsets[i + 1] = static_cast<int32_t>(end);
+            }
+            appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(int32_t));
+            appendBuffer(cfs.getChars().data(), num_rows * n);
             return;
         }
         case TypeIndex::IPv4: appendFixedWidth<ColumnVector<IPv4>>(*this, column, num_rows); return;

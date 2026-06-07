@@ -25,6 +25,9 @@ public:
 private:
     const bool stream;
     const FormatSettings format_settings;
+    /// Total number of rows of the Arrow file, summed from the record-batch footer blocks during
+    /// `readSchema` (the file format only); `nullopt` for `ArrowStream`, which cannot be counted up front.
+    std::optional<size_t> num_rows_in_file;
 };
 
 }
