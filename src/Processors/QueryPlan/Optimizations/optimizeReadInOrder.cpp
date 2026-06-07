@@ -732,7 +732,8 @@ InputOrder buildInputOrderFromUnorderedKeys(
     const std::optional<ActionsDAG> & dag,
     const Names & unordered_keys,
     const ActionsDAG & sorting_key_dag,
-    const Names & sorting_key_columns)
+    const Names & sorting_key_columns,
+    const std::vector<bool> & sorting_key_reverse_flags)
 {
     MatchedTrees::Matches matches;
     FixedColumns fixed_key_columns;
@@ -807,6 +808,13 @@ InputOrder buildInputOrderFromUnorderedKeys(
     while (!not_matched_keys.empty() && next_sort_key < sorting_key_columns.size())
     {
         const auto & sorting_key_column = sorting_key_columns[next_sort_key];
+
+        /// A descending (reverse) sorting-key column is physically stored in DESC order, so reading
+        /// in order yields streams sorted that way. The merge `sort_description` built below must
+        /// reflect this physical direction; otherwise a sorted merge of several streams (such as the
+        /// multi-stream path in `LimitByStep`) would mis-merge equal keys on reverse-key tables.
+        const int reverse_indicator
+            = (!sorting_key_reverse_flags.empty() && sorting_key_reverse_flags[next_sort_key]) ? -1 : 1;
 
         /// Direction for current sort key.
         int current_direction = 0;
@@ -891,7 +899,15 @@ InputOrder buildInputOrderFromUnorderedKeys(
             /// Prefix sort description for reading will be (negate(y) DESC, negate(x) DESC),
             /// Sort description for GROUP BY will be (negate(y) DESC, negate(x) DESC, z).
             //std::cerr << "---- adding " << std::string(*group_by_key_it) << std::endl;
-            sort_description.emplace_back(SortColumnDescription(std::string(*group_by_key_it), current_direction));
+            /// `current_direction` is the logical (table-order) direction; multiply by `reverse_indicator`
+            /// so `sort_description` describes the physical order the streams are actually sorted in.
+            /// Example:
+            ///   CREATE TABLE t (a, b) ENGINE = MergeTree ORDER BY (a DESC) -- reverse key on `a`
+            ///   SELECT a FROM t LIMIT 1 BY a
+            /// `current_direction` is 1 (`a` is a direct prefix match), but `a` is stored descending, so
+            /// `reverse_indicator` is -1 and the merge sort description becomes (a DESC) -- the order the
+            /// in-order streams physically arrive in. Using (a ASC) here would mis-merge equal keys.
+            sort_description.emplace_back(SortColumnDescription(std::string(*group_by_key_it), current_direction * reverse_indicator));
             order_key_prefix_descr.emplace_back(SortColumnDescription(std::string(*group_by_key_it), current_direction));
             not_matched_keys.erase(group_by_key_it);
         }
@@ -1082,7 +1098,8 @@ InputOrder buildInputOrderFromUnorderedKeys(
     return buildInputOrderFromUnorderedKeys(
         fixed_columns,
         dag, unordered_keys,
-        sorting_key.expression->getActionsDAG(), sorting_key_columns);
+        sorting_key.expression->getActionsDAG(), sorting_key_columns,
+        sorting_key.reverse_flags);
 }
 
 InputOrder buildInputOrderFromUnorderedKeys(
@@ -1097,7 +1114,8 @@ InputOrder buildInputOrderFromUnorderedKeys(
     return buildInputOrderFromUnorderedKeys(
         fixed_columns,
         dag, unordered_keys,
-        sorting_key.expression->getActionsDAG(), sorting_key_columns);
+        sorting_key.expression->getActionsDAG(), sorting_key_columns,
+        sorting_key.reverse_flags);
 }
 
 InputOrder buildInputOrderFromUnorderedKeys(
@@ -1131,7 +1149,8 @@ InputOrder buildInputOrderFromUnorderedKeys(
         auto table_order_info = buildInputOrderFromUnorderedKeys(
             combined_fixed_columns,
             combined_dag, unordered_keys,
-            sorting_key.expression->getActionsDAG(), sorting_key_columns);
+            sorting_key.expression->getActionsDAG(), sorting_key_columns,
+            sorting_key.reverse_flags);
 
         if (!table_order_info.input_order)
             return {};
