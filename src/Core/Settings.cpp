@@ -5973,6 +5973,9 @@ Eliminates functions of other keys in GROUP BY section
     DECLARE(Bool, optimize_group_by_constant_keys, true, R"(
 Optimize GROUP BY when all keys in block are constant
 )", 0) \
+    DECLARE(Bool, optimize_constant_columns_after_filter, true, R"(
+Replace filtered columns with `ColumnConst` when an equality predicate proves that all passed values are equal to a constant.
+)", 0) \
     DECLARE(Bool, legacy_column_name_of_tuple_literal, false, R"(
 List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.
 )", 0) \

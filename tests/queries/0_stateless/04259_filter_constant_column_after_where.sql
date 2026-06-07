@@ -25,6 +25,13 @@ SETTINGS query_plan_merge_filters = 0;
 
 SELECT dumpColumnStructure(x), count(), sum(y)
 FROM 04259_filter_constant_column_after_where
+WHERE x = 'hello'
+GROUP BY ALL
+ORDER BY ALL
+SETTINGS optimize_constant_columns_after_filter = 0, query_plan_merge_filters = 0;
+
+SELECT dumpColumnStructure(x), count(), sum(y)
+FROM 04259_filter_constant_column_after_where
 WHERE 'world' = x AND y >= 0
 GROUP BY ALL
 ORDER BY ALL

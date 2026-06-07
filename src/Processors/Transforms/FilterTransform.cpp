@@ -6,6 +6,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -20,6 +21,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/IFunction.h>
+#include <Common/CurrentThread.h>
 #include <stack>
 #include <unordered_set>
 
@@ -35,6 +37,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+}
+
+namespace Setting
+{
+    extern const SettingsBool optimize_constant_columns_after_filter;
 }
 
 namespace
@@ -347,6 +354,15 @@ void FilterTransform::removeFilterIfNeed(Columns & columns) const
 
 void FilterTransform::applyConstantColumnsAfterFilter(Columns & columns, size_t num_rows) const
 {
+    if (constant_columns_after_filter.empty())
+        return;
+
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+    {
+        if (!query_context->getSettingsRef()[Setting::optimize_constant_columns_after_filter])
+            return;
+    }
+
     for (const auto & constant_column : constant_columns_after_filter)
     {
         if (constant_column.first == filter_column_position && remove_filter_column)
