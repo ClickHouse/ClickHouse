@@ -1520,22 +1520,8 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
             join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
     }
-    if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
-    {
-        auto order_info = buildInputOrderFromUnorderedKeys(merge, fixed_columns, dag, keys);
 
-        if (!canImproveOrderForDistinct(order_info, merge->getInputOrder()))
-            return {};
-
-        if (!merge->requestReadingInOrder(order_info.input_order))
-            return {};
-
-        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
-        return order_info;
-    }
-
-    /// TODO: Consider adding optimization for ReadFromObjectStorageStep after proper testing.
+    /// TODO: Consider adding optimization for ReadFromMerge and ReadFromObjectStorageStep after proper testing.
     return {};
 }
 
