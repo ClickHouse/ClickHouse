@@ -5,6 +5,7 @@
 #include <base/find_symbols.h>
 #include <base/hex.h>
 #include <Common/StringUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -71,7 +72,7 @@ namespace
             char * dst_pos = dst;
 
             // to hold char seq for lookup, reuse it
-            std::vector<char> seq;
+            VectorWithMemoryTracking<char> seq;
             while (true)
             {
                 const char * entity_pos = find_first_symbols<'&'>(src_pos, src_end);

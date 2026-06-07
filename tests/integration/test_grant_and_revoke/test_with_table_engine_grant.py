@@ -37,6 +37,7 @@ def cleanup_after_test():
         yield
     finally:
         instance.query("DROP USER IF EXISTS A, B, C")
+        instance.query("DROP DATABASE IF EXISTS test_fs_db")
 
         instance.query("DROP TABLE IF EXISTS test.view_1, test.view_2, default.table")
 
@@ -826,3 +827,50 @@ def test_table_engine_and_source_grant():
     )
 
     instance.query("DROP TABLE test.table1")
+
+
+def test_source_grant_bridges_to_table_engine():
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE TABLE ON test.table1 TO A")
+
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "CREATE TABLE test.table1(a Integer) engine=URL('http://localhost:65535/dummy', 'CSV')",
+        user="A",
+    )
+
+    instance.query("GRANT READ, WRITE ON URL TO A")
+
+    instance.query(
+        "CREATE TABLE test.table1(a Integer) engine=URL('http://localhost:65535/dummy', 'CSV')",
+        user="A",
+    )
+
+    instance.query("DROP TABLE test.table1")
+
+    instance.query("REVOKE READ, WRITE ON URL FROM A")
+
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "CREATE TABLE test.table1(a Integer) engine=URL('http://localhost:65535/dummy', 'CSV')",
+        user="A",
+    )
+
+
+def test_source_grant_bridges_to_database_engine():
+    # When table_engines_require_grant = true, database engines with source_access_type
+    # should also be grantable via source READ/WRITE grants (same as table engines).
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE DATABASE ON *.* TO A")
+
+    # No source grant → blocked.
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "CREATE DATABASE test_fs_db ENGINE = Filesystem",
+        user="A",
+    )
+
+    # Grant FILE source access → Filesystem database engine is now allowed.
+    instance.query("GRANT READ, WRITE ON FILE TO A")
+
+    instance.query("CREATE DATABASE test_fs_db ENGINE = Filesystem", user="A")
+    instance.query("DROP DATABASE test_fs_db")

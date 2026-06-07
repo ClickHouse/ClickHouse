@@ -8,8 +8,6 @@ title: 'Integration Libraries from Third-party Developers'
 doc_type: 'reference'
 ---
 
-# Integration libraries from third-party developers
-
 :::warning Disclaimer
 ClickHouse, Inc. does **not** maintain the tools and libraries listed below and haven't done extensive testing to ensure their quality.
 For official integrations please see the [integrations page](/integrations).
@@ -32,6 +30,12 @@ For official integrations please see the [integrations page](/integrations).
   - [clickhouse_fdw](https://github.com/adjust/clickhouse_fdw)
 - [MSSQL](https://en.wikipedia.org/wiki/Microsoft_SQL_Server)
   - [ClickHouseMigrator](https://github.com/zlzforever/ClickHouseMigrator)
+</details>
+
+<details>
+<summary>Schema migration tools</summary>
+
+- [clicko](https://github.com/arsura/clicko) - Cluster-aware and Go integration.
 </details>
 
 <details>

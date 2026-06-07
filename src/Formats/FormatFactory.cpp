@@ -78,7 +78,8 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
     if (dict.end() != it)
         return it->second;
     auto hints = this->getHints(name);
-    throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}. Maybe you meant: {}", name, toString(hints));
+    auto hint_string = hints.empty() ? "" : fmt::format(". Maybe you meant: {}", toString(hints));
+    throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}{}", name, hint_string);
 }
 
 FormatFactory::Creators & FormatFactory::getOrCreateCreators(const String & name)
@@ -108,8 +109,12 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.avro.output_codec = settings[Setting::output_format_avro_codec];
     format_settings.avro.output_sync_interval = settings[Setting::output_format_avro_sync_interval];
     format_settings.avro.schema_registry_url = settings[Setting::format_avro_schema_registry_url].toString();
+    format_settings.avro.schema_registry_timeouts.connection_timeout = settings[Setting::format_avro_schema_registry_connection_timeout];
+    format_settings.avro.schema_registry_timeouts.send_timeout = settings[Setting::format_avro_schema_registry_send_timeout];
+    format_settings.avro.schema_registry_timeouts.receive_timeout = settings[Setting::format_avro_schema_registry_receive_timeout];
     format_settings.avro.string_column_pattern = settings[Setting::output_format_avro_string_column_pattern].toString();
     format_settings.avro.output_rows_in_file = settings[Setting::output_format_avro_rows_in_file];
+    format_settings.avro.output_confluent_subject = settings[Setting::output_format_avro_confluent_subject].toString();
     format_settings.csv.allow_double_quotes = settings[Setting::format_csv_allow_double_quotes];
     format_settings.csv.allow_single_quotes = settings[Setting::format_csv_allow_single_quotes];
     format_settings.csv.serialize_tuple_into_separate_columns = settings[Setting::output_format_csv_serialize_tuple_into_separate_columns];
@@ -199,6 +204,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
+    format_settings.float_precision = settings[Setting::output_format_float_precision];
     format_settings.trim_fixed_string = settings[Setting::output_format_trim_fixed_string];
     format_settings.parquet.row_group_rows = settings[Setting::output_format_parquet_row_group_size];
     format_settings.parquet.row_group_bytes = settings[Setting::output_format_parquet_row_group_size_bytes];
@@ -401,6 +407,23 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
             context->getRemoteHostFilter().checkURL(avro_schema_registry_url);
     }
 
+    /// Schema Registry timeouts must be greater than 0 and less than 10 minutes (600 seconds).
+    {
+        static constexpr UInt64 max_seconds = 600;
+        auto check_timeout = [](UInt64 value, const char * name)
+        {
+            if (value == 0 || value >= max_seconds)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Setting '{}' must be greater than 0 and less than {} seconds (10 minutes), got {}",
+                    name, max_seconds, value);
+        };
+        const auto & timeouts = format_settings.avro.schema_registry_timeouts;
+        check_timeout(timeouts.connection_timeout, "format_avro_schema_registry_connection_timeout");
+        check_timeout(timeouts.send_timeout, "format_avro_schema_registry_send_timeout");
+        check_timeout(timeouts.receive_timeout, "format_avro_schema_registry_receive_timeout");
+    }
+
     if (context->getClientInfo().interface == ClientInfo::Interface::HTTP
         && context->getSettingsRef()[Setting::http_write_exception_in_output_format].value)
     {
@@ -477,7 +500,7 @@ InputFormatPtr FormatFactory::getInputImpl(
     row_input_format_params.max_block_wait_ms = format_settings.max_block_wait_ms;
     row_input_format_params.connection_handling = format_settings.connection_handling;
     row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
-    row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
+    row_input_format_params.allow_errors_ratio = static_cast<double>(format_settings.input_allow_errors_ratio);
     row_input_format_params.max_execution_time = settings[Setting::max_execution_time];
     row_input_format_params.timeout_overflow_mode = settings[Setting::timeout_overflow_mode];
 
@@ -740,7 +763,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
         return format;
     }
 
-    return getOutputFormat(name, buf, sample, context, format_settings);
+    return getOutputFormat(name, buf, sample, context, format_settings, format_filter_info);
 }
 
 

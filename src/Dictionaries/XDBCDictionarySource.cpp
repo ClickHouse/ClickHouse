@@ -193,9 +193,7 @@ bool XDBCDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (invalidate_query_response == response)
-            return false;
-        invalidate_query_response = response;
+        return invalidate_query_response.updateAndCheckModified(response);
     }
     return true;
 }
@@ -243,6 +241,7 @@ QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & uri, const B
     return QueryPipeline(std::move(format));
 }
 
+void registerDictionarySourceXDBC(DictionarySourceFactory & factory);
 void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -284,6 +283,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 }
 
 
+void registerDictionarySourceJDBC(DictionarySourceFactory & factory);
 void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,

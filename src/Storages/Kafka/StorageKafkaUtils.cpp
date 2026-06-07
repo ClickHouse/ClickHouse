@@ -2,6 +2,7 @@
 
 
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -95,6 +96,7 @@ namespace ErrorCodes
 }
 
 
+void registerStorageKafka(StorageFactory & factory);
 void registerStorageKafka(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args) -> std::shared_ptr<IStorage>
@@ -263,8 +265,8 @@ void registerStorageKafka(StorageFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS,
                 "To store committed offsets in Keeper both kafka_keeper_path and kafka_replica_name must be specified");
 
-        const auto is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        const auto is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        const auto is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
+        const auto is_replicated_database = args.getLocalContext()->isDDLOrOnClusterInternal()
             && DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
 
         // UUID macro is only allowed:

@@ -90,7 +90,6 @@ namespace S3RequestSetting
 
 namespace ErrorCodes
 {
-extern const int NO_ELEMENTS_IN_CONFIG;
 extern const int BAD_ARGUMENTS;
 }
 
@@ -117,12 +116,6 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     const auto & request_settings = settings.request_settings;
 
     const bool is_s3_express_bucket = S3::isS3ExpressEndpoint(url.endpoint);
-    if (is_s3_express_bucket && auth_settings[S3AuthSetting::region].value.empty())
-    {
-        throw Exception(
-            ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-            "Region should be explicitly specified for directory buckets");
-    }
 
     const Settings & local_settings = context->getSettingsRef();
 

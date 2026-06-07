@@ -23,7 +23,6 @@ from .tablecheck import SparkAndClickHouseCheck
 
 from utils.backgroundworker import BackgroundWorker
 
-
 """
 ┌─────────────────┬────────────────┬──────────────────────────────────────┐
 │ Catalog Type    │ Mixed Support  │ How It Works                         │
@@ -330,6 +329,12 @@ logger.jetty.level = warn
                 if catalog == LakeCatalogs.Unity
                 else "org.apache.spark.sql.delta.catalog.DeltaCatalog"
             )
+        elif lake == LakeFormat.Paimon:
+            all_jars.append("org.apache.paimon:paimon-spark-4.0_2.13:1.4.1")
+            catalog_extension = (
+                "org.apache.paimon.spark.extensions.PaimonSparkSessionExtensions"
+            )
+            catalog_format = "org.apache.paimon.spark.SparkCatalog"
         else:
             raise Exception("Unknown lake format")
 
@@ -574,6 +579,8 @@ logger.jetty.level = warn
                 builder.config("datanucleus.fixedDatastore", "false")
                 builder.config("spark.sql.catalogImplementation", "hive")
                 builder.enableHiveSupport()
+            elif lake == LakeFormat.Paimon:
+                pass
 
             # ============================================================
             # STORAGE CONFIGURATIONS
@@ -819,6 +826,8 @@ logger.jetty.level = warn
             self.start_uc_server()
             self.logger.info(f"Creating unity catalog {catalog_name}")
             self.run_unity_cmd(["catalog", "create", "--name", catalog_name])
+        elif next_lake == LakeFormat.Paimon:
+            pass
         else:
             raise Exception("I have not implemented this case yet")
 
@@ -1000,7 +1009,7 @@ logger.jetty.level = warn
                 res = self.kafka_handler.update_table(
                     cluster, data["catalog_name"], data["table_name"]
                 )
-            elif data["engine"] in ["iceberg", "deltalake"]:
+            elif data["engine"] in ["iceberg", "deltalake", "paimon"]:
                 res = (
                     self.data_generator.update_table(next_session, next_table)
                     if random.randint(1, 10) < 8
