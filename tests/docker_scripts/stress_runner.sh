@@ -304,7 +304,7 @@ rm -f /etc/clickhouse-server/config.d/fail_points_active.xml
 
 # Use a larger timeout for the post-stress restart: under sanitizers with
 # async_load_databases=false the server may need minutes to load all tables.
-start_server 30 || { echo "Failed to start server"; exit 1; }
+start_server 10 || { echo "Failed to start server"; exit 1; }
 
 check_server_start
 
