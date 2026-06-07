@@ -1059,11 +1059,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )
                 attached_files.append("./ci/tmp/dmesg.log")
 
-    # For targeted and flaky checks, session-timeout is an expected risk (because of
-    # `--count N` overloading on targeted, and the soft FLAKY_CHECK_TIME_LIMIT on flaky),
-    # so do not propagate the synthetic `Timeout` result as a failure.
+    # In targeted and flaky checks, `Timeout` and `OOM in dmesg` reflect intentional
+    # overload of the runner, not per-test regressions, so drop the synthetic results.
+    # The `dmesg.log` is still attached above for debugging.
     if is_targeted_check or is_flaky_check:
-        test_results = [r for r in test_results if r.name != "Timeout"]
+        test_results = [
+            r for r in test_results if r.name not in ("Timeout", OOM_IN_DMESG_TEST_NAME)
+        ]
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
 
