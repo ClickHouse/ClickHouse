@@ -941,10 +941,13 @@ const std::unordered_map<TypeIndex, size_t> & getTypesTextDeserializePriorityMap
             TypeIndex::UInt128,
             TypeIndex::Int256,
             TypeIndex::UInt256,
+            TypeIndex::Int512,
+            TypeIndex::UInt512,
             TypeIndex::Decimal32,
             TypeIndex::Decimal64,
             TypeIndex::Decimal128,
             TypeIndex::Decimal256,
+            TypeIndex::Decimal512,
             TypeIndex::Float32,
             TypeIndex::Float64,
 

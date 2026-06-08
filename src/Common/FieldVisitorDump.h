@@ -13,9 +13,11 @@ public:
     String operator() (const UInt64 & x) const;
     String operator() (const UInt128 & x) const;
     String operator() (const UInt256 & x) const;
+    String operator() (const UInt512 & x) const;
     String operator() (const Int64 & x) const;
     String operator() (const Int128 & x) const;
     String operator() (const Int256 & x) const;
+    String operator() (const Int512 & x) const;
     String operator() (const UUID & x) const;
     String operator() (const IPv4 & x) const;
     String operator() (const IPv6 & x) const;
@@ -29,6 +31,7 @@ public:
     String operator() (const DecimalField<Decimal64> & x) const;
     String operator() (const DecimalField<Decimal128> & x) const;
     String operator() (const DecimalField<Decimal256> & x) const;
+    String operator() (const DecimalField<Decimal512> & x) const;
     String operator() (const AggregateFunctionStateData & x) const;
     String operator() (const CustomType & x) const;
     String operator() (const bool & x) const;

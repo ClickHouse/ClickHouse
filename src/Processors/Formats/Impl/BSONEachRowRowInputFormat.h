@@ -39,7 +39,7 @@ namespace DB
  * Other BSON types are not supported.
  * Also, we perform conversion between different integer types
  * (for example, you can insert BSON int32 value into ClickHouse UInt8)
- * Big integers and decimals Int128/UInt128/Int256/UInt256/Decimal128/Decimal256
+ * Big integers and decimals Int128/UInt128/Int256/UInt256/Int512/UInt512/Decimal128/Decimal256/Decimal512
  * can be parsed from BSON Binary value with \x00 binary subtype. In this case
  * we validate that the size of binary data equals the size of expected value.
  *

@@ -2529,8 +2529,8 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
         using ToDataType = typename Types::LeftType;
 
         if constexpr (is_any_of<ToDataType,
-            DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
-            DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
+            DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256, DataTypeUInt512,
+            DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256, DataTypeInt512,
             DataTypeBFloat16, DataTypeFloat32, DataTypeFloat64,
             DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime,
             DataTypeUUID, DataTypeIPv4, DataTypeIPv6>)
@@ -2555,7 +2555,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
         }
         if constexpr (is_any_of<ToDataType,
             DataTypeDecimal<Decimal32>, DataTypeDecimal<Decimal64>,
-            DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal256>,
+            DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal512>,
             DataTypeDateTime64, DataTypeTime64>)
         {
             ret = createDecimalWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
@@ -2761,8 +2761,8 @@ FunctionBasePtr createFunctionBaseCast(
     {
     }
     else if (castTypeToEither<
-        DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
-        DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
+        DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256, DataTypeUInt512,
+        DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256, DataTypeInt512,
         DataTypeFloat32, DataTypeFloat64,
         DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64, DataTypeTime, DataTypeTime64,
         DataTypeString>(monotonicity_result_type.get(), [&](auto & type)

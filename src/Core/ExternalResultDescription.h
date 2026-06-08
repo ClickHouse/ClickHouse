@@ -37,6 +37,7 @@ struct ExternalResultDescription
         vtDecimal64,
         vtDecimal128,
         vtDecimal256,
+        vtDecimal512,
         vtArray,
         vtFixedString,
         vtPoint,

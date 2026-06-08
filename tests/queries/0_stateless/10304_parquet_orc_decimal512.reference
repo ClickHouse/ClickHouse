@@ -1,0 +1,4 @@
+-- parquet decimal512 roundtrip
+Decimal(154, 3)	123456789.987
+-- orc decimal512 roundtrip
+Decimal(154, 3)	-654.321

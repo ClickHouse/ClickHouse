@@ -178,6 +178,28 @@ struct AggregateFunctionUniqUpToData<Int256> : AggregateFunctionUniqUpToData<UIn
     }
 };
 
+template <>
+struct AggregateFunctionUniqUpToData<UInt512> : AggregateFunctionUniqUpToData<UInt64>
+{
+    /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
+    void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
+    {
+        UInt512 value = assert_cast<const ColumnVector<UInt512> &>(column).getData()[row_num];
+        insert(sipHash64(value), threshold);
+    }
+};
+
+template <>
+struct AggregateFunctionUniqUpToData<Int512> : AggregateFunctionUniqUpToData<UInt64>
+{
+    /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
+    void ALWAYS_INLINE add(const IColumn & column, size_t row_num, UInt8 threshold)
+    {
+        Int512 value = assert_cast<const ColumnVector<Int512> &>(column).getData()[row_num];
+        insert(sipHash64(value), threshold);
+    }
+};
+
 
 template <typename T>
 class AggregateFunctionUniqUpTo final : public IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T>>

@@ -7,6 +7,7 @@ namespace detail
 {
 
 template class FunctionConvert<DataTypeInt256, NameToInt256, ToNumberMonotonicity<Int256>>;
+template class FunctionConvert<DataTypeInt512, NameToInt512, ToNumberMonotonicity<Int512>>;
 
 }
 

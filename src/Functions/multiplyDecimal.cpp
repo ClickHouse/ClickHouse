@@ -1,12 +1,12 @@
-#include <Functions/FunctionsDecimalArithmetics.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsDecimalArithmetics.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int DECIMAL_OVERFLOW;
+extern const int DECIMAL_OVERFLOW;
 }
 
 namespace
@@ -14,18 +14,17 @@ namespace
 
 struct MultiplyDecimalsImpl
 {
-    static constexpr auto name = "multiplyDecimal";
-    static constexpr auto suitable_for_short_circuit = false;
+    [[maybe_unused]] static constexpr auto name = "multiplyDecimal";
+    [[maybe_unused]] static constexpr auto suitable_for_short_circuit = false;
 
     template <typename FirstType, typename SecondType>
-    static Decimal256
-    execute(FirstType a, SecondType b, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale)
+    static Decimal512 execute(FirstType a, SecondType b, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale)
     {
         if (a.value == 0 || b.value == 0)
-            return Decimal256(0);
+            return Decimal512(0);
 
-        Int256 sign_a = a.value < 0 ? -1 : 1;
-        Int256 sign_b = b.value < 0 ? -1 : 1;
+        Int512 sign_a = a.value < 0 ? -1 : 1;
+        Int512 sign_b = b.value < 0 ? -1 : 1;
 
         VectorWithMemoryTracking<UInt8> a_digits = DecimalOpHelpers::toDigits(a.value * sign_a);
         VectorWithMemoryTracking<UInt8> b_digits = DecimalOpHelpers::toDigits(b.value * sign_b);
@@ -39,19 +38,20 @@ struct MultiplyDecimalsImpl
             ++product_scale;
         }
 
-        while (product_scale > result_scale&& !multiplied.empty())
+        while (product_scale > result_scale && !multiplied.empty())
         {
             multiplied.pop_back();
             --product_scale;
         }
 
         if (multiplied.empty())
-            return Decimal256(0);
+            return Decimal512(0);
 
-        if (multiplied.size() > DecimalUtils::max_precision<Decimal256>)
-            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow: result bigger that Decimal256");
+        // Unify overflow threshold to Decimal512 for all operand combinations.
+        if (multiplied.size() > DecimalUtils::max_precision<Decimal512>)
+            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow: result bigger that Decimal512");
 
-        return Decimal256(sign_a * sign_b * DecimalOpHelpers::fromDigits(multiplied));
+        return Decimal512(sign_a * sign_b * DecimalOpHelpers::fromDigits(multiplied));
     }
 };
 
@@ -60,8 +60,8 @@ struct MultiplyDecimalsImpl
 REGISTER_FUNCTION(MultiplyDecimals)
 {
     FunctionDocumentation::Description description = R"(
-Performs multiplication on two decimals. Result value will be of type [Decimal256](/sql-reference/data-types/decimal).
-Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
+Performs multiplication on two decimals. Result value will be of type [Decimal512](/sql-reference/data-types/decimal).
+Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 154]`). If not specified, the result scale is the max scale of given arguments.
 
 :::note
 These functions work significantly slower than usual `multiply`.
@@ -69,15 +69,12 @@ In case you don't really need controlled precision and/or need fast computation,
 :::
     )";
     FunctionDocumentation::Syntax syntax = "multiplyDecimal(a, b[, result_scale])";
-    FunctionDocumentation::Arguments arguments = {
-        {"a", "First value.", {"Decimal"}},
-        {"b", "Second value.", {"Decimal"}},
-        {"result_scale", "Scale of result.", {"(U)Int*"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"The result of multiplication with the given scale. Type:", {"Decimal256"}};
-    FunctionDocumentation::Examples examples = {
-        {"Usage example", "SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)", "25.2"},
-        {"Difference with regular multiplication", "SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)", R"(
+    FunctionDocumentation::Arguments arguments
+        = {{"a", "First value.", {"Decimal"}}, {"b", "Second value.", {"Decimal"}}, {"result_scale", "Scale of result.", {"(U)Int*"}}};
+    FunctionDocumentation::ReturnedValue returned_value = {"The result of multiplication with the given scale. Type:", {"Decimal512"}};
+    FunctionDocumentation::Examples examples
+        = {{"Usage example", "SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)", "25.2"},
+           {"Difference with regular multiplication", "SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)", R"(
 ┌─multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
 │                                               -26.8609633 │
 └───────────────────────────────────────────────────────────┘
@@ -85,7 +82,8 @@ In case you don't really need controlled precision and/or need fast computation,
 │                                                         -26.8609 │
 └──────────────────────────────────────────────────────────────────┘
         )"},
-        {"Decimal overflow", R"(
+           {"Decimal overflow",
+            R"(
 SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,

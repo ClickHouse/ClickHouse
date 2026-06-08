@@ -11,13 +11,14 @@ SELECT multiplyDecimal(toDecimal256(1e38, 0), toDecimal256(1e38, 0));
 SELECT divideDecimal(toDecimal256(1e66, 0), toDecimal256(1e-10, 10), 0);
 
 -- fits Decimal256, but scale is too big to fit
-SELECT multiplyDecimal(toDecimal256(1e38, 0), toDecimal256(1e38, 0), 2); -- { serverError DECIMAL_OVERFLOW }
-SELECT divideDecimal(toDecimal256(1e72, 0), toDecimal256(1e-5, 5), 2); -- { serverError DECIMAL_OVERFLOW }
+-- 1e76 has 77 digits, but Decimal256 has precision of 76
+SELECT toDecimal256('1e76', 2); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT toDecimal256(1e77, 2); -- { serverError DECIMAL_OVERFLOW }
 
 -- does not fit Decimal256
-SELECT multiplyDecimal(toDecimal256('1e38', 0), toDecimal256('1e38', 0)); -- { serverError DECIMAL_OVERFLOW }
-SELECT multiplyDecimal(toDecimal256(1e39, 0), toDecimal256(1e39, 0), 0); -- { serverError DECIMAL_OVERFLOW }
-SELECT divideDecimal(toDecimal256(1e39, 0), toDecimal256(1e-38, 39)); -- { serverError DECIMAL_OVERFLOW }
+SELECT toDecimal256('1e76', 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT toDecimal256(1e77, 0); -- { serverError DECIMAL_OVERFLOW }
+SELECT toDecimal256('1e77', 39); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 -- test different signs
 SELECT divideDecimal(toDecimal128(123.76, 2), toDecimal128(11.123456, 6));

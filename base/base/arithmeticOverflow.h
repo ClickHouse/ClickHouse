@@ -86,6 +86,21 @@ namespace common
         return x > std::numeric_limits<UInt256>::max() - y;
     }
 
+    template <>
+    inline bool addOverflow(Int512 x, Int512 y, Int512 & res)
+    {
+        res = addIgnoreOverflow(x, y);
+        return (y > 0 && x > std::numeric_limits<Int512>::max() - y) ||
+            (y < 0 && x < std::numeric_limits<Int512>::min() - y);
+    }
+
+    template <>
+    inline bool addOverflow(UInt512 x, UInt512 y, UInt512 & res)
+    {
+        res = addIgnoreOverflow(x, y);
+        return x > std::numeric_limits<UInt512>::max() - y;
+    }
+
     template <typename T>
     inline bool subOverflow(T x, T y, T & res)
     {
@@ -135,6 +150,21 @@ namespace common
 
     template <>
     inline bool subOverflow(UInt256 x, UInt256 y, UInt256 & res)
+    {
+        res = subIgnoreOverflow(x, y);
+        return x < y;
+    }
+
+    template <>
+    inline bool subOverflow(Int512 x, Int512 y, Int512 & res)
+    {
+        res = subIgnoreOverflow(x, y);
+        return (y < 0 && x > std::numeric_limits<Int512>::max() + y) ||
+            (y > 0 && x < std::numeric_limits<Int512>::min() + y);
+    }
+
+    template <>
+    inline bool subOverflow(UInt512 x, UInt512 y, UInt512 & res)
     {
         res = subIgnoreOverflow(x, y);
         return x < y;
@@ -202,6 +232,20 @@ namespace common
 
     template <>
     inline bool mulOverflow(UInt256 x, UInt256 y, UInt256 & res)
+    {
+        res = mulIgnoreOverflow(x, y);
+        return false;
+    }
+
+    template <>
+    inline bool mulOverflow(Int512 x, Int512 y, Int512 & res)
+    {
+        res = mulIgnoreOverflow(x, y);
+        return false;
+    }
+
+    template <>
+    inline bool mulOverflow(UInt512 x, UInt512 y, UInt512 & res)
     {
         res = mulIgnoreOverflow(x, y);
         return false;

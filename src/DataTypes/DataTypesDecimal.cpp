@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int DECIMAL_OVERFLOW;
     extern const int NOT_IMPLEMENTED;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -43,7 +44,9 @@ DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
 {
     if (sizeof(T) <= sizeof(Decimal128))
         return std::make_shared<DataTypeDecimal<Decimal128>>(DataTypeDecimal<Decimal128>::maxPrecision(), this->scale);
-    return std::make_shared<DataTypeDecimal<Decimal256>>(DataTypeDecimal<Decimal256>::maxPrecision(), this->scale);
+    if (sizeof(T) <= sizeof(Decimal256))
+        return std::make_shared<DataTypeDecimal<Decimal256>>(DataTypeDecimal<Decimal256>::maxPrecision(), this->scale);
+    return std::make_shared<DataTypeDecimal<Decimal512>>(DataTypeDecimal<Decimal512>::maxPrecision(), this->scale);
 }
 
 template <is_decimal T>
@@ -100,12 +103,12 @@ static DataTypePtr createExact(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-        "Decimal32 | Decimal64 | Decimal128 | Decimal256 data type family must have exactly one arguments: scale");
+        "Decimal32 | Decimal64 | Decimal128 | Decimal256 | Decimal512 data type family must have exactly one arguments: scale");
     const auto * scale_arg = arguments->children[0]->as<ASTLiteral>();
 
     if (!scale_arg || !(scale_arg->value.getType() == Field::Types::Int64 || scale_arg->value.getType() == Field::Types::UInt64))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-        "Decimal32 | Decimal64 | Decimal128 | Decimal256 data type family must have a one number as its argument");
+        "Decimal32 | Decimal64 | Decimal128 | Decimal256 | Decimal512 data type family must have a one number as its argument");
 
     UInt64 precision = DecimalUtils::max_precision<T>;
     UInt64 scale = scale_arg->value.safeGet<UInt64>();
@@ -612,6 +615,10 @@ FOR_EACH_DECIMAL_TYPE(INVOKE);
 template <typename T>
 DataTypePtr createDecimalMaxPrecision(UInt64 scale)
 {
+    if (scale > DecimalUtils::max_precision<T>)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                        "Scale {} is out of bounds (max scale: {})",
+                        std::to_string(scale), DecimalUtils::max_precision<T>);
     return std::make_shared<DataTypeDecimal<T>>(DecimalUtils::max_precision<T>, scale);
 }
 
@@ -619,12 +626,14 @@ template DataTypePtr createDecimalMaxPrecision<Decimal32>(UInt64 scale);
 template DataTypePtr createDecimalMaxPrecision<Decimal64>(UInt64 scale);
 template DataTypePtr createDecimalMaxPrecision<Decimal128>(UInt64 scale);
 template DataTypePtr createDecimalMaxPrecision<Decimal256>(UInt64 scale);
+template DataTypePtr createDecimalMaxPrecision<Decimal512>(UInt64 scale);
 
 /// Explicit template instantiations.
 template class DataTypeDecimal<Decimal32>;
 template class DataTypeDecimal<Decimal64>;
 template class DataTypeDecimal<Decimal128>;
 template class DataTypeDecimal<Decimal256>;
+template class DataTypeDecimal<Decimal512>;
 
 void registerDataTypeDecimal(DataTypeFactory & factory)
 {
@@ -652,6 +661,12 @@ void registerDataTypeDecimal(DataTypeFactory & factory)
             .syntax = "Decimal256(S)",
             .related = {"Decimal"},
         });
+    factory.registerDataType("Decimal512", createExact<Decimal512>, DataTypeFactory::Case::Insensitive,
+        Documentation{
+            .description = "A fixed-point decimal with a fixed bit width; equivalent to `Decimal(P, S)` with a fixed precision range. See the `Decimal` entry for full documentation.",
+            .syntax = "Decimal512(S)",
+            .related = {"Decimal"},
+        });
 
     factory.registerDataType("Decimal", create, DataTypeFactory::Case::Insensitive,
         Documentation{
@@ -660,7 +675,7 @@ Signed fixed-point numbers that keep precision during add, subtract and multiply
 
 ## Parameters {#parameters}
 
-- P - precision. Valid range: \[ 1 : 76 \]. Determines how many decimal digits number can have (including fraction). By default, the precision is 10.
+- P - precision. Valid range: \[ 1 : 153 \]. Determines how many decimal digits number can have (including fraction). By default, the precision is 10.
 - S - scale. Valid range: \[ 0 : P \]. Determines how many decimal digits fraction can have.
 
 Decimal(P) is equivalent to Decimal(P, 0). Similarly, the syntax Decimal is equivalent to Decimal(10, 0).
@@ -670,6 +685,7 @@ Depending on P parameter value Decimal(P, S) is a synonym for:
 - P from \[ 10 : 18 \] - for Decimal64(S)
 - P from \[ 19 : 38 \] - for Decimal128(S)
 - P from \[ 39 : 76 \] - for Decimal256(S)
+- P from \[ 77 : 153 \] - for Decimal512(S)
 
 ## Decimal Value Ranges {#decimal-value-ranges}
 
@@ -678,6 +694,7 @@ Depending on P parameter value Decimal(P, S) is a synonym for:
 - Decimal64(S) - (-1 \* 10^(18 - S), 1 \* 10^(18 - S))
 - Decimal128(S) - (-1 \* 10^(38 - S), 1 \* 10^(38 - S))
 - Decimal256(S) - (-1 \* 10^(76 - S), 1 \* 10^(76 - S))
+- Decimal512(S) - (-1 \* 10^(153 - S), 1 \* 10^(153 - S))
 
 For example, Decimal32(4) can contain numbers from -99999.9999 to 99999.9999 with 0.0001 step.
 
@@ -685,7 +702,7 @@ For example, Decimal32(4) can contain numbers from -99999.9999 to 99999.9999 wit
 
 Internally data is represented as normal signed integers with respective bit width. Real value ranges that can be stored in memory are a bit larger than specified above, which are checked only on conversion from a string.
 
-Because modern CPUs do not support 128-bit and 256-bit integers natively, operations on Decimal128 and Decimal256 are emulated. Thus, Decimal128 and Decimal256 work significantly slower than Decimal32/Decimal64.
+Because modern CPUs do not support 128-bit, 256-bit and 512-bit integers natively, operations on Decimal128, Decimal256 and Decimal512 are emulated. Thus, Decimal128, Decimal256 and Decimal512 work significantly slower than Decimal32/Decimal64.
 
 ## Operations and Result Type {#operations-and-result-type}
 
@@ -695,6 +712,7 @@ Binary operations on Decimal result in wider result type (with any order of argu
 - `Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
 - `Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
 - `Decimal256(S1) <op> Decimal<32|64|128>(S2) -> Decimal256(S)`
+- `Decimal512(S1) <op> Decimal<32|64|128|256>(S2) -> Decimal512(S)`
 
 Rules for scale:
 
@@ -704,7 +722,7 @@ Rules for scale:
 
 For similar operations between Decimal and integers, the result is Decimal of the same size as an argument.
 
-Operations between Decimal and Float32/Float64 are not defined. If you need them, you can explicitly cast one of argument using toDecimal32, toDecimal64, toDecimal128 or toFloat32, toFloat64 builtins. Keep in mind that the result will lose precision and type conversion is a computationally expensive operation.
+Operations between Decimal and Float32/Float64 are not defined. If you need them, you can explicitly cast one of argument using toDecimal32, toDecimal64, toDecimal128, toDecimal256, toDecimal512 or toFloat32, toFloat64 builtins. Keep in mind that the result will lose precision and type conversion is a computationally expensive operation.
 
 Some functions on Decimal return result as Float64 (for example, var or stddev). Intermediate calculations might still be performed in Decimal, which might lead to different results between Float64 and Decimal inputs with the same values.
 
@@ -713,7 +731,7 @@ Some functions on Decimal return result as Float64 (for example, var or stddev).
 During calculations on Decimal, integer overflows might happen. Excessive digits in a fraction are discarded (not rounded). Excessive digits in integer part will lead to an exception.
 
 :::warning
-Overflow check is not implemented for Decimal128 and Decimal256. In case of overflow incorrect result is returned, no exception is thrown.
+Overflow check is not implemented for Decimal128, Decimal256 and Decimal512. In case of overflow incorrect result is returned, no exception is thrown.
 :::
 
 ```sql
@@ -770,7 +788,7 @@ DB::Exception: Can't compare.
 - [countDigits](/sql-reference/functions/other-functions#countDigits)
 )DOCS_MD",
             .syntax = "Decimal(P, S)",
-            .related = {"Decimal32", "Decimal64", "Decimal128", "Decimal256"},
+            .related = {"Decimal32", "Decimal64", "Decimal128", "Decimal256", "Decimal512"},
         });
     factory.registerAlias("DEC", "Decimal", DataTypeFactory::Case::Insensitive);
     factory.registerAlias("NUMERIC", "Decimal", DataTypeFactory::Case::Insensitive);

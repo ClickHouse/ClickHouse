@@ -76,6 +76,7 @@ GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
     check(std::make_shared<DataTypeDecimal64>(3, 6));
     check(std::make_shared<DataTypeDecimal128>(3, 6));
     check(std::make_shared<DataTypeDecimal256>(3, 6));
+    check(std::make_shared<DataTypeDecimal512>(3, 6));
     check(std::make_shared<DataTypeUUID>());
     check(DataTypeFactory::instance().get("Array(UInt32)"));
     check(DataTypeFactory::instance().get("Array(Array(Array(UInt32)))"));

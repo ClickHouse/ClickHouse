@@ -94,14 +94,18 @@ String FieldVisitorToString::operator() (const DecimalField<Decimal32> & x) cons
 String FieldVisitorToString::operator() (const DecimalField<Decimal64> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const DecimalField<Decimal128> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const DecimalField<Decimal256> & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const DecimalField<Decimal512> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const Decimal32 & x, UInt32 scale) const { return formatQuoted(x, scale); }
 String FieldVisitorToString::operator() (const Decimal64 & x, UInt32 scale) const { return formatQuoted(x, scale); }
 String FieldVisitorToString::operator() (const Decimal128 & x, UInt32 scale) const { return formatQuoted(x, scale); }
 String FieldVisitorToString::operator() (const Decimal256 & x, UInt32 scale) const { return formatQuoted(x, scale); }
+String FieldVisitorToString::operator() (const Decimal512 & x, UInt32 scale) const { return formatQuoted(x, scale); }
 String FieldVisitorToString::operator() (const Int128 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const UInt128 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const UInt256 & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const UInt512 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const Int256 & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const Int512 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const UUID & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const IPv4 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const IPv6 & x) const { return formatQuoted(x); }

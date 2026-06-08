@@ -1267,6 +1267,22 @@ namespace DB
             case TypeIndex::Decimal256:
                 fillArrowArrayWithDecimalColumnData<DataTypeDecimal256, Int256, arrow::Decimal256, arrow::Decimal256Builder>(column, null_bytemap, array_builder, format_name, start, end);
                 break;
+            case TypeIndex::Decimal512:
+            {
+                /// Arrow 无 Decimal512。采用 FixedSizeBinary(64) 以二进制形式输出底层存储。
+                /// 复用 "大整数" 写出逻辑，但对 ColumnDecimal 需要专用实现。
+                auto & builder = assert_cast<arrow::FixedSizeBinaryBuilder &>(*array_builder);
+                PaddedPODArray<UInt8> arrow_null_bytemap = revertNullByteMap(null_bytemap, start, end);
+                const UInt8 * arrow_null_bytemap_raw_ptr = arrow_null_bytemap.empty() ? nullptr : arrow_null_bytemap.data();
+
+                const auto & dec_col = assert_cast<const ColumnDecimal<Decimal512> &>(*column);
+                const size_t fixed_length = sizeof(Decimal512);
+                const auto raw_view = dec_col.getRawData();
+                const uint8_t * data_start = reinterpret_cast<const uint8_t *>(raw_view.data()) + start * fixed_length;
+                auto status = builder.AppendValues(data_start, end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+                checkStatus(status, column->getName(), format_name);
+                break;
+            }
             case TypeIndex::DateTime64:
                 fillArrowArrayWithDateTime64ColumnData(column_type, column, null_bytemap, format_name, array_builder, start, end);
                 break;
@@ -1413,6 +1429,12 @@ namespace DB
                 {
                     const auto & decimal_type = assert_cast<const ToDataType *>(column_type.get());
                     arrow_type = arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale());
+                    return true;
+                }
+                else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal512>>)
+                {
+                    /// Arrow 无 Decimal512，使用 FixedSizeBinary(64) 承载底层字节。
+                    arrow_type = arrow::fixed_size_binary(static_cast<int32_t>(sizeof(Decimal512)));
                     return true;
                 }
 

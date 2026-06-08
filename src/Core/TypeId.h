@@ -15,12 +15,14 @@ enum class TypeIndex : uint8_t
     UInt64,
     UInt128,
     UInt256,
+    UInt512,
     Int8,
     Int16,
     Int32,
     Int64,
     Int128,
     Int256,
+    Int512,
     BFloat16,
     Float32,
     Float64,
@@ -38,6 +40,7 @@ enum class TypeIndex : uint8_t
     Decimal64,
     Decimal128,
     Decimal256,
+    Decimal512,
     UUID,
     Array,
     Tuple,
@@ -91,12 +94,14 @@ TYPEID_MAP(UInt32)
 TYPEID_MAP(UInt64)
 TYPEID_MAP(UInt128)
 TYPEID_MAP(UInt256)
+TYPEID_MAP(UInt512)
 TYPEID_MAP(Int8)
 TYPEID_MAP(Int16)
 TYPEID_MAP(Int32)
 TYPEID_MAP(Int64)
 TYPEID_MAP(Int128)
 TYPEID_MAP(Int256)
+TYPEID_MAP(Int512)
 TYPEID_MAP(BFloat16)
 TYPEID_MAP(Float32)
 TYPEID_MAP(Float64)
@@ -108,6 +113,7 @@ TYPEID_MAP(Decimal32)
 TYPEID_MAP(Decimal64)
 TYPEID_MAP(Decimal128)
 TYPEID_MAP(Decimal256)
+TYPEID_MAP(Decimal512)
 TYPEID_MAP(DateTime64)
 TYPEID_MAP(Time64)
 

@@ -82,6 +82,10 @@ Field convertNumericType(const Field & from, const IDataType & type)
         return convertNumericTypeImpl<UInt256, To>(from);
     if (from.getType() == Field::Types::Int256)
         return convertNumericTypeImpl<Int256, To>(from);
+    if (from.getType() == Field::Types::UInt512)
+        return convertNumericTypeImpl<UInt512, To>(from);
+    if (from.getType() == Field::Types::Int512)
+        return convertNumericTypeImpl<Int512, To>(from);
 
     throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
         type.getName(), from.getType());
@@ -163,6 +167,10 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
         result = convertIntToDecimalType<UInt256>(from, type);
     else if (from.getType() == Field::Types::Int256)
         result = convertIntToDecimalType<Int256>(from, type);
+    else if (from.getType() == Field::Types::UInt512)
+        result = convertIntToDecimalType<UInt512>(from, type);
+    else if (from.getType() == Field::Types::Int512)
+        result = convertIntToDecimalType<Int512>(from, type);
     else if (from.getType() == Field::Types::String)
         result = convertStringToDecimalType(from, type);
     else if (from.getType() == Field::Types::Decimal32)
@@ -173,6 +181,8 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
         result = convertDecimalToDecimalType<Decimal128>(from, type);
     else if (from.getType() == Field::Types::Decimal256)
         result = convertDecimalToDecimalType<Decimal256>(from, type);
+    else if (from.getType() == Field::Types::Decimal512)
+        result = convertDecimalToDecimalType<Decimal512>(from, type);
     else if (from.getType() == Field::Types::Float64)
         result = convertFloatToDecimalType<Float64>(from, type);
     else
@@ -314,6 +324,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return convertNumericType<UInt128>(src, type);
         if (which_type.isUInt256())
             return convertNumericType<UInt256>(src, type);
+        if (which_type.isUInt512())
+            return convertNumericType<UInt512>(src, type);
         if (which_type.isInt8())
             return convertNumericType<Int8>(src, type);
         if (which_type.isInt16())
@@ -326,6 +338,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return convertNumericType<Int128>(src, type);
         if (which_type.isInt256())
             return convertNumericType<Int256>(src, type);
+        if (which_type.isInt512())
+            return convertNumericType<Int512>(src, type);
         if (which_type.isBFloat16())
             return convertNumericType<BFloat16>(src, type);
         if (which_type.isFloat32())
@@ -339,6 +353,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal128> *>(&type))
             return convertDecimalType(src, *ptype, strict);
         if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal256> *>(&type))
+            return convertDecimalType(src, *ptype, strict);
+        if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal512> *>(&type))
             return convertDecimalType(src, *ptype, strict);
 
         if (which_type.isEnum() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))

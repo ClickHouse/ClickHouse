@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/Exception.h>
 #include <Common/intExp.h>
-#include <base/arithmeticOverflow.h>
 
 #include <limits>
 #include <type_traits>
@@ -17,33 +17,45 @@ class DataTypeNumber;
 
 namespace ErrorCodes
 {
-    extern const int DECIMAL_OVERFLOW;
-    extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int DECIMAL_OVERFLOW;
+extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace DecimalUtils
 {
 
 inline constexpr size_t min_precision = 1;
-template <typename T> inline constexpr size_t max_precision = 0;
-template <> inline constexpr size_t max_precision<Decimal32> = 9;
-template <> inline constexpr size_t max_precision<Decimal64> = 18;
-template <> inline constexpr size_t max_precision<DateTime64> = 18;
-template <> inline constexpr size_t max_precision<Time64> = 18;
-template <> inline constexpr size_t max_precision<Decimal128> = 38;
-template <> inline constexpr size_t max_precision<Decimal256> = 76;
+template <typename T>
+inline constexpr size_t max_precision = 0;
+template <>
+inline constexpr size_t max_precision<Decimal32> = 9;
+template <>
+inline constexpr size_t max_precision<Decimal64> = 18;
+template <>
+inline constexpr size_t max_precision<DateTime64> = 18;
+template <>
+inline constexpr size_t max_precision<Time64> = 18;
+template <>
+inline constexpr size_t max_precision<Decimal128> = 38;
+template <>
+inline constexpr size_t max_precision<Decimal256> = 76;
+template <>
+inline constexpr size_t max_precision<Decimal512> = 154;
 
 template <typename T>
 inline auto scaleMultiplier(UInt32 scale)
 {
     if constexpr (std::is_same_v<T, Int32> || std::is_same_v<T, Decimal32>)
         return common::exp10_i32(scale);
-    else if constexpr (std::is_same_v<T, Int64> || std::is_same_v<T, Decimal64> || std::is_same_v<T, DateTime64> || std::is_same_v<T, Time64>)
+    else if constexpr (
+        std::is_same_v<T, Int64> || std::is_same_v<T, Decimal64> || std::is_same_v<T, DateTime64> || std::is_same_v<T, Time64>)
         return common::exp10_i64(scale);
     else if constexpr (std::is_same_v<T, Int128> || std::is_same_v<T, Decimal128>)
         return common::exp10_i128(scale);
     else if constexpr (std::is_same_v<T, Int256> || std::is_same_v<T, Decimal256>)
         return common::exp10_i256(scale);
+    else if constexpr (std::is_same_v<T, Int512> || std::is_same_v<T, Decimal512>)
+        return common::exp10_i512(scale);
 }
 
 
@@ -72,9 +84,10 @@ struct DataTypeDecimalTrait
     const UInt32 scale;
 
     DataTypeDecimalTrait(UInt32 precision_, UInt32 scale_)
-        : precision(precision_),
-          scale(scale_)
-    {}
+        : precision(precision_)
+        , scale(scale_)
+    {
+    }
 
     /// @returns multiplier for U to become T with correct scale
     template <typename U>
@@ -143,8 +156,7 @@ inline bool decimalFromComponentsWithMultiplierImpl(
     using T = typename DecimalType::NativeType;
     const auto fractional_sign = whole < 0 ? -1 : 1;
     T value;
-    if (!multiplyAdd<T, throw_on_error>(
-            whole, scale_multiplier, fractional_sign * (fractional % scale_multiplier), value))
+    if (!multiplyAdd<T, throw_on_error>(whole, scale_multiplier, fractional_sign * (fractional % scale_multiplier), value))
         return false;
     result = DecimalType(value);
     return true;
@@ -152,9 +164,9 @@ inline bool decimalFromComponentsWithMultiplierImpl(
 
 template <typename DecimalType>
 inline DecimalType decimalFromComponentsWithMultiplier(
-        const typename DecimalType::NativeType & whole,
-        const typename DecimalType::NativeType & fractional,
-        typename DecimalType::NativeType scale_multiplier)
+    const typename DecimalType::NativeType & whole,
+    const typename DecimalType::NativeType & fractional,
+    typename DecimalType::NativeType scale_multiplier)
 {
     DecimalType result{};
     decimalFromComponentsWithMultiplierImpl<DecimalType, true>(whole, fractional, scale_multiplier, result);
@@ -172,18 +184,15 @@ inline bool tryGetDecimalFromComponentsWithMultiplier(
 }
 
 template <typename DecimalType>
-inline DecimalType decimalFromComponentsWithMultiplier(
-        const DecimalComponents<DecimalType> & components,
-        typename DecimalType::NativeType scale_multiplier)
+inline DecimalType
+decimalFromComponentsWithMultiplier(const DecimalComponents<DecimalType> & components, typename DecimalType::NativeType scale_multiplier)
 {
     return decimalFromComponentsWithMultiplier<DecimalType>(components.whole, components.fractional, scale_multiplier);
 }
 
 template <typename DecimalType>
 inline bool tryGetDecimalFromComponentsWithMultiplier(
-    const DecimalComponents<DecimalType> & components,
-    typename DecimalType::NativeType scale_multiplier,
-    DecimalType & result)
+    const DecimalComponents<DecimalType> & components, typename DecimalType::NativeType scale_multiplier, DecimalType & result)
 {
     return tryGetDecimalFromComponentsWithMultiplier<DecimalType>(components.whole, components.fractional, scale_multiplier, result);
 }
@@ -194,10 +203,8 @@ inline bool tryGetDecimalFromComponentsWithMultiplier(
  * @see `decimalFromComponentsWithMultiplier` for details.
  */
 template <typename DecimalType>
-inline DecimalType decimalFromComponents(
-        const typename DecimalType::NativeType & whole,
-        const typename DecimalType::NativeType & fractional,
-        UInt32 scale)
+inline DecimalType
+decimalFromComponents(const typename DecimalType::NativeType & whole, const typename DecimalType::NativeType & fractional, UInt32 scale)
 {
     using T = typename DecimalType::NativeType;
 
@@ -206,10 +213,7 @@ inline DecimalType decimalFromComponents(
 
 template <typename DecimalType>
 inline bool tryGetDecimalFromComponents(
-    const typename DecimalType::NativeType & whole,
-    const typename DecimalType::NativeType & fractional,
-    UInt32 scale,
-    DecimalType & result)
+    const typename DecimalType::NativeType & whole, const typename DecimalType::NativeType & fractional, UInt32 scale, DecimalType & result)
 {
     using T = typename DecimalType::NativeType;
 
@@ -220,18 +224,13 @@ inline bool tryGetDecimalFromComponents(
  * @see `decimalFromComponentsWithMultiplier` for details.
  */
 template <typename DecimalType>
-inline DecimalType decimalFromComponents(
-        const DecimalComponents<DecimalType> & components,
-        UInt32 scale)
+inline DecimalType decimalFromComponents(const DecimalComponents<DecimalType> & components, UInt32 scale)
 {
     return decimalFromComponents<DecimalType>(components.whole, components.fractional, scale);
 }
 
 template <typename DecimalType>
-inline bool tryGetDecimalFromComponents(
-    const DecimalComponents<DecimalType> & components,
-    UInt32 scale,
-    DecimalType & result)
+inline bool tryGetDecimalFromComponents(const DecimalComponents<DecimalType> & components, UInt32 scale, DecimalType & result)
 {
     return tryGetDecimalFromComponents<DecimalType>(components.whole, components.fractional, scale, result);
 }
@@ -298,9 +297,8 @@ inline bool tryGetDateTimeFromComponents(
  * This is an optimization to reduce number of calls to scaleMultiplier on known scale.
  */
 template <typename DecimalType>
-inline DecimalComponents<DecimalType> splitWithScaleMultiplier(
-        const DecimalType & decimal,
-        typename DecimalType::NativeType scale_multiplier)
+inline DecimalComponents<DecimalType>
+splitWithScaleMultiplier(const DecimalType & decimal, typename DecimalType::NativeType scale_multiplier)
 {
     using T = typename DecimalType::NativeType;
     const auto whole = decimal.value / scale_multiplier;
@@ -338,9 +336,8 @@ inline typename DecimalType::NativeType getWholePart(const DecimalType & decimal
 
 
 template <typename DecimalType, bool keep_sign = false>
-inline typename DecimalType::NativeType getFractionalPartWithScaleMultiplier(
-        const DecimalType & decimal,
-        typename DecimalType::NativeType scale_multiplier)
+inline typename DecimalType::NativeType
+getFractionalPartWithScaleMultiplier(const DecimalType & decimal, typename DecimalType::NativeType scale_multiplier)
 {
     using T = typename DecimalType::NativeType;
 

@@ -109,10 +109,12 @@ void Stats::report(const Stats & cumulative)
 
     std::cerr << "Total: read " << cumulative.read_collector.requests
               << ", write " << cumulative.write_collector.requests;
-    if (cumulative.errors)
-        std::cerr << ", errors " << cumulative.errors;
-    if (cumulative.watches_fired)
-        std::cerr << ", watches fired " << cumulative.watches_fired;
+    const auto errors_count = cumulative.errors.load();
+    const auto watches_fired_count = cumulative.watches_fired.load();
+    if (errors_count)
+        std::cerr << ", errors " << errors_count;
+    if (watches_fired_count)
+        std::cerr << ", watches fired " << watches_fired_count;
     std::cerr << "\n";
 
     std::cerr << "Last " << seconds << "s:";

@@ -287,6 +287,8 @@ private:
             cast_type = createDecimalMaxPrecision<Decimal128>(scale);
         else if (which.isDecimal256())
             cast_type = createDecimalMaxPrecision<Decimal256>(scale);
+        else if (which.isDecimal512())
+            cast_type = createDecimalMaxPrecision<Decimal512>(scale);
         else
             cast_type = type;
 
@@ -526,6 +528,28 @@ If no `default` value is passed then `0` is returned in case of an error.
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt256OrDefault", std::make_shared<DataTypeUInt256>()); },
         toUInt256OrDefault_documentation);
 
+    FunctionDocumentation::Description toUInt512OrDefault_description = R"(
+Like [`toUInt512`](#toUInt512), this function converts an input value to a value of type [UInt512](../data-types/int-uint.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
+    )";
+    FunctionDocumentation::Syntax toUInt512OrDefault_syntax = "toUInt512OrDefault(expr[, default])";
+    FunctionDocumentation::Arguments toUInt512OrDefault_arguments = {
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
+        {"default", "Optional. The default value to return if parsing is unsuccessful.", {"UInt512"}}
+    };
+    FunctionDocumentation::ReturnedValue toUInt512OrDefault_returned_value = {"Returns a value of type UInt512 if successful, otherwise returns the default value if passed, or 0 if not.", {"UInt512"}};
+    FunctionDocumentation::Examples toUInt512OrDefault_examples = {
+        {"Successful conversion", "SELECT toUInt512OrDefault('-512', CAST('0', 'UInt512'))", "0"},
+        {"Failed conversion", "SELECT toUInt512OrDefault('abc', CAST('0', 'UInt512'))", "0"}
+    };
+    FunctionDocumentation::Category toUInt512OrDefault_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation::IntroducedIn toUInt512OrDefault_introduced_in = {21, 11};
+    FunctionDocumentation toUInt512OrDefault_documentation = {toUInt512OrDefault_description, toUInt512OrDefault_syntax, toUInt512OrDefault_arguments, {}, toUInt512OrDefault_returned_value, toUInt512OrDefault_examples, toUInt512OrDefault_introduced_in, toUInt512OrDefault_category};
+
+    factory.registerFunction("toUInt512OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt512OrDefault", std::make_shared<DataTypeUInt512>()); },
+        toUInt512OrDefault_documentation);
+
     FunctionDocumentation::Description toInt8OrDefault_description = R"(
 Like [`toInt8`](#toInt8), this function converts an input value to a value of type [Int8](../data-types/int-uint.md) but returns the default value in case of an error.
 If no `default` value is passed then `0` is returned in case of an error.
@@ -652,6 +676,28 @@ If no `default` value is passed then `0` is returned in case of an error.
     factory.registerFunction("toInt256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt256OrDefault", std::make_shared<DataTypeInt256>()); },
         toInt256OrDefault_documentation);
+
+    FunctionDocumentation::Description toInt512OrDefault_description = R"(
+Like [`toInt512`](#toInt512), this function converts an input value to a value of type [Int512](../data-types/int-uint.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
+    )";
+    FunctionDocumentation::Syntax toInt512OrDefault_syntax = "toInt512OrDefault(expr[, default])";
+    FunctionDocumentation::Arguments toInt512OrDefault_arguments = {
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
+        {"default", "Optional. The default value to return if parsing is unsuccessful.", {"Int512"}}
+    };
+    FunctionDocumentation::ReturnedValue toInt512OrDefault_returned_value = {"Returns a value of type Int512 if successful, otherwise returns the default value if passed, or 0 if not.", {"Int512"}};
+    FunctionDocumentation::Examples toInt512OrDefault_examples = {
+        {"Successful conversion", "SELECT toInt512OrDefault('-512', CAST('-1', 'Int512'))", "-512"},
+        {"Failed conversion", "SELECT toInt512OrDefault('abc', CAST('-1', 'Int512'))", "-1"}
+    };
+    FunctionDocumentation::Category toInt512OrDefault_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation::IntroducedIn toInt512OrDefault_introduced_in = {21, 11};
+    FunctionDocumentation toInt512OrDefault_documentation = {toInt512OrDefault_description, toInt512OrDefault_syntax, toInt512OrDefault_arguments, {}, toInt512OrDefault_returned_value, toInt512OrDefault_examples, toInt512OrDefault_introduced_in, toInt512OrDefault_category};
+
+    factory.registerFunction("toInt512OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt512OrDefault", std::make_shared<DataTypeInt512>()); },
+        toInt512OrDefault_documentation);
 
     FunctionDocumentation::Description toFloat32OrDefault_description = R"(
 Like [`toFloat32`](#toFloat32), this function converts an input value to a value of type [Float32](../data-types/float.md) but returns the default value in case of an error.
@@ -868,6 +914,29 @@ Like [`toDecimal256`](#toDecimal256), this function converts an input value to a
     factory.registerFunction("toDecimal256OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal256OrDefault", createDecimalMaxPrecision<Decimal256>(0)); },
         toDecimal256OrDefault_documentation);
+
+    FunctionDocumentation::Description toDecimal512OrDefault_description = R"(
+Like [`toDecimal512`](#toDecimal512), this function converts an input value to a value of type [Decimal512](../data-types/decimal.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
+    )";
+    FunctionDocumentation::Syntax toDecimal512OrDefault_syntax = "toDecimal512OrDefault(expr, S[, default])";
+    FunctionDocumentation::Arguments toDecimal512OrDefault_arguments = {
+        {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*", "Decimal*"}},
+        {"S", "Scale of the resulting type, between 0 and 154."},
+        {"default", "Optional. The default value to return if parsing is unsuccessful.", {"Decimal512(S)"}}
+    };
+    FunctionDocumentation::ReturnedValue toDecimal512OrDefault_returned_value = {"Value of type Decimal(154, S) if successful, otherwise returns the default value if passed or 0 if not.", {"Decimal512(S)"}};
+    FunctionDocumentation::Examples toDecimal512OrDefault_examples = {
+        {"Successful conversion", "SELECT toDecimal512OrDefault(toString(1/42), 154)", "0.023809523809523808"},
+        {"Failed conversion", "SELECT toDecimal512OrDefault('Inf', 0, CAST('-1', 'Decimal512(0)'))", "-1"}
+    };
+    FunctionDocumentation::Category toDecimal512OrDefault_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation::IntroducedIn toDecimal512OrDefault_introduced_in = {21, 11};
+    FunctionDocumentation toDecimal512OrDefault_documentation = {toDecimal512OrDefault_description, toDecimal512OrDefault_syntax, toDecimal512OrDefault_arguments, {}, toDecimal512OrDefault_returned_value, toDecimal512OrDefault_examples, toDecimal512OrDefault_introduced_in, toDecimal512OrDefault_category};
+
+    factory.registerFunction("toDecimal512OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal512OrDefault", createDecimalMaxPrecision<Decimal512>(0)); },
+        toDecimal512OrDefault_documentation);
 
     FunctionDocumentation::Description toUUIDOrDefault_description = R"(
 Converts a String value to UUID type. If the conversion fails, returns a default UUID value instead of throwing an error.

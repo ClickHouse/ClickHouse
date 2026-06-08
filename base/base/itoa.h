@@ -10,13 +10,15 @@
     M(UInt64) \
     M(UInt128) \
     M(UInt256) \
+    M(UInt512) \
     M(int8_t) \
     M(Int8) \
     M(Int16) \
     M(Int32) \
     M(Int64) \
     M(Int128) \
-    M(Int256)
+    M(Int256) \
+    M(Int512)
 
 #define INSTANTIATION(T) char * itoa(T i, char * p);
 FOR_INTEGER_TYPES(INSTANTIATION)

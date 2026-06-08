@@ -32,6 +32,7 @@ class Block;
  * Decimal64               | \x12 int64
  * Decimal128              | \x05 binary, \x00 binary subtype, size = 16
  * Decimal256              | \x05 binary, \x00 binary subtype, size = 32
+ * Decimal512              | \x05 binary, \x00 binary subtype, size = 64
  * Int128/UInt128          | \x05 binary, \x00 binary subtype, size = 16
  * Int256/UInt256          | \x05 binary, \x00 binary subtype, size = 32
  * String/FixedString      | \x05 binary, \x00 binary subtype or \x02 string if setting output_format_bson_string_as_string is enabled

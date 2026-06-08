@@ -1,17 +1,17 @@
-#include <Functions/FunctionGenerateRandomStructure.h>
+#include <Columns/ColumnString.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionGenerateRandomStructure.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <Interpreters/Context.h>
 #include <Common/randomSeed.h>
 #include <Common/FunctionDocumentation.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Core/Settings.h>
-#include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 
 #include <pcg_random.hpp>
 
@@ -38,9 +38,10 @@ namespace
     const size_t MAX_DECIMAL64_PRECISION = 18;
     const size_t MAX_DECIMAL128_PRECISION = 38;
     const size_t MAX_DECIMAL256_PRECISION = 76;
+    const size_t MAX_DECIMAL512_PRECISION = 154;
     const size_t MAX_DEPTH = 16;
 
-    constexpr std::array<TypeIndex, 29> simple_types
+    constexpr std::array<TypeIndex, 30> simple_types
     {
         TypeIndex::Int8,
         TypeIndex::UInt8,
@@ -60,6 +61,7 @@ namespace
         TypeIndex::Decimal64,
         TypeIndex::Decimal128,
         TypeIndex::Decimal256,
+        TypeIndex::Decimal512,
         TypeIndex::Date,
         TypeIndex::Date32,
         TypeIndex::DateTime,
@@ -276,6 +278,9 @@ namespace
             case TypeIndex::Decimal256:
                 writeString("Decimal256(" + std::to_string(rng() % MAX_DECIMAL256_PRECISION + 1) + ")", buf);
                 return;
+            case TypeIndex::Decimal512:
+                writeString("Decimal512(" + std::to_string(rng() % MAX_DECIMAL512_PRECISION + 1) + ")", buf);
+                return;
             case TypeIndex::Enum8:
                 writeCString("Enum8(", buf);
                 writeEnumValues(column_name, rng, buf, INT8_MAX);
@@ -372,7 +377,8 @@ DataTypePtr FunctionGenerateRandomStructure::getReturnTypeImpl(const DataTypes &
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Number of arguments for function {} doesn't match: passed {}, expected from 0 to 2",
-            getName(), arguments.size());
+            getName(),
+            arguments.size());
 
 
     for (size_t i = 0; i != arguments.size(); ++i)
@@ -391,7 +397,8 @@ DataTypePtr FunctionGenerateRandomStructure::getReturnTypeImpl(const DataTypes &
     return std::make_shared<DataTypeString>();
 }
 
-ColumnPtr FunctionGenerateRandomStructure::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+ColumnPtr
+FunctionGenerateRandomStructure::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
 {
     size_t seed = randomSeed();
     size_t number_of_columns = 0;
@@ -401,10 +408,7 @@ ColumnPtr FunctionGenerateRandomStructure::executeImpl(const ColumnsWithTypeAndN
         number_of_columns = arguments[0].column->getUInt(0);
         if (number_of_columns > MAX_NUMBER_OF_COLUMNS)
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Maximum allowed number of columns is {}, got {}",
-                MAX_NUMBER_OF_COLUMNS,
-                number_of_columns);
+                ErrorCodes::BAD_ARGUMENTS, "Maximum allowed number of columns is {}, got {}", MAX_NUMBER_OF_COLUMNS, number_of_columns);
     }
 
     if (arguments.size() > 1 && !arguments[1].column->onlyNull())

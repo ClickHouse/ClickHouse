@@ -224,7 +224,7 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
             break;
         case TypeIndex::Decimal128: {
             // MySQL Decimal has max 65 precision and 30 scale
-            // Decimal256 (min scale is 39) is higher than the MySQL supported range and handled in the default case
+            // Decimal256/Decimal512 typically exceed the MySQL DECIMAL precision/scale limits and are handled in the default case
             // See https://dev.mysql.com/doc/refman/8.0/en/precision-math-decimal-characteristics.html
             const auto & type = assert_cast<const DataTypeDecimal128 &>(*normalized_data_type);
             if (type.getPrecision() > 65 || type.getScale() > 30)
@@ -239,6 +239,11 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
             }
             break;
         }
+        case TypeIndex::Decimal256:
+        case TypeIndex::Decimal512:
+            column_type = ColumnType::MYSQL_TYPE_STRING;
+            charset = CharacterSet::utf8_general_ci;
+            break;
         default:
             column_type = ColumnType::MYSQL_TYPE_STRING;
             charset = CharacterSet::utf8_general_ci;

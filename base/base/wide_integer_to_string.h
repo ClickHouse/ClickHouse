@@ -13,6 +13,8 @@ using Int128 = wide::integer<128, signed>;
 using UInt128 = wide::integer<128, unsigned>;
 using Int256 = wide::integer<256, signed>;
 using UInt256 = wide::integer<256, unsigned>;
+using Int512 = wide::integer<512, signed>;
+using UInt512 = wide::integer<512, unsigned>;
 
 namespace wide
 {
@@ -24,6 +26,8 @@ extern template std::string to_string(const Int128 & n);
 extern template std::string to_string(const UInt128 & n);
 extern template std::string to_string(const Int256 & n);
 extern template std::string to_string(const UInt256 & n);
+extern template std::string to_string(const Int512 & n);
+extern template std::string to_string(const UInt512 & n);
 }
 
 template <size_t Bits, typename Signed>
@@ -33,6 +37,8 @@ extern std::ostream & operator<<(std::ostream & out, const Int128 & value);
 extern std::ostream & operator<<(std::ostream & out, const UInt128 & value);
 extern std::ostream & operator<<(std::ostream & out, const Int256 & value);
 extern std::ostream & operator<<(std::ostream & out, const UInt256 & value);
+extern std::ostream & operator<<(std::ostream & out, const Int512 & value);
+extern std::ostream & operator<<(std::ostream & out, const UInt512 & value);
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types
 template <size_t Bits, typename Signed>
@@ -61,3 +67,5 @@ extern template struct fmt::formatter<Int128>;
 extern template struct fmt::formatter<UInt128>;
 extern template struct fmt::formatter<Int256>;
 extern template struct fmt::formatter<UInt256>;
+extern template struct fmt::formatter<Int512>;
+extern template struct fmt::formatter<UInt512>;

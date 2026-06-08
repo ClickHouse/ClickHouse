@@ -122,6 +122,8 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
                 return Type::nullable_keys128;
             if ((std::tuple_size_v<KeysNullMap<UInt256>> + keys_bytes) <= 32)
                 return Type::nullable_keys256;
+            if ((std::tuple_size_v<KeysNullMap<UInt512>> + keys_bytes) <= 64)
+                return Type::nullable_keys512;
         }
 
         /// Fallback case.

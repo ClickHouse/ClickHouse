@@ -201,7 +201,7 @@ private:
     static constexpr size_t KEY_BITS = sizeof(Key) * 8;
     static constexpr size_t NUM_PASSES = (KEY_BITS + (Traits::PART_SIZE_BITS - 1)) / Traits::PART_SIZE_BITS;
     static constexpr size_t PREFETCH_DISTANCE = std::max(1UL, 64 / sizeof(Element) / 2);
-    static constexpr size_t UNROLL_DISTANCE = 512 / (8 * sizeof(Element));
+    static constexpr size_t UNROLL_DISTANCE = std::max(size_t{1}, 512 / (8 * sizeof(Element)));
 
     static KeyBits keyToBits(Key x) { return bit_cast<KeyBits>(x); }
     static Key bitsToKey(KeyBits x) { return bit_cast<Key>(x); }
