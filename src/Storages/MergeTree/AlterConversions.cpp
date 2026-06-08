@@ -317,6 +317,16 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
     /// dropped here, otherwise an earlier surviving step that reads one of
     /// those columns as a source would see the on-disk type while the block
     /// already advertises the post-`MODIFY` type.
+    ///
+    /// `MutationActions::dag.getOutputs()` would give a superset (it lists
+    /// passthrough columns too), so we read the assignment targets directly
+    /// from the surviving commands.
+    ///
+    /// The skip is keyed on storage column names downstream
+    /// (`MergeTreeReadersChain::executeActionsBeforePrewhere` calls
+    /// `getNameInStorage()`). Assignment targets are top-level columns today;
+    /// if per-subcolumn assignments to `Nested` columns ever become
+    /// supported, the reader-side key has to switch accordingly.
     NameSet columns_overwritten_by_chain;
     if (!actions_chain.empty())
     {
@@ -347,10 +357,12 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
             }
             else if (command.type == MutationCommand::DELETE)
             {
-                /// Lightweight delete arrives as a `DELETE` typed command without
-                /// the original `_row_exists = 0` assignment; add it explicitly so
-                /// the chain skips it from conversion. Plain `ALTER DELETE` is
-                /// unaffected (`_row_exists` is virtual).
+                /// Inserted for any chained `DELETE`. Lightweight delete
+                /// arrives as a `DELETE`-typed command without the original
+                /// `_row_exists = 0` assignment, so the explicit insert is
+                /// the only way to keep it skipped. Plain `ALTER DELETE` does
+                /// not have an on-disk `_row_exists`, so the insert is a
+                /// no-op for `performRequiredConversions`.
                 columns_overwritten_by_chain.insert(RowExistsColumn::name);
             }
         }
