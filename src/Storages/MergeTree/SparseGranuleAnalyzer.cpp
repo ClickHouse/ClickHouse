@@ -335,7 +335,15 @@ analyzeSparseColumnGranules(
     /// fresh column on its own; the disk-fallback path is not safe here because the
     /// scan never seeked the disk stream (all previous calls were cache hits) and
     /// `DeserializeStateSparse` would be stale.
-    if (offsets_share)
+    /// Only wide parts consume the share today. Compact parts pack all columns and
+    /// substreams contiguously in one file and the top-level column read path in
+    /// `MergeTreeReaderCompactSingleBuffer` passes a null SubstreamsCache, so a
+    /// cached offsets hit would not advance the underlying buffer and the next
+    /// substream read would land at the wrong file offset. Seeding for compact parts
+    /// would also need a cache that survives across `readRows` calls (the wide
+    /// reader carries one as a member; the compact reader recreates a local cache
+    /// each iteration). Until those gaps are addressed, skip storing for compact.
+    if (offsets_share && part->getType() == MergeTreeDataPartType::Wide)
     {
         for (size_t j = 0; j < chunks.size(); ++j)
         {

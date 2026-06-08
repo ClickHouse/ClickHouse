@@ -49,6 +49,9 @@ try
         /// we will read the whole column only once and then reuse to extract all subcolumns.
         /// We cannot use SubstreamsCache for it, because we may also read the full column itself
         /// and it might be not empty inside res_columns (and SubstreamsCache contains the whole columns).
+        /// This same constraint blocks the sparse-offsets share (`SparseOffsetsShare`) from
+        /// seeding compact parts at the top-level read path: cached offsets cannot be returned
+        /// without advancing the underlying single-buffer stream.
         std::unordered_map<String, ColumnPtr> columns_cache_for_subcolumns;
 
         for (size_t pos = 0; pos < num_columns; ++pos)
