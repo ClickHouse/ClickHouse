@@ -18,7 +18,7 @@ ASTPtr ASTDropRewriteRuleQuery::clone() const
 void ASTDropRewriteRuleQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings &, IAST::FormatState &, IAST::FormatStateStacked) const
 {
     ostr << "DROP RULE ";
-    ostr << rule_name;
+    ostr << backQuoteIfNeed(rule_name);
 }
 
 }

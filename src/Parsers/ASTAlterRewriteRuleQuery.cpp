@@ -23,7 +23,7 @@ ASTPtr ASTAlterRewriteRuleQuery::clone() const
 void ASTAlterRewriteRuleQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
     ostr << "ALTER RULE ";
-    ostr << rule_name;
+    ostr << backQuoteIfNeed(rule_name);
     ostr << " AS ";
     ostr << "(";
     source_query->format(ostr, settings);
