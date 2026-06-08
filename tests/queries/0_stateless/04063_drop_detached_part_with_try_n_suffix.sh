@@ -9,6 +9,11 @@
 # copies alias the same remote blobs; dropping the copies then removes blobs the original still
 # references, and the subsequent "ATTACH PARTITION ALL" fails because the data is gone. The bug
 # under test (detached part name parsing) is storage-agnostic, so the test runs on local disk only.
+#
+# The "no-object-storage" tag only skips the test in regular object-storage runs (clickhouse-test
+# with "--s3-storage"). The stress test does not pass that flag yet still randomly makes an object
+# storage policy the MergeTree default, so the table is pinned to the built-in local "default"
+# storage policy below to keep "cp -r" safe regardless of the server's default policy.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,6 +25,7 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE} (n UInt64)
     ENGINE = MergeTree ORDER BY n
+    SETTINGS storage_policy = 'default'
 "
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE} VALUES (1), (42)"
