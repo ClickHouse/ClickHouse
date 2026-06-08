@@ -1083,8 +1083,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     return buildInputOrderFromUnorderedKeys(
         fixed_columns,
         dag, unordered_keys,
-        sorting_key.expression->getActionsDAG(), sorting_key_columns,
-        sorting_key.reverse_flags);
+        sorting_key.expression->getActionsDAG(), sorting_key_columns);
 }
 
 InputOrder buildInputOrderFromUnorderedKeys(
@@ -1099,8 +1098,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     return buildInputOrderFromUnorderedKeys(
         fixed_columns,
         dag, unordered_keys,
-        sorting_key.expression->getActionsDAG(), sorting_key_columns,
-        sorting_key.reverse_flags);
+        sorting_key.expression->getActionsDAG(), sorting_key_columns);
 }
 
 InputOrder buildInputOrderFromUnorderedKeys(
@@ -1134,8 +1132,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
         auto table_order_info = buildInputOrderFromUnorderedKeys(
             combined_fixed_columns,
             combined_dag, unordered_keys,
-            sorting_key.expression->getActionsDAG(), sorting_key_columns,
-            sorting_key.reverse_flags);
+            sorting_key.expression->getActionsDAG(), sorting_key_columns);
 
         if (!table_order_info.input_order)
             return {};
@@ -1529,7 +1526,26 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
         return order_info;
     }
 
-    /// TODO: Consider adding optimization for ReadFromMerge and ReadFromObjectStorageStep after proper testing.
+    if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
+    {
+        auto order_info = buildInputOrderFromUnorderedKeys(merge, fixed_columns, dag, keys);
+
+        /// The order of BY columns does not matter for LIMIT BY
+        if (getCollationAwareSortPrefixInColumns(order_info.sort_description, keys).size() != keys.size())
+            return {};
+
+        if (!canImproveOrderForDistinct(order_info, merge->getInputOrder()))
+            return {};
+
+        if (!merge->requestReadingInOrder(order_info.input_order))
+            return {};
+
+        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+        return order_info;
+    }
+
+    /// TODO: Consider adding optimization for ReadFromObjectStorageStep after proper testing.
     return {};
 }
 
@@ -1744,7 +1760,7 @@ void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const Qu
 
     auto order_info = buildInputOrderInfo(*limit_by, *node.children.front(), optimization_settings);
     if (order_info.input_order)
-        limit_by->applyOrder(std::move(order_info.sort_description));
+        limit_by->applyOrder();
 }
 
 /// This optimization is obsolete and will be removed.
