@@ -597,6 +597,29 @@ std::unique_ptr<ICacheHandle> DiskCacheProvider::lookup(
     size_t object_file_offset,
     ByteRange range_in_file)
 {
+    return makeHandle(object, object_file_offset, range_in_file, cache_settings);
+}
+
+std::unique_ptr<ICacheHandle> DiskCacheProvider::planResidency(
+    const StoredObject & object,
+    size_t object_file_offset,
+    ByteRange range_in_file)
+{
+    /// `read_if_exists_otherwise_bypass` already gives the exact read-only
+    /// handle plan-then-stream needs: the ctor uses `cache->get` (no segment
+    /// creation) and `put` returns 0. Flip it on a local copy so the provider's
+    /// own settings — and therefore the gap-fill `lookup` path — are untouched.
+    auto plan_settings = cache_settings;
+    plan_settings.read_if_exists_otherwise_bypass = true;
+    return makeHandle(object, object_file_offset, range_in_file, plan_settings);
+}
+
+std::unique_ptr<ICacheHandle> DiskCacheProvider::makeHandle(
+    const StoredObject & object,
+    size_t object_file_offset,
+    ByteRange range_in_file,
+    const FilesystemCacheSettings & settings)
+{
     auto resolved_key = custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
     auto resolved_origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
     return std::make_unique<DiskCacheHandle>(
@@ -606,7 +629,7 @@ std::unique_ptr<ICacheHandle> DiskCacheProvider::lookup(
         object_file_offset,
         object.bytes_size,
         range_in_file,
-        cache_settings,
+        settings,
         local_throttler,
         object.remote_path,
         &reader_anchors,

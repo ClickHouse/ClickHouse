@@ -187,10 +187,30 @@ public:
         const StoredObject & object,
         size_t object_file_offset,
         ByteRange range_in_file) override;
+
+    /// Read-only residency probe (no `getOrSet`, no segment creation). Builds a
+    /// `DiskCacheHandle` over a `cache_settings` copy with
+    /// `read_if_exists_otherwise_bypass` forced on — that already makes the ctor
+    /// use the read-only `cache->get` and `put` a no-op, which is exactly
+    /// plan-then-stream's read-only handle. See `ICacheProvider::planResidency`.
+    std::unique_ptr<ICacheHandle> planResidency(
+        const StoredObject & object,
+        size_t object_file_offset,
+        ByteRange range_in_file) override;
+
     String name() const override { return "DiskCache"; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
 private:
+    /// Shared by `lookup` / `planResidency`: build a `DiskCacheHandle` over
+    /// `settings` (the only thing that differs between the two — `lookup` passes
+    /// the provider's settings, `planResidency` a read-only copy).
+    std::unique_ptr<ICacheHandle> makeHandle(
+        const StoredObject & object,
+        size_t object_file_offset,
+        ByteRange range_in_file,
+        const FilesystemCacheSettings & settings);
+
     FileCachePtr cache;
     FilesystemCacheSettings cache_settings;
     /// Forwarded into each `DiskCacheHandle` so cache-file reads in `get`

@@ -2018,6 +2018,87 @@ TEST_F(FileCacheTest, DiskCacheProviderReadPopulatesCache)
     }
 }
 
+TEST_F(FileCacheTest, DiskCacheProviderPlanResidencyIsReadOnlyAndMatchesLookup)
+{
+    /// `planResidency` is the plan-then-stream residency probe: it must report
+    /// the SAME hit/miss decomposition as the production `lookup` path, but
+    /// WITHOUT mutating the cache (no `getOrSet`, no EMPTY-segment creation).
+    /// That read-only-ness is what lets a plan be queried once over a large
+    /// look-ahead window instead of paying `getOrSet` metadata work per stream
+    /// window — the whole point of the rework.
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_file_segment_size] = 10;  /// → 3 segments for the 30-byte file
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("dc_provider_plan", settings);
+    cache->initialize();
+
+    const std::string file_path = fs::current_path() / "test_dc_provider_plan";
+    const std::string data(30, 'A');
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+    auto provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
+
+    StoredObject object(file_path, "", data.size());
+    const auto & user = FileCache::getCommonOrigin();
+
+    auto normalise = [](const VectorWithMemoryTracking<ByteRange> & ranges)
+    {
+        std::vector<std::pair<size_t, size_t>> out;
+        for (const auto & r : ranges)
+            out.emplace_back(r.offset, r.size);
+        std::sort(out.begin(), out.end());
+        return out;
+    };
+    using Pairs = std::vector<std::pair<size_t, size_t>>;
+
+    /// Cold: planResidency reports the whole range as a miss and, crucially,
+    /// creates no segments — even while its handle is held.
+    {
+        auto plan = provider->planResidency(object, 0, ByteRange{0, 30});
+        auto st = plan->status();
+        EXPECT_TRUE(st.hit_ranges.empty());
+        EXPECT_EQ(normalise(st.miss_ranges), (Pairs{{0, 30}}));
+        EXPECT_EQ(cache->getFileSegmentInfos(user.user_id).size(), 0u);
+    }
+
+    /// Warm the prefix [0, 20) so segments [0, 9] and [10, 19] are DOWNLOADED,
+    /// leaving [20, 29] cold.
+    {
+        auto holder = cache->getOrSet(FileCacheKey::fromPath(file_path), 0, 20, data.size(), {}, 0, user);
+        download(holder);
+    }
+
+    /// Probe with planResidency FIRST (read-only), then lookup: lookup's
+    /// `getOrSet` materialises an EMPTY segment for the cold tail, which still
+    /// reports as a miss but mutates the cache — so order matters for an apples-
+    /// to-apples comparison.
+    auto plan_status = provider->planResidency(object, 0, ByteRange{0, 30})->status();
+    auto look_status = provider->lookup(object, 0, ByteRange{0, 30})->status();
+
+    EXPECT_EQ(normalise(plan_status.hit_ranges), normalise(look_status.hit_ranges));
+    EXPECT_EQ(normalise(plan_status.miss_ranges), normalise(look_status.miss_ranges));
+
+    /// And the decomposition is the expected warm-prefix / cold-tail split.
+    EXPECT_EQ(normalise(plan_status.hit_ranges), (Pairs{{0, 10}, {10, 10}}));
+    EXPECT_EQ(normalise(plan_status.miss_ranges), (Pairs{{20, 10}}));
+}
+
 TEST_F(FileCacheTest, DiskCacheProviderHonoursFullRangeWhenBatchSizeIsOne)
 {
     /// Regression: with `filesystem_cache_segments_batch_size = 1`, an earlier

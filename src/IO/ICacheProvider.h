@@ -110,6 +110,32 @@ public:
         size_t object_file_offset,
         ByteRange range_in_file) = 0;
 
+    /// Read-only residency query over a (typically large) look-ahead range,
+    /// intended to be held across many stream windows. Same arguments and
+    /// coordinate space as `lookup`; the returned handle reports resident bytes
+    /// as `status().hit_ranges` and gaps as `status().miss_ranges`, and pins the
+    /// resident segments for its lifetime so they can be streamed via `get`.
+    ///
+    /// Unlike `lookup`, `planResidency` MUST NOT mutate the cache: it never
+    /// creates segments and its `put` is a no-op. This is the basis of
+    /// plan-then-stream — discover resident ranges once over the look-ahead
+    /// window, stream them, and fill gaps through a separate `lookup` + `put`.
+    /// On a fully-resident range it therefore costs nothing beyond the residency
+    /// probe, which is the whole point: it avoids the per-window `getOrSet`
+    /// metadata churn that `lookup` incurs.
+    ///
+    /// The default delegates to `lookup`, which is correct for providers whose
+    /// `lookup` is already a non-mutating, pinning probe (e.g. `PageCacheProvider`,
+    /// and the in-memory test providers). Providers whose `lookup` mutates
+    /// (`DiskCacheProvider`, via `getOrSet`) override this with a read-only path.
+    virtual std::unique_ptr<ICacheHandle> planResidency(
+        const StoredObject & object,
+        size_t object_file_offset,
+        ByteRange range_in_file)
+    {
+        return lookup(object, object_file_offset, range_in_file);
+    }
+
     virtual String name() const = 0;
 };
 
