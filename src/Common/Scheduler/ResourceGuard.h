@@ -138,6 +138,22 @@ public:
             ProfileEvents::increment(metrics->cost, real_cost_);
         }
 
+        // Restore a reused request to the `Finished` state after a `ResourceGuard` constructor failed
+        // (either `enqueue()` or `wait()` threw). Because the constructor is unwinding, `~ResourceGuard()`
+        // will not run, so this is the only chance to make the thread-local instance reusable; otherwise the
+        // next request enqueued on this thread would hit `chassert(state == Finished)`.
+        void recoverAfterConstructorFailure(ResourceLink link_)
+        {
+            if (state == Enqueued)
+                // `enqueue()` threw before the request entered the scheduler (e.g. the queue is being
+                // destructed). The request was never linked into a queue, so just restore the state.
+                state = Finished;
+            else if (state == Dequeued)
+                // `wait()` threw: the request was failed by the scheduler. Finish it as the destructor would;
+                // `ResourceRequest::finish()` is a no-op for a failed request.
+                finish(0, link_);
+        }
+
         void assertFinished()
         {
             // lock(mutex) is not required because `Finished` request cannot be used by the scheduler thread
@@ -172,9 +188,21 @@ public:
             link.reset(); // Ignore zero-cost requests
         else if (link)
         {
-            request.enqueue(cost, link);
-            if (type == Lock::Default)
-                request.wait();
+            try
+            {
+                request.enqueue(cost, link);
+                if (type == Lock::Default)
+                    request.wait();
+            }
+            catch (...)
+            {
+                // The constructor is propagating an exception (the request failed in `enqueue()` or `wait()`),
+                // so `~ResourceGuard()` will not run. Restore the reused thread-local `Request` to the `Finished`
+                // state here, mirroring the cleanup the `Lock::Defer` path performs via `~ResourceGuard()`.
+                request.recoverAfterConstructorFailure(link);
+                link.reset();
+                throw;
+            }
         }
     }
 
