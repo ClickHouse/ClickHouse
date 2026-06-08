@@ -851,15 +851,23 @@ void RemoteQueryExecutor::finish()
             return;
     }
 
-    /// Mark `finished` only when the drain loop completes (or rethrows on exception):
-    /// `SCOPE_EXIT` runs regardless of how we leave the loop, but if we exit early via
-    /// `drain_should_stop` we still have active connections with unread packets, and
-    /// leaving `finished = false` lets the destructor (or a subsequent caller) clean up
-    /// the connection state via `disconnect`. On exception, the loop rethrows out of
-    /// `finish`, so `SCOPE_EXIT` still runs — gate it on the loop-exit condition to keep
-    /// `isQueryPending` truthful in the preemption case.
+    /// Mark `finished` only when the drain loop has actually drained every replica:
+    /// `SCOPE_EXIT` runs regardless of how we leave the loop, so gate it strictly on
+    /// `!connections->hasActiveConnections()`. There are three ways out of the loop:
+    ///   - normal completion (all replicas sent `EndOfStream`) — no active connections,
+    ///     so `finished` becomes true;
+    ///   - early exit via `drain_should_stop` (a concurrent hard cancel preempted the
+    ///     drain) — replicas still have unread packets, so `finished` stays false and the
+    ///     destructor (or a subsequent caller) cleans up the connection state via `disconnect`;
+    ///   - a genuine replica exception is rethrown — `receivePacket` only invalidated the
+    ///     replica that produced the `Exception` packet, while the other parallel/hedged
+    ///     replicas can still be active. Leaving `finished = false` here (matching the
+    ///     normal-read path in `processPacket`, which sets `got_exception_from_replica`
+    ///     but never flips `finished`) keeps `isQueryPending` truthful so the destructor
+    ///     disconnects the remaining connections instead of returning them to the pool with
+    ///     unread packets.
     SCOPE_EXIT({
-        if (!connections->hasActiveConnections() || hasThrownException())
+        if (!connections->hasActiveConnections())
             finished = true;
     });
 
