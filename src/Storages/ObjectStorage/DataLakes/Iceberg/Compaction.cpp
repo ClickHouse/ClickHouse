@@ -141,7 +141,7 @@ struct Plan
 ///
 /// The companion "are manifests already optimal?" check is done lazily inside
 /// `writeConsolidatedManifestFile` from the data it has to read anyway.
-bool isCurrentManifestListAboveThreshold(
+static bool isCurrentManifestListAboveThreshold(
     Poco::JSON::Object::Ptr metadata_object,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
@@ -391,7 +391,7 @@ static void writeDataFiles(
     }
 }
 
-bool writeConsolidatedManifestFile(
+static bool writeConsolidatedManifestFile(
     int metadata_version,
     Poco::JSON::Object::Ptr metadata_object,
     const PersistentTableComponents & persistent_table_components,
