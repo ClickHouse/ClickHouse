@@ -501,6 +501,15 @@ void StorageObjectStorage::read(
     if (configuration->isDataLakeConfiguration() && storage_snapshot->metadata
         && !storage_snapshot->metadata->datalake_table_state.has_value())
     {
+        /// Initialize underlying datalake metadata if it has not been yet.
+        /// Cluster table function workers and other paths that bypass the analyzer
+        /// reach `read` without having had `update`/`updateExternalDynamicMetadataIfExists`
+        /// called, so `getTableStateSnapshot` would otherwise hit an "uninitialized" assertion.
+        if (is_table_function)
+            configuration->lazyInitializeIfNeeded(object_storage, local_context);
+        else
+            configuration->update(object_storage, local_context);
+
         if (auto state = configuration->getTableStateSnapshot(local_context))
         {
             StorageInMemoryMetadata pinned = *storage_snapshot->metadata;
