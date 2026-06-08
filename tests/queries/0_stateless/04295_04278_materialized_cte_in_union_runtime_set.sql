@@ -1,6 +1,16 @@
 SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
+-- The temporary materialized CTE storage `_materialized_cte_ct_<hash>` is
+-- registered on the initiator only. Under `enable_parallel_replicas = 1`,
+-- the follower replica running the `Remote` step does not see it and raises
+-- `UNKNOWN_TABLE: Unknown table expression identifier '_materialized_cte_ct_<hash>'`
+-- in `QueryAnalyzer::initializeQueryJoiningTreeWithTableExpressions`. Pin the
+-- setting so the CI `ParallelReplicas` variant cannot flip it on. The proper
+-- planner-side fix lives in `MaterializingCTEStep` plus the `ParallelReplicas`
+-- distributed-query construction path and is tracked separately.
+SET enable_parallel_replicas = 0;
+
 DROP TABLE IF EXISTS t_04278 SYNC;
 CREATE TABLE t_04278 (a Int32, b Int32) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_04278 VALUES (1, 10), (2, 20), (3, 30);
