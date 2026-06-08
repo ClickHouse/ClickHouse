@@ -486,7 +486,9 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 {
     /// Is this a read from MergeTree step?
     auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(node.step.get());
-    if (!read_from_merge_tree_step)
+    auto * read_from_object_storage_step = typeid_cast<ReadFromObjectStorageStep *>(node.step.get());
+
+    if (!read_from_merge_tree_step && !read_from_object_storage_step)
         return;
 
     /// Should not have children
@@ -496,21 +498,37 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     /// TODO: estimate number of buckets based on statistics and available nodes and memory
     const size_t bucket_count = optimization_settings.distributed_plan_default_reader_bucket_count;
 
-    /// Round-robin mark-range bucketing would split rows with the same sort key across buckets and
-    /// break FINAL dedup on engines with specialized merging (Replacing, Collapsing, ...). Fall back
-    /// to serial read until a correctness-preserving bucketing strategy exists.
-    if (read_from_merge_tree_step->isQueryWithFinal() &&
-        read_from_merge_tree_step->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Ordinary)
-        return;
+    if (read_from_merge_tree_step)
+    {
+        /// Round-robin mark-range bucketing would split rows with the same sort key across buckets and
+        /// break FINAL dedup on engines with specialized merging (Replacing, Collapsing, ...). Fall back
+        /// to serial read until a correctness-preserving bucketing strategy exists.
+        if (read_from_merge_tree_step->isQueryWithFinal() &&
+            read_from_merge_tree_step->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+            return;
 
-    /// Check if table is big enough for distributed read
-    /// TODO: implement better logic for choosing number of parallel readers
-    auto analysis_result = read_from_merge_tree_step->selectRangesToRead();
-    if (analysis_result && analysis_result->selected_rows <= optimization_settings.distributed_plan_max_rows_to_broadcast)
-        return;
+        /// Check if table is big enough for distributed read
+        /// TODO: implement better logic for choosing number of parallel readers
+        auto analysis_result = read_from_merge_tree_step->selectRangesToRead();
+        if (analysis_result && analysis_result->selected_rows <= optimization_settings.distributed_plan_max_rows_to_broadcast)
+            return;
 
-    /// Move read step to a new node and set it to distributed read
-    read_from_merge_tree_step->setDistributedRead(bucket_count);
+        /// Move read step to a new node and set it to distributed read
+        read_from_merge_tree_step->setDistributedRead(bucket_count);
+    }
+    else if (read_from_object_storage_step)
+    {
+#if CLICKHOUSE_CLOUD
+        /// Check if table is big enough for distributed read
+        /// TODO: implement better logic for choosing number of parallel readers
+        if (read_from_object_storage_step->totalRows() <= optimization_settings.distributed_plan_max_rows_to_broadcast)
+            return;
+
+        read_from_object_storage_step->setDistributedRead(bucket_count);
+#else
+        return;
+#endif
+    }
 
     auto & new_read_node = nodes.emplace_back();
     new_read_node.step = std::move(node.step);
@@ -956,20 +974,41 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             else
             {
                 /// No children, this means that this is a leaf step.
-                /// Use ReadFromMergeTree with catalog access for distributed reads on public master.
-                auto shards_for_read = makeListOfShardsForReadStep(frame.node->step.get());
 
-                current_plan = std::make_unique<QueryPlan>();
-                current_plan->addStep(std::move(frame.node->step));
-
-                for (size_t bucket = 0; bucket < shards_for_read.size(); ++bucket)
+                auto populate_shards = [&](std::vector<String> shards_for_read)
                 {
-                    String shard_id = toString(bucket);
-                    DistributedQueryTask task;
-                    task.parameters.parameters["bucket_id"] = Field(shard_id);
-                    task.parameters.parameters["bucket_description"] = Field(shards_for_read[bucket]);
-                    task.parameters.parameters["total_buckets"] = Field(shards_for_read.size());
-                    frame.list_of_shards[shard_id] = std::move(task);
+                    for (size_t bucket = 0; bucket < shards_for_read.size(); ++bucket)
+                    {
+                        String shard_id = toString(bucket);
+                        DistributedQueryTask task;
+                        task.parameters.parameters["bucket_id"] = Field(shard_id);
+                        task.parameters.parameters["bucket_description"] = Field(shards_for_read[bucket]);
+                        task.parameters.parameters["total_buckets"] = Field(shards_for_read.size());
+                        frame.list_of_shards[shard_id] = std::move(task);
+                    }
+                };
+
+#if CLICKHOUSE_CLOUD
+                ReadFromMergeTree * read_merge_tree = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
+                if (read_merge_tree && !optimization_settings.distributed_plan_prefer_replicas_over_workers)
+                {
+                    auto worker_step = ReadFromMergeTreeAtWorker::createFrom(*read_merge_tree);
+                    auto shards_for_read = worker_step->getShardsForDistributedRead();
+
+                    current_plan = std::make_unique<QueryPlan>();
+                    current_plan->addStep(std::move(worker_step));
+
+                    populate_shards(std::move(shards_for_read));
+                }
+                else
+#endif
+                {
+                    auto shards_for_read = makeListOfShardsForReadStep(frame.node->step.get());
+
+                    current_plan = std::make_unique<QueryPlan>();
+                    current_plan->addStep(std::move(frame.node->step));
+
+                    populate_shards(std::move(shards_for_read));
                 }
             }
 
