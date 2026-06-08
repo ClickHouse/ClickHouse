@@ -96,10 +96,10 @@ def main():
         test_results.append(
             Result.from_commands_run(
                 name="select 1",
-                command=f"{temp_dir}/clickhouse-client --receive_timeout=5 --query 'select 1'",
+                command=f"{temp_dir}/clickhouse-client --query 'select 1'",
             )
         )  # success if exit code is 0
-        test_results.append(Result(name="test 2", status=Result.Status.OK))
+        test_results.append(Result(name="test 2", status=Result.Status.SUCCESS))
 
         results.append(
             Result.create_from(
@@ -110,7 +110,7 @@ def main():
 
     Result.create_from(
         results=results,  # job status success or failure will be generated in accordance with subtask results in this array
-        # status=Result.Status.FAIL, # or set status here
+        # status=Result.Status.FAILED, # or set status here
         stopwatch=stop_watch,
         files=[],  # files you need to store after the job completes
         info="write result info here",  # will be shown in the report

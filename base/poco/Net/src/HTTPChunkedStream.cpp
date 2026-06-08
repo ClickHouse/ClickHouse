@@ -52,8 +52,8 @@ void HTTPChunkedStreamBuf::close()
 	if (_mode & std::ios::out && _chunk != std::char_traits<char>::eof())
 	{
 		sync();
-		if (writeToDevice("", 0) < 0)
-			throw MessageException("Failed to write terminating chunk");
+		_session.write("0\r\n\r\n", 5);
+
 		_chunk = std::char_traits<char>::eof();
 	}
 }
@@ -167,16 +167,7 @@ int HTTPChunkedStreamBuf::writeToDevice(const char* buffer, std::streamsize leng
 	_chunkBuffer.append("\r\n", 2);
 	_chunkBuffer.append(buffer, static_cast<std::string::size_type>(length));
 	_chunkBuffer.append("\r\n", 2);
-
-	std::streamsize chunkSize = static_cast<std::streamsize>(_chunkBuffer.size());
-	std::streamsize offset = 0;
-	while (offset < chunkSize)
-	{
-		int written = _session.write(_chunkBuffer.data() + offset, chunkSize - offset);
-		if (written <= 0)
-			return -1;
-		offset += written;
-	}
+	_session.write(_chunkBuffer.data(), static_cast<std::streamsize>(_chunkBuffer.size()));
 	return static_cast<int>(length);
 }
 
@@ -219,7 +210,6 @@ HTTPChunkedInputStream::HTTPChunkedInputStream(HTTPSession& session):
 	HTTPChunkedIOS(session, std::ios::in),
 	std::istream(&_buf)
 {
-	poco_ios_init(&_buf);
 }
 
 
@@ -235,7 +225,6 @@ HTTPChunkedOutputStream::HTTPChunkedOutputStream(HTTPSession& session):
 	HTTPChunkedIOS(session, std::ios::out),
 	std::ostream(&_buf)
 {
-	poco_ios_init(&_buf);
 }
 
 

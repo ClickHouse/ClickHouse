@@ -5,8 +5,6 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <limits>
-
 namespace DB
 {
 
@@ -68,8 +66,6 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override = 0;
 
-    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override = 0;
-
     /// This is a volume.
     bool isVolume() const override { return true; }
 
@@ -100,7 +96,7 @@ protected:
 
 public:
     /// Volume priority. Maximum UInt64 value by default (lowest possible priority)
-    UInt64 volume_priority = std::numeric_limits<UInt64>::max();
+    UInt64 volume_priority;
     /// Max size of reservation, zero means unlimited size
     UInt64 max_data_part_size = 0;
     /// Should a new data part be synchronously moved to a volume according to ttl on insert

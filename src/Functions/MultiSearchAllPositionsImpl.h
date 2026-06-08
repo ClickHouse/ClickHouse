@@ -2,7 +2,6 @@
 
 #include <vector>
 #include <Columns/ColumnString.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -31,7 +30,7 @@ struct MultiSearchAllPositionsImpl
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be at most 255", name, needles_arr.size());
 
-        VectorWithMemoryTracking<std::string_view> needles;
+        std::vector<std::string_view> needles;
         needles.reserve(needles_arr.size());
         for (const auto & needle : needles_arr)
             needles.emplace_back(needle.safeGet<String>());
@@ -92,7 +91,7 @@ struct MultiSearchAllPositionsImpl
 
         const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
 
-        VectorWithMemoryTracking<std::string_view> needles;
+        std::vector<std::string_view> needles;
 
         for (size_t i = 0; i < haystack_offsets.size(); ++i)
         {
@@ -100,7 +99,7 @@ struct MultiSearchAllPositionsImpl
 
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
             {
-                needles.emplace_back(needles_data_string.getDataAt(j));
+                needles.emplace_back(needles_data_string.getDataAt(j).toView());
             }
 
             const size_t needles_size = needles.size();

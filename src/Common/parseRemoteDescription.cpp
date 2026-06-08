@@ -45,7 +45,7 @@ static bool parseNumber(const String & description, size_t l, size_t r, size_t &
         if (!isNumericASCII(description[pos]))
             return false;
         res = res * 10 + description[pos] - '0';
-        if (static_cast<double>(res) > 1e15)
+        if (res > 1e15)
             return false;
     }
     return true;
@@ -72,7 +72,7 @@ std::vector<String> parseRemoteDescription(
         {
             ssize_t cnt = 1;
             ssize_t last_dot = -1; /// The rightmost pair of points, remember the index of the right of the two
-            size_t m = 0;
+            size_t m;
             std::vector<String> buffer;
             bool have_splitter = false;
 
@@ -95,8 +95,8 @@ std::vector<String> parseRemoteDescription(
             /// The presence of a dot - numeric interval
             if (last_dot != -1)
             {
-                size_t left = 0;
-                size_t right = 0;
+                size_t left;
+                size_t right;
                 if (description[last_dot - 1] != '.')
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -183,7 +183,7 @@ std::vector<std::pair<String, uint16_t>> parseRemoteDescriptionForExternalDataba
     for (const auto & address : addresses)
     {
         const size_t close_bracket = address.rfind(']');
-        size_t colon = 0;
+        size_t colon;
         std::string host;
         if (address.length() > 2 && address[0] == '[' && close_bracket != String::npos)
         {
