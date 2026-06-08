@@ -4,9 +4,11 @@
 -- Only core formats that are present in every build are checked here: formats backed by
 -- optional libraries (Parquet, Arrow, Avro, ...) are absent from builds with ENABLE_LIBRARIES=0
 -- (such as the fast-test build), and documentation is attached only to registered formats.
+-- `RowBinaryWithNamesAndTypesAndDefaults` is a core format with a dedicated page; it must not be
+-- skipped by documentation registration (regression guard for a previously-missing entry).
 SELECT name, length(description) > 0 AS has_description
 FROM system.formats
-WHERE name IN ('JSONEachRow', 'CSV', 'TabSeparated', 'Native', 'Pretty')
+WHERE name IN ('JSONEachRow', 'CSV', 'TabSeparated', 'Native', 'Pretty', 'RowBinaryWithNamesAndTypesAndDefaults')
 ORDER BY name;
 
 -- The CSV documentation is migrated in full, so it mentions the format.

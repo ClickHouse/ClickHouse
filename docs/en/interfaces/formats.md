@@ -68,7 +68,7 @@ The supported formats are:
 | [JSON](./formats/JSON/JSON.md)                                                                             | ✔   | ✔     |
 | [JSONAsString](./formats/JSON/JSONAsString.md)                                                             | ✔   | ✗     |
 | [JSONAsObject](./formats/JSON/JSONAsObject.md)                                                             | ✔   | ✗     |
-| [JSONStrings](./formats/JSON/JSONStrings.md)                                                               | ✔   | ✔     |
+| [JSONStrings](./formats/JSON/JSONStrings.md)                                                               | ✗   | ✔     |
 | [JSONColumns](./formats/JSON/JSONColumns.md)                                                               | ✔   | ✔     |
 | [JSONColumnsWithMetadata](./formats/JSON/JSONColumnsWithMetadata.md)                                       | ✔   | ✔     |
 | [JSONCompact](./formats/JSON/JSONCompact.md)                                                               | ✔   | ✔     |

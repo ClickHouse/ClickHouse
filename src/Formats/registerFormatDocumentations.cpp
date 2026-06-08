@@ -1102,7 +1102,7 @@ Additional settings:
         .description = R"DOCS_MD(
 | Input | Output | Alias |
 |-------|--------|-------|
-| ✔     |        |       |
+| ✔     | ✗      |       |
 
 ## Description {#description}
 
@@ -1139,7 +1139,7 @@ INSERT INTO football FROM INFILE 'football.txt' FORMAT CustomSeparatedIgnoreSpac
         .description = R"DOCS_MD(
 | Input | Output | Alias |
 |-------|--------|-------|
-| ✔     |        |       |
+| ✔     | ✗      |       |
 
 ## Description {#description}
 
@@ -1176,7 +1176,7 @@ INSERT INTO football FROM INFILE 'football.txt' FORMAT CustomSeparatedIgnoreSpac
         .description = R"DOCS_MD(
 | Input | Output | Alias |
 |-------|--------|-------|
-| ✔     |        |       |
+| ✔     | ✗      |       |
 
 ## Description {#description}
 
@@ -5039,155 +5039,6 @@ The following settings are common to all `Pretty` formats:
 Differs from [JSONEachRow](./JSONEachRow.md) only in that JSON is pretty formatted with new line delimiters and 4 space indents.
 
 ## Example usage {#example-usage}
-### Inserting data {#inserting-data}
-
-Using a JSON file with the following data, named as `football.json`:
-
-```json
-{
-    "date": "2022-04-30",
-    "season": 2021,
-    "home_team": "Sutton United",
-    "away_team": "Bradford City",
-    "home_team_goals": 1,
-    "away_team_goals": 4
-}
-{
-    "date": "2022-04-30",
-    "season": 2021,
-    "home_team": "Swindon Town",
-    "away_team": "Barrow",
-    "home_team_goals": 2,
-    "away_team_goals": 1
-}
-{
-    "date": "2022-04-30",
-    "season": 2021,
-    "home_team": "Tranmere Rovers",
-    "away_team": "Oldham Athletic",
-    "home_team_goals": 2,
-    "away_team_goals": 0
-}
-{
-    "date": "2022-05-02",
-    "season": 2021,
-    "home_team": "Port Vale",
-    "away_team": "Newport County",
-    "home_team_goals": 1,
-    "away_team_goals": 2
-}
-{
-    "date": "2022-05-02",
-    "season": 2021,
-    "home_team": "Salford City",
-    "away_team": "Mansfield Town",
-    "home_team_goals": 2,
-    "away_team_goals": 2
-}
-{
-    "date": "2022-05-07",
-    "season": 2021,
-    "home_team": "Barrow",
-    "away_team": "Northampton Town",
-    "home_team_goals": 1,
-    "away_team_goals": 3
-}
-{
-    "date": "2022-05-07",
-    "season": 2021,
-    "home_team": "Bradford City",
-    "away_team": "Carlisle United",
-    "home_team_goals": 2,
-    "away_team_goals": 0
-}
-{
-    "date": "2022-05-07",
-    "season": 2021,
-    "home_team": "Bristol Rovers",
-    "away_team": "Scunthorpe United",
-    "home_team_goals": 7,
-    "away_team_goals": 0
-}
-{
-    "date": "2022-05-07",
-    "season": 2021,
-    "home_team": "Exeter City",
-    "away_team": "Port Vale",
-    "home_team_goals": 0,
-    "away_team_goals": 1
-}
-{
-    "date": "2022-05-07",
-    "season": 2021,
-    "home_team": "Harrogate Town A.F.C.",
-    "away_team": "Sutton United",
-    "home_team_goals": 0,
-    "away_team_goals": 2
-}
-{
-    "date": "2022-05-07",
-    "season": 2021,
-    "home_team": "Hartlepool United",
-    "away_team": "Colchester United",
-    "home_team_goals": 0,
-    "away_team_goals": 2
-}
-{
-    "date": "2022-05-07",
-    "season": 2021,
-    "home_team": "Leyton Orient",
-    "away_team": "Tranmere Rovers",
-    "home_team_goals": 0,
-    "away_team_goals": 1
-}
-{
-    "date": "2022-05-07",
-    "season": 2021,
-    "home_team": "Mansfield Town",
-    "away_team": "Forest Green Rovers",
-    "home_team_goals": 2,
-    "away_team_goals": 2
-}
-{
-    "date": "2022-05-07",
-    "season": 2021,
-    "home_team": "Newport County",
-    "away_team": "Rochdale",
-    "home_team_goals": 0,
-    "away_team_goals": 2
-}
-{
-    "date": "2022-05-07",
-    "season": 2021,
-    "home_team": "Oldham Athletic",
-    "away_team": "Crawley Town",
-    "home_team_goals": 3,
-    "away_team_goals": 3
-}
-{
-    "date": "2022-05-07",
-    "season": 2021,
-    "home_team": "Stevenage Borough",
-    "away_team": "Salford City",
-    "home_team_goals": 4,
-    "away_team_goals": 2
-}
-{
-    "date": "2022-05-07",
-    "season": 2021,
-    "home_team": "Walsall",
-    "away_team": "Swindon Town",
-    "home_team_goals": 0,
-    "away_team_goals": 3
-} 
-```
-
-Insert the data:
-
-```sql
-INSERT INTO football FROM INFILE 'football.json' FORMAT PrettyJSONEachRow;
-```
-
 ### Reading data {#reading-data}
 
 Read data using the `PrettyJSONEachRow` format:
@@ -7580,6 +7431,83 @@ Otherwise, the first row will be skipped.
 If setting [`input_format_with_types_use_header`](/operations/settings/settings-formats.md/#input_format_with_types_use_header) is set to `1`,
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
 :::
+)DOCS_MD"});
+
+    factory.setDocumentation("RowBinaryWithNamesAndTypesAndDefaults", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✗      |       |
+
+## Description {#description}
+
+Similar to the [`RowBinaryWithNamesAndTypes`](./RowBinaryWithNamesAndTypes.md) format, but with an extra byte before each cell that indicates whether the column's `DEFAULT` value should be used — exactly like in the [`RowBinaryWithDefaults`](./RowBinaryWithDefaults.md) format. This combination supports schema-evolving `INSERT`s: the writer can omit columns from the header (they receive the target column's `DEFAULT`) and, for any column it does send, it can mark individual cells as "use the column's `DEFAULT`" without conflating that with `NULL`.
+
+This format is input only.
+
+## Wire format {#wire-format}
+
+The header is identical to [`RowBinaryWithNamesAndTypes`](./RowBinaryWithNamesAndTypes.md):
+
+1. A `VarUInt` with the number of columns `N`.
+2. `N` length-prefixed `String`s with column names.
+3. `N` column types — either textual names or compact binary encoding, controlled by the `output_format_binary_encode_types_in_binary_format` / `input_format_binary_decode_types_in_binary_format` settings.
+
+After the header, each row consists of `N` cells. For each cell:
+
+- A single `UInt8` marker byte.
+  - `0x01` — use the target column's `DEFAULT` expression. No value bytes follow.
+  - `0x00` — a value follows, serialized via the column type's `RowBinary` serializer. For `Nullable(T)` the value bytes start with the `Nullable` null byte (`0` for non-null, `1` for NULL), then the inner value if non-null.
+
+## Defaults vs NULL {#defaults-vs-null}
+
+The per-cell default marker and `Nullable`'s built-in null byte are independent. A `Nullable(UInt32) DEFAULT 42` column can be sent three different ways per row:
+
+| Bytes      | Meaning                                                |
+|------------|--------------------------------------------------------|
+| `01`       | Use `DEFAULT 42`.                                      |
+| `00 01`    | Value path, then `NULL` via the `Nullable` type.       |
+| `00 00 …`  | Value path, then a non-null inner value.               |
+
+## Schema evolution {#schema-evolution}
+
+| Case                                                                             | Behavior                                                                                                                                                                                |
+|----------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Column missing from the file's header entirely                                   | Filled in the target via `insertDefaultsForNotSeenColumns`; gated by `defaults_for_omitted_fields`.                                                                                     |
+| Column present in the header, cell marker `0x01`                                 | `insertDefault` per row.                                                                                                                                                                |
+| Column present in the header, cell marker `0x00`                                 | Value is parsed normally.                                                                                                                                                               |
+| Extra column in the header, not in the target table                              | Silently dropped when `input_format_skip_unknown_fields = 1` (the marker is consumed first; if `0x01`, nothing else; if `0x00`, the typed value is parsed and discarded).               |
+
+## Example usage {#example-usage}
+
+```sql title="Query"
+SELECT * FROM format(
+    'RowBinaryWithNamesAndTypesAndDefaults',
+    'x Nullable(UInt32) DEFAULT 42',
+    unhex('01' || '0178' || '10' || hex('Nullable(UInt32)') || '01')
+);
+```
+
+```response title="Response"
+┌──x─┐
+│ 42 │
+└────┘
+```
+
+- The header carries one column named `x` of type `Nullable(UInt32)`.
+- The single cell uses marker `0x01`, meaning "use `DEFAULT 42`".
+
+## Format settings {#format-settings}
+
+The following settings are common to all `RowBinary` type formats.
+
+| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
+|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`format_binary_max_string_size`](/operations/settings/settings-formats.md/#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
+| [`output_format_binary_encode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) output format.  | `false` |
+| [`input_format_binary_decode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) input format.    | `false` |
+| [`output_format_binary_write_json_as_string`](/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) output format.                            | `false` |
+| [`input_format_binary_read_json_as_string`](/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) input format.                              | `false` |
 )DOCS_MD"});
 
     factory.setDocumentation("SQLInsert", Documentation{
