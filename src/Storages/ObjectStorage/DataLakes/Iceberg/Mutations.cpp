@@ -420,10 +420,8 @@ static bool writeMetadataFiles(
     auto hint_path = filename_generator.generateVersionHint();
     const bool use_version_hint = data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint];
 
-    Iceberg::MetadataRollbackInfo metadata_rollback;
-
-    auto cleanup = [object_storage, context, &delete_files, &data_files, &path_resolver, manifest_entries_in_storage,
-                    storage_manifest_list_name, metadata_info, hint_path, &metadata_rollback]()
+    auto cleanup = [object_storage, &delete_files, &data_files, &path_resolver, manifest_entries_in_storage,
+                    storage_manifest_list_name]()
     {
         try
         {
@@ -436,9 +434,6 @@ static bool writeMetadataFiles(
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
-
-            Iceberg::removeMetadataFileAndRollbackVersionHint(
-                path_resolver, metadata_info, hint_path, object_storage, context, metadata_rollback);
         }
         catch (...)
         {
@@ -526,15 +521,14 @@ static bool writeMetadataFiles(
         const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
         if (!catalog_writes_metadata_file)
         {
-            metadata_rollback = writeMetadataFileAndVersionHint(
-                path_resolver,
-                metadata_info,
-                json_representation,
-                hint_path,
-                object_storage,
-                context,
-                use_version_hint);
-            if (!metadata_rollback.metadata_file_written)
+            if (!writeMetadataFileAndVersionHint(
+                    path_resolver,
+                    metadata_info,
+                    json_representation,
+                    hint_path,
+                    object_storage,
+                    context,
+                    use_version_hint))
             {
                 cleanup();
                 return false;
@@ -765,18 +759,16 @@ void alter(
         auto hint_path = filename_generator.generateVersionHint();
 
         const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
-        Iceberg::MetadataRollbackInfo metadata_rollback;
         if (!catalog_writes_metadata_file)
         {
-            metadata_rollback = writeMetadataFileAndVersionHint(
-                persistent_table_components.path_resolver,
-                metadata_info,
-                json_representation,
-                hint_path,
-                object_storage,
-                context,
-                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]);
-            if (!metadata_rollback.metadata_file_written)
+            if (!writeMetadataFileAndVersionHint(
+                    persistent_table_components.path_resolver,
+                    metadata_info,
+                    json_representation,
+                    hint_path,
+                    object_storage,
+                    context,
+                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
             {
                 ++i;
                 continue;
@@ -787,21 +779,8 @@ void alter(
         {
             auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-            bool updated = false;
-            try
+            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id))
             {
-                updated = catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id);
-            }
-            catch (...)
-            {
-                Iceberg::removeMetadataFileAndRollbackVersionHint(
-                    persistent_table_components.path_resolver, metadata_info, hint_path, object_storage, context, metadata_rollback);
-                throw;
-            }
-            if (!updated)
-            {
-                Iceberg::removeMetadataFileAndRollbackVersionHint(
-                    persistent_table_components.path_resolver, metadata_info, hint_path, object_storage, context, metadata_rollback);
                 ++i;
                 continue;
             }

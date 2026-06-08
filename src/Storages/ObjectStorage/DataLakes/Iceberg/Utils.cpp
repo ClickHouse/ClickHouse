@@ -283,7 +283,7 @@ void writeMessageToFile(
     }
 }
 
-MetadataRollbackInfo writeMetadataFileAndVersionHint(
+bool writeMetadataFileAndVersionHint(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
     const std::string & metadata_file_content,
@@ -292,14 +292,12 @@ MetadataRollbackInfo writeMetadataFileAndVersionHint(
     DB::ContextPtr context,
     bool try_write_version_hint)
 {
-    MetadataRollbackInfo rollback_info;
-
     auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
     auto storage_version_hint_path = resolver.resolve(version_hint_path);
     try
     {
         if (object_storage->exists(StoredObject(storage_metadata_path)))
-            return rollback_info;
+            return false;
 
         Iceberg::writeMessageToFile(
             metadata_file_content,
@@ -309,12 +307,11 @@ MetadataRollbackInfo writeMetadataFileAndVersionHint(
             /* write-if-none-match */ "*",
             "",
             metadata_file_info.compression_method);
-        rollback_info.metadata_file_written = true;
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        return rollback_info;
+        return false;
     }
 
     if (try_write_version_hint)
@@ -326,7 +323,6 @@ MetadataRollbackInfo writeMetadataFileAndVersionHint(
             std::string version_hint_value;
             std::string etag;
             std::string write_if_none_match = "*";
-            bool hint_existed = false;
             if (object_storage->exists(object_info))
             {
                 auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), MAX_HINT_FILE_SIZE);
@@ -334,7 +330,6 @@ MetadataRollbackInfo writeMetadataFileAndVersionHint(
                 boost::algorithm::trim(version_hint_value);
                 etag = object_metadata.etag;
                 write_if_none_match.clear();
-                hint_existed = true;
             }
 
             Int32 old_version = 0;
@@ -361,9 +356,6 @@ MetadataRollbackInfo writeMetadataFileAndVersionHint(
                         context,
                         write_if_none_match,
                         /* write-if-match */ etag);
-                    rollback_info.version_hint_written = true;
-                    rollback_info.previous_version_hint
-                        = hint_existed ? std::optional<std::string>(version_hint_value) : std::nullopt;
                     break;
                 }
                 catch (...)
@@ -379,65 +371,7 @@ MetadataRollbackInfo writeMetadataFileAndVersionHint(
         }
     }
 
-    return rollback_info;
-}
-
-void removeMetadataFileAndRollbackVersionHint(
-    const IcebergPathResolver & resolver,
-    const GeneratedMetadataFileWithInfo & metadata_file_info,
-    const IcebergPathFromMetadata & version_hint_path,
-    DB::ObjectStoragePtr object_storage,
-    DB::ContextPtr context,
-    const MetadataRollbackInfo & rollback_info)
-{
-    if (!rollback_info.metadata_file_written)
-        return;
-
-    auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
-    auto storage_version_hint_path = resolver.resolve(version_hint_path);
-
-    if (rollback_info.version_hint_written)
-    {
-        StoredObject object_info(storage_version_hint_path);
-        if (object_storage->exists(object_info))
-        {
-            auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), MAX_HINT_FILE_SIZE);
-            std::string version_hint_value = object_data;
-            boost::algorithm::trim(version_hint_value);
-
-            Int32 hint_version = 0;
-            if (!version_hint_value.empty())
-            {
-                if (std::all_of(version_hint_value.begin(), version_hint_value.end(), isdigit))
-                    hint_version = std::stoi(version_hint_value);
-                else
-                    hint_version = getMetadataFileAndVersion(version_hint_value).version;
-            }
-
-            if (hint_version == metadata_file_info.version)
-            {
-                try
-                {
-                    if (rollback_info.previous_version_hint.has_value())
-                        Iceberg::writeMessageToFile(
-                            *rollback_info.previous_version_hint,
-                            storage_version_hint_path,
-                            object_storage,
-                            context,
-                            /* write-if-none-match */ "",
-                            /* write-if-match */ object_metadata.etag);
-                    else
-                        object_storage->removeObjectIfExists(object_info);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-                }
-            }
-        }
-    }
-
-    object_storage->removeObjectIfExists(StoredObject(storage_metadata_path));
+    return true;
 }
 
 

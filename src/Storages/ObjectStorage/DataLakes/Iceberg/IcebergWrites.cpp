@@ -903,7 +903,6 @@ bool IcebergStorageSink::initializeMetadata()
     const auto & resolver = persistent_table_components.path_resolver;
     auto metadata_info = filename_generator.generateMetadataPathWithInfo();
     auto hint_path = filename_generator.generateVersionHint();
-    Iceberg::MetadataRollbackInfo metadata_rollback;
 
     Int64 parent_snapshot = -1;
     if (metadata->has(Iceberg::f_current_snapshot_id) && !metadata->isNull(Iceberg::f_current_snapshot_id))
@@ -941,9 +940,6 @@ bool IcebergStorageSink::initializeMetadata()
             object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
         object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
-
-        Iceberg::removeMetadataFileAndRollbackVersionHint(
-            resolver, metadata_info, hint_path, object_storage, context, metadata_rollback);
 
         if (retry_because_of_metadata_conflict)
         {
@@ -1087,15 +1083,14 @@ bool IcebergStorageSink::initializeMetadata()
             const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
             if (!catalog_writes_metadata_file)
             {
-                metadata_rollback = writeMetadataFileAndVersionHint(
-                    persistent_table_components.path_resolver,
-                    metadata_info,
-                    json_representation,
-                    hint_path,
-                    object_storage,
-                    context,
-                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]);
-                if (!metadata_rollback.metadata_file_written)
+                if (!writeMetadataFileAndVersionHint(
+                        persistent_table_components.path_resolver,
+                        metadata_info,
+                        json_representation,
+                        hint_path,
+                        object_storage,
+                        context,
+                        data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
                 {
                     LOG_DEBUG(log, "Failed to write metadata {}, retrying", metadata_info.path);
                     cleanup(true);
@@ -1115,8 +1110,6 @@ bool IcebergStorageSink::initializeMetadata()
                     return false;
                 }
             }
-
-            metadata_rollback = {};
         }
 
         /// If there's an active metadata cache, we can't just cache 'our' written version as
