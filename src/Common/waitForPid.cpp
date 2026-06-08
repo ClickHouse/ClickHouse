@@ -217,12 +217,15 @@ bool waitForPid(pid_t pid, size_t timeout_in_seconds)
         return process_terminated_normally;
     }
 
-    /// If timeout is positive try waitpid without block in loop until
-    /// process is normally terminated or waitpid return error
+    /// If timeout is positive, poll until the process exits or the total wall
+    /// clock since function entry exceeds the limit. The remaining budget is
+    /// derived from the `watch` started at function entry (never reset) so
+    /// that the `/proc/<pid>` fallback — whose directory fd is always instantly
+    /// ready, causing `pollPid` to return in ~0 ms — still subtracts real
+    /// elapsed time and cannot busy-spin until the child exits on its own.
 
-    /// NOTE: timeout cast to int, since poll() accept int for timeout
-    int timeout_in_ms = static_cast<int>(timeout_in_seconds * 1000);
-    while (timeout_in_ms > 0)
+    const Int64 total_timeout_ms = static_cast<Int64>(timeout_in_seconds * 1000);
+    while (true)
     {
         int waitpid_res = HANDLE_EINTR(waitpid(pid, &status, WNOHANG));
         bool process_terminated_normally = (waitpid_res == pid);
@@ -232,17 +235,14 @@ bool waitForPid(pid_t pid, size_t timeout_in_seconds)
         if (waitpid_res != 0)
             return false;
 
-        watch.restart();
-
-        PollPidResult result = pollPid(pid, timeout_in_ms);
-
-        if (result == PollPidResult::FAILED)
+        const Int64 remaining_ms = total_timeout_ms - static_cast<Int64>(watch.elapsedMilliseconds());
+        if (remaining_ms <= 0)
             return false;
 
-        timeout_in_ms -= watch.elapsedMilliseconds();
+        PollPidResult result = pollPid(pid, static_cast<int>(remaining_ms));
+        if (result == PollPidResult::FAILED)
+            return false;
     }
-
-    return false;
 }
 
 }
