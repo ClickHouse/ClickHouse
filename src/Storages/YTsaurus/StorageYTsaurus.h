@@ -18,7 +18,9 @@ struct StorageID;
 struct YTsaurusStorageConfiguration
 {
     YTsaurusSettings settings;
-    VectorWithMemoryTracking<String> http_proxy_urls{};
+    /// Persistent storage/dictionary-owned connection config (built from engine args at CREATE,
+    /// lives until drop) -> global tracker, not the creating query's. See `PoolWithFailover`.
+    VectorWithGlobalMemoryTracking<String> http_proxy_urls{};
     String cypress_path{};
     String oauth_token{};
     std::optional<String> ytsaurus_columns_description{};

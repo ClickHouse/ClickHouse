@@ -62,8 +62,14 @@ private:
 
     /// Highest priority is 0, the bigger the number in map, the less the priority
     using PoolHolderPtr = std::shared_ptr<PoolHolder>;
-    using Replicas = DB::VectorWithMemoryTracking<PoolHolderPtr>;
-    using ReplicasWithPriority = DB::MapWithMemoryTracking<size_t, Replicas>;
+    /// `replicas_with_priority` is persistent, storage-owned metadata: it is built once when the
+    /// `PoolWithFailover` is created during CREATE/ATTACH and lives until the storage is dropped or the
+    /// server shuts down (it also feeds the process-wide reconnector), and is freed on that later path.
+    /// Charge the global tracker rather than the creating query's: its lifetime is not the query's, so
+    /// per-query enforcement would let low-limit DDL spuriously fail while allocating persistent pool
+    /// metadata, and the create/drop alloc/free would otherwise straddle different trackers.
+    using Replicas = DB::VectorWithGlobalMemoryTracking<PoolHolderPtr>;
+    using ReplicasWithPriority = DB::MapWithGlobalMemoryTracking<size_t, Replicas>;
 
     static auto connectionReestablisher(std::weak_ptr<PoolHolder> pool, size_t pool_wait_timeout);
 

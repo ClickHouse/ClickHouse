@@ -24,6 +24,13 @@ using MapWithMemoryTracking = std::map<K, V, Compare, AllocatorWithMemoryTrackin
 template <typename K, typename V, typename Compare = std::less<K>>
 using MultiMapWithMemoryTracking = std::multimap<K, V, Compare, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
 
+/// Like `MapWithMemoryTracking`, but charges and enforces only the global/total memory tracker,
+/// never the per-query/per-thread one. For process-wide containers mutated from arbitrary threads.
+/// See `VectorWithGlobalMemoryTracking` and `AllocatorWithMemoryTracking`'s `tracking_level`.
+template <typename K, typename V, typename Compare = std::less<K>>
+using MapWithGlobalMemoryTracking
+    = std::map<K, V, Compare, AllocatorWithMemoryTracking<std::pair<const K, V>, VariableContext::User>>;
+
 /// Like `MultiMapWithMemoryTracking`, but charges and enforces only the global/total memory tracker,
 /// never the per-query/per-thread one. For process-wide containers mutated from arbitrary threads.
 /// See `VectorWithGlobalMemoryTracking` and `AllocatorWithMemoryTracking`'s `tracking_level`.
