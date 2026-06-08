@@ -175,13 +175,13 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
     auto current_context = getContext();
 
     auto table_function_name = table_expression.table_function->as<ASTFunction>()->name;
-    TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, current_context);
 
-    if (!table_function_ptr)
+    /// A parameterized view takes precedence over a table function with a colliding name, mirroring
+    /// `Context::executeTableFunction`, which does the catalog lookup first and only falls back to the
+    /// table-function factory. Look the name up without throwing: a missing or inaccessible object must
+    /// still produce the `UNKNOWN_FUNCTION` error (with hints) below, not a table-resolution or
+    /// access-check exception.
     {
-        /// The name may refer to a parameterized view rather than a table function. Look it up without throwing:
-        /// a missing or inaccessible object must still produce the `UNKNOWN_FUNCTION` error (with hints) below,
-        /// not a table-resolution or access-check exception.
         auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(table_function_name, current_context);
         StoragePtr table;
         if (!table_name.empty())
@@ -190,23 +190,32 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
         if (auto * storage_view = table ? table->as<StorageView>() : nullptr; storage_view && storage_view->isParameterizedView())
         {
             current_context->checkAccess(AccessType::SHOW_COLUMNS, storage_view->getStorageID());
-            auto query = storage_view->getInMemoryMetadataPtr(current_context, false)->getSelectQuery().inner_query->clone();
+            auto view_metadata = storage_view->getInMemoryMetadataPtr(current_context, false);
+            auto query = view_metadata->getSelectQuery().inner_query->clone();
             NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression.table_function, current_context);
             StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
-            fillColumnsFromSubqueryImpl(query, current_context);
+            /// Analyze the substituted query under the view's SQL security context (`DEFINER`/`INVOKER`),
+            /// matching execution via `Context::buildParameterizedViewStorage`, so that a user with
+            /// `SHOW COLUMNS` on the view but without direct grants on the inner tables can still describe
+            /// a `SQL SECURITY DEFINER` view.
+            auto view_context = view_metadata->getSQLSecurityOverriddenContext(current_context);
+            fillColumnsFromSubqueryImpl(query, view_context);
             return;
         }
+    }
 
+    TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, current_context);
+
+    if (!table_function_ptr)
+    {
         auto hints = TableFunctionFactory::instance().getHints(table_function_name);
         if (!hints.empty())
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}. Maybe you meant: {}", table_function_name, toString(hints));
         else
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function_name);
     }
-    else
-    {
-        table_function_ptr->parseArguments(table_expression.table_function, current_context);
-    }
+
+    table_function_ptr->parseArguments(table_expression.table_function, current_context);
 
     auto column_descriptions = table_function_ptr->getActualTableStructureWithAccess(current_context, /*is_insert_query*/ true);
     for (const auto & column : column_descriptions)
