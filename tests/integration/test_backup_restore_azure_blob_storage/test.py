@@ -11,9 +11,12 @@ from helpers.cluster import ClickHouseCluster
 
 
 def generate_cluster_def(port):
+    # Per-worker suffix so parallel xdist workers don't race on the generated file.
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
+    suffix = f"_{worker_id}" if worker_id else ""
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
-        "./_gen/named_collections.xml",
+        f"./_gen/named_collections{suffix}.xml",
     )
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
@@ -71,6 +74,46 @@ def generate_cluster_def(port):
     return path
 
 
+def generate_cluster_def_legacy_native_copy(port):
+    # Legacy-form disk (`<type>azure_blob_storage</type>`) with native copy enabled, sharing the
+    # backup target's connection string so both resolve to the same endpoint key.
+    # Per-worker suffix so parallel xdist workers don't race on the generated file.
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
+    suffix = f"_{worker_id}" if worker_id else ""
+    path = os.path.join(
+        os.path.dirname(os.path.realpath(__file__)),
+        f"./_gen/legacy_native_copy{suffix}.xml",
+    )
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(
+            f"""<clickhouse>
+    <storage_configuration>
+        <disks>
+            <blob_storage_disk_legacy_native_copy>
+                <type>azure_blob_storage</type>
+                <connection_string>DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:{port}/devstoreaccount1;</connection_string>
+                <container_name>cont</container_name>
+                <skip_access_check>false</skip_access_check>
+                <use_native_copy>true</use_native_copy>
+            </blob_storage_disk_legacy_native_copy>
+        </disks>
+        <policies>
+            <blob_storage_policy_legacy_native_copy>
+                <volumes>
+                    <main>
+                        <disk>blob_storage_disk_legacy_native_copy</disk>
+                    </main>
+                </volumes>
+            </blob_storage_policy_legacy_native_copy>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+"""
+        )
+    return path
+
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
@@ -81,6 +124,13 @@ def cluster():
             "node",
             main_configs=[path],
             with_azurite=True,
+        )
+        cluster.add_instance(
+            "node_legacy_native_copy",
+            main_configs=[generate_cluster_def_legacy_native_copy(port)],
+            with_azurite=True,
+            # Otherwise database-metadata copies also bump AzureCopyObject.
+            with_remote_database_disk=False,
         )
         cluster.start()
 
@@ -559,3 +609,43 @@ def test_backup_restore_on_merge_tree_with_checksum_data_file_name(cluster):
     assert azure_query(node, f"SELECT * from test_restored") == "1\ta\n"
     azure_query(node, f"DROP TABLE test")
     azure_query(node, f"DROP TABLE test_restored")
+
+
+def get_profile_event_count(node, event):
+    return int(
+        azure_query(
+            node, f"SELECT sum(value) FROM system.events WHERE event = '{event}'"
+        ).strip()
+    )
+
+
+def test_backup_legacy_disk_endpoint_settings_loaded(cluster):
+    # A legacy `<type>azure_blob_storage</type>` disk's use_native_copy=true must be honored on
+    # BACKUP/RESTORE; before the fix such disks were skipped while building the endpoint map.
+    node = cluster.instances["node_legacy_native_copy"]
+    azure_query(node, "DROP TABLE IF EXISTS test_legacy_native_copy SYNC")
+    azure_query(
+        node,
+        "CREATE TABLE test_legacy_native_copy(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy_legacy_native_copy'",
+    )
+    azure_query(node, "INSERT INTO test_legacy_native_copy VALUES (1, 'a')")
+
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}')"
+    azure_query(node, f"BACKUP TABLE test_legacy_native_copy TO {backup_destination}")
+    azure_query(node, "DROP TABLE IF EXISTS test_legacy_native_copy_restored")
+
+    before = get_profile_event_count(node, "AzureCopyObject")
+    azure_query(
+        node,
+        f"RESTORE TABLE test_legacy_native_copy AS test_legacy_native_copy_restored FROM {backup_destination};",
+    )
+    after = get_profile_event_count(node, "AzureCopyObject")
+    assert (
+        after > before
+    ), "legacy-declared disk's use_native_copy=true must enable native copy"
+    assert (
+        azure_query(node, "SELECT * from test_legacy_native_copy_restored") == "1\ta\n"
+    )
+
+    azure_query(node, "DROP TABLE test_legacy_native_copy")
+    azure_query(node, "DROP TABLE test_legacy_native_copy_restored")
