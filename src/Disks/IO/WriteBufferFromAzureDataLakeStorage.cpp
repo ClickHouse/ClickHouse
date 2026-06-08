@@ -65,7 +65,8 @@ constexpr size_t ADLFS_MAX_RETRIES = 10;
 
 bool isAdlsGen2Endpoint(const AzureBlobStorage::Endpoint & endpoint)
 {
-    return endpoint.storage_account_url.contains("dfs.fabric.microsoft.com");
+    return endpoint.storage_account_url.contains("dfs.fabric.microsoft.com")
+        || endpoint.storage_account_url.contains("blob.fabric.microsoft.com");
 }
 
 Azure::Storage::Files::DataLake::DataLakeFileClient makeAdlsGen2FileClient(
@@ -156,12 +157,12 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(
     size_t backoff_ms = 100;
     for (size_t attempt = 1; attempt < ADLFS_MAX_RETRIES; ++attempt)
     {
-        LOG_INFO(log, "ADLS Gen2 {} attempt {} for `{}`", what, attempt, blob_path);
+        LOG_TRACE(log, "ADLS Gen2 {} attempt {} for `{}`", what, attempt, blob_path);
         try
         {
             op();
             log_event(/*error_code=*/ 0, /*error_message=*/ {}, watch.elapsedMicroseconds());
-            LOG_INFO(log, "ADLS Gen2 {} attempt {} for `{}` succeeded", what, attempt, blob_path);
+            LOG_TRACE(log, "ADLS Gen2 {} attempt {} for `{}` succeeded", what, attempt, blob_path);
             return;
         }
         catch (const Azure::Core::RequestFailedException & e)
@@ -205,14 +206,14 @@ void WriteBufferFromAzureDataLakeStorage::ensureCreated()
     if (!write_settings.object_storage_write_if_match.empty())
         create_options.AccessConditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
 
-    LOG_INFO(log, "Entering Create for ADLS Gen2 file `{}` (url={})", blob_path, file_client.GetUrl());
+    LOG_TRACE(log, "Entering Create for ADLS Gen2 file `{}`", blob_path);
     runWithRetries(
         [&]() { file_client.Create(create_options); },
         "Create",
         BlobStorageLogElement::EventType::MultiPartUploadCreate,
         /*data_size=*/ 0);
     file_created = true;
-    LOG_INFO(log, "Created ADLS Gen2 file `{}`", blob_path);
+    LOG_DEBUG(log, "Created ADLS Gen2 file `{}`", blob_path);
 }
 
 void WriteBufferFromAzureDataLakeStorage::appendBufferedData()
@@ -228,7 +229,7 @@ void WriteBufferFromAzureDataLakeStorage::appendBufferedData()
 
     ProfileEvents::increment(ProfileEvents::AzureUpload);
 
-    LOG_INFO(log, "Entering Append for `{}`: offset={}, len={}", blob_path, offset_for_append, to_append);
+    LOG_TRACE(log, "Entering Append for `{}`: offset={}, len={}", blob_path, offset_for_append, to_append);
     runWithRetries(
         [&]()
         {
@@ -240,7 +241,7 @@ void WriteBufferFromAzureDataLakeStorage::appendBufferedData()
         to_append);
 
     bytes_appended += static_cast<int64_t>(to_append);
-    LOG_INFO(log, "Appended for `{}`: bytes_appended={}", blob_path, bytes_appended);
+    LOG_TRACE(log, "Appended for `{}`: bytes_appended={}", blob_path, bytes_appended);
 }
 
 void WriteBufferFromAzureDataLakeStorage::nextImpl()
@@ -260,7 +261,7 @@ void WriteBufferFromAzureDataLakeStorage::preFinalize()
         return;
     is_prefinalized = true;
 
-    LOG_INFO(log, "Entering preFinalize for ADLS Gen2 file `{}`", blob_path);
+    LOG_DEBUG(log, "Entering preFinalize for ADLS Gen2 file `{}`", blob_path);
     appendBufferedData();
     WriteBuffer::set(fake_buffer_when_prefinalized, sizeof(fake_buffer_when_prefinalized));
     ensureCreated();
@@ -269,7 +270,7 @@ void WriteBufferFromAzureDataLakeStorage::preFinalize()
         "Flush",
         BlobStorageLogElement::EventType::MultiPartUploadComplete,
         /*data_size=*/ 0);
-    LOG_INFO(log, "Flushed ADLS Gen2 file `{}` ({} bytes)", blob_path, bytes_appended);
+    LOG_DEBUG(log, "Flushed ADLS Gen2 file `{}` ({} bytes)", blob_path, bytes_appended);
 }
 
 void WriteBufferFromAzureDataLakeStorage::finalizeImpl()
