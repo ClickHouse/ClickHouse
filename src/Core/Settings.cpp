@@ -4509,6 +4509,11 @@ on Nullable columns, `empty(col)` / `notEmpty(col)` on String columns, `col = tr
 `col != true` on Bool columns, and (for unsigned integer columns) `col > 0`, `col >= 1`,
 `col < 1`, `col <= 0`.
 
+Floating-point columns are excluded from the equality patterns: the persisted `num_defaults`
+counter treats `+0.0` and `-0.0` as distinct (bitwise comparison) so that sparse-serialized
+columns preserve the sign of `-0.0` on round-trip, while SQL `col = 0` matches both. Using
+the counter for these predicates would undercount `-0.0` rows.
+
 Possible values:
 
    - 0 — Optimization disabled.

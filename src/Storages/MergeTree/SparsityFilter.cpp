@@ -227,6 +227,13 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
     /// column cleanly even though `true` is not the type default.
     bool col_is_bool = isBool(col.type);
 
+    /// Floating-point columns persist `+0.0` and `-0.0` as distinct rows
+    /// (`ColumnVector<Float>::isDefaultAt` is bitwise) but SQL `col = 0` matches both.
+    /// Classifying these via the defaultness stat would undercount the `-0.0` rows in
+    /// the trivial-count rewrite and drop matching granules in the pruner.
+    if (isFloat(col.type))
+        return std::nullopt;
+
     if (name == "equals")
     {
         if (constantEqualsTypeDefault(value, const_node->getResultType(), col.type))
