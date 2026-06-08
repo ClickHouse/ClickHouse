@@ -17,6 +17,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -182,11 +183,11 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
                     "Please specify `DEFAULT` expression in ALTER MODIFY COLUMN statement",
                     required_column.name, column_in_block.type->getName(), required_column.type->getName());
 
-            /// Cast the nullable column to Nullable(TargetType) first, then strip NULLs with ifNull.
-            /// This handles cross-type conversion (e.g. Nullable(UInt8) -> String) correctly,
-            /// because _CAST(Nullable(UInt8), 'Nullable(String)') -> Nullable(String),
-            /// and ifNull(Nullable(String), String) trivially resolves to String.
-            auto nullable_target_type_name = "Nullable(" + required_column.type->getName() + ")";
+            /// Builds: ifNull(_CAST(col, 'Nullable(T)'), _CAST(default, 'T'))
+            /// Use makeNullableOrLowCardinalityNullable so LowCardinality targets stay valid:
+            ///   LowCardinality(String) -> LowCardinality(Nullable(String))   (valid)
+            /// instead of the invalid Nullable(LowCardinality(String)) produced by string concatenation.
+            auto nullable_target_type_name = makeNullableOrLowCardinalityNullable(required_column.type)->getName();
             auto cast_col = makeASTFunction("_CAST",
                 make_intrusive<ASTIdentifier>(required_column.name),
                 make_intrusive<ASTLiteral>(nullable_target_type_name));
