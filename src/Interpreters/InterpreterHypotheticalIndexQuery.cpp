@@ -32,28 +32,6 @@ namespace Setting
     extern const SettingsBool allow_suspicious_indices;
 }
 
-namespace
-{
-
-void checkSuspiciousIndex(const ASTPtr & expression_list)
-{
-    const auto * function = expression_list ? typeid_cast<const ASTFunction *>(expression_list.get()) : nullptr;
-    if (!function || !function->arguments)
-        return;
-
-    std::unordered_set<UInt64> seen;
-    for (const auto & child : function->arguments->children)
-    {
-        const auto hash = child->getTreeHash(/* ignore_aliases = */ true);
-        if (!seen.emplace(hash.low64).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Primary key or secondary index contains a duplicate expression. "
-                "To suppress this exception, rerun the command with setting 'allow_suspicious_indices = 1'");
-    }
-}
-
-}
-
 BlockIO InterpreterHypotheticalIndexQuery::execute()
 {
     const auto & query = query_ptr->as<ASTHypotheticalIndexQuery &>();
@@ -124,8 +102,10 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     if (index_desc.expression)
         context->checkAccess(AccessType::SELECT, table_id, index_desc.expression->getRequiredColumns());
 
-    /// Reject unsupported types before the type-specific validator can throw a confusing error.   todo.
-    if (index_desc.type == "text" || index_desc.type == "vector_similarity")
+    /// Reject unsupported types before validate can throw a confusing type-specific error
+    /// get() already throws INCORRECT_QUERY for unknown types, exactly as validate
+    auto index_helper = MergeTreeIndexFactory::instance().get(index_desc);
+    if (index_helper->isTextIndex() || index_helper->isVectorSimilarityIndex())
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Hypothetical indexes of type '{}' are not supported",
@@ -175,7 +155,11 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     }
 
     if (!context->getSettingsRef()[Setting::allow_suspicious_indices])
-        checkSuspiciousIndex(index_ast.getExpression());
+    {
+        ASTPtr index_expression = index_ast.getExpression();
+        if (const auto * index_function = index_expression ? index_expression->as<ASTFunction>() : nullptr)
+            checkSuspiciousIndices(index_function);
+    }
 
     store.add(table_id, index_desc, query.if_not_exists);
     return {};

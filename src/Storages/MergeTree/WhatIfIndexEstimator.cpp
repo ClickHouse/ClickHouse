@@ -1,6 +1,9 @@
 #include <Storages/MergeTree/WhatIfIndexEstimator.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HypotheticalIndexStore.h>
@@ -14,10 +17,8 @@
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -28,6 +29,7 @@
 
 #include <Columns/ColumnSparse.h>
 #include <Common/Exception.h>
+#include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/Stopwatch.h>
 #include <Core/Settings.h>
@@ -125,6 +127,32 @@ void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTre
         collectReadSteps(child, steps);
 }
 
+/// Empty table, nothing to scan, just mark every candidate not-applicable
+WhatIfIndexEstimator::Result buildEmptyTableResult(const MergeTreeData & data, const HypotheticalIndexStore & store)
+{
+    WhatIfIndexEstimator::Result result;
+    result.database = data.getStorageID().getDatabaseName();
+    result.table = data.getStorageID().getTableName();
+    for (const auto & index_desc : store.getForTable(data.getStorageID()))
+    {
+        WhatIfIndexEstimator::IndexResult r;
+        r.index_name = index_desc.name;
+        r.index_type = index_desc.type;
+        r.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+        r.not_applicable_reason = "Table is empty, so there is no data to estimate a benefit";
+        result.index_results.push_back(std::move(r));
+    }
+    if (result.index_results.empty())
+    {
+        WhatIfIndexEstimator::IndexResult none;
+        none.index_name = "(none)";
+        none.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+        none.not_applicable_reason = "No hypothetical indexes defined for this table.";
+        result.index_results.push_back(std::move(none));
+    }
+    return result;
+}
+
 /// Drop the inner-SELECT settings we pin for a deterministic local baseline
 /// `force_data_skipping_indices` is collected into `removed_force` so we can re-check it later
 void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_force)
@@ -144,6 +172,7 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
                         removed_force.push_back(change.value.template safeGet<String>());
                         return true;
                     }
+                    /// keep the estimate local, use_skip_indexes_on_data_read: avoid over-reporting marks
                     return change.name == "enable_parallel_replicas"
                         || change.name == "allow_experimental_parallel_reading_from_replicas"
                         || change.name == "use_skip_indexes_on_data_read";
@@ -165,8 +194,8 @@ void collectFilterInputColumns(const ActionsDAG::Node * node, NameSet & out)
         collectFilterInputColumns(child, out);
 }
 
-/// An OR with the candidate's column on one side and another column on the other. The real
-/// read can combine them (use_skip_indexes_for_disjunctions) we can't, so we bail on those    todo.
+/// TODO(yariks5s): an OR with the candidate's column on one side and another column on the other
+/// The real read can combine them (use_skip_indexes_for_disjunctions) we can't, so we bail on those
 bool disjunctionMixesIndexAndOtherColumns(const ActionsDAG::Node * node, const NameSet & index_columns)
 {
     if (!node)
@@ -247,7 +276,7 @@ bool tryEstimateWithStatistics(
                 has_any_stats = true;
             }
         }
-        catch (...) /// Ok — statistical estimation is best-effort
+        catch (const Exception &) /// Ok — statistical estimation is best-effort
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
@@ -269,7 +298,6 @@ bool tryEstimateWithStatistics(
     double selectivity = std::min(1.0, static_cast<double>(profile.rows) / static_cast<double>(unfiltered.rows));
     result.skip_ratio = 1.0 - selectivity;
     result.estimated_marks = std::max<UInt64>(1, static_cast<UInt64>(static_cast<double>(analysis.selected_marks) * selectivity));
-    result.estimated_parts = analysis.selected_parts;
     result.estimate_source = "statistical";
     return true;
 }
@@ -292,8 +320,7 @@ bool tryEstimateEmpirical(
     if (index_columns.empty())
         return false;
 
-    /// We count each granule on its own. With seek-gap settings the real read merges nearby
-    /// ranges, so pass to statistics/applicability rather than guess
+    /// With non-zero seek gaps a real read coalesces ranges, so our per-granule count would diverge
     if (context->getSettingsRef()[Setting::merge_tree_min_rows_for_seek] != 0
         || context->getSettingsRef()[Setting::merge_tree_min_bytes_for_seek] != 0)
         return false;
@@ -302,8 +329,8 @@ bool tryEstimateEmpirical(
     UInt64 skipped_data_granules = 0;
     Stopwatch watch;
 
-    /// This scan isn't the normal read pipeline, so apply the read limits by hand
-    /// (max_execution_time still comes from the process-list element)
+    /// The whole-part scan is not the normal read pipeline, so enforce the query's
+    /// read limits explicitly (max_execution_time is handled by the process-list element)
     const auto & limit_settings = context->getSettingsRef();
     const SizeLimits read_limits(
         limit_settings[Setting::max_rows_to_read],
@@ -331,11 +358,10 @@ bool tryEstimateEmpirical(
             for (size_t m = range.begin; m < range.end && m < in_baseline.size(); ++m)
                 in_baseline[m] = true;
 
-        /// Read the whole part: non-zero-start ranges hit a LOGICAL_ERROR in
-        /// MergeTreeSequentialSource with adaptive granularity                    todo.
+        /// TODO(yariks5s): read the whole part, non-zero-start ranges hit a LOGICAL_ERROR on adaptive granularity
         RangesInDataPart part_for_read(part);
 
-        /// Apply patch parts / on-the-fly mutations so we see the up-to-date values, not raw part data
+        /// Apply patch parts / on-the-fly mutations so we see the up-to-date values
         auto alter_conversions = mutations_snapshot
             ? MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context)
             : std::make_shared<AlterConversions>();
@@ -424,11 +450,13 @@ bool tryEstimateEmpirical(
                                    ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
                 return false;
 
-            /// Run the index expression (e.g. lower(s)) so the aggregator sees what MATERIALIZE INDEX would
+            /// Evaluate the index expression so the aggregator sees what a real
+            /// MATERIALIZE INDEX would see (lower(s) instead of raw s)
             if (index_expression)
                 index_expression->execute(block);
 
-            /// Aggregators want full columns; sparse-serialized parts would otherwise trip `getRawData`.
+            /// Index aggregators require full columns, sparse-serialized parts
+            /// would otherwise trip getRawData (matches the real index writer)
             for (auto & column : block)
                 column.column = recursiveRemoveSparse(column.column);
 
@@ -453,7 +481,6 @@ bool tryEstimateEmpirical(
 
     result.skip_ratio = static_cast<double>(skipped_data_granules) / static_cast<double>(total_data_granules);
     result.estimated_marks = total_data_granules - skipped_data_granules;
-    result.estimated_parts = analysis.selected_parts;
     result.estimate_source = "empirical";
     result.empirical_status = WhatIfIndexEstimator::IndexResult::Ok;
     result.sampled_parts = analysis.selected_parts;
@@ -517,7 +544,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
             /* escape_filenames = */ true,
             context);
     }
-    catch (...)
+    catch (const Exception &)
     {
         result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
         result.not_applicable_reason = "Hypothetical index no longer matches the current table schema: "
@@ -530,7 +557,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     {
         index_helper = MergeTreeIndexFactory::instance().get(fresh_index_desc);
     }
-    catch (...)
+    catch (const Exception &)
     {
         result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
         result.not_applicable_reason = "Failed to create index: " + getCurrentExceptionMessage(false);
@@ -541,8 +568,9 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     /// current grants, a grant revoked since CREATE should deny the estimate
     context->checkAccess(AccessType::SELECT, data.getStorageID(), index_helper->getColumnsRequiredForIndexCalc());
 
-    /// Text indexes need a tokenized block layout the empirical pipeline doesn't build      todo.
-    if (index_desc.type == "text")
+    /// TODO(yariks5s): text indexes need a tokenized block layout the empirical pipeline doesn't build
+    /// also, add a whitelist index types so the logic will not be broken by a new type
+    if (index_helper->isTextIndex())
     {
         result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
         result.not_applicable_reason = "EXPLAIN WHATIF does not yet support empirical estimation for text indexes";
@@ -567,7 +595,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     {
         condition = index_helper->createIndexCondition(predicate, context);
     }
-    catch (...)
+    catch (const Exception &)
     {
         result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
         result.not_applicable_reason = "Cannot build index condition: " + getCurrentExceptionMessage(false);
@@ -613,7 +641,6 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
 
     result.estimate_source = "applicability_only";
     result.estimated_marks = analysis.selected_marks;
-    result.estimated_parts = analysis.selected_parts;
     result.skip_ratio = 0.0;
 
     return result;
@@ -645,10 +672,19 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     QueryPlan plan;
     ContextPtr plan_context = local_context;
 
+    StoragePtr source_storage;
+
     if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(select_query_copy, local_context, query_options);
         plan_context = interpreter.getContext();
+        if (const auto * query_node = interpreter.getQueryTree()->as<QueryNode>())
+        {
+            auto table_nodes = extractTableExpressions(query_node->getJoinTree());
+            if (table_nodes.size() == 1)
+                if (const auto * table_node = table_nodes.front()->as<TableNode>())
+                    source_storage = table_node->getStorage();
+        }
         plan = std::move(interpreter).extractQueryPlan();
     }
     else
@@ -658,17 +694,21 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         interpreter.buildQueryPlan(plan);
     }
 
-    /// Build pipeline to trigger filter pushdown and index analysis
-    auto builder = plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings(plan_context),
-        BuildQueryPipelineSettings(plan_context));
+    plan.optimize(QueryPlanOptimizationSettings(plan_context));
 
     std::vector<ReadFromMergeTree *> read_steps;
     collectReadSteps(plan.getRootNode(), read_steps);
 
     if (read_steps.empty())
+    {
+        /// Empty table -> ReadNothing, no read step, report a zero baseline
+        if (const auto * mt = dynamic_cast<const MergeTreeData *>(source_storage.get());
+            mt && mt->getActivePartsCount() == 0)
+            return buildEmptyTableResult(*mt, local_context->getHypotheticalIndexStore());
+
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "EXPLAIN WHATIF requires a query reading from a MergeTree family table");
+    }
 
     if (read_steps.size() > 1)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -678,11 +718,11 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     auto * read_step = read_steps[0];
     const auto & data = read_step->getMergeTreeData();
 
-    /// FINAL needs every granule for the merge, so a skip index can't help here
+    /// TODO(yariks5s): FINAL prevents skip indexes from pruning granules (the merge needs every
+    /// granule), so a hypothetical index can't help. Report not_applicable
     const bool query_with_final = read_step->isQueryWithFinal();
 
-    /// Effective use_skip_indexes, same as ReadFromMergeTree: on the effective context,
-    /// and off under FINAL unless use_skip_indexes_if_final
+    /// Mirror a real read's skip-index state, use_skip_indexes, off under FINAL unless use_skip_indexes_if_final
     const auto & effective_settings = plan_context->getSettingsRef();
     const bool effective_use_skip_indexes = effective_settings[Setting::use_skip_indexes]
         && !(query_with_final && !effective_settings[Setting::use_skip_indexes_if_final]);
@@ -699,20 +739,17 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
 
     auto analysis_ptr = read_step->getAnalyzedResult();
     if (!analysis_ptr)
+        analysis_ptr = read_step->selectRangesToRead();
+    if (!analysis_ptr)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXPLAIN WHATIF: query analysis result is not available");
     const auto & analysis = *analysis_ptr;
 
-    /// A parent-table index isn't on projection parts, so projection plan would mis-attribute pruning
+    /// Can't model a projection-served read, the hypothetical index isn't on projection parts
     if (analysis.readFromProjection())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "EXPLAIN WHATIF is not supported when the query is served from a projection");
 
-    /// Building the pipeline consumed parts_with_ranges, re-run selectRangesToRead for a fresh copy
-    read_step->setAnalyzedResult(nullptr);
-    auto fresh_analysis = read_step->selectRangesToRead();
-    RangesInDataParts baseline_parts;
-    if (fresh_analysis)
-        baseline_parts = std::move(fresh_analysis->parts_with_ranges);
+    const RangesInDataParts & baseline_parts = analysis.parts_with_ranges;
 
     Result result;
     result.database = data.getStorageID().getDatabaseName();
@@ -795,13 +832,7 @@ void WhatIfIndexEstimator::Result::format(WriteBuffer & out) const
     writeString(fmt::format("  parts:       {}\n", baseline_parts), out);
     writeString(fmt::format("  marks:       {}\n", baseline_marks), out);
     if (baseline_est_bytes > 0)
-    {
-        double gb = static_cast<double>(baseline_est_bytes) / (1024.0 * 1024.0 * 1024.0);
-        if (gb >= 0.01)
-            writeString(fmt::format("  est_bytes:   {:.2f} GB\n", gb), out);
-        else
-            writeString(fmt::format("  est_bytes:   {} B\n", baseline_est_bytes), out);
-    }
+        writeString(fmt::format("  est_bytes:   {}\n", ReadableSize(baseline_est_bytes)), out);
     writeCString("\n", out);
 
     for (const auto & idx : index_results)
@@ -826,11 +857,7 @@ void WhatIfIndexEstimator::Result::format(WriteBuffer & out) const
         {
             UInt64 hypo_bytes = static_cast<UInt64>(
                 static_cast<double>(baseline_est_bytes) * static_cast<double>(idx.estimated_marks) / static_cast<double>(baseline_marks));
-            double gb = static_cast<double>(hypo_bytes) / (1024.0 * 1024.0 * 1024.0);
-            if (gb >= 0.01)
-                writeString(fmt::format("  est_bytes:    {:.2f} GB\n", gb), out);
-            else
-                writeString(fmt::format("  est_bytes:    {} B\n", hypo_bytes), out);
+            writeString(fmt::format("  est_bytes:    {}\n", ReadableSize(hypo_bytes)), out);
         }
 
         writeString(fmt::format("  skip_ratio:   {:.1f}%\n", idx.skip_ratio * 100.0), out);
@@ -843,7 +870,6 @@ void WhatIfIndexEstimator::Result::format(WriteBuffer & out) const
         switch (idx.empirical_status)
         {
             case IndexResult::Ok: empirical_status_str = "ok"; break;
-            case IndexResult::Timeout: empirical_status_str = "timeout"; break;
             case IndexResult::Unsupported: empirical_status_str = "unsupported"; break;
             case IndexResult::Disabled: empirical_status_str = "disabled"; break;
         }
@@ -856,13 +882,6 @@ void WhatIfIndexEstimator::Result::format(WriteBuffer & out) const
             writeString(fmt::format("  elapsed_us:       {}\n", idx.elapsed_us), out);
         }
         writeCString("\n", out);
-
-        if (idx.storage_estimate_bytes > 0)
-        {
-            writeCString("Cost:\n", out);
-            writeString(fmt::format("  storage_estimate_bytes:   {}\n", idx.storage_estimate_bytes), out);
-            writeCString("\n", out);
-        }
     }
 }
 

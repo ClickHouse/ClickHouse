@@ -379,7 +379,7 @@ static String getPartNameFromAST(const ASTPtr & partition)
     return literal->value.safeGet<String>();
 }
 
-static void checkSuspiciousIndices(const ASTFunction * index_function)
+void checkSuspiciousIndices(const ASTFunction * index_function)
 {
     std::unordered_set<UInt64> unique_index_expression_hashes;
     for (const auto & child : index_function->arguments->children)

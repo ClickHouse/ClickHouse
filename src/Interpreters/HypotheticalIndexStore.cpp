@@ -120,10 +120,4 @@ std::vector<HypotheticalIndexStore::Entry> HypotheticalIndexStore::getAll() cons
     return entries;
 }
 
-bool HypotheticalIndexStore::empty() const
-{
-    std::lock_guard lock(mutex);
-    return entries.empty();
-}
-
 }

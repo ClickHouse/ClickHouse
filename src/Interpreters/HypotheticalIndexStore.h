@@ -27,8 +27,6 @@ public:
     };
     std::vector<Entry> getAll() const;
 
-    bool empty() const;
-
 private:
     static bool sameTable(const StorageID & a, const StorageID & b);
 

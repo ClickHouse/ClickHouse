@@ -26,10 +26,9 @@ public:
 
         /// Meaningful only when status == Applicable
         UInt64 estimated_marks = 0;
-        UInt64 estimated_parts = 0;
         double skip_ratio = 0.0;
 
-        enum EmpiricalStatus { Ok, Timeout, Unsupported, Disabled };
+        enum EmpiricalStatus { Ok, Unsupported, Disabled };
         EmpiricalStatus empirical_status = Disabled;
         String estimate_source; /// "empirical", "statistical", "applicability_only"
 
@@ -38,8 +37,6 @@ public:
         UInt64 sampled_marks = 0;
         UInt64 total_marks = 0;
         UInt64 elapsed_us = 0;
-
-        UInt64 storage_estimate_bytes = 0;
     };
 
     struct Result
