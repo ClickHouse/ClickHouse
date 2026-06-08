@@ -59,10 +59,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_max_set_size_for_projection_match", 0, 10000, "Added new setting that bounds the cost of content-hashing IN-clause sets in the projection matcher (today: aggregate projection). Sets larger than the limit are treated as non-matching. Zero disables content-hash comparison entirely (compatibility value: projection match never succeeds for nodes with IN-sets)."},
             {"format_avro_schema_registry_max_retries", 0, 5, "New setting controlling the maximum number of retries for transient failures (transport timeouts, connection refused, DNS errors, HTTP 5xx/408/429) when communicating with the Confluent Schema Registry. Set to 0 to disable retries. Previous behavior (no retries) is preserved by `compatibility = '26.5'`."},
             {"format_avro_schema_registry_retry_initial_backoff_ms", 100, 100, "New setting controlling the initial backoff (in milliseconds) before retrying a failed Confluent Schema Registry request. The backoff doubles on each retry, capped at 10 seconds. Has no effect when `format_avro_schema_registry_max_retries = 0` (the pre-26.6 behavior restored by `compatibility = '26.5'`)."},
+            {"iceberg_manifest_min_count_to_compact", 30, 30, "New setting to control manifest compaction for Iceberg tables."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
-            {"iceberg_manifest_min_count_to_compact", 30, 30, "New setting to control manifest compaction for Iceberg tables."},
             {"defer_partition_pruning_after_final", true, true, "Setting newly added in 26.5 to gate the FINAL partition-pruning behavior that shipped silently in 26.3 (https://github.com/ClickHouse/ClickHouse/pull/98242). The meaningful semantic change is registered under the 26.3 block so `compatibility = '26.2'` reverts it; this entry exists so the upgrade-from-26.4 check accepts the newly-introduced name."},
             {"optimize_trivial_group_by_limit_query", false, true, "New setting that limits aggregation to at most LIMIT distinct keys for `SELECT key_expr FROM t GROUP BY key_expr LIMIT n` queries."},
             {"date_time_input_format", "basic", "best_effort", "Better usability"},
