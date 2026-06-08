@@ -250,6 +250,12 @@ directories_to_lint_std_containers_usages=(
     src/BridgeHelper
     src/Columns
     src/Compression
+    src/Core/MySQL
+    src/Core/PostgreSQL
+    src/Core/Streaming
+    src/Core/YTsaurus
+    src/Core/examples
+    src/Core/fuzzers
     src/Daemon
     src/Dictionaries
     src/Examples
