@@ -55,8 +55,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_rewrite_has_to_in", false, true, "New setting"},
             {"unique_key_max_encoded_size", 256, 256, "New setting: maximum size (bytes) of the order-preserving binary encoding of a single UNIQUE KEY row"},
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
+            {"analyzer_compatibility_prefer_alias_over_subcolumn", false, false, "New compatibility setting"},
             {"query_plan_max_set_size_for_projection_match", 0, 10000, "Added new setting that bounds the cost of content-hashing IN-clause sets in the projection matcher (today: aggregate projection). Sets larger than the limit are treated as non-matching. Zero disables content-hash comparison entirely (compatibility value: projection match never succeeds for nodes with IN-sets)."},
             {"output_format_approximate_numbers_with_decimal_point", false, false, "New setting to always print a decimal point for floating-point and Decimal numbers in text formats, even when the value is a whole number."},
+            {"format_avro_schema_registry_max_retries", 0, 5, "New setting controlling the maximum number of retries for transient failures (transport timeouts, connection refused, DNS errors, HTTP 5xx/408/429) when communicating with the Confluent Schema Registry. Set to 0 to disable retries. Previous behavior (no retries) is preserved by `compatibility = '26.5'`."},
+            {"format_avro_schema_registry_retry_initial_backoff_ms", 100, 100, "New setting controlling the initial backoff (in milliseconds) before retrying a failed Confluent Schema Registry request. The backoff doubles on each retry, capped at 10 seconds. Has no effect when `format_avro_schema_registry_max_retries = 0` (the pre-26.6 behavior restored by `compatibility = '26.5'`)."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {

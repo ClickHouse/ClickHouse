@@ -193,10 +193,21 @@ struct FormatSettings
         UInt64 receive_timeout = 1;
     };
 
+    /// Retry policy for the Confluent Schema Registry HTTP client. Applied to
+    /// transient transport-level failures (connection refused, DNS, socket
+    /// timeouts) and to retryable HTTP responses (5xx, 408, 429). Schema
+    /// validation errors (HTTP 409, malformed Avro JSON) are NOT retried.
+    struct AvroSchemaRegistryRetryConfig
+    {
+        UInt64 max_retries = 5;
+        UInt64 initial_backoff_ms = 100;
+    };
+
     struct
     {
         String schema_registry_url;
         AvroSchemaRegistryTimeouts schema_registry_timeouts;
+        AvroSchemaRegistryRetryConfig schema_registry_retry;
         String output_codec;
         UInt64 output_sync_interval = 16 * 1024;
         bool allow_missing_fields = false;
