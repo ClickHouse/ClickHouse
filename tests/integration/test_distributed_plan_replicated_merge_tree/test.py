@@ -273,7 +273,11 @@ def test_parallel_read_missing_part_on_worker_errors(started_cluster):
         assert int(node2.query(f"SELECT count() FROM {table}").strip()) == 50_000
         assert int(node3.query(f"SELECT count() FROM {table}").strip()) == 50_000
 
-        settings = DISTRIBUTED_SETTINGS + ", distributed_plan_force_exchange_kind = 'Persisted'"
+        settings = (
+            DISTRIBUTED_SETTINGS
+            + ", distributed_plan_force_exchange_kind = 'Persisted'"
+            + ", distributed_plan_prefer_replicas_over_workers = 1"
+        )
         with pytest.raises(QueryRuntimeException) as exc:
             INITIATOR.query(f"SELECT count(), sum(id) FROM {table} SETTINGS {settings}")
         assert "is not available on this replica" in str(exc.value)
