@@ -20,9 +20,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
-#if CLICKHOUSE_CLOUD
-#include <Core/KMS.h>
-#endif
 
 namespace fs = std::filesystem;
 
@@ -440,7 +437,7 @@ public:
 
 private:
     std::string key;
-    UInt128 key_fingerprint{};
+    UInt128 key_fingerprint;
     FileEncryption::Algorithm algorithm;
 };
 
