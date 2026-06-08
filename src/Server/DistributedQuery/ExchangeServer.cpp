@@ -109,11 +109,11 @@ void ExchangeServer::run()
                 try
                 {
                     handshake_pool.scheduleOrThrowOnError(
-                        [accepted = std::move(socket), conns = connections, task_log = log]() mutable
+                        [accepted = socket, conns = connections, task_log = log]()
                         {
                             try
                             {
-                                handleConnection(std::move(accepted), conns, task_log);
+                                handleConnection(accepted, conns, task_log);
                             }
                             catch (...)
                             {
