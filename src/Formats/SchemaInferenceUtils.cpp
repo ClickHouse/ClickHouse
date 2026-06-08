@@ -1466,7 +1466,7 @@ static void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, 
     {
         auto nested_type = nullable_type->getNestedType();
         transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info, remain_nothing_types);
-        data_type = makeNullableAllowingArray(nested_type);
+        data_type = canBeInsideNullableBySchemaSettings(nested_type, settings) ? makeNullableAllowingArray(nested_type) : nested_type;
         return;
     }
 
