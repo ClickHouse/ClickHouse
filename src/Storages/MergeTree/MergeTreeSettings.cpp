@@ -1049,7 +1049,18 @@ namespace ErrorCodes
     reduce memory usage
     )", 0) \
     DECLARE(Bool, optimize_row_order_if_no_order_by, true, R"(
-    Enable row order optimization if table has no ORDER BY
+    Controls whether row order optimization (see `optimize_row_order`) is applied
+    automatically on insert for tables with an empty sorting key, i.e. tables
+    declared with `ORDER BY ()` or `ORDER BY tuple()`.
+
+    Enabled by default. For such tables there is no explicit row order to preserve,
+    so reordering the rows of newly inserted parts to improve the compressibility
+    of LZ4 or ZSTD is generally beneficial.
+
+    As with `optimize_row_order`, inserts incur additional CPU cost to analyze and
+    optimize the row order of the new data. Disable this setting if preserving the
+    original insert order of the rows or maximizing insert throughput matters more
+    than compression.
     )", 0) \
     DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
     Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
