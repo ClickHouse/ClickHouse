@@ -124,14 +124,9 @@ class RandomQueryKiller:
         self._thread = None
 
 
-def get_options(
-    i: int,
-    upgrade_check: bool,
-    encrypted_storage: bool,
-    extra_client_options: Optional[List[str]] = None,
-) -> str:
+def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     options = []
-    client_options = list(extra_client_options or [])
+    client_options = []
 
     if upgrade_check:
         # Disable settings randomization for upgrade checks to prevent test failures caused by missing settings in old version
@@ -284,22 +279,18 @@ def run_func_test(
         # Validate that simple tests work across all randomizations.
         # IF THIS FAILS, THE STRESS TESTS ARE BROKEN
         options = get_options(i, upgrade_check, encrypted_storage)
-        full_command = (
-            f"{cmd} --stress-tests {options} {global_time_limit_option} "
+        base_command = (
+            f"{cmd} --stress-tests {options} "
             f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
         )
+        full_command = f"{base_command} {global_time_limit_option} "
         commands.append(full_command)
         # Smoke check: disable AST fuzzer (fuzzed queries produce expected
         # errors in stderr) and cap global_time_limit so clickhouse-test
         # exits on its own within the execute_bash timeout.
-        smoke_options = get_options(
-            i, upgrade_check, encrypted_storage,
-            extra_client_options=["ast_fuzzer_runs=0"],
-        )
-        smoke_command = (
-            f"{cmd} --stress-tests {smoke_options} {smoke_time_limit_option} "
-            f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
-        )
+        smoke_command = base_command.replace(
+            "--client-option ", "--client-option ast_fuzzer_runs=0 ", 1
+        ) + f" {smoke_time_limit_option} "
         check_command = (
             smoke_command
             + "--server-logs-level fatal --jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
