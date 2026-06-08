@@ -55,6 +55,11 @@ private:
     Key    begin_x;
     Key    end_x;
 
+    /// Multiplier applied to each key read from the column before bucketing. It is always 1
+    /// except for DateTime64 columns whose scale is coarser than the working scale of
+    /// `begin_x`/`end_x`, where keys are rescaled up so that all three are in the same unit.
+    Key    key_multiplier;
+
     size_t align_of_data;
     size_t size_of_data;
 
@@ -101,6 +106,7 @@ public:
         size_t width_,
         Key begin_x_,
         Key end_x_,
+        Key key_multiplier_,
         const DataTypes & arguments,
         const Array & params)
         : IAggregateFunctionHelper<AggregateFunctionSparkbar<Key>>{arguments, params, std::make_shared<DataTypeString>()}
@@ -108,6 +114,7 @@ public:
         , width{width_}
         , begin_x{begin_x_}
         , end_x{end_x_}
+        , key_multiplier{key_multiplier_}
         , align_of_data{nested_function->alignOfData()}
         , size_of_data{(nested_function->sizeOfData() + align_of_data - 1) / align_of_data * align_of_data}
     {
@@ -181,7 +188,18 @@ public:
         /// For unsigned Key types the static_cast is safe because valid x-axis values fit in
         /// the chosen unsigned type (UInt64 for Date/DateTime/DateTime64/UInt*, Int32/Int64 for
         /// the signed branches).
-        const Key key = static_cast<Key>(columns[0]->getInt(row_num));
+        Key key = static_cast<Key>(columns[0]->getInt(row_num));
+
+        /// Rescale the key up to the working scale of begin_x/end_x (DateTime64 with a coarser
+        /// column scale). If the rescaled key overflows the Key type it cannot lie inside the
+        /// representable [begin_x, end_x] range, so it is safely skipped.
+        if (key_multiplier != 1)
+        {
+            Key scaled = 0;
+            if (common::mulOverflow(key, key_multiplier, scaled))
+                return;
+            key = scaled;
+        }
 
         if (key < begin_x || key > end_x)
             return;

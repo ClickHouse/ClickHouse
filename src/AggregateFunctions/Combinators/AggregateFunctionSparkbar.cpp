@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionSparkbar.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -96,52 +98,46 @@ public:
             const UInt64 end_x   = params[n - 1].safeGet<UInt64>();
 
             return std::make_shared<AggregateFunctionSparkbar<UInt64>>(
-                nested_function, width, begin_x, end_x, arguments, params);
+                nested_function, width, begin_x, end_x, /*key_multiplier=*/1, arguments, params);
         }
 
         if (which.isDateTime64())
         {
-            /// Rescale parameter ticks to the column scale so that begin_x/end_x and
-            /// the keys read in add() are in the same unit.
             const UInt32 col_scale = typeid_cast<const DataTypeDateTime64 &>(*arguments[0]).getScale();
 
-            /// `round_up == true` is used for `begin_x` and `round_up == false` for `end_x`.
-            /// When the parameter has a finer scale than the column (`param_scale > col_scale`),
-            /// the rescaled value may fall between two column ticks. To keep the inclusive
-            /// `[begin_x, end_x]` contract we round `begin_x` up (toward +inf) and `end_x` down
-            /// (toward -inf), so the rescaled range never admits keys outside the requested one.
-            const auto extract = [col_scale](const Field & f, bool round_up) -> Int64
-            {
-                const auto & dec = f.safeGet<DecimalField<DateTime64>>();
-                const Int64 ticks = static_cast<Int64>(dec.getValue());
-                const UInt32 param_scale = dec.getScale();
-                if (param_scale == col_scale)
-                    return ticks;
-                if (col_scale > param_scale)
-                {
-                    const Int64 multiplier = static_cast<Int64>(DecimalUtils::scaleMultiplier<Int64>(col_scale - param_scale));
-                    Int64 result = 0;
-                    if (common::mulOverflow(ticks, multiplier, result))
-                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
-                            "DateTime64 value overflows Int64 when rescaling from scale {} to {} "
-                            "for aggregate function with Sparkbar suffix",
-                            param_scale, col_scale);
-                    return result;
-                }
+            const auto & begin_dec = params[n - 2].safeGet<DecimalField<DateTime64>>();
+            const auto & end_dec   = params[n - 1].safeGet<DecimalField<DateTime64>>();
 
-                /// `param_scale > col_scale`: integer division truncates toward zero, which
-                /// would silently shift inclusive bounds. Round directionally instead.
-                const Int64 divisor = static_cast<Int64>(DecimalUtils::scaleMultiplier<Int64>(param_scale - col_scale));
-                const Int64 quotient = ticks / divisor;
-                const Int64 remainder = ticks % divisor;
-                if (remainder == 0)
-                    return quotient;
-                if (round_up)
-                    return remainder > 0 ? quotient + 1 : quotient;
-                return remainder < 0 ? quotient - 1 : quotient;
+            /// Bucket entirely at the finest scale among the column and the two bounds. Working
+            /// at the common-finest scale means `begin_x`, `end_x`, and the rescaled keys are
+            /// always in the same unit and obtained by exact multiplication (never division or
+            /// rounding). A range that is valid at fine scale therefore can never collapse to
+            /// `begin_x >= end_x` after conversion to a coarser column scale, and sub-tick or
+            /// single-tick ranges are bucketed correctly instead of throwing.
+            const UInt32 result_scale = std::max({col_scale, begin_dec.getScale(), end_dec.getScale()});
+
+            const auto rescale = [result_scale](const DecimalField<DateTime64> & dec) -> Int64
+            {
+                const Int64 ticks = static_cast<Int64>(dec.getValue());
+                const UInt32 scale = dec.getScale();
+                if (scale == result_scale)
+                    return ticks;
+                const Int64 multiplier = static_cast<Int64>(DecimalUtils::scaleMultiplier<Int64>(result_scale - scale));
+                Int64 result = 0;
+                if (common::mulOverflow(ticks, multiplier, result))
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                        "DateTime64 value overflows Int64 when rescaling to scale {} "
+                        "for aggregate function with Sparkbar suffix",
+                        result_scale);
+                return result;
             };
+
+            /// Keys are read from the column at `col_scale`; multiply each up to `result_scale`
+            /// in add(). `result_scale >= col_scale` always holds, so the multiplier is >= 1.
+            const Int64 key_multiplier = static_cast<Int64>(DecimalUtils::scaleMultiplier<Int64>(result_scale - col_scale));
+
             return std::make_shared<AggregateFunctionSparkbar<Int64>>(
-                nested_function, width, extract(params[n - 2], /*round_up=*/true), extract(params[n - 1], /*round_up=*/false), arguments, params);
+                nested_function, width, rescale(begin_dec), rescale(end_dec), key_multiplier, arguments, params);
         }
 
         if (which.isDate32())
@@ -151,7 +147,7 @@ public:
             const Int32 end_x   = params[n - 1].tryGet<Int64>(tmp) ? static_cast<Int32>(tmp) : static_cast<Int32>(params[n - 1].safeGet<UInt64>());
 
             return std::make_shared<AggregateFunctionSparkbar<Int32>>(
-                nested_function, width, begin_x, end_x, arguments, params);
+                nested_function, width, begin_x, end_x, /*key_multiplier=*/1, arguments, params);
         }
 
         if (which.isNativeInt() || which.isEnum() || which.isInterval())
@@ -161,7 +157,7 @@ public:
             const Int64 end_x   = params[n - 1].tryGet<Int64>(tmp) ? tmp : static_cast<Int64>(params[n - 1].safeGet<UInt64>());
 
             return std::make_shared<AggregateFunctionSparkbar<Int64>>(
-                nested_function, width, begin_x, end_x, arguments, params);
+                nested_function, width, begin_x, end_x, /*key_multiplier=*/1, arguments, params);
         }
 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

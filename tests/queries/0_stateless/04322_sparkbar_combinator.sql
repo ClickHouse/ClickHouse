@@ -81,15 +81,31 @@ SELECT countSparkbar(5, toDateTime64('2024-01-01 00:00:00', 3), toDateTime64('20
     toDateTime64('2024-01-01 00:00:00', 6) + INTERVAL (number) DAY
 ) FROM numbers(5);
 
--- DateTime64 downscale rounding (col=0, params=3): fractional bounds must be rounded
--- directionally so the inclusive [begin_x, end_x] contract holds. begin_x = 00:00:00.500
--- rounds up to 00:00:01 and end_x = 00:00:04.500 rounds down to 00:00:04, so a row at
--- 00:00:00 (below begin_x) and a row at 00:00:05 (above end_x) are both excluded, leaving
--- the 4 in-range seconds 01..04, one per bucket.
-SELECT 'countSparkbar with DateTime64 downscale rounding (col=0, params=3):';
+-- DateTime64 column coarser than the bounds (col=0, params=3): bucketing happens at the
+-- finest scale (ms), so the fractional bounds are honoured exactly. The range
+-- [00:00:00.500, 00:00:04.500] spans the 4 whole seconds 01..04 (one per bucket); the rows
+-- at 00:00:00 (below begin_x) and 00:00:05 (above end_x) are excluded.
+SELECT 'countSparkbar with DateTime64 coarser column (col=0, params=3):';
 SELECT countSparkbar(4, toDateTime64('2024-01-01 00:00:00.500', 3), toDateTime64('2024-01-01 00:00:04.500', 3))(
     toDateTime64('2024-01-01 00:00:00', 0) + INTERVAL (number) SECOND
 ) FROM numbers(6);
+
+-- DateTime64 sub-tick range with a single representable column tick (col=0, params=3):
+-- the range [00:00:00.500, 00:00:01.500] contains exactly one whole second (00:00:01).
+-- A previous implementation rounded both bounds to the same column tick and threw
+-- BAD_ARGUMENTS; bucketing at the finest scale aggregates the single matching tick instead.
+SELECT 'countSparkbar with DateTime64 single representable tick (col=0, params=3):';
+SELECT countSparkbar(2, toDateTime64('2024-01-01 00:00:00.500', 3), toDateTime64('2024-01-01 00:00:01.500', 3))(
+    toDateTime64('2024-01-01 00:00:00', 0) + INTERVAL (number) SECOND
+) FROM numbers(3);
+
+-- DateTime64 sub-tick range with no representable column tick (col=0, params=3): the range
+-- [00:00:00.300, 00:00:00.700] lies entirely between two whole seconds, so no column tick can
+-- match and the result is an empty bar (not an exception).
+SELECT 'countSparkbar with DateTime64 sub-tick empty range (col=0, params=3):';
+SELECT countSparkbar(2, toDateTime64('2024-01-01 00:00:00.300', 3), toDateTime64('2024-01-01 00:00:00.700', 3))(
+    toDateTime64('2024-01-01 00:00:00', 0) + INTERVAL (number) SECOND
+) FROM numbers(3);
 
 -- Parametric nested aggregate: leading params are forwarded to the nested function,
 -- the last 3 are consumed by the combinator (width, begin_x, end_x).
