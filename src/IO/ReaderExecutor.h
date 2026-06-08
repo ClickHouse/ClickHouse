@@ -3,6 +3,7 @@
 #include <IO/Rope.h>
 #include <IO/OffsetMap.h>
 #include <IO/ICacheProvider.h>
+#include <IO/IntervalSet.h>
 #include <IO/ISourceReader.h>
 #include <IO/SourceBufferLimit.h>
 
@@ -191,25 +192,53 @@ public:
     static VectorWithMemoryTracking<ByteRange> mergeRanges(const VectorWithMemoryTracking<ByteRange> & ranges, size_t min_gap);
 
 private:
-    /// Read a specific physical range through the cache chain and source.
-    /// `from_prefetch` is true when called from a prefetch worker; it routes
-    /// cache-populate bytes to the sync vs. async counter.
+    /// Assemble the bytes for `physical_window` from the residency plan, then the
+    /// source. Two phases, no per-window cache discovery:
+    ///   1. `serveResidentFromPlan` — copy every byte the held plan reports
+    ///      resident straight from its pinned cache handle (synchronous).
+    ///   2. `fetchAndBackfillGaps` — the rest are remote gaps: read them from the
+    ///      source and write them back into the caches.
+    /// While a live connection streams sequentially, pins the segment it will
+    /// continue into so a mid-read eviction can't reset it (Strategy A).
+    /// `from_prefetch` routes served/populated bytes to the sync vs. async
+    /// counters. Returns one contiguous run from the window start (a hole would
+    /// shift the caller's offset interpretation).
     Rope readPhysicalWindow(ByteRange physical_window, bool from_prefetch);
 
-    /// Plan-then-stream: query cache residency ONCE over `[physical_start,
-    /// physical_start + plan_look_ahead_window)` (clamped to the file end / read
-    /// extent) via the read-only `ICacheProvider::planResidency`, and stash the
-    /// resident segments + their held (pinning) handles in `window_plan`. While
-    /// the plan is held, `readPhysicalWindow` streams resident bytes straight from
-    /// these handles — no per-window `lookup`/`getOrSet`. Rebuilt lazily by
-    /// `readPhysicalWindow` whenever the current window leaves the planned span.
-    /// Only used on the sequential path (never for `is_transient` readBigAt).
+    /// Phase 1 of `readPhysicalWindow`: ensure `window_plan` covers
+    /// `physical_window` (re-planning if the cursor left the planned span), then
+    /// append every resident byte to `result` (recording it in `covered`),
+    /// reading it from the plan's held, pinning cache handles. Fastest-tier-first
+    /// is preserved by the `covered` guard (the plan is in tier order).
+    void serveResidentFromPlan(ByteRange physical_window, bool from_prefetch, Rope & result, IntervalSet & covered);
+
+    /// Phase 2 of `readPhysicalWindow`: whatever `covered` does not already hold
+    /// in `physical_window` is a remote gap. Discover the per-tier backfill
+    /// segments (`getOrSet`), read the gaps from the source (merged into fewer
+    /// requests), append them, and write them back into every cache tier. Returns
+    /// true if any source read happened (i.e. there were gaps), which the caller
+    /// uses to decide the live-connection keep/drop. `backfill_handles` is filled
+    /// with the populate handles, kept alive by the caller so their deferred
+    /// LRU-bump runs after the writes and so the in-flight segment can be pinned.
+    bool fetchAndBackfillGaps(
+        ByteRange physical_window,
+        bool from_prefetch,
+        Rope & result,
+        IntervalSet & covered,
+        VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> & backfill_handles);
+
+    /// Query cache residency ONCE over `[physical_start, physical_start +
+    /// plan_look_ahead_window)` (clamped to the file end / read extent) via the
+    /// read-only `ICacheProvider::planResidency`, and stash the resident segments
+    /// + their held (pinning) handles in `window_plan`. While the plan is held,
+    /// `serveResidentFromPlan` streams resident bytes straight from these handles
+    /// — no per-window `lookup`/`getOrSet`. Rebuilt lazily whenever the cursor
+    /// leaves the planned span.
     void planResidencyWindow(size_t physical_start);
 
     /// True when `physical_window` is fully covered by the residency plan with no
     /// gaps - i.e. it can be served entirely from cache without a source read.
-    /// (Re)builds the plan if it does not yet cover the window. Returns false when
-    /// planning is disabled / transient, or the window has any gap. Drives the
+    /// (Re)builds the plan if it does not yet cover the window. Drives the
     /// prefetch-skip: a fully-resident next window is read synchronously from
     /// cache instead of via an async prefetch whose worker handoff is pure
     /// overhead for a fast cache read.
@@ -336,13 +365,9 @@ private:
     size_t block_size;
     /// Drain bound for `maybeDrainLiveTail` (constructor-supplied, like the others).
     size_t max_tail_for_drain;
-    /// Look-ahead span for plan-then-stream (see `DEFAULT_PLAN_LOOK_AHEAD`).
+    /// Look-ahead span for plan-then-stream (see `DEFAULT_PLAN_LOOK_AHEAD`);
+    /// raised to at least `window_size` so a plan always covers a full window.
     size_t plan_look_ahead_window;
-    /// Enable plan-then-stream: needs a span covering at least one full window
-    /// AND a single-tier cache chain (stacked tiers keep the per-window loop for
-    /// its promotion behavior — see the constructor). Still gated by
-    /// `!is_transient` at use sites (one-shot reads don't plan).
-    bool planning_enabled = false;
     size_t position = 0;
 
     /// One held residency handle from `planResidencyWindow`, plus the resident

@@ -101,74 +101,6 @@ namespace DB::FailPoints
 namespace DB
 {
 
-namespace
-{
-
-/// Disjoint, sorted set of ByteRanges. Used by readPhysicalWindow to track
-/// which logical bytes are already in `result` so that:
-///   - cache hits are appended only for not-yet-covered subranges,
-///   - source-fetched bytes are appended only for not-yet-covered subranges.
-/// This makes `result` always disjoint by construction, so any `slice` over
-/// it is also disjoint — which is what `cache->put` requires.
-class IntervalSet
-{
-public:
-    void add(ByteRange r)
-    {
-        if (r.size == 0)
-            return;
-
-        size_t new_start = r.offset;
-        size_t new_end = r.end();
-
-        auto erase_from = intervals.begin();
-        while (erase_from != intervals.end() && erase_from->end() < new_start)
-            ++erase_from;
-
-        auto it = erase_from;
-        while (it != intervals.end() && it->offset <= new_end)
-        {
-            new_start = std::min(new_start, it->offset);
-            new_end = std::max(new_end, it->end());
-            ++it;
-        }
-
-        auto insert_pos = intervals.erase(erase_from, it);
-        intervals.insert(insert_pos, ByteRange{new_start, new_end - new_start});
-    }
-
-    /// Returns r minus all intervals in the set, as a list of disjoint
-    /// sub-ranges in increasing-offset order.
-    VectorWithMemoryTracking<ByteRange> subtract(ByteRange r) const
-    {
-        VectorWithMemoryTracking<ByteRange> out;
-        if (r.size == 0)
-            return out;
-        size_t cur = r.offset;
-        size_t end = r.end();
-        for (const auto & i : intervals)
-        {
-            if (i.end() <= cur)
-                continue;
-            if (i.offset >= end)
-                break;
-            if (i.offset > cur)
-                out.push_back({cur, i.offset - cur});
-            cur = std::max(cur, i.end());
-            if (cur >= end)
-                break;
-        }
-        if (cur < end)
-            out.push_back({cur, end - cur});
-        return out;
-    }
-
-private:
-    VectorWithMemoryTracking<ByteRange> intervals;
-};
-
-}
-
 ReaderExecutor::ReaderExecutor(
     std::shared_ptr<ISourceReader> source_,
     const StoredObjects & objects,
@@ -187,13 +119,7 @@ ReaderExecutor::ReaderExecutor(
     , min_bytes_for_seek(min_bytes_for_seek_)
     , block_size(block_size_)
     , max_tail_for_drain(max_tail_for_drain_)
-    , plan_look_ahead_window(plan_look_ahead_window_)
-    /// Single-tier only for now: a stacked chain (e.g. page cache over filesystem
-    /// cache) relies on the per-window loop to PROMOTE lower-tier hits into the
-    /// higher tier via miss-handle `put`s, which pre-covering from a plan would
-    /// skip. The expensive per-window cost is the filesystem cache's `getOrSet`
-    /// anyway; page-cache lookup is cheap. Multi-tier planning is a later step.
-    , planning_enabled(plan_look_ahead_window_ >= window_size_ && caches.size() == 1)
+    , plan_look_ahead_window(std::max(plan_look_ahead_window_, window_size_))
 {
     if (window_size == 0 || block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -1421,294 +1347,30 @@ Rope ReaderExecutor::readFromSource(
     return rope;
 }
 
-/// Assemble the bytes for `physical_window` from the cache chain, then the
-/// source. Walks caches fastest-first, appending each tier's hits (clamped to
-/// the request, deduped via `covered` so `result` stays disjoint even across
-/// overlapping tiers) and propagating misses down; merges leftover misses into
-/// fewer source reads; writes fetched bytes back into the missed segments.
-/// While a live connection streams sequentially, pins the segment it will
-/// continue into so a mid-read eviction can't reset it (Strategy A).
-/// `from_prefetch` routes cache-populate bytes to the sync vs. async counter.
-/// Returns one contiguous run from the window start (a hole would shift the
-/// caller's offset interpretation).
 Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_prefetch)
 {
     LOG_TRACE(log, "readPhysicalWindow [{}, {}) from_prefetch={}",
         physical_window.offset, physical_window.end(), from_prefetch);
 
     Rope result;
-    IntervalSet covered;   /// disjoint logical bytes already materialised in `result`
-    /// Both vectors live to scope exit so `~ICacheHandle` (the deferred LRU
-    /// bump) runs AFTER every `put` below — see `~DiskCacheHandle`.
-    VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> miss_handles;
-    VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> hit_only_handles;
+    /// Logical bytes already materialised in `result`. Keeps `result` disjoint:
+    /// resident and source reads only fill what is not yet covered.
+    IntervalSet covered;
+    /// Gap-backfill handles, kept alive to scope exit so the deferred LRU-bump in
+    /// `~ICacheHandle` runs AFTER every `put` (see `~DiskCacheHandle`), and so the
+    /// in-flight segment can be pinned from them below.
+    VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> backfill_handles;
 
-    /// Plan-then-stream (sequential path only): pre-fill `result` / `covered` from
-    /// the held residency plan, streaming resident bytes straight from the plan's
-    /// pinned handles. The per-window cache-discovery loop below then runs only
-    /// over the gaps `covered` does not already hold — zero `lookup` / `getOrSet`
-    /// on a fully-resident window. Transients (one-shot `readBigAt`) and disabled
-    /// planning fall through to the legacy per-window discovery unchanged.
-    if (planning_enabled && !is_transient)
-    {
-        if (!window_plan.covers(physical_window))
-            planResidencyWindow(physical_window.offset);
+    serveResidentFromPlan(physical_window, from_prefetch, result, covered);
+    const bool fetched_from_source = fetchAndBackfillGaps(
+        physical_window, from_prefetch, result, covered, backfill_handles);
 
-        for (const auto & ph : window_plan.planned)
-        {
-            size_t & hit_bytes = ph.tier == CacheTier::PageCache
-                ? stats.bytes_from_page_cache
-                : stats.bytes_from_filesystem_cache;
-
-            for (const auto & res : ph.resident)
-            {
-                const size_t lo = std::max(res.offset, physical_window.offset);
-                const size_t hi = std::min(res.end(), physical_window.end());
-                if (lo >= hi)
-                    continue;
-                ByteRange clamped{lo, hi - lo};
-
-                auto useful = covered.subtract(clamped);
-                if (useful.empty())
-                    continue;
-                ++stats.cache_get_requests;
-                StopwatchAccumulator get_scope(stats.cache_get_us);
-                Rope hit_rope = ph.handle->get(clamped);
-                HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
-                    static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
-                for (const auto & sub : useful)
-                {
-                    /// The plan handle pins resident segments, so a hit it
-                    /// reported MUST still be readable here. If not, the pin was
-                    /// not honored — fail loudly rather than drop bytes.
-                    if (!hit_rope.covers(sub))
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "ReaderExecutor: residency plan promised a hit at [{}, {}) but get() did not "
-                            "return it - a pinned cache segment was not honored",
-                            sub.offset, sub.end());
-                    result.append(hit_rope.extract(sub));
-                    covered.add(sub);
-                    hit_bytes += sub.size;
-                    if (from_prefetch)
-                        stats.prefetch_issued_cache_bytes += sub.size;
-                }
-            }
-        }
-    }
-
-    VectorWithMemoryTracking<ByteRange> remaining = covered.subtract(physical_window);
-    for (auto & cache : caches)
-    {
-        VectorWithMemoryTracking<ByteRange> still_missing;
-
-        /// Attribute every byte this tier serves to the matching counter.
-        size_t & hit_bytes = cache->tier() == CacheTier::PageCache
-            ? stats.bytes_from_page_cache
-            : stats.bytes_from_filesystem_cache;
-
-        for (const auto & r : remaining)
-        {
-            /// Split `r` by object boundaries so each `cache->lookup` carries
-            /// a single `StoredObject` and the provider can derive a per-object
-            /// key / origin. Handles still report ranges in file-level
-            /// coordinates — the per-object translation lives inside the provider.
-            auto pieces = offset_map.map(r);
-            size_t piece_file_start = r.offset;
-            for (const auto & pr : pieces)
-            {
-                const size_t object_file_offset = piece_file_start - pr.object_offset;
-                ByteRange piece_range{piece_file_start, pr.size};
-
-                auto handle = cache->lookup(pr.object, object_file_offset, piece_range);
-                auto status = handle->status();
-                bool any_hit_done = false;
-
-                /// Test hook: pause after a hit is classified but before `get`
-                /// reads it, so a test can drop the cache in that window and
-                /// verify the hit is still honored. No-op in production.
-                if (!status.hit_ranges.empty())
-                    FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_cache_status);
-
-                for (const auto & hit : status.hit_ranges)
-                {
-                    LOG_TRACE(log, "readPhysicalWindow: cache {} hit [{}, {})",
-                        cache->name(), hit.offset, hit.end());
-
-                    /// `hit` is the cache's segment range; `piece_range` is
-                    /// the actual request. Clamp `get` to the intersection to
-                    /// avoid allocating buffer memory for segment bytes outside
-                    /// the request. Misses stay segment-sized so the next layer
-                    /// (or the source) can fully populate this cache via `put`.
-                    size_t lo = std::max(hit.offset, piece_range.offset);
-                    size_t hi = std::min(hit.end(), piece_range.end());
-                    if (lo >= hi)
-                        continue;
-                    ByteRange clamped{lo, hi - lo};
-
-                    auto useful = covered.subtract(clamped);
-                    if (useful.empty())
-                        continue;
-                    ++stats.cache_get_requests;
-                    StopwatchAccumulator get_scope(stats.cache_get_us);
-                    Rope hit_rope = handle->get(clamped);
-                    HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
-                        static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
-                    for (const auto & sub : useful)
-                    {
-                        /// `status` promised this sub-range as a hit; `get` must
-                        /// have returned it. If not, a held FileSegment was lost
-                        /// between the two calls (the holder is supposed to keep
-                        /// it non-releasable against eviction and DROP) — fail
-                        /// loudly rather than silently mark uncovered bytes done.
-                        if (!hit_rope.covers(sub))
-                            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "ReaderExecutor: cache {} status() reported a hit at [{}, {}) but get() did not "
-                                "return it - a held FileSegment was not honored across status()/get()",
-                                cache->name(), sub.offset, sub.end());
-                        result.append(hit_rope.extract(sub));
-                        covered.add(sub);
-                        hit_bytes += sub.size;
-                        if (from_prefetch)
-                            stats.prefetch_issued_cache_bytes += sub.size;
-                    }
-                    any_hit_done = true;
-                }
-
-                for (const auto & miss : status.miss_ranges)
-                {
-                    LOG_TRACE(log, "readPhysicalWindow: cache {} miss [{}, {})",
-                        cache->name(), miss.offset, miss.end());
-                    still_missing.push_back(miss);
-                }
-
-                if (!status.miss_ranges.empty())
-                    miss_handles.push_back(std::move(handle));
-                else if (any_hit_done)
-                    hit_only_handles.push_back(std::move(handle));
-
-                piece_file_start += pr.size;
-            }
-        }
-
-        remaining = std::move(still_missing);
-        if (remaining.empty())
-            break;
-    }
-
-    /// Merge close-together miss ranges into fewer source requests. The merge
-    /// may bridge across already-covered hits — the latency saving outweighs
-    /// the small extra bandwidth, and the overlap is dropped below when only
-    /// the uncovered portion of each source range is appended to `result`.
-    auto fetch_ranges = mergeRanges(remaining, min_bytes_for_seek);
-
-    if (fetch_ranges.size() < remaining.size())
-        LOG_TRACE(log, "readPhysicalWindow: merged {} miss ranges into {} fetch ranges (min_gap={})",
-            remaining.size(), fetch_ranges.size(), min_bytes_for_seek);
-
-    /// Sample the pressure-scaled block size ONCE per window, not per fetch
-    /// range — `effectiveBlockSize` queries the memory-pressure monitor, and on
-    /// a wide-table read thousands of concurrent executors would otherwise hit
-    /// it per block. The value is stable across this call.
-    const size_t window_block_size = effectiveBlockSize();
-
-    for (const auto & fr : fetch_ranges)
-    {
-        auto physical_ranges = offset_map.map(fr);
-        size_t logical_pos = fr.offset;
-
-        for (const auto & pr : physical_ranges)
-        {
-            LOG_TRACE(log, "readPhysicalWindow: source read object={}, offset={}, size={}",
-                pr.object.remote_path, pr.object_offset, pr.size);
-
-            /// Split at the user-window edges so user-data bytes (within
-            /// the window) and head-extension bytes (segment-aligned miss
-            /// heads before the window) live in separate `OwnedRopeBuffer`s.
-            VectorWithMemoryTracking<size_t> splits;
-            const size_t pr_lo = logical_pos;
-            const size_t pr_hi = logical_pos + pr.size;
-            if (physical_window.offset > pr_lo && physical_window.offset < pr_hi)
-                splits.push_back(physical_window.offset - pr_lo);
-            if (physical_window.end() > pr_lo && physical_window.end() < pr_hi)
-                splits.push_back(physical_window.end() - pr_lo);
-            std::sort(splits.begin(), splits.end());
-
-            auto blocks = allocateBlocks(pr.size, window_block_size, splits);
-            StopwatchAccumulator src_scope(stats.source_read_us);
-            Rope source_rope = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos);
-            HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
-                static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
-            size_t actual = source_rope.totalBytes();
-            stats.bytes_from_source += actual;
-            if (from_prefetch)
-                stats.prefetch_issued_source_bytes += actual;
-            /// Size-known short reads are fatal (the map promised those bytes;
-            /// silently shrinking would shift later logical offsets). Size-unknown
-            /// short reads are the only way to learn EOF — latch `reached_eof`.
-            if (actual != pr.size)
-            {
-                if (!offset_map.hasUnknownSize())
-                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                        "ReaderExecutor: short read from {} at offset {}: requested {} bytes, got {}",
-                        pr.object.remote_path, pr.object_offset, pr.size, actual);
-                reached_eof = true;
-            }
-
-            /// Use `actual` so the recorded range tracks what the source
-            /// actually delivered — diverges from `pr.size` only at EOF.
-            ByteRange pr_range{logical_pos, actual};
-            /// Over-read: fetched bytes that do not serve the requested window —
-            /// head/tail alignment slack outside `physical_window`, plus bytes
-            /// inside it already covered by an earlier hit (a mergeRanges bridged
-            /// gap). Measured before `covered.add` below mutates the set.
-            {
-                const size_t lo = std::max(pr_range.offset, physical_window.offset);
-                const size_t hi = std::min(pr_range.end(), physical_window.end());
-                size_t needed = 0;
-                if (hi > lo)
-                    for (const auto & sub : covered.subtract(ByteRange{lo, hi - lo}))
-                        needed += sub.size;
-                stats.over_read_bytes += actual - needed;
-            }
-            auto uncovered = covered.subtract(pr_range);
-            for (const auto & sub : uncovered)
-            {
-                result.append(source_rope.extract(sub));
-                covered.add(sub);
-            }
-
-            logical_pos += pr.size;
-        }
-    }
-
-    /// `result` is disjoint by construction (every append went through the
-    /// `covered` guard), so each slice handed to `put` has at most one node
-    /// per byte. The slice may be shorter than `miss.size` at EOF.
-    for (auto & handle : miss_handles)
-    {
-        auto status = handle->status();
-        for (const auto & miss : status.miss_ranges)
-        {
-            auto slice = result.slice(miss);
-            if (slice.empty())
-                continue;
-            ++stats.cache_populate_requests;
-            StopwatchAccumulator put_scope(stats.cache_populate_us);
-            size_t & pushed_bytes = from_prefetch
-                ? stats.bytes_pushed_to_cache_async
-                : stats.bytes_pushed_to_cache_sync;
-            pushed_bytes += handle->put(miss, std::move(slice));
-            HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
-                static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
-        }
-    }
-
-    /// Cache-only window (no source read): the un-advanced live buffer fell
-    /// behind the read frontier. Keep it while the next window start is still a
-    /// bridgeable forward gap (<= min_bytes_for_seek) within its bound - the
-    /// next miss will skip the cached gap and reuse the connection. Close it
-    /// once it has fallen too far behind to bridge, so its slot isn't held idle.
-    if (live_buffer && !reached_eof && fetch_ranges.empty())
+    /// A cache-only window (no source read) means the un-advanced live buffer
+    /// fell behind the read frontier. Keep it while the next window start is still
+    /// a bridgeable forward gap (<= min_bytes_for_seek) within its bound - the next
+    /// gap will skip the cached span and reuse the connection. Close it once it
+    /// has fallen too far behind to bridge, so its slot isn't held idle.
+    if (live_buffer && !reached_eof && !fetched_from_source)
     {
         const size_t next_physical = physical_window.end();
         size_t next_obj_file_offset = 0;
@@ -1733,7 +1395,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
     if (live_buffer && !reached_eof)
     {
         ICacheHandle::CacheSegmentPin pin;
-        for (const auto & handle : miss_handles)
+        for (const auto & handle : backfill_handles)
         {
             pin = handle->pinSegmentAt(physical_window.end());
             if (pin)
@@ -1772,6 +1434,248 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
             "ReaderExecutor::readPhysicalWindow: assembled result starts at {} but window begins at {} - missing prefix bytes",
             ivs[0].offset, physical_window.offset);
     return sliced;
+}
+
+void ReaderExecutor::serveResidentFromPlan(ByteRange physical_window, bool from_prefetch, Rope & result, IntervalSet & covered)
+{
+    if (!window_plan.covers(physical_window))
+        planResidencyWindow(physical_window.offset);
+
+    /// The plan is in cache-tier priority order, so the `covered` guard serves
+    /// each byte from the fastest tier that holds it.
+    for (const auto & ph : window_plan.planned)
+    {
+        size_t & tier_bytes = ph.tier == CacheTier::PageCache
+            ? stats.bytes_from_page_cache
+            : stats.bytes_from_filesystem_cache;
+
+        for (const auto & res : ph.resident)
+        {
+            const size_t lo = std::max(res.offset, physical_window.offset);
+            const size_t hi = std::min(res.end(), physical_window.end());
+            if (lo >= hi)
+                continue;
+            ByteRange clamped{lo, hi - lo};
+
+            auto useful = covered.subtract(clamped);
+            if (useful.empty())
+                continue;
+            ++stats.cache_get_requests;
+            StopwatchAccumulator get_scope(stats.cache_get_us);
+            Rope resident_rope = ph.handle->get(clamped);
+            HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
+                static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
+            for (const auto & sub : useful)
+            {
+                /// The plan handle pins resident segments, so a byte it reported
+                /// resident MUST still be readable here. If not, the pin was not
+                /// honored - fail loudly rather than drop bytes.
+                if (!resident_rope.covers(sub))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "ReaderExecutor: residency plan promised a hit at [{}, {}) but get() did not "
+                        "return it - a pinned cache segment was not honored",
+                        sub.offset, sub.end());
+                result.append(resident_rope.extract(sub));
+                covered.add(sub);
+                tier_bytes += sub.size;
+                if (from_prefetch)
+                    stats.prefetch_issued_cache_bytes += sub.size;
+            }
+        }
+    }
+}
+
+bool ReaderExecutor::fetchAndBackfillGaps(
+    ByteRange physical_window,
+    bool from_prefetch,
+    Rope & result,
+    IntervalSet & covered,
+    VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> & backfill_handles)
+{
+    /// Whatever the plan left uncovered is a remote gap. Walk the tiers to create
+    /// each tier's backfill segments (`getOrSet`) and segment-align the misses.
+    /// A byte that became resident between planning and now (another reader's
+    /// download) surfaces as a hit here and is served, so no byte is left a hole.
+    VectorWithMemoryTracking<ByteRange> remaining = covered.subtract(physical_window);
+    for (auto & cache : caches)
+    {
+        VectorWithMemoryTracking<ByteRange> still_missing;
+        size_t & tier_bytes = cache->tier() == CacheTier::PageCache
+            ? stats.bytes_from_page_cache
+            : stats.bytes_from_filesystem_cache;
+
+        for (const auto & r : remaining)
+        {
+            /// Split by object boundaries so each `lookup` carries a single
+            /// `StoredObject` (the provider keys/translates per object); handles
+            /// still report file-level ranges.
+            auto pieces = offset_map.map(r);
+            size_t piece_file_start = r.offset;
+            for (const auto & pr : pieces)
+            {
+                const size_t object_file_offset = piece_file_start - pr.object_offset;
+                ByteRange piece_range{piece_file_start, pr.size};
+
+                auto handle = cache->lookup(pr.object, object_file_offset, piece_range);
+                auto status = handle->status();
+
+                /// Test hook: pause after a hit is classified but before `get`,
+                /// so a test can drop the cache in that window. No-op in production.
+                if (!status.hit_ranges.empty())
+                    FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_cache_status);
+
+                bool any_hit_done = false;
+                for (const auto & hit : status.hit_ranges)
+                {
+                    const size_t lo = std::max(hit.offset, piece_range.offset);
+                    const size_t hi = std::min(hit.end(), piece_range.end());
+                    if (lo >= hi)
+                        continue;
+                    ByteRange clamped{lo, hi - lo};
+                    auto useful = covered.subtract(clamped);
+                    if (useful.empty())
+                        continue;
+                    ++stats.cache_get_requests;
+                    StopwatchAccumulator get_scope(stats.cache_get_us);
+                    Rope hit_rope = handle->get(clamped);
+                    HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
+                        static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
+                    for (const auto & sub : useful)
+                    {
+                        if (!hit_rope.covers(sub))
+                            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "ReaderExecutor: cache {} status() reported a hit at [{}, {}) but get() did not "
+                                "return it - a held FileSegment was not honored across status()/get()",
+                                cache->name(), sub.offset, sub.end());
+                        result.append(hit_rope.extract(sub));
+                        covered.add(sub);
+                        tier_bytes += sub.size;
+                        if (from_prefetch)
+                            stats.prefetch_issued_cache_bytes += sub.size;
+                    }
+                    any_hit_done = true;
+                }
+
+                for (const auto & miss : status.miss_ranges)
+                    still_missing.push_back(miss);
+
+                /// Keep every handle that did real work: ones with misses are
+                /// `put` into below and pinned by the caller; the deferred LRU-bump
+                /// of any read hit must land after those `put`s.
+                if (!status.miss_ranges.empty() || any_hit_done)
+                    backfill_handles.push_back(std::move(handle));
+
+                piece_file_start += pr.size;
+            }
+        }
+
+        remaining = std::move(still_missing);
+        if (remaining.empty())
+            break;
+    }
+
+    /// Merge close-together gaps into fewer source requests. The merge may bridge
+    /// already-covered bytes; the overlap is dropped below (only the uncovered
+    /// portion of each fetched range is appended).
+    auto fetch_ranges = mergeRanges(remaining, min_bytes_for_seek);
+    if (fetch_ranges.size() < remaining.size())
+        LOG_TRACE(log, "fetchAndBackfillGaps: merged {} gaps into {} fetch ranges (min_gap={})",
+            remaining.size(), fetch_ranges.size(), min_bytes_for_seek);
+
+    /// Sample the pressure-scaled block size ONCE per call - `effectiveBlockSize`
+    /// queries the memory-pressure monitor, and a wide-table read would otherwise
+    /// hit it per block across thousands of concurrent executors.
+    const size_t window_block_size = effectiveBlockSize();
+
+    for (const auto & fr : fetch_ranges)
+    {
+        auto physical_ranges = offset_map.map(fr);
+        size_t logical_pos = fr.offset;
+        for (const auto & pr : physical_ranges)
+        {
+            LOG_TRACE(log, "fetchAndBackfillGaps: source read object={}, offset={}, size={}",
+                pr.object.remote_path, pr.object_offset, pr.size);
+
+            /// Split at the window edges so user-data bytes and segment-aligned
+            /// head-extension bytes land in separate `OwnedRopeBuffer`s (released
+            /// independently).
+            VectorWithMemoryTracking<size_t> splits;
+            const size_t pr_lo = logical_pos;
+            const size_t pr_hi = logical_pos + pr.size;
+            if (physical_window.offset > pr_lo && physical_window.offset < pr_hi)
+                splits.push_back(physical_window.offset - pr_lo);
+            if (physical_window.end() > pr_lo && physical_window.end() < pr_hi)
+                splits.push_back(physical_window.end() - pr_lo);
+            std::sort(splits.begin(), splits.end());
+
+            auto blocks = allocateBlocks(pr.size, window_block_size, splits);
+            StopwatchAccumulator src_scope(stats.source_read_us);
+            Rope source_rope = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos);
+            HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
+                static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
+            size_t actual = source_rope.totalBytes();
+            stats.bytes_from_source += actual;
+            if (from_prefetch)
+                stats.prefetch_issued_source_bytes += actual;
+            /// Size-known short reads are fatal (the map promised those bytes).
+            /// Size-unknown short reads are how EOF is learned - latch it.
+            if (actual != pr.size)
+            {
+                if (!offset_map.hasUnknownSize())
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "ReaderExecutor: short read from {} at offset {}: requested {} bytes, got {}",
+                        pr.object.remote_path, pr.object_offset, pr.size, actual);
+                reached_eof = true;
+            }
+
+            /// Use `actual` so the recorded range tracks what the source delivered
+            /// - diverges from `pr.size` only at EOF.
+            ByteRange pr_range{logical_pos, actual};
+            /// Over-read: fetched bytes that do not serve the window (alignment
+            /// slack outside it, or bytes a bridged gap already covered). Measured
+            /// before `covered.add` mutates the set.
+            {
+                const size_t lo = std::max(pr_range.offset, physical_window.offset);
+                const size_t hi = std::min(pr_range.end(), physical_window.end());
+                size_t needed = 0;
+                if (hi > lo)
+                    for (const auto & sub : covered.subtract(ByteRange{lo, hi - lo}))
+                        needed += sub.size;
+                stats.over_read_bytes += actual - needed;
+            }
+            for (const auto & sub : covered.subtract(pr_range))
+            {
+                result.append(source_rope.extract(sub));
+                covered.add(sub);
+            }
+
+            logical_pos += pr.size;
+        }
+    }
+
+    /// Write the fetched bytes back into every tier that missed. `result` is
+    /// disjoint by construction, so each slice has at most one node per byte (it
+    /// may be short at EOF). Hit-only handles have no misses and are skipped.
+    for (auto & handle : backfill_handles)
+    {
+        auto status = handle->status();
+        for (const auto & miss : status.miss_ranges)
+        {
+            auto slice = result.slice(miss);
+            if (slice.empty())
+                continue;
+            ++stats.cache_populate_requests;
+            StopwatchAccumulator put_scope(stats.cache_populate_us);
+            size_t & pushed_bytes = from_prefetch
+                ? stats.bytes_pushed_to_cache_async
+                : stats.bytes_pushed_to_cache_sync;
+            pushed_bytes += handle->put(miss, std::move(slice));
+            HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
+                static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
+        }
+    }
+
+    return !fetch_ranges.empty();
 }
 
 void ReaderExecutor::planResidencyWindow(size_t physical_start)
@@ -1856,7 +1760,7 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
 
 bool ReaderExecutor::windowFullyResident(ByteRange physical_window)
 {
-    if (!planning_enabled || is_transient || physical_window.size == 0)
+    if (physical_window.size == 0)
         return false;
 
     if (!window_plan.covers(physical_window))
@@ -1890,7 +1794,7 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     auto t = std::make_unique<ReaderExecutor>(
         source, stored_objects, caches,
         window_size, min_bytes_for_seek, block_size, log_file_path, max_tail_for_drain,
-        /*plan_look_ahead_window=*/0);  /// one-shot reads never plan (also gated by is_transient)
+        plan_look_ahead_window);  /// plans over its one-shot range (clamped to the read extent)
 
     t->buffer_limit = buffer_limit;
 

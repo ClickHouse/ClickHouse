@@ -498,7 +498,11 @@ TEST_F(ReaderExecutorCacheChain, PageHitSkipsSourceAndFs)
 /// Scenario 3: page cold, fs warm. A fresh `PageCacheFile` makes the page layer
 /// cold; the SAME warm fs serves the whole file. A third executor reusing the
 /// fresh page provider (now populated by #2) serves entirely from page.
-TEST_F(ReaderExecutorCacheChain, FsHitWhenPageColdRepopulatesPage)
+/// Plan-then-stream serves each byte from the fastest tier that already holds
+/// it and does NOT promote it up the chain: a byte resident in fs but cold in
+/// page is served from fs and left there. (Gaps - bytes resident in no tier -
+/// are still back-filled to every tier; this only drops cache->cache copies.)
+TEST_F(ReaderExecutorCacheChain, FsHitIsNotPromotedToPage)
 {
     constexpr size_t segment_size = 64;
     constexpr size_t block_size = 16;
@@ -542,8 +546,9 @@ TEST_F(ReaderExecutorCacheChain, FsHitWhenPageColdRepopulatesPage)
             << "fs layer must serve everything while page is cold";
     }
 
-    /// Executor #3: reuses #2's fresh page provider (now populated). Drop the
-    /// fs from the chain entirely to prove page alone serves it.
+    /// Executor #3: reuses #2's page provider with the fs DROPPED from the chain.
+    /// Because the fs hit in #2 was served straight from fs and not promoted, the
+    /// page layer is still cold - so a page-only chain must fall to the source.
     {
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
         caches.push_back(cold_page_provider);
@@ -551,8 +556,8 @@ TEST_F(ReaderExecutorCacheChain, FsHitWhenPageColdRepopulatesPage)
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
         executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
-        EXPECT_EQ(executor.getSourceRequestsCount(), 0u)
-            << "fs hit in #2 must have repopulated the page layer";
+        EXPECT_GT(executor.getSourceRequestsCount(), 0u)
+            << "the fs hit in #2 must NOT have repopulated the page layer (no cross-tier promotion)";
     }
 }
 
@@ -717,10 +722,10 @@ TEST_F(ReaderExecutorCacheChain, PageCacheBypassModeDoesNotPopulate)
 
 
 /// Scenario 5: two fs layers. Chain [page(cold), fastFs(cold), slowFs(warm)].
-/// Only slowFs is warmed. The chain reads from slowFs, and the populate path
-/// back-fills the faster upstream layers (page + fastFs). We verify fastFs got
-/// populated by reading through fastFs alone with source count 0.
-TEST_F(ReaderExecutorCacheChain, TwoFsLayersFastMissSlowHit)
+/// Only slowFs is warmed. The chain serves from slowFs (the tier that holds the
+/// bytes) and does NOT promote them up to the faster cold layers - so reading
+/// later through fastFs alone still misses and falls to the source.
+TEST_F(ReaderExecutorCacheChain, SlowFsHitIsNotPromotedToFastFs)
 {
     constexpr size_t segment_size = 64;
     constexpr size_t block_size = 16;
@@ -768,8 +773,8 @@ TEST_F(ReaderExecutorCacheChain, TwoFsLayersFastMissSlowHit)
             << "slowFs must serve everything; source untouched";
     }
 
-    /// Executor #3: chain of just [fastFs]. If fastFs was populated, source
-    /// count stays 0.
+    /// Executor #3: chain of just [fastFs]. fastFs was never promoted (slowFs
+    /// served #2 directly), so it is still cold and must fall to the source.
     {
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
         caches.push_back(fast_provider);
@@ -777,8 +782,8 @@ TEST_F(ReaderExecutorCacheChain, TwoFsLayersFastMissSlowHit)
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
         executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
-        EXPECT_EQ(executor.getSourceRequestsCount(), 0u)
-            << "fastFs must have been back-filled while serving from slowFs";
+        EXPECT_GT(executor.getSourceRequestsCount(), 0u)
+            << "fastFs must NOT have been back-filled from slowFs (no cross-tier promotion)";
     }
 }
 
