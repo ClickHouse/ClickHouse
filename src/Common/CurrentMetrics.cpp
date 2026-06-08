@@ -322,6 +322,8 @@
     M(FilesystemCacheSize, "Filesystem cache size in bytes") \
     M(FilesystemCacheSizeLimit, "Filesystem cache size limit in bytes") \
     M(FilesystemCacheElements, "Filesystem cache elements (file segments)") \
+    M(FilesystemCachePriorityQueueElements, "Total number of entries in the filesystem cache priority queue, including invalidated entries pending removal") \
+    M(FilesystemCacheInvalidatedElements, "Number of invalidated (zero size, pending removal) entries in the filesystem cache priority queue") \
     M(FilesystemCacheDownloadQueueElements, "Filesystem cache elements in download queue") \
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \

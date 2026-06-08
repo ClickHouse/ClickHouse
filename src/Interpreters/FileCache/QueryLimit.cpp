@@ -63,7 +63,7 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
 FileCacheQueryLimit::QueryContext::QueryContext(
     size_t query_cache_size,
     bool recache_on_query_limit_exceeded_)
-    : priority(LRUFileCachePriority(query_cache_size, 0))
+    : priority(LRUFileCachePriority(IFileCachePriority::QueueType::Query, query_cache_size, 0))
     , recache_on_query_limit_exceeded(recache_on_query_limit_exceeded_)
 {
 }
