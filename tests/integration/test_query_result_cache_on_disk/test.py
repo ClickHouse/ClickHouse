@@ -50,6 +50,8 @@ def test_disk_cache_survives_restart(start_cluster):
             "use_query_cache": 1,
             "enable_writes_to_query_cache_disk": 1,
             "enable_reads_from_query_cache_disk": 1,
+            # Keep the entry fresh across the (potentially slow) restart so the post-restart read is a hit.
+            "query_cache_ttl": 600,
         },
     )
 
@@ -96,6 +98,8 @@ def test_disk_cache_user_isolation_after_restart(start_cluster):
             "use_query_cache": 1,
             "enable_writes_to_query_cache_disk": 1,
             "enable_reads_from_query_cache_disk": 1,
+            # Keep the entry fresh across the (potentially slow) restart so the post-restart read is a hit.
+            "query_cache_ttl": 600,
         },
     )
     assert node.query("SELECT shared FROM system.query_cache WHERE type = 'Disk'").strip() == "0"
