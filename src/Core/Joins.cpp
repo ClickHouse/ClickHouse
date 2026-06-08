@@ -80,9 +80,9 @@ const char * toString(JoinOrderAlgorithm join_order_algorithm)
 {
     switch (join_order_algorithm)
     {
+        case JoinOrderAlgorithm::AUTO: return "AUTO";
         case JoinOrderAlgorithm::GREEDY: return "GREEDY";
         case JoinOrderAlgorithm::DPSIZE: return "DPSIZE";
-        case JoinOrderAlgorithm::AUTO: return "AUTO";
     }
 }
 
