@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, long
+# Tags: no-fasttest, no-parallel, no-flaky-check, long
 #
 # Regression test for the TOCTOU race fixed in the second iteration of the issue #63019 fix.
 # clickhouse-gh[bot] flagged that the simple "track and roll back on scope exit" approach
