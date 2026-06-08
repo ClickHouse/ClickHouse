@@ -454,7 +454,7 @@ void fillMissingColumns(
         if (res_columns[i] || hasDefault(storage_snapshot, *requested_column))
             continue;
 
-        Columns current_offsets;
+        std::vector<ColumnPtr> current_offsets;
         size_t num_dimensions = 0;
 
         const auto * array_type = typeid_cast<const DataTypeArray *>(requested_column->type.get());

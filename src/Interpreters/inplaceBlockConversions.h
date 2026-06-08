@@ -3,7 +3,6 @@
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/COW.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/ColumnDefault.h>
 
 #include <memory>
@@ -17,7 +16,7 @@ class ColumnsDescription;
 
 class IColumn;
 using ColumnPtr = COW<IColumn>::Ptr;
-using Columns = VectorWithMemoryTracking<ColumnPtr>;
+using Columns = std::vector<ColumnPtr>;
 
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
