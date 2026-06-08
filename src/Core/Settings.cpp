@@ -785,6 +785,8 @@ For queries that read at least a somewhat large volume of data (one million rows
     DECLARE(Bool, use_columns_cache, true, R"(
 Whether to use the columns cache. Accepts 0 or 1. By default, 1 (enabled).
 The columns cache stores deserialized columns from `MergeTree` tables, eliminating repeated decompression and deserialization for hot data. This can significantly reduce latency for repeated queries on the same data. The cache is keyed by table UUID, data part name, column name, and row range.
+
+The cache currently applies to wide parts only: data in compact parts is not read from or written to the columns cache, so whether a read is accelerated depends on the part format.
 )", BETA) \
     DECLARE(Bool, enable_reads_from_columns_cache, true, R"(
 Whether to read from the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
