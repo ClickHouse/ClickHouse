@@ -103,6 +103,20 @@ class TestAnyArrayRewrite(unittest.TestCase):
         sql = "SELECT * FROM t WHERE x = ANY((WITH c AS (SELECT 1) SELECT * FROM c))"
         self.assertEqual(rewrite_query(sql), sql)
 
+    def test_arithmetic_left_hand_side_left_untouched(self):
+        # The captured identifier (`b`) is only the tail of `a + b`, not the
+        # whole left-hand side; rewriting would wrongly produce
+        # `a + has(arr, b)`. Leave such complex expressions untouched.
+        sql = "SELECT * FROM t WHERE a + b = ANY(arr)"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_cast_left_hand_side_left_untouched(self):
+        # A PostgreSQL cast `a::integer` must not be split into
+        # `a::has(arr, integer)`. The `::` before the identifier marks it as
+        # part of a larger expression.
+        sql = "SELECT * FROM t WHERE a::integer = ANY(arr)"
+        self.assertEqual(rewrite_query(sql), sql)
+
 
 def _sort_key(f):
     """Mirror of `runner._sort_key` — kept inline to avoid importing the runner

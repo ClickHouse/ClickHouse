@@ -447,11 +447,28 @@ def rewrite_any_array(sql):
     # Capture a simple or qualified (optionally quoted) identifier as the
     # left-hand side, immediately followed by `= ANY(`.
     pat = re.compile(r'("?\w+"?(?:\s*\.\s*"?\w+"?)*)\s*=\s*ANY\s*\(', re.IGNORECASE)
+    # Characters that, when they immediately precede the captured identifier,
+    # prove it is only the tail of a larger left-hand expression rather than the
+    # whole operand. Rewriting in that case would be wrong: `a + b = ANY(arr)`
+    # would become `a + has(arr, b)` and `a::integer = ANY(arr)` would become
+    # `a::has(arr, integer)`. The conservative contract above requires leaving
+    # such expressions untouched.
+    lhs_continuation = set("+-*/%|&^~:.)]'")
     while i < len(sql):
         m = pat.search(sql, i)
         if not m:
             result.append(sql[i:])
             break
+        # Verify the captured identifier is the whole left-hand side: scan back
+        # past whitespace and skip the rewrite if it is glued to a preceding
+        # operator, cast (`::`), or closing bracket.
+        j = m.start() - 1
+        while j >= 0 and sql[j].isspace():
+            j -= 1
+        if j >= 0 and sql[j] in lhs_continuation:
+            result.append(sql[i:m.end()])
+            i = m.end()
+            continue
         paren_start = m.end() - 1  # position of '('
         paren_end = find_balanced_parens(sql, paren_start)
         if paren_end == -1:
