@@ -119,6 +119,8 @@ const constexpr uint32_t allow_set = (1 << 0), allow_cte = (1 << 1), allow_disti
 const constexpr uint32_t collect_generated = (1 << 0), flat_tuple = (1 << 1), flat_nested = (1 << 2), flat_json = (1 << 3),
                          skip_tuple_node = (1 << 4), skip_nested_node = (1 << 5), to_table_entries = (1 << 6), to_remote_entries = (1 << 7);
 
+void collectColumnPaths(String cname, SQLType * tp, uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths);
+
 class CatalogBackup
 {
 public:
@@ -164,11 +166,15 @@ private:
     std::vector<TableEngineValues> likeEngsDeterministic;
     std::vector<TableEngineValues> likeEngsNotDeterministic;
     std::vector<TableEngineValues> likeEngsInfinite;
-    std::unordered_map<SQLFunc, uint32_t> dictFuncs;
+    std::unordered_map<std::string, uint32_t> dictFuncs;
     ExternalIntegrations & connections;
     const bool supports_cloud_features;
-    const size_t deterministic_funcs_limit;
-    const size_t deterministic_aggrs_limit;
+    const std::vector<CHFunction> & det_funcs;
+    const std::vector<CHFunction> & nondet_funcs;
+    const std::vector<CHFunction> & common_funcs;
+    const std::vector<CHAggregate> & det_aggrs;
+    const std::vector<CHAggregate> & simple_det_aggrs;
+    const std::vector<CHAggregate> & nondet_aggrs;
     PeerQuery peer_query = PeerQuery::None;
 
     bool in_transaction = false;
@@ -717,12 +723,6 @@ private:
     void renameObjects(const String & old_key, const String & new_key, const std::optional<String> & new_db);
     template <typename T>
     void attachOrDetachObject(const String & tkey, DetachStatus status);
-
-    static const constexpr auto funcDeterministicLambda = [](const SQLFunction & f) { return f.is_deterministic; };
-
-    static const constexpr auto funcNotDeterministicIndexLambda = [](const CHFunction & f) { return f.fnum == SQLFunc::FUNCarrayShuffle; };
-
-    static const constexpr auto aggrNotDeterministicIndexLambda = [](const CHAggregate & a) { return a.fnum == SQLFunc::FUNCany; };
 
     template <typename T, typename U>
     void setObjectStoreParams(RandomGenerator & rg, const T & b, U * source)

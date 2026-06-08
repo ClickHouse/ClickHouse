@@ -2,6 +2,7 @@
 
 #include <sys/resource.h>
 #include <Common/Config/getLocalConfigPath.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Core/Settings.h>
@@ -145,6 +146,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
     extern const ServerSettingsUInt64 thread_pool_queue_size;
@@ -184,6 +186,9 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
+namespace
+{
+
 void applySettingsOverridesForLocal(ContextMutablePtr context)
 {
     Settings settings = context->getSettingsCopy();
@@ -193,6 +198,8 @@ void applySettingsOverridesForLocal(ContextMutablePtr context)
     settings[Setting::implicit_select] = true;
 
     context->setSettings(settings);
+}
+
 }
 
 Poco::Util::LayeredConfiguration & LocalServer::getClientConfiguration()
@@ -217,8 +224,12 @@ void LocalServer::processError(std::string_view) const
             message = client_exception->message();
         }
 
+        /// musl defines `stderr` as `(stderr)` which triggers `-Wdisabled-macro-expansion`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         fmt::print(stderr, "Received exception:\n{}\n", message);
         fmt::print(stderr, "\n");
+#pragma clang diagnostic pop
     }
     else
     {
@@ -330,7 +341,10 @@ void LocalServer::initialize(Poco::Util::Application & self)
 }
 
 
-static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & database_name)
+namespace
+{
+
+DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & database_name)
 {
     DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(database_name);
     if (!system_database)
@@ -342,13 +356,18 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
     return system_database;
 }
 
-static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
+DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
     auto overlay = std::make_shared<DatabaseOverlay>(name_, context);
 
     UUID default_database_uuid;
 
-    fs::path existing_path_symlink = fs::weakly_canonical(context->getPath()) / "metadata" / "default";
+    /// Look up the persisted UUID via the per-database metadata symlink that
+    /// `DatabaseAtomic` creates at `metadata/<escapeForFileName(name)>`.
+    /// Using a hardcoded `"default"` here means a non-default `default_database`
+    /// (e.g. `--default_database=mydb`) silently loses data on restart because
+    /// the lookup misses the previous run's symlink and a fresh UUID is picked.
+    fs::path existing_path_symlink = fs::weakly_canonical(context->getPath()) / DatabaseCatalog::getMetadataDirPath(name_);
     if (FS::isSymlinkNoThrow(existing_path_symlink))
     {
         auto symlink_path = FS::readSymlink(existing_path_symlink);
@@ -366,6 +385,8 @@ static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, Co
     overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
     overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
     return overlay;
+}
+
 }
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
@@ -545,11 +566,16 @@ std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
 }
 
 
-static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
+namespace
+{
+
+ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 {
     std::stringstream ss{std::string{xml_data}};    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::XML::InputSource input_source{ss};
     return {new Poco::Util::XMLConfiguration{&input_source}};
+}
+
 }
 
 
@@ -651,7 +677,7 @@ void LocalServer::connect()
     );
 
     /// This is needed for table function input(...).
-    ReadBuffer * in;
+    ReadBuffer * in = nullptr;
     auto table_file = getClientConfiguration().getString("table-file", "-");
     if (table_file == "-" || table_file == "stdin")
     {
@@ -679,7 +705,7 @@ try
 
     /// Try to increase limit on number of open files.
     {
-        rlimit rlim;
+        rlimit rlim{};
         if (getrlimit(RLIMIT_NOFILE, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 
@@ -737,6 +763,8 @@ try
     /// After this point the global context must be stayed almost unchanged till shutdown,
     /// and all necessary changes must be made to the client context instead.
     initClientContext(Context::createCopy(global_context));
+    if (!query_id.empty())
+        client_context->setCurrentQueryId(query_id);
     /// Note, QueryScope will be initialized in the LocalConnection
 
     if (is_interactive)
@@ -813,6 +841,8 @@ void LocalServer::processConfig()
     {
         echo_queries = getClientConfiguration().hasOption("echo") || getClientConfiguration().hasOption("verbose");
         ignore_error = getClientConfiguration().getBool("ignore-error", false);
+
+        query_id = getClientConfiguration().getString("query_id", "");
     }
 
     print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
@@ -895,6 +925,9 @@ void LocalServer::processConfig()
     total_memory_tracker.setHardLimit(max_server_memory_usage);
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
+        server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
 
     size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
     size_t page_cache_max_size = server_settings[ServerSetting::page_cache_max_size];
@@ -1365,8 +1398,7 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
 
 }
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
+int mainEntryClickHouseLocal(int argc, char ** argv);
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {

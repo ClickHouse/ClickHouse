@@ -609,7 +609,7 @@ void Connection::receiveHello()
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
         {
-            UInt64 rules_size;
+            UInt64 rules_size = 0;
             readVarUInt(rules_size, *in);
             /// `rules_size` is server-controlled and feeds a `reserve`; reject absurd
             /// values so a hostile server cannot force a huge allocation. The server
@@ -635,7 +635,7 @@ void Connection::receiveHello()
         {
             chassert(!nonce.has_value());
 
-            UInt64 read_nonce;
+            UInt64 read_nonce = 0;
             readIntBinary(read_nonce, *in);
             nonce.emplace(read_nonce);
         }
@@ -1347,7 +1347,7 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 
     if (hasReadPendingData() || poll(timeout_microseconds))
     {
-        UInt64 packet_type;
+        UInt64 packet_type = 0;
         readVarUInt(packet_type, *in);
 
         last_input_packet_type.emplace(packet_type);
@@ -1364,7 +1364,7 @@ UInt64 Connection::receivePacketType()
     if (last_input_packet_type)
         return *last_input_packet_type;
 
-    UInt64 type;
+    UInt64 type = 0;
     readVarUInt(type, *in);
     return last_input_packet_type.emplace(type);
 }

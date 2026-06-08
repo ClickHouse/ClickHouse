@@ -10,19 +10,19 @@
 #include "config.h"
 
 #if USE_SIMDJSON
-#include <Common/JSONParsers/SimdJSONParser.h>
+#    include <Common/JSONParsers/SimdJSONParser.h>
 namespace BuzzHouse
 {
 using JSONParserImpl = DB::SimdJSONParser;
 }
 #elif USE_RAPIDJSON
-#include <Common/JSONParsers/RapidJSONParser.h>
+#    include <Common/JSONParsers/RapidJSONParser.h>
 namespace BuzzHouse
 {
 using JSONParserImpl = DB::RapidJSONParser;
 }
 #else
-#include <Common/JSONParsers/DummyJSONParser.h>
+#    include <Common/JSONParsers/DummyJSONParser.h>
 namespace BuzzHouse
 {
 using JSONParserImpl = DB::DummyJSONParser;
@@ -30,6 +30,7 @@ using JSONParserImpl = DB::DummyJSONParser;
 #endif
 
 #include <Client/BuzzHouse/AST/SQLProtoStr.h>
+#include <Client/BuzzHouse/Generator/SQLFuncs.h>
 #include <Client/ClientBase.h>
 #include <Common/logger_useful.h>
 
@@ -307,6 +308,13 @@ public:
     DB::Strings hot_table_settings;
     DB::Strings tokenizers;
 
+    std::vector<CHFunction> det_funcs;
+    std::vector<CHFunction> nondet_funcs;
+    std::vector<CHFunction> common_funcs;
+    std::vector<CHAggregate> det_aggrs;
+    std::vector<CHAggregate> simple_det_aggrs;
+    std::vector<CHAggregate> nondet_aggrs;
+
     std::optional<ServerCredentials> clickhouse_server;
     std::optional<ServerCredentials> mysql_server;
     std::optional<ServerCredentials> postgresql_server;
@@ -416,6 +424,8 @@ private:
     uint32_t tableCountSystemRows(const String & system_table, const String & database, const String & table);
 
     String tableGetRandomSystemName(uint64_t rand_val, const String & system_table, const String & database, const String & table);
+
+    void loadFunctions();
 
 public:
     void loadServerConfigurations();

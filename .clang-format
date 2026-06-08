@@ -31,7 +31,7 @@ IndentCaseLabels: true
 SpaceAfterTemplateKeyword: true
 SpaceBeforeCpp11BracedList: false
 SortIncludes: true
-IndentPPDirectives: AfterHash
+IndentPPDirectives: None
 IncludeCategories:
   - Regex: '^<[a-z_]+>'
     Priority: 1
