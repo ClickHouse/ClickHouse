@@ -221,16 +221,45 @@ String evaluateSubqueryQueryText(const ASTPtr & query, ContextPtr context)
     return extractQueryTextFromField((*block.getByPosition(0).column)[0], block.getByPosition(0).type, "input subquery");
 }
 
+bool isTableFunctionAST(const ASTPtr & ast)
+{
+    const auto * function = ast->as<ASTFunction>();
+    return function && TableFunctionFactory::instance().isTableFunctionName(function->name);
+}
+
+void checkNoNestedEvalTableFunction(const ASTPtr & table_function_ast);
+
 void checkNoNestedEval(const ASTPtr & ast)
 {
     if (const auto * table_expression = ast->as<ASTTableExpression>(); table_expression && table_expression->table_function)
     {
-        if (const auto * function = table_expression->table_function->as<ASTFunction>(); function && function->name == TableFunctionEval::name)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nested table function `eval` is not supported");
+        checkNoNestedEvalTableFunction(table_expression->table_function);
+        return;
     }
 
     for (const auto & child : ast->children)
         checkNoNestedEval(child);
+}
+
+void checkNoNestedEvalTableFunction(const ASTPtr & table_function_ast)
+{
+    const auto * function = table_function_ast->as<ASTFunction>();
+    if (!function)
+        return;
+
+    if (function->name == TableFunctionEval::name)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nested table function `eval` is not supported");
+
+    if (!function->arguments)
+        return;
+
+    for (const auto & argument : function->arguments->children)
+    {
+        if (isTableFunctionAST(argument))
+            checkNoNestedEvalTableFunction(argument);
+        else
+            checkNoNestedEval(argument);
+    }
 }
 
 ASTPtr parseGeneratedQuery(const String & query_text, ContextPtr context)

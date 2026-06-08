@@ -45,3 +45,4 @@ SELECT * FROM eval(SELECT 'SELECT 1', 'SELECT 2'); -- { serverError BAD_ARGUMENT
 SELECT * FROM eval('SHOW TABLES'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM eval('SELECT 1; SELECT 2'); -- { serverError SYNTAX_ERROR }
 SELECT * FROM eval('SELECT * FROM eval(''SELECT 1'')'); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM eval('SELECT * FROM remote(''remote'', eval(''SELECT 1''))'); -- { serverError BAD_ARGUMENTS }
