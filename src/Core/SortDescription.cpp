@@ -76,7 +76,7 @@ bool SortDescription::hasPrefix(const SortDescription & prefix) const
     return true;
 }
 
-bool SortDescription::hasPrefix(const Names & prefix) const
+bool SortDescription::hasPrefixWithoutCollation(const Names & prefix) const
 {
     if (prefix.empty())
         return true;
@@ -87,6 +87,11 @@ bool SortDescription::hasPrefix(const Names & prefix) const
     for (size_t i = 0; i < prefix.size(); ++i)
     {
         if ((*this)[i].column_name != prefix[i])
+            return false;
+
+        /// A collated column is ordered by its collation key, not by value, so equal values are
+        /// not adjacent and the prefix is not value-ordered.
+        if ((*this)[i].collator)
             return false;
     }
     return true;
@@ -114,6 +119,11 @@ SortDescription getSortPrefixInColumns(const SortDescription & description, cons
     for (const auto & sort_column_desc : description)
     {
         if (!column_set.contains(sort_column_desc.column_name))
+            break;
+
+        /// A collated column is ordered by its collation key, not by value, so equal values are not
+        /// adjacent; in-order grouping (DISTINCT / LIMIT BY) cannot rely on it. Stop the prefix here.
+        if (sort_column_desc.collator)
             break;
 
         prefix.emplace_back(sort_column_desc);
