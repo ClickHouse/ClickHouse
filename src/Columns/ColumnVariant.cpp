@@ -824,7 +824,7 @@ std::string_view ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena,
 void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     /// During any serialization/deserialization we should always use global discriminators.
-    Discriminator global_discr;
+    Discriminator global_discr = 0;
     readBinaryLittleEndian<Discriminator>(global_discr, in);
 
     Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
@@ -841,7 +841,7 @@ void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
 
 void ColumnVariant::skipSerializedInArena(ReadBuffer & in) const
 {
-    Discriminator global_discr;
+    Discriminator global_discr = 0;
     readBinaryLittleEndian<Discriminator>(global_discr, in);
 
     if (global_discr == NULL_DISCRIMINATOR)
@@ -1752,6 +1752,16 @@ void ColumnVariant::applyNullMap(const ColumnVector<UInt8>::Container & null_map
 void ColumnVariant::applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map)
 {
     applyNullMapImpl<true>(null_map);
+}
+
+ColumnPtr ColumnVariant::createNullMap() const
+{
+    const auto & discriminators = getLocalDiscriminators();
+    auto null_map = ColumnUInt8::create(discriminators.size(), UInt8(0));
+    auto & null_map_data = null_map->getData();
+    for (size_t i = 0; i < discriminators.size(); ++i)
+        null_map_data[i] = (discriminators[i] == NULL_DISCRIMINATOR);
+    return null_map;
 }
 
 template <bool inverted>

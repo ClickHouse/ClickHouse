@@ -84,13 +84,13 @@ void printRanges(const auto & segments)
         std::cerr << '\n' << segment->range().toString() << " (state: " + DB::FileSegment::stateToString(segment->state()) + ")" << "\n";
 }
 
-String getFileSegmentPath(const String & base_path, const DB::FileCache::Key & key, size_t offset)
+[[maybe_unused]] static String getFileSegmentPath(const String & base_path, const DB::FileCache::Key & key, size_t offset)
 {
     auto key_str = key.toString();
     return fs::path(base_path) / key_str.substr(0, 3) / key_str / DB::toString(offset);
 }
 
-void download(const std::string & cache_base_path, DB::FileSegment & file_segment)
+static void download(const std::string & cache_base_path, DB::FileSegment & file_segment)
 {
     const auto & key = file_segment.key();
     size_t size = file_segment.range().size();
@@ -117,7 +117,7 @@ std::string cache_base_path2 = caches_dir / "cache2" / "";
 std::string cache_base_path3 = caches_dir / "cache3" / "";
 
 
-void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
+static void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
 {
     std::cerr << "\nFile segments: ";
     for (const auto & file_segment : *file_segments)
@@ -148,7 +148,7 @@ void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & exp
     }
 }
 
-void assertEqual(const std::vector<FileSegment::Info> & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
+static void assertEqual(const std::vector<FileSegment::Info> & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
 {
     std::cerr << "\nFile segments: ";
     for (const auto & file_segment : file_segments)
@@ -179,7 +179,7 @@ void assertEqual(const std::vector<FileSegment::Info> & file_segments, const Ran
     }
 }
 
-void assertEqual(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected_ranges, const States & expected_states = {})
+static void assertEqual(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected_ranges, const States & expected_states = {})
 {
     if (const auto * lru = dynamic_cast<const LRUFileCachePriority::IPriorityDump *>(dump.get()))
     {
@@ -191,7 +191,7 @@ void assertEqual(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges 
     }
 }
 
-void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected, bool assert_protected)
+static void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected, bool assert_protected)
 {
     std::cerr << "\nFile segments: ";
     std::vector<Range> res;
@@ -222,19 +222,19 @@ void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & file_seg
     }
 }
 
-void assertProtected(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected)
+static void assertProtected(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected)
 {
     std::cerr << "\nAssert protected";
     assertProtectedOrProbationary(file_segments, expected, true);
 }
 
-void assertProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected)
+static void assertProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected)
 {
     std::cerr << "\nAssert probationary";
     assertProtectedOrProbationary(file_segments, expected, false);
 }
 
-void assertProtected(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected)
+static void assertProtected(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected)
 {
     if (const auto * lru = dynamic_cast<const LRUFileCachePriority::IPriorityDump *>(dump.get()))
     {
@@ -246,7 +246,7 @@ void assertProtected(const IFileCachePriority::PriorityDumpPtr & dump, const Ran
     }
 }
 
-void assertProbationary(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected)
+static void assertProbationary(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected)
 {
     if (const auto * lru = dynamic_cast<const LRUFileCachePriority::IPriorityDump *>(dump.get()))
     {
@@ -258,7 +258,7 @@ void assertProbationary(const IFileCachePriority::PriorityDumpPtr & dump, const 
     }
 }
 
-FileSegmentPtr get(const HolderPtr & holder, int i)
+static FileSegmentPtr get(const HolderPtr & holder, int i)
 {
     auto it = std::next(holder->begin(), i);
     if (it == holder->end())
@@ -266,7 +266,7 @@ FileSegmentPtr get(const HolderPtr & holder, int i)
     return *it;
 }
 
-void download(FileSegmentPtr file_segment, bool complete = true)
+static void download(FileSegmentPtr file_segment, bool complete = true)
 {
     std::cerr << "\nDownloading range " << file_segment->range().toString() << "\n";
 
@@ -286,7 +286,7 @@ void download(FileSegmentPtr file_segment, bool complete = true)
     }
 }
 
-void assertDownloadFails(FileSegmentPtr file_segment)
+static void assertDownloadFails(FileSegmentPtr file_segment)
 {
     ASSERT_EQ(file_segment->getOrSetDownloader(), FileSegment::getCallerId());
     ASSERT_EQ(file_segment->getDownloadedSize(), 0);
@@ -295,7 +295,7 @@ void assertDownloadFails(FileSegmentPtr file_segment)
     FileSegment::complete(FileSegmentPtr(file_segment), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
 }
 
-void download(const HolderPtr & holder)
+static void download(const HolderPtr & holder)
 {
     for (auto & it : *holder)
     {
@@ -303,13 +303,13 @@ void download(const HolderPtr & holder)
     }
 }
 
-void increasePriority(const HolderPtr & holder)
+static void increasePriority(const HolderPtr & holder)
 {
     for (auto & it : *holder)
         it->increasePriority();
 }
 
-void increasePriority(const HolderPtr & holder, size_t pos)
+[[maybe_unused]] static void increasePriority(const HolderPtr & holder, size_t pos)
 {
     FileSegments::iterator it = holder->begin();
     std::advance(it, pos);
@@ -1028,8 +1028,8 @@ try
     ASSERT_GT(size_used_before_temporary_data, 0);
     ASSERT_GT(segments_used_before_temporary_data, 0);
 
-    size_t size_used_with_temporary_data;
-    size_t segments_used_with_temporary_data;
+    size_t size_used_with_temporary_data = {};
+    size_t segments_used_with_temporary_data = {};
 
 
     {
@@ -1829,6 +1829,59 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
 }
 
+TEST_F(FileCacheTest, MoveEvictionPos)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    /// Two independent LRU queues, modelling SLRU's protected/probationary sub-queues
+    /// between which `LRUFileCachePriority::move` transfers entries.
+    LRUFileCachePriority src(/* max_size */100, /* max_elements */10, "src");
+    LRUFileCachePriority dst(/* max_size */100, /* max_elements */10, "dst");
+
+    std::string cache_path = std::filesystem::path(caches_dir) / "test_move_eviction_pos";
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+
+    auto key = DB::FileCacheKey::fromPath("move_key");
+    auto origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    using Entry = IFileCachePriority::Entry;
+    auto add_to_src = [&](size_t offset, size_t size)
+    {
+        auto write_lock = cache_guard.writeLock();
+        auto state_lock = state_guard.lock();
+        return src.add(std::make_shared<Entry>(key, offset, size, key_metadata), write_lock, &state_lock);
+    };
+
+    /// src queue: [offset 0, offset 10, offset 20].
+    add_to_src(0, 10);
+    auto it_middle = add_to_src(10, 10);
+    add_to_src(20, 10);
+
+    /// Point src's eviction position at the middle entry — the one we are about to move out.
+    {
+        auto read_lock = cache_guard.readLock();
+        src.setEvictionPos(it_middle.get(), read_lock);
+    }
+    ASSERT_EQ((*src.getEvictionPos(cache_guard.readLock()))->offset, 10u);
+
+    /// Move the middle entry out of `src` into `dst` (as an SLRU upgrade/downgrade would).
+    /// `move` is called on the destination queue; `src` is the source.
+    {
+        auto write_lock = cache_guard.writeLock();
+        auto state_lock = state_guard.lock();
+        dst.move(it_middle, src, write_lock, state_lock);
+    }
+
+    /// The moved node was spliced out of src, so src's eviction position must advance to the
+    /// next surviving src entry (offset 20). Before the fix it kept pointing at the moved node,
+    /// which now lives in `dst` (offset 10) — a dangling cross-queue eviction position.
+    ASSERT_EQ((*src.getEvictionPos(cache_guard.readLock()))->offset, 20u);
+}
+
 TEST_F(FileCacheTest, LoadMetadataParallelism)
 {
     /// Test that loading cache metadata with different numbers of threads produces
@@ -2141,4 +2194,346 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         ASSERT_NO_THROW(cache->applySettingsIfPossible(second_new_settings, second_actual));
         ASSERT_LE(cache->getUsedCacheSize(), 4u);
     }
+}
+
+namespace
+{
+    /// Creators for SplitFileCachePriority inner queues used by the split-cache tests below.
+    std::unique_ptr<IFileCachePriority> makeLRUInner(
+        size_t max_size, size_t max_elements, double /* size_ratio */, size_t /* overcommit_step */, String desc)
+    {
+        return std::make_unique<LRUFileCachePriority>(max_size, max_elements, desc);
+    }
+
+    std::unique_ptr<IFileCachePriority> makeSLRUInner(
+        size_t max_size, size_t max_elements, double size_ratio, size_t /* overcommit_step */, String desc)
+    {
+        return std::make_unique<SLRUFileCachePriority>(max_size, max_elements, size_ratio, desc);
+    }
+}
+
+TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
+{
+    /// `modifySizeLimits` must be all-or-nothing: when the probationary update throws
+    /// (injected via failpoint), the already-applied protected limit is rolled back.
+    ServerUUID::setRandomForUnitTests();
+
+    const size_t max_size = 30;
+    const size_t max_elements = 6;
+    const double slru_size_ratio = 0.5; /// protected 15/3, probationary 15/3
+    SLRUFileCachePriority priority(max_size, max_elements, slru_size_ratio, "test_slru_modify_rollback");
+
+    const std::string cache_path = caches_dir / "test_slru_modify_rollback";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+
+    const auto key = DB::FileCacheKey::fromPath("slru_modify_rollback_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    /// One small 5-byte entry in each sub-queue, fitting comfortably under old and new limits.
+    {
+        auto write_lock = cache_guard.writeLock();
+        auto state_lock = state_guard.lock();
+        priority.addForRestore(key_metadata, 0, 5,
+            IFileCachePriority::QueueEntryType::SLRU_Protected, write_lock, &state_lock);
+        priority.addForRestore(key_metadata, 100, 5,
+            IFileCachePriority::QueueEntryType::SLRU_Probationary, write_lock, &state_lock);
+    }
+    ASSERT_EQ(priority.getProtectedSize(state_guard.lock()), 5);
+    ASSERT_EQ(priority.getProbationarySize(state_guard.lock()), 5);
+    ASSERT_EQ(priority.getProtectedSizeLimit(state_guard.lock()), 15);
+
+    /// Resize total to 20 (ratio 0.5 -> protected limit 10). The resize is valid by itself
+    /// (current 5/1 fit 10/3); the only thing that throws is the injected failpoint.
+    DB::FailPointInjection::enableFailPoint("file_cache_modify_size_limits_fail");
+    SCOPE_EXIT({
+        DB::FailPointInjection::disableFailPoint("file_cache_modify_size_limits_fail");
+    });
+    {
+        auto state_lock = state_guard.lock();
+        ASSERT_ANY_THROW(priority.modifySizeLimits(20, max_elements, slru_size_ratio, state_lock));
+    }
+
+    /// With the bug the protected limit was already shrunk to 10; with the fix it is
+    /// rolled back to the original 15.
+    ASSERT_EQ(priority.getProtectedSizeLimit(state_guard.lock()), 15);
+}
+
+TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
+{
+    /// Total-space cleanup must reclaim from the System sub-queue too. The bug dispatched
+    /// by origin (General -> data), so keep-free-space never freed System-only space.
+    ServerUUID::setRandomForUnitTests();
+
+    const size_t max_size = 100;
+    const size_t max_elements = 100;
+    SplitFileCachePriority priority(
+        makeLRUInner, max_size, max_elements, /* slru_size_ratio */ 0.5, /* split_cache_ratio */ 0.5,
+        "test_split_total_cleanup");
+
+    const std::string cache_path = caches_dir / "test_split_total_cleanup";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+
+    FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
+    auto key = DB::FileCacheKey::fromPath("split_total_cleanup_system_key");
+    auto key_metadata = std::make_shared<KeyMetadata>(key, system_origin, &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    /// Add entries only to the System sub-queue.
+    {
+        auto write_lock = cache_guard.writeLock();
+        auto state_lock = state_guard.lock();
+        priority.add(key_metadata, 0, 10, write_lock, &state_lock);
+        priority.add(key_metadata, 10, 10, write_lock, &state_lock);
+    }
+    ASSERT_EQ(priority.getSize(state_guard.lock()), 20);
+
+    /// Total-space cleanup wants to evict everything. The background thread invokes this
+    /// with `getInternalOrigin()` (segment type `General`).
+    EvictionInfoPtr eviction_info = priority.collectEvictionInfo(
+        /* size */ 20, /* elements */ 2, /* reservee */ nullptr,
+        /* is_total_space_cleanup */ true, FileCache::getInternalOrigin(), state_guard.lock());
+
+    /// With the bug, dispatch goes to the empty data sub-queue and nothing is targeted.
+    ASSERT_TRUE(eviction_info->requiresEviction());
+    ASSERT_EQ(eviction_info->getSizeToEvict(), 20u);
+}
+
+TEST_F(FileCacheTest, SplitResizeCollectsSystemCandidates)
+{
+    /// During resize, collectEvictionInfoForResize targets both sub-queues, but
+    /// collectCandidatesForEviction dispatched by origin (General -> data), so System
+    /// eviction targets were ignored and the resize could not free System-held space.
+    ServerUUID::setRandomForUnitTests();
+
+    const size_t max_size = 100;
+    const size_t max_elements = 100;
+    SplitFileCachePriority priority(
+        makeLRUInner, max_size, max_elements, /* slru_size_ratio */ 0.5, /* split_cache_ratio */ 0.5,
+        "test_split_resize");
+
+    const std::string cache_path = caches_dir / "test_split_resize";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+
+    FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
+    auto key = DB::FileCacheKey::fromPath("split_resize_system_key");
+    auto key_metadata = std::make_shared<KeyMetadata>(key, system_origin, &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    auto add_system_segment = [&](size_t offset, size_t size)
+    {
+        IFileCachePriority::IteratorPtr it;
+        {
+            auto write_lock = cache_guard.writeLock();
+            auto state_lock = state_guard.lock();
+            it = priority.add(key_metadata, offset, size, write_lock, &state_lock);
+        }
+        auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, system_origin);
+        if (std::filesystem::exists(path))
+            std::filesystem::remove(path);
+        std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+        std::string data(size, '0');
+        WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        DB::writeString(data, wb);
+        wb.finalize();
+        auto file_segment = std::make_shared<FileSegment>(
+            key, offset, size, FileSegment::State::DOWNLOADED,
+            CreateFileSegmentSettings{}, false, nullptr, key_metadata, it);
+        LockedKey(key_metadata).emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
+        return it;
+    };
+
+    add_system_segment(0, 10);
+    add_system_segment(10, 10);
+    ASSERT_EQ(priority.getSize(state_guard.lock()), 20);
+
+    /// Resize down so the System sub-queue must shed space.
+    EvictionInfoPtr eviction_info;
+    {
+        auto state_lock = state_guard.lock();
+        eviction_info = priority.collectEvictionInfoForResize(
+            /* desired_max_size */ 4, /* desired_max_elements */ max_elements,
+            FileCache::getInternalOrigin(), state_lock);
+    }
+    ASSERT_TRUE(eviction_info->requiresEviction());
+
+    FileCacheReserveStat stat;
+    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
+    EvictionCandidates evicted;
+    priority.collectCandidatesForEviction(
+        *eviction_info, stat, evicted, invalidated_entries, /* reservee */ nullptr,
+        /* continue_from_last_eviction_pos */ false, /* max_candidates_size */ 0,
+        /* is_total_space_cleanup */ true, FileCache::getInternalOrigin(), cache_guard, state_guard);
+
+    /// With the bug, dispatch goes to the empty data sub-queue and no System candidates
+    /// are collected. With the fix the System segments are collected for eviction.
+    ASSERT_GT(evicted.size(), 0u);
+}
+
+TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
+{
+    /// If the downgrade's state finalization is skipped (an exception between
+    /// afterEvictWrite and afterEvictState), the rollback must reset the old protected
+    /// entries from `Evicting` back to `Active` instead of leaving them stranded.
+    ServerUUID::setRandomForUnitTests();
+
+    const size_t max_size = 30;
+    const size_t max_elements = 6;
+    const double slru_size_ratio = 0.5; /// protected 15/3, probationary 15/3
+    SLRUFileCachePriority priority(max_size, max_elements, slru_size_ratio, "test_slru_downgrade_rollback");
+
+    const std::string cache_path = caches_dir / "test_slru_downgrade_rollback";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+
+    const auto key = DB::FileCacheKey::fromPath("slru_downgrade_rollback_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    /// Fill the protected sub-queue with 3 releasable 5-byte entries (15 bytes = limit).
+    std::vector<IFileCachePriority::IteratorPtr> protected_iters;
+    auto add_protected_segment = [&](size_t offset, size_t size)
+    {
+        IFileCachePriority::IteratorPtr it;
+        {
+            auto write_lock = cache_guard.writeLock();
+            auto state_lock = state_guard.lock();
+            it = priority.addForRestore(key_metadata, offset, size,
+                IFileCachePriority::QueueEntryType::SLRU_Protected, write_lock, &state_lock);
+        }
+        auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, origin);
+        if (std::filesystem::exists(path))
+            std::filesystem::remove(path);
+        std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+        std::string data(size, '0');
+        WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        DB::writeString(data, wb);
+        wb.finalize();
+        auto file_segment = std::make_shared<FileSegment>(
+            key, offset, size, FileSegment::State::DOWNLOADED,
+            CreateFileSegmentSettings{}, false, nullptr, key_metadata, it);
+        LockedKey(key_metadata).emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
+        protected_iters.push_back(it);
+        return it;
+    };
+
+    add_protected_segment(0, 5);
+    add_protected_segment(5, 5);
+    auto reservee = add_protected_segment(10, 5);
+    ASSERT_EQ(priority.getProtectedSize(state_guard.lock()), 15);
+
+    /// Reserve 5 more bytes for a protected entry: protected is full, so the eviction
+    /// path must downgrade the oldest protected entry into probationary.
+    EvictionInfoPtr eviction_info = priority.collectEvictionInfo(
+        /* size */ 5, /* elements */ 0, reservee.get(),
+        /* is_total_space_cleanup */ false, origin, state_guard.lock());
+    ASSERT_TRUE(eviction_info->requiresEviction());
+
+    FileCacheReserveStat stat;
+    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
+    {
+        auto evicted = std::make_unique<EvictionCandidates>();
+        priority.collectCandidatesForEviction(
+            *eviction_info, stat, *evicted, invalidated_entries, reservee,
+            /* continue_from_last_eviction_pos */ false, /* max_candidates_size */ 0,
+            /* is_total_space_cleanup */ false, origin, cache_guard, state_guard);
+
+        /// Run only the write phase, then drop the candidates WITHOUT running the state
+        /// phase -- simulating an exception between `afterEvictWrite` and `afterEvictState`.
+        evicted->afterEvictWrite(cache_guard.writeLock());
+        eviction_info.reset();
+        evicted.reset();
+    }
+
+    /// No protected entry must be left stuck in `Evicting`: with the bug, the downgraded
+    /// entry stays `Evicting`; with the fix the rollback resets it to `Active`.
+    for (const auto & it : protected_iters)
+    {
+        EXPECT_NE(it->getEntry()->getState(), IFileCachePriority::Entry::State::Evicting)
+            << "A protected entry was left stuck in Evicting after a skipped downgrade finalization";
+    }
+}
+
+TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
+{
+    /// Regression for the default split-cache config (SLRU inner priorities). When only the
+    /// System sub-queue has entries, total-space cleanup must not throw: the empty Data SLRU
+    /// contributes no eviction info, and collectCandidatesForEviction must treat its absent
+    /// queues as "nothing to collect" instead of throwing on a missing queue id. The other
+    /// split tests only use LRU inners (which always register a queue id), so they miss this.
+    ServerUUID::setRandomForUnitTests();
+
+    const size_t max_size = 100;
+    const size_t max_elements = 100;
+    SplitFileCachePriority priority(
+        makeSLRUInner, max_size, max_elements, /* slru_size_ratio */ 0.5, /* split_cache_ratio */ 0.5,
+        "test_split_slru_total_cleanup");
+
+    const std::string cache_path = caches_dir / "test_split_slru_total_cleanup";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+
+    FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
+    auto key = DB::FileCacheKey::fromPath("split_slru_total_cleanup_system_key");
+    auto key_metadata = std::make_shared<KeyMetadata>(key, system_origin, &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    auto add_system_segment = [&](size_t offset, size_t size)
+    {
+        IFileCachePriority::IteratorPtr it;
+        {
+            auto write_lock = cache_guard.writeLock();
+            auto state_lock = state_guard.lock();
+            it = priority.add(key_metadata, offset, size, write_lock, &state_lock);
+        }
+        auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, system_origin);
+        if (std::filesystem::exists(path))
+            std::filesystem::remove(path);
+        std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+        std::string data(size, '0');
+        WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        DB::writeString(data, wb);
+        wb.finalize();
+        auto file_segment = std::make_shared<FileSegment>(
+            key, offset, size, FileSegment::State::DOWNLOADED,
+            CreateFileSegmentSettings{}, false, nullptr, key_metadata, it);
+        LockedKey(key_metadata).emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
+        return it;
+    };
+
+    /// Entries only in the System sub-queue; the Data sub-queue stays empty.
+    add_system_segment(0, 10);
+    add_system_segment(10, 10);
+    ASSERT_EQ(priority.getSize(state_guard.lock()), 20);
+
+    EvictionInfoPtr eviction_info = priority.collectEvictionInfo(
+        /* size */ 20, /* elements */ 2, /* reservee */ nullptr,
+        /* is_total_space_cleanup */ true, FileCache::getInternalOrigin(), state_guard.lock());
+    ASSERT_TRUE(eviction_info->requiresEviction());
+
+    FileCacheReserveStat stat;
+    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
+    EvictionCandidates evicted;
+    /// Must not throw on the empty Data SLRU's absent queue ids.
+    ASSERT_NO_THROW(priority.collectCandidatesForEviction(
+        *eviction_info, stat, evicted, invalidated_entries, /* reservee */ nullptr,
+        /* continue_from_last_eviction_pos */ false, /* max_candidates_size */ 0,
+        /* is_total_space_cleanup */ true, FileCache::getInternalOrigin(), cache_guard, state_guard));
+
+    ASSERT_GT(evicted.size(), 0u);
 }
