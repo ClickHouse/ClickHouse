@@ -70,7 +70,11 @@ public:
         Value value;
     };
 
-    using VariantSerializations = VectorWithMemoryTracking<SerializationPtr>;
+    /// A `SerializationVariant` is interned into the process-wide `SerializationObjectPool` by
+    /// `create` (via `ISerialization::pooled`), so it is shared across queries and freed under a
+    /// different lifetime than the query that first built it. Charge this member to the global tracker
+    /// rather than the creating query's, which would otherwise pay for shared, process-pooled metadata.
+    using VariantSerializations = VectorWithGlobalMemoryTracking<SerializationPtr>;
 
 private:
     explicit SerializationVariant(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
