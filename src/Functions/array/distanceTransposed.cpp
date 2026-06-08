@@ -471,6 +471,8 @@ private:
         const simsimd_metric_dense_punned_t simd_kernel = resolveSimdKernel<CalcT>();
 #endif
 
+        const auto untranspose_kernel = SerializationQBit::resolveUntransposeBitPlane<Word>();
+
         for (size_t base_row = 0; base_row < input_rows_count; base_row += block_size)
         {
             const size_t rows_in_block = std::min(block_size, input_rows_count - base_row);
@@ -486,7 +488,7 @@ private:
                 for (size_t r = 0; r < rows_in_block; ++r)
                 {
                     const UInt8 * src = reinterpret_cast<const UInt8 *>(col.getChars().data()) + (base_row + r) * bytes_per_fixedstring;
-                    SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(block_row(r)), padded_array_size, bit_mask);
+                    untranspose_kernel(src, reinterpret_cast<Word *>(block_row(r)), padded_array_size, bit_mask);
                 }
             }
 

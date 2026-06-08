@@ -163,8 +163,10 @@ void SerializationQBit::serializeFloatsFromQBitTuple(const Tuple & tuple, WriteB
     using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
 
     constexpr size_t bits = sizeof(Word) * 8;
+    const auto untranspose = resolveUntransposeBitPlane<Word>();
     const size_t slice_size = DataTypeQBit::bitsToBytes(dimension);
     const size_t slice_size_bits = slice_size * 8;
+
     std::vector<FloatType> dst(slice_size_bits, FloatType{});
 
     for (size_t bit = 0; bit < bits; ++bit)
@@ -172,7 +174,7 @@ void SerializationQBit::serializeFloatsFromQBitTuple(const Tuple & tuple, WriteB
         const String & fixed_string = tuple[bit].safeGet<String>();
         const UInt8 * src = reinterpret_cast<const UInt8 *>(fixed_string.data());
         const Word mask = static_cast<Word>(Word(1) << (bits - 1 - bit));
-        SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
+        untranspose(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
     }
 
     /// We untransposed QBit and might have trailing zero floats at the tail if dimension % 8 != 0. Remove them
@@ -220,9 +222,9 @@ void SerializationQBit::serializeFloatsFromQBit(const IColumn & column, size_t r
     using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
 
     constexpr size_t bits = sizeof(Word) * 8;
+    const auto untranspose = resolveUntransposeBitPlane<Word>();
     const size_t slice_size = DataTypeQBit::bitsToBytes(dimension);
     const size_t slice_size_bits = slice_size * 8;
-
     std::vector<FloatType> dst(slice_size_bits, FloatType{});
 
     for (size_t bit = 0; bit < bits; ++bit)
@@ -230,7 +232,7 @@ void SerializationQBit::serializeFloatsFromQBit(const IColumn & column, size_t r
         const auto & fs = assert_cast<const ColumnFixedString &>(extractElementColumn(column, bit));
         const UInt8 * src = reinterpret_cast<const UInt8 *>(fs.getChars().data()) + row_num * slice_size;
         const Word mask = static_cast<Word>(Word(1) << (bits - 1 - bit));
-        SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
+        untranspose(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
     }
 
     /// We untransposed QBit and might have trailing zero floats at the tail if dimension % 8 != 0. Remove them
@@ -439,11 +441,10 @@ void SerializationQBit::transposeBits(Word src, const size_t row_i, const size_t
     }
 }
 
-/// CPU Dispatch for untransposeBitPlane
+/// CPU-dispatched kernels for untransposing a bit plane. Selected at runtime by resolveUntransposeBitPlane
 DECLARE_DEFAULT_CODE(
     template <typename T>
-    ALWAYS_INLINE inline void untransposeBitPlaneImpl(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask)
-    {
+    ALWAYS_INLINE inline void untransposeBitPlaneImpl(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask) {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
 
@@ -466,8 +467,7 @@ DECLARE_DEFAULT_CODE(
 
 /// Do not inline target specific implementations to avoid code bloat on all targets
 DECLARE_X86_64_V4_SPECIFIC_CODE(
-    void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask)
-    {
+    void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask) {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
 
@@ -638,8 +638,8 @@ template void SerializationQBit::transposeBits(UInt16 src, const size_t row_i, c
 template void SerializationQBit::transposeBits(UInt32 src, const size_t row_i, const size_t total_bits, char * const * dst);
 template void SerializationQBit::transposeBits(UInt64 src, const size_t row_i, const size_t total_bits, char * const * dst);
 
-template void SerializationQBit::untransposeBitPlane(const UInt8 * src, UInt64 * dst, size_t stride_len, UInt64 bit_mask);
-template void SerializationQBit::untransposeBitPlane(const UInt8 * src, UInt32 * dst, size_t stride_len, UInt32 bit_mask);
-template void SerializationQBit::untransposeBitPlane(const UInt8 * src, UInt16 * dst, size_t stride_len, UInt16 bit_mask);
+template SerializationQBit::UntransposeBitPlaneFn<UInt64> SerializationQBit::resolveUntransposeBitPlane<UInt64>();
+template SerializationQBit::UntransposeBitPlaneFn<UInt32> SerializationQBit::resolveUntransposeBitPlane<UInt32>();
+template SerializationQBit::UntransposeBitPlaneFn<UInt16> SerializationQBit::resolveUntransposeBitPlane<UInt16>();
 
 }

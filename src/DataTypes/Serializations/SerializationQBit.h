@@ -126,12 +126,18 @@ public:
     template <class Word>
     static void transposeBits(Word src, size_t row_i, size_t total_bits, char * const * __restrict dst);
 
-    /** For a given FixedString column, reads the packed bytes of that column’s bit plane and “scatters” each bit into the
-      * correct positions of the dst buffer, reconstructing the original row-wise bit layout across all elements.
+    /// The CPU-dispatched kernel that untransposes one bit plane (see resolveUntransposeBitPlane).
+    template <typename T>
+    using UntransposeBitPlaneFn = void (*)(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask);
+
+    /** Resolve the kernel that, for a given FixedString column, reads the packed bytes of that column’s bit plane and "scatters" each bit
+      * into the correct positions of the dst buffer, reconstructing the original row-wise bit layout across all elements.
       * The bit_mask T(1) << (sizeof(T) * 8 - 1 - bit) selects which bit in each T to set.
+      *
+      * The kernel is chosen by CPU capability. Resolve it once and call the function in a loop to keep the check out of the hot path.
       */
     template <typename T>
-    static void untransposeBitPlane(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask);
+    static UntransposeBitPlaneFn<T> resolveUntransposeBitPlane();
 };
 
 }
