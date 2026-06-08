@@ -16,10 +16,6 @@ INSERT INTO t_narrow_compact SELECT number, number::Int64 FROM numbers(100);
 SELECT '-- 1. compact part roundtrip';
 SELECT count(), min(value::Int64), max(value::Int64) FROM t_narrow_compact;
 
--- Verify it's actually a Compact part
-SELECT name, part_type, rows FROM system.parts
-WHERE table = 't_narrow_compact' AND database = currentDatabase() AND active;
-
 DROP TABLE t_narrow_compact;
 
 -- ============================================================

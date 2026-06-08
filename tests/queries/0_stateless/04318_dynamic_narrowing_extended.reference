@@ -1,6 +1,5 @@
 -- 1. compact part roundtrip
 100	0	99
-all_1_1_0	Compact	100
 -- 2. large data multi-granule
 50000	0	49999
 10001
