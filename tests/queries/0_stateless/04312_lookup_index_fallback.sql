@@ -43,6 +43,19 @@ SELECT f.id, d.val FROM t_lookup_fb_fact f JOIN t_lookup_fb_dim d USING (id)
 ORDER BY f.id
 SETTINGS additional_table_filters = {'t_lookup_fb_dim':'id = 1'};
 
+-- additional_table_filters keyed by the right-table alias: the regular plan resolves the
+-- filter via `getOriginalAlias`, so the fast-path guard must use the same alias and fall
+-- back, otherwise the lookup would read the unfiltered table.
+
+SELECT 'set: additional_table_filters by alias id = 2';
+SELECT id FROM t_lookup_fb_fact WHERE id IN (SELECT id FROM t_lookup_fb_dim AS d) ORDER BY id
+SETTINGS additional_table_filters = {'d':'id = 2'};
+
+SELECT 'join: additional_table_filters by alias id = 2';
+SELECT f.id, d.val FROM t_lookup_fb_fact f JOIN t_lookup_fb_dim AS d USING (id)
+ORDER BY f.id
+SETTINGS additional_table_filters = {'d':'id = 2'};
+
 -- max_rows_in_set: the lookup `Set` is built with empty SizeLimits; with the fast path
 -- disabled, the regular subquery set must enforce the limit and throw.
 

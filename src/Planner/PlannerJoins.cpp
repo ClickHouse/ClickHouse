@@ -1079,7 +1079,7 @@ PreparedJoinStorage tryGetLookupJoinStorage(
 
     /// `additional_table_filters` are applied by the regular right-side plan; the lookup
     /// direct join replaces that plan with a prebuilt entity and would ignore them.
-    if (hasAdditionalTableFilterForStorage(storage, table_expression->getAlias(), planner_context->getQueryContext()))
+    if (hasAdditionalTableFilterForStorage(storage, table_expression->getOriginalAlias(), planner_context->getQueryContext()))
         return {};
 
     PreparedJoinStorage result;

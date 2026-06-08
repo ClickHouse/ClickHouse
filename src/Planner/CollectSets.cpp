@@ -96,7 +96,7 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
 
         /// `additional_table_filters` are applied by the regular plan; the lookup fast path
         /// reads the storage with an empty `SelectQueryInfo` and would ignore them.
-        if (hasAdditionalTableFilterForStorage(storage, table_expression->getAlias(), query_context))
+        if (hasAdditionalTableFilterForStorage(storage, table_expression->getOriginalAlias(), query_context))
             return std::nullopt;
 
         auto columns_to_select = table_node->getStorageSnapshot()->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
@@ -146,7 +146,7 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
     if (getEffectiveRowPolicyFilter(storage, query_context))
         return std::nullopt;
 
-    if (hasAdditionalTableFilterForStorage(storage, inner_table_expression->getAlias(), query_context))
+    if (hasAdditionalTableFilterForStorage(storage, inner_table_expression->getOriginalAlias(), query_context))
         return std::nullopt;
 
     TableExpressionData::ColumnIdentifierToColumnName column_mapping;

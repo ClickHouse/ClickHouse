@@ -2,6 +2,10 @@ set: additional_table_filters id = 1
 1
 join: additional_table_filters id = 1
 1	a
+set: additional_table_filters by alias id = 2
+2
+join: additional_table_filters by alias id = 2
+2	b
 set: max_rows_in_set = 1
 join: nullable left key
 1	a
