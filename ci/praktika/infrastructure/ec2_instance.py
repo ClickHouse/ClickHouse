@@ -58,13 +58,6 @@ class EC2Instance:
         # Desired behavior
         start_on_deploy: bool = True
 
-        # If True, deploy() will stop existing instances whose live UserData differs
-        # from `user_data`, call ModifyInstanceAttribute to install the new UserData,
-        # and then start them again (subject to `start_on_deploy`). Useful for
-        # instance types like mac1/mac2 where terminate + recreate is expensive due
-        # to dedicated-host cooldown.
-        update_user_data_on_change: bool = False
-
         # Tags applied to the instance
         tags: Dict[str, str] = field(default_factory=dict)
 
@@ -396,9 +389,9 @@ class EC2Instance:
             # Reconcile user_data without ever stopping the whole fleet at once
             # (this runs against production). Bring the already-stopped instances
             # back first (updating them in place costs no downtime), then cycle the
-            # running ones one at a time. Note: starting stopped instances does not
-            # depend on update_user_data_on_change - only the user_data update does
-            # (gated inside the helpers).
+            # running ones one at a time. Starting stopped instances happens
+            # regardless of whether user_data changed; the update itself is a no-op
+            # when the live user_data already matches.
             stopped = [
                 inst
                 for inst in existing_instances
@@ -429,10 +422,10 @@ class EC2Instance:
 
         def _update_user_data(self, ec2, inst):
             """Reinstall user_data on an already-stopped instance if it changed.
-            No-op unless `update_user_data_on_change` is set; the instance is
-            assumed stopped, so this is just a ModifyInstanceAttribute.
+            No-op when no user_data is configured or it already matches; the
+            instance is assumed stopped, so this is just a ModifyInstanceAttribute.
             """
-            if not self.update_user_data_on_change or not self.user_data:
+            if not self.user_data:
                 return
             instance_id = inst.get("InstanceId")
             if not instance_id or self._user_data_matches(ec2, instance_id):
@@ -442,10 +435,9 @@ class EC2Instance:
         def _reconcile_running_instance(self, ec2, inst):
             """If a running instance's user_data changed, cycle it on its own -
             stop, reinstall, start - so only one running instance is ever down at a
-            time. No-op unless `update_user_data_on_change` is set and the user_data
-            differs.
+            time. No-op when no user_data is configured or it already matches.
             """
-            if not self.update_user_data_on_change or not self.user_data:
+            if not self.user_data:
                 return
             instance_id = inst.get("InstanceId")
             if not instance_id or self._user_data_matches(ec2, instance_id):

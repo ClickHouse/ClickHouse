@@ -66,7 +66,6 @@ CLOUD = CloudInfrastructure.Config(
             praktika_resource_tag="mac",
             runner_labels=MACOS_AMD_SMALL_RUNNER_LABELS,
             quantity=2,
-            update_user_data_on_change=True,
         ),
         EC2Instance.Config(
             name=RunnerLabels.MACOS_ARM_SMALL[1],
@@ -85,7 +84,6 @@ CLOUD = CloudInfrastructure.Config(
             praktika_resource_tag="mac_m2_pro",
             runner_labels=MACOS_ARM_SMALL_RUNNER_LABELS,
             quantity=4,
-            update_user_data_on_change=True,
         ),
     ]
 )

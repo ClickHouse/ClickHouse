@@ -2,9 +2,9 @@
 # Bootstrap script for macOS GitHub Actions runners.
 # Bootstraps Homebrew + Python, then hands off to the runner-init script
 # fetched from S3 for the rest of provisioning (CloudWatch agent,
-# actions-runner install, etc.). `cloud.py` opts the mac configs into
-# `update_user_data_on_change`, so changes to this file stop the instance,
-# install the new user_data, and start it again.
+# actions-runner install, etc.). `deploy` reconciles user_data on every run, so
+# changes to this file stop the instance, install the new user_data, and start
+# it again.
 
 set -xeuo pipefail
 trap reboot EXIT
@@ -33,8 +33,8 @@ echo "Installing python@3..."
 sudo -u "$USER" -i brew install python@3
 
 # Install / upgrade boto3 — the only third-party dependency of runner-init.py.
-# `--upgrade` keeps it at the latest version on re-runs triggered by
-# `update_user_data_on_change`.
+# `--upgrade` keeps it at the latest version on re-runs triggered by a
+# user_data change.
 echo "Installing Python packages into venv..."
 sudo -u "$USER" -i bash -c '$(brew --prefix python@3)/bin/python3 -m venv --upgrade ~/venv && ~/venv/bin/pip install --upgrade boto3'
 
