@@ -265,7 +265,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_nullable_partition VALUES (10, 1000), 
 echo "test 16: optimization is disabled for nullable partition keys"
 $CLICKHOUSE_CLIENT -q "
     $SETTINGS;
-    SELECT 'test 12 correctness nullable partition ASC:';
-    SELECT k, val FROM t_lazy_nullable_partition ORDER BY k ASC NULLS LAST LIMIT 2" | grep -c "Concat" || true
+    EXPLAIN PIPELINE SELECT k, val FROM t_lazy_nullable_partition
+    ORDER BY k ASC NULLS LAST LIMIT 2 SETTINGS max_threads=1" | grep -c "Concat" || true
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_nullable_partition;"
