@@ -67,8 +67,8 @@ public:
     Type getType() const { return type; }
 
     /// Creates a streaming accumulator that encodes row ids directly into this codec's format.
-    /// The accumulator splits the posting list into segments of `posting_list_block_size` row ids.
-    virtual std::unique_ptr<IPostingListAccumulator> createAccumulator(size_t posting_list_block_size) const = 0;
+    /// The segment size (`posting_list_block_size`) is passed per `insert` call, not stored.
+    virtual std::unique_ptr<IPostingListAccumulator> createAccumulator() const = 0;
 
     /// Reads a single encoded segment of a posting list, decodes it, and appends it to `postings`.
     virtual void decode(ReadBuffer & in, PostingList & postings) const = 0;

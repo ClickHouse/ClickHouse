@@ -12,17 +12,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// Normalize the requested block size to a multiple of BLOCK_SIZE.
-/// We encode/decode posting lists in fixed-size blocks, and the SIMD bit-packing
-/// implementation expects block-aligned sizes for efficient processing.
-PostingListCodecBitpackingImpl::PostingListCodecBitpackingImpl(size_t postings_list_block_size)
-    : max_rowids_in_segment((postings_list_block_size + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1))
-{
-    compressed_data.reserve(BLOCK_SIZE);
-    current_segment.reserve(BLOCK_SIZE);
-}
-
-void PostingListCodecBitpackingImpl::insert(uint32_t row_id)
+void PostingListCodecBitpackingImpl::insert(uint32_t row_id, size_t max_rowids_in_segment)
 {
     if (row_ids_in_current_segment == 0)
     {
@@ -48,33 +38,6 @@ void PostingListCodecBitpackingImpl::insert(uint32_t row_id)
         encodeBlock(current_segment);
         current_segment.clear();
     }
-
-    if (row_ids_in_current_segment == max_rowids_in_segment)
-        flushCurrentSegment();
-}
-
-void PostingListCodecBitpackingImpl::insert(std::span<uint32_t> row_ids)
-{
-    chassert(row_ids.size() == BLOCK_SIZE && row_ids_in_current_segment % BLOCK_SIZE == 0);
-
-    if (row_ids_in_current_segment == 0)
-    {
-        segment_descriptors.emplace_back();
-        segment_descriptors.back().row_id_begin = row_ids.front();
-        segment_descriptors.back().compressed_data_offset = compressed_data.size();
-        segment_block_metas.emplace_back();
-
-        prev_row_id = row_ids.front();
-    }
-    row_ids_in_current_segment += BLOCK_SIZE;
-    total_row_ids += BLOCK_SIZE;
-
-    auto last_row = row_ids.back();
-    std::adjacent_difference(row_ids.begin(), row_ids.end(), row_ids.begin());
-    row_ids[0] -= prev_row_id;
-    prev_row_id = last_row;
-
-    encodeBlock(row_ids);
 
     if (row_ids_in_current_segment == max_rowids_in_segment)
         flushCurrentSegment();
@@ -269,6 +232,9 @@ void PostingListAccumulatorNone::finalize(WriteBuffer & out, TokenPostingsInfo &
         rows_in_current_segment = 0;
     }
 
+    /// Local buffer freed after this call: a per-accumulator member would keep one buffer alive per
+    /// token until the whole granule is serialized, inflating peak memory.
+    std::vector<char> serialize_buffer;
     for (auto & segment : segments)
     {
         segment.runOptimize();
@@ -290,7 +256,7 @@ void PostingListAccumulatorNone::finalize(WriteBuffer & out, TokenPostingsInfo &
 
 size_t PostingListAccumulatorNone::memoryUsageBytes() const
 {
-    size_t result = current_segment.getSizeInBytes() + serialize_buffer.capacity();
+    size_t result = current_segment.getSizeInBytes();
     for (const auto & segment : segments)
         result += segment.getSizeInBytes();
     return result;

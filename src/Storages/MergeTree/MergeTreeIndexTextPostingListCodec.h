@@ -6,9 +6,6 @@
 #include <IO/WriteBuffer.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 
-#include <algorithm>
-#include <limits>
-
 namespace DB
 {
 struct TokenPostingsInfo;
@@ -108,23 +105,14 @@ class PostingListCodecBitpackingImpl
 
 public:
     PostingListCodecBitpackingImpl() = default;
-    explicit PostingListCodecBitpackingImpl(size_t postings_list_block_size);
 
     /// Add a single increasing row id.
     ///
     /// Internally we store deltas (gaps) in `current_segment` until reaching BLOCK_SIZE,
     /// then compress the full block into `compressed_data`.
-    /// When the segment reaches `max_rowids_in_segment`, flush it.
-    void insert(uint32_t row_id);
-
-    /// Add a block of BLOCK_SIZE-many row ids.
-    ///
-    /// Assumes:
-    /// - row_ids.size() == BLOCK_SIZE
-    /// - total is aligned by BLOCK_SIZE
-    ///
-    /// It computes deltas in-place using adjacent_difference for better throughput.
-    void insert(std::span<uint32_t> row_ids);
+    /// When the segment reaches `max_rowids_in_segment`, flush it. The segment size is passed in
+    /// (rather than stored) because it is a per-index constant, the same for every token.
+    void insert(uint32_t row_id, size_t max_rowids_in_segment);
 
     /// Serialize all buffered postings to `out` and update TokenPostingsInfo.
     ///
@@ -182,8 +170,6 @@ private:
     /// - reset block state so a new segment can start
     void flushCurrentSegment()
     {
-       chassert(row_ids_in_current_segment <= max_rowids_in_segment);
-
        if (!current_segment.empty())
            encodeBlock(current_segment);
 
@@ -228,8 +214,6 @@ private:
     size_t total_row_ids = 0;
     /// Number of values added in the current segment.
     size_t row_ids_in_current_segment = 0;
-    /// Segment size
-    const size_t max_rowids_in_segment = 1024 * 1024;
 };
 
 /// Streaming accumulator for the Bitpacking codec.
@@ -242,14 +226,7 @@ private:
 class PostingListAccumulatorBitpacking final : public IPostingListAccumulator
 {
 public:
-    explicit PostingListAccumulatorBitpacking(size_t posting_list_block_size)
-        : impl(posting_list_block_size)
-    {
-    }
-
-    /// `context` is unused by this codec (it streams bit-packed deltas, not a Roaring bitmap); the
-    /// parameter exists so the templated builder can call `insert` uniformly across codecs.
-    void insert(UInt32 row_id, roaring::BulkContext & /*context*/) { impl.insert(row_id); }
+    void insert(UInt32 row_id, size_t posting_list_block_size) { impl.insert(row_id, posting_list_block_size); }
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
     UInt32 cardinality() const override { return static_cast<UInt32>(impl.cardinality()); }
@@ -276,9 +253,9 @@ public:
 
     PostingListCodecBitpacking() : IPostingListCodec(Type::Bitpacking) {}
 
-    std::unique_ptr<IPostingListAccumulator> createAccumulator(size_t posting_list_block_size) const override
+    std::unique_ptr<IPostingListAccumulator> createAccumulator() const override
     {
-        return std::make_unique<PostingListAccumulatorBitpacking>(posting_list_block_size);
+        return std::make_unique<PostingListAccumulatorBitpacking>();
     }
 
     void decode(ReadBuffer & in, PostingList & postings) const override;
@@ -294,22 +271,16 @@ public:
 class PostingListAccumulatorNone final : public IPostingListAccumulator
 {
 public:
-    explicit PostingListAccumulatorNone(size_t posting_list_block_size_)
-        : block_size(static_cast<UInt32>(std::min<size_t>(posting_list_block_size_, std::numeric_limits<UInt32>::max())))
-    {
-    }
-
-    /// The `BulkContext` is owned by the caller (the `PostingListBuilder`), where it lives next to the
-    /// token's hash-map entry and is therefore cache-warm on every add — matching the baseline, which
-    /// also kept the context inline in the hash-map entry. Keeping it out of the accumulator lets the
-    /// accumulator's hot fields (`current_segment` + the two counters) share a single cache line.
-    /// The context caches the current bitmap's container, so it is reset at every segment boundary.
-    void insert(UInt32 row_id, roaring::BulkContext & context)
+    /// The `bulk_context` caches the current bitmap's container, so it is reset at every segment boundary.
+    /// The segment size is passed in (rather than stored) because it is a per-index constant.
+    void insert(UInt32 row_id, size_t posting_list_block_size)
     {
         if (rows_in_current_segment == 0)
-            context = roaring::BulkContext{};
-        current_segment.addBulk(context, row_id);
-        if (++rows_in_current_segment == block_size)
+            bulk_context = roaring::BulkContext{};
+
+        current_segment.addBulk(bulk_context, row_id);
+
+        if (++rows_in_current_segment == posting_list_block_size)
             sealSegment();
     }
 
@@ -319,8 +290,10 @@ public:
     UInt32 cardinality() const override
     {
         size_t total = current_segment.cardinality();
+
         for (const auto & segment : segments)
             total += segment.cardinality();
+
         return static_cast<UInt32>(total);
     }
 
@@ -330,14 +303,10 @@ private:
     /// Seals the current (full) segment and starts a new one. Cold path.
     void sealSegment();
 
-    /// Hot per-row state, first so `current_segment` and the counters share one cache line.
     PostingList current_segment;
-    UInt32 rows_in_current_segment = 0;
-    UInt32 block_size;
-    /// Cold state, touched only on segment seal and `finalize`.
+    roaring::BulkContext bulk_context;
+    size_t rows_in_current_segment = 0;
     std::vector<PostingList> segments;
-    /// Reusable buffer for portable Roaring serialization in `finalize`.
-    std::vector<char> serialize_buffer;
 };
 
 /// A posting list codec that doesn't compress.
@@ -351,9 +320,9 @@ public:
 
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
-    std::unique_ptr<IPostingListAccumulator> createAccumulator(size_t posting_list_block_size) const override
+    std::unique_ptr<IPostingListAccumulator> createAccumulator() const override
     {
-        return std::make_unique<PostingListAccumulatorNone>(posting_list_block_size);
+        return std::make_unique<PostingListAccumulatorNone>();
     }
 
     void decode(ReadBuffer & in, PostingList & postings) const override;

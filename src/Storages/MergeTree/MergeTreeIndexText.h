@@ -127,14 +127,12 @@ struct PostingListBuilder
             if (value == last_value)
                 return;
         }
+
         last_value = value;
 
-        if (accumulator)
+        if (promoted)
         {
-            /// `bulk_context` is passed by reference and kept cache-warm here (next to the token's
-            /// hash-map entry); the accumulator uses it for its `roaring addBulk` (and ignores it
-            /// for codecs that don't need one).
-            static_cast<Accumulator *>(accumulator)->insert(value, bulk_context);
+            static_cast<Accumulator *>(accumulator)->insert(value, posting_list_block_size);
             return;
         }
 
@@ -145,21 +143,21 @@ struct PostingListBuilder
         }
 
         /// The inline buffer is full: promote to a streaming accumulator and replay the buffered
-        /// values. The buffer shares storage with `bulk_context` (union), so snapshot it first.
-        SmallContainer buffered = small;
-        const UInt8 buffered_size = small_size;
-        bulk_context = roaring::BulkContext{}; /// activate the context union member (small is now dead)
-        holder.push_back(codec.createAccumulator(posting_list_block_size));
-        accumulator = holder.back().get();
-        auto * acc = static_cast<Accumulator *>(accumulator);
-        for (size_t i = 0; i < buffered_size; ++i)
-            acc->insert(buffered[i], bulk_context);
-        acc->insert(value, bulk_context);
+        /// values. The accumulator pointer shares storage with `small` (union), so snapshot it first.
+        const SmallContainer buffered = small;
+        holder.push_back(codec.createAccumulator());
+        auto * acc = static_cast<Accumulator *>(holder.back().get());
+        accumulator = acc; /// activates the accumulator union member (small is now dead)
+        promoted = true;
+
+        for (UInt32 buffered_value : buffered)
+            acc->insert(buffered_value, posting_list_block_size);
+        acc->insert(value, posting_list_block_size);
     }
 
-    size_t size() const { return accumulator ? accumulator->cardinality() : small_size; }
-    bool isEmpty() const { return size() == 0; }
-    bool hasAccumulator() const { return accumulator != nullptr; }
+    size_t size() const { return promoted ? accumulator->cardinality() : small_size; }
+    bool isEmpty() const { return !promoted && small_size == 0; }
+    bool hasAccumulator() const { return promoted; }
     IPostingListAccumulator & getAccumulator() const { return *accumulator; }
 
     /// Inline row ids. Valid only while not promoted (i.e. size() <= inline_capacity).
@@ -170,15 +168,15 @@ struct PostingListBuilder
     UInt32 maximum() const { return small[small_size - 1]; }
 
     /// Before promotion the inline buffer holds the row ids; after promotion that storage is reused
-    /// for the codec's bulk-insert context (kept here so it stays cache-warm with the hash-map entry).
+    /// for the (externally owned) accumulator pointer, discriminated by `promoted`.
     union
     {
         SmallContainer small{};
-        roaring::BulkContext bulk_context;
+        IPostingListAccumulator * accumulator;
     };
     UInt32 last_value = 0;
     UInt8 small_size = 0;
-    IPostingListAccumulator * accumulator = nullptr;
+    bool promoted = false;
 };
 
 using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;

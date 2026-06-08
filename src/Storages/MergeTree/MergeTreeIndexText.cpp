@@ -1259,8 +1259,7 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
                 ArenaKeyHolder key_holder{std::string_view(token_start, token_length), *arena};
                 tokens_map.emplace(key_holder, it, inserted);
 
-                it->getMapped().template add<Accumulator>(
-                    static_cast<UInt32>(current_row), *posting_list_codec, params.posting_list_block_size, accumulators);
+                it->getMapped().template add<Accumulator>(static_cast<UInt32>(current_row), *posting_list_codec, params.posting_list_block_size, accumulators);
                 ++num_processed_tokens;
                 return false;
             });
