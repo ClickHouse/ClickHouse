@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Test that DateTime values are clamped (not wrapped) for out-of-range inputs.
 -- See https://github.com/ClickHouse/ClickHouse/issues/103094
 
