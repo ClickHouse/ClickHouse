@@ -156,14 +156,11 @@ namespace
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
 /// If `column_names` is empty, check access to any columns and return names of accessible columns
-NameSet checkAccessRights(const TableNode & table_node, const Names & column_names, const ContextPtr & query_context)
+NameSet checkAccessRights(const StoragePtr & storage, const StorageID & storage_id, const StorageSnapshotPtr & storage_snapshot, const Names & column_names, const ContextPtr & query_context)
 {
     /// StorageDummy is created on preliminary stage, ignore access check for it.
-    if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
+    if (typeid_cast<const StorageDummy *>(storage.get()))
         return {};
-
-    const auto & storage_id = table_node.getStorageID();
-    const auto & storage_snapshot = table_node.getStorageSnapshot();
 
     if (column_names.empty())
     {
@@ -457,7 +454,22 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
     if (table_node)
     {
         const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
-        columns_names_allowed_to_select = checkAccessRights(*table_node, column_names_with_aliases, query_context);
+        columns_names_allowed_to_select = checkAccessRights(
+            table_node->getStorage(), table_node->getStorageID(), table_node->getStorageSnapshot(), column_names_with_aliases, query_context);
+    }
+    else if (table_function_node)
+    {
+        /// A parameterized view is resolved as a `TableFunctionNode` that wraps a real `StorageView`, but no
+        /// `ITableFunction::execute` runs for it, so the access check skipped above for regular table functions
+        /// would let the query read the view without any `SELECT` grant. Enforce the same column-aware `SELECT`
+        /// check the underlying view would receive as a `TableNode`.
+        const auto & storage = table_function_node->getStorage();
+        if (const auto * storage_view = storage ? storage->as<StorageView>() : nullptr; storage_view && storage_view->isParameterizedView())
+        {
+            const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
+            columns_names_allowed_to_select = checkAccessRights(
+                storage, table_function_node->getStorageID(), table_function_node->getStorageSnapshot(), column_names_with_aliases, query_context);
+        }
     }
     else if ((query_node || union_node) && select_query_options.check_subquery_table_access)
     {

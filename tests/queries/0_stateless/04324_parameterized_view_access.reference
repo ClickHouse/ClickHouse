@@ -1,0 +1,10 @@
+-- SELECT without any grant must be denied --
+ACCESS_DENIED
+-- DESCRIBE without SHOW COLUMNS grant must be denied --
+ACCESS_DENIED
+-- SELECT after granting SELECT on the view --
+1	a
+2	b
+-- DESCRIBE of a SQL SECURITY DEFINER view needs only SHOW COLUMNS, not grants on inner tables --
+x	UInt32
+s	String
