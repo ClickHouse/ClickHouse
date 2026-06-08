@@ -10,7 +10,7 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/Stopwatch.h>
-#include <Examples/clickhouse_examples.h>
+#include <base/StringRef.h>
 
 /**
 
@@ -21,7 +21,7 @@
 
 using namespace std;
 
-int generateStringHashMapData()
+int main()
 {
     std::string s;
     pcg64_fast rng{randomSeed()};
@@ -116,13 +116,10 @@ Best: 1 - 593010342                 Best: 1 - 503062152                 Best: 1 
 */
 
 
-namespace
-{
-
 using Value = uint64_t;
 
 template <typename Map>
-void NO_INLINE bench(const std::vector<std::string_view> & data, DB::Arena &, const char * name)
+void NO_INLINE bench(const std::vector<StringRef> & data, DB::Arena &, const char * name)
 {
     // warm up
     /*
@@ -149,7 +146,7 @@ void NO_INLINE bench(const std::vector<std::string_view> & data, DB::Arena &, co
         Stopwatch watch;
         Map map;
         typename Map::LookupResult it;
-        bool inserted = {};
+        bool inserted;
 
         for (const auto & value : data)
         {
@@ -165,8 +162,6 @@ void NO_INLINE bench(const std::vector<std::string_view> & data, DB::Arena &, co
                   << watch.elapsedSeconds() << std::endl;
     }
 }
-
-} /// anonymous namespace
 
 /*
 template <typename Map>
@@ -209,7 +204,7 @@ benchFromFile()
 */
 
 
-int mainEntryExampleStringHashMap(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     if (argc < 3)
     {
@@ -221,9 +216,9 @@ int mainEntryExampleStringHashMap(int argc, char ** argv)
     size_t m = std::stol(argv[2]);
 
     DB::Arena pool(128 * 1024 * 1024);
-    std::vector<std::string_view> data(n);
+    std::vector<StringRef> data(n);
 
-    std::cerr << "sizeof(Key) = " << sizeof(std::string_view) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
+    std::cerr << "sizeof(Key) = " << sizeof(StringRef) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
 
     {
         Stopwatch watch;
@@ -234,19 +229,19 @@ int mainEntryExampleStringHashMap(int argc, char ** argv)
         for (size_t i = 0; i < n && !in2.eof(); ++i)
         {
             DB::readStringBinary(tmp, in2);
-            data[i] = std::string_view(pool.insert(tmp.data(), tmp.size()), tmp.size());
+            data[i] = StringRef(pool.insert(tmp.data(), tmp.size()), tmp.size());
         }
 
         watch.stop();
         std::cerr << std::fixed << std::setprecision(2) << "Vector. Size: " << n << ", elapsed: " << watch.elapsedSeconds() << " ("
-                  << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)" << std::endl;
+                  << n / watch.elapsedSeconds() << " elem/sec.)" << std::endl;
     }
 
     if (!m || m == 1)
         bench<StringHashMap<Value>>(data, pool, "StringHashMap");
     if (!m || m == 2)
-        bench<HashMapWithSavedHash<std::string_view, Value>>(data, pool, "HashMapWithSavedHash");
+        bench<HashMapWithSavedHash<StringRef, Value>>(data, pool, "HashMapWithSavedHash");
     if (!m || m == 3)
-        bench<HashMap<std::string_view, Value>>(data, pool, "HashMap");
+        bench<HashMap<StringRef, Value>>(data, pool, "HashMap");
     return 0;
 }

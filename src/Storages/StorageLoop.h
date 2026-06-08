@@ -1,6 +1,6 @@
 #pragma once
+#include "config.h"
 #include <Storages/IStorage.h>
-#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
@@ -11,8 +11,7 @@ namespace DB
     public:
         StorageLoop(
                 const StorageID & table_id,
-                StoragePtr inner_storage_,
-                ASTPtr inner_table_function_ast_ = nullptr);
+                StoragePtr inner_storage_);
 
         std::string getName() const override { return "Loop"; }
 
@@ -33,6 +32,5 @@ namespace DB
 
     private:
         StoragePtr inner_storage;
-        ASTPtr inner_table_function_ast;
     };
 }

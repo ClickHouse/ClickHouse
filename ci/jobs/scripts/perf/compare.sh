@@ -31,14 +31,14 @@ function wait_for_server # port, pid
 {
     for _ in {1..60}
     do
-        if clickhouse-client --port "$1" --receive_timeout=5 --query "select 1" || ! kill -0 "$2"
+        if clickhouse-client --port "$1" --query "select 1" || ! kill -0 "$2"
         then
             break
         fi
         sleep 1
     done
 
-    if ! clickhouse-client --port "$1" --receive_timeout=5 --query "select 1"
+    if ! clickhouse-client --port "$1" --query "select 1"
     then
         echo "Cannot connect to ClickHouse server at $1"
         return 1
@@ -123,15 +123,6 @@ function configure
 
     cp -al db0/ right/db/
     cp -R coordination0 right/coordination
-
-    # Symlink user_files from the repository into both servers' user_files directories
-    if [ -d "$script_dir/../../../../tests/performance/user_files" ]; then
-        for f in "$script_dir/../../../../tests/performance/user_files"/*; do
-            [ -e "$f" ] || continue
-            ln -sf "$(readlink -f "$f")" left/db/user_files/
-            ln -sf "$(readlink -f "$f")" right/db/user_files/
-        done
-    fi
 }
 
 function restart
@@ -318,9 +309,9 @@ function run_tests
     do
         echo "$current_test of $total_tests tests complete" > status.txt
         # Check that both servers are alive, and restart them if they die.
-        clickhouse-client --port $LEFT_SERVER_PORT --receive_timeout=5 --query "select 1 format Null" \
+        clickhouse-client --port $LEFT_SERVER_PORT --query "select 1 format Null" \
             || { echo $test_name >> left-server-died.log ; restart ; }
-        clickhouse-client --port $RIGHT_SERVER_PORT --receive_timeout=5 --query "select 1 format Null" \
+        clickhouse-client --port $RIGHT_SERVER_PORT --query "select 1 format Null" \
             || { echo $test_name >> right-server-died.log ; restart ; }
 
         test_name=$(basename "$test" ".xml")
@@ -414,8 +405,8 @@ function get_profiles
 
     # Just check that the servers are alive so that we return a proper exit code.
     # We don't consistently check the return codes of the above background jobs.
-    clickhouse-client --port $LEFT_SERVER_PORT --receive_timeout=5 --query "select 1"
-    clickhouse-client --port $RIGHT_SERVER_PORT --receive_timeout=5 --query "select 1"
+    clickhouse-client --port $LEFT_SERVER_PORT --query "select 1"
+    clickhouse-client --port $RIGHT_SERVER_PORT --query "select 1"
 }
 
 # Build and analyze randomization distribution for all queries.
@@ -820,7 +811,8 @@ create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
 --
 create view test_runs as
     select test,
-        -- Default to 7 runs if we can't determine the number of runs.
+        -- Default to 7 runs if there are only 'short' queries in the test, and
+        -- we can't determine the number of runs.
         if((ceil(median(t.runs), 0) as r) != 0, r, 7) runs
     from (
         select
@@ -1197,21 +1189,21 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         union all
             select
                 test || ' #' || toString(query_index) || '::' || test_desc_.1 test_name,
-                multiIf(
-                    changed_fail != 0 and diff > 0, 'slower',
-                    unstable_fail != 0, 'unstable',
-                    'success'
-                ) test_status,
+                'slower' test_status,
                 test_desc_.2*1e3 test_duration_ms,
-                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/'
-                    || multiIf(
-                        changed_fail != 0 and diff > 0, 'report.html#changes-in-performance.',
-                        unstable_fail != 0, 'report.html#unstable-queries.',
-                        'report.html#all-queries.'
-                    )
-                    || test || '.' || toString(query_index) report_url
+                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#changes-in-performance.' || test || '.' || toString(query_index) report_url
             from queries
             array join map('old', left, 'new', right) as test_desc_
+            where changed_fail != 0 and diff > 0
+        union all
+            select
+                test || ' #' || toString(query_index) || '::' || test_desc_.1 test_name,
+                'unstable' test_status,
+                test_desc_.2*1e3 test_duration_ms,
+                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#unstable-queries.' || test || '.' || toString(query_index) report_url
+            from queries
+            array join map('old', left, 'new', right) as test_desc_
+            where unstable_fail != 0
     )
 ;
     "

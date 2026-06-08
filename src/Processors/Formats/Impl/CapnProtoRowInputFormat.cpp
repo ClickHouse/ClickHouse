@@ -20,7 +20,6 @@ namespace ErrorCodes
 CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const CapnProtoSchemaInfo & info, const FormatSettings & format_settings)
     : IRowInputFormat(std::move(header_), in_, std::move(params_))
     , parser(std::make_shared<CapnProtoSchemaParser>())
-    , max_message_size(format_settings.capn_proto.max_message_size)
 {
     // Parse the schema and fetch the root object
     schema = parser->getMessageSchema(info.getSchemaInfo());
@@ -30,7 +29,7 @@ CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, SharedHeader 
 
 std::pair<kj::Array<capnp::word>, size_t> CapnProtoRowInputFormat::readMessagePrefix()
 {
-    uint32_t segment_count = 0;
+    uint32_t segment_count;
     in->readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
     /// Don't allow large amount of segments as it's done in capnproto library:
     /// https://github.com/capnproto/capnproto/blob/931074914eda9ca574b5c24d1169c0f7a5156594/c%2B%2B/src/capnp/serialize.c%2B%2B#L181
@@ -60,12 +59,6 @@ kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
     // calculate size of message
     const auto expected_words = capnp::expectedSizeInWordsFromPrefix(prefix);
     const auto expected_bytes = expected_words * sizeof(capnp::word);
-
-    if (expected_bytes > max_message_size)
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "CapnProto message size {} exceeds maximum allowed size {}. Most likely, data is corrupted or format mismatch occurred",
-            expected_bytes, max_message_size);
-
     const auto data_size = expected_bytes - prefix_size;
     auto msg = kj::heapArray<capnp::word>(expected_words);
     auto msg_chars = msg.asChars();
@@ -141,7 +134,6 @@ NamesAndTypesList CapnProtoSchemaReader::readSchema()
     return capnProtoSchemaToCHSchema(schema, format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference);
 }
 
-void registerInputFormatCapnProto(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -168,7 +160,6 @@ void registerInputFormatCapnProto(FormatFactory & factory)
         });
 }
 
-void registerCapnProtoSchemaReader(FormatFactory & factory);
 void registerCapnProtoSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("CapnProto", [](const FormatSettings & settings)
@@ -184,8 +175,6 @@ void registerCapnProtoSchemaReader(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
-    void registerInputFormatCapnProto(FormatFactory &);
-    void registerCapnProtoSchemaReader(FormatFactory &);
     void registerInputFormatCapnProto(FormatFactory &) {}
     void registerCapnProtoSchemaReader(FormatFactory &) {}
 }

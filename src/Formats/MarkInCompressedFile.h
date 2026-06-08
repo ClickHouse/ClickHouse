@@ -5,7 +5,6 @@
 
 #include <base/types.h>
 #include <Common/PODArray.h>
-#include <Common/JemallocCacheAllocator.h>
 
 
 namespace DB
@@ -85,12 +84,12 @@ private:
         size_t min_y = UINT64_MAX;
 
         // Place in `packed` where this block start.
-        size_t bit_offset_in_packed_array{};
+        size_t bit_offset_in_packed_array;
 
         // How many bits each mark takes. These numbers are bit-packed in the `packed` array.
         // Can be zero. (Especially for y, which is typically all zeroes.)
-        UInt8 bits_for_x{};
-        UInt8 bits_for_y{};
+        UInt8 bits_for_x;
+        UInt8 bits_for_y;
         // The `y` values should be <<'ed by this amount.
         // Useful for integer columns when marks granularity is a power of 2; in this case all
         // offset_in_decompressed_block values are divisible by 2^15 or so.
@@ -100,8 +99,8 @@ private:
     static constexpr size_t MARKS_PER_BLOCK = 256;
 
     size_t num_marks;
-    PODArray<BlockInfo, 4096, JemallocCacheAllocator> blocks;
-    PODArray<UInt64, 4096, JemallocCacheAllocator> packed;
+    PODArray<BlockInfo> blocks;
+    PODArray<UInt64> packed;
 
     // Mark idx -> {block info, bit offset in `packed`}.
     std::tuple<const BlockInfo *, size_t> lookUpMark(size_t idx) const;

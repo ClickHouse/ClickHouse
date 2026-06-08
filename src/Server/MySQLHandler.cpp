@@ -8,7 +8,6 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
@@ -24,7 +23,6 @@
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
-#include <Common/QueryScope.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/config_version.h>
@@ -89,7 +87,7 @@ static bool isFederatedServerSetupSetCommand(const String & query)
         "|(^(SET sql_mode(.*)))"
         "|(^(SET @@(.*)))"
         "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))", regexp_options);
-    chassert(expr.ok());
+    assert(expr.ok());
     return re2::RE2::FullMatch(query, expr);
 }
 
@@ -239,7 +237,7 @@ MySQLHandler::~MySQLHandler() = default;
 
 void MySQLHandler::run()
 {
-    DB::setThreadName(ThreadName::MYSQL_HANDLER);
+    setThreadName("MySQLHandler");
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);
     SCOPE_EXIT({ session.reset(); });
@@ -461,7 +459,7 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     const auto session_context = session->sessionContext();
     String database = session_context->getCurrentDatabase();
     StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, session_context);
-    auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
+    auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr();
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
         ColumnDefinition column_definition(
@@ -534,7 +532,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         socket().setReceiveTimeout(settings[Setting::receive_timeout]);
         socket().setSendTimeout(settings[Setting::send_timeout]);
 
-        QueryScope query_scope = QueryScope::create(query_context);
+        CurrentThread::QueryScope query_scope{query_context};
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();
@@ -566,10 +564,10 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         if (should_replace)
         {
             ReadBufferFromString replacement(replacement_query);
-            executeQuery(replacement, *out, query_context, set_result_details, QueryFlags{}, format_settings);
+            executeQuery(replacement, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
         }
         else
-            executeQuery(payload, *out, query_context, set_result_details, QueryFlags{}, format_settings);
+            executeQuery(payload, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
 
 
         if (!with_output)
@@ -591,7 +589,7 @@ void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
 
 void MySQLHandler::comStmtExecute(ReadBuffer & payload)
 {
-    uint32_t statement_id = 0;
+    uint32_t statement_id;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
     auto statement_opt = getPreparedStatement(statement_id);
@@ -603,7 +601,7 @@ void MySQLHandler::comStmtExecute(ReadBuffer & payload)
 
 void MySQLHandler::comStmtClose(ReadBuffer & payload)
 {
-    uint32_t statement_id = 0;
+    uint32_t statement_id;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
     // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_stmt_close.html
