@@ -292,6 +292,11 @@ public:
         }
         else
         {
+            /// stdout reached EOF: the child closed it and is usually exiting. Take one
+            /// best-effort final sample (no-op on the pool path); it catches a child that
+            /// lingers after closing stdout, and is fail-safe if the child has already gone.
+            if (sampler)
+                sampler->sampleExecutablePeak(/*is_final=*/true);
             return false;
         }
 

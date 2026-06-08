@@ -77,12 +77,23 @@ public:
 
     /// Executable (non-pool) path: walk the subtree from `executable_root_pid`,
     /// read `VmHWM` from `/proc/<pid>/status` for each pid, and keep a running
-    /// max in `executable_peak_rss_bytes`. Called on every IO read (after the
-    /// child produces output) and on every input write (while the child consumes
-    /// stdin), at both points the child is provably alive. No-op when
+    /// max in `executable_peak_rss_bytes`. Invoked from both IO loops (stdout
+    /// read and stdin write). The first call always samples (start); subsequent
+    /// calls with `is_final=false` are throttled to at most one walk per ~5 ms.
+    /// One best-effort final call (`is_final=true`) is issued at stdout EOF. The
+    /// final call does not flag a failed root read: the child has closed stdout
+    /// and has often already exited at that point, so a failed root read is
+    /// expected rather than a seccomp/sandbox degradation. `VmHWM` monotonicity
+    /// keeps the running max correct under sparse sampling. No-op when
     /// `executable_root_pid <= 0`. Thread-safe: may be called concurrently from
     /// the write-buffer send thread and the read-buffer pull thread.
-    void sampleExecutablePeak() noexcept;
+    ///
+    /// Limitation: only the UDF process and its live descendants at a sample
+    /// point are captured. A short-lived child that allocates and is reaped
+    /// between two consecutive throttled samples is best-effort and may be
+    /// under-counted. A process that is alive at least once after reaching its
+    /// peak is captured exactly, because `VmHWM` is monotonic.
+    void sampleExecutablePeak(bool is_final = false) noexcept;
 
     /// Executable (non-pool) path: stamp `elapsed_us` from the wall clock at
     /// `ShellCommandSource` cleanup and compute `peak_memory_byte_seconds` from
@@ -167,6 +178,11 @@ private:
     /// Running max VmHWM across the executable child's subtree, updated atomically
     /// by sampleExecutablePeak from two IO threads. Read after both threads join.
     std::atomic<UInt64> executable_peak_rss_bytes{0};
+
+    /// Wall-clock microseconds (from entry_watch) of the last subtree sample, or 0
+    /// if none taken yet. Throttles sampleExecutablePeak off the per-buffer IO path;
+    /// updated with a relaxed CAS from the two IO threads.
+    std::atomic<UInt64> last_sample_us{0};
 
     struct PreSnapshot
     {

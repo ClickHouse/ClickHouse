@@ -279,18 +279,29 @@ def test_unwaited_child_cpu_excluded(started_cluster):
 def test_reaped_child_memory_rolls_up(started_cluster):
     _skip_msan()
     qid = "exec-child-mem-1"
-    # The child allocates ~64 MiB and stays alive until the parent has written
-    # its output row. The sampler's stdout-IO subtree walk then finds the child
-    # in the process tree and reads its /proc/<pid>/status VmHWM.
-    # 100_000 byte·s floor: 64 MiB * 1 ms ≈ 67_108, so 100_000 is ~1.5x above
-    # the absolute minimum at sub-millisecond elapsed; a child whose VmHWM is
-    # never sampled (because it exits before the IO walk) would give 0.
+    # One ~64 MiB child is forked before the input loop, signals readiness, and
+    # stays blocked at its peak until the parent has emitted all output rows.
+    # Each row incurs a 20 ms pause, so numbers(4) produces ~80 ms of output
+    # spanning multiple 5 ms throttle intervals; the sampler observes the child
+    # alive at its peak across several sample points.
+    # The implied-peak assertion requires a ~64 MiB reading: the parent process
+    # is ~10 MiB, so a sampler that missed the child entirely would report
+    # ~10 MiB, which fails the >= 40 MiB floor and detects the regression.
     _run(
-        "SELECT sum(test_udf_child_mem(number)) FROM numbers(1)",
+        "SELECT sum(test_udf_child_mem(number)) FROM numbers(4)",
         qid,
     )
-    mem = _profile_event_value(qid, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds")
-    assert mem >= 100_000, f"Expected PeakMemoryByteSeconds >= 100_000 (child RSS sampled while alive), got {mem}"
+    byte_seconds = _profile_event_value(qid, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds")
+    elapsed_us = _profile_event_value(qid, "ExecutableUserDefinedFunctionElapsedMicroseconds")
+    invocations = _profile_event_value(qid, "ExecutableUserDefinedFunctionInvocations")
+    assert invocations >= 1, f"UDF did not run (Invocations={invocations}); memory floor is meaningless"
+    assert elapsed_us > 0, f"ElapsedMicroseconds is 0; implied-peak calculation would divide by zero"
+    implied_peak_mib = byte_seconds * 1e6 / elapsed_us / 1048576
+    assert implied_peak_mib >= 40, (
+        f"Implied peak {implied_peak_mib:.1f} MiB < 40 MiB floor; the child's ~64 MiB VmHWM "
+        f"was not sampled (byte_seconds={byte_seconds}, elapsed_us={elapsed_us}). "
+        f"A ~10 MiB reading indicates only the parent process was observed."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -302,14 +313,19 @@ def test_peak_memory_is_max_not_sum(started_cluster):
     _skip_msan()
     qid_concurrent = "exec-two-mem-concurrent-1"
     qid_sequential = "exec-two-mem-sequential-1"
-    # concurrent: two 100 MiB children coexist and are both alive when the parent
-    # writes its output row, so the sampler's subtree walk sees both simultaneously.
-    # sequential: two 100 MiB children never coexist; only child2 is alive during
-    # the output flush (child1 exits before child2 is forked).
-    # Both report ~100 MiB because the metric is max-of-VmHWM across pids, not sum.
-    # implied_peak = PeakMemoryByteSeconds * 1_000_000 / ElapsedMicroseconds.
-    # A true sum implementation would make concurrent ~2x sequential.
-    # We assert concurrent <= 1.6 * sequential: measured ~1.0, bug threshold ~2.0.
+    # concurrent: both ~100 MiB children are forked before the input loop, signal
+    # readiness, and stay blocked at their peaks while the parent emits output with
+    # a 20 ms per-row pause. The sampler sees both children alive simultaneously
+    # (~200 MiB resident together) across multiple throttle intervals.
+    # sequential: two ~100 MiB children are spawned one at a time per row; the
+    # first is fully reaped before the second is forked, so they never coexist.
+    # Each child is held alive at its peak for 30 ms so a throttled sample observes it.
+    # Both cases report ~100 MiB: the metric is max-of-VmHWM across pids, not sum.
+    # implied_peak = PeakMemoryByteSeconds * 1_000_000 / ElapsedMicroseconds (bytes).
+    # The >= 60 MiB floors (63_000_000 bytes) prove the ~100 MiB children were
+    # sampled: a parent-only (~10 MiB) reading would produce ~10 MiB and fail.
+    # The ratio bound catches a summing implementation: concurrent would give ~200 MiB
+    # vs sequential ~100 MiB (ratio ~2.0), well above the 1.6 threshold.
     _run(
         "SELECT sum(test_udf_two_mem_concurrent(number)) FROM numbers(1)",
         qid_concurrent,
@@ -328,7 +344,16 @@ def test_peak_memory_is_max_not_sum(started_cluster):
 
     concurrent_peak = _implied_peak(qid_concurrent)
     sequential_peak = _implied_peak(qid_sequential)
-    assert sequential_peak > 0, f"sequential peak is 0 — memory not captured (sequential={sequential_peak})"
+
+    mib = 1048576
+    assert sequential_peak >= 60 * mib, (
+        f"sequential implied peak {sequential_peak / mib:.1f} MiB < 60 MiB floor; "
+        f"the ~100 MiB child was not sampled (only the ~10 MiB parent was observed)"
+    )
+    assert concurrent_peak >= 60 * mib, (
+        f"concurrent implied peak {concurrent_peak / mib:.1f} MiB < 60 MiB floor; "
+        f"neither ~100 MiB child was sampled (only the ~10 MiB parent was observed)"
+    )
     assert concurrent_peak <= 1.6 * sequential_peak, (
         f"concurrent peak {concurrent_peak:.0f} is more than 1.6x sequential {sequential_peak:.0f}; "
         f"suggests /proc VmHWM sampling is summing concurrent allocations instead of taking the max"
