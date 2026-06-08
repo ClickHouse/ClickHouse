@@ -5821,7 +5821,7 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
     /// the working set without that commit ever happening, so commit the part storage transaction now;
     /// otherwise the detached part is never materialized and its blobs are orphaned.
     if (was_preactive && part->getDataPartStorage().hasActiveTransaction())
-        part->getDataPartStorage().commitTransaction();
+        asMutableDeletingPart(part)->getDataPartStorage().commitTransaction();
 
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
