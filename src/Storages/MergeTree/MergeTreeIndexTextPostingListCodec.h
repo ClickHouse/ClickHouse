@@ -6,6 +6,9 @@
 #include <IO/WriteBuffer.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 
+#include <algorithm>
+#include <limits>
+
 namespace DB
 {
 struct TokenPostingsInfo;
@@ -16,6 +19,7 @@ using PostingList = roaring::Roaring;
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 /// A codec for a postings list stored in a compact block-compressed format.
@@ -143,6 +147,18 @@ public:
     /// to reconstruct absolute row ids.
     void decode(ReadBuffer & in, PostingList & postings);
 
+    /// Total number of row ids added so far.
+    size_t cardinality() const { return total_row_ids; }
+
+    /// Heap memory held by the in-memory encoded representation.
+    size_t memoryUsageBytes() const
+    {
+        return compressed_data.capacity()
+            + current_segment.capacity() * sizeof(uint32_t)
+            + segment_descriptors.capacity() * sizeof(SegmentDescriptor)
+            + segment_block_metas.capacity() * sizeof(SegmentBlockMetas);
+    }
+
 private:
     void reset()
     {
@@ -216,6 +232,33 @@ private:
     const size_t max_rowids_in_segment = 1024 * 1024;
 };
 
+/// Streaming accumulator for the Bitpacking codec.
+///
+/// Wraps PostingListCodecBitpackingImpl, which encodes row ids into bit-packed 128-row blocks
+/// on the fly (compressing each block as soon as it is full) and starts a new segment every
+/// `posting_list_block_size` row ids. The compressed bytes are held in memory and flushed on `finalize`.
+/// Marked `final` so that callers holding a concrete pointer can devirtualize `insert`
+/// (the per-row hot path during the build).
+class PostingListAccumulatorBitpacking final : public IPostingListAccumulator
+{
+public:
+    explicit PostingListAccumulatorBitpacking(size_t posting_list_block_size)
+        : impl(posting_list_block_size)
+    {
+    }
+
+    /// `context` is unused by this codec (it streams bit-packed deltas, not a Roaring bitmap); the
+    /// parameter exists so the templated builder can call `insert` uniformly across codecs.
+    void insert(UInt32 row_id, roaring::BulkContext & /*context*/) { impl.insert(row_id); }
+    void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
+
+    UInt32 cardinality() const override { return static_cast<UInt32>(impl.cardinality()); }
+    size_t memoryUsageBytes() const override { return impl.memoryUsageBytes(); }
+
+private:
+    PostingListCodecBitpackingImpl impl;
+};
+
 /// Codec for serializing/deserializing a postings list to/from a binary stream.
 /// A codec for a postings list stored in a compact block-compressed format.
 ///
@@ -233,11 +276,74 @@ public:
 
     PostingListCodecBitpacking() : IPostingListCodec(Type::Bitpacking) {}
 
-    void encode(const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const override;
+    std::unique_ptr<IPostingListAccumulator> createAccumulator(size_t posting_list_block_size) const override
+    {
+        return std::make_unique<PostingListAccumulatorBitpacking>(posting_list_block_size);
+    }
+
     void decode(ReadBuffer & in, PostingList & postings) const override;
 };
 
-/// A posting list codec that doesn't compress (no-op).
+/// Streaming accumulator for the None codec.
+///
+/// Accumulates row ids directly into Roaring bitmaps, starting a new segment every
+/// `posting_list_block_size` row ids. Each segment is serialized on `finalize` as a portable
+/// Roaring bitmap prefixed by its size in bytes (`writeVarUInt(num_bytes) + portable bytes`).
+///
+/// Marked `final` so that callers holding a concrete pointer can devirtualize `insert`.
+class PostingListAccumulatorNone final : public IPostingListAccumulator
+{
+public:
+    explicit PostingListAccumulatorNone(size_t posting_list_block_size_)
+        : block_size(static_cast<UInt32>(std::min<size_t>(posting_list_block_size_, std::numeric_limits<UInt32>::max())))
+    {
+    }
+
+    /// The `BulkContext` is owned by the caller (the `PostingListBuilder`), where it lives next to the
+    /// token's hash-map entry and is therefore cache-warm on every add — matching the baseline, which
+    /// also kept the context inline in the hash-map entry. Keeping it out of the accumulator lets the
+    /// accumulator's hot fields (`current_segment` + the two counters) share a single cache line.
+    /// The context caches the current bitmap's container, so it is reset at every segment boundary.
+    void insert(UInt32 row_id, roaring::BulkContext & context)
+    {
+        if (rows_in_current_segment == 0)
+            context = roaring::BulkContext{};
+        current_segment.addBulk(context, row_id);
+        if (++rows_in_current_segment == block_size)
+            sealSegment();
+    }
+
+    void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
+
+    /// Computed from the bitmaps (cold path) so the per-row insert needs no extra counter.
+    UInt32 cardinality() const override
+    {
+        size_t total = current_segment.cardinality();
+        for (const auto & segment : segments)
+            total += segment.cardinality();
+        return static_cast<UInt32>(total);
+    }
+
+    size_t memoryUsageBytes() const override;
+
+private:
+    /// Seals the current (full) segment and starts a new one. Cold path.
+    void sealSegment();
+
+    /// Hot per-row state, first so `current_segment` and the counters share one cache line.
+    PostingList current_segment;
+    UInt32 rows_in_current_segment = 0;
+    UInt32 block_size;
+    /// Cold state, touched only on segment seal and `finalize`.
+    std::vector<PostingList> segments;
+    /// Reusable buffer for portable Roaring serialization in `finalize`.
+    std::vector<char> serialize_buffer;
+};
+
+/// A posting list codec that doesn't compress.
+///
+/// Encoding accumulates row ids into Roaring bitmaps (see PostingListAccumulatorNone) split into
+/// segments of `posting_list_block_size` row ids; each segment is serialized as a portable Roaring bitmap.
 class PostingListCodecNone : public IPostingListCodec
 {
 public:
@@ -245,9 +351,37 @@ public:
 
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
-    void encode(const PostingList &, size_t, TokenPostingsInfo &, WriteBuffer &) const override {}
-    void decode(ReadBuffer &, PostingList &) const override {}
+    std::unique_ptr<IPostingListAccumulator> createAccumulator(size_t posting_list_block_size) const override
+    {
+        return std::make_unique<PostingListAccumulatorNone>(posting_list_block_size);
+    }
+
+    void decode(ReadBuffer & in, PostingList & postings) const override;
 };
+
+/// Dispatches on the codec type to the concrete accumulator type, invoking `f` with a
+/// (null) pointer of that concrete type as a compile-time tag. This lets the per-row hot path
+/// devirtualize `IPostingListAccumulator::insert` once the codec type is known for the whole build.
+///
+///     dispatchByPostingCodec(type, [&](auto * tag)
+///     {
+///         using Accumulator = std::remove_pointer_t<decltype(tag)>;
+///         ...
+///     });
+template <typename F>
+void dispatchByPostingCodec(IPostingListCodec::Type type, F && f)
+{
+    switch (type)
+    {
+        case IPostingListCodec::Type::None:
+            f(static_cast<PostingListAccumulatorNone *>(nullptr));
+            return;
+        case IPostingListCodec::Type::Bitpacking:
+            f(static_cast<PostingListAccumulatorBitpacking *>(nullptr));
+            return;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown posting list codec type {}", static_cast<int>(type));
+}
 
 }
 

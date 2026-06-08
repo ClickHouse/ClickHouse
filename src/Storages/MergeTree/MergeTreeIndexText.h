@@ -15,6 +15,9 @@
 #include <absl/container/flat_hash_set.h>
 #include <base/types.h>
 
+#include <array>
+#include <memory>
+#include <span>
 #include <vector>
 
 #include <roaring/roaring.hh>
@@ -84,65 +87,100 @@ struct MergeTreeIndexTextParams
 using PostingList = roaring::Roaring;
 using PostingListPtr = std::shared_ptr<PostingList>;
 
-/// A struct for building a posting list with optimization for infrequent tokens.
-/// Tokens with cardinality less than max_small_size are stored in a raw array allocated on the stack.
-/// It avoids allocations of Roaring Bitmap for infrequent tokens without increasing the memory usage.
+/// A struct for building a posting list during the index build.
+///
+/// The first `inline_capacity` row ids are stored inline in a fixed-size array — these are tokens
+/// rare enough to be serialized as raw VarUInts (or embedded into the dictionary block), so they
+/// never need a Roaring bitmap or a codec. Once the inline buffer overflows, the builder "promotes"
+/// to a streaming IPostingListAccumulator and forwards all subsequent row ids to it, so larger
+/// posting lists are encoded directly into their codec's on-disk form during the build.
+///
+/// The accumulator is owned externally (in the granule builder) so that the builder stays
+/// trivially relocatable and can live by value inside the StringHashMap.
+///
+/// Row ids are added in non-descending order; consecutive duplicates are skipped.
 struct PostingListBuilder
 {
-public:
-    using PostingListsHolder = std::list<PostingList>;
+    /// Number of row ids stored inline before promoting to an accumulator.
+    /// Sized to MAX_CARDINALITY_FOR_RAW_POSTINGS so the whole raw/embedded range stays heap-free.
+    static constexpr size_t inline_capacity = 12;
+    using SmallContainer = std::array<UInt32, inline_capacity>;
 
-    /// sizeof(PostingListWithContext) == 24 bytes.
-    /// Use small container of the same size to reuse this memory.
-    static constexpr size_t max_small_size = 6;
-    using SmallContainer = std::array<UInt32, max_small_size>;
+    /// Holds accumulators for promoted tokens. A vector is enough: the builders store a raw pointer
+    /// to the pointee (not into this buffer), and the unique_ptr keeps that pointee stable across
+    /// vector reallocations — which only move the 8-byte unique_ptrs, not the accumulator objects.
+    using AccumulatorHolder = std::vector<std::unique_ptr<IPostingListAccumulator>>;
 
-    PostingListBuilder() : small_size(0) {}
-    explicit PostingListBuilder(PostingList * posting_list);
+    /// Adds a row id. On overflow of the inline buffer, an accumulator is created via `codec`
+    /// (stored in `holder`) and the buffered values are replayed into it.
+    ///
+    /// Templated on the concrete accumulator type so that the per-row hot path can call
+    /// `Accumulator::insert` directly (no virtual dispatch); the caller picks `Accumulator`
+    /// once via `dispatchByPostingCodec`. `Accumulator` must match `codec`'s actual type.
+    template <typename Accumulator>
+    void add(UInt32 value, const IPostingListCodec & codec, size_t posting_list_block_size, AccumulatorHolder & holder)
+    {
+        /// Values are added in non-descending order; skip consecutive duplicates.
+        if (small_size != 0)
+        {
+            chassert(value >= last_value);
+            if (value == last_value)
+                return;
+        }
+        last_value = value;
 
-    /// Adds a value to small array or to the large Roaring Bitmap.
-    /// If small array is converted to Roaring Bitmap after adding a value,
-    /// posting list is created in the postings_holder and reference to it is saved.
-    void add(UInt32 value, PostingListsHolder & postings_holder);
+        if (accumulator)
+        {
+            /// `bulk_context` is passed by reference and kept cache-warm here (next to the token's
+            /// hash-map entry); the accumulator uses it for its `roaring addBulk` (and ignores it
+            /// for codecs that don't need one).
+            static_cast<Accumulator *>(accumulator)->insert(value, bulk_context);
+            return;
+        }
 
-    size_t size() const { return isSmall() ? small_size : large.postings->cardinality(); }
+        if (small_size < inline_capacity)
+        {
+            small[small_size++] = value;
+            return;
+        }
+
+        /// The inline buffer is full: promote to a streaming accumulator and replay the buffered
+        /// values. The buffer shares storage with `bulk_context` (union), so snapshot it first.
+        SmallContainer buffered = small;
+        const UInt8 buffered_size = small_size;
+        bulk_context = roaring::BulkContext{}; /// activate the context union member (small is now dead)
+        holder.push_back(codec.createAccumulator(posting_list_block_size));
+        accumulator = holder.back().get();
+        auto * acc = static_cast<Accumulator *>(accumulator);
+        for (size_t i = 0; i < buffered_size; ++i)
+            acc->insert(buffered[i], bulk_context);
+        acc->insert(value, bulk_context);
+    }
+
+    size_t size() const { return accumulator ? accumulator->cardinality() : small_size; }
     bool isEmpty() const { return size() == 0; }
-    bool isSmall() const { return small_size < max_small_size; }
-    bool isLarge() const { return !isSmall(); }
+    bool hasAccumulator() const { return accumulator != nullptr; }
+    IPostingListAccumulator & getAccumulator() const { return *accumulator; }
 
-    UInt32 minimum() const
-    {
-        chassert(!isEmpty());
-        return isSmall() ? small[0] : large.postings->minimum();
-    }
+    /// Inline row ids. Valid only while not promoted (i.e. size() <= inline_capacity).
+    std::span<const UInt32> getSmallValues() const { return {small.data(), small_size}; }
 
-    UInt32 maximum() const
-    {
-        chassert(!isEmpty());
-        return isSmall() ? small[small_size - 1] : large.postings->maximum();
-    }
+    /// Minimum / maximum row id. Only used for the non-promoted (raw) path.
+    UInt32 minimum() const { return small[0]; }
+    UInt32 maximum() const { return small[small_size - 1]; }
 
-    SmallContainer & getSmall() { return small; }
-    const SmallContainer & getSmall() const { return small; }
-    PostingList & getLarge() const { return *large.postings; }
-
-private:
-    struct PostingListWithContext
-    {
-        PostingList * postings;
-        roaring::BulkContext context;
-    };
-
+    /// Before promotion the inline buffer holds the row ids; after promotion that storage is reused
+    /// for the codec's bulk-insert context (kept here so it stays cache-warm with the hash-map entry).
     union
     {
         SmallContainer small{};
-        PostingListWithContext large;
+        roaring::BulkContext bulk_context;
     };
-
-    UInt8 small_size;
+    UInt32 last_value = 0;
+    UInt8 small_size = 0;
+    IPostingListAccumulator * accumulator = nullptr;
 };
 
-/// Save BulkContext to optimize consecutive insertions into the posting list.
 using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
 using SortedTokensAndPostings = std::vector<std::pair<std::string_view, PostingListBuilder *>>;
 struct TokenPostingsInfo;
@@ -168,9 +206,6 @@ struct PostingsSerialization
         HasBlockIndex = 1ULL << 4,
     };
 
-    void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
-    void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
-    void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
     PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
 
@@ -178,9 +213,9 @@ private:
     PostingListCodecPtr posting_list_codec;
     MergeTreeIndexVersion serialization_version;
 
-    /// Reusable buffers to avoid repeated heap allocations during deserialization.
+    /// Reusable buffer to avoid repeated heap allocations when deserializing
+    /// small posting lists stored as raw VarUInts.
     std::vector<UInt32> raw_postings_buffer;
-    std::vector<char> deserialization_buffer;
 };
 
 /// Closed range of rows.
@@ -274,12 +309,12 @@ struct TextIndexSerialization
 
     static TokenPostingsInfo serializePostings(
         PostingListBuilder & postings,
-        MergeTreeIndexWriterStream & postings_stream,
-        const MergeTreeIndexTextParams & params,
-        PostingsSerialization & postings_serialization);
+        MergeTreeIndexWriterStream & postings_stream);
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
+    /// Writes row ids as raw VarUInts (used for embedded and small raw posting lists).
+    static void serializeRawPostings(std::span<const UInt32> row_ids, WriteBuffer & ostr);
     static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
@@ -385,7 +420,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
         IPostingListCodec::Type posting_list_codec_type_,
         SortedTokensAndPostings && tokens_and_postings_,
         TokenToPostingsBuilderMap && tokens_map_,
-        std::list<PostingList> && posting_lists_,
+        PostingListBuilder::AccumulatorHolder && accumulators_,
         std::unique_ptr<Arena> && arena_);
 
     ~MergeTreeIndexGranuleTextWritable() override = default;
@@ -404,7 +439,8 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     SortedTokensAndPostings tokens_and_postings;
     /// tokens_and_postings has references to data held in the fields below.
     TokenToPostingsBuilderMap tokens_map;
-    std::list<PostingList> posting_lists;
+    /// Accumulators for promoted (large) tokens. Referenced by raw pointers in the builders.
+    PostingListBuilder::AccumulatorHolder accumulators;
     std::unique_ptr<Arena> arena;
     LoggerPtr logger;
 };
@@ -435,10 +471,10 @@ struct MergeTreeIndexTextGranuleBuilder
     bool is_empty = true;
     UInt64 current_row = 0;
     UInt64 num_processed_tokens = 0;
-    /// Pointers to posting lists for each token.
+    /// Posting list builder for each token.
     TokenToPostingsBuilderMap tokens_map;
-    /// Holder of posting lists. std::list is used to preserve the stability of pointers to posting lists.
-    std::list<PostingList> posting_lists;
+    /// Holder of accumulators for promoted tokens (see PostingListBuilder::AccumulatorHolder).
+    PostingListBuilder::AccumulatorHolder accumulators;
     /// Keys may be serialized into arena (see ArenaKeyHolder).
     std::unique_ptr<Arena> arena;
 };

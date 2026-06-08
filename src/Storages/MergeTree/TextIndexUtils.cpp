@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
@@ -341,8 +342,21 @@ PostingListPtr MergeTextIndexesTask::adjustPartOffsets(size_t source_num, Postin
 void MergeTextIndexesTask::flushPostingList()
 {
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
-    PostingListBuilder builder(&output_postings);
-    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
+
+    /// Stream the merged (sorted) row ids through a builder so they are encoded directly
+    /// into the codec's on-disk form, just like on the INSERT path. Dispatch once on the
+    /// codec type so the per-row `add` calls the concrete accumulator's `insert` directly.
+    const auto & codec = *postings_serialization.getPostingListCodec();
+    PostingListBuilder builder;
+    PostingListBuilder::AccumulatorHolder accumulators;
+    dispatchByPostingCodec(codec.getType(), [&](auto * tag)
+    {
+        using Accumulator = std::remove_pointer_t<decltype(tag)>;
+        for (UInt32 row_id : output_postings)
+            builder.add<Accumulator>(row_id, codec, params.posting_list_block_size, accumulators);
+    });
+
+    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream);
 
     if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
         token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
@@ -384,8 +398,12 @@ void MergeTextIndexesTask::flushDictionaryBlock()
 
         if (output_infos[i].header & PostingsSerialization::Flags::EmbeddedPostings)
         {
-            const auto & roaring_bitmap = output_infos[i].embedded_postings->roaring;
-            postings_serialization.serialize(roaring_bitmap, output_infos[i].header, ostr);
+            /// Embedded postings are tiny (cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
+            /// and always carry the RawPostings flag, so they are written as raw VarUInts.
+            const auto & embedded = *output_infos[i].embedded_postings;
+            std::vector<UInt32> values(embedded.cardinality());
+            embedded.toUint32Array(values.data());
+            TextIndexSerialization::serializeRawPostings(values, ostr);
         }
     }
 

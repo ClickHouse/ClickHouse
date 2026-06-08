@@ -239,28 +239,79 @@ void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings)
     impl.decode(in, postings);
 }
 
-void PostingListCodecBitpacking::encode(
-        const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const
+void PostingListAccumulatorBitpacking::finalize(WriteBuffer & out, TokenPostingsInfo & info)
 {
-    PostingListCodecBitpackingImpl impl(max_rowids_in_segment);
-    std::vector<uint32_t> rowids;
-    rowids.resize(postings.cardinality());
-    postings.toUint32Array(rowids.data());
+    using enum PostingsSerialization::Flags;
 
-    std::span<uint32_t> rowids_view(rowids.data(), rowids.size());
-    while (rowids_view.size() >= BLOCK_SIZE)
-    {
-        auto front = rowids_view.first(BLOCK_SIZE);
-        impl.insert(front);
-        rowids_view = rowids_view.subspan(BLOCK_SIZE);
-    }
-
-    if (!rowids_view.empty())
-    {
-        for (auto rowid: rowids_view)
-            impl.insert(rowid);
-    }
     impl.encode(out, info);
+
+    info.header |= IsCompressed;
+    /// Bitpacking appends a per-block Index Section after each segment,
+    /// enabling binary search inside PostingListCursor for lazy posting list evaluation.
+    info.header |= HasBlockIndex;
+    if (info.offsets.size() == 1)
+        info.header |= SingleBlock;
+}
+
+void PostingListAccumulatorNone::sealSegment()
+{
+    segments.push_back(std::move(current_segment));
+    current_segment = PostingList{};
+    rows_in_current_segment = 0;
+}
+
+void PostingListAccumulatorNone::finalize(WriteBuffer & out, TokenPostingsInfo & info)
+{
+    if (rows_in_current_segment != 0)
+    {
+        segments.push_back(std::move(current_segment));
+        current_segment = PostingList{};
+        rows_in_current_segment = 0;
+    }
+
+    for (auto & segment : segments)
+    {
+        segment.runOptimize();
+
+        info.offsets.emplace_back(out.count());
+        info.ranges.emplace_back(segment.minimum(), segment.maximum());
+
+        size_t num_bytes = roaring::api::roaring_bitmap_portable_size_in_bytes(&segment.roaring);
+        writeVarUInt(num_bytes, out);
+
+        serialize_buffer.resize(num_bytes);
+        roaring::api::roaring_bitmap_portable_serialize(&segment.roaring, serialize_buffer.data());
+        out.write(serialize_buffer.data(), num_bytes);
+    }
+
+    if (info.offsets.size() == 1)
+        info.header |= PostingsSerialization::Flags::SingleBlock;
+}
+
+size_t PostingListAccumulatorNone::memoryUsageBytes() const
+{
+    size_t result = current_segment.getSizeInBytes() + serialize_buffer.capacity();
+    for (const auto & segment : segments)
+        result += segment.getSizeInBytes();
+    return result;
+}
+
+void PostingListCodecNone::decode(ReadBuffer & in, PostingList & postings) const
+{
+    size_t num_bytes = 0;
+    readVarUInt(num_bytes, in);
+
+    /// If the posting list is completely in the buffer, avoid copying.
+    if (in.position() && in.position() + num_bytes <= in.buffer().end())
+    {
+        postings = PostingList::read(in.position());
+        in.position() += num_bytes;
+        return;
+    }
+
+    std::vector<char> buffer(num_bytes);
+    in.readStrict(buffer.data(), num_bytes);
+    postings = PostingList::read(buffer.data());
 }
 }
 
