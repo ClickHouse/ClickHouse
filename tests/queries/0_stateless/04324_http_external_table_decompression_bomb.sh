@@ -8,14 +8,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # A single native-compressed block declares its decompressed size in the block header.
 # That declared size is attacker-controlled, so it must be rejected *before* the
 # decompressed buffer is allocated, otherwise a tiny crafted block could force a huge
-# allocation that the outer LimitReadBuffer (which only counts bytes after decompression)
-# cannot prevent.
+# allocation. The cumulative decompressed-size limit checked inside CompressedReadBuffer
+# rejects such a block up front, since its declared size alone already exceeds the limit.
 #
 # Here a single compressed block decompresses to ~1 MB (one full max_compress_block_size
 # block), which is far larger than the small http_max_multipart_form_data_size below. The
 # block must be rejected with TOO_LARGE_SIZE_COMPRESSED while reading its header, before any
-# decompressed-block allocation happens (i.e. not the later CANNOT_READ_ALL_DATA path that
-# only triggers once decompressed bytes have already started flowing through the limit).
+# decompressed-block allocation happens.
 
 USER_NAME="test_decompress_bomb_user_${CLICKHOUSE_DATABASE}"
 

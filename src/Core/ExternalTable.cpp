@@ -205,28 +205,15 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
         if (params.has(name + "_disable_checksum"))
             compressed_buffer->disableChecksumming();
 
-        /// Apply size limit to decompressed data to prevent decompression bomb attacks
+        /// Apply size limit to the decompressed data to prevent decompression-bomb attacks.
+        /// The limit is enforced cumulatively inside CompressedReadBuffer, before each block is
+        /// allocated, so an oversized block is rejected up front and appended blocks cannot
+        /// silently truncate the stream at the limit boundary (which an outer LimitReadBuffer
+        /// reporting EOF at the cap would allow).
         if (settings[Setting::http_max_multipart_form_data_size])
-        {
-            /// Reject any single block whose header declares a decompressed size larger than the
-            /// limit *before* the decompressed buffer is allocated. Without this, a tiny crafted
-            /// block can force an oversized allocation that the outer LimitReadBuffer (which only
-            /// counts bytes after decompression) cannot prevent.
             compressed_buffer->setDecompressedSizeLimit(settings[Setting::http_max_multipart_form_data_size]);
 
-            read_buffer = std::make_unique<LimitReadBuffer>(
-                std::move(compressed_buffer),
-                LimitReadBuffer::Settings{
-                    .read_no_more = settings[Setting::http_max_multipart_form_data_size],
-                    .expect_eof = true,
-                    .excetion_hint = "the maximum size of decompressed multipart/form-data. "
-                                     "This limit can be tuned by 'http_max_multipart_form_data_size' setting",
-                });
-        }
-        else
-        {
-            read_buffer = std::move(compressed_buffer);
-        }
+        read_buffer = std::move(compressed_buffer);
     }
 
     if (params.has(name + "_structure"))

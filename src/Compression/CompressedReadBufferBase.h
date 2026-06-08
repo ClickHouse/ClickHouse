@@ -38,12 +38,14 @@ protected:
     /// Report decompression errors as CANNOT_DECOMPRESS, not CORRUPTED_DATA
     bool external_data;
 
-    /// If non-zero, reject blocks whose declared decompressed size exceeds this value,
-    /// before the decompressed buffer is allocated. This guards against decompression
-    /// bombs when reading from an untrusted source: a tiny compressed block can declare
-    /// an arbitrarily large decompressed size in its header, forcing a huge allocation
-    /// in the caller before any outer read limit can take effect.
-    size_t max_decompressed_block_size = 0;
+    /// If non-zero, the cumulative declared decompressed size across all blocks read through
+    /// this buffer must not exceed this value. The size declared in each block header is added
+    /// to the running total and the total is checked before the decompressed buffer is
+    /// allocated. This guards against decompression bombs and silent truncation when reading
+    /// from an untrusted source: a tiny compressed block can declare an arbitrarily large
+    /// decompressed size in its header, and appended blocks can push the total over the limit.
+    size_t decompressed_size_limit = 0;
+    size_t total_decompressed_size = 0;
 
     /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
     ///
@@ -78,14 +80,14 @@ public:
         disable_checksum = true;
     }
 
-    /** Limit the declared decompressed size of a single block.
-      * When set, a block whose header declares a larger decompressed size is rejected
-      * before its decompressed buffer is allocated. Use for data from untrusted sources.
-      * A value of 0 disables the limit.
+    /** Limit the total declared decompressed size across all blocks read through this buffer.
+      * When set, reading a block whose header would push the cumulative decompressed size over
+      * the limit is rejected before the decompressed buffer is allocated. Use for data from
+      * untrusted sources. A value of 0 disables the limit.
       */
     void setDecompressedSizeLimit(size_t limit)
     {
-        max_decompressed_block_size = limit;
+        decompressed_size_limit = limit;
     }
 
     /// Some compressed read buffer can do useful seek operation

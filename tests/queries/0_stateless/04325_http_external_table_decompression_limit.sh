@@ -7,11 +7,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Test that http_max_multipart_form_data_size is enforced on the *total* decompressed data,
 # across several compressed blocks. Each individual block here decompresses to about 1 MB
-# (one max_compress_block_size block), which is below the limit, so the per-block guard does
-# not fire; instead the cumulative decompressed size exceeds the limit, the outer
-# LimitReadBuffer returns EOF mid-stream, and the format reader throws CANNOT_READ_ALL_DATA.
-# (The single-oversized-block path is covered separately in
-# 04324_http_external_table_decompression_bomb.)
+# (one max_compress_block_size block), which is below the limit, so no single block trips it;
+# instead the cumulative decompressed size exceeds the limit and the block whose header pushes
+# the running total over the limit is rejected with TOO_LARGE_SIZE_COMPRESSED before it is
+# allocated. (The single-oversized-block path is covered separately in
+# 04324_http_external_table_decompression_bomb, and the exact-boundary path in
+# 04326_http_external_table_decompression_boundary.)
 
 # User names are server-global, so scope the name to the test database to avoid
 # collisions when the test runs concurrently (e.g. in the flaky check).
@@ -27,6 +28,6 @@ $CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.* TO ${USER_NAME}"
 # decompressed size that trips the limit.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+CAST(0,'UInt64')+AS+id+FROM+numbers(1000000)+FORMAT+Native&compress=1" | \
     ${CLICKHOUSE_CURL} -sSF 'ext=@-' "${CLICKHOUSE_URL}&user=${USER_NAME}&query=SELECT+count()+FROM+ext&ext_structure=id+UInt64&ext_format=Native&ext_decompress=1" 2>&1 | \
-    grep -o 'CANNOT_READ_ALL_DATA'
+    grep -o 'TOO_LARGE_SIZE_COMPRESSED' | head -n1
 
 $CLICKHOUSE_CLIENT -q "DROP USER ${USER_NAME}"
