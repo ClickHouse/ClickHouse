@@ -67,7 +67,7 @@ DataTypeMap::DataTypeMap(const DataTypePtr & nested_)
 
 DataTypeMap::DataTypeMap(const DataTypes & elems_)
 {
-    chassert(elems_.size() == 2);
+    assert(elems_.size() == 2);
     key_type = elems_[0];
     value_type = elems_[1];
 
@@ -134,10 +134,10 @@ SerializationPtr DataTypeMap::doGetSerialization(const SerializationInfoSettings
 
     /// Don't use nested->getSerialization() to avoid creating exponentially growing number of serializations for deep nested maps.
     /// Instead, reuse already created serializations for keys and values.
-    auto key_serialization_named = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(key_serialization, "keys", SubstreamType::TupleElement));
-    auto value_serialization_named = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(value_serialization, "values", SubstreamType::TupleElement));
-    auto nested_serialization = SerializationArray::create(SerializationTuple::create(SerializationTuple::ElementSerializations{key_serialization_named, value_serialization_named}, true));
-    return SerializationMap::create(key_serialization, value_serialization, nested_serialization, settings.map_serialization_version);
+    auto key_serialization_named = std::make_shared<SerializationNamed>(key_serialization, "keys", SubstreamType::TupleElement);
+    auto value_serialization_named = std::make_shared<SerializationNamed>(value_serialization, "values", SubstreamType::TupleElement);
+    auto nested_serialization = std::make_shared<SerializationArray>(std::make_shared<SerializationTuple>(SerializationTuple::ElementSerializations{key_serialization_named, value_serialization_named}, true));
+    return std::make_shared<SerializationMap>(key_serialization, value_serialization, nested_serialization, settings.map_serialization_version);
 }
 
 bool DataTypeMap::equals(const IDataType & rhs) const
@@ -212,7 +212,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeMap::getDynamicSubcolumnData(s
 
     /// Create a serialization that reads only the bucket containing the requested key.
     const auto & map_serialization = assert_cast<const SerializationMap &>(*removeNamedSerialization(data.serialization));
-    auto key_value_serialization = SerializationMapKeyValue::create(
+    auto key_value_serialization = std::make_shared<SerializationMapKeyValue>(
         map_serialization.getValueSerialization(),
         map_serialization.getNestedSerialization(),
         map_serialization.getMapSerializationVersion(),
