@@ -177,7 +177,8 @@ ReaderExecutor::ReaderExecutor(
     size_t min_bytes_for_seek_,
     size_t block_size_,
     String log_file_path_,
-    size_t max_tail_for_drain_)
+    size_t max_tail_for_drain_,
+    size_t plan_look_ahead_window_)
     : source(std::move(source_))
     , stored_objects(objects)
     , caches(std::move(caches_))
@@ -186,6 +187,13 @@ ReaderExecutor::ReaderExecutor(
     , min_bytes_for_seek(min_bytes_for_seek_)
     , block_size(block_size_)
     , max_tail_for_drain(max_tail_for_drain_)
+    , plan_look_ahead_window(plan_look_ahead_window_)
+    /// Single-tier only for now: a stacked chain (e.g. page cache over filesystem
+    /// cache) relies on the per-window loop to PROMOTE lower-tier hits into the
+    /// higher tier via miss-handle `put`s, which pre-covering from a plan would
+    /// skip. The expensive per-window cost is the filesystem cache's `getOrSet`
+    /// anyway; page-cache lookup is cheap. Multi-tier planning is a later step.
+    , planning_enabled(plan_look_ahead_window_ >= window_size_ && caches.size() == 1)
 {
     if (window_size == 0 || block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -1418,6 +1426,59 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
     VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> miss_handles;
     VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> hit_only_handles;
 
+    /// Plan-then-stream (sequential path only): pre-fill `result` / `covered` from
+    /// the held residency plan, streaming resident bytes straight from the plan's
+    /// pinned handles. The per-window cache-discovery loop below then runs only
+    /// over the gaps `covered` does not already hold — zero `lookup` / `getOrSet`
+    /// on a fully-resident window. Transients (one-shot `readBigAt`) and disabled
+    /// planning fall through to the legacy per-window discovery unchanged.
+    if (planning_enabled && !is_transient)
+    {
+        if (!window_plan.covers(physical_window))
+            planResidencyWindow(physical_window.offset);
+
+        for (const auto & ph : window_plan.planned)
+        {
+            size_t & hit_bytes = ph.tier == CacheTier::PageCache
+                ? stats.bytes_from_page_cache
+                : stats.bytes_from_filesystem_cache;
+
+            for (const auto & res : ph.resident)
+            {
+                const size_t lo = std::max(res.offset, physical_window.offset);
+                const size_t hi = std::min(res.end(), physical_window.end());
+                if (lo >= hi)
+                    continue;
+                ByteRange clamped{lo, hi - lo};
+
+                auto useful = covered.subtract(clamped);
+                if (useful.empty())
+                    continue;
+                ++stats.cache_get_requests;
+                StopwatchAccumulator get_scope(stats.cache_get_us);
+                Rope hit_rope = ph.handle->get(clamped);
+                HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
+                    static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
+                for (const auto & sub : useful)
+                {
+                    /// The plan handle pins resident segments, so a hit it
+                    /// reported MUST still be readable here. If not, the pin was
+                    /// not honored — fail loudly rather than drop bytes.
+                    if (!hit_rope.covers(sub))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "ReaderExecutor: residency plan promised a hit at [{}, {}) but get() did not "
+                            "return it - a pinned cache segment was not honored",
+                            sub.offset, sub.end());
+                    result.append(hit_rope.extract(sub));
+                    covered.add(sub);
+                    hit_bytes += sub.size;
+                    if (from_prefetch)
+                        stats.prefetch_issued_cache_bytes += sub.size;
+                }
+            }
+        }
+    }
+
     VectorWithMemoryTracking<ByteRange> remaining = covered.subtract(physical_window);
     for (auto & cache : caches)
     {
@@ -1696,6 +1757,86 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
     return sliced;
 }
 
+void ReaderExecutor::planResidencyWindow(size_t physical_start)
+{
+    window_plan.planned.clear();
+    window_plan.plan_start = physical_start;
+    window_plan.plan_end = physical_start;  /// stays invalid (empty) unless we set a span below
+
+    size_t want = plan_look_ahead_window;
+
+    /// Clamp to the physical file end when the size is known. An unknown-size
+    /// source plans the full look-ahead and discovers EOF via short reads, the
+    /// same way the per-window path does.
+    if (!offset_map.hasUnknownSize())
+    {
+        const size_t physical_end = offset_map.totalSize();
+        if (physical_start >= physical_end)
+            return;
+        want = std::min(want, physical_end - physical_start);
+    }
+
+    /// Clamp to the advertised read extent so the plan never pins segments past
+    /// the region the reader will actually consume.
+    if (read_extent_end)
+    {
+        const size_t physical_extent_end = *read_extent_end + data_start_offset;
+        if (physical_start >= physical_extent_end)
+            return;
+        want = std::min(want, physical_extent_end - physical_start);
+    }
+
+    if (want == 0)
+        return;
+
+    const ByteRange plan_range{physical_start, want};
+    window_plan.plan_end = plan_range.end();
+
+    /// One read-only residency probe per cache tier per object-piece. Both tiers
+    /// are probed independently over the full span; the streaming `covered` guard
+    /// in `readPhysicalWindow` re-establishes fastest-tier-first priority, so a
+    /// byte resident in two tiers is served (and attributed) to the first.
+    for (auto & cache : caches)
+    {
+        auto pieces = offset_map.map(plan_range);
+        size_t piece_file_start = plan_range.offset;
+        for (const auto & pr : pieces)
+        {
+            const size_t object_file_offset = piece_file_start - pr.object_offset;
+            const ByteRange piece_range{piece_file_start, pr.size};
+
+            auto handle = cache->planResidency(pr.object, object_file_offset, piece_range);
+            auto status = handle->status();
+
+            PlannedHandle ph;
+            ph.tier = cache->tier();
+            for (const auto & hit : status.hit_ranges)
+            {
+                /// Hits are segment-aligned and may extend past the plan span;
+                /// clamp so streaming never reads outside `[plan_start, plan_end)`.
+                const size_t lo = std::max(hit.offset, plan_range.offset);
+                const size_t hi = std::min(hit.end(), plan_range.end());
+                if (lo < hi)
+                    ph.resident.push_back(ByteRange{lo, hi - lo});
+            }
+
+            /// Keep only handles that pin resident bytes. A handle with no hits
+            /// would just hold a holder over gaps that the per-window loop refills
+            /// through its own `lookup` + `put`.
+            if (!ph.resident.empty())
+            {
+                ph.handle = std::move(handle);
+                window_plan.planned.push_back(std::move(ph));
+            }
+
+            piece_file_start += pr.size;
+        }
+    }
+
+    LOG_TRACE(log, "planResidencyWindow: planned [{}, {}), {} resident handles",
+        window_plan.plan_start, window_plan.plan_end, window_plan.planned.size());
+}
+
 std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t start_position, size_t read_size) const
 {
     /// `buffer_limit` is shared so the transient's live connection counts
@@ -1706,7 +1847,8 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     /// spam `system.reader_executor_log`.
     auto t = std::make_unique<ReaderExecutor>(
         source, stored_objects, caches,
-        window_size, min_bytes_for_seek, block_size, log_file_path, max_tail_for_drain);
+        window_size, min_bytes_for_seek, block_size, log_file_path, max_tail_for_drain,
+        /*plan_look_ahead_window=*/0);  /// one-shot reads never plan (also gated by is_transient)
 
     t->buffer_limit = buffer_limit;
 

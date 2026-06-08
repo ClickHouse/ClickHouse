@@ -56,6 +56,12 @@ public:
     /// bandwidth breakeven (0.25 MiB), rounded up.
     static constexpr size_t DEFAULT_MAX_TAIL_FOR_DRAIN = 1 * 1024 * 1024; /// 1 MiB
     static constexpr size_t ROPE_BLOCK_SIZE = 1 * 1024 * 1024; /// 1 MiB per Rope node
+    /// Look-ahead span over which residency is planned ONCE (plan-then-stream):
+    /// the held plan lets many `window_size` reads stream resident bytes without
+    /// per-window cache discovery, so `getOrSet`/holder-build is amortised across
+    /// the span instead of paid per window. 8x the default window. Planning is
+    /// disabled when this is below `window_size` (a plan must cover a full window).
+    static constexpr size_t DEFAULT_PLAN_LOOK_AHEAD = 64 * 1024 * 1024; /// 64 MiB
 
     ReaderExecutor(
         std::shared_ptr<ISourceReader> source,
@@ -65,7 +71,8 @@ public:
         size_t min_bytes_for_seek = DEFAULT_MIN_BYTES_FOR_SEEK,
         size_t block_size = ROPE_BLOCK_SIZE,
         String log_file_path = {},
-        size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN);
+        size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN,
+        size_t plan_look_ahead_window = DEFAULT_PLAN_LOOK_AHEAD);
 
     /// Destructor must be out-of-line because LiveBuffer holds unique_ptr<ReadBufferFromFileBase>.
     ~ReaderExecutor();
@@ -189,6 +196,16 @@ private:
     /// cache-populate bytes to the sync vs. async counter.
     Rope readPhysicalWindow(ByteRange physical_window, bool from_prefetch);
 
+    /// Plan-then-stream: query cache residency ONCE over `[physical_start,
+    /// physical_start + plan_look_ahead_window)` (clamped to the file end / read
+    /// extent) via the read-only `ICacheProvider::planResidency`, and stash the
+    /// resident segments + their held (pinning) handles in `window_plan`. While
+    /// the plan is held, `readPhysicalWindow` streams resident bytes straight from
+    /// these handles — no per-window `lookup`/`getOrSet`. Rebuilt lazily by
+    /// `readPhysicalWindow` whenever the current window leaves the planned span.
+    /// Only used on the sequential path (never for `is_transient` readBigAt).
+    void planResidencyWindow(size_t physical_start);
+
     /// Read from source into the pre-allocated `blocks`. Tries live buffer first, falls back to stateless.
     /// `blocks` is consumed: blocks that receive data become RopeNodes in the returned Rope;
     /// blocks that receive no data (e.g., file ended early) are released when this function returns.
@@ -310,7 +327,40 @@ private:
     size_t block_size;
     /// Drain bound for `maybeDrainLiveTail` (constructor-supplied, like the others).
     size_t max_tail_for_drain;
+    /// Look-ahead span for plan-then-stream (see `DEFAULT_PLAN_LOOK_AHEAD`).
+    size_t plan_look_ahead_window;
+    /// Enable plan-then-stream: needs a span covering at least one full window
+    /// AND a single-tier cache chain (stacked tiers keep the per-window loop for
+    /// its promotion behavior — see the constructor). Still gated by
+    /// `!is_transient` at use sites (one-shot reads don't plan).
+    bool planning_enabled = false;
     size_t position = 0;
+
+    /// One held residency handle from `planResidencyWindow`, plus the resident
+    /// (file-level, physical-coordinate) ranges it can stream via `get`. The
+    /// handle pins those segments/cells for the plan's lifetime.
+    struct PlannedHandle
+    {
+        std::unique_ptr<ICacheHandle> handle;
+        VectorWithMemoryTracking<ByteRange> resident;
+        CacheTier tier;
+    };
+    /// The residency plan held across stream windows. `planned` is in cache-tier
+    /// priority order (same order as `caches`), so streaming honours fastest-tier-
+    /// first via the `covered` guard. Empty / `plan_end == plan_start` means no
+    /// valid plan (next read builds one).
+    struct WindowPlan
+    {
+        size_t plan_start = 0;  /// physical (header-inclusive) coords
+        size_t plan_end = 0;    /// [plan_start, plan_end)
+        VectorWithMemoryTracking<PlannedHandle> planned;
+
+        bool covers(ByteRange w) const
+        {
+            return plan_end > plan_start && w.offset >= plan_start && w.end() <= plan_end;
+        }
+    };
+    WindowPlan window_plan;
 
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
     /// Single source of truth for "is there a prefetch scheduled":

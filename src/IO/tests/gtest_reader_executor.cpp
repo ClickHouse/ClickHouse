@@ -2959,17 +2959,30 @@ TEST(ReaderExecutor, CacheLookupSplitByObjectBoundary)
     auto rope = executor.readNextWindow();
     EXPECT_EQ(rope.range().size, 500u);
 
-    ASSERT_EQ(tracker->log.size(), 2u);
+    /// With plan-then-stream (single-tier, the default), the window is probed for
+    /// residency once per object via `planResidency` and then - because the data
+    /// is cold - the gap is filled with a per-object `lookup`. The mock counts
+    /// both as accesses, so the cache sees four per-object calls: [blob_A, blob_B]
+    /// from planning, then [blob_A, blob_B] from the gap fill. The point of the
+    /// test is that BOTH passes split at the object boundary, each call carrying
+    /// the right `StoredObject` and `object_file_offset`.
+    ASSERT_EQ(tracker->log.size(), 4u);
 
-    EXPECT_EQ(tracker->log[0].remote_path, "blob_A");
-    EXPECT_EQ(tracker->log[0].object_file_offset, 0u);
-    EXPECT_EQ(tracker->log[0].range_in_file.offset, 0u);
-    EXPECT_EQ(tracker->log[0].range_in_file.size, 300u);
+    for (size_t pass = 0; pass < 2; ++pass)
+    {
+        const auto & a = tracker->log[pass * 2];
+        const auto & b = tracker->log[pass * 2 + 1];
 
-    EXPECT_EQ(tracker->log[1].remote_path, "blob_B");
-    EXPECT_EQ(tracker->log[1].object_file_offset, 300u);
-    EXPECT_EQ(tracker->log[1].range_in_file.offset, 300u);
-    EXPECT_EQ(tracker->log[1].range_in_file.size, 200u);
+        EXPECT_EQ(a.remote_path, "blob_A");
+        EXPECT_EQ(a.object_file_offset, 0u);
+        EXPECT_EQ(a.range_in_file.offset, 0u);
+        EXPECT_EQ(a.range_in_file.size, 300u);
+
+        EXPECT_EQ(b.remote_path, "blob_B");
+        EXPECT_EQ(b.object_file_offset, 300u);
+        EXPECT_EQ(b.range_in_file.offset, 300u);
+        EXPECT_EQ(b.range_in_file.size, 200u);
+    }
 }
 
 TEST(ReaderExecutor, MultiObjectWindowAcquiresOneSlotThenFallsBack)
