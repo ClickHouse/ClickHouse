@@ -632,16 +632,14 @@ void registerCSVSchemaReader(FormatFactory & factory)
         {
             return std::make_shared<CSVSchemaReader>(buf, with_names, with_types, settings);
         });
-        if (!with_types)
+        factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names](const FormatSettings & settings)
         {
-            factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names](const FormatSettings & settings)
-            {
-                String result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::CSV);
-                if (!with_names)
-                    result += fmt::format(", column_names_for_schema_inference={}, try_detect_header={}, skip_first_lines={}", settings.column_names_for_schema_inference, settings.csv.try_detect_header, settings.csv.skip_first_lines);
-                return result;
-            });
-        }
+            String result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::CSV);
+            result += fmt::format(", skip_first_lines={}", settings.csv.skip_first_lines);
+            if (!with_names)
+                result += fmt::format(", column_names_for_schema_inference={}, try_detect_header={}", settings.column_names_for_schema_inference, settings.csv.try_detect_header);
+            return result;
+        });
     };
 
     registerWithNamesAndTypes("CSV", register_func);
