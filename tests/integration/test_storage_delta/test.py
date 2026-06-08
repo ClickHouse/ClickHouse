@@ -1643,14 +1643,23 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
         zk = started_cluster.get_kazoo_client("zoo1")
         zk.set(replica_path + "/digest", "123456".encode())
 
-        assert "123456" in node2.query(
-            f"SELECT * FROM system.zookeeper WHERE path = '{replica_path}'"
+        # Compare the `digest` value exactly instead of substring-matching the
+        # whole dump of all znodes: the recomputed digest is a 64-bit hash whose
+        # decimal representation can incidentally contain "123456" as a substring.
+        assert (
+            node2.query(
+                f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'"
+            ).strip()
+            == "123456"
         )
 
         node2.restart_clickhouse()
 
-        assert "123456" not in node2.query(
-            f"SELECT * FROM system.zookeeper WHERE path = '{replica_path}'"
+        assert (
+            node2.query(
+                f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'"
+            ).strip()
+            != "123456"
         )
 
 

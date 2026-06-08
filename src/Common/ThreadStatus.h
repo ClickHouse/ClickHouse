@@ -210,6 +210,10 @@ protected:
     bool performance_counters_finalized = false;
 
     String query_id;
+    /// The query_id can be read by signal handlers. If the signal interrupts the thread while it is updating the query_id, it can lead to a race.
+    std::atomic<bool> is_query_id_usable{true};
+    /// is_query_id_usable is used in signal handlers, so ensure it is lock-free to avoid undefined behavior in signal handlers.
+    static_assert(std::atomic<bool>::is_always_lock_free);
 
     [[maybe_unused]] bool jemalloc_profiler_enabled = false;
 
@@ -252,7 +256,7 @@ public:
 
     void setQueryId(std::string && new_query_id) noexcept;
     void clearQueryId() noexcept;
-    const String & getQueryId() const;
+    std::string_view getQueryId() const;
 
     ContextPtr tryGetQueryContext() const;
     ContextPtr getGlobalContext() const;
