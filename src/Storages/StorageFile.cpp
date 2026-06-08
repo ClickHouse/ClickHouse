@@ -53,6 +53,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/checkStackSize.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
@@ -164,6 +165,11 @@ void listFilesWithRegexpMatchingImpl(
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
             "Maximum recursion depth ({}) exceeded while listing files for pattern '{}'.",
             MAX_LIST_FILES_RECURSION_DEPTH, for_match);
+
+    /// On systems with small stacks (e.g., Musl) the depth cap above is not enough on its own,
+    /// because each recursion frame can be large. Probe the remaining stack periodically.
+    if (depth % 16 == 0)
+        checkStackSize();
 
     const size_t first_glob_pos = for_match.find_first_of("*?{");
 
