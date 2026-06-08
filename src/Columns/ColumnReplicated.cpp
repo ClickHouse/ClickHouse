@@ -5,6 +5,8 @@
 #include <Common/WeakHash.h>
 #include <Common/typeid_cast.h>
 
+#include <unordered_map>
+
 namespace DB
 {
 
@@ -709,8 +711,7 @@ void transformColumnsWithSharedIndex(
     std::function<void(ColumnPtr &)> non_replicated_transform,
     std::span<size_t> positions)
 {
-    ColumnPtr shared_src_index;
-    ColumnPtr shared_result_index;
+    std::unordered_map<const IColumn *, ColumnPtr> transformed_indexes;
 
     auto transform = [&](size_t pos)
     {
@@ -719,12 +720,10 @@ void transformColumnsWithSharedIndex(
         {
             const auto & replicated_col = typeid_cast<const ColumnReplicated &>(*col);
             const auto & src_index = replicated_col.getIndexesColumn();
-            if (src_index.get() != shared_src_index.get())
-            {
-                shared_src_index = src_index;
-                shared_result_index = index_transform(src_index);
-            }
-            col = ColumnReplicated::create(replicated_col.getNestedColumn(), shared_result_index);
+            auto [it, inserted] = transformed_indexes.try_emplace(src_index.get(), nullptr);
+            if (inserted)
+                it->second = index_transform(src_index);
+            col = ColumnReplicated::create(replicated_col.getNestedColumn(), it->second);
         }
         else
             non_replicated_transform(col);
