@@ -1,0 +1,19 @@
+3
+SELECT CAST([3, 4, 5][1], \'Int32\')
+4
+SELECT CAST(CAST(\'[3,4,5]\', \'Array(Int64)\')[2], \'Int8\')
+0
+1
+2
+SELECT CAST(CAST(\'[1,2,3]\', \'Array(UInt64)\')[CAST(CAST([number, number], \'Array(UInt8)\')[number], \'UInt64\')], \'UInt8\')
+FROM numbers(3)
+3
+WITH [3, 4, 5] AS x
+SELECT CAST(x[1], \'Int32\')
+3
+SELECT CAST((3, 4, 5).1, \'Int32\')
+4
+SELECT CAST(CAST((3, 4, 5), \'Tuple(UInt64, UInt64, UInt64)\').1, \'Int32\')
+3
+WITH (3, 4, 5) AS x
+SELECT CAST(x.1, \'Int32\')

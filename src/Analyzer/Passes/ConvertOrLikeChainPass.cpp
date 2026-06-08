@@ -24,10 +24,6 @@
 
 #include <Core/Settings.h>
 
-#include "config.h"
-
-#if USE_VECTORSCAN
-
 namespace DB
 {
 namespace Setting
@@ -161,15 +157,3 @@ void ConvertOrLikeChainPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr 
 }
 
 }
-
-#else
-
-namespace DB
-{
-void ConvertOrLikeChainPass::run(QueryTreeNodePtr &, ContextPtr)
-{
-    /// 'multiMatchAny' uses the Vectorscan library. Do nothing if ClickHouse is built without it.
-}
-}
-
-#endif
