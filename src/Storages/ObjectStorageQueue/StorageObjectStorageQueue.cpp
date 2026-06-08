@@ -1333,9 +1333,6 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
                     setting.name, magic_enum::enum_name(mode), getName());
             }
 
-            /// Changing `deduplication_v2` switches the deduplication token scheme, so files
-            /// processed before and after the change use incompatible tokens and duplicates
-            /// can slip through around the switch. Guard it behind an explicit opt-in.
             if (setting.name == "deduplication_v2"
                 && !local_context->getSettingsRef()[Setting::s3queue_allow_unsafe_alter])
             {

@@ -513,3 +513,163 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cach
     assert (
         get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
     ) == total_rows
+
+
+def _wait_for_lock_stat(zk, lock_path, timeout=60):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        stat = zk.exists(lock_path)
+        if stat is not None:
+            return stat
+        time.sleep(0.05)
+    return None
+
+
+def _setup_slow_ordered_bucket_lock_test(started_cluster, table_name, extra_settings):
+    """Ordered + single bucket on two replicas, with a deliberately slow MV so the single
+    bucket lock is held long enough for the cleanup (or the test) to remove it mid-flight.
+    Returns (node1, node2, keeper_path, dst_table_name)."""
+    node1 = started_cluster.instances["instance"]
+    node2 = started_cluster.instances["instance2"]
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    dst_table_name = f"{table_name}_dst"
+
+    settings = {
+        "keeper_path": keeper_path,
+        "s3queue_buckets": 1,
+        "s3queue_processing_threads_num": 1,
+        # One commit per batch, so the lock is held for the whole (slow) batch with no heartbeat.
+        "s3queue_max_processed_files_before_commit": 10000,
+        "polling_min_timeout_ms": 100,
+        "polling_max_timeout_ms": 100,
+    }
+    settings.update(extra_settings)
+
+    for node in (node1, node2):
+        create_table(
+            started_cluster, node, table_name, "ordered", files_path,
+            additional_settings=settings,
+        )
+        node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
+        node.query(f"DROP TABLE IF EXISTS {table_name}_mv")
+        node.query(
+            f"CREATE TABLE {dst_table_name} "
+            f"(column1 UInt32, column2 UInt32, column3 UInt32) ENGINE = MergeTree ORDER BY column1"
+        )
+        # `sleepEachRow` keeps the bucket lock held while the batch is being processed.
+        node.query(
+            f"CREATE MATERIALIZED VIEW {table_name}_mv TO {dst_table_name} AS "
+            f"SELECT column1, column2, column3 FROM {table_name} WHERE NOT sleepEachRow(0.1)"
+        )
+    return node1, node2, keeper_path, dst_table_name
+
+
+def _assert_recovered_without_already_processed_error(
+    started_cluster, table_name, node1, node2, dst_table_name, total_values
+):
+    expected = set(tuple(v) for v in total_values)
+
+    def union_distinct():
+        rows = set()
+        for node in (node1, node2):
+            for line in node.query(
+                f"SELECT column1, column2, column3 FROM {dst_table_name}"
+            ).splitlines():
+                rows.add(tuple(map(int, line.split())))
+        return rows
+
+    for _ in range(120):
+        if union_distinct() == expected:
+            break
+        time.sleep(1)
+
+    # No data was lost: every file's rows ended up processed.
+    assert union_distinct() == expected
+
+    for node in (node1, node2):
+        # The race must not produce the incident's `LOGICAL_ERROR`...
+        assert not node.contains_in_log(
+            "is already processed, while expected it not to be"
+        )
+        # ... no file ended up Failed ...
+        assert (
+            node.query(
+                f"SELECT count() FROM system.s3queue_metadata_cache "
+                f"WHERE zookeeper_path ILIKE '%{table_name}%' AND status = 'Failed'"
+            ).strip()
+            == "0"
+        )
+        # ... and the server is still responsive.
+        assert node.query("SELECT 1").strip() == "1"
+
+
+def test_ordered_bucket_lock_deleted_during_commit(started_cluster):
+    # Option A: deterministically simulate the TTL cleanup removing a *live* bucket lock by
+    # deleting it from Keeper while a slow consumer still holds it, so the other replica takes the
+    # bucket over. The commit-time `czxid` ownership check must turn this into a clean retry
+    # instead of the "File is already processed" LOGICAL_ERROR, with no data loss.
+    table_name = f"test_lock_deleted_{generate_random_string()}"
+    node1, node2, keeper_path, dst_table_name = _setup_slow_ordered_bucket_lock_test(
+        started_cluster,
+        table_name,
+        # Large TTL: here the lock is removed by the test, not by the cleanup.
+        {"s3queue_persistent_processing_node_ttl_seconds": 3600},
+    )
+
+    total_values = generate_random_files(
+        started_cluster, f"{table_name}_data", 30, row_num=1
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    lock_path = f"{keeper_path}/buckets/0/lock"
+
+    stat_before = _wait_for_lock_stat(zk, lock_path)
+    assert stat_before is not None, "bucket lock was never acquired"
+    zk.delete(lock_path)
+
+    # The race actually fired only if another replica re-acquired the bucket (new lock node).
+    deadline = time.monotonic() + 60
+    stat_after = None
+    while time.monotonic() < deadline:
+        stat_after = zk.exists(lock_path)
+        if stat_after is not None and stat_after.czxid != stat_before.czxid:
+            break
+        time.sleep(0.05)
+    assert (
+        stat_after is not None and stat_after.czxid != stat_before.czxid
+    ), "bucket was not taken over after its lock was deleted"
+
+    _assert_recovered_without_already_processed_error(
+        started_cluster, table_name, node1, node2, dst_table_name, total_values
+    )
+
+
+def test_ordered_bucket_lock_cleaned_by_ttl(started_cluster):
+    # Option B: end-to-end — a small `persistent_processing_node_ttl_seconds` plus a slow consumer
+    # lets the cleanup task remove a *live* bucket lock (the batch never commits before the TTL, so
+    # there is no heartbeat), and the other replica takes over. Same guarantee as option A, but via
+    # the real TTL cleanup path.
+    table_name = f"test_lock_ttl_{generate_random_string()}"
+    node1, node2, keeper_path, dst_table_name = _setup_slow_ordered_bucket_lock_test(
+        started_cluster,
+        table_name,
+        {
+            "s3queue_persistent_processing_node_ttl_seconds": 2,
+            "s3queue_cleanup_interval_min_ms": 100,
+            "s3queue_cleanup_interval_max_ms": 200,
+        },
+    )
+
+    total_values = generate_random_files(
+        started_cluster, f"{table_name}_data", 40, row_num=1
+    )
+
+    _assert_recovered_without_already_processed_error(
+        started_cluster, table_name, node1, node2, dst_table_name, total_values
+    )
+
+    # The cleanup must actually have removed a stale node for this test to be meaningful.
+    assert node1.contains_in_log("Removing stale processing node") or node2.contains_in_log(
+        "Removing stale processing node"
+    )

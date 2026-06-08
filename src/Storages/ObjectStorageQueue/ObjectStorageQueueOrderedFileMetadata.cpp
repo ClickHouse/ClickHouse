@@ -625,6 +625,8 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
             auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log_, zookeeper_name_);
             if (zk_client->exists(bucket_lock_path, &stat))
                 lock_czxid = stat.czxid;
+            else
+                chassert(false); /// We just created the lock node, so it must exist.
         });
 
         return std::make_shared<BucketHolder>(
@@ -912,9 +914,7 @@ void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 
     /// `ignore_if_exists` is the start-up / migration path (no live ownership to assert).
-    /// On the real commit path, fold in an atomic check that we still own the bucket lock
-    /// (so a commit by a processor that lost the lock fails cleanly instead of advancing the
-    /// processed pointer over another owner's work) and refresh the lock as a heartbeat.
+    /// On the real commit path, fold in an atomic check that we still own the bucket lock.
     if (!ignore_if_exists)
         prepareBucketOwnershipCheckRequests(requests);
 }
