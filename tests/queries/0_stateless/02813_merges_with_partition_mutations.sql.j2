@@ -1,3 +1,11 @@
+-- Verify how partition-scoped (`IN PARTITION`) mutations interact with merges.
+-- The table has one part per partition. After each mutation or merge we print the
+-- names of the active parts in three sample partitions (7, 8 and 9); only partition 7
+-- is targeted by the `IN PARTITION` mutations. A part name encodes its mutation
+-- version, so the reference shows that partition-scoped mutations advance the version
+-- of partition 7 only, leave the other partitions intact, and that merges still
+-- collapse a partition to a single part even when the partitions ended up with
+-- different mutation versions.
 DROP TABLE IF EXISTS multipart;
 CREATE TABLE multipart
 (

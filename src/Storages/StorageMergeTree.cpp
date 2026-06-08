@@ -967,6 +967,11 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     /// 1. mutation_1 (txn 1)  is submitted
     /// 2. mutation_2 (no txn) is submitted - will wait for mutation_1 (txn 1) to commit or rollback
     /// 3. mutation_3 (txn 1)  is submitted - will wait for mutation_2 to finish: Deadlock!
+    ///
+    /// With partition-scoped (`IN PARTITION`) mutations only an intermediate mutation that
+    /// affects a partition also affected by the current mutation can create such a dependency:
+    /// `selectPartsToMutate` skips non-affecting entries, so an intermediate mutation in an
+    /// unrelated partition never blocks the current one and must not be reported as a deadlock.
     if (txn && !from_another_mutation)
     {
         /// Scan backwards to find the most recent mutation from the same transaction
@@ -977,13 +982,25 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
             const auto & earlier_mutation = it->second;
             if (earlier_mutation.tid == mutation_entry.tid)
             {
-                if (++it != current_mutation_it)
+                /// Look for an intermediate mutation that actually overlaps the current
+                /// mutation's partitions - only such a mutation can block its progress.
+                const MergeTreeMutationEntry * blocking_mutation = nullptr;
+                for (auto intermediate_it = std::next(it); intermediate_it != current_mutation_it; ++intermediate_it)
+                {
+                    if (partitionIdsOverlap(intermediate_it->second.partition_ids, mutation_entry.partition_ids))
+                    {
+                        blocking_mutation = &intermediate_it->second;
+                        break;
+                    }
+                }
+
+                if (blocking_mutation)
                 {
                     result.latest_failed_part = "";
                     result.latest_fail_reason = fmt::format(
                         "Deadlock detected: mutation {} in transaction {} depends on earlier mutation {} "
-                        "from the same transaction with intermediate mutations in between. ",
-                        mutation_entry.file_name, mutation_entry.tid, earlier_mutation.file_name);
+                        "from the same transaction with intermediate mutation {} in between. ",
+                        mutation_entry.file_name, mutation_entry.tid, earlier_mutation.file_name, blocking_mutation->file_name);
                     result.latest_fail_error_code_name = ErrorCodes::getName(ErrorCodes::LOGICAL_ERROR);
                     result.latest_fail_time = time(nullptr);
                     return result;
