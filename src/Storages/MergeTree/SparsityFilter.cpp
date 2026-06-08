@@ -58,6 +58,31 @@ bool isStringLike(const DataTypePtr & type)
     return !type->isNullable() && WhichDataType(*type).isString();
 }
 
+/// `num_defaults` is produced by `IColumn::isDefaultAt`, which is bitwise: row is
+/// counted iff its underlying storage equals zero. For these types SQL equality to
+/// `default(type)` matches the same row set. Excluded: Enum (type default is a named
+/// value, not bitwise 0), Float (treats -0.0 and +0.0 separately, handled at the
+/// caller), Nullable / LowCardinality / composite (Tuple, Array, Map, ...) where the
+/// "default" partition does not coincide with SQL equality to the type default.
+bool typeMatchesDefaultnessStat(const DataTypePtr & type)
+{
+    if (type->isNullable())
+        return false;
+    WhichDataType w(*type);
+    return w.isInt()
+        || w.isUInt()
+        || w.isString()
+        || w.isFixedString()
+        || w.isDate()
+        || w.isDate32()
+        || w.isDateTime()
+        || w.isDateTime64()
+        || w.isDecimal()
+        || w.isUUID()
+        || w.isIPv4()
+        || w.isIPv6();
+}
+
 struct ColumnRef
 {
     String name;
@@ -227,27 +252,19 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
     /// column cleanly even though `true` is not the type default.
     bool col_is_bool = isBool(col.type);
 
-    /// Floating-point columns persist `+0.0` and `-0.0` as distinct rows
-    /// (`ColumnVector<Float>::isDefaultAt` is bitwise) but SQL `col = 0` matches both.
-    /// Classifying these via the defaultness stat would undercount the `-0.0` rows in
-    /// the trivial-count rewrite and drop matching granules in the pruner.
-    if (isFloat(col.type))
-        return std::nullopt;
+    if (name == "equals" || name == "notEquals")
+    {
+        if (!typeMatchesDefaultnessStat(col.type))
+            return std::nullopt;
 
-    if (name == "equals")
-    {
-        if (constantEqualsTypeDefault(value, const_node->getResultType(), col.type))
-            return RecognisedSparsityPredicate{col.name, SparsityPredicateClass::MatchesDefault};
+        const bool eq_default = constantEqualsTypeDefault(value, const_node->getResultType(), col.type);
+        const bool is_eq = (name == "equals");
+        if (eq_default)
+            return RecognisedSparsityPredicate{col.name,
+                is_eq ? SparsityPredicateClass::MatchesDefault : SparsityPredicateClass::MatchesNonDefault};
         if (col_is_bool && isOne(value))
-            return RecognisedSparsityPredicate{col.name, SparsityPredicateClass::MatchesNonDefault};
-        return std::nullopt;
-    }
-    if (name == "notEquals")
-    {
-        if (constantEqualsTypeDefault(value, const_node->getResultType(), col.type))
-            return RecognisedSparsityPredicate{col.name, SparsityPredicateClass::MatchesNonDefault};
-        if (col_is_bool && isOne(value))
-            return RecognisedSparsityPredicate{col.name, SparsityPredicateClass::MatchesDefault};
+            return RecognisedSparsityPredicate{col.name,
+                is_eq ? SparsityPredicateClass::MatchesNonDefault : SparsityPredicateClass::MatchesDefault};
         return std::nullopt;
     }
 

@@ -4504,15 +4504,18 @@ exactly partitions rows into defaults and non-defaults of `col`. The count is th
 served from the per-column `num_defaults` / `num_rows` counters that MergeTree already
 keeps in `serialization.json`, with no data scan.
 
-Patterns recognised: `col = default(col)`, `col != default(col)`, `IS NULL` / `IS NOT NULL`
-on Nullable columns, `empty(col)` / `notEmpty(col)` on String columns, `col = true` /
-`col != true` on Bool columns, and (for unsigned integer columns) `col > 0`, `col >= 1`,
-`col < 1`, `col <= 0`.
+Patterns recognised:
 
-Floating-point columns are excluded from the equality patterns: the persisted `num_defaults`
-counter treats `+0.0` and `-0.0` as distinct (bitwise comparison) so that sparse-serialized
-columns preserve the sign of `-0.0` on round-trip, while SQL `col = 0` matches both. Using
-the counter for these predicates would undercount `-0.0` rows.
+- `col = default(col)` / `col != default(col)` for `Int*` / `UInt*`, `String` /
+  `FixedString`, `Date` / `DateTime` / `DateTime64`, `Decimal*`, `UUID`, `IPv4` / `IPv6`.
+- `IS NULL` / `IS NOT NULL` on `Nullable` columns.
+- `empty(col)` / `notEmpty(col)` on `String` columns.
+- `col = true` / `col != true` on `Bool` columns.
+- `col > 0`, `col >= 1`, `col < 1`, `col <= 0` on unsigned integer columns.
+
+The equality patterns are not applied to `Float*`, `Enum*`, `Nullable`, `LowCardinality`,
+or composite types (`Tuple`, `Array`, `Map`, ...) — for these the count is served from the
+regular scan path.
 
 To take effect, the per-part `num_defaults` counter must be exact. Enable the MergeTree
 table setting `compute_exact_num_defaults_for_sparse_columns` on the target table before
