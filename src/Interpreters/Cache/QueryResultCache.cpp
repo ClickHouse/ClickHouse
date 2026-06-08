@@ -1039,10 +1039,6 @@ void QueryResultCacheReader::buildSourceFromChunks(SharedHeader header, Chunks &
 QueryResultCacheReader::QueryResultCacheReader(QueryResultCachePtr cache_, const Cache::Key & key, bool enable_reads_from_query_cache_disk, const std::lock_guard<std::mutex> &)
 {
     auto entry = cache_->readFromMemory(key);
-    if (entry.has_value())
-        ProfileEvents::increment(ProfileEvents::QueryCacheHits);
-    else
-        ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
 
     if (!entry.has_value() && enable_reads_from_query_cache_disk)
     {
@@ -1055,6 +1051,13 @@ QueryResultCacheReader::QueryResultCacheReader(QueryResultCachePtr cache_, const
         else
             ProfileEvents::increment(ProfileEvents::QueryCacheDiskMisses);
     }
+
+    /// Account the general hit/miss only after the optional disk lookup: a disk hit avoided query
+    /// computation, so it must count as a `QueryCacheHits` and not as a `QueryCacheMisses`.
+    if (entry.has_value())
+        ProfileEvents::increment(ProfileEvents::QueryCacheHits);
+    else
+        ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
 
     if (!entry.has_value())
         return;
@@ -1263,6 +1266,11 @@ void QueryResultCache::writeDisk(const Key & key, const QueryResultCache::Cache:
             auto entry_file = disk->writeFile(entry_path / "key_metadata.txt");
             key.serialize(*entry_file);
             entry_file->finalize();
+            /// `key_metadata.txt` is part of the on-disk entry and contains the formatted query string/tag/
+            /// query id, so its size must count towards the disk cache weight. Otherwise the configured
+            /// `max_disk_size_in_bytes` could be bypassed by metadata bytes. Account the bytes actually
+            /// written (`count()` after finalize), matching `disk->getFileSize` used on reload.
+            disk_entry->bytes_on_disk += entry_file->count();
         }
 
         serializeEntry(key, entry, disk_entry);
@@ -1520,6 +1528,9 @@ std::tuple<Block, QueryResultCache::Cache::MappedPtr, QueryResultCache::DiskCach
         disk_entry->bytes_on_disk += disk->getFileSize(extremes_path);
     }
 
+    /// Account the metadata file too, to match the write path (`writeDisk`).
+    disk_entry->bytes_on_disk += disk->getFileSize(key_path / "key_metadata.txt");
+
     return std::make_tuple(*header, entry, disk_entry);
 }
 
@@ -1557,6 +1568,9 @@ std::pair<Block, size_t> QueryResultCache::loadDiskEntryHeaderAndSize(const Key 
     auto extremes_path = key_path / "extremes.bin";
     if (disk->existsFile(extremes_path))
         bytes_on_disk += disk->getFileSize(extremes_path);
+
+    /// Account the metadata file too, to match the write path (`writeDisk`).
+    bytes_on_disk += disk->getFileSize(key_path / "key_metadata.txt");
 
     return {*header, bytes_on_disk};
 }
