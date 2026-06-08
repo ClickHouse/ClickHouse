@@ -1,3 +1,5 @@
+#include <optional>
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -94,9 +96,10 @@ public:
         else if (!column_index || isColumnConst(*column_index))
         {
             const auto * col_const_index = typeid_cast<const ColumnConst *>(column_index.get());
-            const bool index_omitted = !column_index;
-            ssize_t index = !col_const_index ? 1 : col_const_index->getInt(0);
-            vectorConstant(col->getChars(), col->getOffsets(), col_pattern->getValue<String>(), index, index_omitted, vec_res, offsets_res);
+            std::optional<ssize_t> index_arg;
+            if (col_const_index)
+                index_arg = col_const_index->getInt(0);
+            vectorConstant(col->getChars(), col->getOffsets(), col_pattern->getValue<String>(), index_arg, vec_res, offsets_res);
         }
         else
             vectorVector(col->getChars(), col->getOffsets(), col_pattern->getValue<String>(), column_index, vec_res, offsets_res);
@@ -130,16 +133,14 @@ private:
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const std::string & pattern,
-        ssize_t index,
-        bool index_omitted,
+        std::optional<ssize_t> index_arg,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets) const
     {
         const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
-        /// A pattern with no capturing group only has group 0, so the default index 1 falls back to it.
-        if (index_omitted && capture == 0)
-            index = 0;
+        /// Default index: `1` when capture groups exist, `0` (whole match) otherwise.
+        ssize_t index = index_arg.value_or(capture == 0 ? 0 : 1);
         if (index < 0 || index >= capture + 1)
             throw Exception(
                 ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
