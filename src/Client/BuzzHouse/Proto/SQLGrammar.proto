@@ -758,16 +758,17 @@ enum InFormat {
     IN_RowBinaryWithDefaults = 52;
     IN_RowBinaryWithNames = 53;
     IN_RowBinaryWithNamesAndTypes = 54;
-    IN_TabSeparated = 55;
-    IN_TabSeparatedRaw = 56;
-    IN_TabSeparatedRawWithNames = 57;
-    IN_TabSeparatedRawWithNamesAndTypes = 58;
-    IN_TabSeparatedWithNames = 59;
-    IN_TabSeparatedWithNamesAndTypes = 60;
-    IN_Template = 61;
-    IN_TemplateIgnoreSpaces = 62;
-    IN_TSKV = 63;
-    IN_Values = 64;
+    IN_RowBinaryWithNamesAndTypesAndDefaults = 55;
+    IN_TabSeparated = 56;
+    IN_TabSeparatedRaw = 57;
+    IN_TabSeparatedRawWithNames = 58;
+    IN_TabSeparatedRawWithNamesAndTypes = 59;
+    IN_TabSeparatedWithNames = 60;
+    IN_TabSeparatedWithNamesAndTypes = 61;
+    IN_Template = 62;
+    IN_TemplateIgnoreSpaces = 63;
+    IN_TSKV = 64;
+    IN_Values = 65;
 }
 
 enum OutFormat {
@@ -1638,6 +1639,7 @@ enum ColumnStat {
     STAT_TDigest = 2;
     STAT_Uniq = 3;
     STAT_CountMin = 4;
+    STAT_Basic = 5;
 }
 
 message ColumnStatistics {
@@ -2666,6 +2668,7 @@ message SystemCommand {
         string wait_blobs_cleanup = 105;
         ExprSchemaTable pause_view = 106;
         bool pause_views = 107;
+        string restart_disk = 108;
     }
 }
 

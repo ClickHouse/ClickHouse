@@ -5447,6 +5447,10 @@ CONV_FN(SystemCommand, cmd)
                 BackupOutToString(ret, cmd.unlock_snapshot().from());
             }
             break;
+        case CmdType::kRestartDisk:
+            ret += "RESTART DISK ";
+            appendSQLStringLiteral(ret, cmd.restart_disk());
+            break;
         default: ret += "FLUSH LOGS";
     }
     if (can_set_cluster && cmd.has_cluster())
