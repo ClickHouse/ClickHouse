@@ -46,7 +46,10 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
 
-        return std::make_shared<LimitByTransform>(header, group_length, group_offset, in_order, columns);
+        if (input_sorted_by_keys)
+            return std::make_shared<LimitBySortedStreamTransform>(header, group_length, group_offset, columns);
+
+        return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns);
     });
 }
 
@@ -117,11 +120,6 @@ QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
         readStringBinary(column, ctx.in);
 
     return std::make_unique<LimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
-}
-
-void LimitByStep::applyOrder(SortDescription sort_description)
-{
-    in_order = sort_description.hasPrefix(columns);
 }
 
 void registerLimitByStep(QueryPlanStepRegistry & registry);
