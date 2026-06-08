@@ -280,9 +280,20 @@ pub unsafe extern "C" fn gridPathCells(
     let (Some(s), Some(e)) = (try_cell(start), try_cell(end)) else {
         return E_FAILED;
     };
+    // The C++ caller sizes the `out` buffer from a separate `gridPathCellsSize`
+    // call, so bound the fill loop by the same estimate. If the path ever yields
+    // more cells than the estimate, fail with `E_MEMORY_BOUNDS` instead of writing
+    // past the caller's buffer.
+    let max_size = match s.grid_path_cells_size(e) {
+        Ok(sz) => sz as usize,
+        Err(_) => return E_FAILED,
+    };
     match s.grid_path_cells(e) {
         Ok(iter) => {
             for (i, result) in iter.enumerate() {
+                if i >= max_size {
+                    return E_MEMORY_BOUNDS;
+                }
                 match result {
                     Ok(c) => *out.add(i) = u64::from(c),
                     Err(_) => return E_FAILED,
@@ -608,11 +619,18 @@ pub unsafe extern "C" fn originToDirectedEdges(
     let Some(cell) = try_cell(origin) else {
         return E_FAILED;
     };
-    for (i, e) in cell.edges().enumerate() {
-        if i >= 6 {
-            break;
+    // The H3 C API exposes a fixed six-slot layout where slot `d - 1` holds the
+    // edge for direction `d` (1..=6). For pentagon origins the `K` direction (1)
+    // is deleted, so slot 0 must stay `H3_NULL`. h3o's `edges()` iterator omits
+    // the deleted edge, so placing edges by iterator position would shift the
+    // remaining edges into the wrong slots for pentagons. Place each edge by its
+    // encoded direction instead. The direction is stored in the reserved bits
+    // (56..=58) of the directed-edge index, matching the H3 index layout.
+    for e in cell.edges() {
+        let dir = ((u64::from(e) >> 56) & 0x7) as usize;
+        if (1..=6).contains(&dir) {
+            *edges.add(dir - 1) = u64::from(e);
         }
-        *edges.add(i) = u64::from(e);
     }
     E_SUCCESS
 }
