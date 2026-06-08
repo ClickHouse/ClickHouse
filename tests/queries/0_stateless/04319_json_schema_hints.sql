@@ -1,6 +1,8 @@
 -- Tags: no-fasttest
 -- Test: json_schema_hints MergeTree setting (Layer 2)
 
+SET allow_feature_tier = 1;
+
 -- ============================================================
 -- 1. Basic hint: pre-create dynamic paths for specific partition
 -- ============================================================
