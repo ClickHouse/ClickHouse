@@ -107,7 +107,7 @@ private:
 
     void insertDataToTables();
     void insertDataToTable(const QualifiedTableName & table_name);
-    void insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
+    void insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const String & metadata_path_in_backup, const std::optional<ASTs> & partitions);
 
     void runDataRestoreTasks();
 
