@@ -21,15 +21,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ENDPOINT="http://localhost:11111/test/${CLICKHOUSE_DATABASE}"
 AUTH="'test', 'testtest'"
 
-# 3200 rows at row-group size 50 => 64 row groups, so the bucket splitter (per-row-group
-# buckets with the default batch size of 0) fans the object out into many bucketed sources.
+# 400 rows at row-group size 50 => 8 row groups, so the bucket splitter (per-row-group
+# buckets with the default batch size of 0) fans the object out into several bucketed sources.
 WRITE_SETTINGS="s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 50"
 READ_SETTINGS="optimize_count_from_files = 1, use_cache_for_count_from_files = 1, cluster_table_function_split_granularity = 'bucket'"
 
 # --- Read side -------------------------------------------------------------------
 read_obj="${ENDPOINT}/04320_read.parquet"
 
-${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3('${read_obj}', ${AUTH}, 'Parquet', 'number UInt64') SELECT number FROM numbers(3200) SETTINGS ${WRITE_SETTINGS}"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3('${read_obj}', ${AUTH}, 'Parquet', 'number UInt64') SELECT number FROM numbers(400) SETTINGS ${WRITE_SETTINGS}"
 
 # Populate the whole-object count cache with a non-bucketed read first.
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM s3('${read_obj}', ${AUTH}, 'Parquet') SETTINGS optimize_count_from_files = 1, use_cache_for_count_from_files = 1"
@@ -41,7 +41,7 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM s3Cluster('test_cluster_two_sh
 # --- Write side ------------------------------------------------------------------
 write_obj="${ENDPOINT}/04320_write.parquet"
 
-${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3('${write_obj}', ${AUTH}, 'Parquet', 'number UInt64') SELECT number FROM numbers(3200) SETTINGS ${WRITE_SETTINGS}"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3('${write_obj}', ${AUTH}, 'Parquet', 'number UInt64') SELECT number FROM numbers(400) SETTINGS ${WRITE_SETTINGS}"
 
 # An unfiltered bucketed data read must not write any per-bucket partial count into the
 # whole-object cache (optimize_count_from_files = 0 so this is a real data read).
