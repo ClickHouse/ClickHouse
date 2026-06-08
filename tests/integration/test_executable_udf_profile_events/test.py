@@ -51,6 +51,7 @@ def started_cluster():
             "udf_two_mem_sequential.py",
             "udf_nonzero_exit.py",
             "udf_stdout_close_linger.py",
+            "udf_post_eof_alloc.py",
         ):
             _copy_into_container(
                 os.path.join(SCRIPT_DIR, "user_scripts", script),
@@ -494,4 +495,35 @@ def test_check_exit_code_false_lingering_child_is_bounded_and_flushes_bytes(star
     elapsed_us = _profile_event_value(qid, "ExecutableUserDefinedFunctionElapsedMicroseconds")
     assert elapsed_us > 0, (
         f"ElapsedMicroseconds={elapsed_us}; elapsed must be reported even when the lingering child is never reaped"
+    )
+
+
+def test_peak_memory_includes_post_eof_allocation(started_cluster):
+    _skip_msan()
+    # udf_post_eof_alloc writes every expected row, closes stdout, then allocates
+    # 256 MiB and holds it for ~2 s before exiting 0 (default check_exit_code=true).
+    # The peak sampler keeps sampling the child's subtree at its end-of-stream
+    # cadence while the child lingers through the blocking reap, so this post-output
+    # allocation is observed in the peak — consistent with the CPU and elapsed that
+    # wait4/recordExecutableElapsed attribute to the same post-EOF interval. The 2 s
+    # hold spans many sample intervals, so capture is deterministic, not racy.
+    qid = "exec-post-eof-alloc-1"
+    _run(
+        "SELECT sum(test_udf_post_eof_alloc(number)) FROM numbers(4)",
+        qid,
+    )
+    byte_seconds = _profile_event_value(qid, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds")
+    elapsed_us = _profile_event_value(qid, "ExecutableUserDefinedFunctionElapsedMicroseconds")
+    invocations = _profile_event_value(qid, "ExecutableUserDefinedFunctionInvocations")
+    assert invocations >= 1, f"UDF did not run (Invocations={invocations}); the check is meaningless"
+    assert elapsed_us > 0, "ElapsedMicroseconds is 0; implied-peak calculation would divide by zero"
+
+    implied_peak_mib = byte_seconds * 1e6 / elapsed_us / 1048576
+    # The only large allocation (256 MiB) happens after stdout EOF, so observing it
+    # proves sampling continues through the post-EOF reap rather than freezing at
+    # the EOF sample. A ~10 MiB reading (the interpreter alone) would mean the peak
+    # stopped at EOF.
+    assert implied_peak_mib >= 200, (
+        f"post-EOF 256 MiB allocation not observed: implied peak {implied_peak_mib:.1f} MiB < 200 MiB "
+        f"(byte_seconds={byte_seconds}, elapsed_us={elapsed_us})"
     )
