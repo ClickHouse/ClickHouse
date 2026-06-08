@@ -138,10 +138,22 @@ void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid)
 {
     LOG_TEST(log, "Object {}, setAndStoreRemovalTID {}", getObjectName(), tid);
 
-    auto update_function = [tid](VersionInfo & info)
+    auto update_function = [tid, this](VersionInfo & info)
     {
         if (info.removal_tid == tid)
             return false;
+
+        /// Refuse a non-tx removal over a part whose tx creation has not committed:
+        /// the resulting `creation_csn = 0 + removal_csn = 1` shape would be rejected
+        /// by `validateInfo` and is unrecoverable on restart.
+        if (tid.isNonTransactional()
+            && !info.creation_csn
+            && !info.creation_tid.isNonTransactional())
+        {
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                "Cannot non-transactionally remove object {} whose creation_tid {} has not committed yet",
+                getObjectName(), info.creation_tid);
+        }
 
         chassert(info.removal_tid.isEmpty() || tid == Tx::EmptyTID, fmt::format("removal_tid {}, tid {}", info.removal_tid, tid));
         info.removal_tid = tid;
