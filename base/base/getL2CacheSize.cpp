@@ -17,7 +17,7 @@ namespace
     /// Intel uses leaf 4, AMD uses 0x8000001D, both with identical sub-leaf format
     /// (Intel since Nehalem, AMD since Zen). x86_64-v4 implies Skylake-X+ / Zen 4+,
     /// so at least one of the two leaves is always supported.
-    size_t readL2FromCpuid()
+    size_t readL2FromCPUID()
     {
         const unsigned leaves[] = {0x4u, 0x8000001Du};
         for (unsigned leaf : leaves)
@@ -89,7 +89,7 @@ namespace
     size_t getL2CacheSizeImpl()
     {
 #if defined(__x86_64__)
-        if (size_t v = readL2FromCpuid())
+        if (size_t v = readL2FromCPUID())
             return v;
 #endif
 #if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
