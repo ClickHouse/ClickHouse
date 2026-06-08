@@ -2032,7 +2032,7 @@ bool FileCache::loadFileSegment(
     const OriginInfo & origin,
     bool is_in_rocksdb_index)
 {
-    bool limits_satisfied;
+    bool limits_satisfied = false;
     IFileCachePriority::IteratorPtr cache_it;
 
     {
