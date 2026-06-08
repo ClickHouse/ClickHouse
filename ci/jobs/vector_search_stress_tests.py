@@ -228,7 +228,7 @@ test_params_cohere_wiki_20m = {
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
-    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: 2,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: 1,
     TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_VECTOR,
     GENERATE_TRUTH_SET: False,
     NEW_TRUTH_SET_FILE: None,
@@ -657,6 +657,11 @@ class RunTest:
             chclient = self._chclient
 
         chclient.query("SET use_skip_indexes = 1, max_parallel_replicas = 1")
+        multiplier_settings = ""
+        if self._test_params[VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER] is not None:
+            multiplier = self._test_params[VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER]
+            if multiplier > 0:
+                multiplier_settings = f"SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = {multiplier}"
 
         # First execute a query to load the vector index, could take few minutes
         # We loop because API could timeout and raise exception.(even with higher receive_timeout)
@@ -681,12 +686,12 @@ class RunTest:
                         "USE_RAW_BYTES_FOR_QUERY_VECTOR requires truth records with a materialised query_vector"
                     )
                 params = {"$search_vector_binary$": query_vector.tobytes()}
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, reinterpret($search_vector_binary$, 'Array(Float32)') ) AS distance LIMIT {self._k} SETTINGS vector_search_with_rescoring = 0, vector_search_index_fetch_multiplier = 1"
+                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, reinterpret($search_vector_binary$, 'Array(Float32)') ) AS distance LIMIT {self._k} {multiplier_settings}"
                 q_start = current_time_ms()
                 result = chclient.query(ann_search_query, parameters=params)
             else:
                 query_source = self._render_query_source_sql(truth_record)
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k} SETTINGS vector_search_with_rescoring = 0, vector_search_index_fetch_multiplier = 1"
+                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k} {multiplier_settings}"
                 q_start = current_time_ms()
                 result = chclient.query(ann_search_query)
 
@@ -819,9 +824,9 @@ def install_and_start_clickhouse():
     info = Info()
 
     if Utils.is_arm():
-        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/f00f6a91fefa2dcef4b3198c034272d5b68a5a5d/build_arm_release/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/1dbb459843d39f09d9dfdcb56c1ec895f3092fcb/build_arm_release/clickhouse"
     elif Utils.is_amd():
-        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/f00f6a91fefa2dcef4b3198c034272d5b68a5a5d/build_amd_release/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/1dbb459843d39f09d9dfdcb56c1ec895f3092fcb/build_amd_release/clickhouse"
     else:
         assert False, f"Unknown processor architecture"
 
