@@ -229,6 +229,17 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
     const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
     asio_opts.ssl_context_provider_server_ = getSslContextProvider(config, "server");
     asio_opts.ssl_context_provider_client_ = getSslContextProvider(config, "client");
+
+    const String client_verification_mode_property = "openSSL.client.verificationMode";
+    if (config.has(client_verification_mode_property))
+    {
+        /// `NuRaft` overrides the client `SSL_CTX` verify mode per connection.
+        /// Only an explicitly configured `none` disables peer verification;
+        /// an absent key keeps the historical secure-by-default behavior.
+        asio_opts.skip_verification_
+            = Poco::Net::Utility::convertVerificationMode(config.getString(client_verification_mode_property))
+                == Poco::Net::Context::VERIFY_NONE;
+    }
 }
 #endif
 
@@ -616,6 +627,10 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     {
 #if USE_SSL
         setSSLParams(asio_opts);
+        if (asio_opts.skip_verification_)
+            LOG_WARNING(
+                log,
+                "Keeper Raft peer certificate verification is disabled because `openSSL.client.verificationMode` is set to `none`");
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.");
 #endif
