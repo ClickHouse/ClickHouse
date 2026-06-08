@@ -426,14 +426,15 @@ void UDFProcessSubtreeSampler::sampleExecutablePeak() noexcept
     bool walk_truncated = false;
     std::vector<pid_t> pids;
 
-    /// walkSubtree allocates; catch any exception thrown under a memory limit
-    /// so the IO fast-path is never interrupted by a failed sample.
+    /// walkSubtree allocates; an exception thrown under a memory limit must not
+    /// interrupt the IO fast-path.
     try
     {
         pids = UDFProcfs::walkSubtree(executable_root_pid, walk_truncated);
     }
     catch (...)
     {
+        /// Dropping a sample is ok: the peak is a best-effort high-water mark.
         return;
     }
 
