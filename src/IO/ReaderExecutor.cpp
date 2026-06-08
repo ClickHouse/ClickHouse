@@ -1441,6 +1441,13 @@ void ReaderExecutor::serveResidentFromPlan(ByteRange physical_window, bool from_
     if (!window_plan.covers(physical_window))
         planResidencyWindow(physical_window.offset);
 
+    /// Test hook: pause after residency is planned - the plan's handles are held,
+    /// so the resident segments are pinned - but before they are read, so a test
+    /// can drop/evict the cache and verify the pinned segments survive and `get`
+    /// still honors them. No-op in production.
+    if (!window_plan.planned.empty())
+        FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_cache_status);
+
     /// The plan is in cache-tier priority order, so the `covered` guard serves
     /// each byte from the fastest tier that holds it.
     for (const auto & ph : window_plan.planned)
