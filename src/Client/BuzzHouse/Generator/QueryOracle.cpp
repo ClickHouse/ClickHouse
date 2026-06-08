@@ -15,7 +15,7 @@ namespace BuzzHouse
 {
 
 const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
-    = {{OutFormat::OUT_CSV}, {OutFormat::OUT_TabSeparated}, {OutFormat::OUT_Values}};
+    = {{OutFormat::OUT_Arrow}, {OutFormat::OUT_Parquet}, {OutFormat::OUT_ORC},{OutFormat::OUT_CSV}, {OutFormat::OUT_TabSeparated}, {OutFormat::OUT_Values}};
 
 static void finishSettings(SettingValues * svs)
 {
