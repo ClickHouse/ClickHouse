@@ -744,13 +744,27 @@ void LocalServer::startServers(const ServerType & server_type)
     }
     catch (...)
     {
-        /// Stop and drop every listener appended by this call so no port stays open after we report failure.
-        /// The caller (`SYSTEM START LISTEN` handler) already holds `servers_lock` for the whole
-        /// `startServers` call, so we must not re-acquire it here (the mutex is not recursive).
+        /// Roll back every listener appended by this call so a reported failure never leaves a port
+        /// accepting new connections. The caller (`SYSTEM START LISTEN` handler) already holds
+        /// `servers_lock` for the whole `startServers` call, so we must not re-acquire it here (the
+        /// mutex is not recursive), and we must not call `waitServersToFinish` (it takes the lock and
+        /// would also stop listeners from earlier successful calls).
+        ///
+        /// `stop` only prevents new connections; once `server.start` has returned, an accept thread may
+        /// already have handed an external connection to a handler that still references the underlying
+        /// `TCPServer`. Destroying the adapter while such a handler is running would be a use-after-free.
+        /// Mirror the normal `stopServers` lifetime rule: stop every appended adapter, then erase only
+        /// those with no active connections. Any still-busy adapter stays in `servers` (already stopped,
+        /// so it accepts nothing new and is not reported as an active listener); it is drained and
+        /// destroyed by `cleanup` at teardown.
         for (size_t i = servers_started_before; i < servers.size(); ++i)
             if (!servers[i].isStopping())
                 servers[i].stop();
-        servers.erase(servers.begin() + servers_started_before, servers.end());
+
+        for (size_t i = servers.size(); i > servers_started_before; --i)
+            if (!servers[i - 1].currentConnections())
+                servers.erase(servers.begin() + (i - 1));
+
         throw;
     }
 
