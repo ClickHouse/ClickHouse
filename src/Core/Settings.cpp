@@ -2634,13 +2634,13 @@ Possible values:
 - Positive integer.
 )", 0) \
     DECLARE(UInt64, http_max_fields, 1000, R"(
-Maximum number of fields in HTTP header
+Maximum number of fields in HTTP request headers, query parameters, and form data.
 )", 0) \
     DECLARE(UInt64, http_max_field_name_size, 4 * 1024, R"(
-Maximum length of field name in HTTP header
+Maximum length of a field name in HTTP request headers, query parameters, and form data.
 )", 0) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, R"(
-Maximum length of field value in HTTP header
+Maximum length of a field value in HTTP request headers, query parameters, and form data.
 )", 0) \
     DECLARE(UInt64, http_max_request_header_size, 10 * 1024 * 1024, R"(
 Maximum total size of all HTTP request headers (names and values combined) in bytes.
@@ -4730,6 +4730,13 @@ This setting is useful for ensuring that materialized views do not contain dupli
 **See Also**
 
 - [NULL Processing in IN Operators](/guides/developer/deduplicating-inserts-on-retries#insert-deduplication-with-materialized-views)
+)", 0) \
+    DECLARE(Bool, wait_for_part_commit_in_dependent_materialized_views, false, R"(
+Controls whether each sink commits its just-written part before its own dependent materialized view cascade runs, so a cascade that reads back from the source via `JOIN` observes the part written by that sink.
+
+The guarantee is per sink instance — parts written by other sink threads of the same `INSERT` may not yet be visible. The setting does not provide cross-thread commit ordering.
+
+Has no effect on inserts into tables with no dependent materialized views.
 )", 0) \
     DECLARE(Bool, materialized_views_ignore_errors, false, R"(
 If enabled, exceptions thrown while pushing data to a dependent materialized view (in its `SELECT` or in the inner table sink) are logged as a warning and the `INSERT` statement succeeds. If disabled (default), such an exception propagates and the `INSERT` statement fails.

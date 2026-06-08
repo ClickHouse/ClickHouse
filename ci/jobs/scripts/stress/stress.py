@@ -265,6 +265,10 @@ def run_func_test(
     global_time_limit_option = (
         f"--global_time_limit={global_time_limit}" if global_time_limit else ""
     )
+    # --stress-tests loops until global_time_limit; cap the smoke check so
+    # clickhouse-test exits on its own within the execute_bash timeout (180s).
+    smoke_time_limit = min(global_time_limit, 120) if global_time_limit else 120
+    smoke_time_limit_option = f"--global_time_limit={smoke_time_limit}"
 
     output_paths = [
         output_prefix / f"stress_test_run_{i}.txt" for i in range(num_processes)
@@ -275,16 +279,19 @@ def run_func_test(
     for i, path in enumerate(output_paths):
         # Validate that simple tests work across all randomizations.
         # IF THIS FAILS, THE STRESS TESTS ARE BROKEN
-        full_command = (
-            f"{cmd} --stress-tests {get_options(i, upgrade_check, encrypted_storage)} {global_time_limit_option} "
+        options = get_options(i, upgrade_check, encrypted_storage)
+        base_command = (
+            f"{cmd} --stress-tests {options} "
             f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
         )
+        full_command = f"{base_command} {global_time_limit_option} "
         commands.append(full_command)
-        # Disable server-side AST fuzzer for the smoke check: fuzzed queries
-        # produce expected errors in stderr, which would fail these tests.
-        smoke_command = full_command.replace(
+        # Smoke check: disable AST fuzzer (fuzzed queries produce expected
+        # errors in stderr) and cap global_time_limit so clickhouse-test
+        # exits on its own within the execute_bash timeout.
+        smoke_command = base_command.replace(
             "--client-option ", "--client-option ast_fuzzer_runs=0 ", 1
-        )
+        ) + f" {smoke_time_limit_option} "
         check_command = (
             smoke_command
             + "--server-logs-level fatal --jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
