@@ -217,13 +217,16 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
         }
 
+        if (query.if_exists)
+        {
+            if (!database->isTableExist(table_name, context_) && !database->isTableDetached(table_name))
+            {
+                return {};
+            }
+        }
         if (!database->isTableExist(table_name, context_) && !database->isTableDetached(table_name))
         {
-            if (query.if_exists) {
-                return {};
-            } else {
-                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
-            }
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
         }
 
         context_->checkAccess(AccessType::DROP_TABLE, table_id);
