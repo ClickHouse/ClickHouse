@@ -878,6 +878,10 @@ public:
             TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
 
     #if USE_MULTITARGET_CODE
+        /// The v3 registration is needed because `FunctionsHashingMisc.cpp` is compiled at `-march=x86-64-v2`
+        /// (to dodge an unrelated SLP regression), so the `Default` namespace inherits v2 codegen. Without this
+        /// per-function v3 attribute path, the dispatcher has no AVX2 specialization to pick and falls back to
+        /// the v2 body, regressing hash-on-UUID/Decimal queries by 12-18%.
         selector.registerImplementation<TargetArch::x86_64_v3,
             TargetSpecific::x86_64_v3::FunctionIntHash<Impl, Name>>();
         selector.registerImplementation<TargetArch::x86_64_v4,
@@ -1222,8 +1226,14 @@ private:
 
             if constexpr (Keyed)
             {
-                auto key_cols_replicated = key_cols.replicateForArray(offsets);
-                executeForArgument(key_cols_replicated, nested_type, nested_column, vec_temp, nested_is_first);
+                /// When every array is empty the nested column is empty too. There is nothing to
+                /// hash, but replicating the key columns would produce empty key columns, and the
+                /// recursive call would then read a key for a row that doesn't exist. Skip it.
+                if (nested_size != 0)
+                {
+                    auto key_cols_replicated = key_cols.replicateForArray(offsets);
+                    executeForArgument(key_cols_replicated, nested_type, nested_column, vec_temp, nested_is_first);
+                }
             }
             else
                 executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
@@ -1564,9 +1574,10 @@ public:
             .registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
 
 #if USE_MULTITARGET_CODE
+        /// See the note in `FunctionIntHash`: `FunctionsHashingMisc.cpp` is at v2, so `Default` is v2 and the runtime
+        /// dispatcher needs the per-function v3 specialization to recover AVX2 codegen.
         selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-        selector
-            .registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+        selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
 #endif
     }
 
