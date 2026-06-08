@@ -145,6 +145,7 @@ namespace DB
     M(S3_LIST_POOL, "ListObjectS3") \
     M(SESSION_CLEANUP, "SessionCleanup") \
     M(SEND_TO_SHELL_CMD, "SendToShellCmd") \
+    M(STARTUP_SCRIPT, "StartupScript") \
     M(SUGGEST, "Suggest") \
     M(SYSTEM_LOG_FLUSH, "SystemLogFlush") \
     M(SYSTEM_REPLICAS, "SysReplicas") \
