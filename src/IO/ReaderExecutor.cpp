@@ -988,6 +988,14 @@ Rope ReaderExecutor::readNextWindow()
             /// discovery, no source. Serve each tier's range from its own handle,
             /// advancing the cursor so the appended runs stay disjoint; stop at
             /// the first gap (the next call serves it).
+
+            /// Test hook: pause after the plan classifies this run as a hit but
+            /// before `get` reads it, so a test can drop/evict the cache in the
+            /// status->get window and verify the plan-pinned segment survives. This
+            /// is the warm-serve path `serveResidentFromPlan` is bypassed for, so it
+            /// carries the same hook. No-op in production.
+            FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_cache_status);
+
             const size_t window_end = position_phys + win_size;
             StopwatchAccumulator get_scope(stats.cache_get_us);
             for (size_t pos = position_phys; pos < window_end;)
