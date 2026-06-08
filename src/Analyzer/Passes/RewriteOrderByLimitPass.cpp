@@ -9,6 +9,7 @@
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/MatcherNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/TableNode.h>
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
@@ -109,6 +110,14 @@ struct OrderByLimitRewriteVisitor : public InDepthQueryTreeVisitorWithContext<Or
 
         if (!query_node.hasLimit() || !query_node.hasOrderBy())
             return {};
+        /// `ORDER BY ... WITH FILL` can synthesize rows that do not exist in the table before `LIMIT` is applied.
+        /// The rewritten subquery can only return physical row offsets (`_part_starting_offset + _part_offset`),
+        /// and the filled rows have no such offset, so the rewrite would change the result set.
+        for (const auto & sort_node : query_node.getOrderBy().getNodes())
+        {
+            if (const auto * sort = sort_node->as<SortNode>(); sort && sort->withFill())
+                return {};
+        }
         /// If the limit exceeds @limit_max_val, disable optimization
         if (auto * limit = query_node.getLimit()->as<ConstantNode>())
         {
