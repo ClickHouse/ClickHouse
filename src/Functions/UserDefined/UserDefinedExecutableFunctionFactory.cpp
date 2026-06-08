@@ -288,12 +288,12 @@ public:
                 ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInputBytes, sampler->getInputBytes());
                 ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionOutputBytes, sampler->getOutputBytes());
 
-                /// The time and memory counters come from the resource snapshot taken when
-                /// the child was observed: on the pool path a procfs snapshot is taken at
-                /// `borrowAcquired`; on the executable path wait4 rusage is captured at
-                /// `executableFinished`. A `check_exit_code=false` child that closes stdout
-                /// and then lingers is never reaped by `tryReapWithoutStatusCheck`, so
-                /// `executableFinished` stays false and these counters remain unset.
+                /// Elapsed and CPU/memory counters: on the pool path a procfs snapshot is
+                /// taken at `borrowAcquired`; on the executable path, `executableFinished`
+                /// is set by `recordExecutableElapsed` unconditionally in cleanup, so elapsed
+                /// is always available. CPU and peak-RSS are populated only when `wait4`
+                /// rusage was captured; they remain zero for a lingering child that was never
+                /// reaped.
                 if (sampler->borrowAcquired() || sampler->executableFinished())
                 {
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionElapsedMicroseconds, sampler->getElapsedMicroseconds());

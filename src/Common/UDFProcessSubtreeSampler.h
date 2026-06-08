@@ -14,29 +14,39 @@
 namespace DB
 {
 
-/** Per-borrow resource accounting for an executable_pool UDF call.
+/** Per-invocation resource accounting for executable UDF calls.
   *
   * Created by `UserDefinedExecutableFunctionFactory::executeImpl` and passed
   * via `ShellCommandSourceConfiguration` into the borrow/IO machinery. The
   * factory queries the accumulators after the pipeline drains and feeds them
   * into ProfileEvents.
   *
-  * Lifecycle (callbacks tolerate being skipped — e.g. `tryBorrowObject`
-  * may time out, in which case only `recordPoolWaitDone` fires):
-  *   ctor                    -- implicitly starts the wall clock for pool wait
+  * Two paths share this class:
+  *
+  * Pool path (`executable_pool`): a persistent worker process is borrowed from
+  * a pool for the duration of one UDF invocation. CPU and memory are measured
+  * by sampling `/proc/<pid>/{stat,status}` for the worker and all descendants.
+  * The pre-snapshot zeroes `VmHWM` via `/proc/<pid>/clear_refs` (mode 5) so
+  * `VmHWM` at release reflects the peak observed during this borrow, not the
+  * worker's lifetime peak. Lifecycle callbacks:
+  *   ctor                    -- starts the wall clock for pool-wait measurement
   *   recordPoolWaitDone      -- `tryBorrowObject` returned (success OR timeout)
   *   recordPidAcquired       -- `buildCommand` returned; pid known (success only)
   *   recordInputBytes / recordOutputBytes -- IO buffers report bytes pushed
   *   recordReleased          -- ShellCommandSource cleanup, before returnObject
   *
-  * CPU and memory deltas are derived by sampling /proc/<pid>/{stat,status} for
-  * every descendant of the pool's child process. The pre-snapshot zeroes
-  * VmHWM via /proc/<pid>/clear_refs (mode 5) so VmHWM at release reflects the
-  * peak observed during this borrow, not the lifetime peak of the worker.
+  * Executable path (non-pool): a fresh child is spawned per invocation. CPU
+  * and peak RSS come from `wait4` rusage captured by `ShellCommand::tryWaitImpl`.
+  * Elapsed wall time is always recorded; CPU and peak-RSS are recorded only when
+  * the child was reaped and rusage is available. Lifecycle callbacks:
+  *   ctor                    -- starts the wall clock for elapsed measurement
+  *   recordInputBytes / recordOutputBytes -- IO buffers report bytes pushed
+  *   recordExecutableElapsed -- ShellCommandSource cleanup; stamps elapsed_us
+  *   recordExecutableFinished -- additionally records CPU and peak-RSS from rusage
   *
-  * Procfs failures (ENOENT after a worker died, EACCES, malformed) are
-  * silently skipped: CPU/memory increments are dropped but the other events
-  * still fire.
+  * Procfs failures (ENOENT after a worker died, EACCES, malformed content) are
+  * silently skipped on the pool path: CPU/memory increments are dropped but the
+  * other events still fire.
   */
 class UDFProcessSubtreeSampler
 {
@@ -49,9 +59,14 @@ public:
     void recordOutputBytes(size_t bytes) noexcept;
     void recordReleased();
 
-    /// Executable (non-pool) path: fill elapsed_us, user_time_us, system_time_us,
-    /// and peak_memory_byte_seconds from the scalars returned by ShellCommand::getLastChild*.
-    /// Must be called at most once per sampler lifetime.
+    /// Executable (non-pool) path: stamp `elapsed_us` from the wall clock at
+    /// `ShellCommandSource` cleanup. Safe to call even when the child was never
+    /// reaped — elapsed is always meaningful. Idempotent; a second call is a no-op.
+    void recordExecutableElapsed() noexcept;
+
+    /// Executable (non-pool) path: fill `user_time_us`, `system_time_us`, and
+    /// `peak_memory_byte_seconds` from the scalars returned by `ShellCommand::getChild*`.
+    /// Calls `recordExecutableElapsed` if it has not been called yet. Idempotent.
     /// Coverage note: these come from `wait4` rusage, which — unlike pool mode's /proc
     /// subtree walk — counts the child plus the descendants it reaps (CPU summed, peak
     /// RSS maxed), but not descendants it never waits on.
@@ -97,6 +112,7 @@ private:
     bool pool_wait_done = false;
     bool borrow_acquired = false;
     bool executable_finished = false;
+    bool executable_rusage_recorded = false;
 
     UInt64 pool_wait_us = 0;
     UInt64 elapsed_us = 0;

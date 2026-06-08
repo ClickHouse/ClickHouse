@@ -411,29 +411,42 @@ void UDFProcessSubtreeSampler::recordReleased()
 }
 
 
-void UDFProcessSubtreeSampler::recordExecutableFinished(
-    UInt64 user_time_us_, UInt64 system_time_us_, UInt64 peak_rss_bytes_) noexcept
+void UDFProcessSubtreeSampler::recordExecutableElapsed() noexcept
 {
-    /// Guard against a duplicate call: the contract is "at most once"; a doubled
-    /// call from a future call-site bug must not overwrite the first measurement.
     if (executable_finished)
         return;
 
     /// Wall time from sampler construction to `ShellCommandSource` cleanup (includes
-    /// spawn, output parsing and IO). The executable path spawns a fresh child per
+    /// spawn, output parsing, and IO). The executable path spawns a fresh child per
     /// invocation, so there is no pool-wait interval to subtract.
     elapsed_us = entry_watch.elapsedMicroseconds();
+    executable_finished = true;
+}
+
+
+void UDFProcessSubtreeSampler::recordExecutableFinished(
+    UInt64 user_time_us_, UInt64 system_time_us_, UInt64 peak_rss_bytes_) noexcept
+{
+    if (executable_rusage_recorded)
+        return;
+
+    /// Stamp elapsed first; `recordExecutableElapsed` is idempotent so calling
+    /// it here is safe even if the caller already invoked it.
+    recordExecutableElapsed();
 
     user_time_us = user_time_us_;
     system_time_us = system_time_us_;
 
+    /// `peak_memory_byte_seconds = peak_rss × elapsed_us / 1_000_000`, clamped
+    /// on overflow. 64-bit multiplication is fine for any realistic UDF (1 GiB × 100 s
+    /// ≈ 10^14, well below 2^64); pathological inputs would overflow before the divide.
     UInt64 product = 0;
     if (common::mulOverflow(peak_rss_bytes_, elapsed_us, product))
         peak_memory_byte_seconds = std::numeric_limits<UInt64>::max();
     else
         peak_memory_byte_seconds = product / 1000000ULL;
 
-    executable_finished = true;
+    executable_rusage_recorded = true;
 }
 
 }

@@ -12,7 +12,7 @@ namespace DB
 {
 
 /// Forward-declared so this header does not include `<sys/resource.h>`.
-struct LastChildResourceUsage;
+struct ChildResourceUsage;
 
 
 /** Lets you run the command,
@@ -72,9 +72,9 @@ public:
         DestructorStrategy terminate_in_destructor_strategy = DestructorStrategy(false, 0);
 
         /// When true, `tryWaitImpl` reaps with `wait4` and captures the child's
-        /// `rusage` (read back via `getLastChild*`/`wasChildReaped`). When false
-        /// (the default) it reaps with plain `waitpid` and allocates nothing.
-        /// Set for executable (non-pool) UDFs, which read the usage.
+        /// `rusage` (read back via `getChild*`/`wasChildResourceUsageCaptured`).
+        /// When false (the default) it reaps with plain `waitpid` and allocates
+        /// nothing. Set for executable (non-pool) UDFs, which read the usage.
         bool collect_resource_usage = false;
     };
 
@@ -95,20 +95,20 @@ public:
 
     /// True once the child has been reaped by `tryWaitImpl` and its
     /// resource usage was captured.
-    bool wasChildReaped() const noexcept;
+    bool wasChildResourceUsageCaptured() const noexcept;
 
     /// User-mode CPU time consumed by the reaped child. Zero if
-    /// `wasChildReaped` returns false.
-    UInt64 getLastChildUserTimeMicroseconds() const noexcept;
+    /// `wasChildResourceUsageCaptured` returns false.
+    UInt64 getChildUserTimeMicroseconds() const noexcept;
 
     /// Kernel-mode CPU time consumed by the reaped child. Zero if
-    /// `wasChildReaped` returns false.
-    UInt64 getLastChildSystemTimeMicroseconds() const noexcept;
+    /// `wasChildResourceUsageCaptured` returns false.
+    UInt64 getChildSystemTimeMicroseconds() const noexcept;
 
     /// Peak resident set size of the reaped child, in bytes. Zero if
-    /// `wasChildReaped` returns false. Cross-platform: macOS reports
-    /// `ru_maxrss` in bytes; Linux, FreeBSD, and illumos in kibibytes.
-    UInt64 getLastChildPeakRssBytes() const noexcept;
+    /// `wasChildResourceUsageCaptured` returns false. Cross-platform: macOS
+    /// reports `ru_maxrss` in bytes; Linux, FreeBSD, and illumos in kibibytes.
+    UInt64 getChildPeakRssBytes() const noexcept;
 
     /// Run the command using /bin/sh -c.
     /// If terminate_in_destructor is true, send terminate signal in destructor and don't wait process.
@@ -145,7 +145,7 @@ private:
     Config config;
     bool wait_called = false;
     bool do_not_terminate = false;
-    std::unique_ptr<LastChildResourceUsage> last_resource_usage;
+    std::unique_ptr<ChildResourceUsage> resource_usage;
 
     ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const Config & config);
 

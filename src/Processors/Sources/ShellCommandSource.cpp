@@ -566,19 +566,18 @@ namespace
                 }
                 else if (command)
                 {
-                    /// Executable (non-pool) path: account the child's `rusage`, which
-                    /// `ShellCommand::tryWaitImpl` captures via `wait4`. When `prepare` already
-                    /// reaped the child via its blocking `wait` (`check_exit_code=true`, normal
-                    /// completion), `isWaitCalled()` is true and the usage is just read back.
-                    /// Otherwise — `check_exit_code=false`, or an early-exit/cancellation path —
-                    /// the child is reaped here, non-blocking and without status validation:
-                    ///   * non-blocking: a child that closed stdout but keeps running is left to
-                    ///     `~ShellCommand`'s bounded `command_termination_timeout` + SIGTERM
+                    /// Executable (non-pool) path: attempt a non-blocking reap so that
+                    /// `rusage` is available for accounting. When `prepare` already reaped
+                    /// the child via its blocking `wait` (`check_exit_code=true`, normal
+                    /// completion), `isWaitCalled()` is true and `tryReapWithoutStatusCheck`
+                    /// is skipped — the usage is already captured.
+                    ///
+                    /// The non-blocking reap:
+                    ///   * non-blocking: a child that closed stdout but keeps running is left
+                    ///     to `~ShellCommand`'s bounded `command_termination_timeout` + SIGTERM
                     ///     teardown, so enabling profiling cannot turn cleanup into a query hang;
                     ///   * no status check: a non-zero exit is not an error under
                     ///     `check_exit_code=false`, so it must not raise CHILD_WAS_NOT_EXITED_NORMALLY.
-                    /// Usage is recorded only if the child has already exited; the `try/catch`
-                    /// guards a genuine `wait4` failure.
                     if (!command->isWaitCalled())
                     {
                         try
@@ -591,11 +590,16 @@ namespace
                         }
                     }
 
-                    if (command->wasChildReaped())
+                    /// Elapsed is always reported: it is known regardless of whether the child
+                    /// was reaped. CPU and peak-RSS counters require `wait4` rusage and are
+                    /// recorded only when the reap succeeded.
+                    configuration.sampler->recordExecutableElapsed();
+
+                    if (command->wasChildResourceUsageCaptured())
                         configuration.sampler->recordExecutableFinished(
-                            command->getLastChildUserTimeMicroseconds(),
-                            command->getLastChildSystemTimeMicroseconds(),
-                            command->getLastChildPeakRssBytes());
+                            command->getChildUserTimeMicroseconds(),
+                            command->getChildSystemTimeMicroseconds(),
+                            command->getChildPeakRssBytes());
                 }
             }
 

@@ -411,3 +411,10 @@ def test_check_exit_code_false_lingering_child_is_bounded_and_flushes_bytes(star
     assert output_bytes > 0, (
         f"OutputBytes={output_bytes}; byte counters must flush even when the child was never reaped"
     )
+
+    # Elapsed must be reported even when the child was never reaped: the wall clock
+    # is stamped unconditionally by recordExecutableElapsed in cleanup().
+    elapsed_us = _profile_event_value(qid, "ExecutableUserDefinedFunctionElapsedMicroseconds")
+    assert elapsed_us > 0, (
+        f"ElapsedMicroseconds={elapsed_us}; elapsed must be reported even when the lingering child is never reaped"
+    )

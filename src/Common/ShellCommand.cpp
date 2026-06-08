@@ -34,7 +34,7 @@ namespace DB
 
 /// Opaque wrapper around `::rusage` so callers of `ShellCommand` do not need
 /// to include `<sys/resource.h>`.
-struct LastChildResourceUsage
+struct ChildResourceUsage
 {
     ::rusage rusage{};
 };
@@ -365,8 +365,8 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking, bool check_
             wait_called = true;
             if (config.collect_resource_usage)
             {
-                last_resource_usage = std::make_unique<LastChildResourceUsage>();
-                last_resource_usage->rusage = local_rusage;
+                resource_usage = std::make_unique<ChildResourceUsage>();
+                resource_usage->rusage = local_rusage;
             }
             break;
         }
@@ -462,37 +462,37 @@ void ShellCommand::wait()
 }
 
 
-bool ShellCommand::wasChildReaped() const noexcept
+bool ShellCommand::wasChildResourceUsageCaptured() const noexcept
 {
-    return last_resource_usage != nullptr;
+    return resource_usage != nullptr;
 }
 
 
-UInt64 ShellCommand::getLastChildUserTimeMicroseconds() const noexcept
+UInt64 ShellCommand::getChildUserTimeMicroseconds() const noexcept
 {
-    if (!last_resource_usage)
+    if (!resource_usage)
         return 0;
-    const auto & ru = last_resource_usage->rusage;
+    const auto & ru = resource_usage->rusage;
     return static_cast<UInt64>(ru.ru_utime.tv_sec) * 1000000ULL
         + static_cast<UInt64>(ru.ru_utime.tv_usec);
 }
 
 
-UInt64 ShellCommand::getLastChildSystemTimeMicroseconds() const noexcept
+UInt64 ShellCommand::getChildSystemTimeMicroseconds() const noexcept
 {
-    if (!last_resource_usage)
+    if (!resource_usage)
         return 0;
-    const auto & ru = last_resource_usage->rusage;
+    const auto & ru = resource_usage->rusage;
     return static_cast<UInt64>(ru.ru_stime.tv_sec) * 1000000ULL
         + static_cast<UInt64>(ru.ru_stime.tv_usec);
 }
 
 
-UInt64 ShellCommand::getLastChildPeakRssBytes() const noexcept
+UInt64 ShellCommand::getChildPeakRssBytes() const noexcept
 {
-    if (!last_resource_usage)
+    if (!resource_usage)
         return 0;
-    const auto & ru = last_resource_usage->rusage;
+    const auto & ru = resource_usage->rusage;
 #if defined(OS_DARWIN)
     /// macOS reports `ru_maxrss` already in bytes.
     return static_cast<UInt64>(ru.ru_maxrss);
