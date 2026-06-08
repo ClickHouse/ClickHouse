@@ -817,6 +817,91 @@ inline float turboQuantDistanceFast(const float * query_levels, const char * cod
     return turboQuantDistance(query_levels, code, dimensions);
 }
 
+/// RaBitQ (1-bit, asymmetric estimator), data-oblivious / no codebook (Gao & Long, "RaBitQ", SIGMOD 2024).
+/// After the same random projection used by 'b1_projected', the data vector is sign-binarized (1 bit/coordinate) exactly
+/// like 'b1_projected'. RaBitQ additionally stores a per-vector correction factor that turns the sign code into an
+/// UNBIASED estimator of the cosine similarity. With `o` the unit (rotated) data vector and `s_i = sign(o_i)`, the
+/// stored value is `inv_factor = ||o||_2 / ||o||_1` (note `||o||_2 = 1`, so `factor = sum_i |o_i| >= 1` and
+/// `inv_factor` in (0, 1]). The query stays full precision (this is the "asymmetric" estimator):
+///   cos(o, q) ~= (sum_i s_i * q_i) * (1 / ||q||_2) * inv_factor,    with sum_i s_i * q_i = 2 * sum_{s_i = +1} q_i - sum_i q_i.
+/// Layout per vector: `dimensions / 8` packed sign bits, followed by the 4-byte `inv_factor`. The sign code matches
+/// 'b1_projected' bit-for-bit; the extra factor (and full-precision query) are what lift recall above plain SimHash.
+template <typename T>
+void encodeRaBitQ(const std::vector<float> & projection, const T * x, size_t dimensions, float * work, char * dst)
+{
+    applyRandomProjection(projection, x, dimensions, work);
+
+    const size_t code_bytes = dimensions / 8;
+    std::memset(dst, 0, code_bytes);
+    double l1 = 0.0;
+    double l2sq = 0.0;
+    for (size_t i = 0; i < dimensions; ++i)
+    {
+        const float w = work[i];
+        l1 += std::abs(static_cast<double>(w));
+        l2sq += static_cast<double>(w) * static_cast<double>(w);
+        if (w >= 0.0f)
+            dst[i >> 3] |= static_cast<char>(1u << (i & 7u));
+    }
+    /// inv_factor = ||o||_2 / ||o||_1 = sqrt(l2sq) / l1. A zero vector -> 0 (estimated cosine 0, i.e. distance 1).
+    const float inv_factor = (l1 > 0.0) ? static_cast<float>(std::sqrt(l2sq) / l1) : 0.0f;
+    std::memcpy(dst + code_bytes, &inv_factor, sizeof(float));
+}
+
+/// Asymmetric RaBitQ estimator -> cosineDistance. `q` is the full-precision (rotated) query; `q_total = sum_i q_i` and
+/// `inv_qnorm = 1 / ||q||_2` are precomputed once per query (both over `dimensions` coordinates). `code` points at the
+/// packed sign bits; the 4-byte `inv_factor` immediately follows them.
+inline float raBitQDistance(const float * q, float q_total, float inv_qnorm, const char * code, size_t dimensions)
+{
+    const size_t code_bytes = dimensions / 8;
+    float masked_sum = 0.0f;
+    for (size_t i = 0; i < dimensions; ++i)
+        if ((static_cast<UInt8>(code[i >> 3]) >> (i & 7u)) & 1u)
+            masked_sum += q[i];
+    float inv_factor;
+    std::memcpy(&inv_factor, code + code_bytes, sizeof(float));
+    const float cos = (2.0f * masked_sum - q_total) * inv_qnorm * inv_factor;
+    return 1.0f - cos;
+}
+
+#if USE_MULTITARGET_CODE
+/// AVX-512 version: the sign code is exactly a bit-mask, so `sum_{s_i = +1} q_i` is a mask-controlled add. Each group of
+/// 16 coordinates occupies 2 packed bytes; loading them as a 16-bit `__mmask16` makes bit j select query lane j, and
+/// `_mm512_mask_add_ps` accumulates only the selected coordinates in a single instruction.
+X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE
+inline float raBitQDistanceAVX512(const float * q, float q_total, float inv_qnorm, const char * code, size_t dimensions)
+{
+    const size_t code_bytes = dimensions / 8;
+    __m512 acc = _mm512_setzero_ps();
+    size_t i = 0;
+    for (; i + 16 <= dimensions; i += 16)
+    {
+        __mmask16 m;
+        std::memcpy(&m, code + (i >> 3), sizeof(m)); /// 2 bytes = 16 sign bits, bit j -> coordinate i + j
+        acc = _mm512_mask_add_ps(acc, m, acc, _mm512_loadu_ps(q + i));
+    }
+    float masked_sum = _mm512_reduce_add_ps(acc);
+    for (; i < dimensions; ++i)
+        if ((static_cast<UInt8>(code[i >> 3]) >> (i & 7u)) & 1u)
+            masked_sum += q[i];
+    float inv_factor;
+    std::memcpy(&inv_factor, code + code_bytes, sizeof(float));
+    const float cos = (2.0f * masked_sum - q_total) * inv_qnorm * inv_factor;
+    return 1.0f - cos;
+}
+#endif
+
+/// Dispatch to the AVX-512 kernel when available (decided once per query), else the scalar version.
+inline float raBitQDistanceFast(const float * q, float q_total, float inv_qnorm, const char * code, size_t dimensions, bool use_simd)
+{
+#if USE_MULTITARGET_CODE
+    if (use_simd)
+        return raBitQDistanceAVX512(q, q_total, inv_qnorm, code, dimensions);
+#endif
+    (void)use_simd;
+    return raBitQDistance(q, q_total, inv_qnorm, code, dimensions);
+}
+
 }
 
 MergeTreeIndexAggregatorVectorSimilarityFlat::MergeTreeIndexAggregatorVectorSimilarityFlat(
@@ -826,7 +911,8 @@ MergeTreeIndexAggregatorVectorSimilarityFlat::MergeTreeIndexAggregatorVectorSimi
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
     bool projected_,
-    bool turboquant_)
+    bool turboquant_,
+    bool rabitq_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , dimensions(dimensions_)
@@ -834,7 +920,9 @@ MergeTreeIndexAggregatorVectorSimilarityFlat::MergeTreeIndexAggregatorVectorSimi
     , scalar_kind(scalar_kind_)
     , projected(projected_)
     , turboquant(turboquant_)
-    , bytes_per_vector(turboquant_ ? dimensions_ / 4 : dimensions_ / 8) /// 2 bits/coord for turboquant, else 1 bit
+    , rabitq(rabitq_)
+    /// 2 bits/coord for turboquant; 1 bit/coord + a 4-byte correction factor for rabitq; else 1 bit/coord
+    , bytes_per_vector(turboquant_ ? dimensions_ / 4 : (rabitq_ ? dimensions_ / 8 + sizeof(float) : dimensions_ / 8))
 {
 }
 
@@ -859,7 +947,7 @@ template <typename Column>
 void quantizeRowsToBinary(
     const ColumnArray * column_array, const ColumnArray::Offsets & offsets,
     size_t dimensions, size_t bytes_per_vector, std::vector<UInt8> & codes, size_t & num_vectors, size_t rows,
-    const std::vector<float> & projection, bool turboquant)
+    const std::vector<float> & projection, bool turboquant, bool rabitq)
 {
     const auto & data = typeid_cast<const Column &>(column_array->getData()).getData();
 
@@ -871,8 +959,9 @@ void quantizeRowsToBinary(
     codes.resize((base + rows) * bytes_per_vector);
     num_vectors = base + rows;
 
-    const bool projected = !projection.empty();
-    const size_t padded = projected ? projection.size() / PROJECTION_ROUNDS : 0;
+    /// `projection` is non-empty for all three projection-based methods; `projected` means specifically 'b1_projected'.
+    const bool projected = !projection.empty() && !turboquant && !rabitq;
+    const size_t padded = projection.empty() ? 0 : projection.size() / PROJECTION_ROUNDS;
 
     /// Encode one row into its (disjoint) packed code slot. `work` is a per-thread scratch buffer of `padded` floats,
     /// used only on the projected path.
@@ -887,6 +976,11 @@ void quantizeRowsToBinary(
         {
             /// 'turboquant': project, normalize, 2-bit Lloyd-Max quantize, pack 2 bits/coord.
             encodeTurboQuant(projection, src, dimensions, work, dst);
+        }
+        else if (rabitq)
+        {
+            /// 'rabitq': project, sign-binarize, and append the per-vector correction factor.
+            encodeRaBitQ(projection, src, dimensions, work, dst);
         }
         else if (projected)
         {
@@ -916,9 +1010,9 @@ void quantizeRowsToBinary(
     if (threads_count == 0)
         threads_count = getNumberOfCPUCoresToUse();
 
-    /// Only the projected/turboquant paths are expensive enough to be worth parallelizing; raw-sign is cheap.
+    /// Only the projection-based paths are expensive enough to be worth parallelizing; raw-sign is cheap.
     static constexpr size_t min_rows_for_parallel = 256;
-    const size_t num_threads = ((projected || turboquant) && rows >= min_rows_for_parallel) ? std::min(threads_count, rows) : 1;
+    const size_t num_threads = ((projected || turboquant || rabitq) && rows >= min_rows_for_parallel) ? std::min(threads_count, rows) : 1;
 
     if (num_threads <= 1)
     {
@@ -985,18 +1079,18 @@ void MergeTreeIndexAggregatorVectorSimilarityFlat::update(const Block & block, s
     if (!data_type_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float32|Float64|BFloat16)");
 
-    /// For 'b1_projected' and 'turboquant', build the (deterministic) random projection once and reuse it.
-    if ((projected || turboquant) && projection.empty())
+    /// For 'b1_projected', 'turboquant', and 'rabitq', build the (deterministic) random projection once and reuse it.
+    if ((projected || turboquant || rabitq) && projection.empty())
         projection = generateRandomProjection(dimensions);
 
     const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
     WhichDataType which(nested_type_index);
     if (which.isFloat32())
-        quantizeRowsToBinary<ColumnFloat32>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, turboquant);
+        quantizeRowsToBinary<ColumnFloat32>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, turboquant, rabitq);
     else if (which.isFloat64())
-        quantizeRowsToBinary<ColumnFloat64>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, turboquant);
+        quantizeRowsToBinary<ColumnFloat64>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, turboquant, rabitq);
     else if (which.isBFloat16())
-        quantizeRowsToBinary<ColumnBFloat16>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, turboquant);
+        quantizeRowsToBinary<ColumnBFloat16>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, turboquant, rabitq);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
 
@@ -1009,12 +1103,14 @@ MergeTreeIndexConditionVectorSimilarityFlat::MergeTreeIndexConditionVectorSimila
     unum::usearch::metric_kind_t metric_kind_,
     bool projected_,
     bool turboquant_,
+    bool rabitq_,
     ContextPtr context)
     : parameters(parameters_)
     , index_column(index_column_)
     , metric_kind(metric_kind_)
     , projected(projected_)
     , turboquant(turboquant_)
+    , rabitq(rabitq_)
     , index_fetch_multiplier(context->getSettingsRef()[Setting::vector_search_index_fetch_multiplier])
     , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
     , is_rescoring(context->getSettingsRef()[Setting::vector_search_with_rescoring])
@@ -1070,7 +1166,10 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
     /// Quantize the (full-precision) reference vector to the same packed representation as the index.
     /// For 'b1_projected'/'turboquant', project the query with the same fixed-seed transform used at build time.
     std::vector<UInt8> query_code(bytes_per_vector);
-    std::vector<float> query_levels; /// turboquant only: the dequantized query, used by the squared-L2 scan
+    std::vector<float> query_levels;    /// turboquant only: the dequantized query, used by the squared-L2 scan
+    std::vector<float> query_projected; /// rabitq only: the full-precision (rotated) query, used by the asymmetric estimator
+    float rabitq_query_total = 0.0f;    /// rabitq only: sum_i q_i over the projected query
+    float rabitq_inv_qnorm = 0.0f;      /// rabitq only: 1 / ||q||_2 over the projected query
     if (turboquant)
     {
         const std::vector<float> projection = generateRandomProjection(granule->dimensions);
@@ -1084,6 +1183,23 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
             const UInt8 c = (query_code[i >> 2] >> ((i & 3u) * 2u)) & 3u;
             query_levels[i] = TURBOQUANT_LEVELS[c];
         }
+    }
+    else if (rabitq)
+    {
+        /// Project the query with the same fixed-seed transform, but keep it full precision (the asymmetric estimator).
+        const std::vector<float> projection = generateRandomProjection(granule->dimensions);
+        const size_t padded = projection.size() / PROJECTION_ROUNDS;
+        query_projected.assign(padded, 0.0f);
+        applyRandomProjection(projection, parameters->reference_vector.data(), granule->dimensions, query_projected.data());
+        double total = 0.0;
+        double sumsq = 0.0;
+        for (size_t i = 0; i < granule->dimensions; ++i)
+        {
+            total += static_cast<double>(query_projected[i]);
+            sumsq += static_cast<double>(query_projected[i]) * static_cast<double>(query_projected[i]);
+        }
+        rabitq_query_total = static_cast<float>(total);
+        rabitq_inv_qnorm = (sumsq > 0.0) ? static_cast<float>(1.0 / std::sqrt(sumsq)) : 0.0f;
     }
     else if (projected)
     {
@@ -1106,17 +1222,19 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
     /// usearch's punned metric computes Hamming over b1x8 codes using AVX popcount (not used for turboquant,
     /// which uses its own dequantized squared-L2).
     unum::usearch::metric_punned_t metric;
-    if (!turboquant)
+    if (!turboquant && !rabitq)
         metric = unum::usearch::metric_punned_t(granule->dimensions, granule->metric_kind, granule->scalar_kind);
 
     const char * base = reinterpret_cast<const char *>(granule->codes.data());
     const char * query = reinterpret_cast<const char *>(query_code.data());
     const size_t dims = granule->dimensions;
 
-    /// Decide once whether the turboquant scan can use the AVX-512 dequantize+L2 kernel.
+    /// Decide once whether the turboquant/rabitq scans can use their AVX-512 kernels.
     bool use_simd_turboquant = false;
+    bool use_simd_rabitq = false;
 #if USE_MULTITARGET_CODE
     use_simd_turboquant = turboquant && isArchSupported(TargetArch::x86_64_v4);
+    use_simd_rabitq = rabitq && isArchSupported(TargetArch::x86_64_v4);
 #endif
 
     /// Exhaustive scan. Unlike HNSW search (O(log N) per query, fine single-threaded), a flat scan is O(N) and the
@@ -1140,9 +1258,13 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
             /// Check cancellation periodically (not per vector - that lookup would itself dominate the cheap Hamming).
             if ((i & 0xFFFFu) == 0)
                 throw_if_killed();
-            const float dist = turboquant
-                ? turboQuantDistanceFast(query_levels.data(), base + i * bytes_per_vector, dims, use_simd_turboquant)
-                : static_cast<float>(metric(base + i * bytes_per_vector, query));
+            float dist;
+            if (turboquant)
+                dist = turboQuantDistanceFast(query_levels.data(), base + i * bytes_per_vector, dims, use_simd_turboquant);
+            else if (rabitq)
+                dist = raBitQDistanceFast(query_projected.data(), rabitq_query_total, rabitq_inv_qnorm, base + i * bytes_per_vector, dims, use_simd_rabitq);
+            else
+                dist = static_cast<float>(metric(base + i * bytes_per_vector, query));
             scored[i] = {dist, static_cast<UInt32>(i)};
         }
     };
@@ -1202,6 +1324,7 @@ MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
     unum::usearch::scalar_kind_t scalar_kind_,
     bool projected_,
     bool turboquant_,
+    bool rabitq_,
     UsearchHnswParams usearch_hnsw_params_)
     : IMergeTreeIndex(index_)
     , method(method_)
@@ -1210,6 +1333,7 @@ MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
     , scalar_kind(scalar_kind_)
     , projected(projected_)
     , turboquant(turboquant_)
+    , rabitq(rabitq_)
     , usearch_hnsw_params(usearch_hnsw_params_)
 {
 }
@@ -1224,7 +1348,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexVectorSimilarity::createIndexGranule() co
 MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator() const
 {
     if (method == "fastknn")
-        return std::make_shared<MergeTreeIndexAggregatorVectorSimilarityFlat>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, projected, turboquant);
+        return std::make_shared<MergeTreeIndexAggregatorVectorSimilarityFlat>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, projected, turboquant, rabitq);
     return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 }
 
@@ -1237,7 +1361,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
 {
     const String & index_column = index.column_names[0];
     if (method == "fastknn")
-        return std::make_shared<MergeTreeIndexConditionVectorSimilarityFlat>(parameters, index_column, metric_kind, projected, turboquant, context);
+        return std::make_shared<MergeTreeIndexConditionVectorSimilarityFlat>(parameters, index_column, metric_kind, projected, turboquant, rabitq, context);
     return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(parameters, index_column, metric_kind, context);
 }
 
@@ -1254,6 +1378,7 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
 
     bool projected = false;
     bool turboquant = false;
+    bool rabitq = false;
 
     /// Optional parameters:
     const bool has_six_args = (args.size() == 6);
@@ -1263,12 +1388,17 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
         usearch_hnsw_params = {.connectivity  = args[4].safeGet<UInt64>(),
                                .expansion_add = args[5].safeGet<UInt64>()};
 
-        /// 'turboquant' (fastknn only) is not a usearch scalar_kind: it stores its own 2-bit codes and uses a
-        /// dequantized squared-L2 scan. Keep the metric as the requested distance (cosineDistance -> cos_k).
+        /// 'turboquant'/'rabitq' (fastknn only) are not usearch scalar_kinds: they store their own codes and use their
+        /// own scan kernels. Keep the metric as the requested distance (cosineDistance -> cos_k).
         if (quantization == "turboquant")
         {
             turboquant = true;
             scalar_kind = unum::usearch::scalar_kind_t::f32_k; /// unused by the turboquant scan
+        }
+        else if (quantization == "rabitq")
+        {
+            rabitq = true;
+            scalar_kind = unum::usearch::scalar_kind_t::f32_k; /// unused by the rabitq scan
         }
         else
         {
@@ -1283,7 +1413,7 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
         }
     }
 
-    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, method, dimensions, metric_kind, scalar_kind, projected, turboquant, usearch_hnsw_params);
+    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, method, dimensions, metric_kind, scalar_kind, projected, turboquant, rabitq, usearch_hnsw_params);
 }
 
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */)
@@ -1328,9 +1458,10 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
     {
         const String quantization = args[3].safeGet<String>();
         const bool is_turboquant = (quantization == "turboquant");
+        const bool is_rabitq = (quantization == "rabitq");
 
-        if (!is_turboquant && !quantizationToScalarKind.contains(quantization))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Fourth argument (quantization) of vector similarity index is not supported. Supported quantizations are: {} (and 'turboquant' for the 'fastknn' method)", joinByComma(quantizationToScalarKind));
+        if (!is_turboquant && !is_rabitq && !quantizationToScalarKind.contains(quantization))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Fourth argument (quantization) of vector similarity index is not supported. Supported quantizations are: {} (and 'turboquant', 'rabitq' for the 'fastknn' method)", joinByComma(quantizationToScalarKind));
 
         if (is_turboquant)
         {
@@ -1342,10 +1473,20 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
             if (args[2].safeGet<UInt64>() % 4 != 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "'turboquant' quantization requires that the dimension is a multiple of 4");
         }
+        else if (is_rabitq)
+        {
+            /// 'rabitq': fastknn-only, cosine distance, dimension multiple of 8 (1 bit/coord -> 8 codes/byte).
+            if (!is_fastknn)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "'rabitq' quantization is only supported by the 'fastknn' method");
+            if (distanceFunctionToMetricKind.at(args[1].safeGet<String>()) != unum::usearch::metric_kind_t::cos_k)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "'rabitq' quantization can only be used with the cosine distance as distance function");
+            if (args[2].safeGet<UInt64>() % 8 != 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "'rabitq' quantization requires that the dimension is a multiple of 8");
+        }
         else
         {
             if (is_fastknn && quantizationToScalarKind.at(quantization) != unum::usearch::scalar_kind_t::b1x8_k)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "The 'fastknn' method currently supports only 'b1', 'b1_projected', and 'turboquant' quantization");
+                throw Exception(ErrorCodes::INCORRECT_DATA, "The 'fastknn' method currently supports only 'b1', 'b1_projected', 'turboquant', and 'rabitq' quantization");
 
             /// More checks for binary quantization
             if (quantizationToScalarKind.at(quantization) == unum::usearch::scalar_kind_t::b1x8_k)

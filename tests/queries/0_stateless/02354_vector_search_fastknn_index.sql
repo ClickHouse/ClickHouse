@@ -1,8 +1,9 @@
 -- Tags: no-fasttest, no-ordinary-database
 
 -- Basic test for the flat "fastknn" vector similarity index, for 'b1' (binary / raw sign),
--- 'b1_projected' (random-projection + sign), and 'turboquant' (random-projection + 2-bit Lloyd-Max)
--- quantization. Reuses the 20 dbpedia vectors from 02354_vector_search_binary_quantization.sql.
+-- 'b1_projected' (random-projection + sign), 'turboquant' (random-projection + 2-bit Lloyd-Max), and
+-- 'rabitq' (random-projection + sign + per-vector correction factor, asymmetric estimator) quantization.
+-- Reuses the 20 dbpedia vectors from 02354_vector_search_binary_quantization.sql.
 
 SET enable_analyzer = 1;
 SET allow_experimental_vector_similarity_index = 1;
@@ -10,6 +11,7 @@ SET allow_experimental_vector_similarity_index = 1;
 DROP TABLE IF EXISTS tab_b1;
 DROP TABLE IF EXISTS tab_proj;
 DROP TABLE IF EXISTS tab_tq;
+DROP TABLE IF EXISTS tab_rabitq;
 
 CREATE TABLE tab_b1
 (
@@ -30,6 +32,13 @@ CREATE TABLE tab_tq
     id String,
     vec Array(Float32),
     INDEX vec_idx vec TYPE vector_similarity('fastknn', 'cosineDistance', 1536, 'turboquant', 0, 0) GRANULARITY 100000000
+) ENGINE = MergeTree ORDER BY id;
+
+CREATE TABLE tab_rabitq
+(
+    id String,
+    vec Array(Float32),
+    INDEX vec_idx vec TYPE vector_similarity('fastknn', 'cosineDistance', 1536, 'rabitq', 0, 0) GRANULARITY 100000000
 ) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tab_b1 VALUES
@@ -56,6 +65,7 @@ INSERT INTO tab_b1 VALUES
 
 INSERT INTO tab_proj SELECT * FROM tab_b1;
 INSERT INTO tab_tq SELECT * FROM tab_b1;
+INSERT INTO tab_rabitq SELECT * FROM tab_b1;
 
 -- A vector's nearest neighbour by any of these codes is itself, so self-retrieval is a robust correctness
 -- check independent of rescoring exactness, across all three quantizations.
@@ -71,16 +81,23 @@ SELECT '-- turboquant: nearest neighbour of a row is itself';
 SELECT id FROM tab_tq ORDER BY cosineDistance(vec, (SELECT vec FROM tab_tq WHERE id = '<dbpedia:Honda>')) LIMIT 1;
 SELECT id FROM tab_tq ORDER BY cosineDistance(vec, (SELECT vec FROM tab_tq WHERE id = '<dbpedia:Pizza>')) LIMIT 1;
 
+SELECT '-- rabitq: nearest neighbour of a row is itself';
+SELECT id FROM tab_rabitq ORDER BY cosineDistance(vec, (SELECT vec FROM tab_rabitq WHERE id = '<dbpedia:Honda>')) LIMIT 1;
+SELECT id FROM tab_rabitq ORDER BY cosineDistance(vec, (SELECT vec FROM tab_rabitq WHERE id = '<dbpedia:Pizza>')) LIMIT 1;
+
 SELECT '-- all quantizations return the requested number of rows';
 SELECT count() FROM (SELECT id FROM tab_b1 ORDER BY cosineDistance(vec, (SELECT vec FROM tab_b1 WHERE id = '<dbpedia:Honda>')) LIMIT 4);
 SELECT count() FROM (SELECT id FROM tab_proj ORDER BY cosineDistance(vec, (SELECT vec FROM tab_proj WHERE id = '<dbpedia:Honda>')) LIMIT 4);
 SELECT count() FROM (SELECT id FROM tab_tq ORDER BY cosineDistance(vec, (SELECT vec FROM tab_tq WHERE id = '<dbpedia:Honda>')) LIMIT 4);
+SELECT count() FROM (SELECT id FROM tab_rabitq ORDER BY cosineDistance(vec, (SELECT vec FROM tab_rabitq WHERE id = '<dbpedia:Honda>')) LIMIT 4);
 
 SELECT '-- the fastknn index is used';
 SELECT countIf(explain LIKE '%vec_idx%') > 0 FROM (EXPLAIN indexes = 1 SELECT id FROM tab_b1 ORDER BY cosineDistance(vec, (SELECT vec FROM tab_b1 WHERE id = '<dbpedia:Honda>')) LIMIT 4);
 SELECT countIf(explain LIKE '%vec_idx%') > 0 FROM (EXPLAIN indexes = 1 SELECT id FROM tab_proj ORDER BY cosineDistance(vec, (SELECT vec FROM tab_proj WHERE id = '<dbpedia:Honda>')) LIMIT 4);
 SELECT countIf(explain LIKE '%vec_idx%') > 0 FROM (EXPLAIN indexes = 1 SELECT id FROM tab_tq ORDER BY cosineDistance(vec, (SELECT vec FROM tab_tq WHERE id = '<dbpedia:Honda>')) LIMIT 4);
+SELECT countIf(explain LIKE '%vec_idx%') > 0 FROM (EXPLAIN indexes = 1 SELECT id FROM tab_rabitq ORDER BY cosineDistance(vec, (SELECT vec FROM tab_rabitq WHERE id = '<dbpedia:Honda>')) LIMIT 4);
 
 DROP TABLE tab_b1;
 DROP TABLE tab_proj;
 DROP TABLE tab_tq;
+DROP TABLE tab_rabitq;

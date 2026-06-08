@@ -197,7 +197,7 @@ struct MergeTreeIndexGranuleVectorSimilarityFlat final : public IMergeTreeIndexG
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     const size_t dimensions;
-    size_t bytes_per_vector = 0;       /// dim/8 for b1 (binary) quantization
+    size_t bytes_per_vector = 0;       /// dim/8 for b1; dim/4 for turboquant; dim/8 + sizeof(float) for rabitq (1-bit code + per-vector correction factor)
     size_t num_vectors = 0;
     std::vector<UInt8> codes;          /// num_vectors * bytes_per_vector packed quantized codes
 
@@ -217,7 +217,8 @@ struct MergeTreeIndexAggregatorVectorSimilarityFlat final : IMergeTreeIndexAggre
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
         bool projected_,
-        bool turboquant_);
+        bool turboquant_,
+        bool rabitq_);
 
     ~MergeTreeIndexAggregatorVectorSimilarityFlat() override = default;
 
@@ -232,6 +233,7 @@ struct MergeTreeIndexAggregatorVectorSimilarityFlat final : IMergeTreeIndexAggre
     const unum::usearch::scalar_kind_t scalar_kind;
     const bool projected;          /// 'b1_projected' quantization: random-project before sign-binarizing
     const bool turboquant;         /// 'turboquant' quantization: random-project, then 2-bit Lloyd-Max per coordinate
+    const bool rabitq;             /// 'rabitq' quantization: random-project, sign-binarize, store a per-vector correction factor
     size_t bytes_per_vector = 0;
     size_t num_vectors = 0;
     std::vector<UInt8> codes;
@@ -248,6 +250,7 @@ public:
         unum::usearch::metric_kind_t metric_kind_,
         bool projected_,
         bool turboquant_,
+        bool rabitq_,
         ContextPtr context);
 
     ~MergeTreeIndexConditionVectorSimilarityFlat() override = default;
@@ -263,6 +266,7 @@ private:
     const unum::usearch::metric_kind_t metric_kind;
     const bool projected;          /// 'b1_projected' quantization: random-project the query before sign-binarizing
     const bool turboquant;         /// 'turboquant' quantization: random-project + 2-bit Lloyd-Max
+    const bool rabitq;             /// 'rabitq' quantization: random-project + sign + per-vector correction factor (asymmetric estimator)
     const float index_fetch_multiplier;
     const size_t max_limit;
     const bool is_rescoring;
@@ -280,6 +284,7 @@ public:
         unum::usearch::scalar_kind_t scalar_kind_,
         bool projected_,
         bool turboquant_,
+        bool rabitq_,
         UsearchHnswParams usearch_hnsw_params_);
 
     ~MergeTreeIndexVectorSimilarity() override = default;
@@ -297,6 +302,7 @@ private:
     const unum::usearch::scalar_kind_t scalar_kind;
     const bool projected;        /// fastknn + 'b1_projected' quantization (random projection before sign)
     const bool turboquant;       /// fastknn + 'turboquant' quantization (random projection + 2-bit Lloyd-Max)
+    const bool rabitq;           /// fastknn + 'rabitq' quantization (random projection + sign + per-vector correction factor)
     const UsearchHnswParams usearch_hnsw_params;
 };
 
