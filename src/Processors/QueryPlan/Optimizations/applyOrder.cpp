@@ -125,22 +125,26 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
 
     if (auto * limit_by_step = typeid_cast<LimitByStep *>(parent->step.get()))
     {
-        if (properties->sort_scope == SortingProperty::SortScope::Global)
-        {
-            auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, limit_by_step->getColumns());
-            if (prefix.size() == limit_by_step->getColumns().size())
-                limit_by_step->applyOrder();
-        }
+        if (properties->sort_scope != SortingProperty::SortScope::Global)
+            return {};
+
+        auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, limit_by_step->getColumns());
+        if (prefix.size() == limit_by_step->getColumns().size())
+            limit_by_step->applyOrder();
+
+        return std::move(*properties);
     }
 
     if (auto * negative_limit_by_step = typeid_cast<NegativeLimitByStep *>(parent->step.get()))
     {
-        if (properties->sort_scope == SortingProperty::SortScope::Global)
-        {
-            auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, negative_limit_by_step->getColumns());
-            if (prefix.size() == negative_limit_by_step->getColumns().size())
-                negative_limit_by_step->applyOrder();
-        }
+        if (properties->sort_scope != SortingProperty::SortScope::Global)
+            return {};
+
+        auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, negative_limit_by_step->getColumns());
+        if (prefix.size() == negative_limit_by_step->getColumns().size())
+            negative_limit_by_step->applyOrder();
+
+        return std::move(*properties);
     }
 
     if (auto * transforming = dynamic_cast<ITransformingStep *>(parent->step.get()))
