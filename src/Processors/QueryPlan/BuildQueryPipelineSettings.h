@@ -34,7 +34,6 @@ struct BuildQueryPipelineSettings
     size_t min_outstreams_per_resize_after_split;
     size_t max_streams_for_union_step;
     double max_streams_for_union_step_to_max_threads_ratio;
-    size_t shard_by_hash_input_batch_bytes;
 
     const ExpressionActionsSettings & getActionsSettings() const { return actions_settings; }
 };

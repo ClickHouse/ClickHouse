@@ -619,8 +619,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 Processors shard_transforms;
                 for (auto * port : ports)
                 {
-                    auto shard_transform = std::make_shared<BufferedShardByHashTransform>(
-                        stream_header, num_shards, key_columns, settings.shard_by_hash_input_batch_bytes);
+                    auto shard_transform = std::make_shared<BufferedShardByHashTransform>(stream_header, num_shards, key_columns);
                     connect(*port, shard_transform->getInputs().front());
                     shard_transforms.push_back(shard_transform);
                 }

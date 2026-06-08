@@ -1,57 +1,26 @@
-#include <Columns/ColumnsScatter.h>
 #include <Columns/IColumn.h>
-#include <Core/Defines.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/BufferedShardByHashTransform.h>
-#include <Common/Exception.h>
 #include <Common/MapToRange.h>
 
 namespace DB
 {
 
-namespace
-{
-/// Hard cap on the number of input chunks (blocks) accumulated per flush, in addition to
-/// the byte budget. The byte budget uses physical `Chunk::bytes()`, which does not bound
-/// row count for const-heavy chunks: `ColumnConst::byteSize()` is one stored value, so a
-/// query like `GROUP BY toUInt64(1)` can add tens of thousands of rows (and pids) per chunk
-/// while adding only a few bytes, leaving `pids`/scatter allocations effectively unbounded.
-///
-/// 100 is chosen so it never preempts the byte budget for real data: a flush holds at most
-/// MAX_PENDING_BLOCKS chunks of up to `max_block_size` (~65536) rows each, so reaching a
-/// budget B within the cap needs only B/100 bytes per chunk — at the largest practically
-/// useful budget (64 MiB) that is ~640 KiB/chunk, i.e. ~10 bytes per row, which any real
-/// aggregation input (key plus aggregated columns) exceeds. So for budgets <= 64 MiB the
-/// byte budget governs normal data and this cap only bounds degenerate const-heavy chunks,
-/// limiting a flush to ~100 * max_block_size (~6.5M) rows.
-constexpr size_t MAX_PENDING_BLOCKS = 100;
-}
-
-BufferedShardByHashTransform::BufferedShardByHashTransform(
-    SharedHeader header, size_t num_shards_, ColumnNumbers key_columns_, size_t batch_threshold_bytes_)
+BufferedShardByHashTransform::BufferedShardByHashTransform(SharedHeader header, size_t num_shards_, ColumnNumbers key_columns_)
     : IProcessor(InputPorts{header}, OutputPorts{num_shards_, header})
     , num_shards(num_shards_)
     , key_columns(std::move(key_columns_))
-    , batch_threshold_bytes(batch_threshold_bytes_)
     , output_queues(num_shards)
+    , shard_columns(num_shards)
 {
     chassert(num_shards > 0);
-
-    /// Pre-reserve one source block so the first flush avoids the grow path.
-    /// A byte budget cannot predict the batch's row count, so we reserve a
-    /// single block up front; pids.clear() preserves the high-water-mark
-    /// capacity after the first flush, so later batches never reallocate.
-    pids.reserve(DEFAULT_BLOCK_SIZE);
-
-    /// Pre-size rows_per_shard to num_shards once; zeroed before each flush.
-    rows_per_shard.resize(num_shards, 0);
 }
 
 IProcessor::Status BufferedShardByHashTransform::prepare()
 {
     auto & input = getInputs().front();
 
-    /// Free queues for outputs closed by downstream.
+    /// Free queues for outputs closed by downstream
     bool all_finished = true;
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
@@ -68,14 +37,14 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         return Status::Finished;
     }
 
-    /// Pending work (chunk processing or batch flush) takes priority.
-    if (has_pending_input_chunk || has_pending_flush)
+    /// Pending input chunk takes priority - split it before doing anything else.
+    if (has_pending_input_chunk)
         return Status::Ready;
 
     /// Scan queues to decide what to do next.
-    bool has_queued_chunks = false;
-    bool has_pushable_queued_chunks = false;
-    bool any_queue_at_capacity = false;
+    bool has_queued_chunks = false; /// any shard has chunks waiting in its queue
+    bool has_pushable_queued_chunks = false; /// at least one queued chunk can be pushed right now (port is ready)
+    bool any_queue_at_capacity = false; /// at least one shard's queue hit the back-pressure cap
 
     auto queued_output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++queued_output_it)
@@ -91,15 +60,9 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         }
     }
 
-    /// Input exhausted: flush any pending batch, then drain queues, then finish.
+    /// Input exhausted - drain remaining queues, then finish.
     if (input.isFinished())
     {
-        if (!pending_input.empty())
-        {
-            /// Signal a final flush; work() will handle it.
-            has_pending_flush = true;
-            return Status::Ready;
-        }
         if (has_queued_chunks)
             return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
 
@@ -108,6 +71,7 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         return Status::Finished;
     }
 
+    /// Cannot push any output port
     if (has_queued_chunks && !has_pushable_queued_chunks)
         return Status::PortFull;
 
@@ -123,54 +87,19 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         return Status::Ready;
     }
 
+    /// No new input yet - drain what we can while waiting.
     if (has_pushable_queued_chunks)
         return Status::Ready;
     return Status::NeedData;
 }
 
+/// Split pending input chunk into per-shard queues, then drain queues to output ports.
 void BufferedShardByHashTransform::work()
 {
     if (has_pending_input_chunk)
     {
+        generateOutputChunks();
         has_pending_input_chunk = false;
-
-        /// Stash chunk + pids; flush when the byte budget is crossed.
-        const size_t num_rows = pending_input_chunk.getNumRows();
-
-        /// Compute 32-bit composite hash over key columns.
-        hash_buffer.resize(num_rows);
-        bool initial = true;
-        for (auto col_idx : key_columns)
-        {
-            pending_input_chunk.getColumns()[col_idx]->computeHashInto(0, num_rows, hash_buffer.data(), initial);
-            initial = false;
-        }
-
-        /// Write pids (UInt32) into the shared pids buffer.
-        const size_t pids_offset = pids.size();
-        pids.resize(pids_offset + num_rows);
-        mapToRange(hash_buffer.data(), num_rows, static_cast<UInt32>(num_shards), pids.data() + pids_offset);
-
-        accumulated_bytes += pending_input_chunk.bytes();
-        pending_input.push_back(PendingChunk{std::move(pending_input_chunk), pids_offset});
-
-        /// Flush trigger. `batch_threshold_bytes == 0` degrades to per-chunk
-        /// processing: every chunk is flushed immediately, so no batching occurs.
-        /// Otherwise, chunk boundaries are never split, so a batch may overshoot
-        /// the budget by at most one input chunk's bytes. Counting bytes keeps
-        /// each flush short and its per-shard buffers small for wide rows, while
-        /// narrow rows accumulate until the budget is reached. The MAX_PENDING_BLOCKS
-        /// cap additionally bounds the row count for const-heavy chunks, whose physical
-        /// bytes do not reflect their row count.
-        if (batch_threshold_bytes == 0 || accumulated_bytes >= batch_threshold_bytes
-            || pending_input.size() >= MAX_PENDING_BLOCKS)
-            has_pending_flush = true;
-    }
-
-    if (has_pending_flush)
-    {
-        flushBatch();
-        has_pending_flush = false;
     }
 
     /// Push one queued chunk per shard (if the port can accept it).
@@ -196,65 +125,53 @@ void BufferedShardByHashTransform::work()
     }
 }
 
-void BufferedShardByHashTransform::flushBatch()
+void BufferedShardByHashTransform::generateOutputChunks()
 {
-    if (pending_input.empty())
-        return;
+    const auto num_rows = pending_input_chunk.getNumRows();
+    auto columns = pending_input_chunk.detachColumns();
 
-    const size_t num_batched = pending_input.size();
-    const size_t num_columns = pending_input[0].chunk.getNumColumns();
+    chassert(!columns.empty());
 
-    /// ── Reuse pre-allocated buffers ───────────────────────────────────────────
-
-    /// pids_spans_buf: views into pids, one span per pending chunk.
-    /// Same for every column position — built once here, reused in the c-loop.
-    pids_spans_buf.resize(num_batched);
-    for (size_t b = 0; b < num_batched; ++b)
-        pids_spans_buf[b] = {pids.data() + pending_input[b].pids_offset, pending_input[b].chunk.getNumRows()};
-
-    /// rows_per_shard: count ONCE for all K columns.
-    /// Zero-fill (capacity already num_shards from constructor).
-    std::fill(rows_per_shard.begin(), rows_per_shard.end(), 0);
-    ColumnsScatter::countRowsPerShard(pids_spans_buf, rows_per_shard);
-
-    /// col_ptrs_buf: resize once; refilled per column position inside the loop.
-    col_ptrs_buf.resize(num_batched);
-
-    /// ── Scatter column-by-column ──────────────────────────────────────────────
-
-    std::vector<MutableColumns> shard_cols(num_shards);
-
-    for (size_t c = 0; c < num_columns; ++c)
+    /// Compute a composite 32-bit hash over all key columns into a reusable buffer.
+    /// No allocations: each `computeHashInto` call writes directly into hash_buffer.
+    /// Every column type hashes via hardware CRC32C (see IColumn::computeHashInto).
+    hash_buffer.resize(num_rows);
+    bool initial = true;
+    for (auto column_number : key_columns)
     {
-        for (size_t b = 0; b < num_batched; ++b)
-            col_ptrs_buf[b] = pending_input[b].chunk.getColumns()[c].get();
-
-        /// Pass the pre-computed rows_per_shard: scatterFixed<T> et al skip their
-        /// internal pids scan and go straight to allocation + scatter.
-        MutableColumns scattered = ColumnsScatter::scatter(col_ptrs_buf, pids_spans_buf, num_shards, rows_per_shard);
-
-        for (size_t s = 0; s < num_shards; ++s)
-            shard_cols[s].push_back(std::move(scattered[s]));
+        columns[column_number]->computeHashInto(0, num_rows, hash_buffer.data(), initial);
+        initial = false;
     }
 
-    /// Push the per-shard chunks into their output queues.
+    /// Partition rows by shard using Lemire fastrange.
+    /// The CRC32C-based per-row hash is well-distributed across all 32 bits, so the high
+    /// bits fed into the shift are uniform — no extra finalizer is needed.
+    selector.resize(num_rows);
+    mapToRange(hash_buffer.data(), num_rows, static_cast<UInt32>(num_shards), selector.data());
+
+    /// Physically split every column into N per-shard mutable columns.
+    for (auto & cols : shard_columns)
+        cols.clear();
+
+    for (const auto & column : columns)
+    {
+        auto split = column->scatter(num_shards, selector);
+        for (size_t s = 0; s < num_shards; ++s)
+            shard_columns[s].push_back(std::move(split[s]));
+    }
+
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
     {
         if (output_it->isFinished())
             continue;
 
-        const size_t shard_rows = shard_cols[shard].empty() ? 0 : shard_cols[shard][0]->size();
+        const size_t shard_rows = shard_columns[shard][0]->size();
         if (shard_rows == 0)
             continue;
 
-        output_queues[shard].push_back(Chunk(std::move(shard_cols[shard]), shard_rows));
+        output_queues[shard].push_back(Chunk(std::move(shard_columns[shard]), shard_rows));
     }
-
-    /// Reset batch state; pids.clear() keeps capacity for the next batch.
-    pending_input.clear();
-    pids.clear();
-    accumulated_bytes = 0;
 }
 
 }

@@ -43,7 +43,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"ai_function_embedding_max_batch_size", 100, 100, "New setting"},
             {"enable_sharding_aggregator", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."},
-            {"shard_by_hash_input_batch_bytes", 0, 2097152, "New setting to control input-batching in `BufferedShardByHashTransform`: accumulates this many bytes before a single `ColumnsScatter::scatter` flush, eliminating per-chunk K×P IColumn allocation overhead. Defaulted to 2 MiB to exercise the batched path in CI for correctness and performance."},
             {"allow_experimental_text_index_lazy_apply", false, false, "New setting to gate experimental lazy posting list apply mode"},
             {"text_index_posting_list_apply_mode", "materialize", "materialize", "New setting for lazy posting list apply mode"},
             {"text_index_density_threshold", 0.2, 0.2, "New setting for lazy posting list density threshold"},

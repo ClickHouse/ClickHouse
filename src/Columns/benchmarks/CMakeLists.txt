@@ -7,8 +7,3 @@ clickhouse_add_executable(benchmark_compute_hash_into benchmark_compute_hash_int
 target_link_libraries (benchmark_compute_hash_into PRIVATE
     ch_contrib::gbenchmark_all
     dbms)
-
-clickhouse_add_executable(benchmark_columns_scatter benchmark_columns_scatter.cpp)
-target_link_libraries (benchmark_columns_scatter PRIVATE
-    ch_contrib::gbenchmark_all
-    dbms)
