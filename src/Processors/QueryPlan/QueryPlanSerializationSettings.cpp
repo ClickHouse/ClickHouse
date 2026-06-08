@@ -23,6 +23,10 @@ namespace DB
     DECLARE(UInt64, max_rows_in_distinct, 0, "Maximum number of elements during execution of DISTINCT.", 0) \
     DECLARE(UInt64, max_bytes_in_distinct, 0, "Maximum total size of state (in uncompressed bytes) in memory for the execution of DISTINCT.", 0) \
     DECLARE(OverflowMode, distinct_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.", 0) \
+    DECLARE(UInt64, distinct_set_limit_for_enabling_bloom_filter, 1000000, "Maximum number of elements in pre DISTINCT that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.", 0) \
+    DECLARE(UInt64, distinct_bloom_filter_bytes, 512 * 1024, "Size in bytes of a bloom filter used as DISTINCT filter.", 0) \
+    DECLARE(Double, distinct_pass_ratio_threshold_for_disabling_bloom_filter, 0.7, "If ratio of passed rows to checked rows is greater than this threshold the DISTINCT is considered as poorly performing and is disabled to reduce the overhead.", 0) \
+    DECLARE(Double, distinct_bloom_filter_max_ratio_of_set_bits, 0.7, "If the number of set bits in a DISTINCT bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.", 0) \
     \
     DECLARE(UInt64, max_rows_to_sort, 0, "If more than the specified amount of records have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception", 0) \
     DECLARE(UInt64, max_bytes_to_sort, 0, "If more than the specified amount of (uncompressed) bytes have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception", 0) \

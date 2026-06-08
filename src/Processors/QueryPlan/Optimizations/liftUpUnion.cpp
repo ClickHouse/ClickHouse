@@ -90,7 +90,11 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
                 distinct->getSetSizeLimits(),
                 distinct->getLimitHint(),
                 distinct->getColumnNames(),
-                distinct->isPreliminary());
+                distinct->isPreliminary(),
+                distinct->getSetLimitForEnablingBloomFilter(),
+                distinct->getBloomFilterBytes(),
+                distinct->getBloomFilterPassRatioThreshold(),
+                distinct->getBloomFilterMaxRatioSetBits());
 
             distinct_node.step->setStepDescription(*distinct);
         }

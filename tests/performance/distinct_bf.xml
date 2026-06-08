@@ -1,0 +1,7 @@
+<test>
+    <!-- numeric -->
+    <query>SELECT count() FROM (SELECT DISTINCT if(number % 2, number % 30000000, rand() % 80000) FROM numbers_mt(100000000)) FORMAT Null</query>
+
+    <!-- complex key -->
+    <query>SELECT count() FROM (SELECT DISTINCT if(number % 10 > 0, number, rand() % 30000), materialize('string') FROM numbers_mt(20000000)) FORMAT Null</query>
+</test>
