@@ -41,9 +41,16 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     /// expressions so the top-K optimization still recognizes the underlying `Sort`.
     /// The lifted expressions never touch the sort columns, so they do not affect either
     /// the sort-column resolution below or the threshold tracking on the read step.
-    while (typeid_cast<ExpressionStep *>(node->step.get()))
+    while (auto * above_expr = typeid_cast<ExpressionStep *>(node->step.get()))
     {
         if (node->children.size() != 1)
+            return 0;
+        /// `arrayJoin` changes the number of rows, so it is not enough to read just the
+        /// top-K source rows: `LIMIT` must be applied to the rows produced by `arrayJoin`,
+        /// not to the source rows. Enabling skip-index / dynamic top-K filtering here could
+        /// discard source rows that are still needed to produce `LIMIT` rows after the
+        /// expansion. Bail out, consistent with the same check in `optimizeLazyMaterialization2`.
+        if (above_expr->getExpression().hasArrayJoin())
             return 0;
         node = node->children.front();
     }
