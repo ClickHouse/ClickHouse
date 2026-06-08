@@ -9,7 +9,6 @@ namespace
 {
 using namespace DB;
 using SettingMySQLDataTypesSupport = SettingFieldMultiEnum<MySQLDataTypesSupport, SettingFieldMySQLDataTypesSupportTraits>;
-using SettingJoinOrderAlgorithm = SettingFieldMultiEnum<JoinOrderAlgorithm, SettingFieldJoinOrderAlgorithmTraits>;
 }
 
 namespace DB
@@ -141,27 +140,4 @@ GTEST_TEST(SettingMySQLDataTypesSupport, SetInvalidString)
     EXPECT_NO_THROW(setting = String(", "));
     ASSERT_TRUE(setting.changed);
     ASSERT_EQ(std::vector<MySQLDataTypesSupport>{}, setting.value);
-}
-
-GTEST_TEST(SettingJoinOrderAlgorithm, SetAuto)
-{
-    SettingJoinOrderAlgorithm setting;
-    setting = String("auto");
-
-    ASSERT_TRUE(setting.changed);
-    ASSERT_EQ(std::vector<JoinOrderAlgorithm>{JoinOrderAlgorithm::AUTO}, setting.value);
-    ASSERT_EQ("auto", setting.toString());
-    ASSERT_TRUE(MultiEnum<JoinOrderAlgorithm>(setting).isSet(JoinOrderAlgorithm::AUTO));
-}
-
-GTEST_TEST(SettingJoinOrderAlgorithm, SetMultipleWithDeduplication)
-{
-    SettingJoinOrderAlgorithm setting;
-    setting = String("auto,dpsize,auto,greedy");
-
-    ASSERT_TRUE(setting.changed);
-    ASSERT_EQ(
-        std::vector<JoinOrderAlgorithm>({JoinOrderAlgorithm::AUTO, JoinOrderAlgorithm::DPSIZE, JoinOrderAlgorithm::GREEDY}),
-        setting.value);
-    ASSERT_EQ("auto,dpsize,greedy", setting.toString());
 }
