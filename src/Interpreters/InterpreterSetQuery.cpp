@@ -20,9 +20,38 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace Setting
 {
     extern const SettingsDefaultTableEngine default_table_engine;
+}
+
+namespace
+{
+/// These settings shape the HTTP request routing and the response (query construction, paging,
+/// response-body compression). `HTTPHandler` consumes them *before* the query is parsed and
+/// executed — by the time an in-query `SETTINGS` clause is interpreted, the query has already been
+/// wrapped and the response buffers fixed, so setting them there has no effect on any protocol.
+/// Reject them with a clear message instead of silently ignoring them: they must be supplied via
+/// the HTTP URL parameter, an `X-ClickHouse-*` header, or a user profile.
+void rejectHttpOnlyConstructionSettings(const SettingsChanges & changes)
+{
+    for (const auto & change : changes)
+    {
+        if (change.name == "select" || change.name == "filter" || change.name == "order"
+            || change.name == "sort" || change.name == "page" || change.name == "compression")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting '{}' shapes the HTTP request/response and is consumed before the query is "
+                "executed, so it has no effect when set via an in-query SETTINGS clause. Set it via "
+                "the corresponding HTTP URL parameter, an `X-ClickHouse-*` header, or a user profile "
+                "instead.",
+                change.name);
+    }
+}
 }
 
 BlockIO InterpreterSetQuery::execute()
@@ -41,7 +70,10 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
     if (!ignore_setting_constraints)
+    {
         getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
+        rejectHttpOnlyConstructionSettings(ast.changes);
+    }
     getContext()->applySettingsChanges(ast.changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
 }

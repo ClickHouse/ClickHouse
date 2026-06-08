@@ -6332,18 +6332,32 @@ Result:
     \
     DECLARE(Double, page, 0, R"(
 Sets the page number for paginated results. Equivalent to `offset = limit * (page - 1)`. Can only be specified when `limit` is set and `offset` is not. Pages are 1-based. Inherits the same negative/fractional support as `limit` and `offset`.
+
+This is an HTTP-interface query-construction setting: it is consumed before the query is executed, so it must be supplied via the HTTP URL parameter or a user profile, not via an in-query `SETTINGS` clause (where it has no effect and is rejected).
 )", 0) \
     DECLARE(String, select, "", R"(
 Wraps the query as a subquery with an explicit `SELECT` expression list. When non-empty, every query is wrapped as `SELECT <expr_list> FROM (<query>)`.
+
+This is an HTTP-interface query-construction setting: it is consumed before the query is executed, so it must be supplied via the HTTP URL parameter or a user profile, not via an in-query `SETTINGS` clause (where it has no effect and is rejected).
 )", 0) \
     DECLARE(String, order, "", R"(
 Adds an `ORDER BY` clause to the query as a wrapping subquery. Accepts an arbitrary expression list.
+
+This is an HTTP-interface query-construction setting: it is consumed before the query is executed, so it must be supplied via the HTTP URL parameter or a user profile, not via an in-query `SETTINGS` clause (where it has no effect and is rejected).
 )", 0) \
     DECLARE(String, sort, "", R"(
 Adds a simple `ORDER BY` clause to the query as a wrapping subquery. Accepts a comma-separated list of identifiers or positional column references (positive integers) with an optional `+` (ASC) or `-` (DESC) prefix. Example: `sort=a,-b` orders by `a` ascending and `b` descending; `sort=1,-2` orders by the first column ascending and the second descending. Cannot be combined with `order`.
+
+This is an HTTP-interface query-construction setting: it is consumed before the query is executed, so it must be supplied via the HTTP URL parameter or a user profile, not via an in-query `SETTINGS` clause (where it has no effect and is rejected).
 )", 0) \
     DECLARE(String, filter, "", R"(
 Adds a `WHERE` clause to the query as a wrapping subquery. Multiple filters are combined with AND. The HTTP interface allows multiple `filter` URL parameters which are combined with AND in order, and with the value of this setting.
+
+This is an HTTP-interface query-construction setting: it is consumed before the query is executed, so it must be supplied via the HTTP URL parameter or a user profile, not via an in-query `SETTINGS` clause (where it has no effect and is rejected).
+
+:::danger
+`filter` is **not** an access-control mechanism and must not be used as a substitute for [row-level security policies](/operations/access-rights#row-policy-management) or the `additional_table_filters` setting. It only adds a `WHERE` over the wrapping subquery, so the underlying data is still read and processed before the filter is applied — a query can observe the filtered-out rows during processing (for example with `throwIf` to leak information through the error path). Use row-level security or `additional_table_filters` when the goal is to restrict which rows a user may access.
+:::
 )", 0) \
     DECLARE(String, database, "", R"(
 Specifies the current database for the query. Equivalent to issuing `USE <database>`. Used as the destination for the HTTP interface `database` URL parameter and `X-ClickHouse-Database` header.
@@ -6362,6 +6376,8 @@ Overrides the output format of the query. Wins over the format specified in the 
 )", 0) \
     DECLARE(String, compression, "", R"(
 Applies a generic compression to the response body, e.g., `compression=gz`. Note this is independent of `Content-Encoding` (HTTP compression) and the legacy `compress` parameter (ClickHouse-native compression). Specifying a compressed file extension in the URL path is equivalent.
+
+This is an HTTP-interface response-shaping setting: it is consumed before the query is executed (the response buffers are set up up-front), so it must be supplied via the HTTP URL parameter, the URL path file extension, or a user profile, not via an in-query `SETTINGS` clause (where it has no effect and is rejected).
 )", 0) \
     DECLARE(Bool, http_allow_database_as_path, false, R"(
 If enabled, the HTTP interface recognizes a `/database/` component in the URL path and uses it as the current database.

@@ -1,0 +1,8 @@
+Setting 'select' shapes the HTTP request/response
+Setting 'filter' shapes the HTTP request/response
+Setting 'order' shapes the HTTP request/response
+Setting 'sort' shapes the HTTP request/response
+Setting 'page' shapes the HTTP request/response
+Setting 'compression' shapes the HTTP request/response
+3
+6
