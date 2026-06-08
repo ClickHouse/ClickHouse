@@ -1,4 +1,4 @@
-SET max_bytes_before_external_join = 0; -- Remove once spilling hash join is enabled by default
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 
 create table lhs(a UInt64) Engine=MergeTree order by ();
 create table rhs(a UInt64) Engine=MergeTree order by ();

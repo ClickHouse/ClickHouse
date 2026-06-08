@@ -145,10 +145,8 @@ bool ClickHouseDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        LOG_TRACE(log, "Invalidate query has returned: {}, previous value: {}", response, invalidate_query_response);
-        if (invalidate_query_response == response)
-            return false;
-        invalidate_query_response = response;
+        LOG_TRACE(log, "Invalidate query has returned: {}", response);
+        return invalidate_query_response.updateAndCheckModified(response);
     }
     return true;
 }
@@ -234,6 +232,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     return readInvalidateQuery(pipeline);
 }
 
+void registerDictionarySourceClickHouse(DictionarySourceFactory & factory);
 void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,

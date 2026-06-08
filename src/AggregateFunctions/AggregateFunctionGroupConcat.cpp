@@ -232,7 +232,7 @@ bool GroupConcatImpl<has_limit>::allocatesMemoryInArena() const { return true; }
 
 // Implementation of add, merge, serialize, deserialize, insertResultInto, etc. remains unchanged.
 
-AggregateFunctionPtr createAggregateFunctionGroupConcat(
+static AggregateFunctionPtr createAggregateFunctionGroupConcat(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertUnary(name, argument_types);
@@ -273,6 +273,7 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
     return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types[0], parameters, limit, delimiter);
 }
 
+void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
@@ -342,7 +343,13 @@ John, Jane
     FunctionDocumentation documentation_groupConcat = {description_groupConcat, syntax_groupConcat, arguments_groupConcat, parameters_groupConcat, returned_value_groupConcat, examples_groupConcat, introduced_in_groupConcat, category_groupConcat};
 
     factory.registerFunction("groupConcat", { createAggregateFunctionGroupConcat, documentation_groupConcat, properties });
-    factory.registerAlias(GroupConcatImpl<false>::getNameAndAliases().at(1), GroupConcatImpl<false>::getNameAndAliases().at(0), AggregateFunctionFactory::Case::Insensitive);
+    /// Register every alias from `getNameAndAliases` (index 0 is the canonical name).
+    /// `string_agg` is the PostgreSQL/SQL-standard alias; its argument order matches `groupConcat(expr, sep)`.
+    /// The alias names must also be present in `getNameAndAliases` so the analyzer rewrites
+    /// the 2-argument form into the parameterized form (see `QueryTreeBuilder::setSecondArgumentAsParameter`).
+    const auto & aliases = GroupConcatImpl<false>::getNameAndAliases();
+    for (size_t i = 1; i < aliases.size(); ++i)
+        factory.registerAlias(aliases.at(i), aliases.at(0), AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

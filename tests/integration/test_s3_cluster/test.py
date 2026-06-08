@@ -17,7 +17,9 @@ logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-S3_DATA = [
+
+# Base CSV files committed to git. Immutable on disk, safe to read concurrently.
+S3_BASE_FILES = [
     "data/clickhouse/part1.csv",
     "data/clickhouse/part123.csv",
     "data/database/part2.csv",
@@ -25,14 +27,48 @@ S3_DATA = [
 ]
 
 
+def _generated_host_dir():
+    """Per-xdist-worker host directory for the dynamically generated CSV files.
+
+    Concurrent xdist workers running this module (especially under
+    `--dist=each`, used by the targeted/flaky integration jobs) all execute
+    this fixture in parallel. Their MinIO containers are isolated by
+    `ClickHouseCluster` (it appends `PYTEST_XDIST_WORKER` to `project_name`),
+    but the host filesystem path is not. With a shared host directory, one
+    worker's teardown (`shutil.rmtree(...)`) deletes files while another
+    worker is still uploading them, producing setup-phase
+    `FileNotFoundError` on `data/generated/file_*.csv` and failing every
+    test in the module via fixture error.
+
+    The MinIO bucket key for tests stays `data/generated/file_N.csv` (each
+    worker uploads to its own MinIO instance); only the host write/read path
+    is scoped per worker.
+    """
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
+    suffix = f"_{worker_id}" if worker_id else ""
+    return os.path.join(SCRIPT_DIR, f"data/generated{suffix}")
+
+
 def create_buckets_s3(cluster):
     minio = cluster.minio_client
 
+    host_dir = _generated_host_dir()
+    os.makedirs(host_dir, exist_ok=True)
+
+    files_to_upload = []  # list of (bucket_object_key, host_file_path)
+
+    # Base files: committed in git, read from the shared SCRIPT_DIR location.
+    for relative_path in S3_BASE_FILES:
+        files_to_upload.append(
+            (relative_path, os.path.join(SCRIPT_DIR, relative_path))
+        )
+
+    # Generated files: written into a per-worker host directory but uploaded
+    # to MinIO under the canonical `data/generated/` prefix that tests query.
     for file_number in range(100):
-        file_name = f"data/generated/file_{file_number}.csv"
-        os.makedirs(os.path.join(SCRIPT_DIR, "data/generated/"), exist_ok=True)
-        S3_DATA.append(file_name)
-        with open(os.path.join(SCRIPT_DIR, file_name), "w+", encoding="utf-8") as f:
+        bucket_object_key = f"data/generated/file_{file_number}.csv"
+        host_path = os.path.join(host_dir, f"file_{file_number}.csv")
+        with open(host_path, "w+", encoding="utf-8") as f:
             # a String, b UInt64
             data = []
 
@@ -44,12 +80,13 @@ def create_buckets_s3(cluster):
 
             writer = csv.writer(f)
             writer.writerows(data)
+        files_to_upload.append((bucket_object_key, host_path))
 
-    for file in S3_DATA:
+    for bucket_object_key, host_path in files_to_upload:
         minio.fput_object(
             bucket_name=cluster.minio_bucket,
-            object_name=file,
-            file_path=os.path.join(SCRIPT_DIR, file),
+            object_name=bucket_object_key,
+            file_path=host_path,
         )
     for obj in minio.list_objects(cluster.minio_bucket, recursive=True):
         print(obj.object_name)
@@ -68,6 +105,7 @@ def run_s3_mocks(started_cluster):
 
 @pytest.fixture(scope="module")
 def started_cluster():
+    cluster = None
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
@@ -103,8 +141,10 @@ def started_cluster():
 
         yield cluster
     finally:
-        shutil.rmtree(os.path.join(SCRIPT_DIR, "data/generated/"), ignore_errors=True)
-        cluster.shutdown()
+        # Only this worker's directory; never touches other workers' data.
+        shutil.rmtree(_generated_host_dir(), ignore_errors=True)
+        if cluster is not None:
+            cluster.shutdown()
 
 
 def test_select_all(started_cluster):
