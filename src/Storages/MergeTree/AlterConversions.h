@@ -73,9 +73,7 @@ private:
 
     /// Returns a chain of actions that can be
     /// applied to block to execute mutation commands
-    /// that affect columns from @read_columns. Each returned `MutationActions`
-    /// step carries its own `overwritten_columns` set so the on-fly reader chain
-    /// can apply per-step alter conversion.
+    /// that affect columns from @read_columns.
     std::vector<MutationActions> getMutationActions(
         const IMergeTreeDataPartInfoForReader & part_info,
         const NamesAndTypesList & read_columns,
