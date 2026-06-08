@@ -278,22 +278,20 @@ def run_func_test(
     for i, path in enumerate(output_paths):
         # Validate that simple tests work across all randomizations.
         # IF THIS FAILS, THE STRESS TESTS ARE BROKEN
+        options = get_options(i, upgrade_check, encrypted_storage)
         full_command = (
-            f"{cmd} --stress-tests {get_options(i, upgrade_check, encrypted_storage)} {global_time_limit_option} "
+            f"{cmd} --stress-tests {options} {global_time_limit_option} "
             f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
         )
         commands.append(full_command)
-        # Disable server-side AST fuzzer for the smoke check: fuzzed queries
-        # produce expected errors in stderr, which would fail these tests.
-        smoke_command = full_command.replace(
-            "--client-option ", "--client-option ast_fuzzer_runs=0 ", 1
+        # Smoke check: disable AST fuzzer (fuzzed queries produce expected
+        # errors in stderr) and cap global_time_limit so clickhouse-test
+        # exits on its own within the execute_bash timeout.
+        smoke_command = (
+            f"{cmd} --stress-tests {options} {smoke_time_limit_option} "
+            f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
+            f"--client-option ast_fuzzer_runs=0 "
         )
-        if global_time_limit_option:
-            smoke_command = smoke_command.replace(
-                global_time_limit_option, smoke_time_limit_option
-            )
-        else:
-            smoke_command += f" {smoke_time_limit_option} "
         check_command = (
             smoke_command
             + "--server-logs-level fatal --jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
