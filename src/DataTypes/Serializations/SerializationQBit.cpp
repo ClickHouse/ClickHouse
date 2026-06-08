@@ -18,7 +18,7 @@
 #include <base/types.h>
 
 #if USE_MULTITARGET_CODE
-#    include <immintrin.h>
+#include <immintrin.h>
 #endif
 
 
@@ -166,7 +166,6 @@ void SerializationQBit::serializeFloatsFromQBitTuple(const Tuple & tuple, WriteB
     const auto untranspose = resolveUntransposeBitPlane<Word>();
     const size_t slice_size = DataTypeQBit::bitsToBytes(dimension);
     const size_t slice_size_bits = slice_size * 8;
-
     std::vector<FloatType> dst(slice_size_bits, FloatType{});
 
     for (size_t bit = 0; bit < bits; ++bit)
@@ -441,10 +440,14 @@ void SerializationQBit::transposeBits(Word src, const size_t row_i, const size_t
     }
 }
 
-/// CPU-dispatched kernels for untransposing a bit plane. Selected at runtime by resolveUntransposeBitPlane
+/// clang-format can't deal with _Pragma and macros right now.
+// clang-format off
+
+/// CPU-dispatched kernels for untransposing a bit plane. Selected at runtime by resolveUntransposeBitPlane.
 DECLARE_DEFAULT_CODE(
     template <typename T>
-    ALWAYS_INLINE inline void untransposeBitPlaneImpl(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask) {
+    ALWAYS_INLINE inline void untransposeBitPlaneImpl(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask)
+    {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
 
@@ -549,10 +552,8 @@ DECLARE_X86_64_V4_SPECIFIC_CODE(
 
 /// Use explicit AVX512BW target instead of x86-64-v4 for better performance
 /// The generic x86-64-v4 arch seems to generate slower code for this specific workload
-_Pragma(
-    "clang attribute "
-    "push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.1,sse4.2,popcnt,avx,avx2,fma,f16c,bmi,bmi2,avx512f,avx512cd,avx512bw,avx512dq,"
-    "avx512vl\"))),apply_to=function)") namespace TargetSpecific::x86_64_v4
+_Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.1,sse4.2,popcnt,avx,avx2,fma,f16c,bmi,bmi2,avx512f,avx512cd,avx512bw,avx512dq,avx512vl\"))),apply_to=function)")
+namespace TargetSpecific::x86_64_v4
 {
     using namespace DB::TargetSpecific::x86_64_v4;
 
@@ -605,8 +606,8 @@ _Pragma("clang attribute pop")
 
 #endif
 
-    template <typename T>
-    SerializationQBit::UntransposeBitPlaneFn<T> SerializationQBit::resolveUntransposeBitPlane()
+template <typename T>
+SerializationQBit::UntransposeBitPlaneFn<T> SerializationQBit::resolveUntransposeBitPlane()
 {
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
@@ -621,6 +622,7 @@ _Pragma("clang attribute pop")
 #endif
     return TargetSpecific::Default::untransposeBitPlaneImpl<T>;
 }
+// clang-format on
 
 SerializationPtr SerializationQBit::create(const SerializationPtr & nested_, size_t element_size_, size_t dimension_)
 {
