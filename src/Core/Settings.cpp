@@ -7972,11 +7972,11 @@ Use Paimon partition pruning for Paimon table functions
     DECLARE(Bool, allow_experimental_object_storage_queue_hive_partitioning, false, R"(
 Allow to use hive partitioning with S3Queue/AzureQueue engines
     )", EXPERIMENTAL) \
-DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "greedy", R"(
+DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "auto", R"(
 Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
+ - 'auto' - uses DPsize for up to 9 relations and greedy for 10 or more relations.
  - 'greedy' - basic greedy algorithm - works fast but might not produce the best join order
  - 'dpsize' - implements DPsize algorithm currently only for Inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates.
- - 'auto' - uses DPsize for up to 9 relations and greedy for 10 or more relations.
 Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
     )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
