@@ -15,27 +15,38 @@ namespace DiskFromAST
     /// calls `convertCustomDiskField`/`convertCustomDiskSettings`) so they can be rolled back when
     /// the validation later throws, while remaining safe under concurrent DDL.
     ///
-    /// A registration is only rolled back if no other code path observed it after this scope wrote
-    /// it: every successful `Context::getOrCreateDisk` call for an existing custom disk clears the
-    /// pending-rollback marker for that name (the caller may now commit metadata against this disk,
-    /// so the original validation scope must not delete it). On scope destruction we ask the global
-    /// pending-rollback table whether our marker is still present; if yes, the registration is
-    /// uniquely ours and we remove the disk; if no, another DDL has observed it and we leak the
-    /// name (safe: the disk stays, the existing settings-hash check protects against redefinition).
+    /// Ownership semantics. The global pending-rollback table keeps an "active owners" set per
+    /// disk name plus a `committed` flag. The first scope to register a fresh custom disk inserts
+    /// itself into the active set; any subsequent scope that observes the same name via
+    /// `Context::getOrCreateDisk` joins the active set as an additional owner instead of erasing
+    /// the entry. The disk is rolled back from the global `DiskSelector` only when (a) no scope
+    /// has committed its metadata transition, AND (b) the LAST scope to leave the active set runs
+    /// its destructor. A scope's `commit` flips the `committed` flag and drops its slot; from then
+    /// on no surviving scope's destructor will roll back the disk, even if every observer later
+    /// fails. This eliminates the TOCTOU race where a concurrent observer could erase the
+    /// pending-rollback marker and then itself fail, leaving the original registrar unable to
+    /// roll back a disk that nobody actually committed.
+    ///
+    /// Cache-entry ownership. `disk(type = cache, name = X, ...)` registers a `FileCache` keyed by
+    /// `X` in the global `FileCacheFactory`; the rollback path removes that entry only when the
+    /// FIRST registrar's snapshot proved the cache name did not pre-exist (recorded in
+    /// `we_inserted_cache_entry` on the tentative-registration entry). A pre-existing cache reused
+    /// via the same path is never silently torn down by an unrelated rejected ALTER.
     ///
     /// Usage at a validation call site (e.g. `MergeTreeData::checkAlterIsPossible`):
     ///
     ///     CustomDiskRegistrationScope disk_scope(local_context);
     ///     DiskFromAST::convertCustomDiskSettings(new_changes, local_context, false, &disk_scope);
     ///     // ... validation that may throw ...
-    ///     // No `disk_scope.commit();` -destructor releases markers and rolls back unobserved ones.
+    ///     // No `disk_scope.commit();` - destructor releases the slot; the disk is rolled back
+    ///     // only when no other scope is in flight and none has committed.
     ///
     /// Usage at the actual apply site (e.g. `MergeTreeData::changeSettings`):
     ///
     ///     CustomDiskRegistrationScope disk_scope(getContext());
     ///     DiskFromAST::convertCustomDiskSettings(new_changes, getContext(), false, &disk_scope);
     ///     // ... apply work ...
-    ///     disk_scope.commit();   /// keep the registrations; clear all pending-rollback markers
+    ///     disk_scope.commit();   /// flip `committed`; keep the registration permanently
     class CustomDiskRegistrationScope
     {
     public:

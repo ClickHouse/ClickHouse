@@ -58,6 +58,11 @@ public:
 
     FileCacheDataPtr getByName(const std::string & cache_name);
 
+    /// Like `getByName`, but returns nullptr instead of throwing when no cache by this name
+    /// exists. Used by `Context::getOrCreateDisk` to snapshot cache-name presence around
+    /// custom-disk creation without being forced to swallow exceptions (issue #63019).
+    FileCacheDataPtr tryGetByName(const std::string & cache_name);
+
     void loadDefaultCaches(const Poco::Util::AbstractConfiguration & config, ContextPtr context);
 
     void updateSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);

@@ -6,6 +6,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -98,17 +99,34 @@ static std::string getOrCreateCustomDisk(
     }
 
     /// `Context::getOrCreateDisk` records `scope` (used as an opaque owner pointer) in the
-    /// global pending-rollback table when this call newly registers the disk; if the disk
-    /// already exists, it clears any prior pending-rollback marker so a concurrent ALTER
-    /// validation cannot remove a registration that this caller has just observed (and may
-    /// commit metadata against). See `DiskFromAST::CustomDiskRegistrationScope` and issue
-    /// #63019, clickhouse-gh[bot] CR on PR #103818 (TOCTOU race on rollback).
+    /// global pending-rollback table. Newly-registered disks are tracked under that scope's
+    /// ownership; observers of an already-registered disk join the rollback chain so they
+    /// cannot be silently rolled out from under each other. See
+    /// `DiskFromAST::CustomDiskRegistrationScope` and issue #63019.
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
-        auto result = DiskFactory::instance().create(
-            disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
-        /// Mark that disk can be used without storage policy.
-        result->markDiskAsCustom(disk_settings_hash);
-        return result;
+        /// `disk(type = cache, name = X, ...)` registers a `FileCache` keyed by `X` in the
+        /// global `FileCacheFactory` BEFORE `RegisterDiskCache` reaches the
+        /// `DiskObjectStorage` cast that may throw (`RegisterDiskCache.cpp:144`). If the
+        /// creator throws after the cache is inserted, the disk is never added to
+        /// `DiskSelector`, so the registration scope never gets a chance to track it.
+        /// Snapshot `FileCacheFactory` state here and roll back any cache entry that
+        /// appeared on the throw path. A pre-existing cache by the same name (same path)
+        /// is not removed, because the snapshot proves the entry existed before us.
+        const bool cache_pre_existed = FileCacheFactory::instance().tryGetByName(disk_name) != nullptr;
+        try
+        {
+            auto result = DiskFactory::instance().create(
+                disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
+            /// Mark that disk can be used without storage policy.
+            result->markDiskAsCustom(disk_settings_hash);
+            return result;
+        }
+        catch (...)
+        {
+            if (!cache_pre_existed && FileCacheFactory::instance().tryGetByName(disk_name) != nullptr)
+                FileCacheFactory::instance().removeByName(disk_name);
+            throw;
+        }
     }, /* pending_rollback_owner */ scope);
 
     /// Always remember the name on the scope. The atomic ownership check at rollback / commit

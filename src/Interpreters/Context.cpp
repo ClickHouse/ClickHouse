@@ -636,15 +636,31 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector TSA_GUARDED_BY(storage_policies_mutex);
     /// Storage policy chooser for MergeTree engines
     mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector TSA_GUARDED_BY(storage_policies_mutex);
-    /// Maps a custom-disk name freshly registered by an in-flight ALTER validation to the
-    /// `CustomDiskRegistrationScope *` that registered it. The scope is used as an opaque
-    /// owner token; it is never dereferenced by `Context`. Cleared in three cases under
-    /// `storage_policies_mutex`: when another caller observes the existing disk via
-    /// `getOrCreateDisk` (the registration is now publicly visible and must not be rolled
-    /// back), when the owning scope commits, or when the owning scope is destroyed and
-    /// rolls back the registration. See `DiskFromAST::CustomDiskRegistrationScope` and
-    /// issue #63019.
-    mutable std::unordered_map<String, const void *> tentative_disk_registrations TSA_GUARDED_BY(storage_policies_mutex);
+    /// Tracks custom-disk registrations performed by in-flight ALTER validations.
+    ///
+    /// The `active_owners` vector lists every `CustomDiskRegistrationScope *` (used as opaque
+    /// tokens, never dereferenced) that has either freshly registered the disk or merely
+    /// observed an existing tentative registration via `getOrCreateDisk`. The disk is rolled
+    /// back from the global `DiskSelector` only when (a) `committed` is `false`, AND (b) the
+    /// last scope leaves `active_owners`. Any scope that calls
+    /// `clearPendingCustomDiskRegistration` (after committing its metadata transition) flips
+    /// `committed` to `true`; from that point no destructor rolls the disk back, which keeps
+    /// the disk reachable for the metadata that is now committed against it.
+    ///
+    /// `we_inserted_cache_entry` records whether the FIRST registrar of this name also
+    /// inserted a fresh entry into `FileCacheFactory::caches_by_name` (i.e. `disk(type =
+    /// cache, name = X, ...)` registered a new cache by name `X`). The rollback path removes
+    /// the cache entry only when this flag is set, so a same-name pre-existing cache is
+    /// never silently torn down by an unrelated rejected ALTER.
+    ///
+    /// See `DiskFromAST::CustomDiskRegistrationScope` and issue #63019.
+    struct TentativeDiskRegistration
+    {
+        std::vector<const void *> active_owners;
+        bool committed = false;
+        bool we_inserted_cache_entry = false;
+    };
+    mutable std::unordered_map<String, TentativeDiskRegistration> tentative_disk_registrations TSA_GUARDED_BY(storage_policies_mutex);
 
     ServerSettings server_settings;
 
@@ -6345,21 +6361,45 @@ DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator, const
     auto disk = disk_selector->tryGet(name);
     if (!disk)
     {
+        /// Snapshot whether a `FileCacheFactory` entry by this name pre-exists. Used below
+        /// to decide whether the rollback path is allowed to remove the cache entry: if a
+        /// cache by this name was already registered (e.g. by a still-active table or by
+        /// `disk(type = cache, name = preexisting, ...)` reusing the same path), then this
+        /// scope does not own the cache registration even if it newly registers the disk,
+        /// and the rollback must leave the cache alone.
+        const bool cache_pre_existed = FileCacheFactory::instance().tryGetByName(name) != nullptr;
+
         disk = creator(getDisksMap(lock));
         const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
 
         if (pending_rollback_owner)
-            shared->tentative_disk_registrations[name] = pending_rollback_owner;
+        {
+            auto & entry = shared->tentative_disk_registrations[name];
+            entry.active_owners.push_back(pending_rollback_owner);
+            /// Only the first registrar can claim ownership of a fresh cache entry. Repeat
+            /// observers (`active_owners.size() > 1`) cannot, even if the cache happened to
+            /// appear after their join: that cache belongs to someone else's tentative
+            /// registration or to a committed table.
+            if (entry.active_owners.size() == 1)
+                entry.we_inserted_cache_entry = !cache_pre_existed
+                    && FileCacheFactory::instance().tryGetByName(name) != nullptr;
+        }
     }
-    else
+    else if (pending_rollback_owner)
     {
-        /// The caller has just observed an existing custom disk by this name. Whoever
-        /// registered it (possibly an in-flight ALTER validation in another thread) MUST NOT
-        /// roll the registration back: the caller may now commit metadata against this
-        /// disk and would otherwise end up referencing a name no longer in the selector.
-        /// Erasing the pending-rollback marker is the way `~CustomDiskRegistrationScope`
-        /// detects this case and chooses to leak the name instead of removing it.
-        shared->tentative_disk_registrations.erase(name);
+        /// The caller has observed an existing custom disk by this name. Join the rollback
+        /// chain: the disk must not be removed while we hold a reference, because we may
+        /// later commit metadata against it. The disk is removed only when ALL active
+        /// owners leave AND none has committed (see `removePendingCustomDiskIfOwned` and
+        /// `clearPendingCustomDiskRegistration`).
+        ///
+        /// If no tentative entry is currently tracked for this disk, the disk has long
+        /// been committed by a previous DDL and there is nothing to track. We do NOT
+        /// create an entry in that case: doing so would let an unrelated later rollback
+        /// remove a disk that no in-flight scope ever tentatively registered.
+        auto it = shared->tentative_disk_registrations.find(name);
+        if (it != shared->tentative_disk_registrations.end())
+            it->second.active_owners.push_back(pending_rollback_owner);
     }
 
     return disk;
@@ -6370,8 +6410,33 @@ bool Context::removePendingCustomDiskIfOwned(const String & disk_name, const voi
     std::lock_guard lock(shared->storage_policies_mutex);
 
     auto it = shared->tentative_disk_registrations.find(disk_name);
-    if (it == shared->tentative_disk_registrations.end() || it->second != owner)
+    if (it == shared->tentative_disk_registrations.end())
         return false;
+
+    auto & entry = it->second;
+
+    /// Drop ourselves from the active set. Robust to repeated `track`s of the same name
+    /// (the scope's `track` is best-effort; double-tracking only adds duplicate slots).
+    auto & owners = entry.active_owners;
+    owners.erase(std::remove(owners.begin(), owners.end(), owner), owners.end());
+
+    /// If anyone in the chain has committed, the disk is permanently reachable. Drop our
+    /// slot, leak everything else (the existing settings-hash check protects future ALTERs
+    /// from redefining the name with different settings).
+    if (entry.committed)
+    {
+        if (owners.empty())
+            shared->tentative_disk_registrations.erase(it);
+        return false;
+    }
+
+    /// Other scopes are still in flight. They might commit; defer removal to whichever
+    /// scope is the last to leave.
+    if (!owners.empty())
+        return false;
+
+    /// We are the last scope to leave and no one committed. Roll back globally.
+    const bool we_inserted_cache_entry = entry.we_inserted_cache_entry;
     shared->tentative_disk_registrations.erase(it);
 
     auto disk_selector = getDiskSelector(lock);
@@ -6389,12 +6454,11 @@ bool Context::removePendingCustomDiskIfOwned(const String & disk_name, const voi
     const String storage_policy_name = StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + disk_name;
     const_cast<StoragePolicySelector *>(storage_policy_selector.get())->remove(storage_policy_name);
 
-    /// `disk(type = cache, name = X, ...)` registers a `FileCache` keyed by `X` in the global
-    /// `FileCacheFactory` while the disk is being constructed (`RegisterDiskCache.cpp`). Drop
-    /// that entry too so a follow-up `CREATE TABLE ... SETTINGS disk = disk(name = X, ...)`
-    /// with DIFFERENT path / settings can re-register cleanly. The factory's no-op-if-absent
-    /// `removeByName` makes this safe for non-cache disks (the entry simply doesn't exist).
-    FileCacheFactory::instance().removeByName(disk_name);
+    /// Drop the cache entry we own. `we_inserted_cache_entry` is set only when the first
+    /// registrar inserted a fresh entry into `FileCacheFactory::caches_by_name`; a
+    /// preexisting cache reused via the same path remains untouched.
+    if (we_inserted_cache_entry)
+        FileCacheFactory::instance().removeByName(disk_name);
 
     auto removed_disk = const_cast<DiskSelector *>(disk_selector.get())->removeFromDiskMap(disk_name);
     return removed_disk != nullptr;
@@ -6405,7 +6469,20 @@ void Context::clearPendingCustomDiskRegistration(const String & disk_name, const
     std::lock_guard lock(shared->storage_policies_mutex);
 
     auto it = shared->tentative_disk_registrations.find(disk_name);
-    if (it != shared->tentative_disk_registrations.end() && it->second == owner)
+    if (it == shared->tentative_disk_registrations.end())
+        return;
+
+    auto & entry = it->second;
+
+    /// Mark the registration as committed: from now on no destructor of any scope still
+    /// holding a slot will roll back the disk. This is the only place that flips the flag.
+    entry.committed = true;
+
+    /// Drop our slot. Other observers may still be in flight; their destructors will see
+    /// `committed == true` and merely shrink the active set.
+    auto & owners = entry.active_owners;
+    owners.erase(std::remove(owners.begin(), owners.end(), owner), owners.end());
+    if (owners.empty())
         shared->tentative_disk_registrations.erase(it);
 }
 

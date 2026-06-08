@@ -162,6 +162,17 @@ FileCacheFactory::FileCacheDataPtr FileCacheFactory::getByName(const std::string
     return it->second;
 }
 
+FileCacheFactory::FileCacheDataPtr FileCacheFactory::tryGetByName(const std::string & cache_name)
+{
+    std::lock_guard lock(mutex);
+
+    auto it = caches_by_name.find(cache_name);
+    if (it == caches_by_name.end())
+        return nullptr;
+
+    return it->second;
+}
+
 void FileCacheFactory::updateSettingsFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     CacheByName caches_by_name_copy;

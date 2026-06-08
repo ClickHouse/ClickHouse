@@ -233,3 +233,85 @@ SELECT count(), sum(a) FROM t_63019_rollback_b;
 
 DROP TABLE t_63019_rollback_b;
 DROP TABLE t_63019_rollback_a;
+
+-- clickhouse-gh[bot] follow-up review on PR #103818: the rollback path must not remove
+-- a `FileCacheFactory` entry it does not own. If the rollback path unconditionally calls
+-- `removeByName(disk_name)`, an unrelated rejected `ALTER ... MODIFY SETTING disk = disk(
+-- name = '<existing-cache>', ...)` whose disk name happens to match a pre-existing cache
+-- entry would silently tear down that cache, breaking later lookups by name in
+-- `system.filesystem_cache`, `system.disks`, and any code path that does
+-- `FileCacheFactory::get(name)`.
+--
+-- This block exercises the cache-ownership half of the fix: a base table is created with
+-- a fresh `disk(type = cache, name = '63019_owner_cache', ...)` registration; that name is
+-- then exercised by a REJECTED `ALTER ... MODIFY SETTING disk = disk(name =
+-- '63019_owner_cache', ...)` on a sibling table. The rollback path must not delete the
+-- pre-existing cache that the base table actually owns.
+
+DROP TABLE IF EXISTS t_63019_owner;
+DROP TABLE IF EXISTS t_63019_sibling;
+DROP TABLE IF EXISTS t_63019_base;
+
+CREATE TABLE t_63019_base (a Int32) ENGINE = MergeTree() ORDER BY a
+SETTINGS disk = disk(
+    name = '63019_base',
+    type = object_storage,
+    object_storage_type = local_blob_storage,
+    path = './63019_base_objstore/');
+
+-- Pre-create the owner cache: this cache entry pre-exists from this point on, and is
+-- referenced by `t_63019_owner`. The follow-up rejected ALTER below MUST NOT remove it.
+CREATE TABLE t_63019_owner (a Int32) ENGINE = MergeTree() ORDER BY a
+SETTINGS disk = disk(
+    name = '63019_owner_cache',
+    type = cache,
+    disk = '63019_base',
+    path = './63019_owner_cache_data/',
+    max_size = '1Mi');
+
+INSERT INTO t_63019_owner SELECT number FROM numbers(2);
+SELECT count(), sum(a) FROM t_63019_owner;
+
+-- Sibling table sits on its own object_storage disk; we then issue an ALTER that wraps it
+-- in a cache layer using the SAME `name = '63019_owner_cache'`. The
+-- storage-policy migration guard rejects the ALTER. The rollback path observes the
+-- existing-by-name cache (it pre-existed our scope, so `we_inserted_cache_entry` stays
+-- false on this scope's tentative entry, even though the disk-by-name entry was newly
+-- registered as part of this validation). The cache must NOT be torn down.
+CREATE TABLE t_63019_sibling (a Int32) ENGINE = MergeTree() ORDER BY a
+SETTINGS disk = disk(
+    name = '63019_sibling',
+    type = object_storage,
+    object_storage_type = local_blob_storage,
+    path = './63019_sibling_objstore/');
+
+INSERT INTO t_63019_sibling SELECT number + 10 FROM numbers(2);
+
+ALTER TABLE t_63019_sibling MODIFY SETTING disk = disk(
+    name = '63019_owner_cache',
+    type = cache,
+    disk = '63019_sibling',
+    path = './63019_owner_cache_other_data/',
+    max_size = '2Mi'); -- { serverError BAD_ARGUMENTS }
+
+-- The owner cache must still be intact and usable: a SELECT through the original
+-- `t_63019_owner` table (which is on top of the cache) succeeds and returns the original
+-- rows. Without the ownership fix, the rejected ALTER above would have unconditionally
+-- removed `63019_owner_cache` from `FileCacheFactory::caches_by_name`, and the next read
+-- through `t_63019_owner` would either silently recreate a fresh cache with a different
+-- path or fail downstream.
+SELECT count(), sum(a) FROM t_63019_owner;
+
+-- And the owner cache disk MUST still be visible by name in `system.disks` with its
+-- ORIGINAL cache_path (`./63019_owner_cache_data/`), not replaced by the rejected
+-- ALTER's `./63019_owner_cache_other_data/`. Without the ownership-checked rollback,
+-- the rejected ALTER would have torn down the entry in `FileCacheFactory::caches_by_name`
+-- (`removeByName` deletes by key alone), at minimum disrupting any subsequent
+-- `FileCacheFactory::getByName` call by name.
+SELECT name, endsWith(cache_path, '63019_owner_cache_data/')
+FROM system.disks
+WHERE name = '63019_owner_cache';
+
+DROP TABLE t_63019_sibling;
+DROP TABLE t_63019_owner;
+DROP TABLE t_63019_base;
