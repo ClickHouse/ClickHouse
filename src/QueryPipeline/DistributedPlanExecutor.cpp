@@ -1129,7 +1129,8 @@ protected:
 
             if (task_status.status != "Finished")
                 throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-                    "Failures: Task {} error: {}", task.task_id, task_status.error_message);
+                    "Task {} did not finish successfully (status: {}): {}",
+                    task.task_id, task_status.status, task_status.error_message);
 
             /// Update task state
             setTaskFinished(stage_name, task.task_id);

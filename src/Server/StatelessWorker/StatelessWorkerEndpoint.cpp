@@ -251,7 +251,10 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
             }
             case StatelessTaskExecutor::UnknownTaskId:
             {
-                response.setStatus(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+                /// A gone task is a normal status answer, not a transport error: it has already
+                /// finished and been reclaimed, or was never started. Report it as a successful status
+                /// query carrying an "Unknown task" state so the coordinator treats it as terminal.
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
                 task_status.status = "Unknown task";
                 break;
             }
@@ -280,7 +283,8 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
             }
             case StatelessTaskExecutor::UnknownTaskId:
             {
-                response.setStatus(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+                /// For idempotency: a gone task is already not running, so cancellation succeeded.
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
                 writeString("Unknown task\n", out);
                 break;
             }
