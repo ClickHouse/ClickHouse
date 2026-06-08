@@ -32,24 +32,23 @@ namespace Setting
 
 namespace
 {
-/// These settings shape the HTTP request routing and the response (query construction, paging,
-/// response-body compression). `HTTPHandler` consumes them *before* the query is parsed and
-/// executed — by the time an in-query `SETTINGS` clause is interpreted, the query has already been
-/// wrapped and the response buffers fixed, so setting them there has no effect on any protocol.
-/// Reject them with a clear message instead of silently ignoring them: they must be supplied via
-/// the HTTP URL parameter, an `X-ClickHouse-*` header, or a user profile.
+/// `compression` shapes the HTTP *response body*: `HTTPHandler` sets up the response buffers from it
+/// before the query runs, so by the time an in-query `SETTINGS` clause is interpreted the buffers
+/// are already fixed and the setting has no effect. Reject it with a clear message instead of
+/// silently ignoring it; it must be supplied via the HTTP URL parameter, the URL path file
+/// extension, or a user profile. (The query-construction settings `select`/`filter`/`order`/`sort`/
+/// `page` are applied by the engine on the parsed AST, so they *do* work via an in-query SETTINGS
+/// clause and are not rejected here.)
 void rejectHttpOnlyConstructionSettings(const SettingsChanges & changes)
 {
     for (const auto & change : changes)
     {
-        if (change.name == "select" || change.name == "filter" || change.name == "order"
-            || change.name == "sort" || change.name == "page" || change.name == "compression")
+        if (change.name == "compression")
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Setting '{}' shapes the HTTP request/response and is consumed before the query is "
-                "executed, so it has no effect when set via an in-query SETTINGS clause. Set it via "
-                "the corresponding HTTP URL parameter, an `X-ClickHouse-*` header, or a user profile "
-                "instead.",
-                change.name);
+                "Setting 'compression' shapes the HTTP response body and is consumed before the query "
+                "is executed, so it has no effect when set via an in-query SETTINGS clause. Set it via "
+                "the `compression` HTTP URL parameter, a compressed file extension in the URL path, or "
+                "a user profile instead.");
     }
 }
 }

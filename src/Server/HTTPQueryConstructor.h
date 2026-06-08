@@ -39,29 +39,6 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
 /// be the right-hand side of `name = value`. Returns empty string if the input cannot be interpreted.
 String parseURLParameterAsFilter(const String & name, const String & value);
 
-/// Build the wrapped SQL query at the AST level.
-/// `base_query` is parsed (it must be a `SELECT` / `UNION` query) and, if `select_expr`,
-/// `filter_expr`, or `order_expr` is non-empty, wrapped as a derived table:
-/// `SELECT [select_expr|*] FROM (base_query) [WHERE filter_expr] [ORDER BY order_expr]`.
-/// The wrapping is performed by composing AST nodes (never by concatenating query text), so a
-/// trailing `;`, a top-level `FORMAT` clause, comments, or operator precedence in `base_query` are
-/// handled correctly; a top-level `FORMAT` / `SETTINGS` clause is relocated to the outer query.
-/// The parser limits come from the request's settings. `limit`/`offset`/`page` are handled
-/// separately by the regular `limit`/`offset` settings.
-String wrapHTTPQuery(
-    const String & base_query,
-    const String & select_expr,
-    const String & filter_expr,
-    const String & order_expr,
-    size_t max_query_size,
-    size_t max_parser_depth,
-    size_t max_parser_backtracks);
-
-/// Convert a comma-separated list of identifiers with optional +/- prefix into an ORDER BY clause.
-/// E.g., "a,-b,+c" -> "a ASC, b DESC, c ASC".
-/// Throws on invalid input (e.g., complex expressions). The "+" prefix means ASC; bare identifiers default to ASC.
-String convertSortToOrderBy(const String & sort);
-
 /// Returns true if the given format is considered binary based on its registered content type.
 /// Used to decide whether to set Content-Disposition: attachment.
 bool isBinaryOutputFormat(const String & format_name);

@@ -12,5 +12,3 @@
 20
 10
 0
---- a non-SELECT base query cannot be wrapped ---
-can only wrap a SELECT query

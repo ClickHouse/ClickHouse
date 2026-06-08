@@ -77,9 +77,6 @@ namespace Setting
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsInt64 http_zlib_compression_level;
     extern const SettingsUInt64 input_format_max_block_wait_ms;
-    extern const SettingsUInt64 max_query_size;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool send_progress_in_http_headers;
     extern const SettingsInt64 zstd_window_log_max;
@@ -89,9 +86,6 @@ namespace Setting
     extern const SettingsBool http_allow_filters_as_path;
     extern const SettingsBool http_allow_filters_as_unrecognized_url_parameters;
     extern const SettingsString compression;
-    extern const SettingsString select;
-    extern const SettingsString order;
-    extern const SettingsString sort;
     extern const SettingsString filter;
     extern const SettingsString format;
     extern const SettingsString input_format;
@@ -99,9 +93,6 @@ namespace Setting
     extern const SettingsString default_format;
     extern const SettingsString database;
     extern const SettingsString implicit_table_at_top_level;
-    extern const SettingsDouble limit;
-    extern const SettingsDouble offset;
-    extern const SettingsDouble page;
 }
 
 namespace ErrorCodes
@@ -703,100 +694,45 @@ void HTTPHandler::processQuery(
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
     const auto & raw_query = getQuery(request, params, context);
 
-    /// Translate `page` setting into `limit`/`offset`. All three of `limit`/`offset`/`page` are
-    /// `Double` settings so they may hold negative or fractional values (which `LIMIT`/`OFFSET`
-    /// accept natively).
-    ///
-    ///   - Positive page `N` with limit `L`: starts at offset `L * (N - 1)` and keeps `limit = L`
-    ///     — `page=1` is the first page, `page=2` is rows `L..2L`, etc.
-    ///   - Negative page `N` with limit `L`: count from the end. ClickHouse's negative `LIMIT`
-    ///     gives the last `|L|` rows, and stacking a negative `OFFSET` peels back further pages
-    ///     from the end. So we flip `limit` to `-L` and set `offset = L * (N + 1)`:
-    ///       `page=-1`  → `LIMIT -L OFFSET 0`   (the last page),
-    ///       `page=-2`  → `LIMIT -L OFFSET -L`  (the second-to-last page), etc.
-    ///   - Fractional pages compose naturally with fractional `limit` (e.g. `limit=0.25&page=3`
-    ///     is the third quarter of the result).
-    Float64 page_value = settings[Setting::page];
-    if (page_value != 0)
+    /// Combine all HTTP filter sources into the `filter` setting. The query-construction settings
+    /// (`select`/`filter`/`order`/`sort`/`page`) are applied by the engine in `executeQuery`, on the
+    /// parsed AST — see `applyQueryConstructionSettings`. The HTTP interface only needs to assemble
+    /// the `filter` value here, because it has additional sources the engine does not: the existing
+    /// `filter` setting value, filters from the URL path, repeated `?filter=` parameters, and (when
+    /// enabled) unrecognized URL parameters, combined with `AND` in that order. `select`, `order`,
+    /// `sort` and `page` are already regular settings applied from the URL parameters, so the engine
+    /// reads them directly.
     {
-        Float64 limit_value = settings[Setting::limit];
-        if (limit_value == 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Setting `page` requires `limit` to be set (got page={}, limit=0).", page_value);
-        if (settings[Setting::offset] != 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Setting `page` cannot be combined with `offset` (got page={}, offset={}).",
-                page_value, settings[Setting::offset].value);
-        /// `page` semantics (positive starts from the front; negative starts from the back) assume
-        /// a positive page size. Combining `page` with a negative `limit` (which by itself already
-        /// requests "the last |limit| rows") would either double-flip the direction or produce
-        /// nonsensical offsets — reject it explicitly so the user picks one or the other.
-        if (limit_value < 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Setting `page` cannot be combined with a negative `limit` (got page={}, limit={}). "
-                "Use a positive `limit` with `page` for pagination, or use a negative `limit` alone "
-                "for tail selection.",
-                page_value, limit_value);
-        SettingsChanges page_change;
-        if (page_value > 0)
+        std::vector<String> all_filters;
+        if (!settings[Setting::filter].value.empty())
+            all_filters.push_back("(" + settings[Setting::filter].value + ")");
+        for (const auto & f : path_info.path_filters)
+            all_filters.push_back(f);
+        for (const auto & f : url_filters_from_params)
+            all_filters.push_back(f);
+        for (const auto & f : url_filters_from_unrecognized)
+            all_filters.push_back(f);
+
+        String combined_filter;
+        for (const auto & f : all_filters)
         {
-            page_change.setSetting("offset", limit_value * (page_value - 1));
+            if (!combined_filter.empty())
+                combined_filter += " AND ";
+            combined_filter += f;
         }
-        else
-        {
-            page_change.setSetting("limit", -limit_value);
-            page_change.setSetting("offset", limit_value * (page_value + 1));
-        }
-        context->checkSettingsConstraints(page_change, SettingSource::QUERY);
-        context->applySettingsChanges(page_change);
-    }
 
-    /// Validate that `sort` and `order` are not both specified.
-    if (!settings[Setting::sort].value.empty() && !settings[Setting::order].value.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Settings `sort` and `order` cannot be specified together.");
-
-    /// Build the combined filter expression.
-    /// Order: filter setting value (from session/profile/server default), then path filters,
-    /// then URL `filter` parameters, then unrecognized URL params interpreted as filters.
-    std::vector<String> all_filters;
-    if (!settings[Setting::filter].value.empty())
-        all_filters.push_back("(" + settings[Setting::filter].value + ")");
-    for (const auto & f : path_info.path_filters)
-        all_filters.push_back(f);
-    for (const auto & f : url_filters_from_params)
-        all_filters.push_back(f);
-    for (const auto & f : url_filters_from_unrecognized)
-        all_filters.push_back(f);
-
-    String combined_filter;
-    for (const auto & f : all_filters)
-    {
+        /// Setting the combined value as the `filter` setting also routes the URL-path / repeated
+        /// `?filter=` / unrecognized-parameter filters through `checkSettingsConstraints`, so a
+        /// profile that constrains `filter` (e.g. marks it `const`) is enforced for every source
+        /// instead of being bypassed by `?filter=`.
         if (!combined_filter.empty())
-            combined_filter += " AND ";
-        combined_filter += f;
+        {
+            SettingsChanges filter_change;
+            filter_change.setSetting("filter", combined_filter);
+            context->checkSettingsConstraints(filter_change, SettingSource::QUERY);
+            context->applySettingsChanges(filter_change);
+        }
     }
-
-    /// `filter` is a first-class setting, but the filters supplied via the URL path, repeated
-    /// `?filter=` parameters, and unrecognized URL parameters were collected separately above and so
-    /// never passed through `checkSettingsConstraints` (only the `filter` setting value did, back
-    /// when URL/header settings were applied). Run the fully combined value through the constraints
-    /// as a synthetic `filter` change, so a profile that constrains `filter` (e.g. marks it `const`)
-    /// is enforced for every source instead of being bypassed by `?filter=`. We only check the
-    /// constraints here — the combined value is consumed directly when wrapping the query below.
-    if (!combined_filter.empty())
-    {
-        SettingsChanges filter_change;
-        filter_change.setSetting("filter", combined_filter);
-        context->checkSettingsConstraints(filter_change, SettingSource::QUERY);
-    }
-
-    /// Compute ORDER BY clause from either `order` (free-form) or `sort` (simple, with +/- prefixes).
-    String order_clause;
-    if (!settings[Setting::order].value.empty())
-        order_clause = settings[Setting::order].value;
-    else if (!settings[Setting::sort].value.empty())
-        order_clause = convertSortToOrderBy(settings[Setting::sort].value);
 
     /// Determine base query: from URL path table, or from `query` param (raw_query).
     String final_query = raw_query;
@@ -871,18 +807,10 @@ void HTTPHandler::processQuery(
             final_query = "SELECT * FROM " + qualified_table;
     }
 
-    /// Wrap the final query with SELECT/WHERE/ORDER BY according to query-construction settings.
-    String select_expr = settings[Setting::select].value;
-    if (!select_expr.empty() || !combined_filter.empty() || !order_clause.empty())
-    {
-        if (final_query.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Query construction settings (`select`/`filter`/`order`/`sort`) require a base query — "
-                "specify a query or use `http_allow_table_as_file`.");
-        final_query = wrapHTTPQuery(final_query, select_expr, combined_filter, order_clause,
-            settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-    }
-
+    /// The query-construction settings (`select`/`filter`/`order`/`sort`/`page`) are applied by the
+    /// engine (`executeQuery`) on the parsed AST, so the query text is not wrapped here. When the
+    /// SQL comes from the request body, `final_query` is empty and the body is concatenated below;
+    /// the engine then wraps the parsed body query just the same.
     const String & query = final_query;
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
 

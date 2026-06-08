@@ -31,9 +31,16 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
+#include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Parsers/toOneLineQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
@@ -202,6 +209,13 @@ namespace Setting
     extern const SettingsString format;
     extern const SettingsString output_format;
     extern const SettingsString database;
+    extern const SettingsString select;
+    extern const SettingsString order;
+    extern const SettingsString sort;
+    extern const SettingsString filter;
+    extern const SettingsDouble page;
+    extern const SettingsDouble limit;
+    extern const SettingsDouble offset;
 }
 
 namespace ServerSetting
@@ -1086,6 +1100,188 @@ private:
 using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactionControlExecutor>;
 
 
+/// Convert a comma-separated `sort` setting (identifiers / positional references with optional
+/// `+`/`-` prefix) into an `ORDER BY` expression string, e.g. `a,-b,2` -> `a ASC, b DESC, 2`.
+static String convertSortToOrderBy(const String & sort)
+{
+    String result;
+    auto flush_one = [&](String item)
+    {
+        while (!item.empty() && (item.front() == ' ' || item.front() == '\t'))
+            item.erase(0, 1);
+        while (!item.empty() && (item.back() == ' ' || item.back() == '\t'))
+            item.pop_back();
+        if (item.empty())
+            return;
+
+        String direction = " ASC";
+        String name = item;
+        if (item[0] == '-')
+        {
+            direction = " DESC";
+            name = item.substr(1);
+        }
+        else if (item[0] == '+')
+            name = item.substr(1);
+
+        if (name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty identifier in `sort` setting");
+
+        const bool all_digits = std::all_of(name.begin(), name.end(), isNumericASCII);
+        if (!all_digits)
+            for (char c : name)
+                if (!isAlphaNumericASCII(c) && c != '_')
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid character '{}' in identifier '{}' in `sort` setting. Use `order` for complex expressions.", c, name);
+
+        if (!result.empty())
+            result += ", ";
+        /// Positional references emit as bare numbers so `sort=1,-2` becomes `ORDER BY 1, 2 DESC`.
+        result += all_digits ? name : backQuoteIfNeed(name);
+        result += direction;
+    };
+
+    String current;
+    for (char c : sort)
+    {
+        if (c == ',')
+        {
+            flush_one(current);
+            current.clear();
+        }
+        else
+            current += c;
+    }
+    flush_one(current);
+    return result;
+}
+
+
+/// Apply the query-construction settings (`select`/`filter`/`order`/`sort`) by wrapping the parsed
+/// query AST as a derived table, and translate the `page` setting into `limit`/`offset`. The
+/// wrapping is composed from AST nodes (never by concatenating query text), so a trailing `;`, a
+/// top-level `FORMAT` clause, comments, or operator precedence in the base query are handled
+/// correctly. Settings that have no effect (the AST is not a `SELECT`/`UNION`, or there is an
+/// `INTO OUTFILE`) are left to apply elsewhere or ignored. This runs after the query's own
+/// `SETTINGS` clause has been applied, so these settings are first-class on every protocol.
+static void applyQueryConstructionSettings(
+    ASTPtr & ast,
+    ContextMutablePtr context,
+    size_t max_query_size,
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// `page` is sugar over `limit`/`offset`: `offset = limit * (page - 1)`.
+    if (const Float64 page = settings[Setting::page]; page != 0)
+    {
+        const Float64 limit = settings[Setting::limit];
+        if (limit == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting `page` requires `limit` to be set (got page={}, limit=0).", page);
+        if (settings[Setting::offset] != 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting `page` cannot be combined with `offset` (got page={}, offset={}).", page, settings[Setting::offset].value);
+        if (limit < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting `page` cannot be combined with a negative `limit` (got page={}, limit={}). "
+                "Use a positive `limit` with `page` for pagination, or a negative `limit` alone for tail selection.", page, limit);
+
+        SettingsChanges page_change;
+        if (page > 0)
+            page_change.setSetting("offset", limit * (page - 1));
+        else
+        {
+            page_change.setSetting("limit", -limit);
+            page_change.setSetting("offset", limit * (page + 1));
+        }
+        context->checkSettingsConstraints(page_change, SettingSource::QUERY);
+        context->applySettingsChanges(page_change);
+    }
+
+    const String & select_expr = settings[Setting::select];
+    const String & filter_expr = settings[Setting::filter];
+    String order_expr = settings[Setting::order];
+    const String & sort_expr = settings[Setting::sort];
+
+    if (select_expr.empty() && filter_expr.empty() && order_expr.empty() && sort_expr.empty())
+        return;
+
+    if (!sort_expr.empty() && !order_expr.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings `sort` and `order` cannot be specified together.");
+    if (order_expr.empty() && !sort_expr.empty())
+        order_expr = convertSortToOrderBy(sort_expr);
+
+    /// Only a `SELECT` / `UNION` can be wrapped as a derived table. For any other query kind, or a
+    /// query with `INTO OUTFILE` (which cannot live inside a subquery), leave the AST unchanged.
+    auto * base_select = ast->as<ASTSelectWithUnionQuery>();
+    if (!base_select || base_select->out_file)
+        return;
+
+    auto parse_component = [&](IParser & parser, const String & text, const char * what) -> ASTPtr
+    {
+        return parseQuery(parser, text.data(), text.data() + text.size(),
+            fmt::format("query construction ({})", what), max_query_size, max_parser_depth, max_parser_backtracks);
+    };
+
+    /// `FORMAT` and `SETTINGS` are top-level-only; detach from the base and re-attach to the outer
+    /// query (the base `SETTINGS` were already applied to the context above).
+    ASTPtr base_format = base_select->format_ast;
+    ASTPtr base_settings = base_select->settings_ast;
+    base_select->reset(base_select->format_ast);
+    base_select->reset(base_select->settings_ast);
+
+    auto outer_select = make_intrusive<ASTSelectQuery>();
+
+    ASTPtr select_list;
+    if (select_expr.empty())
+    {
+        select_list = make_intrusive<ASTExpressionList>();
+        select_list->children.push_back(make_intrusive<ASTAsterisk>());
+    }
+    else
+    {
+        ParserNotEmptyExpressionList select_parser(/* allow_alias_without_as_keyword= */ true);
+        select_list = parse_component(select_parser, select_expr, "`select` setting");
+    }
+    outer_select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+
+    auto subquery = make_intrusive<ASTSubquery>(ast);
+    auto table_expression = make_intrusive<ASTTableExpression>();
+    table_expression->subquery = subquery;
+    table_expression->children.push_back(subquery);
+    auto tables_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    tables_element->table_expression = table_expression;
+    tables_element->children.push_back(table_expression);
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(std::move(tables_element));
+    outer_select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
+    if (!filter_expr.empty())
+    {
+        ParserExpression filter_parser;
+        outer_select->setExpression(ASTSelectQuery::Expression::WHERE, parse_component(filter_parser, filter_expr, "`filter` setting"));
+    }
+    if (!order_expr.empty())
+    {
+        ParserOrderByExpressionList order_parser;
+        outer_select->setExpression(ASTSelectQuery::Expression::ORDER_BY, parse_component(order_parser, order_expr, "`order` / `sort` setting"));
+    }
+
+    auto outer_union = make_intrusive<ASTSelectWithUnionQuery>();
+    outer_union->list_of_selects = make_intrusive<ASTExpressionList>();
+    outer_union->list_of_selects->children.push_back(std::move(outer_select));
+    outer_union->children.push_back(outer_union->list_of_selects);
+    if (base_format)
+        outer_union->set(outer_union->format_ast, base_format);
+    if (base_settings)
+        outer_union->set(outer_union->settings_ast, base_settings);
+
+    ast = std::move(outer_union);
+}
+
+
 static BlockIO executeQueryImpl(
     const char * begin,
     const char * end,
@@ -1452,6 +1648,15 @@ static BlockIO executeQueryImpl(
             {
                 context->setCurrentDatabase(database_setting);
             }
+
+            /// Apply the query-construction settings (`select`/`filter`/`order`/`sort`/`page`) on the
+            /// parsed AST. Doing it here — rather than by rewriting the query text in the HTTP handler
+            /// — avoids a parse/serialize/parse round-trip and makes these first-class settings on
+            /// every protocol (HTTP URL parameters, an in-query `SETTINGS` clause, the native TCP
+            /// protocol). The HTTP-only `compression` setting (response-body shaping) is the only one
+            /// that is still consumed before execution by `HTTPHandler`.
+            applyQueryConstructionSettings(out_ast, context,
+                max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 

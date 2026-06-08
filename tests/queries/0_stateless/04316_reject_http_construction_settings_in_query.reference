@@ -1,8 +1,22 @@
-Setting 'select' shapes the HTTP request/response
-Setting 'filter' shapes the HTTP request/response
-Setting 'order' shapes the HTTP request/response
-Setting 'sort' shapes the HTTP request/response
-Setting 'page' shapes the HTTP request/response
-Setting 'compression' shapes the HTTP request/response
+--- filter wraps the query ---
 3
-6
+4
+--- select + order compose ---
+40
+30
+20
+10
+0
+--- sort with +/- prefixes ---
+4
+3
+2
+1
+0
+--- page over limit ---
+2
+3
+--- sort and order together is rejected ---
+cannot be specified together
+--- compression in an in-query SETTINGS clause is rejected ---
+shapes the HTTP response body

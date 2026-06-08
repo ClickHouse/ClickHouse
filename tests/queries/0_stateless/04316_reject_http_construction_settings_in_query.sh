@@ -4,24 +4,22 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The HTTP query-construction / response-shaping settings (`select`, `filter`, `order`, `sort`,
-# `page`, `compression`) are consumed by the HTTP handler before the query is executed. Supplying
-# them through an in-query SETTINGS clause has no effect on any protocol, so it is rejected with a
-# clear error instead of being silently ignored.
+# The query-construction settings `select`/`filter`/`order`/`sort`/`page` are applied by the engine
+# on the parsed query, so they are first-class on every protocol — including via an in-query
+# `SETTINGS` clause on the native protocol, not only via the HTTP URL.
 
-for setting in select filter order sort page compression; do
-    # Use a value that is valid for the setting's type so the rejection (not a parse/type error) is
-    # what we observe. `page` is numeric; the rest are strings.
-    if [ "$setting" = "page" ]; then
-        value="1"
-    else
-        value="'x'"
-    fi
-    ${CLICKHOUSE_CLIENT} --query "SELECT 1 SETTINGS \`${setting}\` = ${value}" 2>&1 \
-        | grep -o -m1 "Setting '${setting}' shapes the HTTP request/response" \
-        || echo "FAIL: ${setting} was not rejected"
-done
+echo "--- filter wraps the query ---"
+${CLICKHOUSE_CLIENT} --query "SELECT number FROM numbers(5) SETTINGS filter = 'number > 2'"
+echo "--- select + order compose ---"
+${CLICKHOUSE_CLIENT} --query "SELECT number, number * 10 AS x FROM numbers(5) SETTINGS \`select\` = 'x', order = 'x DESC'"
+echo "--- sort with +/- prefixes ---"
+${CLICKHOUSE_CLIENT} --query "SELECT number FROM numbers(5) SETTINGS sort = '-number'"
+echo "--- page over limit ---"
+${CLICKHOUSE_CLIENT} --query "SELECT number FROM numbers(10) SETTINGS limit = 2, page = 2"
+echo "--- sort and order together is rejected ---"
+${CLICKHOUSE_CLIENT} --query "SELECT 1 SETTINGS sort = 'a', order = 'b'" 2>&1 | grep -o -m1 "cannot be specified together"
 
-# Settings that DO take effect when set via an in-query SETTINGS clause must keep working.
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM (SELECT number FROM numbers(10) SETTINGS limit = 3)"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM (SELECT number FROM numbers(10) SETTINGS offset = 4)"
+# `compression` shapes the HTTP response body and is consumed before execution, so it has no effect
+# via an in-query SETTINGS clause and is rejected with a clear error.
+echo "--- compression in an in-query SETTINGS clause is rejected ---"
+${CLICKHOUSE_CLIENT} --query "SELECT 1 SETTINGS compression = 'gz'" 2>&1 | grep -o -m1 "shapes the HTTP response body"
