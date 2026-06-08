@@ -19,6 +19,12 @@ FROM
     WHERE match(s, '\\x41bc') != match(s, 'Abc')
 );                                            -- 0
 
+-- Unicode property escapes (RE2): `\pL` is any letter, `\PN` is any non-number.
+SELECT match('Xabc', '\\pLabc');              -- 1
+SELECT match('Xabc', '\\PNabc');              -- 1
+SELECT match('Xabc', '\\p{L}abc');            -- 1
+SELECT match('Xabc', '\\P{N}abc');            -- 1
+
 -- Regression guards: short escapes and character classes must be unaffected.
 SELECT match('A', '\\101');                   -- 1
 SELECT match('5', '\\d');                     -- 1

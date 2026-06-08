@@ -67,8 +67,9 @@ const char * skipNameCapturingGroup(const char * pos, size_t offset, const char 
 }
 
 /// Skips an escape sequence unsupported by the trivial-substring analysis.
-/// Consumes hex (`\xHH`, `\x{...}`) and octal (`\NNN`) escape arguments too, so they are not
-/// treated as literals. `pos` points at the character right after the backslash.
+/// Consumes arguments of hex, octal and Unicode property escapes as part of
+/// the escape, so they are not treated as literals.
+/// `pos` points at the character right after the backslash.
 const char * skipUnsupportedEscape(const char * pos, const char * end)
 {
     if (pos == end)
@@ -90,6 +91,22 @@ const char * skipUnsupportedEscape(const char * pos, const char * end)
         {
             for (size_t i = 0; i < 2 && pos != end && isHexDigit(*pos); ++i)
                 ++pos;
+        }
+    }
+    else if (*pos == 'p' || *pos == 'P')
+    {
+        /// Unicode property: one-letter `\pL`/`\PN` or braced `\p{...}`/`\P{...}`.
+        ++pos;
+        if (pos != end && *pos == '{')
+        {
+            while (pos != end && *pos != '}')
+                ++pos;
+            if (pos != end)
+                ++pos;
+        }
+        else if (pos != end)
+        {
+            ++pos;
         }
     }
     else if (is_octal_digit(*pos))

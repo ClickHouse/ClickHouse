@@ -72,4 +72,8 @@ TEST(OptimizeRE, analyze)
     test_f("\\x{41}bcd", "bcd");     /// `\x{...}` form is consumed whole
     test_f("\\x41\\x42cd", "");      /// consecutive hex escapes leave only the short tail "cd"
     test_f("\\x41(bc)", "", {}, false, true, false); /// escape before a capturing group
+    test_f("\\pLabc", "abc");        /// one-letter Unicode property `\pL`; "Labc" must not be required
+    test_f("\\PNabc", "abc");        /// negated one-letter property `\PN`
+    test_f("\\p{L}abc", "abc");      /// braced Unicode property `\p{...}`
+    test_f("\\P{N}abc", "abc");      /// braced negated Unicode property `\P{...}`
 }
