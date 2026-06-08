@@ -911,23 +911,24 @@ TEST(ReaderExecutor, ShortReadThrows)
     EXPECT_THROW(executor.readNextWindow(), Exception);
 }
 
-TEST(ReaderExecutor, MergeAcrossCacheHitDropsCachedNode)
+TEST(ReaderExecutor, CacheHitBetweenColdGapsNoDuplicateCoverage)
 {
-    /// When mergeRanges combines two miss ranges across a cached hit, the
-    /// source fetches the merged range — which now covers the cached block.
-    /// The cache hit must be dropped from the result, otherwise it appears
-    /// alongside source data for the same logical offsets (duplicate coverage).
+    /// A cached block sits between two cold gaps. The positional plan returns one
+    /// pure run per call - cold gap [0, 100), then the cached block [100, 200)
+    /// served from cache, then cold gap [200, 300) - so the read to EOF must
+    /// assemble exactly [0, 300) with no duplicate coverage. A cache hit left
+    /// overlapping fetched source offsets would inflate totalBytes past the range.
     ///
-    /// Layout: cache block [100, 200), miss ranges [0, 100) and [200, 300)
-    /// merged into [0, 300) with a large min_bytes_for_seek.
+    /// Layout: cache block [100, 200), cold [0, 100) and [200, 300). The large
+    /// min_bytes_for_seek means a window would once have merged the two gaps
+    /// across the hit; the plan-gap clamp now stops each read at the hit boundary.
 
     StoredObjects objects;
     objects.emplace_back("obj", "", 300);
 
     auto cache = std::make_shared<MockCacheProvider>(100);
 
-    /// Warm cache block 1 (offsets [100, 200)). Content is irrelevant —
-    /// the bug is about node count, not content.
+    /// Warm cache block 1 (offsets [100, 200)). Content is irrelevant here.
     {
         String warm_content(300, 'W');
         auto warm_source = std::make_shared<MemorySourceReader>(
@@ -938,8 +939,6 @@ TEST(ReaderExecutor, MergeAcrossCacheHitDropsCachedNode)
         ASSERT_TRUE(cache->hasBlock(1));
     }
 
-    /// Real read: window covers [0, 300); min_bytes_for_seek=8 MiB so the
-    /// two miss ranges around the cached block get merged into [0, 300).
     String real_content(300, 'S');
     auto real_source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"obj", real_content}});
@@ -948,13 +947,21 @@ TEST(ReaderExecutor, MergeAcrossCacheHitDropsCachedNode)
         real_source, objects, {cache},
         /*window_size=*/300,
         /*min_bytes_for_seek=*/8 * 1024 * 1024);
-    auto rope = executor.readNextWindow();
 
-    EXPECT_EQ(rope.range().offset, 0u);
-    EXPECT_EQ(rope.range().size, 300u);
-    /// Without the fix, the surviving cache hit at [100, 200) adds 100 bytes
-    /// of duplicate coverage, so totalBytes() reports 400 instead of 300.
-    EXPECT_EQ(rope.totalBytes(), 300u);
+    /// Drain to EOF: the plan serves the run at the cursor (gap or resident) one
+    /// call at a time.
+    Rope assembled;
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (rope.empty())
+            break;
+        assembled.append(std::move(rope));
+    }
+
+    EXPECT_EQ(assembled.range().offset, 0u);
+    EXPECT_EQ(assembled.range().size, 300u);
+    EXPECT_EQ(assembled.totalBytes(), 300u);
 }
 
 namespace ProfileEvents

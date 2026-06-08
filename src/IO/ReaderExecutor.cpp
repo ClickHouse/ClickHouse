@@ -1032,9 +1032,18 @@ Rope ReaderExecutor::readNextWindow()
         }
         else
         {
-            /// A gap (or extent reached): the source-fetching path.
+            /// A gap (or extent reached): the source-fetching path. Bound the read
+            /// to the plan gap `[position, gapEnd)` so each call returns one pure
+            /// run - a resident run streams from cache above, a gap is fetched here -
+            /// instead of a window straddling both. The next resident run is served
+            /// from cache on the following call. The live connection still bridges a
+            /// sub-`min_bytes_for_seek` cached hole across these calls (it is kept
+            /// past the resident serve and skips the hole on the open GET).
             ensurePreAcquiredSlot();
-            ByteRange physical_window{position_phys, win_size};
+            size_t gap_size = win_size;
+            if (win_size > 0)
+                gap_size = std::min(win_size, read_plan.gapEnd(position_phys) - position_phys);
+            ByteRange physical_window{position_phys, gap_size};
             LOG_TRACE(log, "readNextWindow: synchronous gap read physical [{}, {})",
                 physical_window.offset, physical_window.end());
             StopwatchAccumulator sync_scope(stats.sync_read_us);
