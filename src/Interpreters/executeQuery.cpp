@@ -1530,12 +1530,19 @@ static BlockIO executeQueryImpl(
                             }
                         }
                     }
-                    else
+                    else if (drop_query->table)
                     {
                         target_is_replicated_database = is_replicated_database(drop_query->getDatabase());
                         if (!target_is_temporary && resolves_to_temporary(StorageID(*drop_query)))
                             target_is_temporary = true;
                     }
+                    /// A database-level statement (`DROP DATABASE` / `TRUNCATE DATABASE`) has no `table`,
+                    /// so `StorageID(*drop_query)` would throw `Both table name and UUID are empty`.
+                    /// It is also not a table-level operation that a `Replicated` database coordinates on
+                    /// its own: `DatabaseReplicated::shouldReplicateQuery` returns `false` for `DROP DATABASE`,
+                    /// so dropping a `Replicated` database without `ON CLUSTER` would only affect the local
+                    /// replica. Leave the flags unset so auto-fill adds `ON CLUSTER` and the database is
+                    /// dropped on every node of the configured cluster.
                 }
                 else if (const auto * query_with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
                 {

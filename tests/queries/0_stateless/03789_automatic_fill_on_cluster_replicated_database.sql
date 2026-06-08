@@ -84,5 +84,23 @@ SELECT count() = 0 FROM system.query_log WHERE type = 'QueryFinish'
   AND query LIKE '%DROP TABLE%test_repl_multi%'
   AND query LIKE '%ON CLUSTER%';
 
+SELECT 'Test 6: DROP DATABASE of a Replicated database IS rewritten ON CLUSTER';
+-- A database-level DROP is not a table DDL that a Replicated database coordinates on its own:
+-- DatabaseReplicated::shouldReplicateQuery returns false for DROP DATABASE, so dropping a Replicated
+-- database without ON CLUSTER would only remove the local replica. Auto-fill must add ON CLUSTER here
+-- so the database is dropped on every node of the configured cluster.
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
+  ENGINE = Replicated('/clickhouse/databases/03789_repl_db6_{database}', 'shard1', 'replica1');
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 6 verification: DROP DATABASE contains ON CLUSTER';
+-- Match the DROP DATABASE of the Replicated database by its name. The verification SELECT itself
+-- contains the literals `DROP DATABASE`, the database name and `ON CLUSTER`, but also references
+-- `system.query_log`, so exclude any logged query mentioning `query_log` to avoid a self-match.
+SELECT count() > 0 FROM system.query_log WHERE type = 'QueryFinish'
+  AND query LIKE concat('%DROP DATABASE%', {CLICKHOUSE_DATABASE_1:String}, '%ON CLUSTER%')
+  AND query NOT LIKE '%query_log%';
+
 DROP DATABASE {CLICKHOUSE_DATABASE:Identifier};
