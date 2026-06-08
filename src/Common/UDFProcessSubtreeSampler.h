@@ -35,18 +35,29 @@ namespace DB
   *   recordInputBytes / recordOutputBytes -- IO buffers report bytes pushed
   *   recordReleased          -- ShellCommandSource cleanup, before returnObject
   *
-  * Executable path (non-pool): a fresh child is spawned per invocation. CPU
-  * and peak RSS come from `wait4` rusage captured by `ShellCommand::tryWaitImpl`.
-  * Elapsed wall time is always recorded; CPU and peak-RSS are recorded only when
-  * the child was reaped and rusage is available. Lifecycle callbacks:
+  * Executable path (non-pool): a fresh child is spawned per invocation via
+  * `vfork`+`exec`. Peak RSS is measured by sampling `/proc/<pid>/VmHWM` across
+  * the child's subtree during IO (not `wait4 ru_maxrss`, which reports the
+  * parent's RSS for a `vfork`+`exec` child because the kernel folds the pre-exec
+  * mm's RSS into `signal->maxrss` at exec). CPU still comes from `wait4` rusage.
+  * Lifecycle callbacks:
   *   ctor                    -- starts the wall clock for elapsed measurement
+  *   recordExecutablePid     -- process created; stores pid for subtree sampling
   *   recordInputBytes / recordOutputBytes -- IO buffers report bytes pushed
+  *   sampleExecutablePeak    -- called on every IO read and input write, while
+  *                              the child is provably alive; walks the subtree
+  *                              from executable_root_pid and keeps a running max
+  *                              of VmHWM across pids
   *   recordExecutableElapsed -- ShellCommandSource cleanup; stamps elapsed_us
-  *   recordExecutableFinished -- additionally records CPU and peak-RSS from rusage
+  *                              and computes peak_memory_byte_seconds
+  *   recordExecutableFinished -- records CPU from wait4 rusage
   *
   * Procfs failures (ENOENT after a worker died, EACCES, malformed content) are
-  * silently skipped on the pool path: CPU/memory increments are dropped but the
-  * other events still fire.
+  * silently skipped on both the pool and executable paths: CPU/memory increments
+  * are dropped but the other events still fire. On the executable path, a failed
+  * read for a descendant pid is treated as that pid having exited since
+  * enumeration; only a failed read for the root pid signals genuine degradation
+  * (e.g. seccomp blocking /proc).
   */
 class UDFProcessSubtreeSampler
 {
@@ -59,18 +70,34 @@ public:
     void recordOutputBytes(size_t bytes) noexcept;
     void recordReleased();
 
+    /// Executable (non-pool) path: store the child pid for subtree sampling.
+    /// Called immediately after the child process is created. Does not perform
+    /// any /proc I/O — the child's VmHWM starts at zero and is sampled during IO.
+    void recordExecutablePid(pid_t root_pid) noexcept;
+
+    /// Executable (non-pool) path: walk the subtree from `executable_root_pid`,
+    /// read `VmHWM` from `/proc/<pid>/status` for each pid, and keep a running
+    /// max in `executable_peak_rss_bytes`. Called on every IO read (after the
+    /// child produces output) and on every input write (while the child consumes
+    /// stdin), at both points the child is provably alive. No-op when
+    /// `executable_root_pid <= 0`. Thread-safe: may be called concurrently from
+    /// the write-buffer send thread and the read-buffer pull thread.
+    void sampleExecutablePeak() noexcept;
+
     /// Executable (non-pool) path: stamp `elapsed_us` from the wall clock at
-    /// `ShellCommandSource` cleanup. Safe to call even when the child was never
-    /// reaped — elapsed is always meaningful. Idempotent; a second call is a no-op.
+    /// `ShellCommandSource` cleanup and compute `peak_memory_byte_seconds` from
+    /// `executable_peak_rss_bytes` (sampled from `/proc VmHWM` during IO).
+    /// Safe to call even when the child was never reaped. Idempotent; a second
+    /// call is a no-op.
     void recordExecutableElapsed() noexcept;
 
-    /// Executable (non-pool) path: fill `user_time_us`, `system_time_us`, and
-    /// `peak_memory_byte_seconds` from the scalars returned by `ShellCommand::getChild*`.
-    /// Calls `recordExecutableElapsed` if it has not been called yet. Idempotent.
-    /// Coverage note: these come from `wait4` rusage, which — unlike pool mode's /proc
-    /// subtree walk — counts the child plus the descendants it reaps (CPU summed, peak
-    /// RSS maxed), but not descendants it never waits on.
-    void recordExecutableFinished(UInt64 user_time_us, UInt64 system_time_us, UInt64 peak_rss_bytes) noexcept;
+    /// Executable (non-pool) path: fill `user_time_us` and `system_time_us`
+    /// from the scalars returned by `ShellCommand::getChild*` (CPU from `wait4`
+    /// rusage). Calls `recordExecutableElapsed` if it has not been called yet.
+    /// Peak memory is taken from `/proc VmHWM` sampled during IO and is already
+    /// set by `recordExecutableElapsed`; this method does not receive or touch it.
+    /// Idempotent.
+    void recordExecutableFinished(UInt64 user_time_us, UInt64 system_time_us) noexcept;
 
     /// Pool wait = entry → borrow acquired.
     /// Zero if the borrow never happened (caller should still report 0).
@@ -96,13 +123,13 @@ public:
     /// a sandbox / seccomp profile silently degrades metrics to zero.
     bool clearRefsFailedAnyPid() const noexcept { return clear_refs_failed_any; }
     bool readStatFailedAnyPid() const noexcept { return read_stat_failed_any; }
-    bool readPeakRssFailedAnyPid() const noexcept { return read_peak_rss_failed_any; }
+    bool readPeakRssFailedAnyPid() const noexcept { return read_peak_rss_failed_any.load(std::memory_order_relaxed); }
 
     /// Whether `walkSubtree` hit the `MAX_PIDS` cap during this borrow and
     /// a candidate pid had to be dropped. When true, the subtree enumeration
     /// is incomplete, so CPU and `PeakMemoryByteSeconds` will under-count
     /// the unvisited descendants.
-    bool subtreeWalkTruncated() const noexcept { return subtree_truncated_any; }
+    bool subtreeWalkTruncated() const noexcept { return subtree_truncated_any.load(std::memory_order_relaxed); }
 
 private:
     Stopwatch entry_watch;
@@ -122,11 +149,24 @@ private:
 
     bool clear_refs_failed_any = false;
     bool read_stat_failed_any = false;
-    bool read_peak_rss_failed_any = false;
-    bool subtree_truncated_any = false;
+
+    /// Written by sampleExecutablePeak (called from two threads: the write-buffer
+    /// send thread and the read-buffer pull thread) and read after both threads are
+    /// joined. Must be atomic to avoid a data race.
+    std::atomic<bool> read_peak_rss_failed_any{false};
+    std::atomic<bool> subtree_truncated_any{false};
 
     std::atomic<UInt64> input_bytes{0};
     std::atomic<UInt64> output_bytes{0};
+
+    /// Executable path only: pid set by recordExecutablePid; <= 0 means sampling
+    /// has not been requested (pool path or no process yet). Guarded by sequential
+    /// writes (recordExecutablePid called once before IO) and reads from IO threads.
+    pid_t executable_root_pid = -1;
+
+    /// Running max VmHWM across the executable child's subtree, updated atomically
+    /// by sampleExecutablePeak from two IO threads. Read after both threads join.
+    std::atomic<UInt64> executable_peak_rss_bytes{0};
 
     struct PreSnapshot
     {

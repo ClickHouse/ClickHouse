@@ -105,11 +105,6 @@ public:
     /// `wasChildResourceUsageCaptured` returns false.
     UInt64 getChildSystemTimeMicroseconds() const noexcept;
 
-    /// Peak resident set size of the reaped child, in bytes. Zero if
-    /// `wasChildResourceUsageCaptured` returns false. Cross-platform: macOS
-    /// reports `ru_maxrss` in bytes; Linux, FreeBSD, and illumos in kibibytes.
-    UInt64 getChildPeakRssBytes() const noexcept;
-
     /// Run the command using /bin/sh -c.
     /// If terminate_in_destructor is true, send terminate signal in destructor and don't wait process.
     static std::unique_ptr<ShellCommand> execute(const Config & config);

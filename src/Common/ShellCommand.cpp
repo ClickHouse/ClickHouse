@@ -488,19 +488,5 @@ UInt64 ShellCommand::getChildSystemTimeMicroseconds() const noexcept
 }
 
 
-UInt64 ShellCommand::getChildPeakRssBytes() const noexcept
-{
-    if (!resource_usage)
-        return 0;
-    const auto & ru = resource_usage->rusage;
-#if defined(OS_DARWIN)
-    /// macOS reports `ru_maxrss` already in bytes.
-    return static_cast<UInt64>(ru.ru_maxrss);
-#else
-    /// Linux, FreeBSD, and illumos report `ru_maxrss` in kibibytes.
-    return static_cast<UInt64>(ru.ru_maxrss) * 1024ULL;
-#endif
 }
 
-
-}

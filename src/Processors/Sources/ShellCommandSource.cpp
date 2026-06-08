@@ -274,7 +274,13 @@ public:
                 {
                     bytes_read += res;
                     if (sampler)
+                    {
                         sampler->recordOutputBytes(static_cast<size_t>(res));
+                        /// Child is provably alive — it just wrote output.
+                        /// Sample its subtree VmHWM for the executable path;
+                        /// no-op on the pool path (executable_root_pid <= 0).
+                        sampler->sampleExecutablePeak();
+                    }
                 }
             }
         }
@@ -380,7 +386,13 @@ public:
             {
                 bytes_written += res;
                 if (sampler)
+                {
                     sampler->recordInputBytes(static_cast<size_t>(res));
+                    /// Child is alive — it is consuming this stdin write.
+                    /// Sample its subtree VmHWM for the executable path;
+                    /// no-op on the pool path (executable_root_pid <= 0).
+                    sampler->sampleExecutablePeak();
+                }
             }
         }
     }
@@ -566,18 +578,20 @@ namespace
                 }
                 else if (command)
                 {
-                    /// Executable (non-pool) path: attempt a non-blocking reap so that
-                    /// `rusage` is available for accounting. When `prepare` already reaped
-                    /// the child via its blocking `wait` (`check_exit_code=true`, normal
-                    /// completion), `isWaitCalled()` is true and `tryReapWithoutStatusCheck`
-                    /// is skipped — the usage is already captured.
+                    /// Peak memory was sampled from /proc VmHWM during IO, while the child
+                    /// was provably alive; by cleanup the child has closed stdout and is
+                    /// exiting, so its `/proc` mm fields are gone — no useful sample here.
                     ///
-                    /// The non-blocking reap:
-                    ///   * non-blocking: a child that closed stdout but keeps running is left
-                    ///     to `~ShellCommand`'s bounded `command_termination_timeout` + SIGTERM
-                    ///     teardown, so enabling profiling cannot turn cleanup into a query hang;
-                    ///   * no status check: a non-zero exit is not an error under
-                    ///     `check_exit_code=false`, so it must not raise CHILD_WAS_NOT_EXITED_NORMALLY.
+                    /// Attempt a non-blocking reap to capture wait4 rusage for CPU.
+                    /// When `prepare` already reaped the child via its blocking `wait`
+                    /// (`check_exit_code=true`, normal completion), `isWaitCalled()` is
+                    /// true and `tryReapWithoutStatusCheck` is skipped.
+                    ///
+                    /// Non-blocking: a child that closed stdout but keeps running is left
+                    /// to `~ShellCommand`'s bounded `command_termination_timeout` + SIGTERM,
+                    /// so profiling cannot turn cleanup into a query hang.
+                    /// No status check: a non-zero exit must not raise
+                    /// CHILD_WAS_NOT_EXITED_NORMALLY when `check_exit_code=false`.
                     if (!command->isWaitCalled())
                     {
                         try
@@ -590,16 +604,15 @@ namespace
                         }
                     }
 
-                    /// Elapsed is always reported: it is known regardless of whether the child
-                    /// was reaped. CPU and peak-RSS counters require `wait4` rusage and are
-                    /// recorded only when the reap succeeded.
+                    /// Peak memory is independent of the reap: it comes from /proc VmHWM
+                    /// sampled during IO and stamped by recordExecutableElapsed. CPU requires
+                    /// the wait4 rusage and is recorded only when the reap succeeded.
                     configuration.sampler->recordExecutableElapsed();
 
                     if (command->wasChildResourceUsageCaptured())
                         configuration.sampler->recordExecutableFinished(
                             command->getChildUserTimeMicroseconds(),
-                            command->getChildSystemTimeMicroseconds(),
-                            command->getChildPeakRssBytes());
+                            command->getChildSystemTimeMicroseconds());
                 }
             }
 
@@ -864,6 +877,11 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             process = ShellCommand::executeDirect(command_config);
         else
             process = ShellCommand::execute(command_config);
+
+        /// Record the child pid so sampleExecutablePeak can walk the subtree
+        /// during IO. No-op when sampler is null.
+        if (source_configuration.sampler)
+            source_configuration.sampler->recordExecutablePid(process->getPid());
     }
 
     std::vector<ShellCommandSource::SendDataTask> tasks;

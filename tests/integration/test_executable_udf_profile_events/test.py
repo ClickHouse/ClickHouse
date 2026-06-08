@@ -144,11 +144,12 @@ def test_system_time_microseconds(started_cluster):
     assert sys_time > 0, f"Expected SystemTimeMicroseconds > 0, got {sys_time}"
 
 
-def test_peak_memory_uses_rusage_units(started_cluster):
+def test_peak_memory_byte_seconds(started_cluster):
     _skip_msan()
-    qid = "exec-mem-rusage-1"
-    # Use a small row count; `wait4` populates `ru_maxrss` once per child exit,
-    # so even a single-row block will show the 32 MiB allocation from `udf_mem.py`.
+    qid = "exec-mem-procfs-1"
+    # udf_mem.py allocates ~32 MiB in the UDF process itself (no forked children),
+    # so the VmHWM sampled from /proc/<pid>/status while the process writes output
+    # reflects that allocation directly.
     _run(
         "SELECT sum(test_udf_mem(number)) FROM numbers(4)",
         qid,
@@ -157,9 +158,8 @@ def test_peak_memory_uses_rusage_units(started_cluster):
     # 32 MiB peak RSS. Even a sub-millisecond run: 32 * 1024^2 * 0.001 s ≈ 33_554.
     # The 100_000 floor sits ~3x above that single-millisecond minimum and is
     # cleared once elapsed exceeds ~3 ms, which a real fork/exec/page-touch over
-    # numbers(4) always does. A value this small could only arise if wait4
-    # ru_maxrss were misread (e.g. treated as KiB on a Linux platform where it is
-    # already in bytes, which would deflate the result by 1024).
+    # numbers(4) always does. A value this small could only arise if /proc VmHWM
+    # were sampled from the wrong process or the bytes/kibibytes conversion were wrong.
     assert mem >= 100_000, f"Expected PeakMemoryByteSeconds >= 100_000, got {mem}"
 
 
@@ -279,17 +279,18 @@ def test_unwaited_child_cpu_excluded(started_cluster):
 def test_reaped_child_memory_rolls_up(started_cluster):
     _skip_msan()
     qid = "exec-child-mem-1"
-    # The child allocates ~64 MiB and exits; the parent reaps it with waitpid
-    # so its ru_maxrss appears in wait4 rusage for the top-level script.
+    # The child allocates ~64 MiB and stays alive until the parent has written
+    # its output row. The sampler's stdout-IO subtree walk then finds the child
+    # in the process tree and reads its /proc/<pid>/status VmHWM.
     # 100_000 byte·s floor: 64 MiB * 1 ms ≈ 67_108, so 100_000 is ~1.5x above
-    # the absolute minimum at sub-millisecond elapsed; a missing ru_maxrss
-    # rollup would give a value at least 64x smaller.
+    # the absolute minimum at sub-millisecond elapsed; a child whose VmHWM is
+    # never sampled (because it exits before the IO walk) would give 0.
     _run(
         "SELECT sum(test_udf_child_mem(number)) FROM numbers(1)",
         qid,
     )
     mem = _profile_event_value(qid, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds")
-    assert mem >= 100_000, f"Expected PeakMemoryByteSeconds >= 100_000 (child RSS rolled up), got {mem}"
+    assert mem >= 100_000, f"Expected PeakMemoryByteSeconds >= 100_000 (child RSS sampled while alive), got {mem}"
 
 
 # ---------------------------------------------------------------------------
@@ -301,11 +302,13 @@ def test_peak_memory_is_max_not_sum(started_cluster):
     _skip_msan()
     qid_concurrent = "exec-two-mem-concurrent-1"
     qid_sequential = "exec-two-mem-sequential-1"
-    # concurrent: two 100 MiB children coexist (~200 MiB live simultaneously).
-    # sequential: two 100 MiB children never coexist (~100 MiB peak each).
-    # ru_maxrss is max-of-per-process-peaks, so both report ~100 MiB.
+    # concurrent: two 100 MiB children coexist and are both alive when the parent
+    # writes its output row, so the sampler's subtree walk sees both simultaneously.
+    # sequential: two 100 MiB children never coexist; only child2 is alive during
+    # the output flush (child1 exits before child2 is forked).
+    # Both report ~100 MiB because the metric is max-of-VmHWM across pids, not sum.
     # implied_peak = PeakMemoryByteSeconds * 1_000_000 / ElapsedMicroseconds.
-    # A true concurrent-sum implementation would make concurrent ~2x sequential.
+    # A true sum implementation would make concurrent ~2x sequential.
     # We assert concurrent <= 1.6 * sequential: measured ~1.0, bug threshold ~2.0.
     _run(
         "SELECT sum(test_udf_two_mem_concurrent(number)) FROM numbers(1)",
@@ -328,7 +331,7 @@ def test_peak_memory_is_max_not_sum(started_cluster):
     assert sequential_peak > 0, f"sequential peak is 0 — memory not captured (sequential={sequential_peak})"
     assert concurrent_peak <= 1.6 * sequential_peak, (
         f"concurrent peak {concurrent_peak:.0f} is more than 1.6x sequential {sequential_peak:.0f}; "
-        f"suggests ru_maxrss is summing concurrent allocations instead of taking the max"
+        f"suggests /proc VmHWM sampling is summing concurrent allocations instead of taking the max"
     )
 
 
@@ -381,6 +384,55 @@ def test_check_exit_code_false_no_spurious_log(started_cluster):
     assert count == 0, (
         f"Found {count} occurrence(s) of CHILD_WAS_NOT_EXITED_NORMALLY in the server log; "
         f"check_exit_code=false must suppress that message"
+    )
+
+
+def test_peak_memory_reflects_udf_not_server(started_cluster):
+    _skip_msan()
+    # The metric must reflect the UDF's own peak RSS, not the ClickHouse server's
+    # footprint. The original bug reported the server RSS (~hundreds of MiB)
+    # identically for every UDF regardless of its allocation; a lower-bound floor
+    # cannot catch that. This test asserts a HIGH-allocation UDF reports a
+    # meaningfully HIGHER implied peak than a near-zero-allocation UDF — which is
+    # impossible if the metric is pinned to the (shared) server RSS.
+    #
+    # Mentally-revert note: under the old `ru_maxrss` contamination both UDFs
+    # reported the server RSS, so their difference was ~0 and this assertion
+    # would fail. Under /proc VmHWM sampling the difference tracks the real
+    # allocation gap (0 MiB vs ~32 MiB).
+    qid_low = "exec-rss-contamination-low-1"
+    qid_high = "exec-rss-contamination-high-1"
+
+    # Low case: test_udf_echo allocates essentially nothing.
+    _run(
+        "SELECT sum(test_udf_echo(number)) FROM numbers(4) SETTINGS max_threads = 1",
+        qid_low,
+    )
+    # High case: test_udf_mem allocates ~32 MiB per row.
+    _run(
+        "SELECT sum(test_udf_mem(number)) FROM numbers(4) SETTINGS max_threads = 1",
+        qid_high,
+    )
+
+    def _implied_peak_mib(qid):
+        node.query("SYSTEM FLUSH LOGS")
+        mem_bs = _profile_event_value(qid, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds")
+        elapsed_us = _profile_event_value(qid, "ExecutableUserDefinedFunctionElapsedMicroseconds")
+        invocations = _profile_event_value(qid, "ExecutableUserDefinedFunctionInvocations")
+        assert invocations >= 1, f"UDF did not run for {qid} (Invocations={invocations}); comparison is meaningless"
+        if elapsed_us == 0:
+            return 0.0
+        return mem_bs * 1e6 / elapsed_us / 1048576
+
+    low_peak_mib = _implied_peak_mib(qid_low)
+    high_peak_mib = _implied_peak_mib(qid_high)
+
+    # The 32 MiB allocation gap minus 16 MiB margin gives a conservative threshold
+    # well above noise but well below the actual ~32 MiB difference.
+    assert high_peak_mib >= low_peak_mib + 16, (
+        f"high-alloc UDF implied peak {high_peak_mib:.1f} MiB should be at least 16 MiB above "
+        f"low-alloc UDF {low_peak_mib:.1f} MiB; "
+        f"a near-zero difference indicates the metric is reporting the server RSS instead of the UDF's own peak"
     )
 
 
