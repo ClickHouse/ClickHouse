@@ -1,5 +1,8 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#if CLICKHOUSE_CLOUD
+#include <Processors/QueryPlan/ReadFromMergeTreeAtWorker.h>
+#endif
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -745,9 +748,11 @@ Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step)
     if (read_from_mt)
         return read_from_mt->getShardsForDistributedRead();
 
+#if CLICKHOUSE_CLOUD
     const auto * read_from_object_storage = dynamic_cast<const ReadFromObjectStorageStep *>(read_step);
     if (read_from_object_storage)
         return read_from_object_storage->getShardsForDistributedRead();
+#endif
 
     return {"0"};   /// One shard by default if read step is not distributed
 }
