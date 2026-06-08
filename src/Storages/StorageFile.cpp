@@ -153,7 +153,8 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
-    bool recursive)
+    bool recursive,
+    std::unordered_set<std::string> * matched_paths)
 {
     const size_t first_glob_pos = for_match.find_first_of("*?{");
 
@@ -167,7 +168,9 @@ void listFilesWithRegexpMatchingImpl(
             (void)fs::canonical(path_for_ls + for_match);
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
-            result.push_back(absolute_path.string());
+            const auto normalized_path = absolute_path.lexically_normal().string();
+            if (!matched_paths || matched_paths->insert(normalized_path).second)
+                result.push_back(normalized_path);
         }
         catch (const std::exception &) // NOLINT
         {
@@ -202,6 +205,19 @@ void listFilesWithRegexpMatchingImpl(
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
 
+    /// Allow "**" to match zero directory levels by evaluating the remaining pattern
+    /// against the current directory.
+    if (recursive && looking_for_directory)
+    {
+        listFilesWithRegexpMatchingImpl(
+            prefix_without_globs + "/",
+            suffix_with_globs.substr(next_slash_after_glob_pos),
+            total_bytes_to_read,
+            result,
+            recursive,
+            matched_paths);
+    }
+
     const fs::directory_iterator end;
     std::error_code ec;
     for (fs::directory_iterator it(prefix_without_globs, ec); it != end; it.increment(ec))
@@ -227,21 +243,35 @@ void listFilesWithRegexpMatchingImpl(
                     continue;
                 }
 
-                result.push_back(it->path().string());
+                const auto normalized_path = fs::path(it->path()).lexically_normal().string();
+                if (!matched_paths || matched_paths->insert(normalized_path).second)
+                    result.push_back(normalized_path);
             }
         }
         else if (it->is_directory())
         {
             if (recursive)
             {
-                listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
-                                                looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
-                                                total_bytes_to_read, result, recursive);
+                const std::string next_pattern = (current_glob == "/**")
+                    ? suffix_with_globs
+                    : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
+                listFilesWithRegexpMatchingImpl(
+                    fs::path(full_path) / "",
+                    next_pattern,
+                    total_bytes_to_read,
+                    result,
+                    recursive,
+                    matched_paths);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
-                listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result, false);
+                listFilesWithRegexpMatchingImpl(
+                    fs::path(full_path) / "",
+                    suffix_with_globs.substr(next_slash_after_glob_pos),
+                    total_bytes_to_read,
+                    result,
+                    false,
+                    matched_paths);
         }
     }
 }
@@ -251,11 +281,13 @@ std::vector<std::string> listFilesWithRegexpMatching(
     size_t & total_bytes_to_read)
 {
     std::vector<std::string> result;
+    /// Deduplicate paths produced by `**` recursion and zero-depth matches.
+    std::unordered_set<std::string> matched_paths;
 
     Strings for_match_paths_expanded = expandSelectionGlob(for_match);
 
     for (const auto & for_match_expanded : for_match_paths_expanded)
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false);
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, &matched_paths);
 
     return result;
 }

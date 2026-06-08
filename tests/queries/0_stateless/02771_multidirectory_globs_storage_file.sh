@@ -25,4 +25,28 @@ ${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CL
 ${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/dir?/{subdir?1/data1,subdir2?/data2}.csv', CSV) WHERE _file == 'data1.csv';"
 ${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/dir?/{subdir?1/data1,subdir2?/data2}.csv', CSV) WHERE _file == 'data2.csv';"
 
+mkdir -p ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/dir3/subdir31/
+echo 'This is file data3' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/dir3/subdir31/data3.csv
+echo 'This is file data_root' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/data_root.csv
+
+${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/**/*.csv', CSV) ORDER BY _file;"
+${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/**/data3.csv', CSV);"
+
+mkdir -p ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/to/a/
+mkdir -p ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/to/b/sub/
+echo 'This is file data4' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/to/a/file.csv
+echo 'This is file data5' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/to/b/sub/file.csv
+echo 'This is file data6' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/to/a/other.csv
+
+${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/to/**/file.csv', CSV) ORDER BY _file;"
+${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/to/**/*.csv', CSV) ORDER BY _file;"
+${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/**/file.csv', CSV) ORDER BY _file;"
+
+mkdir -p ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/zipdir/
+echo 'This is file data_zip' > ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/zipdir/file.csv
+(cd ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/zipdir/ && zip -q ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/a.zip file.csv)
+rm -rf ${USER_FILES_PATH:?}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/path/zipdir/
+
+${CLICKHOUSE_CLIENT} --query "SELECT *, _file FROM file('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/path/**/a.zip::file.csv', CSV) ORDER BY _file;"
+
 rm -rf ${USER_FILES_PATH:?}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}
