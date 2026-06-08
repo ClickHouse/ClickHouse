@@ -1744,8 +1744,17 @@ static BlockIO executeQueryImpl(
                 /// computation via `QueryResultCache::startAsyncInsert` / `finishAsyncInsert`.
                 /// Wait cap: `query_cache_herd_wait_timeout`; `0` disables coalescing entirely (each query
                 /// executes independently, as before this feature was introduced).
+                /// Only coalesce when the executor will actually populate the cache, otherwise waiters would
+                /// block, re-read, miss and execute anyway - adding latency with no deduplication benefit.
+                /// This mirrors the write-eligibility checks below (`checkCanWriteQueryResultCache` and
+                /// `query_cache_min_query_runs`): the `no_throw` probe avoids changing where the user-visible
+                /// exception surfaces (it is still raised at the real `checkCanWriteQueryResultCache` call after
+                /// execution), and coalescing is skipped while `query_cache_min_query_runs` is set because no
+                /// entry is written until the threshold is reached.
                 const UInt64 herd_wait_ms = settings[Setting::query_cache_herd_wait_timeout].totalMilliseconds();
-                if (qrc_key && herd_wait_ms > 0 && settings[Setting::enable_writes_to_query_cache] && settings[Setting::enable_reads_from_query_cache])
+                if (qrc_key && herd_wait_ms > 0 && settings[Setting::enable_writes_to_query_cache] && settings[Setting::enable_reads_from_query_cache]
+                    && settings[Setting::query_cache_min_query_runs] == 0
+                    && checkCanWriteQueryResultCache(out_ast, context, /* skip_context_check = */ false, /* no_throw = */ true))
                 {
                     const QueryResultCache::HerdCoalescingKey herd_key{
                         qrc_key->ast_hash,

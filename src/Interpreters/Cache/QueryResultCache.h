@@ -29,7 +29,10 @@ struct Settings;
 /// When skip_context_check is true, the context's canUseQueryResultCache flag is not checked.
 /// This is used for explicit per-subquery opt-in where the subquery has SETTINGS use_query_cache = true
 /// but the outer query context may not have the flag set.
-bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check = false);
+/// When no_throw is true, the function returns false instead of throwing for the cases above; this is used to
+/// probe write-eligibility before query execution (e.g. for thundering-herd coalescing) without changing where
+/// the user-visible exception surfaces.
+bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check = false, bool no_throw = false);
 
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
