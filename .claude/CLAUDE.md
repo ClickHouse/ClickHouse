@@ -173,11 +173,3 @@ ARM machines in CI are not slow. They are similar to x86 in performance.
 
 Use `tmp` subdirectory in the current directory for temporary files (logs, downloads, scripts, etc.), do not use `/tmp`. Create the directory if needed.
 
-When asked to fix a bug or implement a fix, always plan the fix first. Present a detailed plan describing what changes will be made and where, then ask for modifications or confirmation before implementing it.
-
-After implementing a fix and tests, never run a build without explicit confirmation from the user.
-
-When trying to reproduce an error, prefer `clickhouse-local` if the query or scenario can work with it. If `clickhouse-local` is not sufficient, use `clickhouse-client` to connect to a currently running server. If the server is not running, ask the user to start it — do not start the server yourself.
-
-The server must always run from `/home/avogar/tmp/server` directory. Never run the server from any other directory. Use configs from that directory when running the server.
-
