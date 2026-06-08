@@ -1573,7 +1573,6 @@ class SettingsRandomizer:
         "materialize_statistics_on_insert": lambda: random.random() < 0.3,
         "distributed_index_analysis_only_on_coordinator": lambda: random.random() < 0.3,
         "optimize_prewhere_after_pushdown": lambda: random.random() < 0.3,
-        "query_cache_for_subqueries": lambda: random.random() < 0.3,
         "query_plan_optimize_lazy_final": lambda: random.random() < 0.3,
         "query_plan_max_set_size_for_projection_match": lambda: random.choice([0, 100, 10000, 100000]),
     }
@@ -1742,6 +1741,10 @@ class MergeTreeSettingsRandomizer:
                 continue
 
             random_settings[setting] = value
+
+        if random_settings.get("part_minmax_index_columns") == "with_block_number_offset":
+            random_settings["enable_block_number_column"] = 1
+            random_settings["enable_block_offset_column"] = 1
 
         return random_settings
 
