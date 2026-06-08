@@ -20,7 +20,7 @@ struct StringKey24
 
 inline std::string_view ALWAYS_INLINE toStringView(const StringKey8 & n)
 {
-    assert(n != 0);
+    chassert(n != 0);
     if constexpr (std::endian::native == std::endian::big)
         return {reinterpret_cast<const char *>(&n), 8ul - (std::countr_zero(n) >> 3)};
     else
@@ -28,7 +28,7 @@ inline std::string_view ALWAYS_INLINE toStringView(const StringKey8 & n)
 }
 inline std::string_view ALWAYS_INLINE toStringView(const StringKey16 & n)
 {
-    assert(n.items[1] != 0);
+    chassert(n.items[1] != 0);
     if constexpr (std::endian::native == std::endian::big)
         return {reinterpret_cast<const char *>(&n), 16ul - (std::countr_zero(n.items[1]) >> 3)};
     else
@@ -36,7 +36,7 @@ inline std::string_view ALWAYS_INLINE toStringView(const StringKey16 & n)
 }
 inline std::string_view ALWAYS_INLINE toStringView(const StringKey24 & n)
 {
-    assert(n.c != 0);
+    chassert(n.c != 0);
     if constexpr (std::endian::native == std::endian::big)
         return {reinterpret_cast<const char *>(&n), 24ul - (std::countr_zero(n.c) >> 3)};
     else
@@ -132,12 +132,12 @@ struct StringHashTableHash
 };
 
 template <typename Cell>
-struct StringHashTableEmpty
+struct StringHashTableEmpty // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `zero_value_storage` is raw storage for placement new, only written when `has_zero` becomes true
 {
     using Self = StringHashTableEmpty;
 
     bool has_zero = false;
-    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)];
 
 public:
     bool hasZero() const { return has_zero; }
@@ -340,7 +340,7 @@ public:
         const char * p = x.data();
         // pending bits that needs to be shifted out
         const char s = (-sz & 7) * 8;
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             StringKey8 k8;
             StringKey16 k16;

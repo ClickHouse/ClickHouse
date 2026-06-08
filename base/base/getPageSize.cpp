@@ -2,12 +2,15 @@
 #include <unistd.h>
 #include <cstdlib>
 
-static Int64 getPageSizeImpl()
+namespace
 {
-    Int64 page_size = sysconf(_SC_PAGESIZE);
-    if (page_size < 0)
-        abort();
-    return page_size;
+    Int64 getPageSizeImpl()
+    {
+        Int64 page_size = sysconf(_SC_PAGESIZE);
+        if (page_size < 0)
+            abort();
+        return page_size;
+    }
 }
 
 /// Function-local static (instead of a namespace-scope variable with a dynamic

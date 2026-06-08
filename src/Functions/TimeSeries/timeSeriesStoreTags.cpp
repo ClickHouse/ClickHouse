@@ -85,7 +85,7 @@ public:
         if constexpr (id_is_nullable)
         {
             auto ids = TimeSeriesTagsFunctionHelpers::extractIDFromArgument<std::optional<IDType>>(name, arguments, 0);
-            std::vector<IDType> valid_ids;
+            VectorWithMemoryTracking<IDType> valid_ids;
             valid_ids.reserve(ids.size());
             for (size_t i = 0; i != ids.size(); ++i)
             {
