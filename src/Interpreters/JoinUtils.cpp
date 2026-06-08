@@ -552,17 +552,12 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
     size_t num_rows = block.rows();
     size_t num_cols = block.columns();
 
-    PaddedPODArray<UInt32> hash(num_rows);
-    bool initial = true;
+    PaddedPODArray<UInt32> hash(num_rows, WEAK_HASH32_INITIAL_VALUE);
     for (const auto & key_name : key_columns_names)
     {
         ColumnPtr key_col = materializeColumn(block, key_name);
-        key_col->computeHashInto(0, num_rows, hash.data(), initial);
-        initial = false;
+        key_col->computeHashInto(0, num_rows, hash.data(), false);
     }
-    /// No key columns: route every row to a single shard deterministically.
-    if (initial)
-        std::fill(hash.begin(), hash.end(), UInt32(0));
     auto selector = hashToSelector(hash, sharder);
 
     Blocks result;

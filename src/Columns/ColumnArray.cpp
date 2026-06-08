@@ -327,13 +327,15 @@ void ColumnArray::computeHashInto(size_t row_begin, size_t row_end, uint32_t * h
     for (size_t i = row_begin; i < row_end; ++i)
     {
         /// Fold all element hashes of this row through a CRC32C chain seeded with
-        /// WEAK_HASH32_INITIAL_VALUE. Each element extends the chain, so the array length is
+        /// `WEAK_HASH32_INITIAL_VALUE`, self-mixed once (matching the former
+        /// `getWeakHash32`). Each element extends the chain, so the array length is
         /// implicitly mixed in and arrays like [], [0], [0, 0], ... do not collide. The
         /// resulting `acc` is the finalized per-row hash (the same value the initial path
         /// writes), combined with the prior accumulator via the uniform combineWeakHash32 so a
         /// materialized Array and a ColumnConst(Array) of the same value compose identically.
         /// See IColumn::computeHashInto.
         uint32_t acc = WEAK_HASH32_INITIAL_VALUE;
+        acc = static_cast<UInt32>(intHashCRC32(acc));
         for (Offset row = prev_offset; row < offsets_data[i]; ++row)
             acc = combineWeakHash32(elem_hash[row - elem_begin], acc);
 

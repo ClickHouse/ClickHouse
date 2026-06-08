@@ -323,26 +323,24 @@ void ColumnFunction::computeHashInto(size_t row_begin, size_t row_end, uint32_t 
 
     if (captured_columns.empty())
     {
-        /// No captures: a fixed per-row value (0), independent of representation.
+        /// No captures: matches the former `getWeakHash32` (all bits set).
         if (initial)
             for (size_t i = 0; i < n; ++i)
-                hash_out[i] = 0;
+                hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
         else
             for (size_t i = 0; i < n; ++i)
-                hash_out[i] = combineWeakHash32(0, hash_out[i]);
+                hash_out[i] = combineWeakHash32(WEAK_HASH32_INITIAL_VALUE, hash_out[i]);
         return;
     }
 
     if (initial)
     {
-        /// First capture seeds the buffer, the rest combine into it, producing the
-        /// finalized per-row function hash directly.
-        bool first = true;
+        /// Seed with `WEAK_HASH32_INITIAL_VALUE` and combine every capture, matching the
+        /// former `WeakHash32` + `getWeakHash32` chain for `ColumnFunction`.
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
         for (const auto & column : captured_columns)
-        {
-            column.column->computeHashInto(row_begin, row_end, hash_out, first);
-            first = false;
-        }
+            column.column->computeHashInto(row_begin, row_end, hash_out, false);
         return;
     }
 
@@ -351,13 +349,9 @@ void ColumnFunction::computeHashInto(size_t row_begin, size_t row_end, uint32_t 
     /// streaming captures straight into `hash_out`) keeps composition representation-independent:
     /// a materialized `ColumnFunction` and a `ColumnConst(ColumnFunction)` of the same value
     /// compose identically. See IColumn::computeHashInto and ColumnTuple::computeHashInto.
-    PaddedPODArray<UInt32> function_hash(n);
-    bool first = true;
+    PaddedPODArray<UInt32> function_hash(n, WEAK_HASH32_INITIAL_VALUE);
     for (const auto & column : captured_columns)
-    {
-        column.column->computeHashInto(row_begin, row_end, function_hash.data(), first);
-        first = false;
-    }
+        column.column->computeHashInto(row_begin, row_end, function_hash.data(), false);
     for (size_t i = 0; i < n; ++i)
         hash_out[i] = combineWeakHash32(function_hash[i], hash_out[i]);
 }

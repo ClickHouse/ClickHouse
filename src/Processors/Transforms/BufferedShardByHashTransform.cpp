@@ -1,9 +1,10 @@
-#include <algorithm>
 #include <Columns/IColumn.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/BufferedShardByHashTransform.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/MapToRange.h>
+
+#include <algorithm>
 
 namespace DB
 {

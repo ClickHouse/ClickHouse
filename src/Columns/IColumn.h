@@ -389,17 +389,24 @@ public:
     /// mainly needed to scatter data between threads (sharded aggregation,
     /// `grace_hash` joins, parallel-window partitioning, hash-join scatter).
     ///
-    /// When `initial == true` the buffer is overwritten:
+    /// When `initial == true` the buffer is overwritten with the column's standalone
+    /// per-row hash (the value formerly returned by `getWeakHash32`):
     ///     hash_out[i] = h(row_begin + i)
     ///
-    /// When `initial == false` the buffer is combined with the per-row hash,
-    /// composing hashes across multiple key columns without intermediate allocations:
+    /// When `initial == false` the buffer is combined with the per-row hash via
+    /// `combineWeakHash32` (the former `WeakHash32::update`), composing hashes across
+    /// multiple key columns without intermediate allocations:
     ///     hash_out[i] = combineWeakHash32(h(row_begin + i), hash_out[i])
+    ///
+    /// Scatter consumers (`BufferedShardByHashTransform`, `ScatterByPartitionTransform`,
+    /// `scatterBlockByHash`) seed `hash_out` with `WEAK_HASH32_INITIAL_VALUE` and call
+    /// `computeHashInto(..., initial=false)` for every key column, reproducing the former
+    /// `WeakHash32` + repeated `update(getWeakHash32())` chain bit-for-bit.
     ///
     /// `h(row)` is the finalized per-row hash — exactly the value the column writes
     /// on the `initial == true` path — a 32-bit hash based on hardware CRC32C
     /// (`_mm_crc32_u64` / `__crc32cd` / `updateWeakHash32`, seeded with
-    /// `WEAK_HASH32_INITIAL_VALUE`).
+    /// `WEAK_HASH32_INITIAL_VALUE` where applicable).
     ///
     /// REPRESENTATION-INDEPENDENCE CONTRACT: the non-initial path must combine this
     /// same finalized `h(row)` with `combineWeakHash32`, not a column-private intermediate

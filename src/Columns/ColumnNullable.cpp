@@ -70,7 +70,7 @@ void ColumnNullable::updateHashWithValueRange(size_t begin, size_t end, SipHash 
 /// to sit in the nested column for that row, otherwise two SQL-equal NULL keys could
 /// route to different shards/partitions. We replace the nested hash of null rows with
 /// this constant rather than mixing the null byte into a payload-derived hash.
-static constexpr uint32_t NULL_ROW_HASH = 0x6e756c6cU; // 'null'
+static constexpr uint32_t NULL_ROW_HASH = WEAK_HASH32_INITIAL_VALUE;
 
 /// Branchless in-place null select, used on the `initial == true` path where `out`
 /// already holds the nested column's finalized per-row hash. `null_mask` is all-zeros

@@ -421,26 +421,24 @@ void ColumnTuple::computeHashInto(size_t row_begin, size_t row_end, uint32_t * h
 
     if (columns.empty())
     {
-        /// Empty tuple: a fixed per-row value (0), independent of representation.
+        /// Empty tuple: matches the former `getWeakHash32` (all bits set).
         if (initial)
             for (size_t i = 0; i < n; ++i)
-                hash_out[i] = 0;
+                hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
         else
             for (size_t i = 0; i < n; ++i)
-                hash_out[i] = combineWeakHash32(0, hash_out[i]);
+                hash_out[i] = combineWeakHash32(WEAK_HASH32_INITIAL_VALUE, hash_out[i]);
         return;
     }
 
     if (initial)
     {
-        /// First element seeds the buffer, the rest combine into it. This produces the
-        /// finalized per-row tuple hash directly.
-        bool first = true;
+        /// Seed with `WEAK_HASH32_INITIAL_VALUE` and combine every child, matching the
+        /// former `WeakHash32` + `getWeakHash32` chain for tuples.
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
         for (const auto & column : columns)
-        {
-            column->computeHashInto(row_begin, row_end, hash_out, first);
-            first = false;
-        }
+            column->computeHashInto(row_begin, row_end, hash_out, false);
         return;
     }
 
@@ -450,13 +448,9 @@ void ColumnTuple::computeHashInto(size_t row_begin, size_t row_end, uint32_t * h
     /// keeps composition representation-independent: a materialized `Tuple` and a
     /// `ColumnConst(Tuple)` of the same value compose identically. See
     /// IColumn::computeHashInto.
-    PaddedPODArray<UInt32> tuple_hash(n);
-    bool first = true;
+    PaddedPODArray<UInt32> tuple_hash(n, WEAK_HASH32_INITIAL_VALUE);
     for (const auto & column : columns)
-    {
-        column->computeHashInto(row_begin, row_end, tuple_hash.data(), first);
-        first = false;
-    }
+        column->computeHashInto(row_begin, row_end, tuple_hash.data(), false);
     for (size_t i = 0; i < n; ++i)
         hash_out[i] = combineWeakHash32(tuple_hash[i], hash_out[i]);
 }
