@@ -3,33 +3,39 @@ test 1 asc reads less:	1
 test 2 desc reads less:	1
 test 3 no where reads less:	1
 test 4 two partitions reads less:	1
-test 5 correctness ASC:
+test 5 correctness two partitions:
+202402	24999
+202402	24998
+202402	24997
+202402	24996
+202402	24995
+test 6 correctness ASC:
 2024-01-01 00:00:00	0
 2024-01-01 00:01:00	1
 2024-01-01 00:02:00	2
 2024-01-01 00:03:00	3
 2024-01-01 00:04:00	4
-test 5 correctness DESC:
+test 6 correctness DESC:
 2024-06-14 21:19:00	119999
 2024-06-14 21:18:00	119998
 2024-06-14 21:17:00	119997
 2024-06-14 21:16:00	119996
 2024-06-14 21:15:00	119995
 parts:	6
-test 6 prefix fixed reads less:	1
-test 7 gap same reads:	1
-test 8 correctness composite:
+test 7 prefix fixed reads less:	1
+test 8 gap same reads:	1
+test 9 correctness composite:
 aaa	bbb	2024-01-01 00:00:00	0
 aaa	bbb	2024-01-01 00:01:00	1
 aaa	bbb	2024-01-01 00:02:00	2
 aaa	bbb	2024-01-01 00:03:00	3
 aaa	bbb	2024-01-01 00:04:00	4
-test 9 redundant columns in order by:	1
-test 10 correctness integer partition ASC:
+test 10 redundant columns in order by:	1
+test 11 correctness integer partition ASC:
 2	200
 2	201
 2	202
-test 11 correctness integer partition DESC:
+test 12 correctness integer partition DESC:
 10	1002
 10	1001
 10	1000

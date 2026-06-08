@@ -173,15 +173,27 @@ FROM
          AND log_comment = '04230_test_4_disabled'
          AND type = 'QueryFinish'
      ORDER BY event_time_microseconds DESC LIMIT 1) b;
-
--- ------------------------------------------------------------------
--- Test 5: Correctness -- ASC and DESC results must be correct.
--- ------------------------------------------------------------------
-SELECT 'test 5 correctness ASC:';
-SELECT time, val FROM t_lazy_simple ORDER BY time ASC LIMIT 5;
-
-SELECT 'test 5 correctness DESC:';
-SELECT time, val FROM t_lazy_simple ORDER BY time DESC LIMIT 5;
+ 
+ -- ------------------------------------------------------------------
+ -- Test 5: Correctness -- LIMIT spanning 2 partitions returns rows
+ -- from both partitions in correct order.
+ -- ------------------------------------------------------------------
+ SELECT 'test 5 correctness two partitions:';
+ SELECT toYYYYMM(time) AS ym, val
+ FROM (
+     SELECT time, val FROM t_lazy_simple ORDER BY time ASC LIMIT 25000
+ )
+ ORDER BY val DESC
+ LIMIT 5;
+ 
+ -- ------------------------------------------------------------------
+ -- Test 6: Correctness -- ASC and DESC results must be correct.
+ -- ------------------------------------------------------------------
+ SELECT 'test 6 correctness ASC:';
+ SELECT time, val FROM t_lazy_simple ORDER BY time ASC LIMIT 5;
+ 
+ SELECT 'test 6 correctness DESC:';
+ SELECT time, val FROM t_lazy_simple ORDER BY time DESC LIMIT 5;
 
 DROP TABLE t_lazy_simple;
 
@@ -227,47 +239,11 @@ SELECT 'parts:', count() FROM system.parts
 WHERE database = currentDatabase() AND table = 't_lazy_composite' AND active;
 
 -- ------------------------------------------------------------------
--- Test 6: Both prefix columns fixed -- optimization SHOULD apply.
+-- Test 7: Both prefix columns fixed -- optimization SHOULD apply.
 -- ------------------------------------------------------------------
 SELECT k1, k2, time, val
 FROM t_lazy_composite
 WHERE k1 = 'aaa' AND k2 = 'bbb' AND time >= '2024-01-01 00:00:00'
-ORDER BY k1, k2, time ASC
-LIMIT 5
-SETTINGS log_comment = '04230_test_6_enabled'
-FORMAT Null;
-
-SELECT k1, k2, time, val
-FROM t_lazy_composite
-WHERE k1 = 'aaa' AND k2 = 'bbb' AND time >= '2024-01-01 00:00:00'
-ORDER BY k1, k2, time ASC
-LIMIT 5
-SETTINGS read_in_order_allow_per_partition_lazy_read = 0, log_comment = '04230_test_6_disabled'
-FORMAT Null;
-
-SYSTEM FLUSH LOGS query_log;
-
-SELECT 'test 6 prefix fixed reads less:', a.read_rows < b.read_rows
-FROM
-    (SELECT read_rows FROM system.query_log
-     WHERE current_database = currentDatabase()
-         AND log_comment = '04230_test_6_enabled'
-         AND type = 'QueryFinish'
-     ORDER BY event_time_microseconds DESC LIMIT 1) a,
-    (SELECT read_rows FROM system.query_log
-     WHERE current_database = currentDatabase()
-         AND log_comment = '04230_test_6_disabled'
-         AND type = 'QueryFinish'
-     ORDER BY event_time_microseconds DESC LIMIT 1) b;
-
--- ------------------------------------------------------------------
--- Test 7: Gap in prefix -- k1 fixed, k2 NOT fixed.
--- Optimization should NOT apply because different k2 values interleave
--- across partitions.
--- ------------------------------------------------------------------
-SELECT k1, k2, time, val
-FROM t_lazy_composite
-WHERE k1 = 'aaa' AND time >= '2024-01-01 00:00:00'
 ORDER BY k1, k2, time ASC
 LIMIT 5
 SETTINGS log_comment = '04230_test_7_enabled'
@@ -275,7 +251,7 @@ FORMAT Null;
 
 SELECT k1, k2, time, val
 FROM t_lazy_composite
-WHERE k1 = 'aaa' AND time >= '2024-01-01 00:00:00'
+WHERE k1 = 'aaa' AND k2 = 'bbb' AND time >= '2024-01-01 00:00:00'
 ORDER BY k1, k2, time ASC
 LIMIT 5
 SETTINGS read_in_order_allow_per_partition_lazy_read = 0, log_comment = '04230_test_7_disabled'
@@ -283,8 +259,7 @@ FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
--- With gap in prefix, optimization is not applied, so read_rows should be equal.
-SELECT 'test 7 gap same reads:', a.read_rows = b.read_rows
+SELECT 'test 7 prefix fixed reads less:', a.read_rows < b.read_rows
 FROM
     (SELECT read_rows FROM system.query_log
      WHERE current_database = currentDatabase()
@@ -298,9 +273,46 @@ FROM
      ORDER BY event_time_microseconds DESC LIMIT 1) b;
 
 -- ------------------------------------------------------------------
--- Test 8: Correctness -- composite key results must be correct.
+-- Test 8: Gap in prefix -- k1 fixed, k2 NOT fixed.
+-- Optimization should NOT apply because different k2 values interleave
+-- across partitions.
 -- ------------------------------------------------------------------
-SELECT 'test 8 correctness composite:';
+SELECT k1, k2, time, val
+FROM t_lazy_composite
+WHERE k1 = 'aaa' AND time >= '2024-01-01 00:00:00'
+ORDER BY k1, k2, time ASC
+LIMIT 5
+SETTINGS log_comment = '04230_test_8_enabled'
+FORMAT Null;
+
+SELECT k1, k2, time, val
+FROM t_lazy_composite
+WHERE k1 = 'aaa' AND time >= '2024-01-01 00:00:00'
+ORDER BY k1, k2, time ASC
+LIMIT 5
+SETTINGS read_in_order_allow_per_partition_lazy_read = 0, log_comment = '04230_test_8_disabled'
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- With gap in prefix, optimization is not applied, so read_rows should be equal.
+SELECT 'test 8 gap same reads:', a.read_rows = b.read_rows
+FROM
+    (SELECT read_rows FROM system.query_log
+     WHERE current_database = currentDatabase()
+         AND log_comment = '04230_test_8_enabled'
+         AND type = 'QueryFinish'
+     ORDER BY event_time_microseconds DESC LIMIT 1) a,
+    (SELECT read_rows FROM system.query_log
+     WHERE current_database = currentDatabase()
+         AND log_comment = '04230_test_8_disabled'
+         AND type = 'QueryFinish'
+     ORDER BY event_time_microseconds DESC LIMIT 1) b;
+
+-- ------------------------------------------------------------------
+-- Test 9: Correctness -- composite key results must be correct.
+-- ------------------------------------------------------------------
+SELECT 'test 9 correctness composite:';
 SELECT k1, k2, time, val
 FROM t_lazy_composite
 WHERE k1 = 'aaa' AND k2 = 'bbb' AND time >= '2024-01-01 00:00:00'
@@ -308,14 +320,14 @@ ORDER BY k1, k2, time ASC
 LIMIT 5;
 
 -- ------------------------------------------------------------------
--- Test 9: Fixed columns are not added to ORDER BY - optimization SHOULD apply
+-- Test 10: Fixed columns are not added to ORDER BY - optimization SHOULD apply
 -- ------------------------------------------------------------------
 SELECT k1, k2, time, val
 FROM t_lazy_composite
 WHERE k1 = 'aaa' AND k2 = 'bbb' AND time >= '2024-01-01 00:00:00'
 ORDER BY time ASC
 LIMIT 5
-SETTINGS log_comment = '04230_test_9_enabled'
+SETTINGS log_comment = '04230_test_10_enabled'
 FORMAT Null;
 
 SELECT k1, k2, time, val
@@ -323,21 +335,21 @@ FROM t_lazy_composite
 WHERE k1 = 'aaa' AND k2 = 'bbb' AND time >= '2024-01-01 00:00:00'
 ORDER BY time ASC
 LIMIT 5
-SETTINGS read_in_order_allow_per_partition_lazy_read = 0, log_comment = '04230_test_9_disabled'
+SETTINGS read_in_order_allow_per_partition_lazy_read = 0, log_comment = '04230_test_10_disabled'
 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT 'test 9 redundant columns in order by:', a.read_rows < b.read_rows
+SELECT 'test 10 redundant columns in order by:', a.read_rows < b.read_rows
 FROM
     (SELECT read_rows FROM system.query_log
      WHERE current_database = currentDatabase()
-         AND log_comment = '04230_test_9_enabled'
+         AND log_comment = '04230_test_10_enabled'
          AND type = 'QueryFinish'
      ORDER BY event_time_microseconds DESC LIMIT 1) a,
     (SELECT read_rows FROM system.query_log
      WHERE current_database = currentDatabase()
-         AND log_comment = '04230_test_9_disabled'
+         AND log_comment = '04230_test_10_disabled'
          AND type = 'QueryFinish'
      ORDER BY event_time_microseconds DESC LIMIT 1) b;
 
@@ -345,7 +357,7 @@ DROP TABLE t_lazy_composite;
 
 -- ============================================================================
 -- Table 3: PARTITION BY k ORDER BY k with integer k.
--- partition_id values are "10" and "2", so "10" < "2" lexicographically 
+-- partition_id values are "10" and "2", so "10" < "2" lexicographically
 -- even though 10 > 2 numerically.
 -- ============================================================================
 
@@ -362,15 +374,15 @@ INSERT INTO t_lazy_int_partition VALUES (10, 1000), (10, 1001), (10, 1002);
 OPTIMIZE TABLE t_lazy_int_partition FINAL;
 
 -- ------------------------------------------------------------------
--- Test 10: Correctness ASC -- must return k=2 rows first.
+-- Test 11: Correctness ASC -- must return k=2 rows first.
 -- ------------------------------------------------------------------
-SELECT 'test 10 correctness integer partition ASC:';
+SELECT 'test 11 correctness integer partition ASC:';
 SELECT k, val FROM t_lazy_int_partition ORDER BY (k, val) ASC LIMIT 3;
 
 -- ------------------------------------------------------------------
--- Test 11: Correctness DESC -- must return k=10 rows first.
+-- Test 12: Correctness DESC -- must return k=10 rows first.
 -- ------------------------------------------------------------------
-SELECT 'test 11 correctness integer partition DESC:';
+SELECT 'test 12 correctness integer partition DESC:';
 SELECT k, val FROM t_lazy_int_partition ORDER BY (k, val) DESC LIMIT 3;
 
 DROP TABLE t_lazy_int_partition;

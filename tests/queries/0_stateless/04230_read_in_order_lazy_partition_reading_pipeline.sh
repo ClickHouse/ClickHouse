@@ -63,6 +63,13 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN PIPELINE SELECT time, val FROM t_lazy_pipeline_simple
     ORDER BY time ASC LIMIT 5 SETTINGS max_threads=1" | grep -c "Concat"
 
+# -- Test 5: No LIMIT → optimization must NOT apply
+echo "test 5: no LIMIT no Concat"
+$CLICKHOUSE_CLIENT -q "
+    $SETTINGS;
+    EXPLAIN PIPELINE SELECT time, val FROM t_lazy_pipeline_simple
+    ORDER BY time ASC SETTINGS max_threads=1" | grep -c "Concat" || true
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_pipeline_simple"
 
 # ============================================================================
@@ -82,40 +89,40 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_composite SELECT 'xxx', 'yyy'
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_composite SELECT 'xxx', 'yyy', toDateTime('2024-02-01') + number * 60, number + 2500 FROM numbers(500)"
 $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE t_lazy_pipeline_composite FINAL"
 
-# -- Test 5: Both prefix columns fixed → Concat
-echo "test 5: prefix fixed has Concat"
+# -- Test 6: Both prefix columns fixed → Concat
+echo "test 6: prefix fixed has Concat"
 $CLICKHOUSE_CLIENT -q "
     $SETTINGS;
     EXPLAIN PIPELINE SELECT k1, k2, time, val FROM t_lazy_pipeline_composite
     WHERE k1 = 'aaa' AND k2 = 'bbb'
     ORDER BY k1, k2, time ASC LIMIT 5 SETTINGS max_threads=1" | grep -c "Concat"
 
-# -- Test 6: Gap in prefix (k2 not fixed) → no Concat
-echo "test 6: gap in prefix no Concat"
+# -- Test 7: Gap in prefix (k2 not fixed) → no Concat
+echo "test 7: gap in prefix no Concat"
 $CLICKHOUSE_CLIENT -q "
     $SETTINGS;
     EXPLAIN PIPELINE SELECT k1, k2, time, val FROM t_lazy_pipeline_composite
     WHERE k1 = 'aaa'
     ORDER BY k1, k2, time ASC LIMIT 5 SETTINGS max_threads=1" | grep -c "Concat" || true
 
-# -- Test 7: No prefix fixed → no Concat
-echo "test 7: no prefix no Concat"
+# -- Test 8: No prefix fixed → no Concat
+echo "test 8: no prefix no Concat"
 $CLICKHOUSE_CLIENT -q "
     $SETTINGS;
     EXPLAIN PIPELINE SELECT k1, k2, time, val FROM t_lazy_pipeline_composite
     WHERE time >= '2024-01-01'
     ORDER BY k1, k2, time ASC LIMIT 5 SETTINGS max_threads=1" | grep -c "Concat" || true
 
-# -- Test 8: IN on prefix column (not a single point) → no Concat
-echo "test 8: IN prefix no Concat"
+# -- Test 9: IN on prefix column (not a single point) → no Concat
+echo "test 9: IN prefix no Concat"
 $CLICKHOUSE_CLIENT -q "
     $SETTINGS;
     EXPLAIN PIPELINE SELECT k1, k2, time, val FROM t_lazy_pipeline_composite
     WHERE k1 IN ('aaa', 'xxx') AND k2 = 'bbb'
     ORDER BY k1, k2, time ASC LIMIT 5 SETTINGS max_threads=1" | grep -c "Concat" || true
 
-# -- Test 9: Range on prefix column (not a point) → no Concat
-echo "test 9: range prefix no Concat"
+# -- Test 10: Range on prefix column (not a point) → no Concat
+echo "test 10: range prefix no Concat"
 $CLICKHOUSE_CLIENT -q "
     $SETTINGS;
     EXPLAIN PIPELINE SELECT k1, k2, time, val FROM t_lazy_pipeline_composite
@@ -138,7 +145,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_non_mono SELECT toDateTime('2
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_non_mono SELECT toDateTime('2024-01-02') + number * 60, number + 1440 FROM numbers(1440)"
 $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE t_lazy_pipeline_non_mono FINAL"
 
-echo "test 10: non-monotonic no Concat"
+echo "test 11: non-monotonic no Concat"
 $CLICKHOUSE_CLIENT -q "
     $SETTINGS;
     EXPLAIN PIPELINE SELECT time, val FROM t_lazy_pipeline_non_mono
@@ -159,7 +166,7 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_non_sort SELECT toDateTime('2024-01-01') + number * 60, number FROM numbers(3000)"
 $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE t_lazy_pipeline_non_sort FINAL"
 
-echo "test 11: non-sort-key partition no Concat"
+echo "test 12: non-sort-key partition no Concat"
 $CLICKHOUSE_CLIENT -q "
     $SETTINGS;
     EXPLAIN PIPELINE SELECT time, val FROM t_lazy_pipeline_non_sort
@@ -180,7 +187,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_multi_part SELECT toDateTime(
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_multi_part SELECT toDateTime('2024-02-01') + number * 60, number + 1000 FROM numbers(1000)"
 $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE t_lazy_pipeline_multi_part FINAL"
 
-echo "test 12: multi-column partition key no Concat"
+echo "test 13: multi-column partition key no Concat"
 $CLICKHOUSE_CLIENT -q "
     $SETTINGS;
     EXPLAIN PIPELINE SELECT time, val FROM t_lazy_pipeline_multi_part
@@ -203,7 +210,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_todate SELECT toDateTime('202
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_todate SELECT toDateTime('2024-01-03') + number * 60, number + 2880 FROM numbers(1440)"
 $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE t_lazy_pipeline_todate FINAL"
 
-echo "test 13: toDate partition has Concat"
+echo "test 14: toDate partition has Concat"
 $CLICKHOUSE_CLIENT -q "
     $SETTINGS;
     EXPLAIN PIPELINE SELECT time, val FROM t_lazy_pipeline_todate
@@ -227,15 +234,15 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_reverse_key SELECT toDateTime
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_reverse_key SELECT toDateTime('2024-03-01') + number * 60, number + 2000 FROM numbers(1000)"
 $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE t_lazy_pipeline_reverse_key FINAL"
 
-# -- Test 14: Optimization still applies
-echo "test 14: reversed key DESC has Concat"
+# -- Test 15: Optimization still applies
+echo "test 15: reversed key DESC has Concat"
 $CLICKHOUSE_CLIENT -q "
     $SETTINGS;
     EXPLAIN PIPELINE SELECT time, val FROM t_lazy_pipeline_reverse_key
     ORDER BY time DESC LIMIT 5 SETTINGS max_threads=1" | grep -c "Concat"
 
-# -- Test 15: Correctness — ORDER BY time DESC LIMIT 5 must return the newest rows (March 2024)
-echo "test 15: reversed key DESC correctness"
+# -- Test 16: Correctness — ORDER BY time DESC LIMIT 5 must return the newest rows (March 2024)
+echo "test 16: reversed key DESC correctness"
 $CLICKHOUSE_CLIENT -q "
     $SETTINGS;
     SELECT toYYYYMM(time) AS ym FROM t_lazy_pipeline_reverse_key
@@ -262,8 +269,8 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_nullable_partition VALUES (NULL, 999);
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_nullable_partition VALUES (2, 200), (2, 201);"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_nullable_partition VALUES (10, 1000), (10, 1001);"
 
-# -- Test 16: Optimization is disabled for nullable partition keys
-echo "test 16: optimization is disabled for nullable partition keys"
+# -- Test 17: Optimization is disabled for nullable partition keys
+echo "test 17: optimization is disabled for nullable partition keys"
 $CLICKHOUSE_CLIENT -q "
     $SETTINGS;
     EXPLAIN PIPELINE SELECT k, val FROM t_lazy_nullable_partition

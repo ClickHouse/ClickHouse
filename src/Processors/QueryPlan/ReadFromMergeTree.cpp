@@ -1599,6 +1599,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     auto sorting_key_expr = std::make_shared<ExpressionActions>(std::move(sorting_key_prefix_expr));
 
     bool use_lazy_partition_reading = settings[Setting::read_in_order_allow_per_partition_lazy_read]
+        && query_task_size_limit
         && !is_parallel_reading_from_replicas
         && !output_each_partition_through_separate_port
         && countPartitions(parts_with_ranges) > 1;

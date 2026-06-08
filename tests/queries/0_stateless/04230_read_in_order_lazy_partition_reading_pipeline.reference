@@ -8,27 +8,29 @@ test 3: DESC has Concat
 1
 test 4: no WHERE has Concat
 1
-test 5: prefix fixed has Concat
+test 5: no LIMIT no Concat
+0
+test 6: prefix fixed has Concat
 1
-test 6: gap in prefix no Concat
+test 7: gap in prefix no Concat
 0
-test 7: no prefix no Concat
+test 8: no prefix no Concat
 0
-test 8: IN prefix no Concat
+test 9: IN prefix no Concat
 0
-test 9: range prefix no Concat
+test 10: range prefix no Concat
 0
-test 10: non-monotonic no Concat
+test 11: non-monotonic no Concat
 0
-test 11: non-sort-key partition no Concat
+test 12: non-sort-key partition no Concat
 0
-test 12: multi-column partition key no Concat
+test 13: multi-column partition key no Concat
 0
-test 13: toDate partition has Concat
+test 14: toDate partition has Concat
 1
-test 14: reversed key DESC has Concat
+test 15: reversed key DESC has Concat
 1
-test 15: reversed key DESC correctness
+test 16: reversed key DESC correctness
 202403
-test 16: optimization is disabled for nullable partition keys
+test 17: optimization is disabled for nullable partition keys
 0
