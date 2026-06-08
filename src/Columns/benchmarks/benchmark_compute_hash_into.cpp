@@ -17,12 +17,14 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/JoinUtils.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/MapToRange.h>
 #include <Common/PODArray.h>
 #include <Common/randomSeed.h>
 
 #include <benchmark/benchmark.h>
 
+#include <algorithm>
 #include <random>
 #include <string>
 #include <vector>
@@ -125,12 +127,15 @@ void BM_ComputeHashInto(benchmark::State & state, const std::vector<ColumnPtr> &
 
 /// ─── End-to-end hash → selector benchmark ────────────────────────────────
 ///
-/// Captures the full pipeline as executed by
+/// Captures the full pipeline exactly as executed by
 /// BufferedShardByHashTransform::generateOutputChunks:
-/// computeHashInto chain (0 allocations) + mapToRange SIMD.
+/// seed hash_buffer with WEAK_HASH32_INITIAL_VALUE, chain computeHashInto with
+/// initial=false over every key column (0 allocations), then mapToRange SIMD.
 ///
-/// Both buffers are constructed outside the timing loop so the per-iteration
-/// cost reflects steady-state behaviour.
+/// The per-iteration std::fill is part of the consumer hot path (the buffer is
+/// re-seeded for every block), so it is measured here rather than hoisted out.
+/// Both buffers are allocated outside the timing loop to reflect the transform's
+/// reuse of its member arrays across blocks.
 
 void BM_HashAndFastrange_New(benchmark::State & state, const std::vector<ColumnPtr> & cols, size_t num_shards)
 {
@@ -141,12 +146,9 @@ void BM_HashAndFastrange_New(benchmark::State & state, const std::vector<ColumnP
     const UInt32 p32 = static_cast<UInt32>(num_shards);
     for (auto _ : state)
     {
-        bool initial = true;
+        std::fill(hash_buf.begin(), hash_buf.end(), WEAK_HASH32_INITIAL_VALUE);
         for (size_t k = 0; k < ncols; ++k)
-        {
-            cols[k]->computeHashInto(0, n, hash_buf.data(), initial);
-            initial = false;
-        }
+            cols[k]->computeHashInto(0, n, hash_buf.data(), false);
         mapToRange(hash_buf.data(), n, p32, pids.data());
         benchmark::DoNotOptimize(pids.data());
     }
