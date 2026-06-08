@@ -291,6 +291,18 @@ def run_func_test(
         logging.info(check_command)
         try:
             execute_bash(check_command, timeout=180)
+        except subprocess.TimeoutExpired as e:
+            output = str(e.stdout or "")
+            if "tests passed" in output and "FAIL" not in output:
+                logging.warning(
+                    "Smoke check timed out after 180s (--stress-tests loops until global_time_limit). "
+                    "Tests passed. Partial output:\n%s",
+                    output,
+                )
+            else:
+                raise RuntimeError(
+                    f"Smoke check timed out and tests did not pass:\n{output}"
+                ) from e
         except subprocess.CalledProcessError as e:
             logging.info("Smoke check stdout:\n%s", e.stdout)
             logging.info("Smoke check stderr:\n%s", e.stderr)
