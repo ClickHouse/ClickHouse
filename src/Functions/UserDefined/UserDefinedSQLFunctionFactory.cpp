@@ -22,6 +22,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 
+#include <optional>
 
 namespace DB
 {
@@ -171,10 +172,10 @@ bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & c
 
     try
     {
+        auto & wasm_factory = UserDefinedWebAssemblyFunctionFactory::instance();
+        std::optional<UserDefinedWebAssemblyFunctionFactory::RegisteredFunction> wasm_function;
         if (create_function_query->as<ASTCreateWasmFunctionQuery>())
-            UserDefinedWebAssemblyFunctionFactory::instance().addOrReplace(create_function_query, current_context->getWasmModuleManager());
-        else if (replace_if_exists && UserDefinedWebAssemblyFunctionFactory::instance().has(function_name))
-            UserDefinedWebAssemblyFunctionFactory::instance().dropIfExists(function_name);
+            wasm_function = wasm_factory.prepareFunction(create_function_query, current_context->getWasmModuleManager());
 
         auto & loader = current_context->getUserDefinedSQLObjectsStorage();
         bool stored = loader.storeObject(
@@ -187,6 +188,11 @@ bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & c
             current_context->getSettingsRef());
         if (!stored)
             return false;
+
+        if (wasm_function)
+            wasm_factory.addOrReplace(std::move(*wasm_function));
+        else if (replace_if_exists && wasm_factory.has(function_name))
+            wasm_factory.dropIfExists(function_name);
     }
     catch (Exception & exception)
     {
