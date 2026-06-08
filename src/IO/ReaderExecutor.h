@@ -36,12 +36,16 @@ enum class FilesystemPrefetchState : uint8_t;
 /// Reads a logical file (one or more `StoredObject`s mapped by `OffsetMap`)
 /// through a fastest-first cache chain, falling back to the source. Tuned for
 /// sequential scans: keeps one source connection alive across windows
-/// (`live_buffer`), reads one window ahead on a `PrefetchThreadPool`, and
+/// (`live_buffer`), reads the next gap ahead on a `PrefetchThreadPool`, and
 /// shrinks its window/block sizes under memory pressure. Owns its cache and
 /// decryption layers internally, so it is NOT wrapped by the legacy
 /// async/decrypt/cache read buffers. One instance per column-stream; not
-/// thread-safe beyond the documented prefetch-worker handoff (the prefetch
-/// future's `get()` happens-before edge).
+/// thread-safe beyond the prefetch-worker handoff: while a prefetch is in flight
+/// the worker exclusively owns `live_buffer`, `inflight_segment_pin` and the
+/// served-byte `stats`, and the foreground must establish the `get()`/`tryCancel`
+/// happens-before edge before touching them (enforced by a `chassert` in
+/// `readPhysicalWindow`). A foreground read that skips that handoff reintroduces the
+/// `live_buffer` use-after-free.
 class ReaderExecutor
 {
 public:
@@ -235,14 +239,6 @@ private:
     /// — no per-window `lookup`/`getOrSet`. Rebuilt lazily whenever the cursor
     /// leaves the planned span.
     void planResidencyWindow(size_t physical_start);
-
-    /// True when `physical_window` is fully covered by the residency plan with no
-    /// gaps - i.e. it can be served entirely from cache without a source read.
-    /// (Re)builds the plan if it does not yet cover the window. Drives the
-    /// prefetch-skip: a fully-resident next window is read synchronously from
-    /// cache instead of via an async prefetch whose worker handoff is pure
-    /// overhead for a fast cache read.
-    bool windowFullyResident(ByteRange physical_window);
 
     /// Read from source into the pre-allocated `blocks`. Tries live buffer first, falls back to stateless.
     /// `blocks` is consumed: blocks that receive data become RopeNodes in the returned Rope;
