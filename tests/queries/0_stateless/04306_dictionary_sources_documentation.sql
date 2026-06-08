@@ -16,6 +16,10 @@ FROM system.dictionary_sources
 WHERE name = 'clickhouse';
 
 -- The ytsaurus syntax must use the real configuration key `http_proxy_urls`, not `http_proxy_url`.
-SELECT name, position(syntax, 'http_proxy_urls') > 0 AS uses_correct_key
+-- Its description must also mention the experimental setting required to enable the source.
+SELECT
+    name,
+    position(syntax, 'http_proxy_urls') > 0 AS uses_correct_key,
+    position(description, 'allow_experimental_ytsaurus_dictionary_source') > 0 AS mentions_experimental_setting
 FROM system.dictionary_sources
 WHERE name = 'ytsaurus';

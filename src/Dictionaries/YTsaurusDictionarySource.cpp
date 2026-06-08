@@ -111,6 +111,7 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
 
     factory.registerSource("ytsaurus", create_dictionary_source, Documentation{
         .description = "Reads dictionary data from a YTsaurus cluster."
+            " This source is experimental; set the `allow_experimental_ytsaurus_dictionary_source` setting to enable it."
 #if !USE_YTSAURUS
             " Currently unavailable, because this ClickHouse build does not include YTsaurus support."
 #endif
