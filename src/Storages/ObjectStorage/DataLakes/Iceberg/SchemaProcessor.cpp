@@ -12,6 +12,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <base/types.h>
@@ -519,8 +520,8 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                     old_id,
                     new_id);
             }
-            ColumnPtr default_type_column = type->createColumnConstWithDefaultValue(0);
-            const auto & constant = dag->addColumn({default_type_column, type, name});
+            auto default_type_column = type->createColumnConstWithDefaultValue(0);
+            const auto & constant = dag->addColumn(std::move(default_type_column), type, name);
             outputs.push_back(&constant);
         }
     }

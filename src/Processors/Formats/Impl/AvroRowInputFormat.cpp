@@ -598,6 +598,10 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 return [symbols](IColumn & column, avro::Decoder & decoder)
                 {
                     size_t enum_index = decoder.decodeEnum();
+                    if (enum_index >= symbols.size())
+                    {
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Avro enum index {} is out of range, the schema has {} symbols", enum_index, symbols.size());
+                    }
                     const auto & enum_symbol = symbols[enum_index];
                     column.insertData(enum_symbol.c_str(), enum_symbol.length());
                     return true;
@@ -614,6 +618,10 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 return [symbol_mapping](IColumn & column, avro::Decoder & decoder)
                 {
                     size_t enum_index = decoder.decodeEnum();
+                    if (enum_index >= symbol_mapping.size())
+                    {
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Avro enum index {} is out of range, the schema has {} symbols", enum_index, symbol_mapping.size());
+                    }
                     column.insert(symbol_mapping[enum_index]);
                     return true;
                 };
@@ -1199,7 +1207,10 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     auto it = deserializer_cache.find(schema_id);
     if (it == deserializer_cache.end())
     {
-        auto schema = schema_registry->getSchema(schema_id, format_settings.avro.schema_registry_timeouts);
+        auto schema = schema_registry->getSchema(
+            schema_id,
+            format_settings.avro.schema_registry_timeouts,
+            format_settings.avro.schema_registry_retry);
         AvroDeserializer deserializer(
             output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
         it = deserializer_cache.emplace(schema_id, std::move(deserializer)).first;
@@ -1218,7 +1229,10 @@ NamesAndTypesList AvroSchemaReader::readSchema()
     if (confluent)
     {
         UInt32 schema_id = readConfluentSchemaId(in);
-        root_node = getConfluentSchemaRegistry(format_settings)->getSchema(schema_id, format_settings.avro.schema_registry_timeouts).root();
+        root_node = getConfluentSchemaRegistry(format_settings)->getSchema(
+            schema_id,
+            format_settings.avro.schema_registry_timeouts,
+            format_settings.avro.schema_registry_retry).root();
     }
     else
     {
