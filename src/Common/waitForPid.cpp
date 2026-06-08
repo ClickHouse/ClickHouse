@@ -5,6 +5,7 @@
 /// for abortOnFailedAssertion() via chassert() (dependency chain looks odd)
 #include <Common/Exception.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 
 #include <fcntl.h>
 #include <sys/wait.h>
@@ -105,6 +106,13 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
         }
     }
 
+    /// Releases pid_fd on every return path, including poll timeout and error.
+    SCOPE_EXIT(
+    {
+        [[maybe_unused]] int err = close(pid_fd);
+        chassert(!err || errno == EINTR);
+    });
+
     struct pollfd pollfd{};
     pollfd.fd = pid_fd;
     pollfd.events = POLLIN;
@@ -113,9 +121,6 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
 
     if (ready <= 0)
         return PollPidResult::FAILED;
-
-    [[maybe_unused]] int err = close(pid_fd);
-    chassert(!err || errno == EINTR);
 
     return PollPidResult::RESTART;
 }
@@ -136,6 +141,9 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
     if (kq == -1)
         return PollPidResult::FAILED;
 
+    /// Releases the kqueue fd on every return path, including early filter-add errors.
+    SCOPE_EXIT({ close(kq); });
+
     struct kevent change{};
     change.ident = 0;
 
@@ -155,11 +163,8 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
 
     struct timespec remaining_timespec = {.tv_sec = timeout_in_ms / 1000, .tv_nsec = (timeout_in_ms % 1000) * 1000000};
     int ready = HANDLE_EINTR(kevent(kq, nullptr, 0, &event, 1, &remaining_timespec));
-    PollPidResult result = ready < 0 ? PollPidResult::FAILED : PollPidResult::RESTART;
 
-    close(kq);
-
-    return result;
+    return ready < 0 ? PollPidResult::FAILED : PollPidResult::RESTART;
 }
 #elif defined(OS_SUNOS)
 
