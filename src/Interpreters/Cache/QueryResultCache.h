@@ -231,6 +231,9 @@ public:
 
         void checkFormatVersion();
 
+        /// Reset the on-disk cache to an empty, current-format state (used on first start and when the existing cache is corrupted).
+        void createFreshCache();
+
         void onEvictFunction(CachePolicy::MappedPtr mapped);
 
         LoggerPtr logger = getLogger("QueryResultCache");

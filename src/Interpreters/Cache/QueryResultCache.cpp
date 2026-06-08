@@ -1141,6 +1141,18 @@ QueryResultCache::OnDiskCache::OnDiskCache(const std::filesystem::path& path_, s
     cache_policy = std::make_unique<LRUCachePolicy<Key, DiskEntryMetadata, KeyHasher, DiskEntryWeight>>(
         CurrentMetrics::QueryCacheOnDiskBytes, CurrentMetrics::QueryCacheOnDiskEntries, max_size_in_bytes_, max_entries_, on_remove_entry_function);
 
+    namespace fs = std::filesystem;
+    fs::path format_version_path = query_cache_path / FormatTokens::format_version_txt;
+
+    /// A fresh cache directory (e.g. the very first server start) has no `format_version.txt` yet. This is the normal initial
+    /// state, not an error: opening the missing file would raise a `FILE_DOESNT_EXIST` exception that pollutes `system.errors`
+    /// and trips log-cleanliness checks. So create the cache from scratch without going through the read-and-fail path.
+    if (!fs::exists(format_version_path))
+    {
+        createFreshCache();
+        return;
+    }
+
     try
     {
         checkFormatVersion();
@@ -1149,16 +1161,21 @@ QueryResultCache::OnDiskCache::OnDiskCache(const std::filesystem::path& path_, s
     catch (...)
     {
         /// Ok: a corrupted or incompatible on-disk cache is not fatal. Remove old cache files and create a new format_version.txt.
-        namespace fs = std::filesystem;
-
-        fs::remove_all(query_cache_path);
-        fs::create_directory(query_cache_path);
-
-        fs::path format_version_path = query_cache_path / FormatTokens::format_version_txt;
-        WriteBufferFromFile format_version_file(format_version_path);
-        writeIntText(FormatTokens::current_version, format_version_file);
-        format_version_file.finalize();
+        createFreshCache();
     }
+}
+
+void QueryResultCache::OnDiskCache::createFreshCache()
+{
+    namespace fs = std::filesystem;
+
+    fs::remove_all(query_cache_path);
+    fs::create_directories(query_cache_path);
+
+    fs::path format_version_path = query_cache_path / FormatTokens::format_version_txt;
+    WriteBufferFromFile format_version_file(format_version_path);
+    writeIntText(FormatTokens::current_version, format_version_file);
+    format_version_file.finalize();
 }
 
 void QueryResultCache::OnDiskCache::readCacheEntriesMetaData()
