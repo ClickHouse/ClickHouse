@@ -1,0 +1,23 @@
+<clickhouse>
+    <!-- Pre-existing filesystem cache used exclusively by `04145_alter_with_inline_disk_setting`
+         to exercise the rollback-ownership path in `Context::removePendingCustomDiskIfOwned`
+         (issue #63019).
+
+         The cache has an ABSOLUTE `<path>` so its resolved path matches what an inline
+         `disk(type = cache, name = 'cache_for_rollback_test', path = './cache_for_rollback_test/')`
+         resolves to under `<custom_cached_disks_base_directory>` (configured by
+         `tests/config/config.d/filesystem_caches_path.xml` to `/var/lib/clickhouse/filesystem_caches/`).
+         When the paths match exactly and the settings match, `FileCacheFactory::getOrCreate`
+         reuses this entry instead of inserting a new one — that is the only way to reach
+         `we_inserted_cache_entry == false` on a fresh tentative-disk registration in
+         user-facing SQL.
+
+         The cache is intentionally tiny (`max_size = 1Mi`) and has a unique name so it cannot
+         interfere with other tests. -->
+    <filesystem_caches>
+        <cache_for_rollback_test>
+            <path>/var/lib/clickhouse/filesystem_caches/cache_for_rollback_test/</path>
+            <max_size>1Mi</max_size>
+        </cache_for_rollback_test>
+    </filesystem_caches>
+</clickhouse>

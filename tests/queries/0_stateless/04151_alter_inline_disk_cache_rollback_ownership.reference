@@ -1,0 +1,9 @@
+before:
+1
+alter rejected: BAD_ARGUMENTS
+after:
+1
+disk rolled back:
+0
+sibling table works:
+3	3
