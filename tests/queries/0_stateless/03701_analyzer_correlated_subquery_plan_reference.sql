@@ -4,7 +4,7 @@ SET enable_parallel_replicas = 0;
 SET correlated_subqueries_default_join_kind = 'left';
 SET correlated_subqueries_use_in_memory_buffer = 0;
 SET enable_join_runtime_filters = 0;
-SET max_bytes_before_external_join = 0; -- Remove once spilling hash join is enabled by default
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1; -- CI may inject False, keeping LEFT ANY instead of converting to LEFT SEMI

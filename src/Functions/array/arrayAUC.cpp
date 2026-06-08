@@ -124,7 +124,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
   *   which uses linear interpolation and can be too optimistic for the Precision Recall AUC metric.
   */
 
-class FunctionArrayAUC : public IFunction
+class FunctionArrayAUC final : public IFunction
 {
 public:
     FunctionArrayAUC(const char * name_, bool is_pr_) : function_name(name_), is_pr(is_pr_) {}

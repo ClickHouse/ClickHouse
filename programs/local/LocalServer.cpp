@@ -2,6 +2,7 @@
 
 #include <sys/resource.h>
 #include <Common/Config/getLocalConfigPath.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Core/Settings.h>
@@ -40,6 +41,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
+#include <Common/StackTrace.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
@@ -144,6 +146,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
     extern const ServerSettingsUInt64 thread_pool_queue_size;
@@ -183,6 +186,9 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
+namespace
+{
+
 void applySettingsOverridesForLocal(ContextMutablePtr context)
 {
     Settings settings = context->getSettingsCopy();
@@ -192,6 +198,8 @@ void applySettingsOverridesForLocal(ContextMutablePtr context)
     settings[Setting::implicit_select] = true;
 
     context->setSettings(settings);
+}
+
 }
 
 Poco::Util::LayeredConfiguration & LocalServer::getClientConfiguration()
@@ -216,8 +224,12 @@ void LocalServer::processError(std::string_view) const
             message = client_exception->message();
         }
 
+        /// musl defines `stderr` as `(stderr)` which triggers `-Wdisabled-macro-expansion`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         fmt::print(stderr, "Received exception:\n{}\n", message);
         fmt::print(stderr, "\n");
+#pragma clang diagnostic pop
     }
     else
     {
@@ -252,6 +264,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
         ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
         getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+        loaded_config_path = config_path;
     }
 
     server_settings.loadSettingsFromConfig(config());
@@ -328,7 +341,10 @@ void LocalServer::initialize(Poco::Util::Application & self)
 }
 
 
-static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & database_name)
+namespace
+{
+
+DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & database_name)
 {
     DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(database_name);
     if (!system_database)
@@ -340,13 +356,18 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
     return system_database;
 }
 
-static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
+DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
 {
     auto overlay = std::make_shared<DatabaseOverlay>(name_, context);
 
     UUID default_database_uuid;
 
-    fs::path existing_path_symlink = fs::weakly_canonical(context->getPath()) / "metadata" / "default";
+    /// Look up the persisted UUID via the per-database metadata symlink that
+    /// `DatabaseAtomic` creates at `metadata/<escapeForFileName(name)>`.
+    /// Using a hardcoded `"default"` here means a non-default `default_database`
+    /// (e.g. `--default_database=mydb`) silently loses data on restart because
+    /// the lookup misses the previous run's symlink and a fresh UUID is picked.
+    fs::path existing_path_symlink = fs::weakly_canonical(context->getPath()) / DatabaseCatalog::getMetadataDirPath(name_);
     if (FS::isSymlinkNoThrow(existing_path_symlink))
     {
         auto symlink_path = FS::readSymlink(existing_path_symlink);
@@ -364,6 +385,8 @@ static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, Co
     overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
     overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
     return overlay;
+}
+
 }
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
@@ -543,11 +566,16 @@ std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
 }
 
 
-static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
+namespace
+{
+
+ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 {
     std::stringstream ss{std::string{xml_data}};    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::XML::InputSource input_source{ss};
     return {new Poco::Util::XMLConfiguration{&input_source}};
+}
+
 }
 
 
@@ -592,19 +620,22 @@ void LocalServer::setupUsers()
     access_control.setEnableUserNameAccessType(config.getBool("access_control_improvements.enable_user_name_access_type", true));
     access_control.setThrowOnInvalidReplicatedAccessEntities(config.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", true));
 
-    if (getClientConfiguration().has("config-file") || fs::exists("config.xml"))
+    /// Apply user-level configuration from a loaded config file (including those
+    /// auto-discovered via `getLocalConfigPath`, e.g. `~/.clickhouse-local/config.xml`).
+    if (!loaded_config_path.empty())
     {
-        String config_path = getClientConfiguration().getString("config-file", "");
+        const auto config_dir = fs::path{loaded_config_path}.remove_filename().string();
         bool has_user_directories = getClientConfiguration().has("user_directories");
-        const auto config_dir = fs::path{config_path}.remove_filename().string();
         String users_config_path = getClientConfiguration().getString("users_config", "");
 
         if (users_config_path.empty() && has_user_directories)
-        {
             users_config_path = getClientConfiguration().getString("user_directories.users_xml.path");
-            if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
-                users_config_path = fs::path(config_dir) / users_config_path;
-        }
+
+        /// Anchor relative paths to the config's directory, not the cwd.
+        /// Otherwise a missing `users.xml` silently falls back to `./users.xml`,
+        /// which could grant `access_management` to the default user.
+        if (!users_config_path.empty() && fs::path(users_config_path).is_relative())
+            users_config_path = fs::path(config_dir) / users_config_path;
 
         if (users_config_path.empty())
             users_config = getConfigurationFromXMLString(minimal_default_user_xml);
@@ -646,7 +677,7 @@ void LocalServer::connect()
     );
 
     /// This is needed for table function input(...).
-    ReadBuffer * in;
+    ReadBuffer * in = nullptr;
     auto table_file = getClientConfiguration().getString("table-file", "-");
     if (table_file == "-" || table_file == "stdin")
     {
@@ -674,7 +705,7 @@ try
 
     /// Try to increase limit on number of open files.
     {
-        rlimit rlim;
+        rlimit rlim{};
         if (getrlimit(RLIMIT_NOFILE, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 
@@ -732,6 +763,8 @@ try
     /// After this point the global context must be stayed almost unchanged till shutdown,
     /// and all necessary changes must be made to the client context instead.
     initClientContext(Context::createCopy(global_context));
+    if (!query_id.empty())
+        client_context->setCurrentQueryId(query_id);
     /// Note, QueryScope will be initialized in the LocalConnection
 
     if (is_interactive)
@@ -798,17 +831,21 @@ void LocalServer::updateLoggerLevel(const String & logs_level)
 
 void LocalServer::processConfig()
 {
-    if (!queries.empty() && getClientConfiguration().has("queries-file"))
+    if (!queries.empty() && !queries_files.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
     pager = getClientConfiguration().getString("pager", "");
 
-    delayed_interactive = getClientConfiguration().has("interactive") && (!queries.empty() || getClientConfiguration().has("queries-file"));
+    delayed_interactive = getClientConfiguration().has("interactive") && (!queries.empty() || !queries_files.empty());
     if (!is_interactive || delayed_interactive)
     {
-        echo_queries = getClientConfiguration().hasOption("echo") || getClientConfiguration().hasOption("verbose");
         ignore_error = getClientConfiguration().getBool("ignore-error", false);
+
+        query_id = getClientConfiguration().getString("query_id", "");
     }
+
+    /// `clickhouse-local` historically makes `--verbose` imply query echoing.
+    setupEchoAndHighlightSettings(/* verbose_implies_echo */ true);
 
     print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
     const std::string clickhouse_dialect{"clickhouse"};
@@ -890,6 +927,9 @@ void LocalServer::processConfig()
     total_memory_tracker.setHardLimit(max_server_memory_usage);
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
+        server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
 
     size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
     size_t page_cache_max_size = server_settings[ServerSetting::page_cache_max_size];
@@ -1137,7 +1177,7 @@ void LocalServer::processConfig()
                 LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
                 waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
 
-                attachSystemTablesServer(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE), false);
+                attachSystemTablesServer(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE), false, false);
                 attached_system_database = true;
             }
 
@@ -1152,14 +1192,14 @@ void LocalServer::processConfig()
         }
 
         if (!attached_system_database)
-            attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
+            attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false, false);
 
         if (fs::exists(fs::path(path) / "user_defined"))
             global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {
-        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
+        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false, false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
 
@@ -1194,6 +1234,8 @@ void LocalServer::processConfig()
     global_context->setCurrentDatabase(default_database);
 
     server_display_name = getClientConfiguration().getString("display_name", "");
+
+    rainbow_parentheses = getClientConfiguration().getBool("rainbow_parentheses", true);
 
     if (getClientConfiguration().has("prompt"))
         prompt = getClientConfiguration().getString("prompt");
@@ -1358,8 +1400,7 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
 
 }
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
+int mainEntryClickHouseLocal(int argc, char ** argv);
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {

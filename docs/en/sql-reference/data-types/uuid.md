@@ -7,8 +7,6 @@ title: 'UUID'
 doc_type: 'reference'
 ---
 
-# UUID
-
 A Universally Unique Identifier (UUID) is a 16-byte value used to identify records. For detailed information about UUIDs, see [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
 
 While different UUID variants exist, e.g. UUIDv4 and UUIDv7 (see [here](https://datatracker.ietf.org/doc/html/draft-ietf-uuidrev-rfc4122bis)), ClickHouse does not validate that inserted UUIDs conform to a particular variant.
@@ -38,7 +36,7 @@ However, with sorting by the second half (counter), at least one mark is expecte
 
 Example:
 
-```sql
+```sql title="Query"
 CREATE TABLE tab (uuid UUID) ENGINE = MergeTree PRIMARY KEY (uuid);
 
 INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
@@ -49,9 +47,7 @@ INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
 SELECT * FROM tab;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─uuid─────────────────────────────────┐
 │ 019d2555-7874-7e9d-a284-9b45a0b2f165 │
 │ 019d2555-7874-7e9d-a284-9b46c3353be7 │
@@ -69,7 +65,7 @@ Result:
 
 As a workaround, the UUID can be converted to a timestamp extracted from the second half:
 
-```sql
+```sql title="Query"
 CREATE TABLE tab (uuid UUID) ENGINE = MergeTree PRIMARY KEY (UUIDv7ToDateTime(uuid));
 -- Or alternatively:                      [...] PRIMARY KEY (toStartOfHour(UUIDv7ToDateTime(uuid)));
 
@@ -83,7 +79,7 @@ SELECT * FROM tab;
 
 Result (assuming same data is inserted):
 
-```text
+```text title="Response"
 ┌─uuid─────────────────────────────────┐
 │ 019d2555-7868-7333-89d1-2bd1639899c3 │
 │ 019d2555-7868-7333-89d1-2bd297eb7d42 │
@@ -111,7 +107,7 @@ ClickHouse provides the [generateUUIDv4](../../sql-reference/functions/uuid-func
 
 This example demonstrates the creation of a table with a UUID column and the insertion of a value into the table.
 
-```sql
+```sql title="Query"
 CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog
 
 INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'
@@ -119,9 +115,7 @@ INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'
 SELECT * FROM t_uuid
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌────────────────────────────────────x─┬─y─────────┐
 │ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │
 └──────────────────────────────────────┴───────────┘

@@ -25,6 +25,21 @@ wait_status() {
     done
 }
 
+# Helper: wait until the refresh is running AND has read at least one row.
+# `wait_status Running` only checks that the task entered the Running state, which is set before
+# the pipeline executor starts. In slow CI builds the gap between "state = Running" and the
+# executor reading its first row can be long, so a SYSTEM STOP issued right after `wait_status`
+# may race with the refresh and find it already finished. Waiting for `read_rows > 0` makes sure
+# the executor is actually past setup and inside `executor.execute()`, so the cancellation has a
+# concrete pipeline to interrupt.
+wait_running_with_progress() {
+    local view_name=$1
+    while [ "`$CLICKHOUSE_CLIENT -q "select status = 'Running' and read_rows > 0 from refreshes where view = '$view_name' -- $LINENO" | xargs`" != '1' ]
+    do
+        sleep 0.1
+    done
+}
+
 # ---------------------------------------------------------------------------
 # Test 1: SYSTEM PAUSE VIEW does NOT interrupt the current refresh.
 # ---------------------------------------------------------------------------
@@ -70,14 +85,17 @@ $CLICKHOUSE_CLIENT -q "
 # Test 2 (contrast): SYSTEM STOP VIEW DOES interrupt the current refresh.
 # ---------------------------------------------------------------------------
 
+# Use 10 source rows (10s of total sleep) to give a comfortable time budget for the SYSTEM STOP
+# query to reach the server while the pipeline is still executing - 5 rows turned out to be too
+# tight in slow CI builds.
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
-    insert into src select * from numbers(5) settings max_block_size=1;
+    insert into src select * from numbers(10) settings max_block_size=1;
     create materialized view s refresh every 1 year (x Int64) engine Memory empty as
         select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
     system refresh view s;"
 
-wait_status s Running
+wait_running_with_progress s
 
 $CLICKHOUSE_CLIENT -q "system stop view s;"
 
@@ -105,7 +123,7 @@ $CLICKHOUSE_CLIENT -q "
         select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
     system refresh view ps;"
 
-wait_status ps Running
+wait_running_with_progress ps
 
 # Pause first; refresh keeps running because PAUSE does not interrupt.
 $CLICKHOUSE_CLIENT -q "system pause view ps;"
