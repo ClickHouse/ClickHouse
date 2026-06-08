@@ -6167,15 +6167,13 @@ void StorageReplicatedMergeTree::read(
         return;
     }
     /// reading step for parallel replicas with the analyzer is built in Planner, so don't do it here
-    if (!query_info.parallel_replicas_disabled
-        && local_context->canUseParallelReplicasOnInitiator() && !settings[Setting::allow_experimental_analyzer])
+    if (local_context->canUseParallelReplicasOnInitiator() && !settings[Setting::allow_experimental_analyzer])
     {
         readParallelReplicasImpl(query_plan, column_names, query_info, local_context, processed_stage);
         return;
     }
 
-    if (!query_info.parallel_replicas_disabled
-        && local_context->canUseParallelReplicasCustomKey() && !settings[Setting::allow_experimental_analyzer]
+    if (local_context->canUseParallelReplicasCustomKey() && !settings[Setting::allow_experimental_analyzer]
         && local_context->getClientInfo().distributed_depth == 0)
     {
         auto cluster = local_context->getClusterForParallelReplicas();

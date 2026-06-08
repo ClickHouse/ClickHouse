@@ -520,6 +520,11 @@ MutationsInterpreter::MutationsInterpreter(
     use_analyzer = shouldUseAnalyzerForMutations(new_context);
     if (!use_analyzer)
         LOG_TEST(logger, "Will use old analyzer to prepare mutation");
+
+    /// Mutation source reads build a synthetic `SELECT` without a table expression,
+    /// so parallel replicas must not be used for them.
+    new_context->setSetting("enable_parallel_replicas", Field(0));
+
     context = std::move(new_context);
 }
 
@@ -2145,7 +2150,6 @@ void MutationsInterpreter::Source::read(
         SelectQueryInfo query_info;
         query_info.query = std::move(select);
         query_info.filter_actions_dag = std::move(filter_actions_dag);
-        query_info.parallel_replicas_disabled = true;
 
         size_t max_block_size = context_->getSettingsRef()[Setting::max_block_size];
         storage->read(plan, required_columns, storage_snapshot, query_info, context_, QueryProcessingStage::FetchColumns, max_block_size, mutation_settings.max_threads);
