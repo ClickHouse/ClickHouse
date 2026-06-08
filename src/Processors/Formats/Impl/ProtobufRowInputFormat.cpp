@@ -47,7 +47,7 @@ void ProtobufRowInputFormat::createReaderAndSerializer()
 void ProtobufRowInputFormat::destroyReaderAndSerializer()
 {
     serializer = nullptr;
-    reader = nullptr;
+    reader.reset();
 }
 
 bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)

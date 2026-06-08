@@ -1,5 +1,4 @@
 #pragma once
-#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/TableLockHolder.h>
 #include <memory>
 
@@ -39,12 +38,12 @@ struct QueryPlanResourceHolder
     /// Some processors may implicitly use Context or temporary Storage created by Interpreter.
     /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
     /// because QueryPipeline is alive until query is finished.
-    VectorWithMemoryTracking<std::shared_ptr<const Context>> interpreter_context;
-    VectorWithMemoryTracking<StoragePtr> storage_holders;
-    VectorWithMemoryTracking<TableLockHolder> table_locks;
-    VectorWithMemoryTracking<std::shared_ptr<QueryIdHolder>> query_id_holders;
-    VectorWithMemoryTracking<InsertDependenciesBuilderConstPtr> insert_dependencies_holders;
-    VectorWithMemoryTracking<std::shared_ptr<ICustomResourceHolder>> custom_resources;
+    std::vector<std::shared_ptr<const Context>> interpreter_context;
+    std::vector<StoragePtr> storage_holders;
+    std::vector<TableLockHolder> table_locks;
+    std::vector<std::shared_ptr<QueryIdHolder>> query_id_holders;
+    std::vector<InsertDependenciesBuilderConstPtr> insert_dependencies_holders;
+    std::vector<std::shared_ptr<ICustomResourceHolder>> custom_resources;
 };
 
 }

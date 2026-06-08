@@ -230,7 +230,7 @@ void StorageSystemReplicas::readImpl(
     query_plan.addStep(std::move(reading));
 }
 
-class SystemReplicasSource final : public ISource
+class SystemReplicasSource : public ISource
 {
 public:
     SystemReplicasSource(

@@ -134,14 +134,14 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
 }
 
 template <typename Definition, typename Configuration, bool is_data_lake>
-VectorWithMemoryTracking<size_t> TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::skipAnalysisForArguments(
+std::vector<size_t> TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::skipAnalysisForArguments(
     const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
     size_t table_function_arguments_size = table_function_arguments_nodes.size();
 
-    VectorWithMemoryTracking<size_t> result;
+    std::vector<size_t> result;
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
         auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();

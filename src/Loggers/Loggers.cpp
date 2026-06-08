@@ -1,6 +1,5 @@
 #include <Loggers/Loggers.h>
 
-#include <Core/Types.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnJSONPatternFormatter.h>
 #include <Loggers/OwnPatternFormatter.h>
@@ -305,7 +304,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     logger.root().setChannel(logger.getChannel());
 
     // Set level and channel to all already created loggers
-    DB::Strings names;
+    std::vector<std::string> names;
     logger.names(names);
 
     for (const auto & name : names)
@@ -386,7 +385,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     logger.setLevel(max_log_level);
 
     // Set level to all already created loggers
-    DB::Strings names;
+    std::vector<std::string> names;
 
     logger.root().names(names);
     for (const auto & name : names)

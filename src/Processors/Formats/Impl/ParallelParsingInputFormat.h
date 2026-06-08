@@ -68,7 +68,7 @@ class Context;
  *  4) repeat until it encounters unit that is marked as "past_the_end"
  * All threads must also check for cancel/eof/exception flags.
  */
-class ParallelParsingInputFormat final : public IInputFormat
+class ParallelParsingInputFormat : public IInputFormat
 {
 public:
     /* Used to recreate parser on every new data piece.*/
@@ -188,7 +188,7 @@ private:
 
                     case IProcessor::Status::NeedData: break;
                     case IProcessor::Status::Async: break;
-                    case IProcessor::Status::UpdatePipeline:
+                    case IProcessor::Status::ExpandPipeline:
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "One of the parsers returned status {} during parallel parsing",
                                              IProcessor::statusToName(status));
                 }

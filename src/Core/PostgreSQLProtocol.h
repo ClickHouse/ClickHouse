@@ -882,8 +882,6 @@ class CloseQuery : FrontMessage
 {
 public:
     String function_name;
-    /// 'S' for prepared statement, 'P' for portal
-    char close_target = 0;
 
     void deserialize(ReadBuffer & in) override
     {
@@ -891,7 +889,6 @@ public:
         readBinaryBigEndian(sz, in);
         Int8 byte;
         readBinaryBigEndian(byte, in);
-        close_target = static_cast<char>(byte);
         readNullTerminated(function_name, in);
     }
 
@@ -904,13 +901,9 @@ public:
 class CloseQueryComplete : BackendMessage
 {
 public:
-    CloseQueryComplete() = default;
-
     void serialize(WriteBuffer & out) const override
     {
-        /// 'C' is `CommandComplete`; `CloseComplete` is tagged with '3' per
-        /// the PostgreSQL message protocol.
-        out.write('3');
+        out.write('C');
         writeBinaryBigEndian(size(), out);
     }
 
@@ -1700,60 +1693,34 @@ public:
         return getStatement(execute->function_name, execute->arguments);
     }
 
-    void deleteStatement(const String & function_name)
+    void deleteStatement(ASTDeallocate * query)
     {
-        auto it = statements.find(function_name);
+        auto it = statements.find(query->function_name);
         if (it == statements.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
         statements.erase(it);
     }
 
-    /// Per the PostgreSQL wire protocol, `Close` on a non-existent prepared
-    /// statement or portal is not an error — it is a silent no-op that still
-    /// responds with `CloseComplete`. Use this instead of `deleteStatement`
-    /// from the extended-query `Close` handler so a stray `Close` does not
-    /// terminate the connection.
-    void tryDeleteStatement(const String & function_name)
-    {
-        statements.erase(function_name);
-    }
-
     void attachBindQuery(std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query)
     {
-        /// We only support the unnamed portal (an empty `portal_name`).
-        /// Reject named portals explicitly: with a single bind slot we cannot
-        /// keep their state correct, and silently overwriting would let
-        /// `Bind(p1, ...); Bind(p2, ...); Execute(p1)` return the result of `p2`.
-        if (!query->portal_name.empty())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Named portals are not supported in the PostgreSQL wire protocol, "
-                "got portal name '{}'", query->portal_name);
+        if (bind_query)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Query is already binded");
 
-        /// For the unnamed portal, a new `Bind` replaces the previous one
-        /// per the PostgreSQL extended-query protocol — clients such as Npgsql
-        /// issue multiple Parse/Bind/Execute/Sync cycles per connection.
         bind_query = std::move(query);
     }
 
     String getStatmentFromBind()
     {
-        if (!bind_query)
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Execute without prior Bind");
-
         auto result = getStatement(bind_query->function_name, bind_query->parameters);
 
         return result;
     }
 
-    void resetBindQuery()
+    void resetBindQuery(const String& function_name)
     {
+        statements.erase(function_name);
         bind_query.reset();
-    }
-
-    bool bindReferencesStatement(const String & function_name) const
-    {
-        return bind_query && bind_query->function_name == function_name;
     }
 
 private:

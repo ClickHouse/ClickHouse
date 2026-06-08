@@ -7,6 +7,8 @@ title: 'Redis table engine'
 doc_type: 'guide'
 ---
 
+# Redis table engine
+
 This engine allows integrating ClickHouse with [Redis](https://redis.io/). For Redis takes kv model, we strongly recommend you only query it in a point way, such as `where k=xx` or `where k in (xx, xx)`.
 
 ## Creating a table {#creating-a-table}
@@ -44,7 +46,7 @@ Queries with `key equals` or `in filtering` will be optimized to multi keys look
 
 Create a table in ClickHouse using `Redis` engine with plain arguments:
 
-```sql title="Query"
+```sql
 CREATE TABLE redis_table
 (
     `key` String,
@@ -69,7 +71,7 @@ Or using [named collections](/operations/named-collections.md):
 </named_collections>
 ```
 
-```sql title="Query"
+```sql
 CREATE TABLE redis_table
 (
     `key` String,
@@ -82,35 +84,37 @@ ENGINE = Redis(redis_creds) PRIMARY KEY(key);
 
 Insert:
 
-```sql title="Query"
+```sql
 INSERT INTO redis_table VALUES('1', 1, '1', 1.0), ('2', 2, '2', 2.0);
 ```
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT COUNT(*) FROM redis_table;
 ```
 
-```text title="Response"
+```text
 ┌─count()─┐
 │       2 │
 └─────────┘
 ```
 
-```sql title="Query"
+```sql
 SELECT * FROM redis_table WHERE key='1';
 ```
 
-```text title="Response"
+```text
 ┌─key─┬─v1─┬─v2─┬─v3─┐
 │ 1   │  1 │ 1  │  1 │
 └─────┴────┴────┴────┘
 ```
 
-```sql title="Query"
+```sql
 SELECT * FROM redis_table WHERE v1=2;
 ```
 
-```text title="Response"
+```text
 ┌─key─┬─v1─┬─v2─┬─v3─┐
 │ 2   │  2 │ 2  │  2 │
 └─────┴────┴────┴────┘
@@ -120,13 +124,13 @@ Update:
 
 Note that the primary key cannot be updated.
 
-```sql title="Query"
+```sql
 ALTER TABLE redis_table UPDATE v1=2 WHERE key='1';
 ```
 
 Delete:
 
-```sql title="Query"
+```sql
 ALTER TABLE redis_table DELETE WHERE key='1';
 ```
 
@@ -134,7 +138,7 @@ Truncate:
 
 Flush Redis db asynchronously. Also `Truncate` support SYNC mode.
 
-```sql title="Query"
+```sql
 TRUNCATE TABLE redis_table SYNC;
 ```
 
@@ -142,7 +146,7 @@ Join:
 
 Join with other tables.
 
-```sql title="Query"
+```sql
 SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
 ```
 
