@@ -282,7 +282,7 @@ void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, c
     if (limit_by_columns.empty() || pipeline.getNumStreams() <= 1)
         return;
 
-    if (getSortPrefixInColumns(stream_sort_desc, limit_by_columns).size() != limit_by_columns.size())
+    if (getCollationAwareSortPrefixInColumns(stream_sort_desc, limit_by_columns).size() != limit_by_columns.size())
         return;
 
     pipeline.addSimpleTransform(

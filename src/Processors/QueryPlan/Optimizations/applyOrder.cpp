@@ -71,7 +71,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             (properties->sort_scope == SortingProperty::SortScope::Global
             || (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)))
         {
-            distinct_step->applyOrder(getSortPrefixInColumns(properties->sort_description, distinct_step->getColumnNames()));
+            distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(properties->sort_description, distinct_step->getColumnNames()));
         }
 
         /// Distinct never breaks global order
@@ -127,7 +127,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
     {
         if (properties->sort_scope == SortingProperty::SortScope::Global)
         {
-            auto prefix = getSortPrefixInColumns(properties->sort_description, limit_by_step->getColumns());
+            auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, limit_by_step->getColumns());
             if (prefix.size() == limit_by_step->getColumns().size())
                 limit_by_step->applyOrder(std::move(prefix));
         }
@@ -137,7 +137,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
     {
         if (properties->sort_scope == SortingProperty::SortScope::Global)
         {
-            auto prefix = getSortPrefixInColumns(properties->sort_description, negative_limit_by_step->getColumns());
+            auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, negative_limit_by_step->getColumns());
             if (prefix.size() == negative_limit_by_step->getColumns().size())
                 negative_limit_by_step->applyOrder();
         }

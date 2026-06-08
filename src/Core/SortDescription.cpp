@@ -76,27 +76,6 @@ bool SortDescription::hasPrefix(const SortDescription & prefix) const
     return true;
 }
 
-bool SortDescription::hasPrefixWithoutCollation(const Names & prefix) const
-{
-    if (prefix.empty())
-        return true;
-
-    if (prefix.size() > size())
-        return false;
-
-    for (size_t i = 0; i < prefix.size(); ++i)
-    {
-        if ((*this)[i].column_name != prefix[i])
-            return false;
-
-        /// A collated column is ordered by its collation key, not by value, so equal values are
-        /// not adjacent and the prefix is not value-ordered.
-        if ((*this)[i].collator)
-            return false;
-    }
-    return true;
-}
-
 SortDescription commonPrefix(const SortDescription & lhs, const SortDescription & rhs)
 {
     size_t i = 0;
@@ -111,7 +90,7 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
     return res;
 }
 
-SortDescription getSortPrefixInColumns(const SortDescription & description, const Names & columns)
+SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns)
 {
     std::unordered_set<std::string_view> column_set(columns.begin(), columns.end());
 
