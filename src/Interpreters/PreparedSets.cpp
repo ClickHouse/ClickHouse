@@ -552,7 +552,17 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     if (!skip_inplace_build)
         executor.execute();
 
-    if (!inplace_set_and_key->set->isCreated())
+    /// A `GLOBAL IN` external table must be populated independently of the in-set size
+    /// limits. The streaming `CreatingSetsTransform` keeps writing rows to the table even
+    /// after `max_rows_in_set` / `max_bytes_in_set` with `set_overflow_mode = 'break'`
+    /// truncates the local set. Building the table from a truncated in-place set instead
+    /// would ship fewer rows to remote servers and make `GLOBAL IN` miss matches. Treat a
+    /// truncated set with an external table as a failed in-place build and defer to the
+    /// delayed streaming path, which fills the table in full.
+    const bool truncated_with_external_table
+        = set_and_key->external_table && inplace_set_and_key->set->isTruncated();
+
+    if (!inplace_set_and_key->set->isCreated() || truncated_with_external_table)
     {
         if (source_for_retry)
         {
@@ -654,7 +664,14 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// SET may not be created successfully at this step because of the sub-query timeout, but if we have
     /// timeout_overflow_mode set to `break`, no exception is thrown, and the executor just stops executing
     /// the pipeline without setting `set_and_key->set->is_created` to true.
-    if (!inplace_set_and_key->set->isCreated())
+    ///
+    /// A truncated set with a `GLOBAL IN` external table is likewise treated as a failed in-place build:
+    /// the table must hold all rows the streaming path would transfer, not just the rows that fit before
+    /// `max_rows_in_set` / `max_bytes_in_set` with `set_overflow_mode = 'break'` truncated the local set.
+    const bool truncated_with_external_table
+        = set_and_key->external_table && inplace_set_and_key->set->isTruncated();
+
+    if (!inplace_set_and_key->set->isCreated() || truncated_with_external_table)
     {
         if (source_for_retry)
         {
