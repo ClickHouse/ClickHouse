@@ -4,7 +4,6 @@
 
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 
 #include <IO/ReadBuffer.h>
@@ -12,6 +11,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/SipHash.h>
 #include <Common/TargetSpecific.h>
 
 #include <base/BFloat16.h>
@@ -475,8 +475,7 @@ DECLARE_X86_64_V4_SPECIFIC_CODE(
 
         /// By default clang-21 with X86_64_V4 unrolls this loop (it didn't with AVX512F) and that makes it slower.
         /// Prevent unrolling to achieve better performance.
-        _Pragma("nounroll")
-        for (size_t b = 0; b < bytes_per_fs; ++b, row_base -= 8)
+        _Pragma("nounroll") for (size_t b = 0; b < bytes_per_fs; ++b, row_base -= 8)
         {
             uint8_t v = src[b];
             if (!v)
@@ -493,8 +492,7 @@ DECLARE_X86_64_V4_SPECIFIC_CODE(
     })
 
 DECLARE_X86_64_V4_SPECIFIC_CODE(
-    void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask)
-    {
+    void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask) {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
 
@@ -549,8 +547,10 @@ DECLARE_X86_64_V4_SPECIFIC_CODE(
 
 /// Use explicit AVX512BW target instead of x86-64-v4 for better performance
 /// The generic x86-64-v4 arch seems to generate slower code for this specific workload
-_Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.1,sse4.2,popcnt,avx,avx2,fma,f16c,bmi,bmi2,avx512f,avx512cd,avx512bw,avx512dq,avx512vl\"))),apply_to=function)")
-namespace TargetSpecific::x86_64_v4
+_Pragma(
+    "clang attribute "
+    "push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.1,sse4.2,popcnt,avx,avx2,fma,f16c,bmi,bmi2,avx512f,avx512cd,avx512bw,avx512dq,"
+    "avx512vl\"))),apply_to=function)") namespace TargetSpecific::x86_64_v4
 {
     using namespace DB::TargetSpecific::x86_64_v4;
 
@@ -603,34 +603,29 @@ _Pragma("clang attribute pop")
 
 #endif
 
-template <typename T>
-void SerializationQBit::untransposeBitPlane(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask)
+    template <typename T>
+    SerializationQBit::UntransposeBitPlaneFn<T> SerializationQBit::resolveUntransposeBitPlane()
 {
 #if USE_MULTITARGET_CODE
-    if constexpr (std::is_same_v<T, UInt64>)
+    if (isArchSupported(TargetArch::x86_64_v4))
     {
-        if (isArchSupported(TargetArch::x86_64_v4))
-            return TargetSpecific::x86_64_v4::untransposeBitPlaneFloat64Impl(src, dst, stride_len, bit_mask);
-    }
-    else if constexpr (std::is_same_v<T, UInt32>)
-    {
-        if (isArchSupported(TargetArch::x86_64_v4))
-            return TargetSpecific::x86_64_v4::untransposeBitPlaneFloat32Impl(src, dst, stride_len, bit_mask);
-    }
-    else if constexpr (std::is_same_v<T, UInt16>)
-    {
-        if (isArchSupported(TargetArch::x86_64_v4))
-            return TargetSpecific::x86_64_v4::untransposeBitPlaneBFloat16Impl(src, dst, stride_len, bit_mask);
+        if constexpr (std::is_same_v<T, UInt64>)
+            return TargetSpecific::x86_64_v4::untransposeBitPlaneFloat64Impl;
+        else if constexpr (std::is_same_v<T, UInt32>)
+            return TargetSpecific::x86_64_v4::untransposeBitPlaneFloat32Impl;
+        else if constexpr (std::is_same_v<T, UInt16>)
+            return TargetSpecific::x86_64_v4::untransposeBitPlaneBFloat16Impl;
     }
 #endif
-    return TargetSpecific::Default::untransposeBitPlaneImpl(src, dst, stride_len, bit_mask);
+    return TargetSpecific::Default::untransposeBitPlaneImpl<T>;
 }
 
 SerializationPtr SerializationQBit::create(const SerializationPtr & nested_, size_t element_size_, size_t dimension_)
 {
     if (!nested_->supportsPooling())
         return std::shared_ptr<ISerialization>(new SerializationQBit(nested_, element_size_, dimension_));
-    return ISerialization::pooled(getHash(nested_, element_size_, dimension_), [&] { return new SerializationQBit(nested_, element_size_, dimension_); });
+    return ISerialization::pooled(
+        getHash(nested_, element_size_, dimension_), [&] { return new SerializationQBit(nested_, element_size_, dimension_); });
 }
 
 
