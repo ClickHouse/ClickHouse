@@ -34,3 +34,9 @@ test 16: reversed key DESC correctness
 202403
 test 17: optimization is disabled for nullable partition keys
 0
+test 18: computed sort key has Concat
+1
+test 19: computed sort key correctness
+2024-01-01 00:00:00	0
+2024-01-01 00:01:00	1
+2024-01-01 00:02:00	2

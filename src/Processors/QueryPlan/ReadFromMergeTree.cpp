@@ -1643,7 +1643,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         if (pipe.empty())
             return {};
 
-        if (have_input_columns_removed_after_prewhere)
+        if (!isCompatibleHeader(pipe.getHeader(), original_pipe_header))
             out_projection = createProjection(original_pipe_header);
 
         return pipe;

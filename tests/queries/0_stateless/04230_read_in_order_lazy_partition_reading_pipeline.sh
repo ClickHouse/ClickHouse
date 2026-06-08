@@ -277,3 +277,36 @@ $CLICKHOUSE_CLIENT -q "
     ORDER BY k ASC NULLS LAST LIMIT 2 SETTINGS max_threads=1" | grep -c "Concat" || true
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_nullable_partition;"
+
+# ============================================================================
+# Table 9: PARTITION BY toYYYYMM(time) ORDER BY (time, toDate(time)).
+# A temporary toDate(time) column not in the original pipe header can be added.
+# The lazy path must set out_projection to drop it, otherwise
+# the pipe header mismatches the original header.
+# ============================================================================
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_lazy_pipeline_computed_sort_key"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_lazy_pipeline_computed_sort_key (time DateTime, val UInt64)
+    ENGINE = MergeTree PARTITION BY toYYYYMM(time) ORDER BY (time, toDate(time))"
+
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_computed_sort_key SELECT toDateTime('2024-01-01') + number * 60, number FROM numbers(1000)"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_computed_sort_key SELECT toDateTime('2024-02-01') + number * 60, number + 1000 FROM numbers(1000)"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_computed_sort_key SELECT toDateTime('2024-03-01') + number * 60, number + 2000 FROM numbers(1000)"
+$CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE t_lazy_pipeline_computed_sort_key FINAL"
+
+# -- Test 18: Optimization applies
+echo "test 18: computed sort key has Concat"
+$CLICKHOUSE_CLIENT -q "
+    $SETTINGS;
+    EXPLAIN PIPELINE SELECT time, val FROM t_lazy_pipeline_computed_sort_key
+    ORDER BY (time, toDate(time)) ASC LIMIT 5 SETTINGS max_threads=1" | grep -c "Concat"
+
+# -- Test 19: Correctness — no extra toDate(time) column in result, correct rows returned
+echo "test 19: computed sort key correctness"
+$CLICKHOUSE_CLIENT -q "
+    $SETTINGS;
+    SELECT time, val FROM t_lazy_pipeline_computed_sort_key
+    ORDER BY (time, toDate(time)) ASC LIMIT 3"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_pipeline_computed_sort_key"
