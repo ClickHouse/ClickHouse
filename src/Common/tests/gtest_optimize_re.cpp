@@ -76,4 +76,6 @@ TEST(OptimizeRE, analyze)
     test_f("\\PNabc", "abc");        /// negated one-letter property `\PN`
     test_f("\\p{L}abc", "abc");      /// braced Unicode property `\p{...}`
     test_f("\\P{N}abc", "abc");      /// braced negated Unicode property `\P{...}`
+    test_f("\\Qa(b)c\\E", "");       /// `\Q...\E` body is literal; "abc" must not be required
+    test_f("\\Qa(b)c\\Exyz", "xyz"); /// extraction resumes after the closing `\E`
 }

@@ -25,6 +25,10 @@ SELECT match('Xabc', '\\PNabc');              -- 1
 SELECT match('Xabc', '\\p{L}abc');            -- 1
 SELECT match('Xabc', '\\P{N}abc');            -- 1
 
+-- `\Q...\E` quoted literal: the body is literal text, including punctuation.
+SELECT match('a(b)c', '\\Qa(b)c\\E');         -- 1
+SELECT match('a(b)c', '\\Qa(b)c');            -- 1, unterminated \Q is literal to the end
+
 -- Regression guards: short escapes and character classes must be unaffected.
 SELECT match('A', '\\101');                   -- 1
 SELECT match('5', '\\d');                     -- 1

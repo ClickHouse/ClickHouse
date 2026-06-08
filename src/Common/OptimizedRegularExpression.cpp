@@ -67,8 +67,8 @@ const char * skipNameCapturingGroup(const char * pos, size_t offset, const char 
 }
 
 /// Skips an escape sequence unsupported by the trivial-substring analysis.
-/// Consumes arguments of hex, octal and Unicode property escapes as part of
-/// the escape, so they are not treated as literals.
+/// Consumes arguments of hex, octal and Unicode property escapes, and the body of
+/// `\Q...\E` quoted literals, so they are not treated as regexp-meaningful literals.
 /// `pos` points at the character right after the backslash.
 const char * skipUnsupportedEscape(const char * pos, const char * end)
 {
@@ -106,6 +106,21 @@ const char * skipUnsupportedEscape(const char * pos, const char * end)
         }
         else if (pos != end)
         {
+            ++pos;
+        }
+    }
+    else if (*pos == 'Q')
+    {
+        /// `\Q...\E` quoted literal: consume through the closing `\E` so the body (which may
+        /// contain regexp punctuation) is not parsed as regexp syntax.
+        ++pos;
+        while (pos != end)
+        {
+            if (*pos == '\\' && pos + 1 != end && *(pos + 1) == 'E')
+            {
+                pos += 2;
+                break;
+            }
             ++pos;
         }
     }
