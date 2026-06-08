@@ -84,14 +84,24 @@ SELECT quantileExactTuple(0.5)(t) FROM (SELECT tuple(toFloat64(1.0), toFloat64(1
 SELECT quantileExactTuple(0.9)(t) FROM (SELECT tuple(toFloat64(1.0), toFloat64(10.0)) AS t UNION ALL SELECT tuple(toFloat64(2.0), toFloat64(20.0)) UNION ALL SELECT tuple(toFloat64(3.0), toFloat64(30.0)));
 SELECT quantilesExactTuple(0.25, 0.5, 0.75)(t) FROM (SELECT tuple(toFloat64(number)) AS t FROM numbers(1, 4));
 
--- Multiple nested combinators: sumTupleIf with Distinct (sumTupleDistinctIf is not valid combinator order, use sumDistinctTupleIf)
--- Note: combinator order matters — Distinct must come before Tuple
+-- Multiple nested combinators: `-Tuple` composes with `-If` in either order.
 SELECT 'multiple nested combinators';
 SELECT sumTupleIf(t, cond) FROM (SELECT tuple(toInt64(1), toFloat64(2.0)) AS t, 1 AS cond UNION ALL SELECT tuple(toInt64(1), toFloat64(2.0)), 1 UNION ALL SELECT tuple(toInt64(3), toFloat64(4.0)), 0 UNION ALL SELECT tuple(toInt64(5), toFloat64(6.0)), 1);
 SELECT avgTupleIf(t, cond) FROM (SELECT tuple(toInt64(10), toFloat64(20.0)) AS t, 1 AS cond UNION ALL SELECT tuple(toInt64(30), toFloat64(40.0)), 0 UNION ALL SELECT tuple(toInt64(50), toFloat64(60.0)), 1);
 SELECT minTupleIf(t, n % 2 = 0) FROM (SELECT tuple(toInt64(number), toFloat64(number) * 1.5) AS t, number AS n FROM numbers(1, 5));
 -- State + If + Merge chain
 SELECT sumTupleMerge(s) FROM (SELECT sumTupleStateIf(t, cond) AS s FROM (SELECT tuple(toInt64(1), toFloat64(2.0)) AS t, 1 AS cond UNION ALL SELECT tuple(toInt64(1), toFloat64(2.0)), 1 UNION ALL SELECT tuple(toInt64(3), toFloat64(4.0)), 0 UNION ALL SELECT tuple(toInt64(5), toFloat64(6.0)), 1));
+
+-- Composition with `-Distinct`, which has its own state wrapper and serialization. `-Distinct` deduplicates
+-- the whole tuple before aggregating, and composes with `-Tuple` in either order, as well as with `-If`, `-State` and `-Merge`.
+SELECT 'distinct combinators';
+SELECT sumTupleDistinct(t) FROM (SELECT tuple(toInt64(1), toFloat64(2.0)) AS t, 1 AS cond UNION ALL SELECT tuple(toInt64(1), toFloat64(2.0)), 1 UNION ALL SELECT tuple(toInt64(3), toFloat64(4.0)), 0 UNION ALL SELECT tuple(toInt64(5), toFloat64(6.0)), 1);
+SELECT sumDistinctTuple(t) FROM (SELECT tuple(toInt64(1), toFloat64(2.0)) AS t, 1 AS cond UNION ALL SELECT tuple(toInt64(1), toFloat64(2.0)), 1 UNION ALL SELECT tuple(toInt64(3), toFloat64(4.0)), 0 UNION ALL SELECT tuple(toInt64(5), toFloat64(6.0)), 1);
+SELECT sumDistinctTupleIf(t, cond) FROM (SELECT tuple(toInt64(1), toFloat64(2.0)) AS t, 1 AS cond UNION ALL SELECT tuple(toInt64(1), toFloat64(2.0)), 1 UNION ALL SELECT tuple(toInt64(3), toFloat64(4.0)), 0 UNION ALL SELECT tuple(toInt64(5), toFloat64(6.0)), 1);
+SELECT avgDistinctTuple(t) FROM (SELECT tuple(toInt64(1), toFloat64(2.0)) AS t, 1 AS cond UNION ALL SELECT tuple(toInt64(1), toFloat64(2.0)), 1 UNION ALL SELECT tuple(toInt64(3), toFloat64(4.0)), 0 UNION ALL SELECT tuple(toInt64(5), toFloat64(6.0)), 1);
+-- Distinct State/Merge round-trip exercises the `-Distinct` state wrapper and serialization.
+SELECT toTypeName(sumDistinctTupleState(t)) FROM (SELECT tuple(toInt64(1), toFloat64(2.0)) AS t UNION ALL SELECT tuple(toInt64(1), toFloat64(2.0)) UNION ALL SELECT tuple(toInt64(5), toFloat64(6.0)));
+SELECT sumDistinctTupleMerge(s) FROM (SELECT sumDistinctTupleState(t) AS s FROM (SELECT tuple(toInt64(1), toFloat64(2.0)) AS t, 1 AS cond UNION ALL SELECT tuple(toInt64(1), toFloat64(2.0)), 1 UNION ALL SELECT tuple(toInt64(3), toFloat64(4.0)), 0 UNION ALL SELECT tuple(toInt64(5), toFloat64(6.0)), 1));
 
 -- Multi-argument base function: error because Tuple combinator requires exactly one Tuple argument
 SELECT 'multi argument error';
