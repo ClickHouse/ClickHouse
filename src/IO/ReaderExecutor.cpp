@@ -1472,14 +1472,14 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
     /// Logical bytes already materialised in `result`. Keeps `result` disjoint:
     /// resident and source reads only fill what is not yet covered.
     IntervalSet covered;
-    /// Gap-backfill handles, kept alive to scope exit so the deferred LRU-bump in
-    /// `~ICacheHandle` runs AFTER every `put` (see `~DiskCacheHandle`), and so the
-    /// in-flight segment can be pinned from them below.
-    VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> backfill_handles;
+    /// The window's write side: gap-backfill handles kept alive to scope exit so
+    /// the deferred LRU-bump in `~ICacheHandle` runs AFTER every `put` (see
+    /// `~DiskCacheHandle`), and so the in-flight segment can be pinned from them below.
+    WritePlan write_plan;
 
     serveResidentFromPlan(physical_window, from_prefetch, result, covered);
     const bool fetched_from_source = fetchAndBackfillGaps(
-        physical_window, from_prefetch, result, covered, backfill_handles);
+        physical_window, from_prefetch, result, covered, write_plan);
 
     /// A cache-only window (no source read) leaves the live connection idle; keep
     /// it only if the next window bridges, else drop it (see the helper).
@@ -1490,14 +1490,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
     /// (dropping any previous pin); clear it when there's nothing partial.
     if (live_buffer && !reached_eof)
     {
-        ICacheHandle::CacheSegmentPin pin;
-        for (const auto & handle : backfill_handles)
-        {
-            pin = handle->pinSegmentAt(physical_window.end());
-            if (pin)
-                break;
-        }
-        inflight_segment_pin = std::move(pin);
+        inflight_segment_pin = write_plan.pinFrontier(physical_window.end());
 
         /// Test hook: pause here while the in-flight segment is pinned and the
         /// live connection is open, so a test can drop/evict the cache and
@@ -1593,7 +1586,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
     bool from_prefetch,
     Rope & result,
     IntervalSet & covered,
-    VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> & backfill_handles)
+    WritePlan & write_plan)
 {
     /// Whatever the plan left uncovered is a remote gap. Walk the tiers to create
     /// each tier's backfill segments (`getOrSet`) and segment-align the misses.
@@ -1666,7 +1659,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
                 /// `put` into below and pinned by the caller; the deferred LRU-bump
                 /// of any read hit must land after those `put`s.
                 if (!status.miss_ranges.empty() || any_hit_done)
-                    backfill_handles.push_back(std::move(handle));
+                    write_plan.handles.push_back(std::move(handle));
 
                 piece_file_start += pr.size;
             }
@@ -1756,10 +1749,17 @@ bool ReaderExecutor::fetchAndBackfillGaps(
         }
     }
 
+    flushWritePlan(write_plan, result, from_prefetch);
+
+    return !fetch_ranges.empty();
+}
+
+void ReaderExecutor::flushWritePlan(WritePlan & write_plan, const Rope & result, bool from_prefetch)
+{
     /// Write the fetched bytes back into every tier that missed. `result` is
     /// disjoint by construction, so each slice has at most one node per byte (it
     /// may be short at EOF). Hit-only handles have no misses and are skipped.
-    for (auto & handle : backfill_handles)
+    for (auto & handle : write_plan.handles)
     {
         auto status = handle->status();
         for (const auto & miss : status.miss_ranges)
@@ -1777,8 +1777,6 @@ bool ReaderExecutor::fetchAndBackfillGaps(
                 static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
         }
     }
-
-    return !fetch_ranges.empty();
 }
 
 void ReaderExecutor::planResidencyWindow(size_t physical_start)

@@ -196,6 +196,9 @@ public:
     static VectorWithMemoryTracking<ByteRange> mergeRanges(const VectorWithMemoryTracking<ByteRange> & ranges, size_t min_gap);
 
 private:
+    /// The write side of one physical window (defined with `ReadPlan` below).
+    struct WritePlan;
+
     /// Assemble the bytes for `physical_window` from the residency plan, then the
     /// source. Two phases, no per-window cache discovery:
     ///   1. `serveResidentFromPlan` — copy every byte the held plan reports
@@ -219,17 +222,24 @@ private:
     /// Phase 2 of `readPhysicalWindow`: whatever `covered` does not already hold
     /// in `physical_window` is a remote gap. Discover the per-tier backfill
     /// segments (`getOrSet`), read the gaps from the source (merged into fewer
-    /// requests), append them, and write them back into every cache tier. Returns
-    /// true if any source read happened (i.e. there were gaps), which the caller
-    /// uses to decide the live-connection keep/drop. `backfill_handles` is filled
-    /// with the populate handles, kept alive by the caller so their deferred
-    /// LRU-bump runs after the writes and so the in-flight segment can be pinned.
+    /// requests), append them, and write them back into every cache tier (via
+    /// `flushWritePlan`). Returns true if any source read happened (i.e. there were
+    /// gaps), which the caller uses to decide the live-connection keep/drop.
+    /// `write_plan` collects the populate handles, kept alive by the caller so
+    /// their deferred LRU-bump runs after the writes and the in-flight segment can
+    /// be pinned from them.
     bool fetchAndBackfillGaps(
         ByteRange physical_window,
         bool from_prefetch,
         Rope & result,
         IntervalSet & covered,
-        VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> & backfill_handles);
+        WritePlan & write_plan);
+
+    /// Write every fetched miss range collected in `write_plan` into its tier
+    /// (`put`), splitting the populated bytes by foreground vs prefetch context.
+    /// The write side of `readPhysicalWindow` - the seam a lower->upper promotion
+    /// rule and a dedicated async write pool will attach to.
+    void flushWritePlan(WritePlan & write_plan, const Rope & result, bool from_prefetch);
 
     /// Query cache residency ONCE over `[physical_start, physical_start +
     /// plan_look_ahead_window)` (clamped to the file end / read extent) via the
@@ -448,6 +458,28 @@ private:
         }
     };
     ReadPlan read_plan;
+
+    /// The write side of one physical window: the cache populate-handles produced
+    /// while discovering gaps (`fetchAndBackfillGaps`), then pinned and `put` into
+    /// by `readPhysicalWindow`/`flushWritePlan`. A per-window local, held to the end
+    /// of the read so the deferred LRU-bump in `~ICacheHandle` lands after the
+    /// writes. The seam where lower->upper promotion and a dedicated async write
+    /// pool will attach.
+    struct WritePlan
+    {
+        VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> handles;
+
+        /// Pin the partial segment under `frontier` from the first handle that has
+        /// one, so a mid-read eviction can't drop the segment the live connection
+        /// streams into. Empty when nothing is partial there.
+        ICacheHandle::CacheSegmentPin pinFrontier(size_t frontier) const
+        {
+            for (const auto & handle : handles)
+                if (auto pin = handle->pinSegmentAt(frontier))
+                    return pin;
+            return {};
+        }
+    };
 
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
     /// Single source of truth for "is there a prefetch scheduled":
