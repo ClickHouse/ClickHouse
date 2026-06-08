@@ -241,8 +241,8 @@ const ActionsDAG::Node & addConstUInt8(ActionsDAG & dag, UInt8 value, const Stri
 {
     auto type = std::make_shared<DataTypeUInt8>();
     auto column = type->createColumnConst(1, Field(value));
-    ColumnWithTypeAndName c{column, type, name_hint.empty() ? (value ? String("const_1") : String("const_0")) : name_hint};
-    return dag.addColumn(std::move(c));
+    String name = name_hint.empty() ? (value ? String("const_1") : String("const_0")) : name_hint;
+    return dag.addColumn(std::move(column), std::move(type), std::move(name));
 }
 
 /// Add a literal (constant) column with the given DataType and value. The KeyCondition's range
@@ -258,8 +258,7 @@ const ActionsDAG::Node * addLiteral(ActionsDAG & dag, const DataTypePtr & type, 
     if (converted.isNull() && !value.isNull())
         return nullptr;
     auto column = type->createColumnConst(1, converted);
-    ColumnWithTypeAndName c{column, type, name_hint};
-    return &dag.addColumn(std::move(c));
+    return &dag.addColumn(std::move(column), type, name_hint);
 }
 
 const ActionsDAG::Node & addNamedFunction(ActionsDAG & dag, const String & fn_name, ActionsDAG::NodeRawConstPtrs children, ContextPtr context)
