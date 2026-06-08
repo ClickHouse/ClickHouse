@@ -115,7 +115,7 @@ String ClientInfo::getLastForwardedForHost() const
 }
 
 
-void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
+void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_client_agent) const
 {
     if (server_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method ClientInfo::write is called for unsupported server revision");
@@ -212,12 +212,14 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 
     /// Sent for all interfaces (not only TCP): the detected client agent must also be preserved
     /// when a clickhouse-local query (LOCAL interface) is forwarded to remote shards.
-    if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
+    /// Skipped for the embedded `ClientInfo` of the persisted async `Distributed` insert header
+    /// (see `with_client_agent` in the declaration), where it is stored as a trailing header field.
+    if (with_client_agent && server_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
         writeBinary(client_agent, out);
 }
 
 
-void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
+void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_client_agent)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method ClientInfo::read is called for unsupported client revision");
@@ -319,7 +321,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
             readBinary(jwt, in);
     }
 
-    if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
+    if (with_client_agent && client_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
         readBinary(client_agent, in);
 }
 
