@@ -384,8 +384,8 @@ void generateManifestFile(
                 set_fields(upper_statistics, Iceberg::f_upper_bounds, dump_fields);
             }
         }
-        Int64 record_count;
-        Int64 file_size_in_bytes;
+        Int64 record_count = 0;
+        Int64 file_size_in_bytes = 0;
         if (!per_file_metrics.empty())
         {
             record_count = per_file_metrics[file_idx].first;
