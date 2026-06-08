@@ -234,7 +234,7 @@ class RandomServerRestarter(RandomRestarter):
         except ProcessLookupError:
             logging.info("%s: server already dead", self.NAME)
             return
-        for _ in range(60):
+        for _ in range(120):
             try:
                 os.kill(pid, 0)
                 time.sleep(0.5)
@@ -292,9 +292,10 @@ class RandomServerRestarter(RandomRestarter):
     def _start_and_wait(self) -> None:
         deadline = self._restart_deadline
 
-        self._wait_port_free(9000, timeout=15)
-        self._wait_port_free(9009, timeout=15)
-        self._wait_port_free(9181, timeout=15)
+        port_timeout = min(60, max(0, deadline - time.monotonic()) / 2)
+        self._wait_port_free(9000, timeout=port_timeout)
+        self._wait_port_free(9009, timeout=port_timeout)
+        self._wait_port_free(9181, timeout=port_timeout)
 
         remaining = max(0, deadline - time.monotonic())
         logging.info(
