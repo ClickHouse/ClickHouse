@@ -27,6 +27,7 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -135,7 +136,8 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     ASTs conditions;
     for (const MutationCommand & command : commands)
     {
-        if (ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command, storage, context))
+        auto alter = command.ast();
+        if (ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(alter.get(), storage, context))
             conditions.push_back(std::move(condition));
     }
 
@@ -231,15 +233,16 @@ IsStorageTouched isStorageTouchedByMutations(
         }
         else
         {
-            if (!command.predicate) /// The command touches all rows.
+            auto alter = command.ast();
+            if (!alter || !alter->predicate) /// The command touches all rows.
             {
                 ProfileEvents::increment(ProfileEvents::MutationAffectedRowsUpperBound, source_part->rows_count);
                 return all_rows;
             }
 
-            if (command.partition)
+            if (alter->partition)
             {
-                const String partition_id = storage_from_part->getPartitionIDFromQuery(command.partition, context);
+                const String partition_id = storage_from_part->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
                 if (partition_id == source_part->info.getPartitionId())
                     all_commands_can_be_skipped = false;
             }
@@ -300,22 +303,22 @@ IsStorageTouched isStorageTouchedByMutations(
 }
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
-    const MutationCommand & command,
+    const ASTAlterCommand * alter,
     const StoragePtr & storage,
     ContextPtr context
 )
 {
     ASTPtr partition_predicate_as_ast_func;
-    if (command.partition)
+    if (alter && alter->partition)
     {
         String partition_id;
 
         auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
         auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
         if (storage_merge_tree)
-            partition_id = storage_merge_tree->getPartitionIDFromQuery(command.partition, context);
+            partition_id = storage_merge_tree->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
         else if (storage_from_merge_tree_data_part)
-            partition_id = storage_from_merge_tree_data_part->getPartitionIDFromQuery(command.partition, context);
+            partition_id = storage_from_merge_tree_data_part->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables");
 
@@ -325,9 +328,10 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
         );
     }
 
-    if (command.predicate && command.partition)
-        return makeASTOperator("and", command.predicate->clone(), std::move(partition_predicate_as_ast_func));
-    return command.predicate ? command.predicate->clone() : partition_predicate_as_ast_func;
+    IAST * predicate = alter ? alter->predicate : nullptr;
+    if (predicate && alter->partition)
+        return makeASTOperator("and", ASTPtr(predicate), std::move(partition_predicate_as_ast_func));
+    return predicate ? ASTPtr(predicate) : partition_predicate_as_ast_func;
 }
 
 MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(std::move(storage_))
@@ -678,15 +682,20 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (command.type == MutationCommand::REWRITE_PARTS)
             has_rewrite_parts = true;
 
-        for (const auto & [name, _] : command.column_to_update_expression)
+        auto alter = command.ast();
+        if (alter && alter->update_assignments)
         {
-            if (name == RowExistsColumn::name)
+            for (const auto & child : alter->update_assignments->children)
             {
-                if (available_columns_set.emplace(name).second)
-                    available_columns.push_back(name);
-            }
+                const auto & name = child->as<ASTAssignment &>().column_name;
+                if (name == RowExistsColumn::name)
+                {
+                    if (available_columns_set.emplace(name).second)
+                        available_columns.push_back(name);
+                }
 
-            updated_columns.insert(name);
+                updated_columns.insert(name);
+            }
         }
     }
 
@@ -796,7 +805,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                     "Cannot apply command {} while returning mutated rows", command.type);
             }
 
-            if (auto filter = getPartitionAndPredicateExpressionForMutationCommand(command))
+            auto alter = command.ast();
+            if (auto filter = getPartitionAndPredicateExpressionForMutationCommand(alter.get()))
                 all_filters.push_back(std::move(filter));
         }
 
@@ -825,7 +835,8 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             if (!settings.return_mutated_rows)
             {
-                auto predicate = getPartitionAndPredicateExpressionForMutationCommand(command);
+                auto alter = command.ast();
+                auto predicate = getPartitionAndPredicateExpressionForMutationCommand(alter.get());
                 predicate = makeASTFunction("isZeroOrNull", predicate);
                 stages.back().filters.push_back(predicate);
             }
@@ -840,8 +851,13 @@ void MutationsInterpreter::prepare(bool dry_run)
             addStageIfNeeded(command.mutation_version, false);
 
             NameSet affected_materialized;
+            auto alter = command.ast();
+            auto column_to_update = alter ? getColumnToUpdateExpression(*alter) : std::unordered_map<String, ASTPtr>{};
 
-            for (const auto & [column_name, update_expr] : command.column_to_update_expression)
+            /// Compute partition+predicate once per command (reusing the same parse); cloned per assignment below.
+            ASTPtr base_condition = getPartitionAndPredicateExpressionForMutationCommand(alter.get());
+
+            for (const auto & [column_name, update_expr] : column_to_update)
             {
                 auto materialized_it = column_to_affected_materialized.find(column_name);
                 if (materialized_it != column_to_affected_materialized.end())
@@ -849,7 +865,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                         affected_materialized.emplace(mat_column);
             }
 
-            for (const auto & [column_name, update_expr] : command.column_to_update_expression)
+            for (const auto & [column_name, update_expr] : column_to_update)
             {
                 /// When doing UPDATE column = expression WHERE condition
                 /// we will replace column to the result of the following expression:
@@ -877,7 +893,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 auto type_literal = make_intrusive<ASTLiteral>(type->getName());
-                ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command);
+                ASTPtr condition = base_condition ? base_condition->clone() : nullptr;
 
                 /// And new check validateNestedArraySizes for Nested subcolumns.
                 /// When share_nested_offsets is disabled, sibling Array columns are independent
@@ -888,7 +904,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     boost::intrusive_ptr<ASTFunction> function = nullptr;
 
-                    auto nested_update_exprs = getExpressionsOfUpdatedNestedSubcolumns(column_name, affected_materialized, all_columns, command.column_to_update_expression);
+                    auto nested_update_exprs = getExpressionsOfUpdatedNestedSubcolumns(column_name, affected_materialized, all_columns, column_to_update);
                     if (!nested_update_exprs)
                     {
                         function = makeASTFunction("validateNestedArraySizes",
@@ -1271,10 +1287,15 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else
         {
+            String description;
+            if (auto alter = command.ast())
+                description = alter->formatForLogging();
+            else
+                description = fmt::to_string(command.type);
             throw Exception(
                 ErrorCodes::UNKNOWN_MUTATION_COMMAND,
                 "Unknown mutation command: {}",
-                command.ast ? command.ast->formatForLogging() : fmt::to_string(command.type));
+                description);
         }
     }
 
@@ -2381,9 +2402,9 @@ std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIf
     return sort_description;
 }
 
-ASTPtr MutationsInterpreter::getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const
+ASTPtr MutationsInterpreter::getPartitionAndPredicateExpressionForMutationCommand(const ASTAlterCommand * alter) const
 {
-    return DB::getPartitionAndPredicateExpressionForMutationCommand(command, source.getStorage(), context);
+    return DB::getPartitionAndPredicateExpressionForMutationCommand(alter, source.getStorage(), context);
 }
 
 bool MutationsInterpreter::Stage::isAffectingAllColumns(const Names & storage_columns) const

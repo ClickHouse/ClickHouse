@@ -3,7 +3,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
-#include "config.h"
 
 namespace Poco { class Logger; }
 

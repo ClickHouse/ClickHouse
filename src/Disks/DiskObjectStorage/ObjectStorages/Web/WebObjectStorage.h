@@ -1,6 +1,5 @@
 #pragma once
 
-#include "config.h"
 
 #include <Common/SharedMutex.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -137,7 +136,7 @@ private:
 
     const String url;
     LoggerPtr log;
-    size_t min_bytes_for_seek;
+    size_t min_bytes_for_seek{};
 };
 
 }
