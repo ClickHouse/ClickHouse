@@ -2,9 +2,6 @@
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
-#ifdef __SSE2__
-#include <emmintrin.h>
-#endif
 #if defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX__) || defined(__AVX2__)
 #include <immintrin.h>
 #endif
@@ -33,17 +30,6 @@ inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
         _mm256_loadu_si256(reinterpret_cast<const __m256i *>(bytes64)), zero32))) & 0xffffffff)
         | (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(
         _mm256_loadu_si256(reinterpret_cast<const __m256i *>(bytes64+32)), zero32))) << 32);
-#elif defined(__SSE2__)
-    const __m128i zero16 = _mm_setzero_si128();
-    UInt64 res =
-        (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64)), zero16))) & 0xffff)
-        | ((static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 16)), zero16))) << 16) & 0xffff0000)
-        | ((static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 32)), zero16))) << 32) & 0xffff00000000)
-        | ((static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 48)), zero16))) << 48) & 0xffff000000000000);
 #elif defined(__aarch64__) && defined(__ARM_NEON)
     const uint8x16_t bitmask = {0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
     const auto * src = reinterpret_cast<const unsigned char *>(bytes64);

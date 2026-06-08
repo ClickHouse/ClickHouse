@@ -130,12 +130,12 @@ bool forAllKeys(OnExpr & expressions, Func callback)
     for (auto & expr : expressions)
     {
         if constexpr (std::is_same_v<SideTag, BothSidesTag>)
-            assert(expr.key_names_left.size() == expr.key_names_right.size());
+            chassert(expr.key_names_left.size() == expr.key_names_right.size());
 
         size_t sz = !std::is_same_v<SideTag, RightSideTag> ? expr.key_names_left.size() : expr.key_names_right.size();
         for (size_t i = 0; i < sz; ++i)
         {
-            bool cont;
+            bool cont = false;
             if constexpr (std::is_same_v<SideTag, BothSidesTag>)
                 cont = callback(expr.key_names_left[i], expr.key_names_right[i]);
             if constexpr (std::is_same_v<SideTag, LeftSideTag>)

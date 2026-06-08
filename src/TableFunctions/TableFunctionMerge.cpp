@@ -58,7 +58,7 @@ private:
     const char * getStorageEngineName() const override { return "Merge"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
-    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     String source_database_name_or_regexp;
@@ -66,13 +66,13 @@ private:
     bool database_is_regexp = false;
 };
 
-std::vector<size_t> TableFunctionMerge::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+VectorWithMemoryTracking<size_t> TableFunctionMerge::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
     size_t table_function_arguments_size = table_function_arguments_nodes.size();
 
-    std::vector<size_t> result;
+    VectorWithMemoryTracking<size_t> result;
 
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {

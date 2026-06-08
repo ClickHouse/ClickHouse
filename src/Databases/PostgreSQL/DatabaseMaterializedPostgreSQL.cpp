@@ -368,7 +368,7 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
 
         /// We just came from createTable() and created nested table there. Add assert.
         auto nested_table = DatabaseAtomic::tryGetTable(table_name, current_context);
-        assert(nested_table != nullptr);
+        chassert(nested_table != nullptr);
 
         try
         {
@@ -504,6 +504,7 @@ DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
     return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name, skip_not_loaded);
 }
 
+void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory);
 void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)

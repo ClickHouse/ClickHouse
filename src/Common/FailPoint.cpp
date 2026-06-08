@@ -71,6 +71,7 @@ static struct InitFiu
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_choose_server) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
+    PAUSEABLE(file_cache_pause_before_do_eviction) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(file_segment_range_writer_partial_write_then_network_error) \
     REGULAR(distributed_cache_simulate_writer_not_keeping_up) \
@@ -153,6 +154,7 @@ static struct InitFiu
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(merge_task_projection_stage_pause) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_merge_selecting_task_pause_when_scheduled) \
     PAUSEABLE(mt_merge_selecting_task_pause_when_scheduled) \

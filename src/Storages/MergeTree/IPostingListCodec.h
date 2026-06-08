@@ -43,7 +43,7 @@ public:
     /// Reads an encoded posting list, decodes it, and returns a posting list.
     virtual void decode(ReadBuffer & in, PostingList & postings) const = 0;
 private:
-    Type type;
+    Type type{};
 };
 
 class PostingListCodecFactory : public boost::noncopyable

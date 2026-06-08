@@ -1,10 +1,13 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Core/Settings.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -383,7 +386,7 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     ctx.in >> "\n";
 
     result.hive_partition_columns_to_read_from_file_path.readTextWithNamesInStorage(ctx.in);
-    bool has_prewhere_info;
+    bool has_prewhere_info = false;
     readBinary(has_prewhere_info, ctx.in);
     if (has_prewhere_info)
         result.prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
@@ -391,6 +394,38 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     ctx.in >> "\n";
 
     return result;
+}
+
+Block buildAllowedFilterInputs(
+    const StorageSnapshotPtr & storage_snapshot,
+    const Block & source_header,
+    const PrewhereInfoPtr & prewhere_info,
+    const FilterDAGInfoPtr & row_level_filter)
+{
+    Block base = storage_snapshot->metadata->getSampleBlock();
+    for (const auto & col : source_header)
+        if (!base.has(col.name))
+            base.insert(col);
+    return FormatFilterInfo::buildKeyConditionInputs(std::move(base), prewhere_info, row_level_filter);
+}
+
+void prepareEagerKeyConditionSets(
+    const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
+    const StorageSnapshotPtr & storage_snapshot,
+    const Block & source_header,
+    const PrewhereInfoPtr & prewhere_info,
+    const FilterDAGInfoPtr & row_level_filter,
+    const ContextPtr & context)
+{
+    if (!filter_actions_dag)
+        return;
+
+    auto allowed_inputs = buildAllowedFilterInputs(
+        storage_snapshot, source_header, prewhere_info, row_level_filter);
+    if (auto split = VirtualColumnUtils::splitFilterDagForAllowedInputs(
+            filter_actions_dag->getOutputs().at(0), &allowed_inputs, context,
+            /*allow_partial_result=*/ true))
+        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*split, context);
 }
 
 }
