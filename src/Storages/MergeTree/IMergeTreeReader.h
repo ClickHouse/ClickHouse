@@ -86,6 +86,12 @@ public:
 
     virtual bool canSkipMark(size_t, size_t) { return false; }
 
+    /// Returns true if this reader can skip whole marks via `canSkipMark` for at least some inputs.
+    /// Independent of any particular mark index. Used by callers that need to know upfront whether
+    /// the reader chain may filter marks before the PREWHERE step runs — for example, to decide
+    /// whether `read_mark_ranges` with `row_count == 0` can be attributed to the PREWHERE predicate.
+    virtual bool canSkipAnyMark() const { return false; }
+
     virtual void updateAllMarkRanges(const MarkRanges & ranges) { all_mark_ranges = ranges; }
 
     StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
