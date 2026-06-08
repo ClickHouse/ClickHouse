@@ -459,3 +459,56 @@ def test_v3_iceberg_system_tables(iceberg_db):
         f'SELECT count(*) FROM "{NAMESPACE}"."{table_name}$history"',
     )
     assert history.strip() == "2", f"$history count: {history!r}"
+
+
+@pytest.mark.parametrize("time_type", ["Time",
+                                       "Time64(0)",
+                                       "Time64(3)",
+                                       "Time64(6)"])
+def test_time_type(iceberg_db, time_type):
+    cluster = iceberg_db
+    node = cluster.instances["node1"]
+
+    table_name = f"time_type_table_{_get_uuid_str()}"
+    full = f"{CATALOG_DATABASE}.`{NAMESPACE}.{table_name}`"
+
+    node.query(
+        f"""
+        CREATE TABLE {full} (time_key {time_type}, time_value {time_type})
+        {_engine_clause(table_name)}
+        PARTITION BY identity(time_key)
+        SETTINGS iceberg_format_version = 3
+        """,
+        settings=WRITE_SETTINGS,
+    )
+
+    node.query(
+        f"""
+        INSERT INTO {full} VALUES
+            ('01:00:00', '01:10:00'),
+            ('01:00:00', '01:20:00'),
+            ('02:00:00', '02:10:00'),
+        """,
+        settings=WRITE_SETTINGS,
+    )
+
+    out = _trino_exec(
+        cluster,
+        f'SELECT time_key, time_value FROM "{NAMESPACE}"."{table_name}" ORDER BY time_key, time_value',
+    )
+    expected = "01:00:00.000000\t01:10:00.000000\n01:00:00.000000\t01:20:00.000000\n02:00:00.000000\t02:10:00.000000\n"
+    assert out == expected, f"expected {expected!r}, got {out!r}"
+
+    out = _trino_exec(
+        cluster,
+        f'SELECT time_key, time_value FROM "{NAMESPACE}"."{table_name}" WHERE time_key = time \'01:00:00\' ORDER BY time_key, time_value',
+    )
+    expected = "01:00:00.000000\t01:10:00.000000\n01:00:00.000000\t01:20:00.000000\n"
+    assert out == expected, f"expected {expected!r}, got {out!r}"
+
+    out = _trino_exec(
+        cluster,
+        f'SELECT time_key, time_value FROM "{NAMESPACE}"."{table_name}" WHERE time_value = time \'01:20:00\' ORDER BY time_key, time_value',
+    )
+    expected = "01:00:00.000000\t01:20:00.000000\n"
+    assert out == expected, f"expected {expected!r}, got {out!r}"
