@@ -252,8 +252,26 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
     bool found = false;
 
+    /// STOP matches also STOP [...], check the more specific forms first.
+    auto is_generic_verb = [](Type type)
+    {
+        switch (type)
+        {
+            case Type::STOP:
+            case Type::START:
+            case Type::PAUSE:
+            case Type::CANCEL:
+            case Type::REFRESH:
+                return true;
+            default:
+                return false;
+        }
+    };
+
     for (const auto & type : magic_enum::enum_values<Type>())
     {
+        if (is_generic_verb(type))
+            continue;
         if (ParserKeyword::createDeprecated(ASTSystemQuery::typeToString(type)).ignore(pos, expected))
         {
             res->type = type;
@@ -298,6 +316,27 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         for (const auto & [alias, type] : system_aliases)
         {
             if (ParserKeyword::createDeprecatedPtr(alias)->ignore(pos, expected))
+            {
+                res->type = type;
+                found = true;
+                break;
+            }
+        }
+    }
+
+    if (!found)
+    {
+        static const Type background_verbs[] = {
+            Type::STOP,
+            Type::START,
+            Type::PAUSE,
+            Type::CANCEL,
+            Type::REFRESH,
+        };
+
+        for (const auto & type : background_verbs)
+        {
+            if (ParserKeyword::createDeprecated(ASTSystemQuery::typeToString(type)).ignore(pos, expected))
             {
                 res->type = type;
                 found = true;
@@ -612,6 +651,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::STOP_REPLICATED_VIEW:
         case Type::PAUSE_VIEW:
         case Type::CANCEL_VIEW:
+        case Type::STOP:
+        case Type::START:
+        case Type::PAUSE:
+        case Type::CANCEL:
+        case Type::REFRESH:
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
             break;
@@ -620,6 +664,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::STOP_VIEWS:
         case Type::PAUSE_VIEWS:
         case Type::FREE_MEMORY:
+        case Type::STOP_ALL_BACKGROUND:
+        case Type::START_ALL_BACKGROUND:
+        case Type::PAUSE_ALL_BACKGROUND:
+        case Type::CANCEL_ALL_BACKGROUND:
+        case Type::REFRESH_ALL_BACKGROUND:
             break;
 
         case Type::TEST_VIEW:

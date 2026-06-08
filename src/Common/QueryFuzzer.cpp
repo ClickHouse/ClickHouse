@@ -4864,6 +4864,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 {Type::STOP_REPLICATED_VIEW, Type::START_REPLICATED_VIEW},
                 {Type::STOP_VIRTUAL_PARTS_UPDATE, Type::START_VIRTUAL_PARTS_UPDATE},
                 {Type::STOP_REDUCE_BLOCKING_PARTS, Type::START_REDUCE_BLOCKING_PARTS},
+                {Type::STOP, Type::START},
+                {Type::STOP_ALL_BACKGROUND, Type::START_ALL_BACKGROUND},
                 {Type::STOP_LISTEN, Type::START_LISTEN},
                 {Type::LOAD_PRIMARY_KEY, Type::UNLOAD_PRIMARY_KEY},
                 /* These are too slow
@@ -4928,6 +4930,24 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 if (system_query->type == t && fuzz_rand() % 10 == 0)
                 {
                     system_query->type = view_cmd_types[fuzz_rand() % std::size(view_cmd_types)];
+                    break;
+                }
+            }
+        }
+        /// Rotate among background control commands that all take a table argument
+        {
+            static const Type background_cmd_types[] = {
+                Type::STOP,
+                Type::START,
+                Type::PAUSE,
+                Type::CANCEL,
+                Type::REFRESH,
+            };
+            for (const auto & t : background_cmd_types)
+            {
+                if (system_query->type == t && fuzz_rand() % 10 == 0)
+                {
+                    system_query->type = background_cmd_types[fuzz_rand() % std::size(background_cmd_types)];
                     break;
                 }
             }

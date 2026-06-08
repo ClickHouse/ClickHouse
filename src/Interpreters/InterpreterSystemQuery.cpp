@@ -2607,6 +2607,16 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::PAUSE_VIEWS:
         case Type::CANCEL_VIEW:
         case Type::TEST_VIEW:
+        case Type::STOP:
+        case Type::START:
+        case Type::PAUSE:
+        case Type::CANCEL:
+        case Type::REFRESH:
+        case Type::STOP_ALL_BACKGROUND:
+        case Type::START_ALL_BACKGROUND:
+        case Type::PAUSE_ALL_BACKGROUND:
+        case Type::CANCEL_ALL_BACKGROUND:
+        case Type::REFRESH_ALL_BACKGROUND:
         {
             if (!query.table)
                 required_access.emplace_back(AccessType::SYSTEM_VIEWS);

@@ -4,6 +4,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
+#include <base/EnumReflection.h>
 
 #include "config.h"
 
@@ -146,6 +147,16 @@ public:
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
+        STOP_ALL_BACKGROUND,
+        START_ALL_BACKGROUND,
+        PAUSE_ALL_BACKGROUND,
+        CANCEL_ALL_BACKGROUND,
+        REFRESH_ALL_BACKGROUND,
+        STOP,
+        START,
+        PAUSE,
+        CANCEL,
+        REFRESH,
         END
     };
 
@@ -265,3 +276,10 @@ protected:
 
 
 }
+
+/// ASTSystemQuery::Type has more enumerators than the default magic_enum range [-128, 127],
+template <> struct magic_enum::customize::enum_range<DB::ASTSystemQuery::Type>
+{
+    static constexpr int min = 0;
+    static constexpr int max = 256;
+};
