@@ -245,10 +245,13 @@ private:
 
     /// Promote a range just served from `from_tier` up into every populatable
     /// cache faster than it (those all miss it, since `from_tier` was the fastest
-    /// hit): `getOrSet` a handle in each and `put` the served bytes. A no-op when
-    /// nothing faster is populatable (single tier, served from the fastest tier,
-    /// or the faster tiers are in read-only/bypass mode). `bytes` carries
-    /// file-level (physical) node offsets, the same space as `range`.
+    /// hit). Driven by the prepare-stage plan: the faster tier's gaps were recorded
+    /// in `PlannedHandle::missing` at plan-build, and the write goes through the
+    /// plan's lazily-acquired, cached `write_handle` — so no per-serve `lookup`
+    /// runs here, and a fully-resident faster tier (no recorded gap) is skipped for
+    /// free. A no-op when nothing faster is populatable (single tier, served from
+    /// the fastest tier, or the faster tiers are in read-only/bypass mode). `bytes`
+    /// carries file-level (physical) node offsets, the same space as `range`.
     void maybePromote(CacheTier from_tier, ByteRange range, const Rope & bytes);
 
     /// Query cache residency ONCE over `[physical_start, physical_start +
@@ -394,14 +397,30 @@ private:
     size_t plan_look_ahead_window;
     size_t position = 0;
 
-    /// One held residency handle from `planResidencyWindow`, plus the resident
-    /// (file-level, physical-coordinate) ranges it can stream via `get`. The
-    /// handle pins those segments/cells for the plan's lifetime.
+    /// One cache tier's plan over the look-ahead window, for ONE object-piece.
+    /// Read side: the `resident` (file-level, physical-coordinate) ranges this
+    /// tier holds, streamable via `handle->get`; the read-only `planResidency`
+    /// handle pins those segments/cells for the plan's lifetime (`handle` is null
+    /// when the tier holds nothing resident in this piece). Write side: the
+    /// `missing` ranges this (populatable) tier lacks, recorded for free from the
+    /// same residency probe; `write_handle` is the writable `getOrSet` handle a
+    /// promotion `put` targets, acquired lazily on the first write into this
+    /// tier-piece and reused for the plan's lifetime — so promotion needs no
+    /// per-serve `lookup`. `provider`/`object`/`object_file_offset` let that lazy
+    /// acquisition re-issue the `getOrSet`. `missing` is left empty for bypass
+    /// (non-populating) tiers, which are never written.
     struct PlannedHandle
     {
+        CacheTier tier{};
+        ICacheProvider * provider = nullptr;
+        StoredObject object;
+        size_t object_file_offset = 0;
+
         std::unique_ptr<ICacheHandle> handle;
         VectorWithMemoryTracking<ByteRange> resident;
-        CacheTier tier;
+
+        VectorWithMemoryTracking<ByteRange> missing;
+        std::unique_ptr<ICacheHandle> write_handle;
     };
 
     /// The plan for one look-ahead window. Queried positionally by

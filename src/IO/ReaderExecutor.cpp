@@ -1538,8 +1538,17 @@ void ReaderExecutor::serveResidentFromPlan(ByteRange physical_window, bool from_
     /// Test hook: pause after residency is planned - the plan's handles are held,
     /// so the resident segments are pinned - but before they are read, so a test
     /// can drop/evict the cache and verify the pinned segments survive and `get`
-    /// still honors them. No-op in production.
-    if (!read_plan.planned.empty())
+    /// still honors them. Gated on there being resident bytes to serve: `planned`
+    /// can now also hold miss-only (write-target) records, which pin nothing. No-op
+    /// in production.
+    bool any_resident = false;
+    for (const auto & ph : read_plan.planned)
+        if (!ph.resident.empty())
+        {
+            any_resident = true;
+            break;
+        }
+    if (any_resident)
         FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_cache_status);
 
     /// The plan is in cache-tier priority order, so the `covered` guard serves
@@ -1787,11 +1796,13 @@ void ReaderExecutor::flushWritePlan(WritePlan & write_plan, const Rope & result,
 void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Rope & bytes)
 {
     /// Walk tiers fastest-first. Everything before `from_tier` is faster and
-    /// misses `range` (else it would have served it), so write `bytes` up into
+    /// missed `range` (else it would have served it), so write `bytes` up into
     /// each such tier that populates on a miss. Stop at the serving tier - no
     /// point writing it or anything slower, a faster copy already lives there.
-    /// `bytes`/`range` are in file-level (physical) coordinates (pre-decryption
-    /// shift), the same space `put` expects.
+    /// Matching same-tier providers by `tier()` keeps the "first FilesystemCache
+    /// provider ends promotion" rule two fs layers rely on. `bytes`/`range` are in
+    /// file-level (physical) coordinates (pre-decryption shift), the space `put`
+    /// expects.
     for (auto & cache : caches)
     {
         if (cache->tier() == from_tier)
@@ -1799,27 +1810,49 @@ void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Ro
         if (!cache->populatesOnMiss())
             continue;
 
-        /// Split by object boundary so each `lookup` carries a single object
-        /// (the provider keys/translates per object), as in `fetchAndBackfillGaps`.
-        auto pieces = offset_map.map(range);
-        size_t piece_file_start = range.offset;
-        for (const auto & pr : pieces)
+        for (auto & ph : read_plan.planned)
         {
-            const size_t object_file_offset = piece_file_start - pr.object_offset;
-            const ByteRange piece_range{piece_file_start, pr.size};
-            auto handle = cache->lookup(pr.object, object_file_offset, piece_range);
-            for (const auto & miss : handle->status().miss_ranges)
+            /// This provider's plan records, and only ones the prepare stage
+            /// recorded a gap for. The empty-`missing` skip is the warm-neutral
+            /// gate: a faster tier fully resident over the span is passed over here
+            /// WITHOUT a `lookup`.
+            if (ph.provider != cache.get() || ph.missing.empty())
+                continue;
+
+            /// Acquire the tier-piece's writable handle once - over the span of its
+            /// recorded gaps - and reuse it for every promotion in this plan, so no
+            /// per-serve `lookup` runs. Put through the handle's own fresh miss
+            /// ranges (the `put` contract), which also drops any sub-range another
+            /// reader downloaded since the plan was built.
+            if (!ph.write_handle)
             {
-                auto slice = bytes.slice(miss);
+                size_t span_lo = ph.missing.front().offset;
+                size_t span_hi = ph.missing.front().end();
+                for (const auto & m : ph.missing)
+                {
+                    span_lo = std::min(span_lo, m.offset);
+                    span_hi = std::max(span_hi, m.end());
+                }
+                ph.write_handle = ph.provider->lookup(
+                    ph.object, ph.object_file_offset, ByteRange{span_lo, span_hi - span_lo});
+            }
+
+            for (const auto & miss : ph.write_handle->status().miss_ranges)
+            {
+                const size_t lo = std::max(miss.offset, range.offset);
+                const size_t hi = std::min(miss.end(), range.end());
+                if (lo >= hi)
+                    continue;
+                const ByteRange sub{lo, hi - lo};
+                auto slice = bytes.slice(sub);
                 if (slice.empty())
                     continue;
                 ++stats.cache_populate_requests;
                 StopwatchAccumulator put_scope(stats.cache_populate_us);
-                stats.bytes_promoted += handle->put(miss, std::move(slice));
+                stats.bytes_promoted += ph.write_handle->put(sub, std::move(slice));
                 HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
                     static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
             }
-            piece_file_start += pr.size;
         }
     }
 }
@@ -1865,6 +1898,7 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
     /// byte resident in two tiers is served (and attributed) to the first.
     for (auto & cache : caches)
     {
+        const bool populates = cache->populatesOnMiss();
         auto pieces = offset_map.map(plan_range);
         size_t piece_file_start = plan_range.offset;
         for (const auto & pr : pieces)
@@ -1877,6 +1911,10 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
 
             PlannedHandle ph;
             ph.tier = cache->tier();
+            ph.provider = cache.get();
+            ph.object = pr.object;
+            ph.object_file_offset = object_file_offset;
+
             for (const auto & hit : status.hit_ranges)
             {
                 /// Hits are segment-aligned and may extend past the plan span;
@@ -1887,14 +1925,28 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
                     ph.resident.push_back(ByteRange{lo, hi - lo});
             }
 
-            /// Keep only handles that pin resident bytes. A handle with no hits
-            /// would just hold a holder over gaps that the per-window loop refills
-            /// through its own `lookup` + `put`.
+            /// Record the gaps this tier lacks for the write side (promotion), but
+            /// only for tiers that populate on a miss — a bypass tier is never
+            /// written, so it needs no write target. Free: the `miss_ranges` come
+            /// from the same read-only residency probe we already ran for `hit_ranges`.
+            if (populates)
+                for (const auto & miss : status.miss_ranges)
+                {
+                    const size_t lo = std::max(miss.offset, plan_range.offset);
+                    const size_t hi = std::min(miss.end(), plan_range.end());
+                    if (lo < hi)
+                        ph.missing.push_back(ByteRange{lo, hi - lo});
+                }
+
+            /// Keep the read-only handle only when it pins resident bytes; a
+            /// miss-only record streams nothing (its `write_handle` is acquired
+            /// lazily on the first promotion write). Drop records that are neither
+            /// resident nor a populatable gap — nothing to read or write.
             if (!ph.resident.empty())
-            {
                 ph.handle = std::move(handle);
+
+            if (!ph.resident.empty() || !ph.missing.empty())
                 read_plan.planned.push_back(std::move(ph));
-            }
 
             piece_file_start += pr.size;
         }
