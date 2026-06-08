@@ -30,7 +30,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , reset_columns(reset_columns_)
     , info_settings
     {
-        (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        static_cast<double>((*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
         (*storage_settings)[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         (*storage_settings)[MergeTreeSetting::serialization_info_version],

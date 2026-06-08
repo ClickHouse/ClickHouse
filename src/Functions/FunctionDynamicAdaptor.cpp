@@ -85,6 +85,33 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         }
     };
 
+    /// Helper: execute function, respecting throw_on_type_mismatch.
+    /// Some functions (e.g. comparisons) pass build() but throw during execute()
+    /// because executeGeneric calls getLeastSupertype which can throw NO_COMMON_TYPE.
+    /// Returns nullptr if execution fails with a type-related error and throwing is disabled.
+    auto try_execute = [&](const FunctionBasePtr & func_base, const ColumnsWithTypeAndName & args,
+                           const DataTypePtr & res_type, size_t rows, bool is_dry_run) -> ColumnPtr
+    {
+        if (throw_on_type_mismatch)
+            return func_base->execute(args, res_type, rows, is_dry_run);
+
+        try
+        {
+            return func_base->execute(args, res_type, rows, is_dry_run);
+        }
+        catch (const Exception & e)
+        {
+            /// Only suppress NO_COMMON_TYPE, which is what getLeastSupertype throws when the
+            /// alternative type is incompatible with the other argument (e.g. comparison functions
+            /// calling executeGeneric). All other errors (including ILLEGAL_TYPE_OF_ARGUMENT) are
+            /// value-dependent and must propagate — for example, geoToS2 throws ILLEGAL_TYPE_OF_ARGUMENT
+            /// for NaN coordinates after build() has already succeeded for a Float64 alternative.
+            if (e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+            return nullptr;
+        }
+    };
+
     /// Check if this Dynamic column contains only values of one type and no NULLs.
     /// In this case we can replace argument with this variant and execute the function without changing all other arguments.
     auto non_empty_variant_discr_no_nulls = variant_column.getGlobalDiscriminatorOfOneNoneEmptyVariantNoNulls();
@@ -123,7 +150,14 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
             return res;
         }
         auto nested_result_type = func_base->getResultType();
-        auto nested_result = func_base->execute(new_arguments, nested_result_type, dynamic_column.size(), dry_run);
+        auto nested_result = try_execute(func_base, new_arguments, nested_result_type, dynamic_column.size(), dry_run);
+        if (!nested_result)
+        {
+            /// execute() failed with a type-related error and throw_on_type_mismatch is false — return NULLs for all rows.
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(dynamic_column.size());
+            return res;
+        }
 
         /// If result is Nullable(Nothing), just return column filled with NULLs.
         if (nested_result_type->onlyNull())
@@ -214,7 +248,15 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
             return res;
         }
         auto nested_result_type = func_base->getResultType();
-        auto nested_result = func_base->execute(new_arguments, nested_result_type, new_arguments[0].column->size(), dry_run)->convertToFullColumnIfConst();
+        auto nested_result = try_execute(func_base, new_arguments, nested_result_type, new_arguments[0].column->size(), dry_run);
+        if (!nested_result)
+        {
+            /// execute() failed with a type-related error and throw_on_type_mismatch is false — return NULLs for all rows.
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(dynamic_column.size());
+            return res;
+        }
+        nested_result = nested_result->convertToFullColumnIfConst();
 
         /// If result is Nullable(Nothing), just return column filled with NULLs.
         if (nested_result_type->onlyNull())
@@ -451,7 +493,14 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
             continue;
         }
         auto nested_result_type = func_base->getResultType();
-        auto nested_result = func_base->execute(variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run)->convertToFullColumnIfConst();
+        auto nested_result = try_execute(func_base, variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run);
+        if (!nested_result)
+        {
+            /// execute() failed with a type-related error and throw_on_type_mismatch is false — treat as NULL result.
+            variants_results.emplace_back();
+            continue;
+        }
+        nested_result = nested_result->convertToFullColumnIfConst();
 
         /// Append nullptr in case of only NULL values, we will insert NULL for rows of this selector.
         if (nested_result_type->onlyNull())
@@ -514,7 +563,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeDryRunImpl(const ColumnsWithT
 FunctionBaseDynamicAdaptor::FunctionBaseDynamicAdaptor(std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, DataTypes arguments_) : function_overload_resolver(function_overload_resolver_), arguments(arguments_)
 {
     /// For resulting Dynamic type use the maximum max_dynamic_types from all Dynamic arguments.
-    size_t result_max_dynamic_type;
+    size_t result_max_dynamic_type = 0;
     bool first = true;
     for (size_t i = 0; i != arguments.size(); ++i)
     {

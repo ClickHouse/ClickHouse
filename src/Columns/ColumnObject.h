@@ -314,10 +314,10 @@ public:
 
         struct PathInfo
         {
-            PathType type;
+            PathType type{};
             std::string_view path;
             ColumnPtr column;
-            size_t row;
+            size_t row{};
         };
 
         SortedPathsIterator(const ColumnObject & column_object_, size_t row_);
@@ -343,9 +343,9 @@ public:
         SetWithMemoryTracking<std::string_view>::const_iterator dynamic_paths_end;
         size_t shared_data_it;
         size_t shared_data_end;
-        const ColumnString * shared_data_paths;
-        const ColumnString * shared_data_values;
-        PathType current_path_type;
+        const ColumnString * shared_data_paths{};
+        const ColumnString * shared_data_values{};
+        PathType current_path_type{};
         size_t row;
     };
 

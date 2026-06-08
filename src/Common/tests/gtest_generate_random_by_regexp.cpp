@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-void routine(String s)
+static void routine(String s)
 {
     std::cerr << "case '"<< s << "'";
     auto gen = DB::RandomStringGeneratorByRegexp(s);
