@@ -129,7 +129,7 @@ struct Base64DecodeTraits
 
     static std::optional<size_t> perform(std::string_view src, UInt8 * dst)
     {
-        int rc;
+        int rc = 0;
         size_t outlen = 0;
         if constexpr (variant == Base64Variant::URL)
         {
