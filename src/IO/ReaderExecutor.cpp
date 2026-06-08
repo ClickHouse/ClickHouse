@@ -641,6 +641,23 @@ void ReaderExecutor::maybeTriggerPrefetch()
     ByteRange next_physical_window{position + data_start_offset, next_size};
     size_t next_logical_offset = position;
 
+    /// Skip the async prefetch when the residency plan reports the next window
+    /// fully resident: a warm cache read is fast, so the prefetch worker handoff
+    /// (schedule, `ThreadGroupSwitcher`, future wait) is pure coordination
+    /// overhead the next synchronous `readNextWindow` avoids. Only async-prefetch
+    /// windows that have gaps (remote/uncached bytes), where overlapping the fetch
+    /// with consumption actually hides latency. Release the slot reserved above
+    /// (as the suppressed-window path) - a synchronous warm read needs no live
+    /// connection.
+    if (windowFullyResident(next_physical_window))
+    {
+        LOG_TRACE(log, "Prefetch: next window [{}, {}) fully resident, reading synchronously instead",
+            next_physical_window.offset, next_physical_window.end());
+        ++stats.prefetch_skipped_resident;
+        pre_acquired_slot.reset();
+        return;
+    }
+
     LOG_TRACE(log, "Prefetch: submitting physical [{}, {})", next_physical_window.offset, next_physical_window.end());
 
     /// Prefetch-log timing. Reset `execution_watch` before submit so a
@@ -1835,6 +1852,31 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
 
     LOG_TRACE(log, "planResidencyWindow: planned [{}, {}), {} resident handles",
         window_plan.plan_start, window_plan.plan_end, window_plan.planned.size());
+}
+
+bool ReaderExecutor::windowFullyResident(ByteRange physical_window)
+{
+    if (!planning_enabled || is_transient || physical_window.size == 0)
+        return false;
+
+    if (!window_plan.covers(physical_window))
+        planResidencyWindow(physical_window.offset);
+    if (!window_plan.covers(physical_window))
+        return false;
+
+    /// Union the plan's resident ranges and check they leave no gap in the
+    /// window. `IntervalSet::subtract` returns the uncovered parts; empty means
+    /// fully resident.
+    IntervalSet resident;
+    for (const auto & ph : window_plan.planned)
+        for (const auto & r : ph.resident)
+        {
+            const size_t lo = std::max(r.offset, physical_window.offset);
+            const size_t hi = std::min(r.end(), physical_window.end());
+            if (lo < hi)
+                resident.add(ByteRange{lo, hi - lo});
+        }
+    return resident.subtract(physical_window).empty();
 }
 
 std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t start_position, size_t read_size) const

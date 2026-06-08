@@ -206,6 +206,15 @@ private:
     /// Only used on the sequential path (never for `is_transient` readBigAt).
     void planResidencyWindow(size_t physical_start);
 
+    /// True when `physical_window` is fully covered by the residency plan with no
+    /// gaps - i.e. it can be served entirely from cache without a source read.
+    /// (Re)builds the plan if it does not yet cover the window. Returns false when
+    /// planning is disabled / transient, or the window has any gap. Drives the
+    /// prefetch-skip: a fully-resident next window is read synchronously from
+    /// cache instead of via an async prefetch whose worker handoff is pure
+    /// overhead for a fast cache read.
+    bool windowFullyResident(ByteRange physical_window);
+
     /// Read from source into the pre-allocated `blocks`. Tries live buffer first, falls back to stateless.
     /// `blocks` is consumed: blocks that receive data become RopeNodes in the returned Rope;
     /// blocks that receive no data (e.g., file ended early) are released when this function returns.
@@ -511,6 +520,10 @@ private:
         size_t prefetch_hits = 0;
         size_t prefetch_cancelled = 0;
         size_t prefetch_pool_full = 0;
+        /// Prefetches NOT submitted because the residency plan reported the next
+        /// window fully resident - it is read synchronously from cache instead,
+        /// avoiding the worker-handoff coordination that is wasted on a warm read.
+        size_t prefetch_skipped_resident = 0;
         /// Discarding a running prefetch: `discardPrefetch` blocked on
         /// `get()` because `tryCancel` lost the race against the worker.
         /// All work the worker did is thrown away.
@@ -553,6 +566,7 @@ private:
             prefetch_hits += o.prefetch_hits;
             prefetch_cancelled += o.prefetch_cancelled;
             prefetch_pool_full += o.prefetch_pool_full;
+            prefetch_skipped_resident += o.prefetch_skipped_resident;
             prefetch_discarded_running += o.prefetch_discarded_running;
             prefetch_discard_wait_us += o.prefetch_discard_wait_us;
             prefetch_issued_source_bytes += o.prefetch_issued_source_bytes;
