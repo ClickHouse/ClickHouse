@@ -321,20 +321,14 @@ void SerializationJSON<Parser>::serializeTextQuoted(const IColumn & column, size
 {
     WriteBufferFromOwnString buf;
     serializeTextImpl(column, row_num, buf, settings);
-    if (settings.values.escape_quote_with_quote)
-        writeQuotedStringPostgreSQL(buf.str(), ostr);
-    else
-        writeQuotedString(buf.str(), ostr);
+    writeQuotedString(buf.str(), ostr);
 }
 
 template <typename Parser>
 void SerializationJSON<Parser>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object;
-    /// Use SQL-style quoted reader so we accept both `\'` and the SQL-standard `''` apostrophe escapes.
-    /// `serializeTextQuoted` above can emit either form depending on `output_format_values_escape_quote_with_quote`,
-    /// and a JSON column written by us via `Values` must be parseable back by the same path.
-    readQuotedStringWithSQLStyle(object, istr);
+    readQuotedString(object, istr);
     deserializeObject(column, object, settings);
 }
 

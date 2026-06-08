@@ -36,18 +36,22 @@ SplitFileCachePriority::SplitFileCachePriority(
     , max_system_segment_elements(getRatio(max_elements_, system_segment_size_ratio))
     , log(getLogger("SplitFileCachePriority(" + description_ + ")"))
 {
-    priorities_holder[std::to_underlying(SegmentType::Data)] = creator_function(
-        max_data_segment_size,
-        max_data_segment_elements,
-        size_ratio,
-        0, // Overcommit available only for CH Cloud
-        description_ + "_" + getKeyTypePrefix(SegmentType::Data));
-    priorities_holder[static_cast<uint8_t>(SegmentType::System)] = creator_function(
-        max_system_segment_size,
-        max_system_segment_elements,
-        size_ratio,
-        0, // Overcommit available only for CH Cloud
-        description_ + "_" + getKeyTypePrefix(SegmentType::System));
+    priorities_holder.insert(
+        {SegmentType::Data,
+         creator_function(
+             max_data_segment_size,
+             max_data_segment_elements,
+             size_ratio,
+             0, // Overcommit available only for CH Cloud
+             description_ + "_" + getKeyTypePrefix(SegmentType::Data))});
+    priorities_holder.insert(
+        {SegmentType::System,
+         creator_function(
+             max_system_segment_size,
+             max_system_segment_elements,
+             size_ratio,
+             0, // Overcommit available only for CH Cloud
+             description_ + "_" + getKeyTypePrefix(SegmentType::System))});
 }
 
 SplitFileCachePriority::SegmentType
@@ -60,45 +64,45 @@ SplitFileCachePriority::getPriorityType(const SegmentType & segment_type) const
 
 size_t SplitFileCachePriority::getSize(const CacheStateGuard::Lock & lock) const
 {
-    return getPriority(SegmentType::Data).getSize(lock)
-        + getPriority(SegmentType::System).getSize(lock);
+    return priorities_holder.at(SegmentType::Data)->getSize(lock)
+        + priorities_holder.at(SegmentType::System)->getSize(lock);
 }
 
 size_t SplitFileCachePriority::getElementsCount(const CacheStateGuard::Lock & lock) const
 {
-    return getPriority(SegmentType::Data).getElementsCount(lock)
-        + getPriority(SegmentType::System).getElementsCount(lock);
+    return priorities_holder.at(SegmentType::Data)->getElementsCount(lock)
+        + priorities_holder.at(SegmentType::System)->getElementsCount(lock);
 }
 
 size_t SplitFileCachePriority::getSizeApprox() const
 {
-    return getPriority(SegmentType::Data).getSizeApprox()
-        + getPriority(SegmentType::System).getSizeApprox();
+    return priorities_holder.at(SegmentType::Data)->getSizeApprox()
+        + priorities_holder.at(SegmentType::System)->getSizeApprox();
 }
 
 size_t SplitFileCachePriority::getElementsCountApprox() const
 {
-    return getPriority(SegmentType::Data).getElementsCountApprox()
-        + getPriority(SegmentType::System).getElementsCountApprox();
+    return priorities_holder.at(SegmentType::Data)->getSizeApprox()
+        + priorities_holder.at(SegmentType::System)->getSizeApprox();
 }
 
 std::string SplitFileCachePriority::getStateInfoForLog(const CacheStateGuard::Lock & lock) const
 {
-    return "DataPriority: " + getPriority(SegmentType::Data).getStateInfoForLog(lock)
-        + " SystemPriority: " + getPriority(SegmentType::System).getStateInfoForLog(lock);
+    return "DataPriority: " + priorities_holder.at(SegmentType::Data)->getStateInfoForLog(lock)
+        + " SystemPriority: " + priorities_holder.at(SegmentType::System)->getStateInfoForLog(lock);
 }
 
 void SplitFileCachePriority::shuffle(const CachePriorityGuard::WriteLock & lock)
 {
-    getPriority(SegmentType::Data).shuffle(lock);
-    getPriority(SegmentType::System).shuffle(lock);
+    priorities_holder[SegmentType::Data]->shuffle(lock);
+    priorities_holder[SegmentType::System]->shuffle(lock);
 }
 
 IFileCachePriority::PriorityDumpPtr SplitFileCachePriority::dump(
     const CachePriorityGuard::ReadLock & lock)
 {
-    auto data_dump = getPriority(SegmentType::Data).dump(lock);
-    auto system_dump = getPriority(SegmentType::System).dump(lock);
+    auto data_dump = priorities_holder.at(SegmentType::Data)->dump(lock);
+    auto system_dump = priorities_holder.at(SegmentType::System)->dump(lock);
     data_dump->merge(*system_dump);
     return data_dump;
 }
@@ -108,8 +112,8 @@ void SplitFileCachePriority::iterate(
     FileCacheReserveStat & stat,
     const CachePriorityGuard::ReadLock & lock)
 {
-    getPriority(SegmentType::Data).iterate(func, stat, lock);
-    getPriority(SegmentType::System).iterate(func, stat, lock);
+    priorities_holder[SegmentType::Data]->iterate(func, stat, lock);
+    priorities_holder[SegmentType::System]->iterate(func, stat, lock);
 }
 
 bool SplitFileCachePriority::modifySizeLimits(
@@ -121,40 +125,17 @@ bool SplitFileCachePriority::modifySizeLimits(
     if (max_size == max_size_ && max_elements == max_elements_)
         return false; /// Nothing to change.
 
-    const size_t new_data_size = getRatio(max_size_, (1 - system_segment_size_ratio));
-    const size_t new_data_elements = getRatio(max_elements_, (1 - system_segment_size_ratio));
-    const size_t new_system_size = getRatio(max_size_, system_segment_size_ratio);
-    const size_t new_system_elements = getRatio(max_elements_, system_segment_size_ratio);
+    max_data_segment_elements = getRatio(max_elements_, (1 - system_segment_size_ratio));
+    max_data_segment_size = getRatio(max_size_, (1 - system_segment_size_ratio));
 
-    /// Remember data limits to roll back if the system update throws, so we never leave the
-    /// split priority partially resized. The rollback cannot throw (data already fit these).
-    const size_t prev_data_size = getPriority(SegmentType::Data).getSizeLimit(lock);
-    const size_t prev_data_elements = getPriority(SegmentType::Data).getElementsLimit(lock);
+    max_system_segment_elements = getRatio(max_elements_, system_segment_size_ratio);
+    max_system_segment_size = getRatio(max_size_, system_segment_size_ratio);
 
-    getPriority(SegmentType::Data).modifySizeLimits(
-        new_data_size, new_data_elements, size_ratio_, lock);
+    priorities_holder.at(SegmentType::Data)->modifySizeLimits(
+        max_data_segment_size, max_data_segment_elements, size_ratio_, lock);
 
-    try
-    {
-        getPriority(SegmentType::System).modifySizeLimits(
-            new_system_size, new_system_elements, size_ratio_, lock);
-    }
-    catch (...)
-    {
-        getPriority(SegmentType::Data).modifySizeLimits(
-            prev_data_size, prev_data_elements, size_ratio_, lock);
-        throw;
-    }
-
-    max_data_segment_size = new_data_size;
-    max_data_segment_elements = new_data_elements;
-    max_system_segment_size = new_system_size;
-    max_system_segment_elements = new_system_elements;
-
-    /// Keep the wrapper's own (inherited) limits in sync with the children, so getSizeLimit/
-    /// getElementsLimit report the new totals and doDynamicResize sees no limits inconsistency.
-    max_size = max_size_;
-    max_elements = max_elements_;
+    priorities_holder.at(SegmentType::System)->modifySizeLimits(
+        max_system_segment_size, max_system_segment_elements, size_ratio_, lock);
 
     return true;
 }
@@ -172,10 +153,10 @@ EvictionInfoPtr SplitFileCachePriority::collectEvictionInfoForResize(
     size_t desired_data_elements = getRatio(desired_max_elements, 1 - system_segment_size_ratio);
     size_t desired_system_elements = getRatio(desired_max_elements, system_segment_size_ratio);
 
-    auto info = getPriority(SegmentType::Data).collectEvictionInfoForResize(
+    auto info = priorities_holder.at(SegmentType::Data)->collectEvictionInfoForResize(
         desired_data_size, desired_data_elements, origin_info, lock);
 
-    info->add(getPriority(SegmentType::System).collectEvictionInfoForResize(
+    info->add(priorities_holder.at(SegmentType::System)->collectEvictionInfoForResize(
         desired_system_size, desired_system_elements, origin_info, lock));
 
     return info;
@@ -190,7 +171,7 @@ IFileCachePriority::IteratorPtr SplitFileCachePriority::add( /// NOLINT
     bool is_initial_load)
 {
     const auto type = getPriorityType(key_metadata->origin.segment_type);
-    return getPriority(type).add(
+    return priorities_holder.at(type)->add(
         key_metadata, offset, size, write_lock, state_lock, is_initial_load);
 }
 
@@ -203,7 +184,7 @@ IFileCachePriority::IteratorPtr SplitFileCachePriority::addForRestore( /// NOLIN
     const CacheStateGuard::Lock * state_lock)
 {
     const auto type = getPriorityType(key_metadata->origin.segment_type);
-    return getPriority(type).addForRestore(
+    return priorities_holder.at(type)->addForRestore(
         key_metadata, offset, size, original_queue_type, write_lock, state_lock);
 }
 
@@ -216,7 +197,7 @@ bool SplitFileCachePriority::canFit( /// NOLINT
     bool is_initial_load) const
 {
     const auto type = getPriorityType(origin_info.segment_type);
-    return getPriority(type).canFit(
+    return priorities_holder.at(type)->canFit(
         size, elements, lock, reservee, origin_info, is_initial_load);
 }
 
@@ -228,35 +209,10 @@ EvictionInfoPtr SplitFileCachePriority::collectEvictionInfo(
     const IFileCachePriority::OriginInfo & origin_info,
     const CacheStateGuard::Lock & lock)
 {
-    if (is_total_space_cleanup)
-    {
-        /// First evict as much as possible from Data
-        /// and if something remains - evict from System.
-        auto & data_priority = getPriority(SegmentType::Data);
-        auto & system_priority = getPriority(SegmentType::System);
-
-        const size_t evict_size_from_data = std::min(size, data_priority.getSize(lock));
-        const size_t evict_elements_from_data = std::min(elements, data_priority.getElementsCount(lock));
-
-        size -= evict_size_from_data;
-        elements -= evict_elements_from_data;
-
-        auto info = data_priority.collectEvictionInfo(
-            evict_size_from_data, evict_elements_from_data, /* reservee */nullptr,
-            is_total_space_cleanup, origin_info, lock);
-
-        const size_t evict_size_from_system = size ? std::min(size, system_priority.getSize(lock)) : 0;
-        const size_t evict_elements_from_system = elements ? std::min(elements, system_priority.getElementsCount(lock)) : 0;
-
-        info->add(system_priority.collectEvictionInfo(
-            evict_size_from_system, evict_elements_from_system, /* reservee */nullptr,
-            is_total_space_cleanup, origin_info, lock));
-
-        return info;
-    }
-
     const auto type = getPriorityType(origin_info.segment_type);
-    return getPriority(type).collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, origin_info, lock);
+    return priorities_holder.at(type)->collectEvictionInfo(
+        size, elements, reservee, is_total_space_cleanup,
+        origin_info, lock);
 }
 
 bool SplitFileCachePriority::collectCandidatesForEviction(
@@ -272,35 +228,19 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
     CachePriorityGuard & priority_guard,
     CacheStateGuard & state_guard)
 {
-    if (!eviction_info.requiresEviction())
-        return true;
-
-    if (is_total_space_cleanup)
-    {
-        chassert(!reservee);
-        FileCacheReserveStat data_stat;
-        bool success = getPriority(SegmentType::Data).collectCandidatesForEviction(
-            eviction_info, data_stat, res, invalidated_entries, /* reservee */nullptr,
-            continue_from_last_eviction_pos, max_candidates_size,
-            is_total_space_cleanup, origin_info, priority_guard, state_guard);
-
-        /// Collect candidates even if success == false, we will process them anyway.
-        FileCacheReserveStat system_stat;
-        success &= getPriority(SegmentType::System).collectCandidatesForEviction(
-            eviction_info, system_stat, res, invalidated_entries, /* reservee */nullptr,
-            continue_from_last_eviction_pos, max_candidates_size,
-            is_total_space_cleanup, origin_info, priority_guard, state_guard);
-
-        stat += data_stat;
-        stat += system_stat;
-        return success;
-    }
-
     const auto type = getPriorityType(origin_info.segment_type);
-    return getPriority(type).collectCandidatesForEviction(
-        eviction_info, stat, res, invalidated_entries, reservee,
-        continue_from_last_eviction_pos, max_candidates_size,
-        is_total_space_cleanup, origin_info, priority_guard, state_guard);
+    return priorities_holder.at(type)->collectCandidatesForEviction(
+        eviction_info,
+        stat,
+        res,
+        invalidated_entries,
+        reservee,
+        continue_from_last_eviction_pos,
+        max_candidates_size,
+        is_total_space_cleanup,
+        origin_info,
+        priority_guard,
+        state_guard);
 }
 
 bool SplitFileCachePriority::tryIncreasePriority(
@@ -310,25 +250,26 @@ bool SplitFileCachePriority::tryIncreasePriority(
     CacheStateGuard & state_guard)
 {
     const auto type = getPriorityType(iterator.getEntry()->key_metadata->origin.segment_type);
-    return getPriority(type).tryIncreasePriority(iterator, is_space_reservation_complete, queue_guard, state_guard);
+    return priorities_holder.at(type)->tryIncreasePriority(
+        iterator, is_space_reservation_complete, queue_guard, state_guard);
 }
 
 void SplitFileCachePriority::resetEvictionPos()
 {
-    getPriority(SegmentType::Data).resetEvictionPos();
-    getPriority(SegmentType::System).resetEvictionPos();
+    priorities_holder[SegmentType::Data]->resetEvictionPos();
+    priorities_holder[SegmentType::System]->resetEvictionPos();
 }
 
 size_t SplitFileCachePriority::getHoldSize()
 {
-    return getPriority(SegmentType::Data).getHoldSize()
-        + getPriority(SegmentType::System).getHoldSize();
+    return priorities_holder[SegmentType::Data]->getHoldSize()
+        + priorities_holder[SegmentType::System]->getHoldSize();
 }
 
 size_t SplitFileCachePriority::getHoldElements()
 {
-    return getPriority(SegmentType::Data).getHoldElements()
-        + getPriority(SegmentType::System).getHoldElements();
+    return priorities_holder[SegmentType::Data]->getHoldElements()
+        + priorities_holder[SegmentType::System]->getHoldElements();
 }
 
 SplitFileCachePriority::SplitIterator::SplitIterator(

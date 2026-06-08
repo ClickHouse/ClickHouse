@@ -46,11 +46,11 @@ struct SortColumnDescription
 {
     std::string alias;
     std::string column_name; /// The name of the column.
-    int direction{1};           /// 1 - ascending, -1 - descending.
-    int nulls_direction{1};     /// 1 - NULLs and NaNs are greater, -1 - less.
+    int direction;           /// 1 - ascending, -1 - descending.
+    int nulls_direction;     /// 1 - NULLs and NaNs are greater, -1 - less.
                              /// To achieve NULLS LAST, set it equal to direction, to achieve NULLS FIRST, set it opposite.
     std::shared_ptr<Collator> collator; /// Collator for locale-specific comparison of strings
-    bool with_fill{};
+    bool with_fill;
     FillColumnDescription fill_description;
 
     SortColumnDescription() = default;
@@ -146,12 +146,7 @@ public:
     bool compile_sort_description = false;
 
     bool hasPrefix(const SortDescription & prefix) const;
-
-    /// Whether `prefix` matches the leading columns of this sort description and none of those
-    /// columns uses a collator. A collated column is ordered by its collation key rather than by
-    /// value, so rows with equal values are not adjacent; in-order optimizations that rely on
-    /// value equality (e.g. DISTINCT, LIMIT BY) require this property.
-    bool hasPrefixWithoutCollation(const Names & prefix) const;
+    bool hasPrefix(const Names & prefix) const;
 };
 
 /// Returns a copy of lhs containing only the prefix of columns matching rhs's columns.

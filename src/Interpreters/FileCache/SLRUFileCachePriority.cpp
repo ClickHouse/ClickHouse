@@ -2,13 +2,10 @@
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
-#include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/thread_local_rng.h>
+#include <Common/randomSeed.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
-#include <Common/FailPoint.h>
-#include <random>
 
 
 namespace ProfileEvents
@@ -22,13 +19,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int FAULT_INJECTED;
-}
-
-namespace FailPoints
-{
-    extern const char file_cache_slru_downgrade_fail_before_finalize[];
-    extern const char file_cache_modify_size_limits_fail[];
 }
 
 namespace
@@ -214,12 +204,7 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
     const CacheStateGuard::Lock & lock)
 {
     if (!size && !elements)
-    {
-        /// Create empty target EvictionInfo for each subqueue.
-        auto info = probationary_queue.collectEvictionInfo(0, 0, reservee, is_total_space_cleanup, origin_info, lock);
-        info->add(protected_queue.collectEvictionInfo(0, 0, reservee, is_total_space_cleanup, origin_info, lock));
-        return info;
-    }
+        return std::make_unique<EvictionInfo>();
 
     /// Total space cleanup is for keep_free_space_size(elements)_ratio feature.
     if (is_total_space_cleanup)
@@ -229,8 +214,12 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
         size_t evict_size_from_probationary = std::min(size, probationary_queue.getSize(lock));
         size_t evict_elements_from_probationary = std::min(elements, probationary_queue.getElementsCount(lock));
 
-        /// Probationary may be empty while protected still has entries (everything got promoted);
-        /// then we pass zeroes to probationary and route the full request to protected.
+        /// It is valid for the probationary queue to be empty here while the protected queue still
+        /// has entries -- e.g. when `keep_free_space_size(elements)_ratio` is high enough for the
+        /// background thread to want to evict everything, but all entries have already been
+        /// promoted to the protected queue. The downstream code below correctly handles this case
+        /// by passing zeroes to `probationary_queue.collectEvictionInfo` and routing the full
+        /// requested amount to the protected queue.
         size -= evict_size_from_probationary;
         elements -= evict_elements_from_probationary;
 
@@ -296,9 +285,6 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     CachePriorityGuard & cache_guard,
     CacheStateGuard & state_guard)
 {
-    if (!eviction_info.requiresEviction())
-        return true;
-
     if (is_total_space_cleanup)
     {
         /// Use per-queue local stat objects so that each sub-queue's
@@ -461,7 +447,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
 
     const bool requires_eviction = probationary_eviction_info->requiresEviction();
     /// FIXME: const_cast is a bad practice.
-    const_cast<EvictionInfo &>(eviction_info).addOrUpdate(std::move(probationary_eviction_info));
+    const_cast<EvictionInfo &>(eviction_info).add(std::move(probationary_eviction_info));
     if (requires_eviction)
     {
         /// If not enough space - we need to "downgrade" lowest priority entries
@@ -489,26 +475,10 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         IteratorPtr slru_iterator;
         /// Entry size as it was in protected queue.
         size_t entry_size = 0;
-        /// Previous entry/iterator in protected queue.
-        /// The strong `prev_entry` lets rollback reset the flag without the throwing `getEntry`.
-        EntryPtr prev_entry;
+        /// Previous iterator to entry in protected queue.
         LRUIterator prev_nested_iterator;
         /// New iterator to entry in probationary queue.
         LRUIterator new_nested_iterator;
-        bool rollbacked = false;
-
-        void rollbackState() noexcept
-        {
-            chassert(!rollbacked, "State is already rollbacked");
-            if (rollbacked)
-                return;
-
-            /// Invalidate the new probationary `PreActive` entry, and
-            /// reset the old protected entry's `Evicting` flag back to `Active`.
-            new_nested_iterator.invalidate();
-            prev_entry->resetFlag(Entry::State::Evicting);
-            rollbacked = true;
-        }
     };
     /// RAII wrapper to protect against the case when afterEvictState callback
     /// is not called because of some unexpected exception.
@@ -531,10 +501,11 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
 
         ~DowngradedEntriesInfos()
         {
-            /// Roll back unfinalized downgrades. `rollbackState` is noexcept, so one
-            /// entry cannot abort the loop or escape the destructor.
+            /// Invalidate new unused iterators.
+            /// If entries number is non-zero here, it must mean there was
+            /// some exception because of which we failed to process new iterators.
             for (auto & entry : *this)
-                entry.rollbackState();
+                entry.new_nested_iterator.invalidate();
         }
     };
     auto downgraded_entries = std::make_shared<DowngradedEntriesInfos>(downgrade_candidates->size());
@@ -565,7 +536,6 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
                 downgraded_entries->add(DowngradedEntryInfo{
                     .slru_iterator = iterator,
                     .entry_size = entry->size,
-                    .prev_entry = entry,
                     .prev_nested_iterator = slru_iterator->lru_iterator,
                     .new_nested_iterator = new_iterator
                 });
@@ -577,14 +547,6 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     /// Set incrementing size callback, as explained in the previous comment.
     res.setAfterEvictStateFunc([=, this](const CacheStateGuard::Lock & lk)
     {
-        fiu_do_on(FailPoints::file_cache_slru_downgrade_fail_before_finalize,
-        {
-            static constexpr double fault_probability = 0.001;
-            if (std::bernoulli_distribution(fault_probability)(thread_local_rng))
-                throw Exception(ErrorCodes::FAULT_INJECTED,
-                                "Injected fault before SLRU downgrade finalization");
-        });
-
         chassert(downgraded_entries->getSize() > 0);
         while (true)
         {
@@ -592,18 +554,15 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
             if (!info.has_value())
                 break;
 
-            SLRUIterator * iterator = nullptr;
+            auto * iterator = assert_cast<SLRUIterator *>(info->slru_iterator->getNestedOrThis());
+            chassert(iterator);
             try
             {
-                iterator = assert_cast<SLRUIterator *>(info->slru_iterator->getNestedOrThis());
-                chassert(iterator);
                 info->new_nested_iterator.incrementSize(info->entry_size, lk);
             }
             catch (...)
             {
-                /// This entry was already popped off `downgraded_entries`
-                /// (in downgraded_entries->next()), so its destructor will not roll it back.
-                info->rollbackState();
+                info->new_nested_iterator.invalidate();
                 throw;
             }
             iterator->setIterator(std::move(info->new_nested_iterator), /* is_protected */false, lk);
@@ -830,24 +789,8 @@ bool SLRUFileCachePriority::modifySizeLimits(
     if (max_size == max_size_ && max_elements == max_elements_ && size_ratio == size_ratio_)
         return false; /// Nothing to change.
 
-    const size_t prev_protected_size = protected_queue.getSizeLimit(lock);
-    const size_t prev_protected_elements = protected_queue.getElementsLimit(lock);
-
     protected_queue.modifySizeLimits(getRatio(max_size_, size_ratio_), getRatio(max_elements_, size_ratio_), 0, lock);
-
-    try
-    {
-        fiu_do_on(FailPoints::file_cache_modify_size_limits_fail,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault in modifySizeLimits");
-        });
-        probationary_queue.modifySizeLimits(getRatio(max_size_, 1 - size_ratio_), getRatio(max_elements_, 1 - size_ratio_), 0, lock);
-    }
-    catch (...)
-    {
-        protected_queue.modifySizeLimits(prev_protected_size, prev_protected_elements, 0, lock);
-        throw;
-    }
+    probationary_queue.modifySizeLimits(getRatio(max_size_, 1 - size_ratio_), getRatio(max_elements_, 1 - size_ratio_), 0, lock);
 
     max_size = max_size_;
     max_elements = max_elements_;
