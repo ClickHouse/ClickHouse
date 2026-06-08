@@ -54,7 +54,6 @@ private:
     std::vector<std::shared_ptr<Node>> root_nodes;
     Coordination::ACLs default_acls;
     TaggedPaths tagged_paths;
-    bool use_remove_recursive = true;
 };
 
 class Runner
@@ -62,7 +61,7 @@ class Runner
 private:
     struct alignas(DB::CH_CACHE_LINE_SIZE) ThreadState
     {
-        size_t thread_idx = 0;
+        size_t thread_idx;
         Stats thread_info;
     };
 
