@@ -4720,10 +4720,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (!element.monotonic_functions_chain.empty())
             {
                 key_range_storage = hyperrectangle[key_column];
+                /// The chain was built in `extractAtomFromTree` against an
+                /// `LowCardinality`-stripped key type; the runtime type must match.
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                     *key_range_storage,
                     element.monotonic_functions_chain,
-                    data_types[key_column],
+                    recursiveRemoveLowCardinality(data_types[key_column]),
                     single_point
                 );
 
