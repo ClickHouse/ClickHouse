@@ -39,9 +39,13 @@ Limitations:
 
 ## DROP DETACHED TABLE {#drop-detached-table}
 
-Permanently removes a previously detached table's metadata and data from disk.
+Removes a previously detached table's metadata and data from disk.
 
 The table must be detached first with [`DETACH TABLE`](../../sql-reference/statements/detach.md) before it can be dropped with this statement.
+
+:::tip
+To undo the deletion of a table, please see [UNDROP TABLE](/sql-reference/statements/undrop.md)
+:::
 
 :::note
 This is an experimental feature gated by the setting [`allow_experimental_drop_detached_table`](../../operations/settings/settings.md#allow-experimental-drop-detached-table) (disabled by default).
