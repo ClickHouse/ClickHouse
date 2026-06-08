@@ -138,6 +138,7 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 output_format_pretty_max_rows;
     extern const SettingsUInt64 output_format_pretty_max_value_width;
+    extern const SettingsString output_format_pretty_grid_charset;
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool implicit_select;
@@ -848,6 +849,18 @@ try
 
         auto format_settings = getFormatSettings(client_context);
         format_settings.is_writing_to_terminal = stdout_is_a_tty;
+
+        /// If the result is written to a terminal that does not support UTF-8 (e.g. with LANG=C),
+        /// fall back to ASCII for the Pretty formats. Otherwise Unicode box-drawing characters
+        /// would corrupt the terminal. Respect an explicit choice of the charset by the user, and
+        /// do not change the output when it goes only into a file (the file should keep UTF-8).
+        if (stdout_is_a_tty
+            && !select_only_into_file
+            && !client_context->getSettingsRef()[Setting::output_format_pretty_grid_charset].changed
+            && !terminalSupportsUTF8())
+        {
+            format_settings.pretty.charset = FormatSettings::Pretty::Charset::ASCII;
+        }
 
         /// We need to disable output format squashing semantics for streaming queries
         /// because otherwise data may not be disaplayed forever.
@@ -2716,6 +2729,16 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
             while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                 ++token_iterator;
             this_query_begin = token_iterator->end;
+
+            /// Mirror the per-query reset at the top of `processParsedSingleQuery` so the skip
+            /// matches the state a successful query would leave behind. Otherwise stale
+            /// exceptions from a prior statement (executed under `ignore_error`) survive and
+            /// `Client::main` returns their code as the process exit, even though the loop
+            /// elected to skip past the failing query and continue.
+            have_error = false;
+            error_code = 0;
+            client_exception.reset();
+            server_exception.reset();
 
             return MultiQueryProcessingStage::CONTINUE_PARSING;
         }
