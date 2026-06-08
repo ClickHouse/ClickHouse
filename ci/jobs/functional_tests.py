@@ -742,6 +742,21 @@ def main():
                         verbose=True,
                         strict=True,
                     )
+                    # The downloaded build-type binaries are self-extracting:
+                    # the first invocation decompresses the real ELF in place.
+                    # Trigger that synchronously here - exactly as the install
+                    # stage does via `clickhouse-server --version` - instead of
+                    # letting the server self-extract during `start`.
+                    # Decompressing a sanitizer binary takes longer than
+                    # `start`'s 15s pid-file wait, so the swap would otherwise
+                    # time out; worse, a later `clickhouse local` (log scraping)
+                    # racing the half-written binary fails with
+                    # `open: Is a directory`.
+                    Shell.run(
+                        f"clickhouse-server --version",
+                        verbose=True,
+                        strict=True,
+                    )
                     CH.clean_logs()
                     # Fail closed if the server cannot come back up after the
                     # binary swap: running tests against a dead server would
@@ -759,6 +774,38 @@ def main():
                         )
                         startup_error.set_label(bugfix_bt)
                         test_result.results.append(startup_error)
+                        test_result.status = Result.Status.ERROR
+                        break
+
+                    # `start` wipes the server data directory (`run_path0`), so
+                    # the environment built once in the START stage is gone:
+                    # re-create the MinIO log tables and, for stateful suites,
+                    # reload the stateful data and the `system.zookeeper`
+                    # config. Auxiliary services (Kafka/Redpanda, MinIO) keep
+                    # running across `stop_server`, so only the server-side
+                    # state has to be rebuilt. Without this a stateful changed
+                    # test fails only because `test.hits`/`datasets`/the
+                    # auxiliary ZooKeeper row disappeared, and the bugfix
+                    # inverter reports that false failure as a successful bug
+                    # reproduction.
+                    reprepared = CH.create_minio_log_tables()
+                    if reprepared and has_stateful_tests:
+                        reprepared = (
+                            CH.prepare_stateful_data(
+                                with_s3_storage=is_s3_storage,
+                                is_db_replicated=is_database_replicated,
+                            )
+                            and CH.insert_system_zookeeper_config()
+                        )
+                    if not reprepared:
+                        setup_error = Result(
+                            name=f"Environment setup ({bugfix_bt})",
+                            status=Result.Status.ERROR,
+                            info="Failed to re-prepare the test environment "
+                            f"after switching to the {bugfix_bt} binary",
+                        )
+                        setup_error.set_label(bugfix_bt)
+                        test_result.results.append(setup_error)
                         test_result.status = Result.Status.ERROR
                         break
 
