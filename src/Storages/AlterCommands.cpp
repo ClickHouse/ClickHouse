@@ -1813,8 +1813,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         }
                     }
                 }
-                all_columns.remove(command.column_name);
-                revalidate_stored_defaults = true;
+                if (!command.clear)
+                {
+                    all_columns.remove(command.column_name);
+                    revalidate_stored_defaults = true;
+                }
             }
             else if (!command.if_exists)
             {
