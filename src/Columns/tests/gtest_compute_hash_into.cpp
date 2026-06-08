@@ -75,6 +75,36 @@ ColumnArray::MutablePtr makeUInt32ArrayColumn(size_t num_rows, size_t max_len)
     return ColumnArray::create(std::move(data), std::move(offsets));
 }
 
+/// Reproduce the former `WeakHash32` + `getWeakHash32` scatter chain for equivalence checks.
+void weakHash32Update(std::vector<uint32_t> & acc, const std::vector<uint32_t> & other)
+{
+    ASSERT_EQ(acc.size(), other.size());
+    for (size_t i = 0; i < acc.size(); ++i)
+        acc[i] = static_cast<UInt32>(intHashCRC32(other[i], acc[i]));
+}
+
+std::vector<uint32_t> composeLikeScatterConsumers(const std::vector<ColumnPtr> & key_columns)
+{
+    const size_t n = key_columns.front()->size();
+    std::vector<uint32_t> hash(n, WEAK_HASH32_INITIAL_VALUE);
+    for (const auto & col : key_columns)
+        col->computeHashInto(0, n, hash.data(), false);
+    return hash;
+}
+
+std::vector<uint32_t> composeLikeOldWeakHash32(const std::vector<ColumnPtr> & key_columns)
+{
+    const size_t n = key_columns.front()->size();
+    std::vector<uint32_t> hash(n, WEAK_HASH32_INITIAL_VALUE);
+    for (const auto & col : key_columns)
+    {
+        std::vector<uint32_t> per_column(n);
+        col->computeHashInto(0, n, per_column.data(), true);
+        weakHash32Update(hash, per_column);
+    }
+    return hash;
+}
+
 /// Verify that splitting the row range in two produces the same per-row hashes
 /// as a single call over the whole range.
 void expectRangeSplitConsistent(const IColumn & col)
@@ -131,14 +161,59 @@ TEST(ComputeHashInto, MultiColumnCompositionDeterministic)
 
     for (int rep = 0; rep < 20; ++rep)
     {
-        col0->computeHashInto(0, n, a.data(), true);
+        std::fill(a.begin(), a.end(), WEAK_HASH32_INITIAL_VALUE);
+        col0->computeHashInto(0, n, a.data(), false);
         col1->computeHashInto(0, n, a.data(), false);
 
-        col0->computeHashInto(0, n, b.data(), true);
+        std::fill(b.begin(), b.end(), WEAK_HASH32_INITIAL_VALUE);
+        col0->computeHashInto(0, n, b.data(), false);
         col1->computeHashInto(0, n, b.data(), false);
 
         EXPECT_EQ(a, b) << "Mismatch on rep " << rep;
     }
+}
+
+
+// ──────────────────────────────────────────────────────────────────────
+// 2b. Scatter-consumer composition matches the former WeakHash32 chain.
+// ──────────────────────────────────────────────────────────────────────
+TEST(ComputeHashInto, MatchesFormerWeakHash32SingleColumn)
+{
+    const size_t n = 1024;
+    ColumnPtr col = makeUInt32Column(randomUInts(n));
+    EXPECT_EQ(composeLikeScatterConsumers({col}), composeLikeOldWeakHash32({col}));
+}
+
+TEST(ComputeHashInto, MatchesFormerWeakHash32MultiColumn)
+{
+    const size_t n = 512;
+    std::vector<ColumnPtr> cols = {
+        makeUInt32Column(randomUInts(n)),
+        makeStringColumn([&]
+        {
+            std::vector<std::string> v(n);
+            for (auto & s : v)
+                s = std::string(rng() % 17, 'x');
+            return v;
+        }()),
+        ColumnTuple::create(Columns{makeUInt32Column(randomUInts(n)), makeUInt32Column(randomUInts(n))})->getPtr(),
+    };
+    EXPECT_EQ(composeLikeScatterConsumers(cols), composeLikeOldWeakHash32(cols));
+}
+
+TEST(ComputeHashInto, MatchesFormerWeakHash32NullableAndArray)
+{
+    const size_t n = 256;
+    auto nested = ColumnUInt32::create();
+    auto null_map = ColumnUInt8::create();
+    for (size_t i = 0; i < n; ++i)
+    {
+        nested->insert(static_cast<UInt64>(rng()));
+        null_map->insert(static_cast<UInt64>(i % 3 == 0 ? 1 : 0));
+    }
+    ColumnPtr nullable = ColumnNullable::create(std::move(nested), std::move(null_map));
+    ColumnPtr array = makeUInt32ArrayColumn(n, 5);
+    EXPECT_EQ(composeLikeScatterConsumers({nullable, array}), composeLikeOldWeakHash32({nullable, array}));
 }
 
 
@@ -270,8 +345,8 @@ TEST(ComputeHashInto, NullableNullPayloadIndependenceComposed)
     }
     auto nullable = ColumnNullable::create(std::move(nested), std::move(null_map));
 
-    std::vector<uint32_t> out(n);
-    col0->computeHashInto(0, n, out.data(), true); // initial
+    std::vector<uint32_t> out(n, WEAK_HASH32_INITIAL_VALUE);
+    col0->computeHashInto(0, n, out.data(), false);
     nullable->computeHashInto(0, n, out.data(), false); // non-initial: scratch path
 
     for (size_t i = 1; i < n; ++i)
@@ -387,9 +462,9 @@ TEST(ComputeHashInto, DistributionUniformityUInt32K4P64)
         cols.push_back(std::move(col));
     }
 
-    std::vector<uint32_t> hashes(total_rows);
+    std::vector<uint32_t> hashes(total_rows, WEAK_HASH32_INITIAL_VALUE);
     for (size_t k = 0; k < num_key_cols; ++k)
-        cols[k]->computeHashInto(0, total_rows, hashes.data(), k == 0);
+        cols[k]->computeHashInto(0, total_rows, hashes.data(), false);
 
     std::vector<size_t> counts(num_parts, 0);
     for (auto h : hashes)
@@ -439,7 +514,8 @@ TEST(ComputeHashInto, ColumnDecimalDistinctHashes)
 
 // ──────────────────────────────────────────────────────────────────────
 // 10b. ColumnBFloat16: hash the raw 16-bit value, not a Float32-truncated int.
-//      Distinct fractional values must not collapse, and -0.0 must hash like +0.0.
+//      Distinct fractional values must not collapse. Raw-bit hashing matches
+//      old getWeakHash32 behavior, so -0.0 and +0.0 hash differently.
 // ──────────────────────────────────────────────────────────────────────
 TEST(ComputeHashInto, ColumnBFloat16RawBitsAndSignedZero)
 {
@@ -459,13 +535,13 @@ TEST(ComputeHashInto, ColumnBFloat16RawBitsAndSignedZero)
     const size_t unique = static_cast<size_t>(std::unique(sorted.begin(), sorted.end()) - sorted.begin());
     EXPECT_EQ(unique, n) << "Distinct BFloat16 values must hash distinctly (raw-bit hashing)";
 
-    // Signed zero: -0.0 and +0.0 compare equal, so they must hash identically.
+    // Signed zero: raw-bit hashing matches old getWeakHash32, so -0.0 and +0.0 hash differently.
     auto zeros = ColumnBFloat16::create();
     zeros->insertValue(BFloat16(0.0f));
     zeros->insertValue(BFloat16(-0.0f));
     std::vector<uint32_t> hz(2);
     zeros->computeHashInto(0, 2, hz.data(), true);
-    EXPECT_EQ(hz[0], hz[1]) << "BFloat16 -0.0 and +0.0 must hash identically";
+    EXPECT_NE(hz[0], hz[1]) << "BFloat16 -0.0 and +0.0 hash differently (raw-bit hashing, matching old getWeakHash32)";
 }
 
 
@@ -487,9 +563,9 @@ TEST(ComputeHashInto, ColumnTupleCompositionAndOrder)
     auto tuple_ab = ColumnTuple::create(Columns{a, b});
     expectRangeSplitConsistent(*tuple_ab);
 
-    // A tuple hash must equal manually chaining its children with the same flags.
-    std::vector<uint32_t> manual(n);
-    a->computeHashInto(0, n, manual.data(), true);
+    // A tuple hash must equal manually chaining its children the way tuples combine internally.
+    std::vector<uint32_t> manual(n, WEAK_HASH32_INITIAL_VALUE);
+    a->computeHashInto(0, n, manual.data(), false);
     b->computeHashInto(0, n, manual.data(), false);
 
     std::vector<uint32_t> via_tuple(n);
@@ -661,12 +737,12 @@ TEST(ComputeHashInto, ColumnNullableRangeSplit)
 // ──────────────────────────────────────────────────────────────────────
 namespace
 {
-/// Compose `prefix` (initial=true) then `second` (initial=false); return the per-row hash.
+/// Compose `prefix` then `second` the way scatter consumers do (seeded buffer, always non-initial).
 std::vector<uint32_t> composeKey(const IColumn & prefix, const IColumn & second)
 {
     const size_t n = prefix.size();
-    std::vector<uint32_t> h(n);
-    prefix.computeHashInto(0, n, h.data(), true);
+    std::vector<uint32_t> h(n, WEAK_HASH32_INITIAL_VALUE);
+    prefix.computeHashInto(0, n, h.data(), false);
     second.computeHashInto(0, n, h.data(), false);
     return h;
 }
@@ -808,11 +884,12 @@ TEST(ComputeHashInto, ReprIndependenceConstFixedString)
 
 TEST(ComputeHashInto, ReprIndependenceConstNothing)
 {
-    // A dummy column (ColumnNothing) has a single fixed per-row hash (0). It must still combine
-    // that finalized value on the non-initial path, so a materialized ColumnNothing and a
-    // ColumnConst(ColumnNothing) compose identically. Otherwise a key (prefix, Nothing) would
-    // route differently depending on whether the Nothing column is materialized or a const
-    // wrapper, splitting equal multi-column keys across shards / grace_hash partitions.
+    // A dummy column (ColumnNothing) has a single fixed per-row hash (`WEAK_HASH32_INITIAL_VALUE`).
+    // It must still combine that finalized value on the non-initial path, so a materialized
+    // ColumnNothing and a ColumnConst(ColumnNothing) compose identically. Otherwise a key
+    // (prefix, Nothing) would route differently depending on whether the Nothing column is
+    // materialized or a const wrapper, splitting equal multi-column keys across shards /
+    // grace_hash partitions.
     const size_t n = 333;
     auto prefix = makeUInt32Column(randomUInts(n));
 

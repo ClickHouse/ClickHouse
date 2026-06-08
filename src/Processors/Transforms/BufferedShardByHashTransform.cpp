@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <Columns/IColumn.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/BufferedShardByHashTransform.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/MapToRange.h>
 
 namespace DB
@@ -136,12 +138,9 @@ void BufferedShardByHashTransform::generateOutputChunks()
     /// No allocations: each `computeHashInto` call writes directly into hash_buffer.
     /// Every column type hashes via hardware CRC32C (see IColumn::computeHashInto).
     hash_buffer.resize(num_rows);
-    bool initial = true;
+    std::fill(hash_buffer.begin(), hash_buffer.end(), WEAK_HASH32_INITIAL_VALUE);
     for (auto column_number : key_columns)
-    {
-        columns[column_number]->computeHashInto(0, num_rows, hash_buffer.data(), initial);
-        initial = false;
-    }
+        columns[column_number]->computeHashInto(0, num_rows, hash_buffer.data(), false);
 
     /// Partition rows by shard using Lemire fastrange.
     /// The CRC32C-based per-row hash is well-distributed across all 32 bits, so the high

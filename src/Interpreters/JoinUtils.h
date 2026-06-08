@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
@@ -122,7 +123,7 @@ IColumn::Selector hashToSelector(const PaddedPODArray<UInt32> & hashes, Sharder 
 
     IColumn::Selector selector(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
-        selector[i] = sharder(hashes[i]);
+        selector[i] = sharder(intHashCRC32(hashes[i]));
     return selector;
 }
 

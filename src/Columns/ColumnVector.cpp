@@ -82,28 +82,17 @@ void ColumnVector<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash
 /// This is the canonical per-row hash `h(row)`: every column type produces a finalized
 /// CRC32C-based 32-bit hash, and wrappers combine these finalized hashes uniformly via
 /// `combineWeakHash32`, so SQL-equal keys hash identically across representations.
-///   - floats: normalise -0.0 to +0.0 before hashing (so the two zero encodings, which
-///     compare equal in SQL, hash identically)
-///   - everything else: hashed via `hashCRC32` over its raw bytes (one `_mm_crc32_u64`
-///     per 64-bit word; no hi/lo split)
+///   - all types: hashed via `hashCRC32` over their raw bytes (one `_mm_crc32_u64`
+///     per 64-bit word; no hi/lo split), matching the old `getWeakHash32` behavior
 template <typename T>
 [[gnu::always_inline]] static inline uint32_t weakHashValue32(T v) noexcept
 {
     if constexpr (std::is_same_v<T, BFloat16>)
     {
-        // `BFloat16` is a 16-bit float but is NOT a `std::is_floating_point` type. Hash its
-        // raw 16 bits, normalising `-0.0` (`0x8000`) to `+0.0` so the two zero encodings
-        // (which compare equal) hash identically, matching the floating-point branch.
+        // `BFloat16` is a 16-bit float but is NOT a `std::is_floating_point` type.
+        // Hash its raw 16 bits directly, matching old `getWeakHash32` behavior.
         UInt16 bits = v.raw();
-        if (bits == 0x8000)
-            bits = 0;
         return static_cast<uint32_t>(hashCRC32(bits, WEAK_HASH32_INITIAL_VALUE));
-    }
-    else if constexpr (std::is_floating_point_v<T>)
-    {
-        if (v == T{0})
-            v = T{0}; // normalise -0.0 to +0.0
-        return static_cast<uint32_t>(hashCRC32(v, WEAK_HASH32_INITIAL_VALUE));
     }
     else
     {

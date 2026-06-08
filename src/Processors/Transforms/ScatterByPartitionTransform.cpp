@@ -1,7 +1,9 @@
+#include <algorithm>
 #include <Columns/IColumn.h>
 #include <Core/ColumnNumbers.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
 
 namespace DB
@@ -136,13 +138,10 @@ void ScatterByPartitionTransform::generateOutputChunks()
     chassert(!columns.empty());
 
     hash.resize(num_rows);
+    std::fill(hash.begin(), hash.end(), WEAK_HASH32_INITIAL_VALUE);
 
-    bool initial = true;
     for (const auto & column_number : key_columns)
-    {
-        columns[column_number]->computeHashInto(0, num_rows, hash.data(), initial);
-        initial = false;
-    }
+        columns[column_number]->computeHashInto(0, num_rows, hash.data(), false);
 
     IColumn::Selector selector(num_rows);
 
