@@ -11,7 +11,15 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Common/CurrentMetrics.h>
 #include <Poco/Net/NetException.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric ExchangeServerThreads;
+    extern const Metric ExchangeServerThreadsActive;
+    extern const Metric ExchangeServerThreadsScheduled;
+}
 
 namespace DB
 {
@@ -22,10 +30,21 @@ namespace ErrorCodes
     extern const int PROTOCOL_VERSION_MISMATCH;
 }
 
+/// Bounds the handshake thread pool: enough threads to absorb bursts of concurrent connections
+/// without serializing on the accept thread, while staying bounded.
+static constexpr size_t HANDSHAKE_POOL_MAX_THREADS = 64;
+static constexpr size_t HANDSHAKE_POOL_MAX_FREE_THREADS = 8;
+static constexpr size_t HANDSHAKE_POOL_QUEUE_SIZE = 10000;
+
 ExchangeServer::ExchangeServer(const String & listen_host, UInt16 port, ExchangeConnectionsPtr connections_)
     : connections(std::move(connections_))
     , server_socket(Poco::Net::ServerSocket(Poco::Net::SocketAddress(listen_host, port)))
     , accept_thread("ExchangeServer")
+    , handshake_pool(
+        CurrentMetrics::ExchangeServerThreads,
+        CurrentMetrics::ExchangeServerThreadsActive,
+        CurrentMetrics::ExchangeServerThreadsScheduled,
+        HANDSHAKE_POOL_MAX_THREADS, HANDSHAKE_POOL_MAX_FREE_THREADS, HANDSHAKE_POOL_QUEUE_SIZE)
     , stopped(true)
     , log(getLogger("ExchangeServer"))
 {
@@ -58,6 +77,9 @@ void ExchangeServer::stop()
     {
         stopped = true;
         accept_thread.join();
+        /// Finish in-flight handshakes (each bounded by HELLO_TIMEOUT_SECONDS) before `connections`
+        /// is torn down.
+        handshake_pool.wait();
     }
 }
 
@@ -70,14 +92,34 @@ void ExchangeServer::run()
         {
             if (server_socket.poll(timeout, Poco::Net::Socket::SELECT_READ))
             {
+                Poco::Net::StreamSocket socket;
                 try
                 {
-                    handleConnection(server_socket.acceptConnection(), connections, log);
+                    socket = server_socket.acceptConnection();
                 }
                 // Termination request
                 catch (Poco::InvalidArgumentException &)
                 {
                     break;
+                }
+
+                /// Run the handshake on the pool, not inline, so a slow peer does not stall the
+                /// accept loop and block subsequent connections. Drop the connection if the pool
+                /// rejects the job (queue full or shutting down).
+                try
+                {
+                    handshake_pool.scheduleOrThrowOnError(
+                        [accepted = std::move(socket), conns = connections, task_log = log]() mutable
+                        {
+                            try
+                            {
+                                handleConnection(std::move(accepted), conns, task_log);
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(task_log);
+                            }
+                        });
                 }
                 catch (...)
                 {

@@ -6,6 +6,7 @@
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Runnable.h>
 #include <Common/Logger.h>
+#include <Common/ThreadPool.h>
 
 namespace DB
 {
@@ -33,6 +34,9 @@ private:
     ExchangeConnectionsPtr connections;
     Poco::Net::ServerSocket server_socket;
     Poco::Thread accept_thread;
+    /// Handshakes run on this pool so a slow peer cannot stall the single accept thread and block
+    /// subsequent connections.
+    ThreadPool handshake_pool;
     std::atomic<bool> stopped {false};
     LoggerPtr log;
 };
