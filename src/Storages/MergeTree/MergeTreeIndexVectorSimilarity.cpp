@@ -418,7 +418,7 @@ void MergeTreeIndexGranuleVectorSimilarity::loadVectorsFromPart(
                 ErrorCodes::INCORRECT_DATA,
                 "Vector at row {} of column '{}' has length {}, expected {} (index dimensions)",
                 row, column_name, row_length, expected_dimensions);
-        bool success;
+        bool success = false;
 
         if (which.isFloat32())
         {
