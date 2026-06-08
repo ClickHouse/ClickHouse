@@ -4748,23 +4748,6 @@ Strings ReadFromMergeTree::getShardsForDistributedRead() const
 }
 
 
-namespace
-{
-    void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out)
-    {
-        writeIntBinary(val.numerator, out);
-        writeIntBinary(val.denominator, out);
-    }
-
-    TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in)
-    {
-        TableExpressionModifiers::Rational val;
-        readIntBinary(val.numerator, in);
-        readIntBinary(val.denominator, in);
-        return val;
-    }
-}
-
 void ReadFromMergeTree::serialize(Serialization & ctx) const
 {
     /// Serializing the STREAM modifier is not implemented yet, so reject it instead of silently
