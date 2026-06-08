@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-shared-merge-tree
+# Tags: no-replicated-database, no-shared-merge-tree, no-object-storage
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,16 +15,26 @@ CREATE TABLE t_text_idx_empty
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS prewarm_mark_cache = true"
+SETTINGS prewarm_mark_cache = true, compress_marks = 0"
 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_text_idx_empty SELECT toFixedString(toString(number), 37) FROM numbers(5)"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_text_idx_empty SELECT toFixedString(toString(number + 5), 37) FROM numbers(5)"
 ${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE t_text_idx_empty FINAL"
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_text_idx_empty DELETE WHERE 1 SETTINGS mutations_sync = 2"
 
+DATA_PATH=$(${CLICKHOUSE_CLIENT} -q "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND table = 't_text_idx_empty'")
+PART_NAME=$(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 't_text_idx_empty' AND active")
+PART_DIR="${DATA_PATH}${PART_NAME}"
+
 ${CLICKHOUSE_CLIENT} -q "SELECT rows, marks FROM system.parts WHERE database = currentDatabase() AND table = 't_text_idx_empty' AND active"
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM DROP MARK CACHE"
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE t_text_idx_empty"
+
+printf '\x00' >> "${PART_DIR}/skp_idx_idx.mrk4"
+rm "${PART_DIR}/checksums.txt"
+
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal -q "ATTACH TABLE t_text_idx_empty"
+
 ${CLICKHOUSE_CLIENT} -q "SYSTEM PREWARM MARK CACHE t_text_idx_empty"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_text_idx_empty"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_text_idx_empty WHERE has(['anything'], s)"
