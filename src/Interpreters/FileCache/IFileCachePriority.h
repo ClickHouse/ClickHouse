@@ -114,7 +114,7 @@ public:
                 printUnexpectedState(prev, "Active or Moving or Evicting or PreActive", "Invalidated"));
         }
 
-        void resetFlag(State from_state, State to_state = State::Active)
+        void resetFlag(State from_state, State to_state = State::Active) noexcept
         {
             [[maybe_unused]] auto prev = state.exchange(to_state);
             chassert(
