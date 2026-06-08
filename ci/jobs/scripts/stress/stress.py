@@ -124,9 +124,14 @@ class RandomQueryKiller:
         self._thread = None
 
 
-def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
+def get_options(
+    i: int,
+    upgrade_check: bool,
+    encrypted_storage: bool,
+    extra_client_options: Optional[List[str]] = None,
+) -> str:
     options = []
-    client_options = []
+    client_options = list(extra_client_options or [])
 
     if upgrade_check:
         # Disable settings randomization for upgrade checks to prevent test failures caused by missing settings in old version
@@ -287,10 +292,13 @@ def run_func_test(
         # Smoke check: disable AST fuzzer (fuzzed queries produce expected
         # errors in stderr) and cap global_time_limit so clickhouse-test
         # exits on its own within the execute_bash timeout.
+        smoke_options = get_options(
+            i, upgrade_check, encrypted_storage,
+            extra_client_options=["ast_fuzzer_runs=0"],
+        )
         smoke_command = (
-            f"{cmd} --stress-tests {options} {smoke_time_limit_option} "
+            f"{cmd} --stress-tests {smoke_options} {smoke_time_limit_option} "
             f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
-            f"--client-option ast_fuzzer_runs=0 "
         )
         check_command = (
             smoke_command
