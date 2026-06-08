@@ -346,6 +346,14 @@ private:
     /// `at_eof` lets EOF drop sites treat a reached-EOF connection as complete.
     void accountLiveBufferDrop(bool at_eof);
 
+    /// Decide an open live connection's fate before the next read at
+    /// `next_physical`: keep it only while that read is a small bridgeable forward
+    /// gap within its bound (so the next source read skips the gap on it instead
+    /// of reopening); otherwise drain its tail and drop it (and its pin) so the
+    /// slot isn't held idle. No-op without a live connection or at EOF. Called
+    /// after every cache-only serve (resident run, or a cache-only gap window).
+    void maybeKeepLiveBufferBefore(size_t next_physical);
+
     /// readPhysicalWindow + remap the window's offsets to logical (subtract the
     /// encryption header). Payload decryption is deferred to the consumer
     /// (PipelineReadBuffer), so unconsumed read-ahead is never decrypted.

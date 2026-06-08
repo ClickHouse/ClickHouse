@@ -2765,9 +2765,11 @@ TEST(ReaderExecutor, ChainThreeTierCascading)
     EXPECT_EQ(rope.totalBytes(), 128u * 1024u);
 }
 
-/// After a read where PageCache hits but DiskCache is cold, the DiskCache
-/// must be filled with its full segment range (cached hit bytes + source
-/// bytes combined into one disjoint rope for the put).
+/// PageCache hits the prefix, DiskCache is cold. The prefix is streamed from
+/// PageCache (not promoted into DiskCache); the cold tail is a gap whose
+/// block-aligned miss over-reads and fills the whole DiskCache segment. The
+/// plan-centric path serves the resident prefix and the gap in separate
+/// `readNextWindow` calls, so drain the scan.
 TEST(ReaderExecutor, ChainLowerCacheFilledFullyAfterRead)
 {
     auto src = std::make_shared<MemorySourceReader>(
@@ -2783,10 +2785,17 @@ TEST(ReaderExecutor, ChainLowerCacheFilledFullyAfterRead)
                              /*window_size=*/128 * 1024,
                              /*min_bytes_for_seek=*/0);
 
-    auto rope = executor.readNextWindow();
-    EXPECT_EQ(rope.totalBytes(), 128u * 1024u);
+    size_t total = 0;
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (rope.range().size == 0)
+            break;
+        total += rope.range().size;
+    }
+    EXPECT_EQ(total, 4u * 1024 * 1024);
     EXPECT_TRUE(disk_cache->hasBlock(0))
-        << "DiskCache must be filled with the full segment after the read";
+        << "DiskCache must be filled with the full segment after the read (gap over-read)";
 }
 
 /// Every put across the chain must receive a rope with disjoint coverage —
@@ -2807,7 +2816,10 @@ TEST(ReaderExecutor, ChainPutReceivesDisjointRope)
                              /*window_size=*/128 * 1024,
                              /*min_bytes_for_seek=*/0);
 
-    executor.readNextWindow();
+    /// Drain: the resident prefix and the cold gap are served in separate calls;
+    /// the gap's backfill is the put we are checking.
+    while (executor.readNextWindow().range().size != 0)
+        ;
 
     ASSERT_FALSE(disk_cache->putLog().empty()) << "DiskCache put must be called";
     for (const auto & [range, total] : disk_cache->putLog())

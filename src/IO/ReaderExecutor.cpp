@@ -487,6 +487,29 @@ void ReaderExecutor::accountLiveBufferDrop(bool at_eof)
         ++stats.incomplete_connections;
 }
 
+void ReaderExecutor::maybeKeepLiveBufferBefore(size_t next_physical)
+{
+    if (!live_buffer || reached_eof)
+        return;
+
+    size_t next_obj_file_offset = 0;
+    const StoredObject * next_obj = offset_map.findObjectAt(next_physical, &next_obj_file_offset);
+    const bool same_object = next_obj
+        && live_buffer->slot.objectPath() == next_obj->remote_path;
+    const size_t next_local = same_object ? next_physical - next_obj_file_offset : 0;
+    const bool bridgeable = same_object
+        && next_local >= live_buffer->current_position
+        && next_local - live_buffer->current_position <= min_bytes_for_seek
+        && (!live_buffer->read_until || next_local <= *live_buffer->read_until);
+    if (!bridgeable)
+    {
+        maybeDrainLiveTail();
+        accountLiveBufferDrop(/*at_eof=*/false);
+        live_buffer.reset();
+        inflight_segment_pin.reset();
+    }
+}
+
 void ReaderExecutor::maybeDrainLiveTail()
 {
     /// Called just before dropping a live connection that is not at its bound. If
@@ -946,15 +969,71 @@ Rope ReaderExecutor::readNextWindow()
             return {};
         }
 
-        ensurePreAcquiredSlot();
-        size_t win_size = clampToExtent(std::min(effectiveWindowSize(), logical_size - position));
-        ByteRange physical_window{position + data_start_offset, win_size};
-        LOG_TRACE(log, "readNextWindow: synchronous read physical [{}, {}), logical [{}, {})",
-            physical_window.offset, physical_window.end(), position, position + win_size);
-        StopwatchAccumulator sync_scope(stats.sync_read_us);
-        rope = readWindowLogical(physical_window, /*from_prefetch=*/false);
-        HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
-            static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
+        const size_t position_phys = position + data_start_offset;
+        const size_t win_size = clampToExtent(std::min(effectiveWindowSize(), logical_size - position));
+
+        /// Plan-first: build/refresh the ReadPlan and ask what sits at the cursor.
+        ReadPlan::Resident at;
+        if (win_size > 0)
+        {
+            if (!read_plan.covers(ByteRange{position_phys, win_size}))
+                planResidencyWindow(position_phys);
+            at = read_plan.residentAt(position_phys);
+        }
+
+        if (at.handle)
+        {
+            /// Active cache stream: stream the contiguous resident run straight
+            /// from the plan's held (pinning) cache readers - no per-window
+            /// discovery, no source. Serve each tier's range from its own handle,
+            /// advancing the cursor so the appended runs stay disjoint; stop at
+            /// the first gap (the next call serves it).
+            const size_t window_end = position_phys + win_size;
+            StopwatchAccumulator get_scope(stats.cache_get_us);
+            for (size_t pos = position_phys; pos < window_end;)
+            {
+                auto run = read_plan.residentAt(pos);
+                if (!run.handle)
+                    break;
+                const size_t serve_end = std::min(run.run_end, window_end);
+                Rope chunk = run.handle->get(ByteRange{pos, serve_end - pos});
+                const size_t got = chunk.range().size;
+                if (got == 0)
+                    break;
+                ++stats.cache_get_requests;
+                (run.tier == CacheTier::PageCache
+                    ? stats.bytes_from_page_cache
+                    : stats.bytes_from_filesystem_cache) += got;
+                rope.append(std::move(chunk));
+                pos += got;
+                if (pos < serve_end)
+                    break;
+            }
+            HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
+                static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
+
+            /// Cache-only serve: settle the open live connection for the next read
+            /// (keep it if the next read bridges, else drop it) - the resident path
+            /// bypasses `readPhysicalWindow`'s tail where this normally happens.
+            maybeKeepLiveBufferBefore(position_phys + rope.range().size);
+
+            if (data_start_offset)
+                rope.shift(-static_cast<ssize_t>(data_start_offset));
+            LOG_TRACE(log, "readNextWindow: streamed resident [{}, {}) from cache",
+                position_phys, position_phys + rope.range().size);
+        }
+        else
+        {
+            /// A gap (or extent reached): the source-fetching path.
+            ensurePreAcquiredSlot();
+            ByteRange physical_window{position_phys, win_size};
+            LOG_TRACE(log, "readNextWindow: synchronous gap read physical [{}, {})",
+                physical_window.offset, physical_window.end());
+            StopwatchAccumulator sync_scope(stats.sync_read_us);
+            rope = readWindowLogical(physical_window, /*from_prefetch=*/false);
+            HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
+                static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
+        }
     }
 
     stats.bytes_requested += rope.range().size;
@@ -1365,30 +1444,10 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
     const bool fetched_from_source = fetchAndBackfillGaps(
         physical_window, from_prefetch, result, covered, backfill_handles);
 
-    /// A cache-only window (no source read) means the un-advanced live buffer
-    /// fell behind the read frontier. Keep it while the next window start is still
-    /// a bridgeable forward gap (<= min_bytes_for_seek) within its bound - the next
-    /// gap will skip the cached span and reuse the connection. Close it once it
-    /// has fallen too far behind to bridge, so its slot isn't held idle.
-    if (live_buffer && !reached_eof && !fetched_from_source)
-    {
-        const size_t next_physical = physical_window.end();
-        size_t next_obj_file_offset = 0;
-        const StoredObject * next_obj = offset_map.findObjectAt(next_physical, &next_obj_file_offset);
-        const bool same_object = next_obj
-            && live_buffer->slot.objectPath() == next_obj->remote_path;
-        const size_t next_local = same_object ? next_physical - next_obj_file_offset : 0;
-        const bool bridgeable = same_object
-            && next_local >= live_buffer->current_position
-            && next_local - live_buffer->current_position <= min_bytes_for_seek
-            && (!live_buffer->read_until || next_local <= *live_buffer->read_until);
-        if (!bridgeable)
-        {
-            maybeDrainLiveTail();
-            accountLiveBufferDrop(/*at_eof=*/false);
-            live_buffer.reset();
-        }
-    }
+    /// A cache-only window (no source read) leaves the live connection idle; keep
+    /// it only if the next window bridges, else drop it (see the helper).
+    if (!fetched_from_source)
+        maybeKeepLiveBufferBefore(physical_window.end());
 
     /// Strategy A pin: re-point to the partial segment under the new frontier
     /// (dropping any previous pin); clear it when there's nothing partial.
