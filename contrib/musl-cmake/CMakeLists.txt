@@ -1752,9 +1752,23 @@ set(MUSL_ALL_ASM_SOURCES ${MUSL_ARCH_ASM_SOURCES} ${MUSL_LDSO_ARCH_ASM_SOURCES})
 set(MUSL_SOURCES_BASE ${MUSL_SOURCES_BASE_COMMON})
 list(REMOVE_ITEM MUSL_SOURCES_BASE ${MUSL_ARCH_REMOVE_SOURCES})
 
-# Replace musl's naive byte-by-byte memcmp with a SIMD-friendly version.
-# See contrib/musl-cmake/memcmp.c for rationale.
-list(REMOVE_ITEM MUSL_SOURCES_BASE "${MUSL_SOURCE_DIR}/src/string/memcmp.c")
+# mem*/bcmp are provided by LLVM-libc (see contrib/libllvmlibc-cmake) which
+# dispatches to AVX-512BW/AVX2/SSE4 on x86_64 and NEON on aarch64. Drop musl's
+# byte-loop C implementations so LLVM-libc's symbols win at link time.
+list(REMOVE_ITEM MUSL_SOURCES_BASE
+    "${MUSL_SOURCE_DIR}/src/string/bcmp.c"
+    "${MUSL_SOURCE_DIR}/src/string/memcmp.c"
+    "${MUSL_SOURCE_DIR}/src/string/memcpy.c"
+    "${MUSL_SOURCE_DIR}/src/string/memmove.c"
+    "${MUSL_SOURCE_DIR}/src/string/memset.c"
+)
+
+# Drop arch-specific mem* assembly for the same reason.
+list(REMOVE_ITEM MUSL_ALL_ASM_SOURCES
+    "${MUSL_SOURCE_DIR}/src/string/x86_64/memset.s"
+    "${MUSL_SOURCE_DIR}/src/string/aarch64/memcpy.S"
+    "${MUSL_SOURCE_DIR}/src/string/aarch64/memset.S"
+)
 
 set(MUSL_C_SOURCES
     ${MUSL_SOURCES_BASE}
@@ -1762,7 +1776,6 @@ set(MUSL_C_SOURCES
     ${MUSL_LDSO_SOURCES}
     ${MUSL_LDSO_ARCH_C_SOURCES}
     ${MUSL_COMPAT_SOURCES}
-    "${CMAKE_CURRENT_SOURCE_DIR}/memcmp.c"
 )
 
 # Remove duplicates

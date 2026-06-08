@@ -5,7 +5,12 @@ if (NOT (ARCH_AMD64 OR ARCH_AARCH64))
     return()
 endif()
 
+# Memory functions (memcmp, memcpy, memmove, memset, bcmp). See the wrapper
+# TU's header comment for the per-function `weak`-attribute mechanism.
+# SIMD dispatch (__AVX512BW__/__AVX2__/__SSE4_1__ on x86_64, NEON on aarch64)
+# is selected at compile time from the inherited -march= flag.
 set(SRCS
+    "${CMAKE_CURRENT_SOURCE_DIR}/string/mem_functions.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/acos.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asin.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asinf.cpp"
