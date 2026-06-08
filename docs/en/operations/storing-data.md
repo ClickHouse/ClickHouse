@@ -47,7 +47,7 @@ It requires specifying:
 <br/>
 
 Optionally, `metadata_type` can be specified (it is equal to `local` by default), but it can also be set to `plain`, `web`, `plain_rewritable` (starting from `24.4`), and `memory`.
-Usage of `plain` metadata type is described in [plain storage section](/operations/storing-data#plain-storage), `web` metadata type can be used only with `web` object storage type, `local` metadata type stores metadata files locally (each metadata file contains mapping to files in object storage and some additional meta information about them). The `memory` metadata type keeps all mappings entirely in RAM with no persistence — see [borrow-from-cache storage](/operations/storing-data#borrow-from-cache-storage).
+Usage of `plain` metadata type is described in [plain storage section](/operations/storing-data#plain-storage), `web` metadata type can be used only with `web` object storage type, `local` metadata type stores metadata files locally (each metadata file contains mapping to files in object storage and some additional meta information about them). The `memory` metadata type keeps all mappings entirely in RAM with no persistence — see [borrow-from-cache storage](/operations/storing-data#borrow-from-cache-storage); it can be used only with `object_storage_type='borrow_from_cache'`, and conversely `borrow_from_cache` requires `metadata_type='memory'` (any other combination is rejected with `INVALID_CONFIG_PARAMETER`).
 
 For example:
 
