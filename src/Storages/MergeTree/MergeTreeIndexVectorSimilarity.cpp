@@ -12,6 +12,7 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/TargetSpecific.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
@@ -770,6 +771,52 @@ inline float turboQuantDistance(const float * query_levels, const char * code, s
     return acc;
 }
 
+#if USE_MULTITARGET_CODE
+/// AVX-512 version: 16 coordinates per iteration. The 16 codes of a chunk occupy 4 packed bytes, and coordinate i
+/// within the chunk sits at bit 2*i of that 32-bit word, so a single variable shift (srlv by {0,2,...,30}) + mask
+/// yields the 16 indices; `vpermps` then gathers the 4 reconstruction levels into 16 floats in one instruction.
+X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE
+inline float turboQuantDistanceAVX512(const float * query_levels, const char * code, size_t dimensions)
+{
+    const __m512i shifts = _mm512_set_epi32(30, 28, 26, 24, 22, 20, 18, 16, 14, 12, 10, 8, 6, 4, 2, 0);
+    const __m512i mask3 = _mm512_set1_epi32(3);
+    const __m512 levels = _mm512_set_ps(
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        TURBOQUANT_LEVELS[3], TURBOQUANT_LEVELS[2], TURBOQUANT_LEVELS[1], TURBOQUANT_LEVELS[0]);
+
+    __m512 acc = _mm512_setzero_ps();
+    size_t i = 0;
+    for (; i + 16 <= dimensions; i += 16)
+    {
+        UInt32 packed;
+        std::memcpy(&packed, code + (i >> 2), sizeof(packed)); /// 4 bytes = 16 two-bit codes
+        const __m512i idx = _mm512_and_epi32(_mm512_srlv_epi32(_mm512_set1_epi32(static_cast<int>(packed)), shifts), mask3);
+        const __m512 dequantized = _mm512_permutexvar_ps(idx, levels);
+        const __m512 diff = _mm512_sub_ps(_mm512_loadu_ps(query_levels + i), dequantized);
+        acc = _mm512_fmadd_ps(diff, diff, acc);
+    }
+    float total = _mm512_reduce_add_ps(acc);
+    for (; i < dimensions; ++i)
+    {
+        const UInt8 c = (static_cast<UInt8>(code[i >> 2]) >> ((i & 3u) * 2u)) & 3u;
+        const float diff = query_levels[i] - TURBOQUANT_LEVELS[c];
+        total += diff * diff;
+    }
+    return total;
+}
+#endif
+
+/// Dispatch to the AVX-512 kernel when available (decided once per query), else the scalar version.
+inline float turboQuantDistanceFast(const float * query_levels, const char * code, size_t dimensions, bool use_simd)
+{
+#if USE_MULTITARGET_CODE
+    if (use_simd)
+        return turboQuantDistanceAVX512(query_levels, code, dimensions);
+#endif
+    (void)use_simd;
+    return turboQuantDistance(query_levels, code, dimensions);
+}
+
 }
 
 MergeTreeIndexAggregatorVectorSimilarityFlat::MergeTreeIndexAggregatorVectorSimilarityFlat(
@@ -1066,6 +1113,12 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
     const char * query = reinterpret_cast<const char *>(query_code.data());
     const size_t dims = granule->dimensions;
 
+    /// Decide once whether the turboquant scan can use the AVX-512 dequantize+L2 kernel.
+    bool use_simd_turboquant = false;
+#if USE_MULTITARGET_CODE
+    use_simd_turboquant = turboquant && isArchSupported(TargetArch::x86_64_v4);
+#endif
+
     /// Exhaustive scan. Unlike HNSW search (O(log N) per query, fine single-threaded), a flat scan is O(N) and the
     /// index-analysis phase only parallelizes across parts, so a single large part would otherwise scan single-threaded.
     /// We compute distances in parallel into disjoint slices of `scored` and then partial-sort to the top `limit`.
@@ -1088,7 +1141,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
             if ((i & 0xFFFFu) == 0)
                 throw_if_killed();
             const float dist = turboquant
-                ? turboQuantDistance(query_levels.data(), base + i * bytes_per_vector, dims)
+                ? turboQuantDistanceFast(query_levels.data(), base + i * bytes_per_vector, dims, use_simd_turboquant)
                 : static_cast<float>(metric(base + i * bytes_per_vector, query));
             scored[i] = {dist, static_cast<UInt32>(i)};
         }
