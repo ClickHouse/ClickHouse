@@ -122,11 +122,6 @@ QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
     return std::make_unique<LimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
 }
 
-void LimitByStep::applyOrder(SortDescription sort_description)
-{
-    input_sorted_by_keys = sort_description.hasPrefix(columns);
-}
-
 void registerLimitByStep(QueryPlanStepRegistry & registry);
 void registerLimitByStep(QueryPlanStepRegistry & registry)
 {
