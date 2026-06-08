@@ -263,7 +263,6 @@ def test_optimize_manifest_files(started_cluster_iceberg_with_spark, storage_typ
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
     snapshot_id = get_last_snapshot(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/")
-    snapshot_timestamp = datetime.now(timezone.utc)
 
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_snapshot_id = {snapshot_id}") == instance.query(
         "SELECT number FROM numbers(10, 90)"
