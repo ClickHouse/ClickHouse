@@ -32,10 +32,12 @@ namespace
             ColumnString::Offsets & res_offsets,
             size_t input_rows_count)
         {
-            /// The size of result is always not more than the size of source.
-            /// Because entities decodes to the shorter byte sequence.
-            /// Example: &#xx... &#xx... will decode to UTF-8 byte sequence not longer than 4 bytes.
-            res_data.resize(data.size());
+            /// Most entities decode to a byte sequence shorter than the reference, but two HTML5
+            /// references decode to two code points: `&nGt;` -> `≫⃒` and `&nLt;` -> `≪⃒`, which is
+            /// 6 bytes from a 5-byte reference. That is the largest expansion in the table, so the
+            /// output is at most `data.size() * 6 / 5`. Reserve for that and shrink to the real size
+            /// at the end; otherwise a string of repeated `&nGt;` overflows the result buffer.
+            res_data.resize(data.size() + data.size() / 5 + 1);
 
             res_offsets.resize(input_rows_count);
 
