@@ -1,0 +1,16 @@
+--- trailing semicolon in base query ---
+3
+4
+--- trailing line comment in base query ---
+4
+--- top-level FORMAT clause is relocated to the outer query ---
+{"number":3}
+{"number":4}
+--- explicit SELECT list + ORDER BY composed on the AST ---
+40
+30
+20
+10
+0
+--- a non-SELECT base query cannot be wrapped ---
+can only wrap a SELECT query

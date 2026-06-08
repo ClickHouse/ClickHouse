@@ -5,7 +5,19 @@
 #include <Common/quoteString.h>
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Poco/String.h>
+
+#include <fmt/format.h>
 
 #include <array>
 
@@ -285,38 +297,99 @@ String wrapHTTPQuery(
     const String & base_query,
     const String & select_expr,
     const String & filter_expr,
-    const String & order_expr)
+    const String & order_expr,
+    size_t max_query_size,
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
 {
     if (select_expr.empty() && filter_expr.empty() && order_expr.empty())
         return base_query;
 
-    /// `base_query` is embedded as a subquery: `SELECT ... FROM (<base_query>) ...`. A trailing
-    /// semicolon (or trailing whitespace) is legal for a top-level statement but a syntax error
-    /// inside the parentheses, so strip it before wrapping. Other top-level-only suffixes that
-    /// cannot appear inside a subquery (e.g. a `FORMAT` clause) are not wrapped — the output format
-    /// should be selected via the `format` / `output_format` / `default_format` settings when query
-    /// construction is in use.
-    String inner = base_query;
-    while (!inner.empty() && (inner.back() == ';' || inner.back() == ' '
-        || inner.back() == '\t' || inner.back() == '\n' || inner.back() == '\r'))
-        inner.pop_back();
+    /// Wrapping is performed on the AST, never by concatenating query text: each of `base_query`,
+    /// `select_expr`, `filter_expr` and `order_expr` is parsed independently and the result is
+    /// assembled from AST nodes. This is robust against a trailing `;`, a top-level `FORMAT` clause,
+    /// comments, operator precedence, etc., none of which a text-level wrap could handle.
+    auto parse_component = [&](IParser & parser, const String & text, const char * what) -> ASTPtr
+    {
+        return parseQuery(parser, text.data(), text.data() + text.size(),
+            fmt::format("HTTP query construction ({})", what),
+            max_query_size, max_parser_depth, max_parser_backtracks);
+    };
 
-    String result = "SELECT ";
-    result += select_expr.empty() ? "*" : select_expr;
-    result += " FROM (";
-    result += inner;
-    result += ")";
+    /// The base query becomes a derived table, so it must be a `SELECT` / `UNION` of selects.
+    ParserQuery base_parser(base_query.data() + base_query.size());
+    ASTPtr base_ast = parse_component(base_parser, base_query, "base query");
+    auto * base_select = base_ast->as<ASTSelectWithUnionQuery>();
+    if (!base_select)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Query construction settings (`select`/`filter`/`order`/`sort`) can only wrap a SELECT query, "
+            "but the base query is: {}", base_ast->getID());
+
+    /// `FORMAT`, `INTO OUTFILE` and `SETTINGS` are top-level-only and cannot live inside a derived
+    /// table. `INTO OUTFILE` makes no sense for an HTTP response, so reject it; `FORMAT` and
+    /// `SETTINGS` are detached from the base query and re-attached to the outer wrapping query.
+    if (base_select->out_file)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`INTO OUTFILE` cannot be combined with HTTP query-construction settings.");
+    ASTPtr base_format = base_select->format_ast;
+    ASTPtr base_settings = base_select->settings_ast;
+    base_select->reset(base_select->format_ast);
+    base_select->reset(base_select->settings_ast);
+
+    auto outer_select = make_intrusive<ASTSelectQuery>();
+
+    /// SELECT list.
+    ASTPtr select_list;
+    if (select_expr.empty())
+    {
+        select_list = make_intrusive<ASTExpressionList>();
+        select_list->children.push_back(make_intrusive<ASTAsterisk>());
+    }
+    else
+    {
+        ParserNotEmptyExpressionList select_parser(/* allow_alias_without_as_keyword= */ true);
+        select_list = parse_component(select_parser, select_expr, "`select` setting");
+    }
+    outer_select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+
+    /// FROM (<base_query>).
+    auto subquery = make_intrusive<ASTSubquery>(std::move(base_ast));
+    auto table_expression = make_intrusive<ASTTableExpression>();
+    table_expression->subquery = subquery;
+    table_expression->children.push_back(subquery);
+    auto tables_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    tables_element->table_expression = table_expression;
+    tables_element->children.push_back(table_expression);
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(std::move(tables_element));
+    outer_select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
+    /// WHERE.
     if (!filter_expr.empty())
     {
-        result += " WHERE ";
-        result += filter_expr;
+        ParserExpression filter_parser;
+        outer_select->setExpression(ASTSelectQuery::Expression::WHERE, parse_component(filter_parser, filter_expr, "`filter` setting"));
     }
+
+    /// ORDER BY.
     if (!order_expr.empty())
     {
-        result += " ORDER BY ";
-        result += order_expr;
+        ParserOrderByExpressionList order_parser;
+        outer_select->setExpression(ASTSelectQuery::Expression::ORDER_BY, parse_component(order_parser, order_expr, "`order` / `sort` setting"));
     }
-    return result;
+
+    /// Wrap the outer SELECT in a SELECT-with-UNION so it is a complete query, and re-attach the
+    /// base query's top-level `FORMAT` / `SETTINGS`.
+    auto outer_union = make_intrusive<ASTSelectWithUnionQuery>();
+    outer_union->list_of_selects = make_intrusive<ASTExpressionList>();
+    outer_union->list_of_selects->children.push_back(std::move(outer_select));
+    outer_union->children.push_back(outer_union->list_of_selects);
+    if (base_format)
+        outer_union->set(outer_union->format_ast, base_format);
+    if (base_settings)
+        outer_union->set(outer_union->settings_ast, base_settings);
+
+    return outer_union->formatWithSecretsOneLine();
 }
 
 
