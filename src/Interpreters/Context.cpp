@@ -1282,6 +1282,7 @@ ContextData::ContextData(const ContextData &o) :
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
     runtime_filter_lookup(o.runtime_filter_lookup),
+    columns_cache_write_budget(o.columns_cache_write_budget),
     kitchen_sink(o.kitchen_sink),
     part_uuids(o.part_uuids),
     ignored_part_uuids(o.ignored_part_uuids),
@@ -1325,6 +1326,7 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
     res->query_access_info = std::make_shared<QueryAccessInfo>();
     res->query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     res->async_read_counters = std::make_shared<AsyncReadCounters>();
+    res->columns_cache_write_budget = std::make_shared<ColumnsCacheWriteBudget>();
     return res;
 }
 
@@ -3508,6 +3510,7 @@ void Context::makeQueryContext()
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>(*query_privileges_info);
     async_read_counters = std::make_shared<AsyncReadCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
+    columns_cache_write_budget = std::make_shared<ColumnsCacheWriteBudget>();
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
@@ -8037,6 +8040,11 @@ void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_looku
 RuntimeFilterLookupPtr Context::getRuntimeFilterLookup() const
 {
     return runtime_filter_lookup;
+}
+
+ColumnsCacheWriteBudgetPtr Context::getColumnsCacheWriteBudget() const
+{
+    return columns_cache_write_budget;
 }
 
 UInt64 Context::getClientProtocolVersion() const

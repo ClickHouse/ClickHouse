@@ -131,6 +131,14 @@ private:
     size_t cache_row_begin = 0;
     size_t cache_task_last_mark = 0;
     std::vector<size_t> cache_column_sizes_at_task_start;
+    /// Table invalidation generation captured when this task's read started.
+    /// Passed to ColumnsCache::set so a deferred write is dropped if the table was
+    /// invalidated (e.g. RENAME COLUMN) after the read began. See getTableGeneration.
+    UInt64 cache_table_generation = 0;
+
+    /// True if the whole task range can be served from the columns cache, so the
+    /// prefetch path can skip scheduling stream reads. See prefetchBeginOfRange.
+    bool canServeWholeRangeFromCache() const;
 };
 
 }

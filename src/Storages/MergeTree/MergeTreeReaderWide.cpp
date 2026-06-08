@@ -89,11 +89,60 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
 }
 
+bool MergeTreeReaderWide::canServeWholeRangeFromCache() const
+{
+    /// Mirror the cache-hit conditions used in readRows, but for the reader's
+    /// entire mark range, to decide whether prefetching can be skipped.
+    if (!columns_cache || !settings.enable_columns_cache_reads)
+        return false;
+    if (data_part_info_for_read->getTableUUID() == UUIDHelpers::Nil
+        || data_part_info_for_read->isProjectionPart())
+        return false;
+    if (all_mark_ranges.getNumberOfMarks() == 0)
+        return false;
+
+    const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
+    const size_t row_begin = index_granularity.getMarkStartingRow(all_mark_ranges.front().begin);
+    const size_t row_end = (all_mark_ranges.back().end < index_granularity.getMarksCount())
+        ? index_granularity.getMarkStartingRow(all_mark_ranges.back().end)
+        : data_part_info_for_read->getRowCount();
+
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    {
+        if (isColumnDroppedByPendingMutation(pos))
+            continue;
+
+        auto intersecting = columns_cache->getIntersecting(
+            data_part_info_for_read->getTableUUID(),
+            data_part_info_for_read->getPartName(),
+            columns_to_read[pos].name,
+            row_begin,
+            row_end);
+
+        /// Need exactly one cached block fully containing the requested range,
+        /// the same condition readRows uses to serve a column from cache.
+        if (!(intersecting.size() == 1
+              && intersecting[0].first.row_begin <= row_begin
+              && intersecting[0].first.row_end >= row_end))
+            return false;
+    }
+
+    return true;
+}
+
 void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
 {
     prefetched_streams.clear();
 
     if (all_mark_ranges.getNumberOfMarks() == 0)
+        return;
+
+    /// If the whole range can be served from the columns cache, readRows will not
+    /// touch the data streams, so issuing prefetches here would spend I/O
+    /// (object-storage reads on remote parts) fetching data we will never read.
+    /// Skip the prefetch in that case; if the entry is evicted before readRows,
+    /// it falls back to a normal (unprefetched) disk read, which stays correct.
+    if (canServeWholeRangeFromCache())
         return;
 
     try
@@ -440,6 +489,10 @@ size_t MergeTreeReaderWide::readRows(
                 cache_row_begin = row_begin;
                 cache_task_last_mark = current_task_last_mark;
                 cache_column_sizes_at_task_start.resize(num_columns);
+                /// Capture the table invalidation generation at the start of the
+                /// read. The deferred write below passes it to set(), which drops
+                /// the write if the table was invalidated after this point.
+                cache_table_generation = columns_cache->getTableGeneration(data_part_info_for_read->getTableUUID());
             }
 
             for (size_t pos = 0; pos < num_columns; ++pos)
@@ -527,12 +580,30 @@ size_t MergeTreeReaderWide::readRows(
                     LOG_TEST(log, "Caching columns (deferred): row_begin={}, row_end={}, rows={}",
                         cache_row_begin, row_end, total_rows_for_task);
 
+                    /// Per-query runtime cap state. The budget only grows during the
+                    /// query, so once it is exhausted we stop caching the remaining
+                    /// columns of this task entirely instead of skipping one at a time.
+                    const auto & bytes_written = settings.columns_cache_bytes_written_so_far;
+                    const size_t max_bytes = settings.columns_cache_max_bytes_to_write_to_cache;
+
                     for (size_t pos = 0; pos < num_columns; ++pos)
                     {
                         if (res_columns[pos] && !res_columns[pos]->empty()
                             && !partially_read_columns.contains(columns_to_read[pos].name)
                             && res_columns[pos]->size() > cache_column_sizes_at_task_start[pos])
                         {
+                            /// Check the budget BEFORE cut()/entry allocation, so an exhausted
+                            /// budget does not keep paying the copy and allocation cost for
+                            /// writes that will be skipped — exactly the work this cap exists
+                            /// to avoid for large scans. Slight overshoot under concurrency is
+                            /// acceptable; the budget is advisory.
+                            if (max_bytes > 0 && bytes_written && bytes_written->load(std::memory_order_relaxed) >= max_bytes)
+                            {
+                                LOG_TEST(log, "Skipping cache write: per-query budget exhausted ({} >= {})",
+                                    bytes_written->load(std::memory_order_relaxed), max_bytes);
+                                break;
+                            }
+
                             size_t rows_to_cache = res_columns[pos]->size() - cache_column_sizes_at_task_start[pos];
 
                             /// Use cut to create an independent copy for the cache.
@@ -554,20 +625,13 @@ size_t MergeTreeReaderWide::readRows(
                             auto entry = std::make_shared<ColumnsCacheEntry>(
                                 ColumnsCacheEntry{std::move(column_to_cache), rows_to_cache});
 
-                            /// Per-query runtime cap: stop writing once the pool has spent its budget.
-                            /// Slight overshoot under concurrency is acceptable — the budget is advisory.
-                            const auto & bytes_written = settings.columns_cache_bytes_written_so_far;
-                            const size_t max_bytes = settings.columns_cache_max_bytes_to_write_to_cache;
-                            if (max_bytes > 0 && bytes_written && bytes_written->load(std::memory_order_relaxed) >= max_bytes)
-                            {
-                                LOG_TEST(log, "Skipping cache write: per-query budget exhausted ({} >= {})",
-                                    bytes_written->load(std::memory_order_relaxed), max_bytes);
-                                continue;
-                            }
-
                             const size_t entry_weight = ColumnsCacheWeightFunction{}(*entry);
-                            columns_cache->set(cache_key, entry);
-                            if (bytes_written)
+                            /// Charge the budget only for entries that were actually inserted.
+                            /// `set` is a no-op when an existing wider interval already covers
+                            /// this range; a no-op write must not consume the budget, otherwise
+                            /// a query could exhaust the cap and skip later real inserts even
+                            /// though those bytes were never written to the cache.
+                            if (columns_cache->set(cache_key, entry, cache_table_generation) && bytes_written)
                                 bytes_written->fetch_add(entry_weight, std::memory_order_relaxed);
 
                             LOG_TEST(log, "Cached column: {}, row_begin={}, row_end={}, rows={}",

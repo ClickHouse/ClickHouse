@@ -32,19 +32,45 @@ namespace ErrorCodes
 
 static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read, const Settings & settings);
 
-/// Compute the per-pool columns cache write policy from the parts/columns to be read.
-/// Two budgets:
-///   - estimate budget: if the total compressed bytes the read is expected to fetch
-///     exceeds it, disable cache writes for the whole pool, so a single large scan
-///     does not displace useful data from the cache.
-///   - runtime budget: a per-pool atomic counter shared across readers; once it
-///     reaches the budget, further writes for this pool are skipped.
+/// Estimate the compressed bytes a read pool will actually fetch for `columns`
+/// from one part, scaled by the fraction of marks the query selects from that
+/// part. `getSizeOfColumns` returns the size of the whole column in the part, but
+/// a query that reads a few marks of a large part should not be charged for the
+/// entire part: that would trip the estimate budget on a tiny read and defeat the
+/// cache exactly where it helps. Scaling by selected/total marks keeps the budget
+/// aligned with "bytes estimated to be read by a query".
+static size_t estimateSelectedColumnsSize(const RangesInDataPart & part, const Names & columns, const Settings & settings)
+{
+    const size_t full_size = getSizeOfColumns(*part.data_part, columns, settings);
+    const size_t total_marks = part.data_part->getMarksCount();
+    if (total_marks == 0)
+        return full_size;
+
+    size_t selected_marks = 0;
+    for (const auto & range : part.ranges)
+        selected_marks += range.end - range.begin;
+
+    if (selected_marks >= total_marks)
+        return full_size;
+
+    const double fraction = static_cast<double>(selected_marks) / static_cast<double>(total_marks);
+    return static_cast<size_t>(static_cast<double>(full_size) * fraction);
+}
+
+/// Compute the columns cache write policy for a pool from the parts/columns to be read.
+/// Two budgets, both enforced per query (shared via ColumnsCacheWriteBudget across all
+/// of the query's read pools, not per pool):
+///   - estimate budget: if the total compressed bytes the query is expected to fetch
+///     exceeds it, disable cache writes for the rest of the query, so a single large
+///     scan does not displace useful data from the cache.
+///   - runtime budget: a query-scoped atomic counter; once it reaches the budget,
+///     further writes for the query are skipped.
 /// Either value of 0 means "use half of the server-level columns_cache_size".
 static MergeTreeReaderSettings adjustReaderSettingsForColumnsCacheWrites(
     MergeTreeReaderSettings settings,
     const RangesInDataParts & parts,
     const Names & columns,
-    const Settings & query_settings,
+    const ContextPtr & context,
     const ColumnsCachePtr & columns_cache,
     bool use_columns_cache)
 {
@@ -58,24 +84,42 @@ static MergeTreeReaderSettings adjustReaderSettingsForColumnsCacheWrites(
         return settings;
     }
 
+    const auto & query_settings = context->getSettingsRef();
+
+    /// Per-query shared write accounting. All read pools of one query share this
+    /// object so the budgets below apply to the whole query, not to each pool.
+    const auto budget = context->getColumnsCacheWriteBudget();
+
+    /// If an earlier pool of this query already exceeded the estimate budget,
+    /// writes are disabled for the rest of the query.
+    if (budget && budget->writes_disabled.load(std::memory_order_relaxed))
+    {
+        settings.enable_columns_cache_writes = false;
+        return settings;
+    }
+
     /// Don't apply the estimate gate when the caller passed no columns (e.g. some
     /// projection paths build the column list later). getSizeOfColumns falls back
     /// to the whole-part size in that case, which would falsely trip the gate.
-    if (!columns.empty())
+    if (budget && !columns.empty())
     {
         size_t estimate_budget = query_settings[Setting::columns_cache_max_estimated_compressed_bytes_to_write_to_cache];
         if (estimate_budget == 0)
             estimate_budget = cache_size / 2;
 
-        size_t estimated_bytes = 0;
+        size_t pool_estimated_bytes = 0;
         for (const auto & part : parts)
+            pool_estimated_bytes += estimateSelectedColumnsSize(part, columns, query_settings);
+
+        /// Accumulate into the query-wide total and compare against the budget, so
+        /// the gate enforces a true per-query budget across all pools.
+        const size_t query_total
+            = budget->estimated_bytes.fetch_add(pool_estimated_bytes, std::memory_order_relaxed) + pool_estimated_bytes;
+        if (query_total > estimate_budget)
         {
-            estimated_bytes += getSizeOfColumns(*part.data_part, columns, query_settings);
-            if (estimated_bytes > estimate_budget)
-            {
-                settings.enable_columns_cache_writes = false;
-                return settings;
-            }
+            budget->writes_disabled.store(true, std::memory_order_relaxed);
+            settings.enable_columns_cache_writes = false;
+            return settings;
         }
     }
 
@@ -84,7 +128,14 @@ static MergeTreeReaderSettings adjustReaderSettingsForColumnsCacheWrites(
         runtime_budget = cache_size / 2;
 
     settings.columns_cache_max_bytes_to_write_to_cache = runtime_budget;
-    settings.columns_cache_bytes_written_so_far = std::make_shared<std::atomic<size_t>>(0);
+    /// Point the reader at the query-scoped counter (aliasing shared_ptr) so the
+    /// runtime budget is shared across all of the query's pools rather than reset
+    /// to zero per pool.
+    if (budget)
+        settings.columns_cache_bytes_written_so_far
+            = std::shared_ptr<std::atomic<size_t>>(budget, &budget->bytes_written);
+    else
+        settings.columns_cache_bytes_written_so_far = std::make_shared<std::atomic<size_t>>(0);
     return settings;
 }
 
@@ -116,7 +167,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
           reader_settings_,
           parts_ranges,
           column_names_,
-          context_->getSettingsRef(),
+          context_,
           pool_settings_.use_columns_cache ? context_->getGlobalContext()->getColumnsCache() : nullptr,
           pool_settings_.use_columns_cache))
     , column_names(column_names_)

@@ -163,7 +163,14 @@ ColumnsCache::getIntersecting(
     return result;
 }
 
-void ColumnsCache::set(const Key & key, const MappedPtr & mapped)
+UInt64 ColumnsCache::getTableGeneration(const UUID & table_uuid)
+{
+    std::lock_guard lock(interval_index_mutex);
+    auto it = table_generations.find(table_uuid);
+    return it == table_generations.end() ? 0 : it->second;
+}
+
+bool ColumnsCache::set(const Key & key, const MappedPtr & mapped, UInt64 expected_table_generation)
 {
     /// Hold interval_index_mutex across all updates so getIntersecting / clearAll
     /// observe a consistent view, and so that overlap detection cannot race with
@@ -171,6 +178,18 @@ void ColumnsCache::set(const Key & key, const MappedPtr & mapped)
     /// interval_index_mutex first, then briefly the CacheBase internal mutex
     /// (taken inside Base::set / Base::remove). No lock-order cycle.
     std::lock_guard lock(interval_index_mutex);
+
+    /// Reject the write if the table was invalidated (removeTable) after the
+    /// reader captured the generation. Otherwise a deferred write from a reader
+    /// that started before a `RENAME COLUMN` could repopulate the cache with
+    /// stale data the invalidation was meant to drop. Checked under the same lock
+    /// removeTable uses, so the comparison cannot race with a concurrent bump.
+    {
+        auto gen_it = table_generations.find(key.table_uuid);
+        const UInt64 current_generation = gen_it == table_generations.end() ? 0 : gen_it->second;
+        if (current_generation != expected_table_generation)
+            return false;
+    }
 
     PartIdentifier part_id{key.table_uuid, key.part_name};
     auto & intervals = interval_index[part_id][key.column_name];
@@ -202,7 +221,7 @@ void ColumnsCache::set(const Key & key, const MappedPtr & mapped)
                 /// is not called and stale entries never get cleaned up
                 /// lazily).
                 if (Base::contains(prev_key))
-                    return;
+                    return false;
                 it = intervals.erase(prev);
             }
             else
@@ -223,7 +242,7 @@ void ColumnsCache::set(const Key & key, const MappedPtr & mapped)
     if (it != intervals.end() && it->first.first == key.row_begin && it->first.second >= key.row_end)
     {
         if (Base::contains(it->second))
-            return;
+            return false;
         it = intervals.erase(it);
     }
 
@@ -248,6 +267,8 @@ void ColumnsCache::set(const Key & key, const MappedPtr & mapped)
         compactIntervalIndex();
         sets_since_compaction = 0;
     }
+
+    return true;
 }
 
 void ColumnsCache::removeTable(const UUID & table_uuid)
@@ -255,6 +276,11 @@ void ColumnsCache::removeTable(const UUID & table_uuid)
     /// Lock ordering matches removePart: interval_index_mutex first, then the
     /// CacheBase mutex (taken inside Base::remove). No lock-order cycle.
     std::lock_guard lock(interval_index_mutex);
+
+    /// Advance the table's invalidation generation before clearing entries, so a
+    /// deferred set() from a reader that captured an older generation is rejected
+    /// and cannot repopulate the cache with stale data after this invalidation.
+    ++table_generations[table_uuid];
 
     std::vector<PartIdentifier> parts_to_remove;
     std::vector<Key> keys_to_remove;

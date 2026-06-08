@@ -115,6 +115,10 @@ private:
     PartIndexMap interval_index;
     mutable std::mutex interval_index_mutex;
 
+    /// Per-table invalidation generation, advanced by removeTable. See
+    /// getTableGeneration. Guarded by interval_index_mutex.
+    std::unordered_map<UUID, UInt64> table_generations;
+
     /// Counts set() calls since the last compaction. Used to amortize the cost of
     /// compactIntervalIndex() across many inserts.
     size_t sets_since_compaction = 0;
@@ -158,7 +162,25 @@ public:
     /// Maintains a non-overlapping invariant on the per-column interval map so
     /// that `getIntersecting` runs in O(log N) instead of scanning every entry
     /// before `lower_bound`. See implementation for details.
-    void set(const Key & key, const MappedPtr & mapped);
+    /// Returns true if an entry was actually inserted, false if the call was a
+    /// no-op (an existing wider interval already covers this range, so nothing
+    /// was written, or the write was rejected as stale - see below). Callers use
+    /// the return value to avoid charging the per-query write budget for writes
+    /// that never landed in the cache.
+    ///
+    /// `expected_table_generation` is the table invalidation generation the
+    /// caller captured (via getTableGeneration) when it started reading the data
+    /// being cached. If it no longer matches the table's current generation, the
+    /// table was invalidated (e.g. by a `RENAME COLUMN`) after the read started,
+    /// so this write would repopulate the cache with stale data and is dropped.
+    bool set(const Key & key, const MappedPtr & mapped, UInt64 expected_table_generation);
+
+    /// Current invalidation generation for a table. Advances each time
+    /// removeTable is called (a metadata change that can remap column names). A
+    /// reader captures this at the start of a read and passes it back to `set`,
+    /// so a deferred write issued by a reader that started before a removeTable
+    /// cannot repopulate the cache with stale data after invalidation.
+    UInt64 getTableGeneration(const UUID & table_uuid);
 
     /// Remove all cached entries for a specific data part.
     /// Should be called when a part is dropped, merged, or mutated.
@@ -236,5 +258,30 @@ private:
 };
 
 using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;
+
+/// Per-query shared accounting for columns cache writes.
+/// One instance is created per query (in Context::makeQueryContext) and shared
+/// by all of that query's read pools, so the documented per-query budgets
+/// (`columns_cache_max_bytes_to_write_to_cache` and
+/// `columns_cache_max_estimated_compressed_bytes_to_write_to_cache`) apply to the
+/// query as a whole rather than to each `MergeTreeReadPoolBase` independently.
+/// Without this, a query with several MergeTree read pipelines (for example a
+/// `JOIN`, `UNION`, or subqueries) would let each pool write up to the full cap,
+/// so total writes could exceed the configured budget by a multiple.
+struct ColumnsCacheWriteBudget
+{
+    /// Running total of bytes actually written to the cache by this query.
+    std::atomic<size_t> bytes_written{0};
+
+    /// Running total of compressed bytes this query's read pools estimate they
+    /// will read, accumulated as the pools are constructed.
+    std::atomic<size_t> estimated_bytes{0};
+
+    /// Latches to true once `estimated_bytes` exceeds the estimate budget, after
+    /// which every later pool of the query disables cache writes.
+    std::atomic<bool> writes_disabled{false};
+};
+
+using ColumnsCacheWriteBudgetPtr = std::shared_ptr<ColumnsCacheWriteBudget>;
 
 }
