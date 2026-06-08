@@ -59,3 +59,25 @@ ALTER TABLE t_bool_multi DROP PARTITION (1, 2);
 SELECT a, b, val FROM t_bool_multi ORDER BY val;
 
 DROP TABLE t_bool_multi;
+
+-- Test Tuple-valued partition key containing Bool
+DROP TABLE IF EXISTS t_bool_tuple;
+CREATE TABLE t_bool_tuple (t Tuple(Bool, UInt32), val String) ENGINE = MergeTree() ORDER BY val PARTITION BY t;
+INSERT INTO t_bool_tuple VALUES (tuple(true, 1), 'a'), (tuple(false, 2), 'b');
+
+SELECT 'drop partition tuple((true, 1))';
+ALTER TABLE t_bool_tuple DROP PARTITION tuple((true, 1));
+SELECT t, val FROM t_bool_tuple ORDER BY val;
+
+DROP TABLE t_bool_tuple;
+
+-- Test Array-valued partition key containing Bool
+DROP TABLE IF EXISTS t_bool_array;
+CREATE TABLE t_bool_array (a Array(Bool), val String) ENGINE = MergeTree() ORDER BY val PARTITION BY a;
+INSERT INTO t_bool_array VALUES ([true, false], 'a'), ([false], 'b');
+
+SELECT 'drop partition [true, false]';
+ALTER TABLE t_bool_array DROP PARTITION [true, false];
+SELECT a, val FROM t_bool_array ORDER BY val;
+
+DROP TABLE t_bool_array;
