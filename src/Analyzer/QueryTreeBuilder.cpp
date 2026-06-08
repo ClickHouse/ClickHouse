@@ -228,7 +228,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     if (select_lists.size() == 1)
         return buildSelectExpression(select_lists[0], is_subquery, cte_data, nullptr /*aliases*/, context);
 
-    SelectUnionMode union_mode;
+    SelectUnionMode union_mode = {};
     if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::INTERSECT_ALL)
         union_mode = SelectUnionMode::INTERSECT_ALL;
     else if (select_intersect_except_query_typed.final_operator == ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT)
@@ -1142,7 +1142,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             QueryTreeNodePtr join_node;
             if (result_join_kind == JoinKind::Cross || result_join_kind == JoinKind::Comma)
             {
-                CrossJoinNode * cross_join;
+                CrossJoinNode * cross_join = nullptr;
                 if (auto * left_cross_join = left_table_expression->as<CrossJoinNode>())
                     cross_join = left_cross_join;
                 else

@@ -32,6 +32,8 @@
 
 using namespace DB;
 
+extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv);
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 ContextMutablePtr context;
 
@@ -44,7 +46,7 @@ size_t max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
 size_t max_query_size = DBMS_DEFAULT_MAX_QUERY_SIZE;
 
 // Helper function to check if this is a merge run
-bool isMerge(int argc, char ** argv)
+static bool isMerge(int argc, char ** argv)
 {
     for (int i = 1; i < argc; ++i)
     {
@@ -58,7 +60,7 @@ bool isMerge(int argc, char ** argv)
 }
 
 // Helper function to parse settings from command line arguments
-NameToNameMap parseSettingsFromArgs(int argc, char ** argv)
+static NameToNameMap parseSettingsFromArgs(int argc, char ** argv)
 {
     NameToNameMap settings;
     bool ignore_remaining = false;
