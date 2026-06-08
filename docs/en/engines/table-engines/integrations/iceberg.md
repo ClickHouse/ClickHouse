@@ -125,6 +125,22 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
 
 ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp or snapshot ID.
 
+## Manifest file compaction {#manifest-compaction}
+
+Over time, frequent writes to an Iceberg table can accumulate a large number of small manifest files in the current snapshot's manifest list. A long manifest list slows down query planning, because every manifest file has to be read to discover the data files. ClickHouse can compact these manifest files into fewer, larger ones using the `OPTIMIZE TABLE ... MANIFEST` statement:
+
+```sql
+OPTIMIZE TABLE example_table MANIFEST SETTINGS allow_experimental_iceberg_compaction = 1;
+```
+
+This produces a new snapshot (a `replace` operation) that references the same data files through a consolidated set of manifest files. No data files are rewritten and no rows are added, deleted, or deduplicated — only the manifest layer is rearranged.
+
+### Requirements and behavior {#manifest-compaction-behavior}
+
+- The feature is experimental and gated behind the `allow_experimental_iceberg_compaction` setting. The statement throws an exception if the setting is not enabled.
+- Compaction is only attempted when the number of manifest files in the current snapshot's manifest list exceeds the threshold given by the `iceberg_manifest_min_count_to_compact` setting (default `30`). If the current count is less than or equal to the threshold, compaction is skipped and no new snapshot is created. Set the threshold lower to compact more eagerly.
+- `OPTIMIZE TABLE ... MANIFEST` is supported only for Iceberg tables. Running it against any other table engine throws an exception.
+
 ## Processing of tables with deleted rows {#deleted-rows}
 
 ClickHouse supports reading Iceberg tables that use the following deletion methods:

@@ -2,6 +2,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 
 #include <climits>
+#include <optional>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -38,17 +39,15 @@ Poco::JSON::Object::Ptr deepCopy(Poco::JSON::Object::Ptr obj)
 }
 
 /// Read a numeric `total-*` field from the parent snapshot's summary.
-/// Iceberg only requires totals on snapshots that change row-level state, so older
-/// Spark-written tables (especially v1, or post-removeOrphanFiles) routinely omit
-/// some of total-data-files/total-delete-files/total-position-deletes/
-/// total-equality-deletes. Treat any missing or null field as 0.
-Int64 readParentTotal(Poco::JSON::Object::Ptr parent_snapshot, const char * field_name)
+/// Returns std::nullopt when the parent (or its summary, or the field itself) is absent
+/// or null, so callers can distinguish a missing counter from a genuine zero.
+std::optional<Int64> readParentTotal(Poco::JSON::Object::Ptr parent_snapshot, const char * field_name)
 {
     if (!parent_snapshot || !parent_snapshot->has(Iceberg::f_summary))
-        return 0;
+        return std::nullopt;
     auto parent_summary = parent_snapshot->getObject(Iceberg::f_summary);
     if (!parent_summary || !parent_summary->has(field_name) || parent_summary->isNull(field_name))
-        return 0;
+        return std::nullopt;
     return parse<Int64>(parent_summary->getValue<String>(field_name));
 }
 
@@ -65,16 +64,29 @@ void setSnapshotTotals(
     Int64 added_position_deletes,
     Int64 added_equality_deletes)
 {
-    auto set_total = [&](const char * field_name, Int64 added)
+    /// Data totals (records, files size, data files) describe the whole table state.
+    /// If the parent omits one we must not invent a zero: that would publish a snapshot
+    /// falsely claiming the table is empty even though the data files are unchanged.
+    /// Preserve the absence instead (these totals are optional in the Iceberg spec).
+    auto set_data_total = [&](const char * field_name, Int64 added)
     {
-        summary->set(field_name, std::to_string(readParentTotal(parent_snapshot, field_name) + added));
+        auto parent_value = readParentTotal(parent_snapshot, field_name);
+        if (!parent_value.has_value())
+            return;
+        summary->set(field_name, std::to_string(*parent_value + added));
     };
-    set_total(Iceberg::f_total_records, added_records);
-    set_total(Iceberg::f_total_files_size, added_files_size);
-    set_total(Iceberg::f_total_data_files, added_data_files);
-    set_total(Iceberg::f_total_delete_files, added_delete_files);
-    set_total(Iceberg::f_total_position_deletes, added_position_deletes);
-    set_total(Iceberg::f_total_equality_deletes, added_equality_deletes);
+    /// Delete-family totals: a missing counter is defined to mean "none", so treating
+    /// an absent parent value as 0 is safe.
+    auto set_delete_total = [&](const char * field_name, Int64 added)
+    {
+        summary->set(field_name, std::to_string(readParentTotal(parent_snapshot, field_name).value_or(0) + added));
+    };
+    set_data_total(Iceberg::f_total_records, added_records);
+    set_data_total(Iceberg::f_total_files_size, added_files_size);
+    set_data_total(Iceberg::f_total_data_files, added_data_files);
+    set_delete_total(Iceberg::f_total_delete_files, added_delete_files);
+    set_delete_total(Iceberg::f_total_position_deletes, added_position_deletes);
+    set_delete_total(Iceberg::f_total_equality_deletes, added_equality_deletes);
 }
 
 bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var new_type)
