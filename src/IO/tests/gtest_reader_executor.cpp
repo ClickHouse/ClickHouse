@@ -3229,6 +3229,69 @@ TEST(ReaderExecutor, UnknownSizePrefetchedFinalBytesAreServed)
     EXPECT_TRUE(r3.empty());
 }
 
+TEST(ReaderExecutor, PlanFirstResidentRunBetweenGapsHasNoPrefetchInFlight)
+{
+    /// Regression guard for the plan-first invariant: a prefetch is in flight ONLY
+    /// at a gap cursor, so the resident fast-path's `chassert(!prefetch_handle)`
+    /// never fires. `maybeTriggerPrefetch` is cursor-keyed (skip when the cursor is
+    /// resident), not window-keyed (launch whenever the window has a gap).
+    ///
+    /// Layout: cold [0,100), CACHED [100,200), cold [200,300), window 300. At the
+    /// resident cursor 100 the window [100,300) still spans the [200,300) gap, so a
+    /// window-keyed prefetch would launch there and the next (resident) read would
+    /// trip the chassert. `SyncPrefetchPool` runs the prefetch inline, making the
+    /// race deterministic.
+    constexpr size_t total = 300;
+    String content(total, 0);
+    for (size_t i = 0; i < total; ++i)
+        content[i] = static_cast<char>('A' + (i % 26));
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", total);
+
+    auto cache = std::make_shared<MockCacheProvider>(100);
+
+    /// Warm the middle block [100, 200) so the cursor crosses cold -> resident -> cold.
+    {
+        auto warm_source = std::make_shared<MemorySourceReader>(
+            std::unordered_map<String, String>{{"obj", content}});
+        ReaderExecutor warmup(warm_source, objects, {cache}, /*window_size=*/100);
+        warmup.seek(100);
+        warmup.readNextWindow();
+        ASSERT_TRUE(cache->hasBlock(1));
+    }
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    auto pool = std::make_shared<SyncPrefetchPool>();
+    ReaderExecutor executor(source, objects, {cache}, /*window_size=*/total, /*min_bytes_for_seek=*/0);
+    executor.setPrefetchPool(pool);
+
+    /// Cold gap [0,100); advances the cursor to the resident run at 100.
+    auto r1 = executor.readNextWindow();
+    EXPECT_EQ(r1.range().offset, 0u);
+    EXPECT_EQ(r1.range().size, 100u);
+    /// The crux: cursor now resident, so NO prefetch was scheduled. A window-keyed
+    /// prefetch would be in flight here (and abort the resident read below).
+    EXPECT_FALSE(executor.hasInflightPrefetch())
+        << "prefetch must not be scheduled for a resident cursor";
+
+    /// Resident run [100,200) from cache - the `chassert(!prefetch_handle)` path.
+    auto r2 = executor.readNextWindow();
+    EXPECT_EQ(r2.range().offset, 100u);
+    EXPECT_EQ(r2.range().size, 100u);
+    /// Cursor now at the [200,300) gap, so a read-ahead IS scheduled.
+    EXPECT_TRUE(executor.hasInflightPrefetch())
+        << "a gap cursor schedules the read-ahead";
+
+    /// Cold gap [200,300) - consumes the in-flight prefetch.
+    auto r3 = executor.readNextWindow();
+    EXPECT_EQ(r3.range().offset, 200u);
+    EXPECT_EQ(r3.range().size, 100u);
+
+    EXPECT_TRUE(executor.readNextWindow().empty());
+}
+
 /// Cache populates are split by the context that produced them: a foreground
 /// (synchronous) read credits `ReaderExecutorBytesPushedToCacheSync`, while a
 /// prefetch worker credits `ReaderExecutorBytesPushedToCacheAsync`. `stats` are
