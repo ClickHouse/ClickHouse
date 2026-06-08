@@ -56,6 +56,11 @@ public:
         return true;
     }
 
+    bool useDefaultImplementationForLowCardinalityColumns() const override
+    {
+        return false;
+    }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         return {0};

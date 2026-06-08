@@ -379,8 +379,11 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         /// paste support), fold the embedded newline into the same edit buffer instead of
         /// committing a partial query and switching to the continuation prompt. This way the
         /// whole paste lives in a single replxx edit buffer and arrow keys navigate across it.
-        /// NOTE: Lexer is only available if we use highlighter.
-        if (highlighter && !replxx_last_is_delimiter && (multiline || hasInputData()))
+        /// The paste case does not depend on the highlighter: the `NEW_LINE` action only inserts
+        /// a newline into the edit buffer and does not use the lexer, so the paste stays under a
+        /// single prompt even with `--highlight 0`. The explicit `--multiline` continuation still
+        /// requires the highlighter, preserving the previous behavior.
+        if (!replxx_last_is_delimiter && ((highlighter && multiline) || hasInputData()))
             return rx.invoke(Replxx::ACTION::NEW_LINE, code);
         replxx_last_is_delimiter = false;
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);

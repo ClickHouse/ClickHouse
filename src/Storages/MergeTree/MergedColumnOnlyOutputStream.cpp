@@ -83,14 +83,6 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
     for (const auto & filename : checksums_to_remove)
         all_checksums.files.erase(filename);
 
-    for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
-    {
-        checksums.addFile(
-            projection_name + ".proj",
-            projection_part->checksums.getTotalSizeOnDisk(),
-            projection_part->checksums.getTotalChecksumUInt128());
-    }
-
     auto columns = new_part->getColumns();
     auto serialization_infos = new_part->getSerializationInfos();
     serialization_infos.replaceData(new_serialization_infos);

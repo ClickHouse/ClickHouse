@@ -923,11 +923,18 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
 
 void WebTerminalRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    if (!server.config().getBool("allow_experimental_webterminal", false))
+    /// The web terminal is enabled by default. `enable_webterminal` is the
+    /// production setting; `allow_experimental_webterminal` is its former
+    /// (experimental) name, still honored for backward compatibility when the
+    /// new name is not present in the config.
+    bool enabled = server.config().getBool(
+        "enable_webterminal",
+        server.config().getBool("allow_experimental_webterminal", true));
+    if (!enabled)
     {
         response.setContentType("text/plain; charset=UTF-8");
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_FORBIDDEN);
-        *response.send() << "Web terminal is disabled. See the `allow_experimental_webterminal` server configuration.\n";
+        *response.send() << "Web terminal is disabled. See the `enable_webterminal` server configuration.\n";
         return;
     }
 

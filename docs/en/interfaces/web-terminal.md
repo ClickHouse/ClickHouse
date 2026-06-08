@@ -7,25 +7,23 @@ title: 'Web Terminal'
 doc_type: 'reference'
 ---
 
-The web terminal is an experimental in-browser interface that provides an interactive `clickhouse-client` session over WebSocket. It is served from any ClickHouse HTTP port at the `/webterminal` path.
+The web terminal is an in-browser interface that provides an interactive `clickhouse-client` session over WebSocket. It is served from any ClickHouse HTTP port at the `/webterminal` path.
 
-:::note
-The web terminal is an experimental feature and is disabled by default; see [Enabling the feature](#enabling-the-feature) below.
-:::
+Navigate to `/webterminal` on any ClickHouse HTTP port (for example, `http://localhost:8123/webterminal`) to open the terminal.
 
-## Enabling the feature {#enabling-the-feature}
+## Enabling and disabling the feature {#enabling-the-feature}
 
-The `/webterminal` endpoint is gated by the `allow_experimental_webterminal` server setting. When the setting is `false` (the default), requests to `/webterminal` return HTTP status `403 Forbidden`.
-
-To enable it, add the following to your server configuration:
+The `/webterminal` endpoint is enabled by default and is controlled by the `enable_webterminal` server setting. To disable it, set the setting to `false`; requests to `/webterminal` then return HTTP status `403 Forbidden`.
 
 ```xml
 <clickhouse>
-    <allow_experimental_webterminal>true</allow_experimental_webterminal>
+    <enable_webterminal>false</enable_webterminal>
 </clickhouse>
 ```
 
-After enabling, navigate to `/webterminal` on any ClickHouse HTTP port (for example, `http://localhost:8123/webterminal`) to open the terminal.
+:::note
+`enable_webterminal` replaces the former `allow_experimental_webterminal` setting. The old name is still honored for backward compatibility when `enable_webterminal` is not set.
+:::
 
 ## Authentication {#authentication}
 
@@ -52,7 +50,7 @@ The terminal uses [xterm.js](https://xtermjs.org/) for rendering. All assets are
 
 ## Integration with `/play` {#play-integration}
 
-The [`/play`](/interfaces/http) Web SQL UI embeds the web terminal as a dockable panel. Toggle it with the terminal icon in the sidebar or press the `~` key when the query editor is empty. The `/play` page detects `/webterminal` availability at load time and hides the terminal controls when the endpoint is unavailable (for example, when the experimental setting is not enabled).
+The [`/play`](/interfaces/http) Web SQL UI embeds the web terminal as a dockable panel. Toggle it with the terminal icon in the sidebar or press the `~` key when the query editor is empty. The `/play` page detects `/webterminal` availability at load time and hides the terminal controls when the endpoint is unavailable (for example, when `enable_webterminal` is set to `false`).
 
 ## Security considerations {#security}
 
@@ -67,4 +65,4 @@ The handler also enforces WebSocket protocol conformance per RFC 6455: unmasked 
 
 ## Platform availability {#platform}
 
-The handler is compiled on all platforms ClickHouse supports. The pseudoterminal layer used by the embedded `clickhouse-client` runner is implemented on top of portable POSIX primitives (`posix_openpt`/`grantpt`/`unlockpt`), with a Linux-specific path that uses the thread-safe `ptsname_r`. The links to `/webterminal` on the ClickHouse start page and in `/play` are hidden automatically when the endpoint is unavailable (for example, when `allow_experimental_webterminal` is not enabled).
+The handler is compiled on all platforms ClickHouse supports. The pseudoterminal layer used by the embedded `clickhouse-client` runner is implemented on top of portable POSIX primitives (`posix_openpt`/`grantpt`/`unlockpt`), with a Linux-specific path that uses the thread-safe `ptsname_r`. The links to `/webterminal` on the ClickHouse start page and in `/play` are hidden automatically when the endpoint is unavailable (for example, when `enable_webterminal` is set to `false`).
