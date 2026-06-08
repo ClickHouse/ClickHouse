@@ -532,7 +532,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
     }
 #endif
 
-    moveEvictionPosIfEqual(it.iterator, lock);
+    other.moveEvictionPosIfEqual(it.iterator, lock);
     queue.splice(queue.end(), other.queue, it.iterator);
 
     state->add(entry.size, /* elements */1, state_lock);
@@ -629,14 +629,16 @@ void LRUFileCachePriority::LRUIterator::remove(const CachePriorityGuard::WriteLo
     iterator = LRUQueue::iterator{};
 }
 
-void LRUFileCachePriority::LRUIterator::invalidate()
+void LRUFileCachePriority::LRUIterator::invalidate() noexcept
 {
     auto entry_ptr = entry.lock();
     chassert(entry_ptr);
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
     LOG_TEST(cache_priority->log,
              "Invalidating entry in LRU queue {}: {}",
              entry_ptr->toString(), cache_priority->getApproxStateInfoForLog());
+#endif
 
     size_t entry_size = entry_ptr->size;
     entry_ptr->size = 0;
@@ -760,8 +762,14 @@ void LRUFileCachePriority::holdImpl(
 
 void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
 {
-    auto lock = cache_usage_stat_guard
-        ? std::optional<CacheUsageStatGuard::Lock>(cache_usage_stat_guard->lock())
+    /// Once the atomic decrements below reach 0, `CacheUsagePerUser::snapshot`
+    /// may concurrently erase this priority and free `cache_usage_stat_guard`,
+    /// so pin it locally to keep the mutex alive until `~unique_lock`.
+    /// This lock is only needed for `OvercommitFileCachePriority::check`'s
+    /// debug consistency check; non-overcommit policies leave the guard unset.
+    auto stat_guard = cache_usage_stat_guard;
+    auto lock = stat_guard
+        ? std::optional<CacheUsageStatGuard::Lock>(stat_guard->lock())
         : std::nullopt;
 
     state->sub(size, elements);

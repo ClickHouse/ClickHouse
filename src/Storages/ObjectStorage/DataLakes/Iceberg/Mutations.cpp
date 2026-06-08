@@ -71,8 +71,8 @@ struct DeleteFileWriteResult
 {
     /// Metadata path (e.g. "wasb://container@account/table/data/uuid-deletes.parquet")
     Iceberg::IcebergPathFromMetadata path;
-    Int64 total_rows;
-    Int64 total_bytes;
+    Int64 total_rows{};
+    Int64 total_bytes{};
 };
 
 using DataFileWriteResultByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkPartitioner::PartitionKeyHasher>;
@@ -732,6 +732,8 @@ void alter(
 
         auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
+        const auto previous_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
+
         auto metadata_json_generator = MetadataGenerator(metadata);
 
         switch (params[0].type)
@@ -754,6 +756,18 @@ void alter(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of alter {}", params[0].type);
         }
 
+        const auto new_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
+        Poco::JSON::Object::Ptr new_schema;
+        auto schemas = metadata->getArray(Iceberg::f_schemas);
+        for (UInt32 schema_index = 0; schema_index < schemas->size(); ++schema_index)
+        {
+            if (schemas->getObject(schema_index)->getValue<Int32>(Iceberg::f_schema_id) == new_schema_id)
+            {
+                new_schema = schemas->getObject(schema_index);
+                break;
+            }
+        }
+
         std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         Poco::JSON::Stringifier::stringify(metadata, oss, 4);
         std::string json_representation = removeEscapedSlashes(oss.str());
@@ -761,7 +775,10 @@ void alter(
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
 
         auto hint_path = filename_generator.generateVersionHint();
-        if (writeMetadataFileAndVersionHint(
+
+        const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
+        if (!catalog_writes_metadata_file
+            && !writeMetadataFileAndVersionHint(
                 persistent_table_components.path_resolver,
                 metadata_info,
                 json_representation,
@@ -770,10 +787,23 @@ void alter(
                 context,
                 data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]).metadata_file_written)
         {
-            succeeded = true;
-            break;
+            ++i;
+            continue;
         }
-        ++i;
+
+        if (catalog)
+        {
+            auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
+            const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id))
+            {
+                ++i;
+                continue;
+            }
+        }
+
+        succeeded = true;
+        break;
     }
 
     if (!succeeded)

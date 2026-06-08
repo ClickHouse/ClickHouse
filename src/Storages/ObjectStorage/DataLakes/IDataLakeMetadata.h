@@ -161,10 +161,7 @@ public:
         const AlterCommands & /*params*/,
         ContextPtr /*context*/,
         const StorageID & /*storage_id*/,
-        std::shared_ptr<DataLake::ICatalog> /*catalog*/)
-    {
-        throwNotImplemented("alter");
-    }
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/) { throwNotImplemented("alter"); }
 
     virtual Pipe executeCommand(
         const String & command_name,
