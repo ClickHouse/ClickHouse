@@ -1759,7 +1759,10 @@ public:
     }
 
 private:
-    UnorderedMapWithMemoryTracking<String, String> statements;
+    /// Prepared statements persist for the connection's lifetime across many queries: a `PREPARE` on
+    /// one query inserts, a `DEALLOCATE` on another frees, so allocation and free straddle different
+    /// query trackers. Charge the global tracker, not whichever query happens to touch the map.
+    UnorderedMapWithGlobalMemoryTracking<String, String> statements;
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
 
