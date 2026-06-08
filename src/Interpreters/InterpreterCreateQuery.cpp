@@ -2239,6 +2239,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     {
         ContextMutablePtr drop_context = Context::createCopy(current_context);
         drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+        /// Size guard is enforced once by the pre-flight check below; the implicit DROP must
+        /// not re-check, otherwise a consumed `force_drop_table` flag would strand the data.
+        drop_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+        drop_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
         return drop_context;
     };
 
@@ -2257,6 +2261,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(table_to_replace_name);
+
+        /// Pre-flight: enforce the DROP size guard on the existing target before EXCHANGE,
+        /// so a violation aborts cleanly instead of stranding data under `_tmp_replace_*`.
+        if (auto existing = database->tryGetTable(table_to_replace_name, current_context))
+            existing->checkTableCanBeDropped(current_context);
     }
 
     {
