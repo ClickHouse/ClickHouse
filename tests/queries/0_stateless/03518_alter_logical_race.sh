@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Tags: race, zookeeper, no-flaky-check
-# no-flaky-check: This test deliberately provokes logical errors via concurrent
-# ALTER and INSERT. Re-running it many times under sanitizers blows the 180s
-# per-test budget and reliably triggers an exception in debug builds, which is the bug being documented.
+# no-flaky-check: This test stresses concurrent ALTER and INSERT to guard against a
+# column-resolution regression. It is expected to pass on master; it should fail only
+# if that regression returns (a genuine bug surfaces as `NOT_FOUND_COLUMN_IN_BLOCK`,
+# `DUPLICATE_COLUMN`, etc.). Re-running it many times under sanitizers and the thread
+# fuzzer exceeds the per-test budget, which is why the flaky check is disabled.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
