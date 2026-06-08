@@ -142,9 +142,9 @@ const char * toString(JoinTableSide join_table_side);
 
 enum class JoinOrderAlgorithm : uint8_t
 {
-    GREEDY = 0,
-    DPSIZE,
-    AUTO
+    AUTO = 0,
+    GREEDY,
+    DPSIZE
 };
 
 const char * toString(JoinOrderAlgorithm join_order_algorithm);
