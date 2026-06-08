@@ -20,6 +20,17 @@ SELECT count() > 0 FROM (EXPLAIN PLAN SELECT * FROM eval('SELECT 8 AS explain_va
 WITH 'SELECT 9 AS with_alias_value' AS q SELECT * FROM eval(q);
 WITH 'SEL' AS a, 'ECT 10 AS with_concat_value' AS b SELECT * FROM eval(a || b);
 
+SET enable_analyzer = 0;
+WITH 'SELECT 1' AS x SELECT * FROM eval(arrayElement(arrayMap(x -> x, ['SELECT 11 AS lambda_value']), 1));
+SET enable_analyzer = 1;
+
+SET union_default_mode = 'ALL';
+SELECT count() FROM eval('SELECT 1 AS x UNION SELECT 1 SETTINGS union_default_mode = ''DISTINCT''');
+SET intersect_default_mode = 'DISTINCT';
+SELECT count() FROM eval('SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1) INTERSECT SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1) SETTINGS intersect_default_mode = ''ALL''');
+SET except_default_mode = 'DISTINCT';
+SELECT count() FROM eval('SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1) EXCEPT SELECT * FROM (SELECT 1 AS x) SETTINGS except_default_mode = ''ALL''');
+
 SELECT n FROM eval(SELECT 'SELECT 2 AS n UNION ALL SELECT 1 AS n') ORDER BY n;
 SELECT * FROM eval(SELECT 'SELECT 1 AS n INTERSECT SELECT 1 AS n');
 SELECT * FROM eval(SELECT 'SELECT 1 AS n EXCEPT SELECT 2 AS n');

@@ -1,3 +1,4 @@
+#include <Core/Names.h>
 #include <Core/Settings.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
@@ -40,6 +41,25 @@ void substituteWithLiterals(ASTPtr & ast, const std::map<String, ASTPtr> & liter
 {
     if (ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSubquery>())
         return;
+
+    if (const auto * function = ast->as<ASTFunction>(); function && isASTLambdaFunction(*function))
+    {
+        const auto & lambda_arguments = function->arguments->children;
+        const auto * lambda_argument_tuple = lambda_arguments.at(0)->as<ASTFunction>();
+        chassert(lambda_argument_tuple);
+
+        NameSet lambda_argument_names;
+        for (const auto & lambda_argument : lambda_argument_tuple->arguments->children)
+            if (auto name = tryGetIdentifierName(lambda_argument))
+                lambda_argument_names.insert(*name);
+
+        auto scoped_literals = literals;
+        for (const auto & name : lambda_argument_names)
+            scoped_literals.erase(name);
+
+        substituteWithLiterals(function->arguments->children.at(1), scoped_literals);
+        return;
+    }
 
     if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && identifier->isShort())
     {
