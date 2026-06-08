@@ -174,6 +174,14 @@ ProcessList::EntryPtr ProcessList::insert(
         if (effective_wait_ms == 0)
             effective_wait_ms = DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC * 1000;
 
+        /// `queue_max_wait_ms` / `max_execution_time` are user-controllable and may be set to enormous values.
+        /// `steady_clock::now() + milliseconds(effective_wait_ms)` converts the duration to nanoseconds
+        /// (multiplying by 1'000'000), which overflows `int64_t` for waits beyond ~292 years and is undefined
+        /// behavior. Clamp to ~100 years, which is "effectively infinite" for an admission wait, so the
+        /// deadline arithmetic here and the `wait_until` calls below can never overflow.
+        static constexpr UInt64 max_effective_wait_ms = 100ULL * 365 * 24 * 3600 * 1000;
+        effective_wait_ms = std::min(effective_wait_ms, max_effective_wait_ms);
+
         const auto admission_deadline = std::chrono::steady_clock::now()
             + std::chrono::milliseconds(effective_wait_ms);
 
