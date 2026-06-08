@@ -154,6 +154,86 @@ bool injectRequiredColumnsRecursively(
     return result;
 }
 
+bool needsDefaultForNullableToNonNullableConversion(
+    const String & column_name,
+    const StorageSnapshotPtr & storage_snapshot,
+    const AlterConversionsPtr & alter_conversions,
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const GetColumnsOptions & options)
+{
+    auto column_in_storage = storage_snapshot->tryGetColumn(options, column_name);
+    if (!column_in_storage || column_in_storage->isSubcolumn())
+        return false;
+
+    auto column_name_in_part = column_in_storage->getNameInStorage();
+    if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_part))
+        column_name_in_part = alter_conversions->getColumnOldName(column_name_in_part);
+
+    auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
+    if (!column_in_part)
+        return false;
+
+    bool share_nested = true;
+    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
+        share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
+    if (alter_conversions && alter_conversions->isColumnDropped(column_name_in_part, share_nested))
+        return false;
+
+    if (!isNullableOrLowCardinalityNullable(column_in_part->type) || isNullableOrLowCardinalityNullable(column_in_storage->type))
+        return false;
+
+    const auto column_default = storage_snapshot->getDefault(column_name);
+    return column_default && column_default->expression;
+}
+
+void injectRequiredColumnsForNullableDefaultConversions(
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const StorageSnapshotPtr & storage_snapshot,
+    ContextPtr context,
+    bool with_subcolumns,
+    Names & columns)
+{
+    NameSet required_columns{std::begin(columns), std::end(columns)};
+    NameSet injected_columns;
+
+    AlterConversionsPtr alter_conversions;
+    if (!data_part_info_for_reader.isProjectionPart())
+        alter_conversions = data_part_info_for_reader.getAlterConversions();
+
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+        .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
+        .withSubcolumns(with_subcolumns);
+
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        const String column_name = columns[i];
+        if (!needsDefaultForNullableToNonNullableConversion(
+                column_name, storage_snapshot, alter_conversions, data_part_info_for_reader, options))
+            continue;
+
+        const auto column_default = storage_snapshot->getDefault(column_name);
+        auto default_expression = cloneAndExpandColumnDefaultExpressionWithAliases(*column_default, storage_snapshot->metadata->getColumns(), context);
+
+        IdentifierNameSet identifiers;
+        default_expression->collectIdentifierNames(identifiers);
+
+        for (const auto & identifier : identifiers)
+        {
+            injectRequiredColumnsRecursively(
+                identifier,
+                storage_snapshot,
+                alter_conversions,
+                data_part_info_for_reader,
+                options,
+                context,
+                columns,
+                required_columns,
+                injected_columns);
+        }
+    }
+}
+
 }
 
 /** If some of the requested columns are not in the part,
@@ -473,6 +553,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     /// Inject columns required for defaults evaluation
     injectRequiredColumns(data_part_info_for_reader, storage_snapshot, context, with_subcolumns, column_to_read_after_prewhere);
+    injectRequiredColumnsForNullableDefaultConversions(
+        data_part_info_for_reader, storage_snapshot, context, with_subcolumns, column_to_read_after_prewhere);
 
     auto options = GetColumnsOptions(GetColumnsOptions::All)
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
@@ -510,6 +592,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             injectRequiredColumns(
                 data_part_info_for_reader, storage_snapshot,
                 context, with_subcolumns, step_column_names);
+            injectRequiredColumnsForNullableDefaultConversions(
+                data_part_info_for_reader, storage_snapshot, context, with_subcolumns, step_column_names);
         }
 
         /// More columns could have been added, filter them as well by the list of columns from previous steps.
