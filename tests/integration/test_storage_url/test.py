@@ -314,13 +314,18 @@ def test_url_wildcard_deduplicates_normalized_links():
 
 
 def test_url_wildcard_listing_order():
+    # The HTML index lists `a/` before `b/`, so recursive `**` expansion must read
+    # `a/part1.tsv` (10) before `b/part1.tsv` (20). Read single-threaded so the output
+    # order reflects the listing order (`glob_expansion_max_elements` is a hard limit
+    # that now raises an exception when exceeded, so it can no longer be used to
+    # truncate the listing to its first element).
     result = node1.query(
         with_url_wildcard_setting(
-            "SELECT sum(x) FROM url('http://resolver:8087/data/order/**/part*.tsv', 'TSV', 'x UInt64') "
-            "SETTINGS glob_expansion_max_elements=1"
+            "SELECT groupArray(x) FROM url('http://resolver:8087/data/order/**/part*.tsv', 'TSV', 'x UInt64') "
+            "SETTINGS max_threads=1, max_download_threads=1"
         )
     )
-    assert result.strip() == "10"
+    assert result.strip() == "[10,20]"
 
 
 def test_url_wildcard_normalizes_leading_slashes():
