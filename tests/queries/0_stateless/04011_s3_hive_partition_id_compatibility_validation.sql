@@ -42,8 +42,12 @@ PARTITION BY d;
 DROP TABLE t_106465_valid_hive;
 RESET SETTING file_like_engine_default_partition_strategy; -- properly unmarks as user-changed
 
--- Test 5: Default wildcard strategy + {_partition_id} path -> must succeed (no regression).
+-- Test 5: Explicit wildcard strategy + {_partition_id} path -> must succeed (no regression for old behaviour).
+-- Note: the server compile-time default changed to 'hive' in 26.6, so we must set 'wildcard' explicitly.
+-- Relying on RESET SETTING / SET compatibility = '' would leave the session at the HIVE default.
+SET file_like_engine_default_partition_strategy = 'wildcard';
 CREATE TABLE t_106465_wildcard_ok (d Date, x UInt64)
 ENGINE = S3(s3_conn, filename = 'test_106465/wildcard_{_partition_id}.parquet', format = Parquet)
 PARTITION BY d;
 DROP TABLE t_106465_wildcard_ok;
+RESET SETTING file_like_engine_default_partition_strategy;
