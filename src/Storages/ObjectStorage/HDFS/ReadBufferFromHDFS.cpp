@@ -3,6 +3,7 @@
 #if USE_HDFS
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
+#include <Storages/ObjectStorage/HDFS/chunkedPread.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/Stopwatch.h>
@@ -175,44 +176,37 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         /// `hdfsPread` takes the size as a 32-bit `tSize`, so a single request above `INT_MAX` would
         /// overflow. Split larger requests into chunks capped at this boundary.
         constexpr size_t max_single_pread = static_cast<size_t>(std::numeric_limits<int32_t>::max());
-        size_t total_read = 0;
 
-        while (total_read < size)
-        {
-            const size_t remaining = size - total_read;
-            const size_t current_read_size = std::min(remaining, max_single_pread);
-
-            const auto bytes_read = wrapErr<tSize>(
-                hdfsPread,
-                fs.get(),
-                fin,
-                buffer + total_read,
-                safe_cast<int>(current_read_size),
-                safe_cast<tOffset>(offset + total_read));
-
-            if (bytes_read < 0)
+        return chunkedPread(buffer, size, offset, max_single_pread,
+            [&](char * chunk_buffer, size_t chunk_size, size_t chunk_offset) -> size_t
             {
-                throw Exception(
-                    ErrorCodes::HDFS_ERROR,
-                    "Fail to read from HDFS: {}, file path: {}. Error: {}",
-                    hdfs_uri,
-                    hdfs_file_path,
-                    std::string(hdfsGetLastError()));
-            }
+                const auto bytes_read = wrapErr<tSize>(
+                    hdfsPread,
+                    fs.get(),
+                    fin,
+                    chunk_buffer,
+                    safe_cast<int>(chunk_size),
+                    safe_cast<tOffset>(chunk_offset));
 
-            if (bytes_read)
-            {
-                rlock.consume(bytes_read);
-                if (read_settings.remote_throttler)
-                    read_settings.remote_throttler->throttle(bytes_read);
-            }
+                if (bytes_read < 0)
+                {
+                    throw Exception(
+                        ErrorCodes::HDFS_ERROR,
+                        "Fail to read from HDFS: {}, file path: {}. Error: {}",
+                        hdfs_uri,
+                        hdfs_file_path,
+                        std::string(hdfsGetLastError()));
+                }
 
-            total_read += static_cast<size_t>(bytes_read);
-            if (static_cast<size_t>(bytes_read) < current_read_size)
-                break;
-        }
+                if (bytes_read)
+                {
+                    rlock.consume(bytes_read);
+                    if (read_settings.remote_throttler)
+                        read_settings.remote_throttler->throttle(bytes_read);
+                }
 
-        return total_read;
+                return static_cast<size_t>(bytes_read);
+            });
     }
 };
 
