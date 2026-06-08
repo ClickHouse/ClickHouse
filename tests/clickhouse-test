@@ -3813,6 +3813,11 @@ class TestSuite:
             tags_str = tags_str[len(tags_prefix) :]  # noqa: ignore E203
             tags = tags_str.split(",")
             tags = {tag.strip() for tag in tags}
+            if "no-stress" in tags:
+                raise ValueError(
+                    "The 'no-stress' tag is not supported: stress tests must be "
+                    "able to run every test. Remove it from the test."
+                )
             return tags
 
         def parse_memory_limits_from_line(
