@@ -714,7 +714,7 @@ void executeQueryWithParallelReplicas(
 
     /// do not build local plan for distributed queries for now (address it later);
     /// when `parallel_replicas_prefer_local_replica` is false, skip local plan to allow the
-    /// load balancer to pick any replica. The predicate is also used in `ReadFromMergeTree`.
+    /// load balancer to pick any replica.
     if (canUseLocalPlanForParallelReplicas(new_context))
     {
         auto local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);

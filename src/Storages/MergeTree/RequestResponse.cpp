@@ -207,7 +207,7 @@ String InitialAllRangesAnnouncementResponse::describe() const
 InitialAllRangesAnnouncementResponse
 InitialAllRangesAnnouncementResponse::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
 {
-    UInt64 version;
+    UInt64 version = 0;
     readIntBinary(version, in);
     if (version < DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION)
         throw Exception(

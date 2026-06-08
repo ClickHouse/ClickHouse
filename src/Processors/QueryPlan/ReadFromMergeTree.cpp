@@ -3016,8 +3016,6 @@ void ReadFromMergeTree::updateSortDescription()
 
 bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
 {
-    /// The split-stream topology only exists when the initiator-side gate in
-    /// `executeQueryWithParallelReplicas` actually took the local-plan branch.
     return is_parallel_reading_from_replicas
         && ClusterProxy::canUseLocalPlanForParallelReplicas(context)
         && context->canUseParallelReplicasOnInitiator();
