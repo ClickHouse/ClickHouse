@@ -53,9 +53,7 @@ SELECT count() = (SELECT uniqExact((a, b)) FROM test_reverse_mixed) FROM (SELECT
 SELECT (SELECT groupArray((a, b)) FROM (SELECT a, b FROM (SELECT a, b FROM test_reverse_mixed LIMIT 1 BY a, b SETTINGS optimize_limit_by_in_order = 0) ORDER BY a, b)) = (SELECT groupArray((a, b)) FROM (SELECT a, b FROM (SELECT a, b FROM test_reverse_mixed LIMIT 1 BY a, b SETTINGS optimize_limit_by_in_order = 1) ORDER BY a, b));
 DROP TABLE test_reverse_mixed;
 
--- Merge engine over children whose sorting keys disagree on direction (one ascending, one reverse): the
--- in-order LIMIT BY optimization is not applied for Merge tables, so the plan keeps the hash
--- LimitByTransform and enabling the setting does not change the result.
+-- Merge engine over children whose sort keys disagree on direction (one ascending, one reverse).
 DROP TABLE IF EXISTS test_merge_mixed_dir_part_1;
 DROP TABLE IF EXISTS test_merge_mixed_dir_part_2;
 DROP TABLE IF EXISTS test_merge_mixed_dir_wrap;

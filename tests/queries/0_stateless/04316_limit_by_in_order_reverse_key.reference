@@ -9,8 +9,7 @@ INSERT INTO test_reverse_single SELECT number % 100, number      FROM numbers(10
 INSERT INTO test_reverse_single SELECT number % 100, number+1000 FROM numbers(1000);
 INSERT INTO test_reverse_single SELECT number % 100, number+2000 FROM numbers(1000);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT k FROM test_reverse_single LIMIT 1 BY k SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitBySortedStreamTransform
-MergingSortedTransform 3 → 1
+LimitByTransform
 LimitBySortedStreamTransform × 3
 SELECT count() = (SELECT uniqExact(k) FROM test_reverse_single) FROM (SELECT k FROM test_reverse_single LIMIT 1 BY k SETTINGS optimize_limit_by_in_order = 1);
 1
@@ -26,8 +25,7 @@ INSERT INTO test_reverse_offset SELECT number % 100, number      FROM numbers(10
 INSERT INTO test_reverse_offset SELECT number % 100, number+1000 FROM numbers(1000);
 INSERT INTO test_reverse_offset SELECT number % 100, number+2000 FROM numbers(1000);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT k FROM test_reverse_offset LIMIT 2 OFFSET 1 BY k SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitBySortedStreamTransform
-MergingSortedTransform 3 → 1
+LimitByTransform
 LimitBySortedStreamTransform × 3
 SELECT (SELECT groupArray((k, v)) FROM (SELECT k, v FROM test_reverse_offset ORDER BY k DESC, v LIMIT 2 OFFSET 1 BY k SETTINGS optimize_limit_by_in_order = 1)) = (SELECT groupArray((k, v)) FROM (SELECT k, v FROM (SELECT k, v, row_number() OVER (PARTITION BY k ORDER BY v) AS rn FROM test_reverse_offset) WHERE rn > 1 AND rn <= 3 ORDER BY k DESC, v));
 1
@@ -40,8 +38,7 @@ INSERT INTO test_reverse_multi_col SELECT number % 50, number % 7, number      F
 INSERT INTO test_reverse_multi_col SELECT number % 50, number % 7, number+1000 FROM numbers(1000);
 INSERT INTO test_reverse_multi_col SELECT number % 50, number % 7, number+2000 FROM numbers(1000);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a FROM test_reverse_multi_col LIMIT 1 BY a SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitBySortedStreamTransform
-MergingSortedTransform 3 → 1
+LimitByTransform
 LimitBySortedStreamTransform × 3
 SELECT count() = (SELECT uniqExact(a) FROM test_reverse_multi_col) FROM (SELECT a FROM test_reverse_multi_col LIMIT 1 BY a SETTINGS optimize_limit_by_in_order = 1);
 1
@@ -54,17 +51,14 @@ INSERT INTO test_reverse_mixed SELECT number % 50, number % 7, number      FROM 
 INSERT INTO test_reverse_mixed SELECT number % 50, number % 7, number+1000 FROM numbers(1000);
 INSERT INTO test_reverse_mixed SELECT number % 50, number % 7, number+2000 FROM numbers(1000);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, b FROM test_reverse_mixed LIMIT 1 BY a, b SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitBySortedStreamTransform
-MergingSortedTransform 3 → 1
+LimitByTransform
 LimitBySortedStreamTransform × 3
 SELECT count() = (SELECT uniqExact((a, b)) FROM test_reverse_mixed) FROM (SELECT a, b FROM test_reverse_mixed LIMIT 1 BY a, b SETTINGS optimize_limit_by_in_order = 1);
 1
 SELECT (SELECT groupArray((a, b)) FROM (SELECT a, b FROM (SELECT a, b FROM test_reverse_mixed LIMIT 1 BY a, b SETTINGS optimize_limit_by_in_order = 0) ORDER BY a, b)) = (SELECT groupArray((a, b)) FROM (SELECT a, b FROM (SELECT a, b FROM test_reverse_mixed LIMIT 1 BY a, b SETTINGS optimize_limit_by_in_order = 1) ORDER BY a, b));
 1
 DROP TABLE test_reverse_mixed;
--- Merge engine over children whose sorting keys disagree on direction (one ascending, one reverse): the
--- in-order LIMIT BY optimization is not applied for Merge tables, so the plan keeps the hash
--- LimitByTransform and enabling the setting does not change the result.
+-- Merge engine over children whose sort keys disagree on direction (one ascending, one reverse).
 DROP TABLE IF EXISTS test_merge_mixed_dir_part_1;
 DROP TABLE IF EXISTS test_merge_mixed_dir_part_2;
 DROP TABLE IF EXISTS test_merge_mixed_dir_wrap;
@@ -75,6 +69,7 @@ INSERT INTO test_merge_mixed_dir_part_2 SELECT number % 20, number+1000 FROM num
 CREATE TABLE test_merge_mixed_dir_wrap AS test_merge_mixed_dir_part_1 ENGINE = Merge(currentDatabase(), '^test_merge_mixed_dir_part_[12]$');
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a FROM test_merge_mixed_dir_wrap LIMIT 1 BY a SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
 LimitByTransform
+LimitBySortedStreamTransform × 2
 SELECT count() = (SELECT uniqExact(a) FROM test_merge_mixed_dir_wrap) FROM (SELECT a FROM test_merge_mixed_dir_wrap LIMIT 1 BY a SETTINGS optimize_limit_by_in_order = 1);
 1
 DROP TABLE test_merge_mixed_dir_wrap;

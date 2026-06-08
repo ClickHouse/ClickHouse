@@ -22,8 +22,7 @@ INSERT INTO test_permuted_multi SELECT number % 50, number % 7, number      FROM
 INSERT INTO test_permuted_multi SELECT number % 50, number % 7, number+1000 FROM numbers(1000);
 INSERT INTO test_permuted_multi SELECT number % 50, number % 7, number+2000 FROM numbers(1000);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT c, a FROM test_permuted_multi LIMIT 1 BY c, a SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitBySortedStreamTransform
-MergingSortedTransform 3 → 1
+LimitByTransform
 LimitBySortedStreamTransform × 3
 SELECT count() = (SELECT uniqExact((a, c)) FROM test_permuted_multi) FROM (SELECT c, a FROM test_permuted_multi LIMIT 1 BY c, a SETTINGS optimize_limit_by_in_order = 1);
 1
@@ -38,8 +37,7 @@ SYSTEM STOP MERGES test_permuted_offset;
 INSERT INTO test_permuted_offset SELECT number % 50, number % 7, number      FROM numbers(1000);
 INSERT INTO test_permuted_offset SELECT number % 50, number % 7, number+1000 FROM numbers(1000);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT c, a FROM test_permuted_offset LIMIT 2 OFFSET 1 BY c, a SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitBySortedStreamTransform
-MergingSortedTransform 2 → 1
+LimitByTransform
 LimitBySortedStreamTransform × 2
 SELECT (SELECT count() FROM (SELECT c, a FROM test_permuted_offset LIMIT 2 OFFSET 1 BY c, a SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT c, a FROM test_permuted_offset LIMIT 2 OFFSET 1 BY c, a SETTINGS optimize_limit_by_in_order = 1));
 1
@@ -62,8 +60,7 @@ SYSTEM STOP MERGES test_permuted_reverse;
 INSERT INTO test_permuted_reverse SELECT number % 50, number % 7, number      FROM numbers(1000);
 INSERT INTO test_permuted_reverse SELECT number % 50, number % 7, number+1000 FROM numbers(1000);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT c, a FROM test_permuted_reverse LIMIT 1 BY c, a SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitBySortedStreamTransform
-MergingSortedTransform 2 → 1
+LimitByTransform
 LimitBySortedStreamTransform × 2
 SELECT count() = (SELECT uniqExact((a, c)) FROM test_permuted_reverse) FROM (SELECT c, a FROM test_permuted_reverse LIMIT 1 BY c, a SETTINGS optimize_limit_by_in_order = 1);
 1

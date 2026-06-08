@@ -8,8 +8,7 @@ SYSTEM STOP MERGES test_monotonic_desc;
 INSERT INTO test_monotonic_desc SELECT number % 50, number      FROM numbers(1000);
 INSERT INTO test_monotonic_desc SELECT number % 50, number+1000 FROM numbers(1000);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT negate(a) FROM test_monotonic_desc LIMIT 1 BY negate(a) SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitBySortedStreamTransform
-MergingSortedTransform 2 → 1
+LimitByTransform
 LimitBySortedStreamTransform × 2
 SELECT count() = (SELECT uniqExact(a) FROM test_monotonic_desc) FROM (SELECT negate(a) FROM test_monotonic_desc LIMIT 1 BY negate(a) SETTINGS optimize_limit_by_in_order = 1);
 1
@@ -23,8 +22,7 @@ SYSTEM STOP MERGES test_monotonic_desc_multi;
 INSERT INTO test_monotonic_desc_multi SELECT number % 50, number % 7, number      FROM numbers(1000);
 INSERT INTO test_monotonic_desc_multi SELECT number % 50, number % 7, number+1000 FROM numbers(1000);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT negate(a) FROM test_monotonic_desc_multi LIMIT 1 BY negate(a) SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitBySortedStreamTransform
-MergingSortedTransform 2 → 1
+LimitByTransform
 LimitBySortedStreamTransform × 2
 SELECT count() = (SELECT uniqExact(a) FROM test_monotonic_desc_multi) FROM (SELECT negate(a) FROM test_monotonic_desc_multi LIMIT 1 BY negate(a) SETTINGS optimize_limit_by_in_order = 1);
 1

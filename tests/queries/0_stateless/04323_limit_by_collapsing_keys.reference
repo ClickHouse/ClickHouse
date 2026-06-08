@@ -28,7 +28,6 @@ SELECT count() = (SELECT uniqExact((a, b)) FROM test_collapse_extra) FROM (SELEC
 1
 -- Contrast: dropping the redundant negate(a) leaves (a, b) as a full (permuted) cover of (b, a), so it streams.
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, b FROM test_collapse_extra LIMIT 1 BY a, b SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitBySortedStreamTransform
-MergingSortedTransform 2 → 1
+LimitByTransform
 LimitBySortedStreamTransform × 2
 DROP TABLE test_collapse_extra;

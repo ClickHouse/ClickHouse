@@ -177,8 +177,7 @@ SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELEC
 SELECT (SELECT count() FROM (SELECT a, x FROM test_array_join ARRAY JOIN arr AS x LIMIT 5 BY a SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT a, x FROM test_array_join ARRAY JOIN arr AS x LIMIT 5 BY a SETTINGS optimize_limit_by_in_order = 1));
 DROP TABLE test_array_join;
 
--- Not optimized: the in-order LIMIT BY optimization is intentionally not applied for Merge tables
--- (children may disagree on sort-key direction), so for now this falls back to the hash LimitByTransform.
+-- Optimized through a Merge engine: both children share the sort key and `a` is a PK prefix.
 DROP TABLE IF EXISTS test_merge_part_1;
 DROP TABLE IF EXISTS test_merge_part_2;
 DROP TABLE IF EXISTS test_merge_wrap;
