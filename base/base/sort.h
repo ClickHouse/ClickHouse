@@ -123,10 +123,18 @@ void partial_sort(RandomIt first, RandomIt middle, RandomIt last)
 #pragma clang diagnostic pop
 
 /** Branchless quicksort (blqsort) outperforms pdqsort by a wide margin on unpatterned,
-  * high-cardinality data, which is the common case reaching this function (already-sorted,
-  * reverse-sorted and nearly-sorted inputs are caught earlier by `trySort`, which keeps using
-  * pdqsort's pattern-defeating fast paths). blqsort requires raw pointers, so we convert the
-  * (always contiguous) iterators with `std::to_address`.
+  * high-cardinality data, which is the common case reaching this function. blqsort requires
+  * raw pointers, so we convert the (always contiguous) iterators with `std::to_address`.
+  *
+  * Unlike pdqsort, blqsort has no pattern-defeating fast paths: it is much slower than pdqsort
+  * on already-sorted, reverse-sorted and nearly-sorted inputs. pdqsort handled those patterns
+  * internally on every `::sort` call, so to preserve that behavior we run pdqsort's pattern
+  * pre-pass (`pdqsort_try_sort`, the same one behind `trySort`) before falling back to blqsort.
+  * The pre-pass also sorts small ranges with insertion sort and returns. On unpatterned data it
+  * gives up after a few partitioning iterations, which costs about 1% — negligible next to the
+  * several-fold speedup blqsort gives on that data. Without this pre-pass, sorts that reach
+  * `::sort` directly (e.g. `ColumnDecimal<Decimal128>::getPermutation`, which has no radix /
+  * trySort step) regress by an order of magnitude on patterned inputs.
   */
 template <typename RandomIt, typename Compare>
 void sort(RandomIt first, RandomIt last, Compare compare)
@@ -141,7 +149,13 @@ void sort(RandomIt first, RandomIt last, Compare compare)
     /// iterators) provide them via `std::to_address`; the rare non-contiguous random-access
     /// iterators (e.g. reverse iterators over contiguous storage) keep using pdqsort.
     if constexpr (std::contiguous_iterator<RandomIt>)
-        ::blqs::sort(std::to_address(first), std::to_address(last), compare_wrapper);
+    {
+        auto * first_ptr = std::to_address(first);
+        auto * last_ptr = std::to_address(last);
+        if (::pdqsort_try_sort(first_ptr, last_ptr, compare_wrapper))
+            return;
+        ::blqs::sort(first_ptr, last_ptr, compare_wrapper);
+    }
     else
         ::pdqsort(first, last, compare_wrapper);
 }
