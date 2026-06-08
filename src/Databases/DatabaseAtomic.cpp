@@ -8,19 +8,20 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Disks/IStoragePolicy.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/isSharedPtrUnique.h>
+#include <Common/AsyncLoader.h>
+#include <Common/CurrentThread.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/PoolId.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/logger_useful.h>
-#include <Common/AsyncLoader.h>
-#include <Common/CurrentThread.h>
-#include <Interpreters/ProcessList.h>
 
 
 namespace fs = std::filesystem;
@@ -260,10 +261,20 @@ void DatabaseAtomic::dropDetachedTable(
     const StorageID storage_id{getDatabaseName(), table_name, create_query->uuid};
 
     QueryStatusPtr query_status = local_context->getProcessListElementSafe();
+
+    /// A table dropped with DROP DETACHED TABLE was detached but never dropped, so it still
+    /// has its UUID mapping. A table recovered after a crash (loadMarkedAsDroppedTables) has
+    /// no mapping yet. Add the mapping only when it is missing to avoid a collision.
+    if (!DatabaseCatalog::instance().hasUUIDMapping(create_query->uuid))
+    {
+        DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
+    }
+
     waitDetachedTableNotInUse(
         create_query->uuid,
         [&]()
         {
+            DatabaseCatalog::instance().removeUUIDMapping(create_query->uuid);
             if (query_status)
                 query_status->throwIfKilled();
         });

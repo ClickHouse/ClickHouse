@@ -1373,11 +1373,6 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
             LOG_WARNING(log, "Cannot parse metadata of partially dropped table {} from {}. Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.", table_id.getNameForLogs(), dropped_metadata_path);
         }
 
-        /// A table dropped with DROP DETACHED TABLE was detached but never dropped, so it still
-        /// has its UUID mapping. A table recovered after a crash (loadMarkedAsDroppedTables) has
-        /// no mapping yet. Add the mapping only when it is missing to avoid a collision.
-        if (!hasUUIDMapping(table_id.uuid))
-            addUUIDMapping(table_id.uuid);
         drop_time = db_disk->getLastModified(dropped_metadata_path).epochTime();
     }
 
