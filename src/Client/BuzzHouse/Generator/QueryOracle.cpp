@@ -565,11 +565,11 @@ void QueryOracle::generateArrayJoinOracleQueries(RandomGenerator & rg, Statement
     gen.levels[gen.current_level].rels.emplace_back(rel);
 
     /// Optionally add PREWHERE / WHERE (must be generated while relations are still available)
-    if (rg.nextSmallNumber() < 5)
-        gen.generateWherePredicate(rg, ssc1->mutable_pre_where()->mutable_expr()->mutable_expr());
-    if (rg.nextSmallNumber() < 5)
-        gen.generateWherePredicate(rg, ssc1->mutable_where()->mutable_expr()->mutable_expr());
     if (rg.nextSmallNumber() < 4)
+        gen.generateWherePredicate(rg, ssc1->mutable_pre_where()->mutable_expr()->mutable_expr());
+    if (rg.nextSmallNumber() < 4)
+        gen.generateWherePredicate(rg, ssc1->mutable_where()->mutable_expr()->mutable_expr());
+    if (rg.nextSmallNumber() < 3)
         gen.generateGroupBy(rg, 1, rg.nextBool(), false, ssc1);
 
     gen.levels.clear();
@@ -607,8 +607,8 @@ void QueryOracle::generateArrayJoinOracleQueries(RandomGenerator & rg, Statement
         aj_func->mutable_func()->set_catalog_func("arrayJoin");
         aj_func->add_args()->mutable_expr()->CopyFrom(*arr_expr);
 
-        /// Remove the ARRAY JOIN clause from sq2
-        ssc2->mutable_from()->mutable_tos()->mutable_join_clause()->clear_clauses();
+        /// Remove only the ARRAY JOIN clause (the last one we appended) from sq2
+        ssc2->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_clauses()->RemoveLast();
     }
 }
 

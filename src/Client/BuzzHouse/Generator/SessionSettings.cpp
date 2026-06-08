@@ -1413,11 +1413,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"query_plan_max_step_description_length",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
-    {"query_plan_min_columns_for_join_lazy_indexing",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 20)); },
-         {"0", "1", "3", "5", "10"},
-         false)},
     {"query_plan_text_index_add_hint", trueOrFalseSetting},
     {"query_plan_read_in_order_through_join", trueOrFalseSetting},
     /// ClickHouse cloud setting
