@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -12,7 +11,7 @@ namespace
 {
 
 /// Returns size on disk for *columns* (without taking into account compression).
-class FunctionBlockSerializedSize final : public IFunction
+class FunctionBlockSerializedSize : public IFunction
 {
 public:
     static constexpr auto name = "blockSerializedSize";

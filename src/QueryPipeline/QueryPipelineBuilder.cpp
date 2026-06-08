@@ -19,7 +19,6 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
-#include <Processors/Transforms/DroppingTransform.h>
 #include <Processors/Transforms/InputSelectorTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ExtremesTransform.h>
@@ -99,7 +98,7 @@ void QueryPipelineBuilder::addTransform(ProcessorPtr transform, InputPort * tota
     pipe.addTransform(std::move(transform), totals, extremes);
 }
 
-void QueryPipelineBuilder::addChains(VectorWithMemoryTracking<Chain> chains)
+void QueryPipelineBuilder::addChains(std::vector<Chain> chains)
 {
     checkInitializedAndNotCompleted();
     pipe.addChains(std::move(chains));
@@ -108,7 +107,7 @@ void QueryPipelineBuilder::addChains(VectorWithMemoryTracking<Chain> chains)
 void QueryPipelineBuilder::addChain(Chain chain)
 {
     checkInitializedAndNotCompleted();
-    VectorWithMemoryTracking<Chain> chains;
+    std::vector<Chain> chains;
     chains.emplace_back(std::move(chain));
     pipe.resize(1);
     pipe.addChains(std::move(chains));
@@ -206,7 +205,7 @@ void QueryPipelineBuilder::addExtremesTransform()
 }
 
 QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
-    VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines,
+    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines,
     size_t max_threads_limit,
     Processors * collected_processors)
 {
@@ -511,9 +510,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     auto lit = left->pipe.output_ports.begin();
     auto rit = right->pipe.output_ports.begin();
 
-    OutputPortRawPtrs joined_output_ports;
-    OutputPortRawPtrs delayed_root_output_ports;
-    OutputPortRawPtrs non_joined_output_ports;
+    std::vector<OutputPort *> joined_output_ports;
+    std::vector<OutputPort *> delayed_root_output_ports;
+    std::vector<OutputPort *> non_joined_output_ports;
 
     std::shared_ptr<DelayedJoinedBlocksTransform> delayed_root = nullptr;
     if (join->hasDelayedBlocks())
@@ -625,7 +624,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     if (delayed_root || use_parallel_non_joined)
     {
         // Process DelayedJoinedBlocksTransform after all JoiningTransforms.
-        VectorWithMemoryTracking<UInt64> delayed_ports_numbers;
+        std::vector<UInt64> delayed_ports_numbers;
         delayed_ports_numbers.reserve(joined_output_ports.size() / 2);
         for (size_t i = 1; i < joined_output_ports.size(); i += 2)
             delayed_ports_numbers.push_back(i);
@@ -649,7 +648,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         // delays the NonJoinedBlocksTransforms until all delayed-block workers finish.
         if (delayed_root && use_parallel_non_joined)
         {
-            VectorWithMemoryTracking<UInt64> non_joined_delayed_ports;
+            std::vector<UInt64> non_joined_delayed_ports;
             non_joined_delayed_ports.reserve(num_streams);
             for (size_t i = 0; i < num_streams; ++i)
                 non_joined_delayed_ports.push_back(2 * i + 1);
@@ -745,7 +744,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
             num_streams, right->getNumStreams());
 
     SharedHeader left_header = left->getSharedHeader();
-    VectorWithMemoryTracking<JoinPtr> joins;
+    std::vector<JoinPtr> joins;
     right->addSimpleTransform([&](const SharedHeader & header)
     {
         joins.push_back(join->cloneNoParallel(std::make_shared<TableJoin>(join->getTableJoin()), left->getSharedHeader(), header));
@@ -788,38 +787,13 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
 }
 
 
-namespace
-{
-
-/// Drop the totals and extremes streams of `pipe` (which are irrelevant for set
-/// construction / CTE materialization) using a `DroppingTransform` instead of a
-/// `NullSink`. The transform consumes all output ports (data + totals + extremes),
-/// forwards the data streams and discards totals/extremes. Unlike a childless
-/// `NullSink`, it keeps the dropping node connected to the data path, so
-/// `ExecutingGraph::initializeExecution` does not seed it and does not pull the
-/// gated source sub-pipeline before its materialized CTE has been built.
-void dropTotalsAndExtremesViaTransform(Pipe & pipe, const SharedHeader & header)
-{
-    if (!pipe.getTotalsPort() && !pipe.getExtremesPort())
-        return;
-
-    bool has_totals = pipe.getTotalsPort() != nullptr;
-    bool has_extremes = pipe.getExtremesPort() != nullptr;
-    auto dropping = std::make_shared<DroppingTransform>(header, pipe.numOutputPorts(), has_totals, has_extremes);
-    auto * totals_in = dropping->getTotalsPort();
-    auto * extremes_in = dropping->getExtremesPort();
-    pipe.addTransform(std::move(dropping), totals_in, extremes_in);
-}
-
-}
-
 void QueryPipelineBuilder::addCreatingSetsTransform(
     SharedHeader res_header,
     SetAndKeyPtr set_and_key,
     const SizeLimits & limits,
     PreparedSetsCachePtr prepared_sets_cache)
 {
-    dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
+    dropTotalsAndExtremes();
     resize(1);
 
     auto transform = std::make_shared<CreatingSetsTransform>(
@@ -838,7 +812,7 @@ void QueryPipelineBuilder::addMaterializingCTETransform(
 )
 {
     checkInitializedAndNotCompleted();
-    dropTotalsAndExtremesViaTransform(pipe, getSharedHeader());
+    dropTotalsAndExtremes();
     resize(1);
 
     auto transform = std::make_shared<MaterializingCTETransform>(
@@ -861,7 +835,7 @@ void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
     bool has_totals = pipe.getTotalsPort();
     bool has_extremes = pipe.getExtremesPort();
     size_t num_extra_ports = (has_totals ? 1 : 0) + (has_extremes ? 1 : 0);
-    VectorWithMemoryTracking<UInt64> delayed_streams(pipe.numOutputPorts() + num_extra_ports);
+    std::vector<UInt64> delayed_streams(pipe.numOutputPorts() + num_extra_ports);
     iota(delayed_streams.data(), delayed_streams.size(), UInt64{0});
 
     auto * collected_processors = pipe.collected_processors;

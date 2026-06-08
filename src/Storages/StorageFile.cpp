@@ -7,7 +7,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
-#include <boost/algorithm/string/predicate.hpp>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
@@ -26,7 +25,6 @@
 #include <IO/MMapReadBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/EmptyReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -39,7 +37,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -78,7 +75,6 @@
 #include <algorithm>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/String.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -504,7 +500,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & compression_method,
     ContextPtr context)
 {
-    CompressionMethod method = {};
+    CompressionMethod method;
     if (use_table_fd)
         method = chooseCompressionMethod("", compression_method);
     else
@@ -568,7 +564,7 @@ namespace
             }
 
             String path;
-            struct stat file_stat{};
+            struct stat file_stat;
 
             do
             {
@@ -750,7 +746,7 @@ namespace
                 }
 
                 const auto & archive = archive_info.paths_to_archives[current_archive_index];
-                struct stat file_stat{};
+                struct stat file_stat;
                 file_stat = getFileStat(archive, false, -1, "File");
                 if (file_stat.st_size == 0)
                 {
@@ -915,7 +911,7 @@ namespace
             if (!context->getSettingsRef()[Setting::schema_inference_use_cache_for_file])
                 return std::nullopt;
 
-            struct stat file_stat{};
+            struct stat file_stat;
             auto & schema_cache = StorageFile::getSchemaCache(context);
             auto get_last_mod_time = [&]() -> std::optional<time_t>
             {
@@ -1163,7 +1159,7 @@ bool StorageFile::parallelizeOutputAfterReading(ContextPtr context) const
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
-    struct stat buf{};
+    struct stat buf;
     int res = fstat(table_fd_, &buf);
     if (-1 == res)
         throw ErrnoException(ErrorCodes::CANNOT_FSTAT, "Cannot execute fstat");
@@ -1472,8 +1468,6 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
 
 Chunk StorageFileSource::generate()
 {
-    const bool is_one_format = Poco::toLower(storage->format_name) == "one";
-
     while (!finished_generate)
     {
         /// Open file lazily on first read. This is needed to avoid too many open files from different streams.
@@ -1500,23 +1494,12 @@ Chunk StorageFileSource::generate()
                         if (need_only_count && tryGetCountFromCache(file_stat))
                             continue;
 
-                        if (is_one_format)
-                        {
-                            if (!archive_reader->fileExists(*filename_override))
-                                continue;
+                        read_buf = archive_reader->readFile(*filename_override, /*throw_on_not_found=*/false);
+                        if (!read_buf)
+                            continue;
 
-                            /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
-                            read_buf = std::make_unique<EmptyReadBuffer>();
-                        }
-                        else
-                        {
-                            read_buf = archive_reader->readFile(*filename_override, /*throw_on_not_found=*/false);
-                            if (!read_buf)
-                                continue;
-
-                            if (auto progress_callback = getContext()->getFileProgressCallback())
-                                progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
-                        }
+                        if (auto progress_callback = getContext()->getFileProgressCallback())
+                            progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
                     }
                     else
                     {
@@ -1563,17 +1546,9 @@ Chunk StorageFileSource::generate()
                         if (need_only_count && tryGetCountFromCache(current_archive_stat))
                             continue;
 
-                        if (is_one_format)
-                        {
-                            /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
-                            read_buf = std::make_unique<EmptyReadBuffer>();
-                        }
-                        else
-                        {
-                            read_buf = archive_reader->readFile(std::move(file_enumerator));
-                            if (auto progress_callback = getContext()->getFileProgressCallback())
-                                progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
-                        }
+                        read_buf = archive_reader->readFile(std::move(file_enumerator));
+                        if (auto progress_callback = getContext()->getFileProgressCallback())
+                            progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
                     }
                 }
                 else
@@ -1594,7 +1569,7 @@ Chunk StorageFileSource::generate()
 
             if (!read_buf)
             {
-                struct stat file_stat{};
+                struct stat file_stat;
                 file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
                 current_file_size = file_stat.st_size;
                 current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
@@ -1622,13 +1597,7 @@ Chunk StorageFileSource::generate()
                 if (need_only_count && tryGetCountFromCache(file_stat))
                     continue;
 
-                if (is_one_format)
-                {
-                    /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
-                    read_buf = std::make_unique<EmptyReadBuffer>();
-                }
-                else
-                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+                read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
             }
 
             size_t file_num = 0;
@@ -1793,8 +1762,6 @@ Chunk StorageFileSource::generate()
     return {};
 }
 
-void StorageFileSource::onFinish() { parser_shared_resources->finishStream(); }
-
 void StorageFileSource::addNumRowsToCache(const String & path, size_t num_rows) const
 {
     auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext());
@@ -1861,12 +1828,6 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    if (boost::iequals(storage->format_name, "Parquet") || boost::iequals(storage->format_name, "ORC"))
-        prepareEagerKeyConditionSets(
-            filter_actions_dag,
-            storage_snapshot, info.source_header,
-            query_info.prewhere_info, query_info.row_level_filter, getContext());
-
     createIterator(predicate);
 }
 
@@ -1896,7 +1857,7 @@ void StorageFile::read(
     }
     else
     {
-        const std::vector<std::string> * p = nullptr;
+        const std::vector<std::string> * p;
 
         if (archive_info.has_value())
             p = &archive_info->paths_to_archives;
@@ -2432,7 +2393,6 @@ void StorageFile::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextP
         args[0] = make_intrusive<ASTLiteral>(format_name);
 }
 
-void registerStorageFile(StorageFactory & factory);
 void registerStorageFile(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures storage_features{

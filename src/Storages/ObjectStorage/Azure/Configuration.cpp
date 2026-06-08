@@ -253,13 +253,8 @@ void AzureStorageParsedArguments::fromNamedCollection(const NamedCollection & co
         partition_strategy_type = partition_strategy_type_opt.value();
     }
 
-    if (collection.has("partition_columns_in_data_file"))
-    {
-        partition_columns_in_data_file = collection.get<bool>("partition_columns_in_data_file");
-        partition_columns_in_data_file_was_set = true;
-    }
-    else
-        partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
+    partition_columns_in_data_file = collection.getOrDefault<bool>(
+        "partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
 
     connection_params = getAzureConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
@@ -528,7 +523,6 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             else
             {
                 partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[6], "partition_columns_in_data_file");
-                partition_columns_in_data_file_was_set = true;
             }
         }
         else
@@ -571,7 +565,6 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
 
             partition_strategy_type = partition_strategy_type_opt.value();
             partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[6], "partition_columns_in_data_file");
-            partition_columns_in_data_file_was_set = true;
             structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
         }
         else
@@ -635,7 +628,6 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
         else
         {
             partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[8], "partition_columns_in_data_file");
-            partition_columns_in_data_file_was_set = true;
         }
     }
     else if (engine_args.size() == 10 && with_structure)
@@ -658,14 +650,13 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
         }
         partition_strategy_type = partition_strategy_type_opt.value();
         partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[8], "partition_columns_in_data_file");
-        partition_columns_in_data_file_was_set = true;
         structure = checkAndGetLiteralArgument<String>(engine_args[9], "structure");
     }
 
     connection_params = getAzureConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 
-static void addStructureAndFormatToArgsIfNeededAzure(
+void addStructureAndFormatToArgsIfNeededAzure(
     ASTs & args,
     const String & structure_,
     const String & format_,
