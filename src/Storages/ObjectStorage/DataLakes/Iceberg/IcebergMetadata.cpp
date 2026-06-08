@@ -477,7 +477,7 @@ bool IcebergMetadata::optimizeManifestFiles(
     else
     {
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call optimize...manifest for iceberg tables.");
+            ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call OPTIMIZE TABLE ... MANIFEST for iceberg tables.");
     }
 }
 
