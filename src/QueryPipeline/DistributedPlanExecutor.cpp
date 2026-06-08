@@ -26,6 +26,7 @@
 #include <Processors/Sinks/NativeCompressedSink.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
+#include <Common/QueryScope.h>
 #include <Processors/Sources/NativeCompressedSource.h>
 #include <Planner/Utils.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
@@ -725,7 +726,15 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
 {
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(toString(unique_query_id), context);
 
-    doExecuteTask(task, object_storage, object_storage_path, toString(unique_query_id), Context::createCopy(context), [is_cancelled]() -> bool { return *is_cancelled; });
+    /// Run each task as an independent query fragment with its own query context and thread group,
+    /// matching the worker path. Attaching the task context to this thread (instead of sharing the
+    /// initiator's) gives the task its own per-query state, such as the runtime filter lookup.
+    auto task_context = Context::createCopy(context);
+    task_context->makeQueryContext();
+    auto query_scope = QueryScope::create(task_context);
+    setThreadName(ThreadName::DISTRIBUTED_QUERY_TASK);
+
+    doExecuteTask(task, object_storage, object_storage_path, toString(unique_query_id), std::move(task_context), [is_cancelled]() -> bool { return *is_cancelled; });
 }
 
 /// Runs tasks in local threads. Useful for testing and debugging.
@@ -766,10 +775,11 @@ protected:
         std::promise<void> task_promise;
         std::future<void> future = task_promise.get_future();
 
-        std::thread([promise = std::move(task_promise), thread_group = CurrentThread::getGroup(), query_id = unique_query_id, task_description, ctx = context, is_cancelled = this->is_cancelled]() mutable
+        std::thread([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, is_cancelled = this->is_cancelled]() mutable
         {
             ThreadStatus thread_status;
-            ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
+            /// The task attaches its own query context and thread group inside executeTask (matching
+            /// the worker path), so this thread is intentionally left detached from the initiator group.
 
             try
             {
