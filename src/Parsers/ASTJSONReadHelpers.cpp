@@ -76,12 +76,21 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
     {
         if (obj.isNull("value"))
             return Field(Null{});
-        String val = obj.getValue<String>("value");
-        if (val == "-Inf")
-            return Field(NEGATIVE_INFINITY);
-        if (val == "+Inf")
-            return Field(POSITIVE_INFINITY);
-        return Field(Null{});
+        /// The writer encodes a `Null`-category field as JSON null, or the string sentinels
+        /// `-Inf`/`+Inf` for the negative/positive infinity boundary values. Any other `value`
+        /// is malformed input the writer cannot produce, so reject it instead of silently
+        /// collapsing it to `NULL`.
+        auto value_var = obj.get("value");
+        if (value_var.isString())
+        {
+            const String & val = value_var.extract<String>();
+            if (val == "-Inf")
+                return Field(NEGATIVE_INFINITY);
+            if (val == "+Inf")
+                return Field(POSITIVE_INFINITY);
+        }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unexpected 'value' for Null field during AST JSON deserialization (expected null, '-Inf', or '+Inf')");
     }
     if (field_type == "UInt64")
         return Field(static_cast<UInt64>(obj.getValue<Poco::UInt64>("value")));
@@ -173,7 +182,15 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
             "Field dump payload exceeds maximum AST depth limit ({}) during JSON AST deserialization",
             max_depth);
 
-    return Field::restoreFromDump(dump_str);
+    Field result = Field::restoreFromDump(dump_str);
+    /// `field_type` is `Field::getTypeName()` of the original value, and the dump string embeds
+    /// its own type. Reject an unknown or inconsistent `field_type` (e.g. `{"field_type":"Bogus"}`)
+    /// instead of letting the dump payload silently decide the resulting literal's type.
+    if (result.getTypeName() != field_type)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Field 'value' dump of type '{}' does not match declared field_type '{}' during AST JSON deserialization",
+            result.getTypeName(), field_type);
+    return result;
 }
 
 }

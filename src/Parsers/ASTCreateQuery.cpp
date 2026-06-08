@@ -485,6 +485,7 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("dictionary_attributes_list", dictionary_attributes_list);
     w.writeChild("dictionary", dictionary);
     w.writeChild("refresh_strategy", refresh_strategy);
+    writeOutputOptionsJSON(w);
 }
 
 void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
@@ -630,9 +631,31 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`CreateQuery` has 'allowed_lateness' set but is missing 'lateness_function' during AST JSON deserialization");
 
+    /// `formatQueryImpl` treats the watermark strategy as a single choice using an if/else-if chain over
+    /// `is_watermark_strictly_ascending`, `is_watermark_ascending` and `is_watermark_bounded`. The SQL parser
+    /// can only ever set one of them. Malformed JSON could set several at once, which would silently drop the
+    /// lower-priority modes on format; reject it instead of rewriting it.
+    const size_t watermark_modes =
+        static_cast<size_t>(is_watermark_strictly_ascending)
+        + static_cast<size_t>(is_watermark_ascending)
+        + static_cast<size_t>(is_watermark_bounded);
+    if (watermark_modes > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` sets more than one watermark strategy at once during AST JSON deserialization, "
+            "but they are mutually exclusive");
+
+    /// `watermark_function` is only meaningful for (and only formatted by) the bounded watermark strategy.
+    /// The parser attaches it exactly when the bounded mode is selected, so require it to be present iff
+    /// `is_watermark_bounded`. A missing function would null-deref in `formatQueryImpl`; a stray function
+    /// in a non-bounded mode would be silently ignored.
     if (is_watermark_bounded && !watermark_function)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`CreateQuery` has a bounded watermark strategy set but is missing 'watermark_function' during AST JSON deserialization");
+    if (!is_watermark_bounded && watermark_function)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` has 'watermark_function' set without a bounded watermark strategy during AST JSON deserialization");
+
+    readOutputOptionsJSON(r);
 }
 
 void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

@@ -13,11 +13,7 @@ void ASTExplainQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("query", query);
     w.writeChild("table_function", table_function);
     w.writeChild("table_override", table_override);
-    w.writeChild("out_file", out_file);
-    w.writeChild("format_ast", format_ast);
-    w.writeChild("settings_ast", settings_ast);
-    w.writeChild("compression", compression);
-    w.writeChild("compression_level", compression_level);
+    writeOutputOptionsJSON(w);
 }
 
 void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
@@ -42,25 +38,7 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
     if (table_override_child)
         setTableOverride(std::move(table_override_child));
 
-    out_file = r.readChild("out_file");
-    if (out_file)
-        children.push_back(out_file);
-
-    format_ast = r.readChild("format_ast");
-    if (format_ast)
-        children.push_back(format_ast);
-
-    settings_ast = r.readChild("settings_ast");
-    if (settings_ast)
-        children.push_back(settings_ast);
-
-    compression = r.readChild("compression");
-    if (compression)
-        children.push_back(compression);
-
-    compression_level = r.readChild("compression_level");
-    if (compression_level)
-        children.push_back(compression_level);
+    readOutputOptionsJSON(r);
 }
 
 }

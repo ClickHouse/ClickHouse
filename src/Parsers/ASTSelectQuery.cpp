@@ -723,6 +723,20 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
         if (!order_by_list->children[0]->as<ASTOrderByElement>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first ORDER BY element must be an order-by element when order_by_all is set during AST JSON deserialization");
     }
+
+    /// `GROUP BY ALL` and an explicit `GROUP BY` list are mutually exclusive: `formatImpl`
+    /// emits `GROUP BY ALL` and drops the list, so the SQL parser can never produce both.
+    if (group_by_all && groupBy())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "group_by_all cannot be set together with a GROUP BY list during AST JSON deserialization");
+
+    /// `LIMIT BY ALL` and an explicit `LIMIT BY` list are mutually exclusive for the same reason.
+    if (limit_by_all && limitBy())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_by_all cannot be set together with a LIMIT BY list during AST JSON deserialization");
+
+    /// `WITH TIES` is a modifier of `LIMIT length`; `formatImpl` only emits it inside the
+    /// `LIMIT length` branch, so it is meaningless without a LIMIT length child.
+    if (limit_with_ties && !limitLength())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_with_ties requires a LIMIT length clause during AST JSON deserialization");
 }
 
 }

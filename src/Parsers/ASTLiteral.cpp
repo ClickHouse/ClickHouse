@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     const char * prefix = "Literal_";
@@ -32,6 +37,11 @@ void ASTLiteral::writeJSON(WriteBuffer & out) const
 void ASTLiteral::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+    /// A `Literal` always requires an explicit `value` key (a NULL literal is written
+    /// with an explicit `value`), so reject input that omits it instead of silently
+    /// deserializing as a NULL literal, which the SQL parser cannot produce.
+    if (!r.has("value"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'value' key for Literal during AST JSON deserialization");
     value = r.readField("value");
     r.readAlias(*this);
 }

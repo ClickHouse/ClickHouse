@@ -54,6 +54,7 @@ void ASTDropIndexQuery::writeJSON(WriteBuffer & out) const
     /// strings above cannot represent query parameters.
     w.writeChild("database_ast", database);
     w.writeChild("table_ast", table);
+    writeOutputOptionsJSON(w);
 }
 
 void ASTDropIndexQuery::readJSON(const Poco::JSON::Object & json)
@@ -87,6 +88,13 @@ void ASTDropIndexQuery::readJSON(const Poco::JSON::Object & json)
     }
     else
         setTable(r.getString("table"));
+
+    /// `formatQueryImpl` always emits `ON <table>`, so a target table is mandatory.
+    /// The parser cannot produce a standalone `DROP INDEX` without one.
+    if (!table)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`DropIndexQuery` must specify a target table during AST JSON deserialization");
+
+    readOutputOptionsJSON(r);
 }
 
 void ASTDropIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

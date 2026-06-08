@@ -270,6 +270,8 @@ void ASTQualifiedColumnsListMatcher::writeJSON(WriteBuffer & out) const
 void ASTColumnsRegexpMatcher::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+    if (!r.has("pattern"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'pattern' field in `ColumnsRegexpMatcher` during AST JSON deserialization");
     setPattern(r.getString("pattern"));
     expression = r.readChild("expression");
     if (expression)
@@ -297,6 +299,8 @@ void ASTColumnsListMatcher::readJSON(const Poco::JSON::Object & json)
 void ASTQualifiedColumnsRegexpMatcher::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+    if (!r.has("pattern"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'pattern' field in `QualifiedColumnsRegexpMatcher` during AST JSON deserialization");
     setPattern(r.getString("pattern"));
     qualifier = r.readChild("qualifier");
     if (!qualifier)

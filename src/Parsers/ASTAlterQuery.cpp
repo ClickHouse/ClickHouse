@@ -290,12 +290,46 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         case ASTAlterCommand::DROP_DETACHED_PARTITION:
         case ASTAlterCommand::FORGET_PARTITION:
         case ASTAlterCommand::ATTACH_PARTITION:
-        case ASTAlterCommand::MOVE_PARTITION:
         case ASTAlterCommand::REPLACE_PARTITION:
         case ASTAlterCommand::FETCH_PARTITION:
         case ASTAlterCommand::FREEZE_PARTITION:
         case ASTAlterCommand::UNFREEZE_PARTITION:
             require(partition, "partition");
+            break;
+        case ASTAlterCommand::MOVE_PARTITION:
+            require(partition, "partition");
+            /// `writeJSON` only emits `move_destination_type` for `MOVE_PARTITION`, so it must be present here.
+            if (!r.has("move_destination_type"))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Missing required 'move_destination_type' field for ALTER command of type 'MOVE_PARTITION' "
+                    "during AST JSON deserialization");
+            switch (move_destination_type)
+            {
+                case DataDestinationType::DISK:
+                case DataDestinationType::VOLUME:
+                case DataDestinationType::SHARD:
+                    if (move_destination_name.empty())
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Missing required 'move_destination_name' field for ALTER command of type 'MOVE_PARTITION' "
+                            "with move_destination_type '{}' during AST JSON deserialization",
+                            magic_enum::enum_name(move_destination_type));
+                    break;
+                case DataDestinationType::TABLE:
+                    if (to_table.empty())
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Missing required 'to_table' field for ALTER command of type 'MOVE_PARTITION' "
+                            "with move_destination_type 'TABLE' during AST JSON deserialization");
+                    break;
+                default:
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Unsupported move_destination_type '{}' for ALTER command of type 'MOVE_PARTITION' "
+                        "during AST JSON deserialization",
+                        magic_enum::enum_name(move_destination_type));
+            }
             break;
         case ASTAlterCommand::DELETE:
             require(predicate, "predicate");
@@ -972,6 +1006,7 @@ void ASTAlterQuery::writeJSON(WriteBuffer & out) const
     w.writeString("alter_object", std::string_view(obj_type));
 
     w.writeChild("command_list", command_list);
+    writeOutputOptionsJSON(w);
 }
 
 void ASTAlterQuery::readJSON(const Poco::JSON::Object & json)
@@ -1014,7 +1049,27 @@ void ASTAlterQuery::readJSON(const Poco::JSON::Object & json)
     auto child = r.readChild("command_list");
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'command_list' field in `AlterQuery` during AST JSON deserialization");
+    /// `formatQueryImpl` and `forEachPointerToChild` both cast `command_list` to `ASTExpressionList`.
+    if (!child->as<ASTExpressionList>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'command_list' of `AlterQuery` must be an ExpressionList during AST JSON deserialization");
     set(command_list, child);
+
+    /// Validate the target against the parser invariants: `ALTER TABLE` always has a table
+    /// target, while `ALTER DATABASE` has only a database target and never a table.
+    if (alter_object == AlterObjectType::TABLE)
+    {
+        if (!table)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`AlterQuery` with alter_object 'TABLE' must specify a target table during AST JSON deserialization");
+    }
+    else if (alter_object == AlterObjectType::DATABASE)
+    {
+        if (!database)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`AlterQuery` with alter_object 'DATABASE' must specify a target database during AST JSON deserialization");
+        if (table)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`AlterQuery` with alter_object 'DATABASE' must not specify a target table during AST JSON deserialization");
+    }
+
+    readOutputOptionsJSON(r);
 }
 
 void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

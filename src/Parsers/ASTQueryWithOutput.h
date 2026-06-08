@@ -8,6 +8,9 @@
 namespace DB
 {
 
+class JSONObjectWriter;
+class JSONObjectReader;
+
 /** Query with output options
   * (supporting [INTO OUTFILE 'file_name'] [FORMAT format_name] [SETTINGS key1 = value1, key2 = value2, ...] suffix).
   */
@@ -50,6 +53,15 @@ public:
 
     /// NOTE: call this helper at the end of the clone() method of descendant class.
     void cloneOutputOptions(ASTQueryWithOutput & cloned) const;
+
+    /// Serialize / deserialize the shared output suffix (INTO OUTFILE / FORMAT / SETTINGS /
+    /// COMPRESSION and the APPEND / TRUNCATE / AND STDOUT flags) as part of `writeJSON` /
+    /// `readJSON`. Descendants that implement JSON serialization must call these so the
+    /// suffix survives the round-trip; otherwise `parseQueryToJSON` -> `formatQueryFromJSON`
+    /// silently drops it. Call `readOutputOptionsJSON` at the end of `readJSON`, after the
+    /// query-specific children have been appended, to match the parser's `children` order.
+    void writeOutputOptionsJSON(JSONObjectWriter & w) const;
+    void readOutputOptionsJSON(JSONObjectReader & r);
 
     /// Format only the query part of the AST (without output options).
     virtual void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;

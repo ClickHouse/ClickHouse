@@ -79,6 +79,7 @@ void ASTDeleteQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("partition", partition);
     w.writeChild("predicate", predicate);
     w.writeChild("settings_ast", settings_ast);
+    writeOutputOptionsJSON(w);
 }
 
 void ASTDeleteQuery::readJSON(const Poco::JSON::Object & json)
@@ -102,6 +103,7 @@ void ASTDeleteQuery::readJSON(const Poco::JSON::Object & json)
     settings_ast = r.readChild("settings_ast");
     if (settings_ast)
         children.push_back(settings_ast);
+    readOutputOptionsJSON(r);
 }
 
 }

@@ -61,6 +61,7 @@ void ASTCreateIndexQuery::writeJSON(WriteBuffer & out) const
     /// strings above cannot represent query parameters.
     w.writeChild("database_ast", database);
     w.writeChild("table_ast", table);
+    writeOutputOptionsJSON(w);
 }
 
 void ASTCreateIndexQuery::readJSON(const Poco::JSON::Object & json)
@@ -100,6 +101,13 @@ void ASTCreateIndexQuery::readJSON(const Poco::JSON::Object & json)
     }
     else
         setTable(r.getString("table"));
+
+    /// `formatQueryImpl` always emits `ON <table>`, so a target table is mandatory.
+    /// The parser cannot produce a standalone `CREATE INDEX` without one.
+    if (!table)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`CreateIndexQuery` must specify a target table during AST JSON deserialization");
+
+    readOutputOptionsJSON(r);
 }
 
 void ASTCreateIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

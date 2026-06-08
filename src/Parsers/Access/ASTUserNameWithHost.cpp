@@ -130,6 +130,13 @@ void ASTUserNamesWithHost::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     children = r.readChildren();
+
+    for (const auto & child : children)
+        if (!child->as<ASTUserNameWithHost>())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected child type '{}' during AST JSON deserialization of ASTUserNamesWithHost, expected UserNameWithHost",
+                child ? child->getID() : "NULL");
 }
 
 bool ASTUserNamesWithHost::getHostPatternIfCommon(String & out_common_host_pattern) const

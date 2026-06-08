@@ -69,6 +69,10 @@ void ASTDropQuery::writeJSON(WriteBuffer & out) const
     w.writeBool("is_view", is_view);
     w.writeBool("sync", sync);
     w.writeBool("permanently", permanently);
+    /// `TEMPORARY` is part of the formatted DDL (`DROP TEMPORARY TABLE ...`) and selects a
+    /// different target object class, so it must survive the round-trip.
+    if (isTemporary())
+        w.writeBool("is_temporary", true);
 
     w.writeChild("database_and_tables", database_and_tables);
 
@@ -77,6 +81,7 @@ void ASTDropQuery::writeJSON(WriteBuffer & out) const
     /// strings above lose them (they stringify to empty), so we restore from these on read.
     w.writeChild("database_ast", database);
     w.writeChild("table_ast", table);
+    writeOutputOptionsJSON(w);
 }
 
 void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
@@ -128,6 +133,8 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
     is_view = r.getBool("is_view");
     sync = r.getBool("sync");
     permanently = r.getBool("permanently");
+    if (r.getBool("is_temporary"))
+        setIsTemporary(true);
 
     auto child = r.readChild("database_and_tables");
     if (child)
@@ -147,6 +154,8 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
     /// name a view or dictionary silently execute as `DROP DATABASE`. Reject it.
     if (!table && !database_and_tables && (is_view || is_dictionary))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`DropQuery` with 'is_view' or 'is_dictionary' set must specify a table target ('table' or 'database_and_tables') during AST JSON deserialization");
+
+    readOutputOptionsJSON(r);
 }
 
 void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

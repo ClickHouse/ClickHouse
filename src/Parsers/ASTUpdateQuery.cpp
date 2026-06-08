@@ -76,6 +76,7 @@ void ASTUpdateQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("partition", partition);
     w.writeChild("predicate", predicate);
     w.writeChild("settings_ast", settings_ast);
+    writeOutputOptionsJSON(w);
 }
 
 void ASTUpdateQuery::readJSON(const Poco::JSON::Object & json)
@@ -109,6 +110,7 @@ void ASTUpdateQuery::readJSON(const Poco::JSON::Object & json)
     settings_ast = r.readChild("settings_ast");
     if (settings_ast)
         children.push_back(settings_ast);
+    readOutputOptionsJSON(r);
 }
 
 }

@@ -232,6 +232,13 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
     if (window_definition)
         children.push_back(window_definition);
 
+    /// A window payload or window kind is only formatted when the function is a window function.
+    /// Accepting such input while 'is_window_function' is false would silently drop the OVER (...) clause,
+    /// producing an AST the parser cannot have produced.
+    if ((r.has("window_name") || window_definition || getKind() == Kind::WINDOW_FUNCTION) && !isWindowFunction())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'window_name', 'window_definition' or 'kind' = 'WINDOW_FUNCTION' require 'is_window_function' to be true during AST JSON deserialization");
+
     if (isWindowFunction() && window_name.empty() && !window_definition)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Window function requires either a non-empty 'window_name' or a 'window_definition' child during AST JSON deserialization");

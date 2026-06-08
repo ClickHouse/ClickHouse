@@ -77,6 +77,7 @@ void ASTShowColumnsQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("case_insensitive_like", true);
     w.writeChild("where_expression", where_expression);
     w.writeChild("limit_length", limit_length);
+    writeOutputOptionsJSON(w);
 }
 
 void ASTShowColumnsQuery::readJSON(const Poco::JSON::Object & json)
@@ -97,6 +98,7 @@ void ASTShowColumnsQuery::readJSON(const Poco::JSON::Object & json)
     limit_length = r.readChild("limit_length");
     if (limit_length)
         children.push_back(limit_length);
+    readOutputOptionsJSON(r);
 }
 
 }

@@ -569,6 +569,12 @@ void ASTTableJoin::readJSON(const Poco::JSON::Object & json)
         on_expression = child;
         children.push_back(on_expression);
     }
+
+    /// A JOIN's `USING` and `ON` are mutually exclusive: the formatter emits `USING` and skips `ON` when both are present,
+    /// silently dropping the `ON` predicate. The parser can never produce both, so reject such a payload.
+    if (using_expression_list && on_expression)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTTableJoin must not have both 'using_expression_list' and 'on_expression' during AST JSON deserialization");
 }
 
 void ASTArrayJoin::readJSON(const Poco::JSON::Object & json)

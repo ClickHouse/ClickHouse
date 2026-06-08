@@ -1,10 +1,52 @@
 #include <Parsers/ASTQueryWithOutput.h>
 
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
 {
+
+void ASTQueryWithOutput::writeOutputOptionsJSON(JSONObjectWriter & w) const
+{
+    w.writeChild("out_file", out_file);
+    w.writeChild("format_ast", format_ast);
+    w.writeChild("settings_ast", settings_ast);
+    w.writeChild("compression", compression);
+    w.writeChild("compression_level", compression_level);
+
+    w.writeBool("is_outfile_append", isOutfileAppend());
+    w.writeBool("is_outfile_truncate", isOutfileTruncate());
+    w.writeBool("is_into_outfile_with_stdout", isIntoOutfileWithStdout());
+}
+
+void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
+{
+    out_file = r.readChild("out_file");
+    if (out_file)
+        children.push_back(out_file);
+
+    format_ast = r.readChild("format_ast");
+    if (format_ast)
+        children.push_back(format_ast);
+
+    settings_ast = r.readChild("settings_ast");
+    if (settings_ast)
+        children.push_back(settings_ast);
+
+    compression = r.readChild("compression");
+    if (compression)
+        children.push_back(compression);
+
+    compression_level = r.readChild("compression_level");
+    if (compression_level)
+        children.push_back(compression_level);
+
+    setIsOutfileAppend(r.getBool("is_outfile_append"));
+    setIsOutfileTruncate(r.getBool("is_outfile_truncate"));
+    setIsIntoOutfileWithStdout(r.getBool("is_into_outfile_with_stdout"));
+}
 
 void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
 {

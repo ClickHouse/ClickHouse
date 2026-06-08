@@ -24,39 +24,59 @@ class JSONObjectReader
 public:
     explicit JSONObjectReader(const Poco::JSON::Object & obj_) : obj(obj_) {}
 
+    /// The scalar getters below validate the JSON scalar type strictly before extracting.
+    /// `Poco::Dynamic::Var` otherwise coerces freely (e.g. the string `"yes"` becomes
+    /// `true`, `"123"` becomes a number), which would let malformed `clickhouse_json`
+    /// deserialize into a different valid AST instead of being rejected at the boundary.
+    /// An absent key still returns the default (presence is enforced separately by callers
+    /// that require a field). Note: Poco reports a JSON boolean as `isInteger()`/`isNumeric()`
+    /// too (`bool` is an integral type), so the numeric getters exclude `isBoolean()`.
     String getString(const char * key, const String & default_value = {}) const
     {
-        if (obj.has(key))
-            return obj.getValue<String>(key);
-        return default_value;
+        if (!obj.has(key))
+            return default_value;
+        if (!obj.get(key).isString())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a string for key '{}' during AST JSON deserialization", key);
+        return obj.getValue<String>(key);
     }
 
     bool getBool(const char * key, bool default_value = false) const
     {
-        if (obj.has(key))
-            return obj.getValue<bool>(key);
-        return default_value;
+        if (!obj.has(key))
+            return default_value;
+        if (!obj.get(key).isBoolean())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a boolean for key '{}' during AST JSON deserialization", key);
+        return obj.getValue<bool>(key);
     }
 
     Int64 getInt(const char * key, Int64 default_value = 0) const
     {
-        if (obj.has(key))
-            return obj.getValue<Int64>(key);
-        return default_value;
+        if (!obj.has(key))
+            return default_value;
+        const auto var = obj.get(key);
+        if (!var.isInteger() || var.isBoolean())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected an integer for key '{}' during AST JSON deserialization", key);
+        return obj.getValue<Int64>(key);
     }
 
     UInt64 getUInt(const char * key, UInt64 default_value = 0) const
     {
-        if (obj.has(key))
-            return obj.getValue<Poco::UInt64>(key);
-        return default_value;
+        if (!obj.has(key))
+            return default_value;
+        const auto var = obj.get(key);
+        if (!var.isInteger() || var.isBoolean())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected an unsigned integer for key '{}' during AST JSON deserialization", key);
+        return obj.getValue<Poco::UInt64>(key);
     }
 
     double getDouble(const char * key, double default_value = 0) const
     {
-        if (obj.has(key))
-            return obj.getValue<double>(key);
-        return default_value;
+        if (!obj.has(key))
+            return default_value;
+        const auto var = obj.get(key);
+        if (!var.isNumeric() || var.isBoolean())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a number for key '{}' during AST JSON deserialization", key);
+        return obj.getValue<double>(key);
     }
 
     bool has(const char * key) const { return obj.has(key); }

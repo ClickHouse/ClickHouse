@@ -60,6 +60,7 @@ void ASTKillQueryQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("test", true);
     if (!cluster.empty())
         w.writeString("cluster", cluster);
+    writeOutputOptionsJSON(w);
 }
 
 void ASTKillQueryQuery::readJSON(const Poco::JSON::Object & json)
@@ -79,6 +80,7 @@ void ASTKillQueryQuery::readJSON(const Poco::JSON::Object & json)
     sync = r.getBool("sync");
     test = r.getBool("test");
     cluster = r.getString("cluster");
+    readOutputOptionsJSON(r);
 }
 
 }

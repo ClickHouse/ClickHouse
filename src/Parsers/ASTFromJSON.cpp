@@ -1,6 +1,8 @@
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/IAST.h>
 
+#include <algorithm>
+
 /// Include ALL AST types for the factory.
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -224,12 +226,57 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
 }
 
 
+namespace
+{
+
+/// Maximum nesting depth of `{`/`[` in a raw JSON string, ignoring brackets inside string
+/// literals. Used to bound recursion before handing the text to the JSON parser.
+size_t computeJSONNestingDepth(const String & json)
+{
+    size_t depth = 0;
+    size_t max_depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (char c : json)
+    {
+        if (in_string)
+        {
+            if (escaped)
+                escaped = false;
+            else if (c == '\\')
+                escaped = true;
+            else if (c == '"')
+                in_string = false;
+            continue;
+        }
+        if (c == '"')
+            in_string = true;
+        else if (c == '{' || c == '[')
+        {
+            ++depth;
+            max_depth = std::max(max_depth, depth);
+        }
+        else if ((c == '}' || c == ']') && depth > 0)
+            --depth;
+    }
+    return max_depth;
+}
+
+}
+
 ASTPtr IAST::createFromJSON(const String & json)
 {
+    /// `Poco::JSON::Parser::setDepth` does not actually bound recursion in our Poco fork
+    /// (`ParserImpl` stores `_depth` but `handle`/`handleObject`/`handleArray` never read it),
+    /// so a hostile deeply-nested payload would recurse through the parser and overflow the
+    /// stack before any AST-level depth check runs. Enforce the limit on the raw text first.
+    if (json_deser_max_depth > 0 && computeJSONNestingDepth(json) > json_deser_max_depth)
+        throw Exception(ErrorCodes::TOO_DEEP_AST,
+            "JSON nesting depth exceeds maximum AST depth limit ({}) during JSON AST deserialization", json_deser_max_depth);
+
     Poco::JSON::Parser parser;
-    /// Bound the JSON parser nesting depth to avoid stack overflow on hostile deeply-nested input,
-    /// before any AST-level depth check runs. The thread-local limit is set by the overload that takes
-    /// `max_depth`; when it is zero (unlimited path), leave the parser unrestricted as before.
+    /// Also request the parser-level bound (kept for forward compatibility if the fork starts
+    /// honouring it); the pre-scan above is the actual enforcement.
     if (json_deser_max_depth > 0)
         parser.setDepth(json_deser_max_depth);
     Poco::Dynamic::Var result;

@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 
 String ASTSampleRatio::toString(BigNum num)
 {
@@ -48,11 +53,18 @@ void ASTSampleRatio::writeJSON(WriteBuffer & out) const
     w.writeString("denominator", toString(ratio.denominator));
 }
 
-static ASTSampleRatio::BigNum parseBigNum(const String & s)
+static ASTSampleRatio::BigNum parseBigNum(const String & key, const String & s)
 {
+    if (s.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Empty '{}' for SampleRatio during AST JSON deserialization", key);
+
     ASTSampleRatio::BigNum result = 0;
     for (char c : s)
     {
+        if (c < '0' || c > '9')
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Non-digit character in '{}' for SampleRatio during AST JSON deserialization", key);
         result = result * 10 + (c - '0');
     }
     return result;
@@ -61,8 +73,17 @@ static ASTSampleRatio::BigNum parseBigNum(const String & s)
 void ASTSampleRatio::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
-    ratio.numerator = parseBigNum(r.getString("numerator"));
-    ratio.denominator = parseBigNum(r.getString("denominator", "1"));
+
+    if (!r.has("numerator"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Missing 'numerator' for SampleRatio during AST JSON deserialization");
+
+    ratio.numerator = parseBigNum("numerator", r.getString("numerator"));
+
+    if (r.has("denominator"))
+        ratio.denominator = parseBigNum("denominator", r.getString("denominator"));
+    else
+        ratio.denominator = 1;
 }
 
 }

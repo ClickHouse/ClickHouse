@@ -542,6 +542,15 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
                 }
             }
 
+            /// In multiquery mode `max_length` is 0 above, so the early guard is skipped even
+            /// though this branch scans and deserializes the JSON client-side. Enforce
+            /// `max_query_size` against the actual JSON slice now that its end is known, so the
+            /// JSON path matches the single-statement, server, and `clickhouse-local` paths.
+            if (const size_t max_query_size = settings[Setting::max_query_size];
+                max_query_size != 0 && static_cast<size_t>(json_end - pos) > max_query_size)
+                throw Exception(ErrorCodes::SYNTAX_ERROR,
+                    "Max query size exceeded (can be increased with the `max_query_size` setting)");
+
             res = IAST::createFromJSON(String(pos, json_end),
                 settings[Setting::max_ast_depth],
                 settings[Setting::max_ast_elements]);

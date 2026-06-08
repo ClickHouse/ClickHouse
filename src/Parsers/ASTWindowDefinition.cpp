@@ -5,6 +5,8 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
+#include <array>
+
 namespace DB
 {
 
@@ -274,17 +276,45 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
         children.push_back(order_by);
     }
 
-    if (r.has("frame_is_default"))
+    /// `frame_is_default` gates whether `formatImpl` emits the frame clause at all, so
+    /// the presence of frame fields must agree with it. `writeJSON` emits `frame_is_default`
+    /// (always `false`) together with the full set of frame fields only for a non-default
+    /// frame, and emits none of them for a default frame. Reject any inconsistent input so
+    /// frame semantics cannot be silently dropped on the next format.
+    const bool has_frame_is_default = r.has("frame_is_default");
+    /// `frame_is_default` defaults to `true` (see the header), so an absent key is a default frame.
+    frame_is_default = has_frame_is_default ? r.getBool("frame_is_default") : true;
+
+    static constexpr std::array frame_field_keys = {
+        "frame_type",
+        "frame_begin_type",
+        "frame_begin_offset",
+        "frame_begin_preceding",
+        "frame_end_type",
+        "frame_end_offset",
+        "frame_end_preceding",
+    };
+
+    if (frame_is_default)
     {
-        frame_is_default = r.getBool("frame_is_default");
+        /// `writeJSON` does not emit `frame_is_default` for a default frame, but accept an
+        /// explicit `frame_is_default: true` as well; in either case no frame field may be present.
+        for (const char * key : frame_field_keys)
+            if (r.has(key))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Field '{}' is present for a default-frame window during AST JSON deserialization", key);
+    }
+    else
+    {
+        if (!r.has("frame_type"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_type' for a non-default-frame window during AST JSON deserialization");
+        if (!r.has("frame_begin_type"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_begin_type' for a non-default-frame window during AST JSON deserialization");
+        if (!r.has("frame_end_type"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_end_type' for a non-default-frame window during AST JSON deserialization");
 
-        String frame_type_str = r.getString("frame_type");
-        if (!frame_type_str.empty())
-            frame_type = parseFrameType(frame_type_str);
-
-        String frame_begin_type_str = r.getString("frame_begin_type");
-        if (!frame_begin_type_str.empty())
-            frame_begin_type = parseBoundaryType(frame_begin_type_str);
+        frame_type = parseFrameType(r.getString("frame_type"));
+        frame_begin_type = parseBoundaryType(r.getString("frame_begin_type"));
 
         child = r.readChild("frame_begin_offset");
         if (child)
@@ -297,9 +327,7 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
 
         frame_begin_preceding = r.getBool("frame_begin_preceding");
 
-        String frame_end_type_str = r.getString("frame_end_type");
-        if (!frame_end_type_str.empty())
-            frame_end_type = parseBoundaryType(frame_end_type_str);
+        frame_end_type = parseBoundaryType(r.getString("frame_end_type"));
 
         child = r.readChild("frame_end_offset");
         if (child)

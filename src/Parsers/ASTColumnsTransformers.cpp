@@ -442,16 +442,37 @@ void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
     column_name_prefix = r.getString("column_name_prefix");
 
     /// `formatImpl`, `appendColumnName`, `updateTreeHashImpl`, and `transform`
-    /// all branch on either a lambda or a function name; one of them must be present.
-    if (!lambda && func_name.empty())
+    /// all branch on either a lambda or a function name; exactly one of the two
+    /// mutually exclusive shapes must be present. The lambda branch takes priority
+    /// in `formatImpl`/`transform` and silently drops `func_name`/`parameters`,
+    /// so accepting both at once would lose information the parser never produces.
+    bool has_function_mode = !func_name.empty();
+    bool has_lambda_mode = lambda != nullptr;
+
+    if (has_function_mode && has_lambda_mode)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ColumnsApplyTransformer must specify either a function name or a lambda, not both, during AST JSON deserialization");
+
+    if (!has_function_mode && !has_lambda_mode)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ColumnsApplyTransformer requires either a function name or a lambda during AST JSON deserialization");
 
+    /// `parameters` is only meaningful for function mode (`func_name(parameters)`),
+    /// so it must not appear without a function name.
+    if (parameters && !has_function_mode)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ColumnsApplyTransformer with parameters requires a function name during AST JSON deserialization");
+
     /// `transform` substitutes the current column for `lambda_arg` inside the lambda body,
-    /// so a lambda without its argument name would be meaningless.
-    if (lambda && lambda_arg.empty())
+    /// so a lambda without its argument name would be meaningless, and the argument name
+    /// must not appear without a lambda.
+    if (has_lambda_mode && lambda_arg.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ColumnsApplyTransformer with a lambda requires a non-empty lambda argument during AST JSON deserialization");
+
+    if (!lambda_arg.empty() && !has_lambda_mode)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ColumnsApplyTransformer with a lambda argument requires a lambda during AST JSON deserialization");
 }
 
 void ASTColumnsExceptTransformer::readJSON(const Poco::JSON::Object & json)

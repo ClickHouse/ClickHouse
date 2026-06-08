@@ -29,8 +29,15 @@ void ASTRenameQuery::readJSON(const Poco::JSON::Object & json)
     elements.clear();
     children.clear();
 
+    /// Every `RENAME` form requires a non-empty `elements` list; the parser cannot produce
+    /// a `RENAME` without targets. Reject a missing/empty list instead of formatting `RENAME `.
+    if (!r.has("elements"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'elements' for `RenameQuery` during AST JSON deserialization");
     auto arr = r.getArray("elements");
-    if (arr)
+    if (!arr)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'elements' is not a JSON array for `RenameQuery` during AST JSON deserialization");
+    if (arr->size() == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'elements' array for `RenameQuery` during AST JSON deserialization");
     {
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
@@ -97,9 +104,7 @@ void ASTRenameQuery::readJSON(const Poco::JSON::Object & json)
         }
     }
 
-    /// `RENAME DATABASE` form indexes `elements.at(0)`, so we must have at least one element.
-    if (database && elements.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`RENAME DATABASE` requires at least one element during AST JSON deserialization");
+    readOutputOptionsJSON(r);
 }
 
 void ASTRenameQuery::writeJSON(WriteBuffer & out) const
@@ -159,6 +164,8 @@ void ASTRenameQuery::writeJSON(WriteBuffer & out) const
         out << '}';
     }
     out << ']';
+
+    writeOutputOptionsJSON(w);
 }
 
 }

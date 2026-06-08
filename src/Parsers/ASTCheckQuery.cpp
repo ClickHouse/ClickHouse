@@ -18,6 +18,7 @@ void ASTCheckTableQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("partition", partition);
     if (!part_name.empty())
         w.writeString("part_name", part_name);
+    writeOutputOptionsJSON(w);
 }
 
 void ASTCheckTableQuery::readJSON(const Poco::JSON::Object & json)
@@ -34,16 +35,19 @@ void ASTCheckTableQuery::readJSON(const Poco::JSON::Object & json)
     if (partition)
         children.push_back(partition);
     part_name = r.getString("part_name");
+    readOutputOptionsJSON(r);
 }
 
 void ASTCheckAllTablesQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "CheckAllTablesQuery");
+    writeOutputOptionsJSON(w);
 }
 
-void ASTCheckAllTablesQuery::readJSON(const Poco::JSON::Object & /* json */)
+void ASTCheckAllTablesQuery::readJSON(const Poco::JSON::Object & json)
 {
-    /// No fields to read.
+    JSONObjectReader r(json);
+    readOutputOptionsJSON(r);
 }
 
 }

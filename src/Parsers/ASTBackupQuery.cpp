@@ -530,6 +530,7 @@ void ASTBackupQuery::writeJSON(WriteBuffer & out) const
         buf << ']';
     }
     w.writeChildren(children);
+    writeOutputOptionsJSON(w);
 }
 
 void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
@@ -575,6 +576,7 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'elements' array during AST JSON deserialization", i);
         elements.push_back(readElementJSON(*elem_obj, i));
     }
+    readOutputOptionsJSON(r);
 }
 
 }

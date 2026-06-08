@@ -113,21 +113,29 @@ String formatWithOriginalWhitespace(const String & canonical, const String & ori
     /// quoted identifiers, and other tokens must match exactly to preserve semantics
     /// for case-sensitive identifier names.
     const auto & keyword_set = getKeyWordSet();
-    auto isKeyword = [&keyword_set](const SignificantToken & t) -> bool
+    /// A `BareWord` is a keyword only when the canonical formatter emitted it in its canonical
+    /// (uppercase) keyword form. An identifier whose name collides with a keyword (e.g. a column
+    /// named `Date`) is emitted in its AST case — not all-uppercase — so it is NOT treated as a
+    /// keyword and must match exactly, preserving the case-sensitive identifier from the AST.
+    /// `b` (the original text) is never consulted here: its casing is authoritative only for
+    /// genuine keywords, which are decided from the canonical token `a`.
+    auto isCanonicalKeyword = [&keyword_set](const SignificantToken & t) -> bool
     {
         if (t.type != TokenType::BareWord)
             return false;
         String upper(t.text);
         Poco::toUpperInPlace(upper);
-        return keyword_set.contains(upper);
+        return String(t.text) == upper && keyword_set.contains(upper);
     };
 
-    auto tokensMatch = [&isKeyword](const SignificantToken & a, const SignificantToken & b) -> bool
+    auto tokensMatch = [&isCanonicalKeyword](const SignificantToken & a, const SignificantToken & b) -> bool
     {
         if (a.text.size() != b.text.size())
             return false;
 
-        bool case_insensitive = isKeyword(a) && isKeyword(b);
+        /// `a` is always the canonical token and `b` the original; only genuine keywords may
+        /// differ in case (SQL keywords are case-insensitive). Identifiers must match exactly.
+        bool case_insensitive = isCanonicalKeyword(a);
 
         for (size_t i = 0; i < a.text.size(); ++i)
         {

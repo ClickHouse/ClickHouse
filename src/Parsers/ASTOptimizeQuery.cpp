@@ -77,6 +77,7 @@ void ASTOptimizeQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("dry_run", true);
     w.writeChild("deduplicate_by_columns", deduplicate_by_columns);
     w.writeChild("parts_list", parts_list);
+    writeOutputOptionsJSON(w);
 }
 
 void ASTOptimizeQuery::readJSON(const Poco::JSON::Object & json)
@@ -103,6 +104,7 @@ void ASTOptimizeQuery::readJSON(const Poco::JSON::Object & json)
     parts_list = r.readChild("parts_list");
     if (parts_list)
         children.push_back(parts_list);
+    readOutputOptionsJSON(r);
 }
 
 }
