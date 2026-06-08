@@ -195,9 +195,9 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
      {"promql", Dialect::promql},
      {"polyglot", Dialect::polyglot}})
 
-IMPLEMENT_SETTING_ENUM(SqlCompatibilityMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"default",  SqlCompatibilityMode::default_},
-     {"standard", SqlCompatibilityMode::standard}})
+IMPLEMENT_SETTING_ENUM(SQLCompatibilityMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"default",  SQLCompatibilityMode::default_},
+     {"standard", SQLCompatibilityMode::standard}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},

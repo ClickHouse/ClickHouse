@@ -6673,7 +6673,7 @@ However, the compatibility setting can be overridden at the user, role, profile,
 :::
 )", 0) \
     \
-    DECLARE(SqlCompatibilityMode, sql_compatibility_mode, SqlCompatibilityMode::default_, R"(
+    DECLARE(SQLCompatibilityMode, sql_compatibility_mode, SQLCompatibilityMode::default_, R"(
 Selects a curated bundle of session settings that align ClickHouse behavior with a SQL standard dialect.
 
 Possible values:
@@ -8434,7 +8434,7 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
-    void applySqlCompatibilityMode(SqlCompatibilityMode mode);
+    void applySQLCompatibilityMode(SQLCompatibilityMode mode);
 
     std::unordered_set<std::string_view> settings_changed_by_compatibility_setting;
     std::unordered_set<std::string_view> settings_changed_by_sql_compatibility_mode;
@@ -8565,9 +8565,9 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     {
         if (value.getType() != Field::Types::Which::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type of value for setting 'sql_compatibility_mode'. Expected String, got {}", value.getTypeName());
-        SettingFieldSqlCompatibilityMode parsed;
+        SettingFieldSQLCompatibilityMode parsed;
         parsed.parseFromString(value.safeGet<String>());
-        applySqlCompatibilityMode(parsed.value);
+        applySQLCompatibilityMode(parsed.value);
     }
     /// If we change a setting that was changed by `compatibility` or `sql_compatibility_mode` before
     /// we should remove it from the corresponding tracking set, otherwise the next time
@@ -8583,7 +8583,7 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     BaseSettings::set(name, value);
 }
 
-void SettingsImpl::applySqlCompatibilityMode(SqlCompatibilityMode mode)
+void SettingsImpl::applySQLCompatibilityMode(SQLCompatibilityMode mode)
 {
     /// First, revert all changes applied by the previous mode value
     for (const auto & setting_name : settings_changed_by_sql_compatibility_mode)
@@ -8591,7 +8591,7 @@ void SettingsImpl::applySqlCompatibilityMode(SqlCompatibilityMode mode)
     settings_changed_by_sql_compatibility_mode.clear();
 
     /// `default` clears overrides and leaves everything at the user-resolved value
-    if (mode == SqlCompatibilityMode::default_)
+    if (mode == SQLCompatibilityMode::default_)
         return;
 
     /// Convert typed enum values to the String Field expected by enum-backed settings.
@@ -8602,7 +8602,7 @@ void SettingsImpl::applySqlCompatibilityMode(SqlCompatibilityMode mode)
 
     /// Curated overrides for each non-default mode. Adding a new mode = adding a branch here.
     std::vector<std::pair<std::string_view, Field>> overrides;
-    if (mode == SqlCompatibilityMode::standard)
+    if (mode == SQLCompatibilityMode::standard)
     {
         overrides = {
             {"data_type_default_nullable",         true},

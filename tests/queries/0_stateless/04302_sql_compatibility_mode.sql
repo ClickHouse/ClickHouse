@@ -45,6 +45,12 @@ SET sql_compatibility_mode = 'default';
 SELECT getSetting('cast_keep_nullable');     -- 0, user value wins
 SELECT getSetting('group_by_use_nulls');     -- 0, reverted to default
 
+SELECT '--- explicit default-valued override survives mode in same batch ---';
+SET sql_compatibility_mode = 'default';
+SET join_use_nulls = DEFAULT;
+-- Must stay 0: explicit override in the same batch should not be dropped as "unchanged".
+SELECT getSetting('join_use_nulls') SETTINGS sql_compatibility_mode = 'standard', join_use_nulls = 0;
+
 SELECT '--- normal SQL still works under standard mode ---';
 SET sql_compatibility_mode = 'default';
 SET join_use_nulls = DEFAULT, cast_keep_nullable = DEFAULT;
@@ -98,11 +104,11 @@ SELECT toTypeName(CAST(materialize(toNullable(1)) AS UInt32));
 
 SELECT '--- per-setting behavioral: data_type_default_nullable ---';
 SET sql_compatibility_mode = 'default';
-CREATE TEMPORARY TABLE t_dtdn_default (x UInt32) ENGINE = Memory;
-SELECT type FROM system.columns WHERE table = 't_dtdn_default' AND name = 'x';
+CREATE TABLE t_dtdn_default (x UInt32) ENGINE = Memory;
+SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_dtdn_default' AND name = 'x';
 SET sql_compatibility_mode = 'standard';
-CREATE TEMPORARY TABLE t_dtdn_standard (x UInt32) ENGINE = Memory;
-SELECT type FROM system.columns WHERE table = 't_dtdn_standard' AND name = 'x';
+CREATE TABLE t_dtdn_standard (x UInt32) ENGINE = Memory;
+SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_dtdn_standard' AND name = 'x';
 
 SELECT '--- per-setting behavioral: group_by_use_nulls ---';
 SET sql_compatibility_mode = 'default';

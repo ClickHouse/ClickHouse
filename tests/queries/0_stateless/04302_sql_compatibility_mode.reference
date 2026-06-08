@@ -29,6 +29,8 @@ Unspecified
 --- manual change after mode switch is preserved on revert ---
 0
 0
+--- explicit default-valued override survives mode in same batch ---
+0
 --- normal SQL still works under standard mode ---
 2
 10
