@@ -502,7 +502,7 @@ TEST_F(ReaderExecutorCacheChain, PageHitSkipsSourceAndFs)
 /// it and does NOT promote it up the chain: a byte resident in fs but cold in
 /// page is served from fs and left there. (Gaps - bytes resident in no tier -
 /// are still back-filled to every tier; this only drops cache->cache copies.)
-TEST_F(ReaderExecutorCacheChain, FsHitIsNotPromotedToPage)
+TEST_F(ReaderExecutorCacheChain, FsHitIsPromotedToPage)
 {
     constexpr size_t segment_size = 64;
     constexpr size_t block_size = 16;
@@ -532,7 +532,8 @@ TEST_F(ReaderExecutorCacheChain, FsHitIsNotPromotedToPage)
     }
 
     /// Executor #2: FRESH PageCacheFile "cold" (page cold) + same warm fs.
-    /// fs serves the file while page is cold.
+    /// fs serves the file while page is cold, and the WritePlan PROMOTES each
+    /// served run up into the (populatable) page layer.
     auto cold_page_provider = makePageProvider(page_cache, "cold", block_size, file_size);
     {
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
@@ -544,11 +545,13 @@ TEST_F(ReaderExecutorCacheChain, FsHitIsNotPromotedToPage)
         EXPECT_EQ(drainAll(executor), content);
         EXPECT_EQ(executor.getSourceRequestsCount(), 0u)
             << "fs layer must serve everything while page is cold";
+        EXPECT_GT(executor.getPromotedBytes(), 0u)
+            << "fs hits must be promoted up into the cold (populatable) page layer";
     }
 
     /// Executor #3: reuses #2's page provider with the fs DROPPED from the chain.
-    /// Because the fs hit in #2 was served straight from fs and not promoted, the
-    /// page layer is still cold - so a page-only chain must fall to the source.
+    /// Because #2 promoted the fs hits up into the page layer, a page-only chain
+    /// now serves everything from page - the source is untouched.
     {
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
         caches.push_back(cold_page_provider);
@@ -556,8 +559,8 @@ TEST_F(ReaderExecutorCacheChain, FsHitIsNotPromotedToPage)
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
         executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
-        EXPECT_GT(executor.getSourceRequestsCount(), 0u)
-            << "the fs hit in #2 must NOT have repopulated the page layer (no cross-tier promotion)";
+        EXPECT_EQ(executor.getSourceRequestsCount(), 0u)
+            << "the fs hits in #2 must have promoted the page layer (cross-tier promotion)";
     }
 }
 

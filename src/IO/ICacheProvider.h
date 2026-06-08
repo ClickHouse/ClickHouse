@@ -136,6 +136,14 @@ public:
         return lookup(object, object_file_offset, range_in_file);
     }
 
+    /// Whether a miss on this tier is populated (write-through) or bypassed
+    /// (read-only, `put` is a no-op). Drives `WritePlan` promotion: a range served
+    /// from a slower tier is written up into the faster tiers that miss it, but
+    /// only the ones that populate. Mirrors the per-tier
+    /// `read_from_{filesystem,page}_cache_if_exists_otherwise_bypass_cache` setting.
+    /// Default: write-through.
+    virtual bool populatesOnMiss() const { return true; }
+
     virtual String name() const = 0;
 };
 

@@ -28,6 +28,7 @@ namespace ProfileEvents
     extern const Event ReaderExecutorBytesFromSource;
     extern const Event ReaderExecutorBytesPushedToCacheSync;
     extern const Event ReaderExecutorBytesPushedToCacheAsync;
+    extern const Event ReaderExecutorBytesPromoted;
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
     extern const Event ReaderExecutorSourceRequests;
@@ -160,6 +161,7 @@ ReaderExecutor::~ReaderExecutor()
     ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromSource, stats.bytes_from_source);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesPushedToCacheSync, stats.bytes_pushed_to_cache_sync);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesPushedToCacheAsync, stats.bytes_pushed_to_cache_async);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesPromoted, stats.bytes_promoted);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheGetRequests, stats.cache_get_requests);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorCachePopulateRequests, stats.cache_populate_requests);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorSourceRequests, stats.source_requests);
@@ -975,6 +977,9 @@ Rope ReaderExecutor::readNextWindow()
             (run.tier == CacheTier::PageCache
                 ? stats.bytes_from_page_cache
                 : stats.bytes_from_filesystem_cache) += got;
+            /// Promote this run up into any faster tier that misses it (no-op when
+            /// served from the fastest tier or nothing faster populates).
+            maybePromote(run.tier, ByteRange{pos, got}, chunk);
             rope.append(std::move(chunk));
             pos += got;
             if (pos < serve_end)
@@ -1775,6 +1780,46 @@ void ReaderExecutor::flushWritePlan(WritePlan & write_plan, const Rope & result,
             pushed_bytes += handle->put(miss, std::move(slice));
             HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
                 static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
+        }
+    }
+}
+
+void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Rope & bytes)
+{
+    /// Walk tiers fastest-first. Everything before `from_tier` is faster and
+    /// misses `range` (else it would have served it), so write `bytes` up into
+    /// each such tier that populates on a miss. Stop at the serving tier - no
+    /// point writing it or anything slower, a faster copy already lives there.
+    /// `bytes`/`range` are in file-level (physical) coordinates (pre-decryption
+    /// shift), the same space `put` expects.
+    for (auto & cache : caches)
+    {
+        if (cache->tier() == from_tier)
+            break;
+        if (!cache->populatesOnMiss())
+            continue;
+
+        /// Split by object boundary so each `lookup` carries a single object
+        /// (the provider keys/translates per object), as in `fetchAndBackfillGaps`.
+        auto pieces = offset_map.map(range);
+        size_t piece_file_start = range.offset;
+        for (const auto & pr : pieces)
+        {
+            const size_t object_file_offset = piece_file_start - pr.object_offset;
+            const ByteRange piece_range{piece_file_start, pr.size};
+            auto handle = cache->lookup(pr.object, object_file_offset, piece_range);
+            for (const auto & miss : handle->status().miss_ranges)
+            {
+                auto slice = bytes.slice(miss);
+                if (slice.empty())
+                    continue;
+                ++stats.cache_populate_requests;
+                StopwatchAccumulator put_scope(stats.cache_populate_us);
+                stats.bytes_promoted += handle->put(miss, std::move(slice));
+                HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
+                    static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
+            }
+            piece_file_start += pr.size;
         }
     }
 }

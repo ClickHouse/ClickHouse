@@ -200,6 +200,7 @@ public:
 
     String name() const override { return "DiskCache"; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
+    bool populatesOnMiss() const override { return !cache_settings.read_if_exists_otherwise_bypass; }
 
 private:
     /// Shared by `lookup` / `planResidency`: build a `DiskCacheHandle` over

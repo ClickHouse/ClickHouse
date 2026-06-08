@@ -164,6 +164,8 @@ public:
     String getFileName() const { return log_file_path; }
 
     size_t getSourceRequestsCount() const { return stats.source_requests; }
+    /// Test-only: bytes promoted into a faster tier (see `Stats::bytes_promoted`).
+    size_t getPromotedBytes() const { return stats.bytes_promoted; }
     /// Test-only: is there a prefetch currently scheduled for the next window?
     bool hasInflightPrefetch() const { return prefetch_handle != nullptr; }
     /// Test-only: byte size of the in-flight prefetch window, or 0 when no
@@ -240,6 +242,14 @@ private:
     /// The write side of `readPhysicalWindow` - the seam a lower->upper promotion
     /// rule and a dedicated async write pool will attach to.
     void flushWritePlan(WritePlan & write_plan, const Rope & result, bool from_prefetch);
+
+    /// Promote a range just served from `from_tier` up into every populatable
+    /// cache faster than it (those all miss it, since `from_tier` was the fastest
+    /// hit): `getOrSet` a handle in each and `put` the served bytes. A no-op when
+    /// nothing faster is populatable (single tier, served from the fastest tier,
+    /// or the faster tiers are in read-only/bypass mode). `bytes` carries
+    /// file-level (physical) node offsets, the same space as `range`.
+    void maybePromote(CacheTier from_tier, ByteRange range, const Rope & bytes);
 
     /// Query cache residency ONCE over `[physical_start, physical_start +
     /// plan_look_ahead_window)` (clamped to the file end / read extent) via the
@@ -609,6 +619,10 @@ private:
         /// read vs. a background prefetch worker.
         size_t bytes_pushed_to_cache_sync = 0;
         size_t bytes_pushed_to_cache_async = 0;
+        /// Bytes written into a FASTER tier by promotion: a range served from a
+        /// slower tier, written up into a missing populatable upper tier. A subset
+        /// of cache-populate work, distinct from remote backfill.
+        size_t bytes_promoted = 0;
         size_t cache_get_requests = 0;
         size_t cache_populate_requests = 0;
         size_t source_requests = 0;
@@ -661,6 +675,7 @@ private:
             bytes_from_source += o.bytes_from_source;
             bytes_pushed_to_cache_sync += o.bytes_pushed_to_cache_sync;
             bytes_pushed_to_cache_async += o.bytes_pushed_to_cache_async;
+            bytes_promoted += o.bytes_promoted;
             cache_get_requests += o.cache_get_requests;
             cache_populate_requests += o.cache_populate_requests;
             source_requests += o.source_requests;

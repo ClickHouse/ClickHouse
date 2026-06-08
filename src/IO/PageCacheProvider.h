@@ -109,6 +109,7 @@ public:
         ByteRange range_in_file) override;
     String name() const override { return "PageCache"; }
     CacheTier tier() const override { return CacheTier::PageCache; }
+    bool populatesOnMiss() const override { return !bypass_if_missing; }
 
 private:
     PageCachePtr cache;
