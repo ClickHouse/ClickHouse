@@ -1622,12 +1622,24 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
 
     /// Check if all rows of the page are filtered out, if we have enough information.
 
+    /// These signed i32 row counts are consumed below to compute `page.end_row_idx` (and the
+    /// row-skip shortcut returns before the later num_values check). A negative value would
+    /// sign-extend to a huge size_t and wrap `next_row_idx + num_rows`, moving the row cursor
+    /// backwards or skipping the page instead of failing, so reject it here.
     std::optional<size_t> num_rows_in_page;
     if (header.type == parq::PageType::DATA_PAGE_V2)
+    {
+        if (header.data_page_header_v2.num_rows < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of rows in DataPageV2");
         num_rows_in_page = header.data_page_header_v2.num_rows;
+    }
     else if (header.type == parq::PageType::DATA_PAGE &&
              column_info.levels.back().rep == 0) // no arrays => num_values == num_rows
+    {
+        if (header.data_page_header.num_values < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of values in data page");
         num_rows_in_page = header.data_page_header.num_values;
+    }
 
     if (num_rows_in_page.has_value())
     {

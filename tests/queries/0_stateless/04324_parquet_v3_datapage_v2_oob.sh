@@ -97,10 +97,25 @@ def patch(buf, off, field_path, signed_value):
             return buf
     raise KeyError(field_path)
 
-def make(path, dtype, vals, compression="none", use_dictionary=False):
+def make(path, dtype, vals, compression="none", use_dictionary=False, data_page_size=None):
+    kw = {} if data_page_size is None else {"data_page_size": data_page_size}
     pq.write_table(pa.table({"v": pa.array(vals, type=dtype)}), path,
                    data_page_version="2.0", compression=compression,
-                   use_dictionary=use_dictionary, write_statistics=False)
+                   use_dictionary=use_dictionary, write_statistics=False, **kw)
+
+def page_offsets(buf):
+    """Offsets of every data page header (walks header + compressed_page_size), bounded by the
+    column chunk's compressed size so we never run into the file footer."""
+    col = pq.ParquetFile(io.BytesIO(bytes(buf))).metadata.row_group(0).column(0)
+    p = col.data_page_offset
+    end = col.data_page_offset + col.total_compressed_size
+    offs = []
+    while p < end:
+        w = Walker(buf, p); w.struct([])
+        cps = next(v for (pi, vs, ve, v) in w.rec if pi == (3,))  # compressed_page_size
+        offs.append(p)
+        p = w.pos + cps
+    return offs
 
 # PageHeader field ids: 2=uncompressed_page_size; 8=data_page_header_v2 struct,
 # whose 5=definition_levels_byte_length, 6=repetition_levels_byte_length.
@@ -135,10 +150,19 @@ craft("nint_negnumvals", pa.int32(), NINT, [((8, 1), -8192)])
 # of a dictionary-encoded column is the DICTIONARY_PAGE, so this patches its header.
 DICTSTR = [("v%d" % (i % 5)) for i in range(64)]  # few distinct values -> small dict num_values
 craft("strdict_negnumvals", pa.string(), DICTSTR, [((7, 1), -64)], use_dictionary=True)
+# Negative num_rows in a NON-FIRST DataPageV2. num_rows is consumed early (before the num_values
+# check) to compute the row cursor, so a negative value on a later page wraps it backwards. Build a
+# multi-page file and patch the second page's num_rows (-1024 keeps the 2-byte varint length of 1024).
+make(f"{work}/multipage.parquet", pa.int32(), list(range(4000)), data_page_size=256)
+mp = bytearray(open(f"{work}/multipage.parquet", "rb").read())
+offs = page_offsets(mp)
+assert len(offs) >= 2, f"expected multiple pages, got {len(offs)}"
+patch(mp, offs[1], (8, 3), -1024)
+open(f"{work}/multipage_negnrows_evil.parquet", "wb").write(mp)
 PYEOF
 
 # Each crafted file must be rejected with INCORRECT_DATA (code 117), not crash or leak.
-for f in nint_wrap nstr_wrap arr_wrap nint_negdef nint_neguncomp nint_badtype nint_badenc nint_negnumvals strdict_negnumvals; do
+for f in nint_wrap nstr_wrap arr_wrap nint_negdef nint_neguncomp nint_badtype nint_badenc nint_negnumvals strdict_negnumvals multipage_negnrows; do
     out=$(${CLICKHOUSE_LOCAL} --query "
         SELECT * FROM file('${WORK_DIR}/${f}_evil.parquet', Parquet) FORMAT Null
         SETTINGS input_format_parquet_use_native_reader_v3 = 1" 2>&1)

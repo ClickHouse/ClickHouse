@@ -7,3 +7,4 @@ nint_badtype: rejected
 nint_badenc: rejected
 nint_negnumvals: rejected
 strdict_negnumvals: rejected
+multipage_negnrows: rejected
