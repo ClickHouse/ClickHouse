@@ -17,6 +17,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnConst.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -2732,18 +2733,30 @@ size_t MergeTreeData::loadNewlyAppearedParts()
     return parts_to_add.size();
 }
 
-void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
-try
+/// Re-scan the data directory once: reload disk metadata and add parts that appeared since the
+/// last scan (it does not detect parts that vanished from disk; `grabOldParts` only cleans up
+/// parts already marked outdated). Shared by the background refresh task (which reschedules
+/// itself afterwards) and by `SYSTEM RESTART DISK` (an explicit, one-shot refresh). The two
+/// callers are serialized so they cannot load the same new part concurrently.
+void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
 {
-    /// Rate-limited metadata refresh — at most once per `interval_milliseconds`. The
-    /// subsequent `loadNewlyAppearedParts` call reads the cache without forcing another
-    /// refresh, so each periodic cycle hits object storage at most once.
+    std::lock_guard refresh_lock(refresh_parts_mutex);
+
     for (auto & disk : getStoragePolicy()->getDisks())
         disk->refresh(interval_milliseconds);
 
+    loadNewlyAppearedParts();
+}
+
+void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
+try
+{
     /// The periodic refresh task is scheduled either when every disk is read-only, or when
     /// `leader_election` is enabled and this replica is a follower. In both cases the
-    /// replica must not write to shared storage. Verify the invariant.
+    /// replica must not write to shared storage. Verify the invariant before re-scanning.
+    /// `SYSTEM RESTART DISK` performs its own readonly check before calling
+    /// `refreshDataPartsOnce`, so the assertion lives in the callers rather than the shared
+    /// `refreshDataPartsOnce` (a `leader_election` follower legitimately has writable disks).
     bool is_leader_election = (*getSettings())[MergeTreeSetting::leader_election];
     if (!is_leader_election)
     {
@@ -2756,7 +2769,7 @@ try
         }
     }
 
-    loadNewlyAppearedParts();
+    refreshDataPartsOnce(interval_milliseconds);
     refresh_parts_task->scheduleAfter(interval_milliseconds);
 }
 catch (...)
@@ -9933,6 +9946,13 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
             std::terminate();
         data.currently_moving_parts.erase(moving_part.part);
     }
+}
+
+bool MergeTreeData::scheduleDataProcessingJob(BackgroundJobsAssignee & /*assignee*/)
+{
+    /// Last-resort guard for the post-vtable-demotion window of STID 3631-4165.
+    /// Derived overrides are always picked in normal operation.
+    return false;
 }
 
 bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)

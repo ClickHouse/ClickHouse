@@ -1,6 +1,13 @@
 <test>
     <substitutions>
         <substitution>
+           <name>hash</name>
+           <values>
+               <value>MD5</value>
+               <value>SHA1</value>
+           </values>
+        </substitution>
+        <substitution>
            <name>column</name>
            <values>
                <value>URL</value>
@@ -12,5 +19,5 @@
         </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(MD5({column}))</query>
+    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore({hash}({column}))</query>
 </test>
