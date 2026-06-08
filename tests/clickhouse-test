@@ -1556,7 +1556,6 @@ class SettingsRandomizer:
         "use_join_disjunctions_push_down": lambda: random.random() > 0.05,
         "enable_join_transitive_predicates": lambda: random.random() < 0.3,
         "analyzer_compatibility_prefer_alias_over_subcolumn": lambda: random.randint(0, 1),
-        # Default-true settings added since v26.4: disable with 0.05 probability
         "optimize_trivial_group_by_limit_query": lambda: random.random() > 0.05,
         "query_plan_top_k_through_join": lambda: random.random() > 0.05,
         "query_plan_push_limit_by_into_sort": lambda: random.random() > 0.05,
@@ -1566,8 +1565,6 @@ class SettingsRandomizer:
         "use_text_index_like_evaluation_by_dictionary_scan": lambda: random.random() > 0.05,
         "enable_join_fixed_hash_table_conversion": lambda: random.random() > 0.05,
         "optimize_rewrite_has_to_in": lambda: random.random() > 0.05,
-        "defer_partition_pruning_after_final": lambda: random.random() > 0.05,
-        # Default-false settings added since v26.4: enable with 0.3 probability
         "enable_sharding_aggregator": lambda: random.random() < 0.3,
         "read_in_order_use_virtual_row_per_block": lambda: random.random() < 0.3,
         "materialize_statistics_on_insert": lambda: random.random() < 0.3,
