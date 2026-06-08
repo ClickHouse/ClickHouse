@@ -1,5 +1,5 @@
--- Tags: no-random-settings, no-random-merge-tree-settings
--- no-random-settings, no-random-merge-tree-settings: Explain output may differ
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
+-- no-random-settings, no-random-merge-tree-settings, no-parallel-replicas: Explain output may differ
 
 -- { echo }
 
