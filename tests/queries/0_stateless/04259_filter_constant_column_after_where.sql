@@ -16,6 +16,11 @@ INSERT INTO 04259_filter_constant_column_after_where VALUES
     ('hello', 3, 2, 3, 'hello'),
     ('other', 4, 4, 4, 'other');
 
+SET query_plan_merge_filters = 0,
+    query_plan_optimize_lazy_materialization = 0,
+    query_plan_remove_unused_columns = 0,
+    query_plan_optimize_prewhere = 0;
+
 SELECT dumpColumnStructure(x), count(), sum(y)
 FROM 04259_filter_constant_column_after_where
 WHERE x = 'hello'
@@ -47,8 +52,6 @@ FROM
 GROUP BY ALL
 ORDER BY ALL
 SETTINGS prefer_column_name_to_alias = 1, query_plan_merge_filters = 0, query_plan_optimize_lazy_materialization = 0;
-
-SET query_plan_merge_filters = 0, query_plan_optimize_lazy_materialization = 0;
 
 SELECT dumpColumnStructure(y), count()
 FROM 04259_filter_constant_column_after_where
