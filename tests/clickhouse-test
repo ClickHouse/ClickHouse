@@ -1720,7 +1720,6 @@ class MergeTreeSettingsRandomizer:
         "compress_per_column_in_compact_parts": lambda: random.randint(0, 1),
         "add_minmax_index_for_block_number_column": lambda: random.random() < 0.3,
         "add_minmax_index_for_block_offset_column": lambda: random.random() < 0.3,
-        "share_nested_offsets": lambda: random.random() > 0.05,
         "concurrent_part_removal_threshold_for_remote_disk": lambda: random.choice([0, 1, 16, 100]),
         "part_minmax_index_columns": lambda: random.choice(["partition_key_only", "with_block_number_offset"]),
     }
