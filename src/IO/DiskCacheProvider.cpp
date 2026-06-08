@@ -31,7 +31,8 @@ DiskCacheHandle::DiskCacheHandle(
     const FilesystemCacheSettings & cache_settings_,
     ThrottlerPtr local_throttler_,
     String source_file_path_,
-    ReaderAnchorCache * anchors_)
+    ReaderAnchorCache * anchors_,
+    StreamingReaderSlot * stream_slot_)
     : cache(std::move(cache_))
     , cache_key(cache_key_)
     , origin(std::move(origin_))
@@ -41,6 +42,7 @@ DiskCacheHandle::DiskCacheHandle(
     , local_throttler(std::move(local_throttler_))
     , source_file_path(std::move(source_file_path_))
     , anchors(anchors_)
+    , stream_slot(stream_slot_)
     , requested_range(requested)
 {
     /// `FileCache` keys segments by object-local offset (the cache key is
@@ -277,51 +279,80 @@ Rope DiskCacheHandle::get(ByteRange range)
 
         auto buf = std::make_shared<OwnedRopeBuffer>(overlap_size);
 
-        /// Always create a fresh reader. It is cheap: `createReadBufferFromFileBase`
-        /// (pread) shares the descriptor via `OpenedFileCache`, kept warm by the
-        /// anchor cache (see `ReaderAnchorCache`), so a hot segment is an
-        /// `OpenedFileCache` hit rather than an `open`. A fresh reader per read
-        /// keeps concurrent `readBigAt` calls race-free. `ReadSettings` are fixed
-        /// except for the throttler (see
-        /// `CachedOnDiskReadBufferFromFile::getCacheReadBuffer`).
-        ReadSettings cache_file_read_settings;
-        cache_file_read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-        cache_file_read_settings.local_fs_settings.buffer_size = 0;
-        cache_file_read_settings.local_throttler = local_throttler;
-
-        std::shared_ptr<ReadBufferFromFileBase> reader = createReadBufferFromFileBase(
-            path, cache_file_read_settings,
-            /*read_hint=*/std::nullopt,
-            /*file_size=*/std::nullopt,
-            segment->getFlagsForLocalRead());
-
-        reader->seek(static_cast<off_t>(offset_in_file), SEEK_SET);
-
-        size_t copied = 0;
-        while (copied < overlap_size)
+        /// Reuse the held streaming reader for this segment if it is free, else
+        /// open a fresh one (a concurrent `readBigAt`/prefetch shares this
+        /// provider, so the slot may be busy or hold another segment). Reuse
+        /// avoids re-constructing the reader on every window of a warm stream; a
+        /// fresh open is still cheap because `createReadBufferFromFileBase` (pread)
+        /// shares the descriptor via `OpenedFileCache`, kept warm by the anchor
+        /// cache. `ReadSettings` are fixed except the throttler (see
+        /// `CachedOnDiskReadBufferFromFile::getCacheReadBuffer`). The holder pins
+        /// the segment, so a read failure is a hard I/O error, not an eviction
+        /// race — throw rather than drop a promised hit.
+        std::shared_ptr<ReadBufferFromFileBase> reader;
+        bool from_slot = false;
+        if (stream_slot)
         {
-            reader->set(buf->data() + copied, overlap_size - copied);
-            if (!reader->next())
-                break;  /// EOF — would mean status() promised a hit we can't honor
-            const size_t got = reader->available();
-            if (got == 0)
-                break;
-            reader->position() = reader->buffer().end();
-            copied += got;
+            reader = stream_slot->tryCheckout(path, offset_in_file);
+            from_slot = reader != nullptr;
+        }
+        if (!reader)
+        {
+            ReadSettings cache_file_read_settings;
+            cache_file_read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+            cache_file_read_settings.local_fs_settings.buffer_size = 0;
+            cache_file_read_settings.local_throttler = local_throttler;
+            reader = createReadBufferFromFileBase(
+                path, cache_file_read_settings,
+                /*read_hint=*/std::nullopt,
+                /*file_size=*/std::nullopt,
+                segment->getFlagsForLocalRead());
+            /// Position the fresh reader. A reused (from_slot) reader is already
+            /// at `offset_in_file` by construction (tryCheckout's contiguity
+            /// check) and must NOT be re-`seek`ed — see `StreamingReaderSlot`.
+            reader->seek(static_cast<off_t>(offset_in_file), SEEK_SET);
         }
 
-        if (copied != overlap_size)
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                "DiskCacheHandle::get: short read from cache file {} at offset {}: got {}, expected {}",
-                path, offset_in_file, copied, overlap_size);
+        /// Zero-copy: `buffer_size = 0` + `set(buf->data(), n)` points
+        /// `working_buffer` at the `OwnedRopeBuffer` so `pread` lands in it.
+        try
+        {
+            size_t copied = 0;
+            while (copied < overlap_size)
+            {
+                reader->set(buf->data() + copied, overlap_size - copied);
+                if (!reader->next())
+                    break;  /// EOF — would mean status() promised a hit we can't honor
+                const size_t got = reader->available();
+                if (got == 0)
+                    break;
+                reader->position() = reader->buffer().end();
+                copied += got;
+            }
+
+            if (copied != overlap_size)
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "DiskCacheHandle::get: short read from cache file {} at offset {}: got {}, expected {}",
+                    path, offset_in_file, copied, overlap_size);
+        }
+        catch (...)
+        {
+            /// Never return a faulted reader to the slot for reuse.
+            if (from_slot)
+                stream_slot->abandon();
+            throw;
+        }
 
         /// Node's logical_offset is file-level — translate from object-local.
         result.append(RopeNode{
             std::move(buf), 0, overlap_size, overlap_start + object_file_offset});
 
-        /// Anchor the just-used reader so the next read of this segment hits
-        /// `OpenedFileCache` instead of re-`open`ing; the cache bounds how many
-        /// fds stay warm. The anchor is never read through, so this is race-free.
+        /// Keep the reader hot for the next window: return/install it as the
+        /// streaming reader (sequential reuse) AND anchor it. The anchor keeps up
+        /// to 16 segment fds warm for the multi-segment / `readBigAt` case where
+        /// the single slot thrashes; the anchor is never read through, race-free.
+        if (stream_slot)
+            stream_slot->checkin(path, reader, offset_in_file + overlap_size);
         if (anchors)
             anchors->set(path, reader);
     }
@@ -578,7 +609,8 @@ std::unique_ptr<ICacheHandle> DiskCacheProvider::lookup(
         cache_settings,
         local_throttler,
         object.remote_path,
-        &reader_anchors);
+        &reader_anchors,
+        &streaming_slot);
 }
 
 }
