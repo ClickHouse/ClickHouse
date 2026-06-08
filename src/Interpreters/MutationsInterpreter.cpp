@@ -667,6 +667,10 @@ void MutationsInterpreter::prepare(bool dry_run)
     NameSet available_columns_set(available_columns.begin(), available_columns.end());
 
     NameSet updated_columns;
+    /// Columns whose on-disk values are recomputed by `MATERIALIZE COLUMN`. Unlike `updated_columns`
+    /// (populated from UPDATE/DELETE assignments) these are not validated as updatable, but their
+    /// data does change, so dependent skip indices, projections and statistics must be rebuilt.
+    NameSet materialized_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
     bool has_lightweight_delete_materialization = false;
     bool has_rewrite_parts = false;
@@ -971,13 +975,31 @@ void MutationsInterpreter::prepare(bool dry_run)
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             addStageIfNeeded(command.mutation_version, false);
 
-            /// Can't materialize a column that is used in a sorting key expression,
-            /// either directly (ORDER BY col) or indirectly (ORDER BY func(col)).
-            /// Materializing such a column recalculates its values, which would
-            /// invalidate the sort order of existing data parts. The same applies to
-            /// the sorting keys of projections: materializing a column used by a
-            /// projection's ORDER BY would leave the already-materialized projection
-            /// parts sorted by stale key values.
+            /// Can't materialize a column that is used in a sorting key or partition key
+            /// expression, either directly (ORDER BY col) or indirectly (ORDER BY func(col)).
+            /// Materializing such a column recalculates its values, which would invalidate the
+            /// sort order or the partition assignment of existing data parts: the mutation
+            /// preserves the on-disk row order and copies the source part's partition id rather
+            /// than recomputing it. The same applies to the sorting keys of projections:
+            /// materializing a column used by a projection's ORDER BY would leave the
+            /// already-materialized projection parts sorted by stale key values.
+            auto materialized_column_required_by = [&](const Names & required_columns) -> bool
+            {
+                for (const auto & required_column : required_columns)
+                {
+                    if (required_column == command.column_name)
+                        return true;
+
+                    /// The key can depend on a subcolumn (e.g. `ORDER BY t.k`), while
+                    /// `MATERIALIZE COLUMN t` targets the parent column. Materializing the parent
+                    /// recalculates the subcolumn too, so it must be refused as well.
+                    auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
+                    if (resolved && resolved->isSubcolumn() && resolved->getNameInStorage() == command.column_name)
+                        return true;
+                }
+                return false;
+            };
+
             auto column_used_in_sorting_key = [&](const StorageMetadataPtr & key_metadata) -> bool
             {
                 if (!key_metadata->hasSortingKey())
@@ -987,20 +1009,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 if (std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end())
                     return true;
 
-                Names sort_required_columns = key_metadata->getColumnsRequiredForSortingKey();
-                for (const auto & sort_required_column : sort_required_columns)
-                {
-                    if (sort_required_column == command.column_name)
-                        return true;
-
-                    /// The sorting key can depend on a subcolumn (e.g. `ORDER BY t.k`), while
-                    /// `MATERIALIZE COLUMN t` targets the parent column. Materializing the parent
-                    /// recalculates the subcolumn too, so it must be refused as well.
-                    auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, sort_required_column);
-                    if (resolved && resolved->isSubcolumn() && resolved->getNameInStorage() == command.column_name)
-                        return true;
-                }
-                return false;
+                return materialized_column_required_by(key_metadata->getColumnsRequiredForSortingKey());
             };
 
             if (column_used_in_sorting_key(metadata_snapshot))
@@ -1008,6 +1017,16 @@ void MutationsInterpreter::prepare(bool dry_run)
                 throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                     "Refused to materialize column {} because it is used in the sorting key expression. "
                     "Doing so could break the sort order of existing data",
+                    backQuote(command.column_name));
+            }
+
+            if (metadata_snapshot->hasPartitionKey()
+                && materialized_column_required_by(metadata_snapshot->getColumnsRequiredForPartitionKey()))
+            {
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                    "Refused to materialize column {} because it is used in the partition key expression. "
+                    "Doing so could move existing rows to a different partition while the part metadata "
+                    "still describes the old partition id",
                     backQuote(command.column_name));
             }
 
@@ -1033,6 +1052,11 @@ void MutationsInterpreter::prepare(bool dry_run)
                 "_CAST", column.default_desc.expression->clone(), make_intrusive<ASTLiteral>(column.type->getName()));
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
+
+            /// The base column data is recomputed, so any skip index, projection or statistics
+            /// that depends on it must be rebuilt too — otherwise the unchanged derived files are
+            /// hardlinked and keep stale values.
+            materialized_columns.insert(column.name);
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
@@ -1469,7 +1493,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         bool changed = std::any_of(
             index_cols.begin(),
             index_cols.end(),
-            [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
+            [&](const auto & col)
+            { return updated_columns.contains(col) || changed_columns.contains(col) || materialized_columns.contains(col); });
 
         if (changed)
         {
@@ -1503,7 +1528,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         bool changed = std::any_of(
             projection_cols.begin(),
             projection_cols.end(),
-            [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
+            [&](const auto & col)
+            { return updated_columns.contains(col) || changed_columns.contains(col) || materialized_columns.contains(col); });
 
         if (changed)
             materialized_projections.insert(projection.name);
@@ -1514,7 +1540,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (column.statistics.empty())
             continue;
 
-        if (updated_columns.contains(column.name) || changed_columns.contains(column.name))
+        if (updated_columns.contains(column.name) || changed_columns.contains(column.name)
+            || materialized_columns.contains(column.name))
             materialized_statistics.insert(column.name);
     }
 
