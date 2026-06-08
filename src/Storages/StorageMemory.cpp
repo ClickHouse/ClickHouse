@@ -682,6 +682,7 @@ std::optional<UInt64> StorageMemory::totalBytes(ContextPtr) const
     return total_size_bytes.load(std::memory_order_relaxed);
 }
 
+void registerStorageMemory(StorageFactory & factory);
 void registerStorageMemory(StorageFactory & factory)
 {
     factory.registerStorage("Memory", [](const StorageFactory::Arguments & args)

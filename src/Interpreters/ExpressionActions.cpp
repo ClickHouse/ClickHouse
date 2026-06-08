@@ -142,7 +142,7 @@ static DataTypesWithConstInfo getDataTypesWithConstInfoFromNodes(const ActionsDA
     types.reserve(nodes.size());
     for (const auto & child : nodes)
     {
-        bool is_const = child->column && isColumnConst(*child->column);
+        bool is_const = child->column != nullptr;
         types.push_back({child->result_type, is_const});
     }
     return types;
@@ -153,7 +153,7 @@ namespace
     /// Information about the node that helps to determine if it can be executed lazily.
     struct LazyExecutionInfo
     {
-        bool can_be_lazy_executed;
+        bool can_be_lazy_executed{};
         /// For each node we need to know all it's ancestors that are short-circuit functions.
         /// Also we need to know which arguments of this short-circuit functions are ancestors for the node
         /// (we will store the set of indexes of arguments), because for some short-circuit function we shouldn't

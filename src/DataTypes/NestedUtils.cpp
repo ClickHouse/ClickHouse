@@ -211,7 +211,7 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
                 size_t tuple_size = element_types.size();
 
                 bool is_const = isColumnConst(*elem.column);
-                const ColumnArray * column_array;
+                const ColumnArray * column_array = nullptr;
                 if (is_const)
                     column_array = typeid_cast<const ColumnArray *>(&assert_cast<const ColumnConst &>(*elem.column).getDataColumn());
                 else
@@ -244,7 +244,7 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
             {
                 const DataTypes & element_types = type_tuple->getElements();
                 const Strings & names = type_tuple->getElementNames();
-                const ColumnTuple * column_tuple;
+                const ColumnTuple * column_tuple = nullptr;
                 if (isColumnConst(*elem.column))
                     column_tuple = typeid_cast<const ColumnTuple *>(&assert_cast<const ColumnConst &>(*elem.column).getDataColumn());
                 else
