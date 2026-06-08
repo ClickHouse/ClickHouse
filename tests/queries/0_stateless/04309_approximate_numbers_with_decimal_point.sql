@@ -16,6 +16,10 @@ SELECT (1/0)::Float64, (-1/0)::Float64, (0/0)::Float64 SETTINGS output_format_ap
 -- Large integer-valued floats taking the rounding fast path also get a decimal point.
 SELECT 1e18::Float64, 1e9::Float32 SETTINGS output_format_approximate_numbers_with_decimal_point=1;
 
+-- Large integer-valued floats outside the itoa fast-path ranges (printed via the shortest-representation
+-- path as a bare integer, without an exponent) must also get a trailing decimal point.
+SELECT toFloat32(1.23e20), toFloat64(1e20) SETTINGS output_format_approximate_numbers_with_decimal_point=1;
+
 -- Decimal values follow the same rule: whole numbers gain a trailing decimal point, fractional values are unchanged.
 SELECT number::Decimal(2) FROM numbers(2) SETTINGS output_format_approximate_numbers_with_decimal_point=0;
 SELECT number::Decimal(2) FROM numbers(2) SETTINGS output_format_approximate_numbers_with_decimal_point=1;

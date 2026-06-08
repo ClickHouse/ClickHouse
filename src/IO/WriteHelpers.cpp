@@ -314,10 +314,6 @@ requires is_floating_point<T>
 size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
 {
     size_t result = 0;
-    /// Whether the produced representation is a bare integer (no '.', exponent or inf/nan),
-    /// i.e. one of the itoa-based fast paths. Only such a representation may need a forced
-    /// trailing decimal point; the zmij path always emits '.', an exponent, or inf/nan.
-    bool integer_representation = false;
 
     if constexpr (std::is_same_v<T, Float64>)
     {
@@ -331,15 +327,9 @@ size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
         ///   exp < 0:    |value| < 1, not an integer.
         ///   exp > 62:   |value| >= 2^63, overflows Int64.
         if (decomposed.isIntegerInRepresentableRange() || exp == 53)
-        {
             result = itoa(Int64(x), buffer) - buffer;
-            integer_representation = true;
-        }
         else if (exp > 53 && exp <= 62)
-        {
             result = writeFloatTextFastPathFloat64Rounded(x, exp, buffer);
-            integer_representation = true;
-        }
         else
             result = zmij::detail::write(x, buffer) - buffer;
     }
@@ -373,24 +363,25 @@ size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
 
         /// Most common fast path first: exp 0..24, exact integers.
         if (decomposed.isIntegerInRepresentableRange() || exp == 24)
-        {
             result = itoa(Int32(f32), buffer) - buffer;
-            integer_representation = true;
-        }
         /// Extended fast path: exp 25..30, round to "roundest" decimal then itoa.
         else if (exp > 24 && exp <= 30)
-        {
             result = writeFloatTextFastPathFloat32Rounded(f32, exp, buffer);
-            integer_representation = true;
-        }
         /// Not an integer, or exp out of range: use zmij.
         else
             result = zmij::detail::write(f32, buffer) - buffer;
     }
 
-    /// The caller guarantees at least DoubleConverter<false>::MAX_REPRESENTATION_LENGTH bytes,
-    /// which leaves room for the extra '.' after an integer representation.
-    if (force_decimal_point && integer_representation)
+    /// Append a trailing decimal point for finite values whose representation is a bare integer
+    /// (no '.', exponent, or inf/nan). The byte-scan predicate covers both the itoa fast paths
+    /// and the zmij path, which can also emit a bare integer for large magnitudes
+    /// (e.g. `toFloat32(1.23e20)` -> `123000000000000000000`). The `isFinite` guard keeps
+    /// `inf`/`nan` untouched. The caller guarantees at least
+    /// `DoubleConverter<false>::MAX_REPRESENTATION_LENGTH` bytes, which leaves room for the extra '.'.
+    if (force_decimal_point && isFinite(x)
+        && !memchr(buffer, '.', result)
+        && !memchr(buffer, 'e', result)
+        && !memchr(buffer, 'E', result))
     {
         buffer[result] = '.';
         ++result;
