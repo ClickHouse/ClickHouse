@@ -233,10 +233,30 @@ size_t readOrGetCachedSparseOffsets(
         if (it != cache->end())
         {
             const auto & cached_offsets_element = assert_cast<const SubstreamsCacheSparseOffsetsElement &>(*it->second);
-            size_t num_read_offsets = cached_offsets_element.offsets->size() - cached_offsets_element.old_size;
             read_rows = cached_offsets_element.read_rows;
             skipped_values_rows = cached_offsets_element.skipped_values_rows;
-            ISerialization::insertDataFromCachedColumn(settings, offsets_column, cached_offsets_element.offsets, num_read_offsets, cache);
+            size_t num_read_offsets = 0;
+            if (cached_offsets_element.offsets)
+            {
+                num_read_offsets = cached_offsets_element.offsets->size() - cached_offsets_element.old_size;
+                ISerialization::insertDataFromCachedColumn(settings, offsets_column, cached_offsets_element.offsets, num_read_offsets, cache);
+            }
+            else
+            {
+                /// Deferred slice path: append `src[i] + shift` directly into `offsets_column`.
+                /// Avoids the intermediate ColumnUInt64 alloc + insertRangeFrom copy that the
+                /// materialised path would do.
+                auto & offsets_data = assert_cast<ColumnUInt64 &>(offsets_column->assumeMutableRef()).getData();
+                const size_t old_data_size = offsets_data.size();
+                num_read_offsets = cached_offsets_element.slice_count;
+                offsets_data.resize(old_data_size + num_read_offsets);
+                UInt64 * __restrict__ dst = offsets_data.data() + old_data_size;
+                const UInt64 * __restrict__ src = cached_offsets_element.slice_source_begin;
+                const UInt64 shift = cached_offsets_element.slice_shift;
+                for (size_t i = 0; i < num_read_offsets; ++i)
+                    dst[i] = src[i] + shift;
+                ProfileEvents::increment(ProfileEvents::SparseOffsetsShareConsumed);
+            }
             return num_read_offsets;
         }
     }
@@ -245,35 +265,7 @@ size_t readOrGetCachedSparseOffsets(
     settings.path.push_back(ISerialization::Substream::SparseOffsets);
 
     size_t num_read_offsets = 0;
-    if (cached_element)
-    {
-        /// Reuse cached offsets info
-        const auto & cached_offsets_element = assert_cast<const SubstreamsCacheSparseOffsetsElement &>(*cached_element);
-        read_rows = cached_offsets_element.read_rows;
-        skipped_values_rows = cached_offsets_element.skipped_values_rows;
-        if (cached_offsets_element.offsets)
-        {
-            num_read_offsets = cached_offsets_element.offsets->size() - cached_offsets_element.old_size;
-            ISerialization::insertDataFromCachedColumn(settings, offsets_column, cached_offsets_element.offsets, num_read_offsets, cache);
-        }
-        else
-        {
-            /// Deferred slice path: append `src[i] + shift` directly into `offsets_column`.
-            /// Avoids the intermediate ColumnUInt64 alloc + insertRangeFrom copy that the
-            /// materialised path would do.
-            auto & offsets_data = assert_cast<ColumnUInt64 &>(offsets_column->assumeMutableRef()).getData();
-            const size_t old_data_size = offsets_data.size();
-            num_read_offsets = cached_offsets_element.slice_count;
-            offsets_data.resize(old_data_size + num_read_offsets);
-            UInt64 * __restrict__ dst = offsets_data.data() + old_data_size;
-            const UInt64 * __restrict__ src = cached_offsets_element.slice_source_begin;
-            const UInt64 shift = cached_offsets_element.slice_shift;
-            for (size_t i = 0; i < num_read_offsets; ++i)
-                dst[i] = src[i] + shift;
-        }
-        ProfileEvents::increment(ProfileEvents::SparseOffsetsShareConsumed);
-    }
-    else if (auto * stream = settings.getter(settings.path))
+    if (auto * stream = settings.getter(settings.path))
     {
         if (!settings.continuous_reading)
             state_sparse.reset();
