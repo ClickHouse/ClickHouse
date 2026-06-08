@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <cmath>
 #include <cstring>
 #include <ranges>
@@ -822,10 +823,16 @@ inline float turboQuantDistanceFast(const float * query_levels, const char * cod
 /// like 'b1_projected'. RaBitQ additionally stores a per-vector correction factor that turns the sign code into an
 /// UNBIASED estimator of the cosine similarity. With `o` the unit (rotated) data vector and `s_i = sign(o_i)`, the
 /// stored value is `inv_factor = ||o||_2 / ||o||_1` (note `||o||_2 = 1`, so `factor = sum_i |o_i| >= 1` and
-/// `inv_factor` in (0, 1]). The query stays full precision (this is the "asymmetric" estimator):
+/// `inv_factor` in (0, 1]). The estimator is asymmetric (the query has more resolution than the 1-bit data):
 ///   cos(o, q) ~= (sum_i s_i * q_i) * (1 / ||q||_2) * inv_factor,    with sum_i s_i * q_i = 2 * sum_{s_i = +1} q_i - sum_i q_i.
 /// Layout per vector: `dimensions / 8` packed sign bits, followed by the 4-byte `inv_factor`. The sign code matches
-/// 'b1_projected' bit-for-bit; the extra factor (and full-precision query) are what lift recall above plain SimHash.
+/// 'b1_projected' bit-for-bit; the extra factor and the query resolution are what lift recall above plain SimHash.
+///
+/// The data half `sum_{s_i = +1} q_i` is the inner product of the 1-bit data code with the query. Rather than a
+/// full-precision float dot product (which costs like the multi-bit 'turboquant' scan, not like the 1-bit 'b1' scan),
+/// the query is uniformly quantized to RABITQ_QUERY_BITS bits and stored "bit-sliced" as one bit-plane per bit. The
+/// inner product then reduces to a few AND+popcount passes over the data code (see `RaBitQQuery`), which is back in
+/// 'b1's popcount regime - the same trick RaBitQ/BBQ use to keep the 1-bit scan fast.
 template <typename T>
 void encodeRaBitQ(const std::vector<float> & projection, const T * x, size_t dimensions, float * work, char * dst)
 {
@@ -848,58 +855,161 @@ void encodeRaBitQ(const std::vector<float> & projection, const T * x, size_t dim
     std::memcpy(dst + code_bytes, &inv_factor, sizeof(float));
 }
 
-/// Asymmetric RaBitQ estimator -> cosineDistance. `q` is the full-precision (rotated) query; `q_total = sum_i q_i` and
-/// `inv_qnorm = 1 / ||q||_2` are precomputed once per query (both over `dimensions` coordinates). `code` points at the
-/// packed sign bits; the 4-byte `inv_factor` immediately follows them.
-inline float raBitQDistance(const float * q, float q_total, float inv_qnorm, const char * code, size_t dimensions)
+/// Number of bits the query is uniformly quantized to for the bit-sliced scan. 4 bits gives the query 16 levels, which
+/// (with the per-vector correction factor) keeps the asymmetric estimator's accuracy while making the scan popcount-based.
+constexpr int RABITQ_QUERY_BITS = 4;
+
+/// The query side of the RaBitQ estimator, prepared once per query. The (rotated) query is uniformly quantized to
+/// RABITQ_QUERY_BITS bits per coordinate: `q_tilde_i = round((q_i - q_min) / delta)` in [0, 2^bits - 1]. It is stored
+/// "bit-sliced" as RABITQ_QUERY_BITS bit-planes, each `code_bytes = dimensions / 8` bytes with the same bit layout as a
+/// data code (coordinate i -> byte i/8, bit i%8). `q_total = sum_i q_i` and `inv_qnorm = 1 / ||q||_2` use the exact
+/// (un-quantized) query so only the data-code inner product is approximate.
+struct RaBitQQuery
 {
-    const size_t code_bytes = dimensions / 8;
-    float masked_sum = 0.0f;
+    std::vector<UInt8> planes; /// RABITQ_QUERY_BITS * code_bytes, plane j at offset j * code_bytes
+    size_t code_bytes = 0;
+    float delta = 0.0f;
+    float q_min = 0.0f;
+    float q_total = 0.0f;
+    float inv_qnorm = 0.0f;
+};
+
+/// Build the bit-sliced query from a (rotated, full-precision) query vector `q` of `dimensions` coordinates.
+RaBitQQuery buildRaBitQQuery(const float * q, size_t dimensions)
+{
+    RaBitQQuery out;
+    out.code_bytes = dimensions / 8;
+    out.planes.assign(static_cast<size_t>(RABITQ_QUERY_BITS) * out.code_bytes, 0);
+
+    double total = 0.0;
+    double sumsq = 0.0;
+    float q_min = q[0];
+    float q_max = q[0];
     for (size_t i = 0; i < dimensions; ++i)
-        if ((static_cast<UInt8>(code[i >> 3]) >> (i & 7u)) & 1u)
-            masked_sum += q[i];
-    float inv_factor;
-    std::memcpy(&inv_factor, code + code_bytes, sizeof(float));
-    const float cos = (2.0f * masked_sum - q_total) * inv_qnorm * inv_factor;
-    return 1.0f - cos;
-}
-
-#if USE_MULTITARGET_CODE
-/// AVX-512 version: the sign code is exactly a bit-mask, so `sum_{s_i = +1} q_i` is a mask-controlled add. Each group of
-/// 16 coordinates occupies 2 packed bytes; loading them as a 16-bit `__mmask16` makes bit j select query lane j, and
-/// `_mm512_mask_add_ps` accumulates only the selected coordinates in a single instruction.
-X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE
-inline float raBitQDistanceAVX512(const float * q, float q_total, float inv_qnorm, const char * code, size_t dimensions)
-{
-    const size_t code_bytes = dimensions / 8;
-    __m512 acc = _mm512_setzero_ps();
-    size_t i = 0;
-    for (; i + 16 <= dimensions; i += 16)
     {
-        __mmask16 m;
-        std::memcpy(&m, code + (i >> 3), sizeof(m)); /// 2 bytes = 16 sign bits, bit j -> coordinate i + j
-        acc = _mm512_mask_add_ps(acc, m, acc, _mm512_loadu_ps(q + i));
+        total += static_cast<double>(q[i]);
+        sumsq += static_cast<double>(q[i]) * static_cast<double>(q[i]);
+        q_min = std::min(q_min, q[i]);
+        q_max = std::max(q_max, q[i]);
     }
-    float masked_sum = _mm512_reduce_add_ps(acc);
-    for (; i < dimensions; ++i)
-        if ((static_cast<UInt8>(code[i >> 3]) >> (i & 7u)) & 1u)
-            masked_sum += q[i];
+    out.q_total = static_cast<float>(total);
+    out.inv_qnorm = (sumsq > 0.0) ? static_cast<float>(1.0 / std::sqrt(sumsq)) : 0.0f;
+    out.q_min = q_min;
+
+    constexpr int levels = (1 << RABITQ_QUERY_BITS) - 1; /// 15 for 4 bits
+    const float range = q_max - q_min;
+    out.delta = (range > 0.0f) ? (range / static_cast<float>(levels)) : 0.0f;
+    const float inv_delta = (out.delta > 0.0f) ? (1.0f / out.delta) : 0.0f;
+
+    for (size_t i = 0; i < dimensions; ++i)
+    {
+        int q_tilde = static_cast<int>((q[i] - q_min) * inv_delta + 0.5f);
+        q_tilde = std::clamp(q_tilde, 0, levels);
+        for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+            if ((q_tilde >> j) & 1)
+                out.planes[static_cast<size_t>(j) * out.code_bytes + (i >> 3)] |= static_cast<UInt8>(1u << (i & 7u));
+    }
+    return out;
+}
+
+/// Reconstruct `sum_i s_i * q_i` from the popcounts and finish the estimator -> cosineDistance.
+/// `pc = popcount(code)` = number of +1 sign bits; `plane_pc[j] = popcount(code AND query_plane_j)`.
+inline float raBitQFinish(const RaBitQQuery & q, UInt64 pc, const UInt64 * plane_pc, const char * code)
+{
+    /// sum_i b_i * q_tilde_i = sum_j 2^j * popcount(code AND plane_j); approx sum over set bits of q_i:
+    ///   sum_{b_i=1} q_i ~= delta * (sum_j 2^j * plane_pc[j]) + q_min * pc.
+    UInt64 weighted = 0;
+    for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+        weighted += plane_pc[j] << j;
+    const float sum_set = q.delta * static_cast<float>(weighted) + q.q_min * static_cast<float>(pc);
+    const float numerator = 2.0f * sum_set - q.q_total; /// sum_i s_i * q_i
     float inv_factor;
-    std::memcpy(&inv_factor, code + code_bytes, sizeof(float));
-    const float cos = (2.0f * masked_sum - q_total) * inv_qnorm * inv_factor;
+    std::memcpy(&inv_factor, code + q.code_bytes, sizeof(float));
+    const float cos = numerator * q.inv_qnorm * inv_factor;
     return 1.0f - cos;
+}
+
+/// Scalar bit-sliced scan: AND+popcount the data code against each query bit-plane, 8 bytes at a time.
+inline float raBitQDistanceScalar(const RaBitQQuery & q, const char * code)
+{
+    const size_t code_bytes = q.code_bytes;
+    const UInt8 * planes = q.planes.data();
+    UInt64 pc = 0;
+    UInt64 plane_pc[RABITQ_QUERY_BITS] = {};
+    size_t b = 0;
+    for (; b + 8 <= code_bytes; b += 8)
+    {
+        UInt64 cw;
+        std::memcpy(&cw, code + b, sizeof(cw));
+        pc += static_cast<UInt64>(std::popcount(cw));
+        for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+        {
+            UInt64 pw;
+            std::memcpy(&pw, planes + static_cast<size_t>(j) * code_bytes + b, sizeof(pw));
+            plane_pc[j] += static_cast<UInt64>(std::popcount(cw & pw));
+        }
+    }
+    for (; b < code_bytes; ++b)
+    {
+        const unsigned cw = static_cast<UInt8>(code[b]);
+        pc += static_cast<UInt64>(std::popcount(cw));
+        for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+            plane_pc[j] += static_cast<UInt64>(std::popcount(cw & static_cast<unsigned>(planes[static_cast<size_t>(j) * code_bytes + b])));
+    }
+    return raBitQFinish(q, pc, plane_pc, code);
+}
+
+#if USE_MULTITARGET_CODE
+/// AVX-512 (Ice Lake) bit-sliced scan: VPOPCNTDQ counts 8x 64-bit lanes per instruction, so each 512-bit chunk of the
+/// data code is AND-ed with each query bit-plane and popcounted in one `_mm512_popcnt_epi64`. This keeps the 1-bit
+/// RaBitQ scan in the popcount regime (close to 'b1') rather than the float-arithmetic regime of 'turboquant'.
+X86_64_ICELAKE_FUNCTION_SPECIFIC_ATTRIBUTE
+inline float raBitQDistanceICELAKE(const RaBitQQuery & q, const char * code)
+{
+    const size_t code_bytes = q.code_bytes;
+    const UInt8 * planes = q.planes.data();
+    __m512i acc_pc = _mm512_setzero_si512();
+    __m512i acc[RABITQ_QUERY_BITS];
+    for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+        acc[j] = _mm512_setzero_si512();
+
+    size_t b = 0;
+    for (; b + 64 <= code_bytes; b += 64)
+    {
+        const __m512i c = _mm512_loadu_si512(reinterpret_cast<const void *>(code + b));
+        acc_pc = _mm512_add_epi64(acc_pc, _mm512_popcnt_epi64(c));
+        for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+        {
+            const __m512i pj = _mm512_loadu_si512(reinterpret_cast<const void *>(planes + static_cast<size_t>(j) * code_bytes + b));
+            acc[j] = _mm512_add_epi64(acc[j], _mm512_popcnt_epi64(_mm512_and_si512(c, pj)));
+        }
+    }
+    UInt64 pc = _mm512_reduce_add_epi64(acc_pc);
+    UInt64 plane_pc[RABITQ_QUERY_BITS];
+    for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+        plane_pc[j] = _mm512_reduce_add_epi64(acc[j]);
+
+    /// Tail (code_bytes not a multiple of 64): finish byte-wise.
+    for (; b < code_bytes; ++b)
+    {
+        const unsigned cw = static_cast<UInt8>(code[b]);
+        pc += static_cast<UInt64>(std::popcount(cw));
+        for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
+            plane_pc[j] += static_cast<UInt64>(std::popcount(cw & static_cast<unsigned>(planes[static_cast<size_t>(j) * code_bytes + b])));
+    }
+    return raBitQFinish(q, pc, plane_pc, code);
 }
 #endif
 
-/// Dispatch to the AVX-512 kernel when available (decided once per query), else the scalar version.
-inline float raBitQDistanceFast(const float * q, float q_total, float inv_qnorm, const char * code, size_t dimensions, bool use_simd)
+/// Dispatch to the Ice Lake (VPOPCNTDQ) kernel when available (decided once per query), else the scalar version.
+inline float raBitQDistanceFast(const RaBitQQuery & q, const char * code, bool use_icelake)
 {
 #if USE_MULTITARGET_CODE
-    if (use_simd)
-        return raBitQDistanceAVX512(q, q_total, inv_qnorm, code, dimensions);
+    if (use_icelake)
+        return raBitQDistanceICELAKE(q, code);
 #endif
-    (void)use_simd;
-    return raBitQDistance(q, q_total, inv_qnorm, code, dimensions);
+    (void)use_icelake;
+    return raBitQDistanceScalar(q, code);
 }
 
 }
@@ -1166,10 +1276,8 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
     /// Quantize the (full-precision) reference vector to the same packed representation as the index.
     /// For 'b1_projected'/'turboquant', project the query with the same fixed-seed transform used at build time.
     std::vector<UInt8> query_code(bytes_per_vector);
-    std::vector<float> query_levels;    /// turboquant only: the dequantized query, used by the squared-L2 scan
-    std::vector<float> query_projected; /// rabitq only: the full-precision (rotated) query, used by the asymmetric estimator
-    float rabitq_query_total = 0.0f;    /// rabitq only: sum_i q_i over the projected query
-    float rabitq_inv_qnorm = 0.0f;      /// rabitq only: 1 / ||q||_2 over the projected query
+    std::vector<float> query_levels; /// turboquant only: the dequantized query, used by the squared-L2 scan
+    RaBitQQuery rabitq_query;        /// rabitq only: the bit-sliced query for the popcount scan
     if (turboquant)
     {
         const std::vector<float> projection = generateRandomProjection(granule->dimensions);
@@ -1186,20 +1294,12 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
     }
     else if (rabitq)
     {
-        /// Project the query with the same fixed-seed transform, but keep it full precision (the asymmetric estimator).
+        /// Project the query with the same fixed-seed transform, then bit-slice it to RABITQ_QUERY_BITS bits.
         const std::vector<float> projection = generateRandomProjection(granule->dimensions);
         const size_t padded = projection.size() / PROJECTION_ROUNDS;
-        query_projected.assign(padded, 0.0f);
+        std::vector<float> query_projected(padded);
         applyRandomProjection(projection, parameters->reference_vector.data(), granule->dimensions, query_projected.data());
-        double total = 0.0;
-        double sumsq = 0.0;
-        for (size_t i = 0; i < granule->dimensions; ++i)
-        {
-            total += static_cast<double>(query_projected[i]);
-            sumsq += static_cast<double>(query_projected[i]) * static_cast<double>(query_projected[i]);
-        }
-        rabitq_query_total = static_cast<float>(total);
-        rabitq_inv_qnorm = (sumsq > 0.0) ? static_cast<float>(1.0 / std::sqrt(sumsq)) : 0.0f;
+        rabitq_query = buildRaBitQQuery(query_projected.data(), granule->dimensions);
     }
     else if (projected)
     {
@@ -1229,12 +1329,12 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
     const char * query = reinterpret_cast<const char *>(query_code.data());
     const size_t dims = granule->dimensions;
 
-    /// Decide once whether the turboquant/rabitq scans can use their AVX-512 kernels.
+    /// Decide once whether the turboquant/rabitq scans can use their AVX-512 kernels (rabitq needs VPOPCNTDQ -> Ice Lake).
     bool use_simd_turboquant = false;
-    bool use_simd_rabitq = false;
+    bool use_icelake_rabitq = false;
 #if USE_MULTITARGET_CODE
     use_simd_turboquant = turboquant && isArchSupported(TargetArch::x86_64_v4);
-    use_simd_rabitq = rabitq && isArchSupported(TargetArch::x86_64_v4);
+    use_icelake_rabitq = rabitq && isArchSupported(TargetArch::x86_64_icelake);
 #endif
 
     /// Exhaustive scan. Unlike HNSW search (O(log N) per query, fine single-threaded), a flat scan is O(N) and the
@@ -1262,7 +1362,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
             if (turboquant)
                 dist = turboQuantDistanceFast(query_levels.data(), base + i * bytes_per_vector, dims, use_simd_turboquant);
             else if (rabitq)
-                dist = raBitQDistanceFast(query_projected.data(), rabitq_query_total, rabitq_inv_qnorm, base + i * bytes_per_vector, dims, use_simd_rabitq);
+                dist = raBitQDistanceFast(rabitq_query, base + i * bytes_per_vector, use_icelake_rabitq);
             else
                 dist = static_cast<float>(metric(base + i * bytes_per_vector, query));
             scored[i] = {dist, static_cast<UInt32>(i)};
