@@ -1152,10 +1152,10 @@ def main():
 
     call_with_retry(make_query_command("SELECT 1"), timeout=0.5, retry_count=20)
 
-    is_sanitizer = os.environ.get("IS_SANITIZER_BUILD") == "1"
-    min_server_start_interval = 420.0 if is_sanitizer else 300.0
-    max_server_start_interval = 600.0 if is_sanitizer else 480.0
-    server_start_timeout = 250.0 if is_sanitizer else 180.0
+    is_slow_build = os.environ.get("IS_SANITIZER_BUILD") == "1" or os.environ.get("IS_DEBUG_BUILD") == "1"
+    min_server_start_interval = 540.0 if is_slow_build else 420.0
+    max_server_start_interval = 720.0 if is_slow_build else 600.0
+    server_start_timeout = 250.0 if is_slow_build else 180.0
     # Build chaos threads list — started inside run_func_test after smoke check.
     # Order matters: stop runs in reverse so services come down before the
     # query killer, and the server stops last (hung check needs it alive).

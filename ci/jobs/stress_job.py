@@ -141,6 +141,9 @@ def get_additional_envs(info, check_name: str) -> List[str]:
     if any(san in check_name for san in ("asan", "msan", "tsan", "ubsan")):
         result.append("IS_SANITIZER_BUILD=1")
 
+    if "debug" in check_name:
+        result.append("IS_DEBUG_BUILD=1")
+
     if "serverfuzz" in info.job_name:
         result.append("ENABLE_SERVER_FUZZER=1")
 

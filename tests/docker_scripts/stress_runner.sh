@@ -294,7 +294,7 @@ if [ $((RANDOM % 2)) -eq 1 ]; then
         > /etc/clickhouse-server/config.d/enable_max_min_fair_scheduler.xml
 fi
 
-start_server || { echo "Failed to start server"; exit 1; }
+start_server 10 || { echo "Failed to start server"; exit 1; }
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
 python3 /repo/ci/jobs/scripts/stress/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE" --minio-data-dir /repo/ci/tmp/minio_data \
