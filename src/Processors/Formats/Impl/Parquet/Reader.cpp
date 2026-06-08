@@ -879,6 +879,10 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
         data = std::span(buf.data(), buf.size());
     }
 
+    /// Signed i32 from the thrift header; a negative count would sign-extend to a huge size_t and
+    /// drive a huge `reserve`/`resize` inside Dictionary::decode.
+    if (header.dictionary_page_header.num_values < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of values in dictionary page");
     column.dictionary.decode(header.dictionary_page_header.encoding, column_info.decoder, size_t(header.dictionary_page_header.num_values), data, *column_info.decoded_type);
 }
 

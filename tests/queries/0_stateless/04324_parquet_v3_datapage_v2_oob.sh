@@ -97,10 +97,10 @@ def patch(buf, off, field_path, signed_value):
             return buf
     raise KeyError(field_path)
 
-def make(path, dtype, vals, compression="none"):
+def make(path, dtype, vals, compression="none", use_dictionary=False):
     pq.write_table(pa.table({"v": pa.array(vals, type=dtype)}), path,
                    data_page_version="2.0", compression=compression,
-                   use_dictionary=False, write_statistics=False)
+                   use_dictionary=use_dictionary, write_statistics=False)
 
 # PageHeader field ids: 2=uncompressed_page_size; 8=data_page_header_v2 struct,
 # whose 5=definition_levels_byte_length, 6=repetition_levels_byte_length.
@@ -108,9 +108,9 @@ NINT = [i if i % 3 else None for i in range(64)]
 NSTR = [("x" * ((i % 7) + 1) if i % 3 else None) for i in range(64)]
 ARR  = [list(range(i % 5)) for i in range(64)]
 
-def craft(name, dtype, vals, patches, compression="none"):
+def craft(name, dtype, vals, patches, compression="none", use_dictionary=False):
     base = f"{work}/{name}.parquet"
-    make(base, dtype, vals, compression)
+    make(base, dtype, vals, compression, use_dictionary)
     buf = bytearray(open(base, "rb").read())
     off = first_page_offset(buf)
     for fp, v in patches:
@@ -131,10 +131,14 @@ craft("nint_badtype", pa.int32(), NINT, [((1,), -64)])
 craft("nint_badenc", pa.int32(), NINT, [((8, 4), -64)])
 # Negative num_values (data_page_header_v2 field 1).
 craft("nint_negnumvals", pa.int32(), NINT, [((8, 1), -8192)])
+# Negative num_values in the DICTIONARY page header (dictionary_page_header field 1). The first page
+# of a dictionary-encoded column is the DICTIONARY_PAGE, so this patches its header.
+DICTSTR = [("v%d" % (i % 5)) for i in range(64)]  # few distinct values -> small dict num_values
+craft("strdict_negnumvals", pa.string(), DICTSTR, [((7, 1), -64)], use_dictionary=True)
 PYEOF
 
 # Each crafted file must be rejected with INCORRECT_DATA (code 117), not crash or leak.
-for f in nint_wrap nstr_wrap arr_wrap nint_negdef nint_neguncomp nint_badtype nint_badenc nint_negnumvals; do
+for f in nint_wrap nstr_wrap arr_wrap nint_negdef nint_neguncomp nint_badtype nint_badenc nint_negnumvals strdict_negnumvals; do
     out=$(${CLICKHOUSE_LOCAL} --query "
         SELECT * FROM file('${WORK_DIR}/${f}_evil.parquet', Parquet) FORMAT Null
         SETTINGS input_format_parquet_use_native_reader_v3 = 1" 2>&1)
