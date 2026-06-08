@@ -76,8 +76,7 @@ void addDefaultRequiredExpressionsRecursively(
     if (column_default)
     {
         /// expressions must be cloned to prevent modification by the ExpressionAnalyzer
-        auto column_default_expr = column_default->expression->clone();
-        expandColumnMatchersInExpression(column_default_expr, columns, context);
+        auto column_default_expr = cloneAndExpandColumnDefaultExpressionWithAliases(*column_default, columns, context);
 
         /// Our default may depend on columns with default expr which not present in block
         /// we have to add them to block too
