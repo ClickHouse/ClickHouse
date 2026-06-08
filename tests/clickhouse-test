@@ -1571,7 +1571,6 @@ class SettingsRandomizer:
         "distributed_index_analysis_only_on_coordinator": lambda: random.random() < 0.3,
         "optimize_prewhere_after_pushdown": lambda: random.random() < 0.3,
         "query_plan_optimize_lazy_final": lambda: random.random() < 0.3,
-        "query_plan_max_set_size_for_projection_match": lambda: random.choice([0, 100, 10000, 100000]),
     }
 
     dependent_settings = {
