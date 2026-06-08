@@ -1,6 +1,7 @@
 -- Tags: long, no-object-storage
 -- no-object-storage: Avoid flakiness due to cache / buffer usage
 SET insert_keeper_fault_injection_probability=0; -- to succeed this test can require too many retries due to 100 partitions, so disable fault injections
+SET max_threads = 1; -- the speculative `additional_memory_tracking_per_thread` reservation scales with the number of pipeline threads, so with the random many-core `--max_threads` it alone exceeds the tight 30 MiB limit of the first (expected-to-succeed) insert; pin it for determinism
 
 -- regression for MEMORY_LIMIT_EXCEEDED error because of deferred final part flush
 
