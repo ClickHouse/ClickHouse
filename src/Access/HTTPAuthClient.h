@@ -14,9 +14,9 @@ struct HTTPAuthClientParams
 {
     Poco::URI uri;
     ConnectionTimeouts timeouts;
-    size_t max_tries;
-    size_t retry_initial_backoff_ms;
-    size_t retry_max_backoff_ms;
+    size_t max_tries{};
+    size_t retry_initial_backoff_ms{};
+    size_t retry_max_backoff_ms{};
     std::vector<String> forward_headers;
 };
 

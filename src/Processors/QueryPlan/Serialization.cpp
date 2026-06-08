@@ -41,7 +41,7 @@ static void serializeHeader(const Block & header, WriteBuffer & out)
 
 static Block deserializeHeader(ReadBuffer & in)
 {
-    UInt64 num_columns;
+    UInt64 num_columns = 0;
     readVarUInt(num_columns, in);
 
     ColumnsWithTypeAndName columns(num_columns);
@@ -159,7 +159,7 @@ bool QueryPlan::isSerialized() const
 
 QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context)
 {
-    UInt64 version;
+    UInt64 version = 0;
     readVarUInt(version, in);
 
     if (version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
@@ -195,7 +195,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         auto & frame = stack.top();
         if (frame.next_child == 0)
         {
-            UInt64 num_children;
+            UInt64 num_children = 0;
             readVarUInt(num_children, in);
             frame.children.resize(num_children);
         }

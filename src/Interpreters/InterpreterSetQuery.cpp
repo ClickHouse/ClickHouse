@@ -182,6 +182,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
     }
 }
 
+void registerInterpreterSetQuery(InterpreterFactory & factory);
 void registerInterpreterSetQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
