@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <exception>
 #include <random>
 #include <string>
 #include <vector>
@@ -242,5 +243,73 @@ TEST(Sort, NonTriviallyCopyableFallback)
         ::stableSort(b.begin(), b.end(), less);
         for (size_t i = 1; i < n; ++i)
             ASSERT_FALSE(less(b[i], b[i - 1])) << "size=" << n << " i=" << i << " (::stableSort not ordered)";
+    }
+}
+
+namespace
+{
+
+/// A non-trivially-copyable element whose live instances are counted, so a leaked element (one that
+/// was constructed but never destroyed) is detectable after the owning container is gone.
+struct Tracked
+{
+    int value = 0;
+    static inline int live = 0;
+
+    explicit Tracked(int v) : value(v) { ++live; }
+    Tracked(const Tracked & o) : value(o.value) { ++live; }
+    Tracked(Tracked && o) noexcept : value(o.value) { ++live; }
+    Tracked & operator=(const Tracked &) = default;
+    Tracked & operator=(Tracked &&) noexcept = default;
+    ~Tracked() { --live; }
+};
+
+struct ComparisonLimitReached : std::exception
+{
+};
+
+}
+
+TEST(Sort, MoveBasedPartitionExceptionSafety)
+{
+    /// `::sort` on a non-trivially-copyable type uses the move-based Hoare partition, which saves an
+    /// in-transit element in uninitialized storage while shuffling. If the comparator throws while
+    /// that storage is engaged, the saved element must still be destroyed on unwind — otherwise it
+    /// leaks. Throw at every comparison index in turn and verify nothing is left alive once the
+    /// vector is destroyed.
+    const size_t n = 512;
+
+    std::mt19937_64 rng(44444); // NOLINT(cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
+
+    for (size_t limit = 1; limit <= 400; ++limit)
+    {
+        size_t calls = 0;
+        auto less = [&](const Tracked & x, const Tracked & y)
+        {
+            if (++calls > limit)
+                throw ComparisonLimitReached{};
+            return x.value < y.value;
+        };
+
+        {
+            std::vector<Tracked> v;
+            v.reserve(n);
+            for (size_t i = 0; i < n; ++i)
+                v.emplace_back(static_cast<int>(rng() % 1000000));
+
+            bool threw = false;
+            try
+            {
+                ::sort(v.begin(), v.end(), less);
+            }
+            catch (const ComparisonLimitReached &)
+            {
+                threw = true;
+            }
+            /// n = 512 unsorted elements always require more than `limit` (<= 400) comparisons.
+            ASSERT_TRUE(threw) << "comparator did not throw at comparison " << limit;
+        }
+
+        ASSERT_EQ(Tracked::live, 0) << "element leaked when the comparator threw at comparison " << limit;
     }
 }

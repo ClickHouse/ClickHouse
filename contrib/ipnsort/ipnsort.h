@@ -629,6 +629,27 @@ inline std::size_t partition_hoare_branchy_cyclic(T * v_base, std::size_t len, c
     Uninit<T> gap_value;          // engaged (move-constructed) only while have_gap is true
     T * gap_pos = nullptr;
 
+    /// If `is_less` throws while the gap is engaged, the in-transit element saved in `gap_value`
+    /// must be moved back into the hole and destroyed on unwind. Otherwise the `Uninit` union's
+    /// trivial destructor never runs `~T`, leaking the element and leaving the range one value
+    /// short — a regression versus the `pdqsort` path this replaces for non-trivially-copyable
+    /// `::sort`. This mirrors `GapGuard` used by the trivially-copyable block partition.
+    struct GapRestorer
+    {
+        bool & have_gap;
+        Uninit<T> & gap_value;
+        T * & gap_pos;
+        bool armed = true;
+        ~GapRestorer()
+        {
+            if (armed && have_gap)
+            {
+                *gap_pos = std::move(gap_value.value);
+                gap_value.value.~T();
+            }
+        }
+    } gap_restorer{have_gap, gap_value, gap_pos};
+
     while (true)
     {
         while (left < right && is_less(*left, *pivot))
@@ -659,6 +680,7 @@ inline std::size_t partition_hoare_branchy_cyclic(T * v_base, std::size_t len, c
 
     if (have_gap)
     {
+        gap_restorer.armed = false;
         *gap_pos = std::move(gap_value.value);
         gap_value.value.~T();
     }
