@@ -10,8 +10,10 @@ SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
 
 INSERT INTO t_lwu_parallel_replicas VALUES (1);
 
+-- `enable_analyzer = 0` forces the legacy parallel-replica path, which is the one that crashed.
 UPDATE t_lwu_parallel_replicas SET c0 = 2 WHERE 1
 SETTINGS enable_lightweight_update = 1,
+    enable_analyzer = 0,
     enable_parallel_replicas = 1,
     parallel_replicas_only_with_analyzer = 0,
     parallel_replicas_prefer_local_replica = 0,
