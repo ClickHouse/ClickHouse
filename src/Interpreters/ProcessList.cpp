@@ -313,15 +313,34 @@ ProcessList::EntryPtr ProcessList::insert(
 
         if (!is_unlimited_query)
         {
-            QueryAmount amount = getQueryKindAmount(query_kind);
-            if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert && amount >= max_insert_queries_amount)
-                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                "Too many simultaneous insert queries. Maximum: {}, current: {}",
-                                max_insert_queries_amount, amount);
-            if (max_select_queries_amount && query_kind == IAST::QueryKind::Select && amount >= max_select_queries_amount)
-                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                "Too many simultaneous select queries. Maximum: {}, current: {}",
-                                max_select_queries_amount, amount);
+            /// Same early-release window as the secondary all-users / per-user limits below: a finishing
+            /// query that already handed us its admission slot still counts toward `query_kind_amounts`
+            /// until its `ProcessListEntry` destructor runs (the admission slot is released earlier, in
+            /// `executeQuery`). Rejecting here would fail a waiter that just left the admission queue,
+            /// whereas legacy admission keeps such a query waiting on the `max_size` gate until the
+            /// counter drops. When we hold an admission slot, wait on `query_finished` for the in-flight
+            /// teardown to drain, bounded by the remaining admission budget (`admission_deadline`).
+            /// Without an admission slot (admission queue disabled) the check stays immediate.
+            if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert)
+            {
+                auto under_limit = [&] { return getQueryKindAmount(query_kind) < max_insert_queries_amount; };
+                if (got_admission_slot
+                    ? !query_finished.wait_until(lock, admission_deadline, under_limit)
+                    : !under_limit())
+                    throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                    "Too many simultaneous insert queries. Maximum: {}, current: {}",
+                                    max_insert_queries_amount, getQueryKindAmount(query_kind));
+            }
+            if (max_select_queries_amount && query_kind == IAST::QueryKind::Select)
+            {
+                auto under_limit = [&] { return getQueryKindAmount(query_kind) < max_select_queries_amount; };
+                if (got_admission_slot
+                    ? !query_finished.wait_until(lock, admission_deadline, under_limit)
+                    : !under_limit())
+                    throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                    "Too many simultaneous select queries. Maximum: {}, current: {}",
+                                    max_select_queries_amount, getQueryKindAmount(query_kind));
+            }
         }
 
         {
