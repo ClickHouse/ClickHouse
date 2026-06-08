@@ -25,11 +25,11 @@
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #if USE_BUZZHOUSE
-#    include <Client/BuzzHouse/AST/SQLProtoStr.h>
-#    include <Client/BuzzHouse/Generator/FuzzConfig.h>
-#    include <Client/BuzzHouse/Generator/QueryOracle.h>
-#    include <Client/BuzzHouse/Generator/StatementGenerator.h>
-#    include <Common/re2.h>
+#include <Client/BuzzHouse/AST/SQLProtoStr.h>
+#include <Client/BuzzHouse/Generator/FuzzConfig.h>
+#include <Client/BuzzHouse/Generator/QueryOracle.h>
+#include <Client/BuzzHouse/Generator/StatementGenerator.h>
+#include <Common/re2.h>
 namespace BuzzHouse
 {
 extern void loadFuzzerServerSettings(const FuzzConfig & fc);
@@ -856,16 +856,16 @@ bool Client::buzzHouse()
                          BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::REINSERT_TABLE;
                          const bool is_mt = tbl.get().isMergeTreeFamily();
                          rg.pickWeighted(
-                             {{20 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges),
+                             {{15 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::OPTIMIZE; }},
-                              {20 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::REATTACH; }},
+                              {25 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::REATTACH; }},
                               {10 * static_cast<uint32_t>(fuzz_config->enable_backups && test_content),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE; }},
                               {40 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_TABLE; }},
                               {20 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_UPDATE; }},
                               {20 * static_cast<uint32_t>(test_content && tbl.get().areInsertsAppends()),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::INSERT_COUNT; }},
-                              {15 * static_cast<uint32_t>(fuzz_config->enable_renames && test_content),
+                              {10 * static_cast<uint32_t>(fuzz_config->enable_renames && test_content),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::RENAME_BACK; }},
                               {15 * static_cast<uint32_t>(test_content && is_mt),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::FREEZE_UNFREEZE; }},
@@ -873,11 +873,10 @@ bool Client::buzzHouse()
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::MOVE_PARTITION; }},
                               {15 * static_cast<uint32_t>(test_content && is_mt),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::REPLACE_PARTITION; }},
-                              {15 * static_cast<uint32_t>(test_content),
-                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_COLUMN; }},
-                              {10 * static_cast<uint32_t>(test_content),
+                              {15 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_COLUMN; }},
+                              {5 * static_cast<uint32_t>(test_content),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::TRUNCATE_COUNT; }},
-                              {60, [&]() { /* REINSERT_TABLE is the default */ }}});
+                              {70, [&]() { /* REINSERT_TABLE is the default */ }}});
 
                          if (test_content)
                          {
