@@ -46,16 +46,23 @@ void WriteBufferFromFileDescriptor::setCancellationHook(std::function<bool()> ca
 {
     cancellation_hook = std::move(cancellation_hook_);
 
-    /// Decide whether the responsive bounded-chunk write path is needed. A write to a regular file
-    /// never blocks, so such a descriptor keeps using a single large write for throughput. For a
-    /// pipe, socket or terminal a write can block when the sink is slow or stuck, so while the hook
-    /// is installed we wait for writability and write in small chunks to stay responsive. If fstat
-    /// fails, assume the descriptor can block and use the safe (responsive) path.
+    /// Decide whether the responsive bounded-chunk write path is needed. Only a pipe/FIFO, a socket
+    /// or a terminal can block in write() when the sink is slow or stuck, so while the hook is
+    /// installed we wait for writability and write in small chunks for these to stay responsive. A
+    /// regular file never blocks on write, and a non-tty character device such as /dev/null does not
+    /// block either, so such descriptors keep using a single large write for throughput - otherwise
+    /// a common pattern like `clickhouse-client --query ... > /dev/null` would regress to one poll
+    /// and one small write per chunk. If fstat fails, assume the descriptor can block and use the
+    /// safe (responsive) path.
     cancellation_fd_can_block = false;
     if (cancellation_hook)
     {
         struct stat stat_buf{};
-        cancellation_fd_can_block = (0 != ::fstat(fd, &stat_buf)) || !S_ISREG(stat_buf.st_mode);
+        if (0 != ::fstat(fd, &stat_buf))
+            cancellation_fd_can_block = true;
+        else
+            cancellation_fd_can_block
+                = S_ISFIFO(stat_buf.st_mode) || S_ISSOCK(stat_buf.st_mode) || (0 != ::isatty(fd));
     }
 }
 
