@@ -105,6 +105,21 @@ void validateJSONSchemaHints(
     if (hints.empty())
         return;
 
+    /// Validate that hint columns exist and are JSON type.
+    const auto & columns = metadata_snapshot->getColumns();
+    for (const auto & [column_name, rules] : hints)
+    {
+        if (!columns.has(column_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "json_schema_hints: column '{}' does not exist in the table", column_name);
+
+        auto column_type = columns.get(column_name).type;
+        if (column_type->getTypeId() != TypeIndex::Object)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "json_schema_hints: column '{}' is not a JSON column (type: {})",
+                column_name, column_type->getName());
+    }
+
     /// Collect partition key column names.
     std::unordered_set<String> partition_key_columns;
     if (metadata_snapshot->hasPartitionKey())
@@ -213,6 +228,9 @@ void applyJSONSchemaHints(
                 if (column_object->getDynamicPathsPtrs().contains(path))
                     continue;
 
+                /// tryToAddNewDynamicPath may fail if max_dynamic_paths is reached.
+                /// In that case the path will fall into shared data — acceptable
+                /// degradation, not an error.
                 column_object->tryToAddNewDynamicPath(path);
             }
 

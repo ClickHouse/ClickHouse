@@ -722,7 +722,11 @@ void SerializationDynamic::serializeBinaryBulkStateSuffix(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Dynamic column structure during serialization of binary bulk state suffix");
 
             writeBinary(true, *stream);
-            writeVarUInt(dynamic_state->statistics.variants_statistics[dynamic_state->narrowed_type->getName()], *stream);
+            /// Use the inner type name for statistics (unwrap Nullable if present).
+            DataTypePtr stats_type = dynamic_state->narrowed_type->isNullable()
+                ? assert_cast<const DataTypeNullable &>(*dynamic_state->narrowed_type).getNestedType()
+                : dynamic_state->narrowed_type;
+            writeVarUInt(dynamic_state->statistics.variants_statistics[stats_type->getName()], *stream);
         }
 
         /// Write suffix for the narrowed type.
