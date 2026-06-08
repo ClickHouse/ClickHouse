@@ -3419,9 +3419,18 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     if (auto * column_node = node->as<ColumnNode>())
         column_source = column_node->getColumnSourceOrNull();
 
+    /// OR-accumulated across LAMBDA scopes up to the enclosing `QUERY` scope, then reset
+    /// when crossing into an outer `QUERY`. The OR within a query suppresses the wrap when
+    /// any scope on the path is inside an aggregate (e.g. `* APPLY x -> agg(x, key)`); the
+    /// reset across `QUERY` boundaries lets outer-scope GROUP BY keys still wrap correlated
+    /// references regardless of an inner subquery's own aggregate context.
+    bool in_aggregate_function_scope = false;
     for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
     {
-        if (!scope_ptr->expressions_in_resolve_process_stack.hasAggregateFunction())
+        in_aggregate_function_scope = in_aggregate_function_scope
+            || scope_ptr->expressions_in_resolve_process_stack.hasAggregateFunction();
+
+        if (!in_aggregate_function_scope)
         {
             auto it = scope_ptr->nullable_group_by_keys.find(node);
             if (it != scope_ptr->nullable_group_by_keys.end())
@@ -3454,6 +3463,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             break;
         if (scope_ptr->registered_table_expression_nodes.contains(column_source))
             break;
+
+        in_aggregate_function_scope = false;
     }
 
     resolved_expressions.emplace(node, result_projection_names);
