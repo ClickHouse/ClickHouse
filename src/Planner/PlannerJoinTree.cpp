@@ -319,8 +319,7 @@ bool applyTrivialCountIfPossible(
     const TableFunctionNode * table_function_node,
     const QueryTreeNodePtr & query_tree,
     ContextMutablePtr & query_context,
-    const Names & columns_names,
-    const PlannerContext & planner_context)
+    const Names & columns_names)
 {
     const auto & settings = query_context->getSettingsRef();
     if (!settings[Setting::optimize_trivial_count_query])
@@ -349,13 +348,12 @@ bool applyTrivialCountIfPossible(
     /// can't apply if FINAL
     if (table_node && table_node->getTableExpressionModifiers().has_value() &&
         (table_node->getTableExpressionModifiers()->hasFinal() || table_node->getTableExpressionModifiers()->hasSampleSizeRatio() ||
-         table_node->getTableExpressionModifiers()->hasSampleOffsetRatio() || table_node->getTableExpressionModifiers()->hasStream()))
+         table_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
         return false;
     if (table_function_node && table_function_node->getTableExpressionModifiers().has_value()
         && (table_function_node->getTableExpressionModifiers()->hasFinal()
             || table_function_node->getTableExpressionModifiers()->hasSampleSizeRatio()
-            || table_function_node->getTableExpressionModifiers()->hasSampleOffsetRatio()
-            || table_function_node->getTableExpressionModifiers()->hasStream()))
+            || table_function_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
         return false;
 
     // TODO: It's possible to optimize count() given only partition predicates
@@ -416,18 +414,10 @@ bool applyTrivialCountIfPossible(
     auto column = ColumnAggregateFunction::create(function_node.getAggregateFunction());
     column->insertFrom(place);
 
-    /// Use the aggregate function's action node identifier (e.g. `count()`) as the column
-    /// name so the emitted block already matches the header the outer planner expects at
-    /// `WithMergeableState`. This lets the caller skip both the rename step and the
-    /// recursive `Planner` that was only used to derive the expected header.
-    String trivial_count_column_name = calculateActionNodeName(aggregates.front(), planner_context);
-    if (trivial_count_column_name.empty())
-        trivial_count_column_name = columns_names.front();
-
     auto block_with_count = std::make_shared<const Block>(Block{
         {std::move(column),
          std::make_shared<DataTypeAggregateFunction>(function_node.getAggregateFunction(), agg_count.getArgumentTypes(), Array{}),
-         trivial_count_column_name}});
+         columns_names.front()}});
 
     auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
     auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
@@ -802,11 +792,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     auto * query_node = table_expression->as<QueryNode>();
     auto * union_node = table_expression->as<UnionNode>();
 
-    /// Hoisted to function scope so the rename block below can skip the recursive
-    /// `Planner` when trivial count produced a header that already matches the
-    /// expected one.
-    bool is_trivial_count_applied = false;
-
     QueryPlan query_plan;
     std::unordered_map<const QueryNode *, const QueryPlan::Node *> query_node_to_plan_step_mapping;
     std::set<std::string> used_row_policies;
@@ -902,7 +887,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads
         if (max_streams > 1 && !is_sync_remote)
         {
-            if (auto streams_with_ratio = static_cast<double>(max_streams) * static_cast<double>(settings[Setting::max_streams_to_max_threads_ratio]);
+            if (auto streams_with_ratio = static_cast<double>(max_streams) * settings[Setting::max_streams_to_max_threads_ratio];
                 canConvertTo<size_t>(streams_with_ratio))
                 max_streams = static_cast<size_t>(streams_with_ratio);
             else
@@ -942,7 +927,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         }
 
         /// Apply trivial_count optimization if possible
-        is_trivial_count_applied = !select_query_options.only_analyze && !select_query_options.build_logical_plan && is_single_table_expression
+        bool is_trivial_count_applied = !select_query_options.only_analyze && !select_query_options.build_logical_plan && is_single_table_expression
             && (table_node || table_function_node) && select_query_info.has_aggregates
             && applyTrivialCountIfPossible(
                 query_plan,
@@ -951,8 +936,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 table_function_node,
                 select_query_info.query_tree,
                 planner_context->getMutableQueryContext(),
-                table_expression_data.getColumnNames(),
-                *planner_context);
+                table_expression_data.getColumnNames());
 
         if (is_trivial_count_applied)
         {
@@ -1557,16 +1541,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
         query_plan.addStep(std::move(rename_step));
     }
-    else if (!is_trivial_count_applied)
+    else
     {
-        /// We need to know the header that the outer planner expects at `till_stage` so we
-        /// can insert a rename if the local plan emits different column names. The cheap
-        /// way to compute it is to run the outer query through the planner under
-        /// `only_analyze` (it skips the actual storage read) and read back its header.
-        ///
-        /// Trivial count already emits the column with the aggregate's action-node name
-        /// (see `applyTrivialCountIfPossible`), so the structure matches the expected
-        /// header by construction and we can skip the recursive planner entirely.
         SelectQueryOptions analyze_query_options = SelectQueryOptions(till_stage).analyze();
         Planner planner(select_query_info.query_tree,
             analyze_query_options,

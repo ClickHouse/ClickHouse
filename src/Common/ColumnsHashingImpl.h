@@ -8,8 +8,6 @@
 #include <Interpreters/KeysNullMap.h>
 #include <Common/HashTable/Prefetching.h>
 
-#include <cstring>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -22,7 +20,7 @@ namespace ColumnsHashing
 
 struct HashMethodContextSettings
 {
-    size_t max_threads{};
+    size_t max_threads;
     bool serialize_string_with_zero_byte = false;
 
     /// Whether software prefetching of hash-table buckets is enabled for this run.
@@ -204,10 +202,7 @@ public:
     {
         if constexpr (nullable)
         {
-            /// Per-block fast path: if a one-time `memchr` at construction proved that the block
-            /// contains no nulls, the compiler can fold this branch away entirely. Otherwise we
-            /// load the cached `null_map_data` directly, avoiding the virtual `IColumn::getBool`.
-            if (!block_has_no_nulls && null_map_data[row]) [[unlikely]]
+            if (isNullAt(row))
             {
                 if constexpr (consecutive_keys_optimization)
                 {
@@ -256,8 +251,7 @@ public:
     {
         if constexpr (nullable)
         {
-            /// See note in `emplaceKey` about `block_has_no_nulls` and the cached `null_map_data`.
-            if (!block_has_no_nulls && null_map_data[row]) [[unlikely]]
+            if (isNullAt(row))
             {
                 bool has_null_key = data.hasNullKeyData();
 
@@ -356,8 +350,7 @@ public:
     {
         if constexpr (nullable)
         {
-            /// Use the cached raw pointer; avoids the virtual `IColumn::getBool` per call.
-            return !block_has_no_nulls && null_map_data[row];
+            return null_map->getBool(row);
         }
         else
         {
@@ -367,12 +360,7 @@ public:
 
 protected:
     Cache cache;
-    /// Cached raw pointer to the null map bytes for the current block. Each element is 0/1.
-    /// Bypasses the virtual `IColumn` dispatch on the per-row hot path in `emplaceKey` / `findKey`.
-    const UInt8 * null_map_data = nullptr;
-    /// Per-block flag set by a single `memchr` at construction time. When true, every row in the
-    /// block has a zero null-map byte, so the per-row null check can be statically skipped.
-    bool block_has_no_nulls = true;
+    const IColumn * null_map = nullptr;
     bool has_null_data = false;
 
     /// column argument only for nullable column
@@ -391,19 +379,7 @@ protected:
         }
 
         if constexpr (nullable)
-        {
-            const auto & null_map_column = checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
-            const auto & null_map_container = null_map_column.getData();
-            null_map_data = null_map_container.data();
-            /// Scan the null map once per block. `PaddedPODArray<UInt8>` stores 0/1 bytes, so
-            /// finding a single 0x01 byte is enough to know the block contains a null. We use
-            /// `memchr` which is typically vectorized in libc and amortizes well for blocks of
-            /// the usual aggregation size (`max_block_size` = 65505). For tiny blocks the cost
-            /// is dominated by the function-call overhead, but the per-row payload saves a
-            /// virtual call and a branch, so the break-even is small.
-            const size_t size = null_map_container.size();
-            block_has_no_nulls = (size == 0) || (std::memchr(null_map_data, 1, size) == nullptr);
-        }
+            null_map = &checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
     }
 
     template <bool compute_hash, typename Data, typename KeyHolder>

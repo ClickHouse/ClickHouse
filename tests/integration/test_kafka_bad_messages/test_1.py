@@ -107,44 +107,14 @@ def test_log_to_exceptions(kafka_cluster, max_retries=20):
     )
     instance.query("SYSTEM FLUSH LOGS")
 
-    # `librdkafka` emits several log lines when the broker is unreachable.
-    # Both flow into `system.kafka_consumers.exceptions` via
-    # `KafkaConsumer::setExceptionInfo`:
-    #   - per-attempt `Connect to ... failed: Connection refused`
-    #   - periodic `N/M brokers are down` summary
-    # There is no guarantee that any specific line shows up first or at all
-    # under unusual broker-thread timing, so accept either form.
-    thrd_prefix = (
-        f"[thrd:localhost:{non_existent_broker_port}/bootstrap]:"
+    system_kafka_consumers_content = instance.query(
+        "SELECT exceptions.text FROM system.kafka_consumers ARRAY JOIN exceptions WHERE table LIKE 'foo_exceptions' LIMIT 1"
     )
-    broker_down_marker = f"{thrd_prefix} 1/1 brokers are down"
-    connect_refused_marker = (
-        f"{thrd_prefix} localhost:{non_existent_broker_port}/bootstrap: Connect to"
+
+    logging.debug(f"system.kafka_consumers content: {system_kafka_consumers_content}")
+    assert system_kafka_consumers_content.startswith(
+        f"[thrd:localhost:{non_existent_broker_port}/bootstrap]: 1/1 brokers are down"
     )
-    matching_count = instance.query_with_retry(
-        f"""
-        SELECT count()
-        FROM system.kafka_consumers
-        ARRAY JOIN exceptions
-        WHERE table = 'foo_exceptions'
-          AND (startsWith(exceptions.text, '{broker_down_marker}')
-               OR startsWith(exceptions.text, '{connect_refused_marker}'))
-        """,
-        check_callback=lambda res: int(res.strip()) >= 1,
-        retry_count=max_retries,
-        sleep_time=1,
-    )
-    if int(matching_count.strip()) < 1:
-        # Surface the full exceptions array on failure to make debugging easier.
-        all_exceptions = instance.query(
-            "SELECT exceptions.text FROM system.kafka_consumers ARRAY JOIN exceptions WHERE table = 'foo_exceptions'"
-        )
-        logging.debug(f"system.kafka_consumers content: {all_exceptions}")
-        raise AssertionError(
-            f"Expected at least one entry in system.kafka_consumers.exceptions starting with "
-            f"either {broker_down_marker!r} or {connect_refused_marker!r}, "
-            f"but none was found. Captured exceptions:\n{all_exceptions}"
-        )
 
     instance.query("DROP TABLE foo_exceptions")
 
