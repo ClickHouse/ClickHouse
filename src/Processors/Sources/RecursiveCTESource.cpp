@@ -589,15 +589,26 @@ private:
             if (values->empty())
                 continue;
 
+            /// The injected `IN` set is lowered by the planner using the
+            /// settings of the `QueryNode` that contains the join, not the
+            /// outer recursive context. For a recursive CTE with more than two
+            /// branches the recursive part is a synthetic `UnionNode` whose
+            /// context can be more permissive than an individual branch's
+            /// (e.g. a branch carrying `SETTINGS max_rows_in_set = 1`). So both
+            /// the set-limit guard and the filter construction must use the
+            /// containing query's own context to match what `CollectSets` will
+            /// later see.
+            const auto containing_query_context = key.containing_query_node->getContext();
+
             /// Fail closed if the generated `IN` set would exceed the user's
             /// `max_rows_in_set` / `max_bytes_in_set` limits: injecting it would
             /// either throw `SET_SIZE_LIMIT_EXCEEDED` or silently truncate the
             /// set, neither of which can happen on the unoptimized scan path.
-            if (!generatedInSetFitsLimits(key.cte_column_type, *values, recursive_query_context))
+            if (!generatedInSetFitsLimits(key.cte_column_type, *values, containing_query_context))
                 return false;
 
             predicates_by_query[key.containing_query_node]
-                .push_back(buildInFilterNode(*key.real_column_node, key.cte_column_type, *values, recursive_query_context));
+                .push_back(buildInFilterNode(*key.real_column_node, key.cte_column_type, *values, containing_query_context));
         }
 
         bool injected_any = false;

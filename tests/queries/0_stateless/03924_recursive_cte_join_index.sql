@@ -241,6 +241,43 @@ WITH RECURSIVE walk_tree AS
 SELECT current_id FROM walk_tree ORDER BY current_id
 SETTINGS max_rows_in_set = 1, set_overflow_mode = 'break';
 
+-- The same fail-closed guard must hold for recursive CTEs with more than two
+-- branches, where a *single branch* carries a stricter `max_rows_in_set`. The
+-- recursive part is then a synthetic `UnionNode` whose context is unlimited,
+-- but the planner lowers the injected `IN` using the branch's own `QueryNode`
+-- context. The set-limit preflight must therefore use the containing branch's
+-- context, not the outer recursive one; otherwise the strict branch would inject
+-- an oversized `IN` and throw `SET_SIZE_LIMIT_EXCEEDED` / truncate the set.
+WITH RECURSIVE walk_tree AS
+(
+    SELECT child AS current_id FROM tree WHERE parent = 0
+  UNION ALL
+    SELECT e.child AS current_id
+    FROM tree AS e
+    INNER JOIN walk_tree AS t ON e.parent = t.current_id
+  UNION ALL
+    SELECT e.child AS current_id
+    FROM tree AS e
+    INNER JOIN walk_tree AS t ON e.parent = t.current_id
+    SETTINGS max_rows_in_set = 1, set_overflow_mode = 'throw'
+)
+SELECT current_id FROM walk_tree ORDER BY current_id;
+
+WITH RECURSIVE walk_tree AS
+(
+    SELECT child AS current_id FROM tree WHERE parent = 0
+  UNION ALL
+    SELECT e.child AS current_id
+    FROM tree AS e
+    INNER JOIN walk_tree AS t ON e.parent = t.current_id
+  UNION ALL
+    SELECT e.child AS current_id
+    FROM tree AS e
+    INNER JOIN walk_tree AS t ON e.parent = t.current_id
+    SETTINGS max_rows_in_set = 1, set_overflow_mode = 'break'
+)
+SELECT current_id FROM walk_tree ORDER BY current_id;
+
 DROP TABLE tree;
 
 DROP TABLE edges;
