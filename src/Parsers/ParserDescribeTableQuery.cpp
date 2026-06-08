@@ -15,6 +15,34 @@
 namespace DB
 {
 
+namespace
+{
+
+/// The input begins with `(`. Decide whether the leading parenthesis encloses only the first
+/// element of a top-level set operation, e.g. `(SELECT 1) UNION ALL (SELECT 2)`, as opposed to a
+/// single parenthesized subquery used as a table expression, e.g. `(SELECT 1 UNION ALL SELECT 2)`
+/// or `(SELECT 1) AS source`. We skip past the parenthesis matching the leading `(` and check
+/// whether it is immediately followed by a set-operation keyword.
+bool isTopLevelSetOperation(IParser::Pos pos)
+{
+    int depth = 0;
+    do
+    {
+        if (pos->type == TokenType::OpeningRoundBracket)
+            ++depth;
+        else if (pos->type == TokenType::ClosingRoundBracket)
+            --depth;
+        ++pos;
+    } while (depth > 0 && pos.isValid());
+
+    Expected expected;
+    return ParserKeyword(Keyword::UNION).ignore(pos, expected)
+        || ParserKeyword(Keyword::EXCEPT).ignore(pos, expected)
+        || ParserKeyword(Keyword::INTERSECT).ignore(pos, expected);
+}
+
+}
+
 bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_describe(Keyword::DESCRIBE);
@@ -60,21 +88,25 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     ///   - a set operation:               DESCRIBE (SELECT 1) UNION ALL (SELECT 2)
     /// while a single parenthesized SELECT is a table expression that may carry an alias:
     ///   - a subquery with an alias:      DESCRIBE (SELECT 1) AS source
+    ///   - a subquery containing a set operation with an alias:
+    ///                                    DESCRIBE (SELECT 1 UNION ALL SELECT 2) AS source
     /// The latter must go through ParserTableExpression so the trailing alias is accepted.
-    /// To tell them apart we speculatively parse a SELECT and only keep it when it is a bare
-    /// SELECT or a real set operation; a lone parenthesized SELECT is rolled back and handled
-    /// as a table expression below.
+    /// To tell them apart we speculatively parse a SELECT. We keep it when it is a bare SELECT or
+    /// a genuine top-level set operation; a lone parenthesized SELECT (even one whose body is a set
+    /// operation) is rolled back and handled as a table expression below. Note that
+    /// ParserSelectWithUnionQuery lifts up a single parenthesized inner union, so the size of
+    /// list_of_selects cannot distinguish `(SELECT 1) UNION ALL (SELECT 2)` from
+    /// `(SELECT 1 UNION ALL SELECT 2)`; we instead inspect what follows the leading parenthesis.
     bool parsed_as_select = false;
     {
         auto saved_pos = pos;
         ASTPtr parsed_select;
         if (ParserSelectWithUnionQuery().parse(pos, parsed_select, expected))
         {
-            const auto * union_query = parsed_select->as<ASTSelectWithUnionQuery>();
-            const bool is_set_operation = union_query && union_query->list_of_selects
-                && union_query->list_of_selects->children.size() > 1;
+            const bool keep_select = saved_pos->type != TokenType::OpeningRoundBracket
+                || isTopLevelSetOperation(saved_pos);
 
-            if (saved_pos->type != TokenType::OpeningRoundBracket || is_set_operation)
+            if (keep_select)
             {
                 select = std::move(parsed_select);
                 parsed_as_select = true;

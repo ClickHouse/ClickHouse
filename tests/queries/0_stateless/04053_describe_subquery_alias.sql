@@ -12,3 +12,9 @@ DESCRIBE SELECT 1 AS a FORMAT TSV;
 -- as a query, not diverted to a table expression (which would only consume the first SELECT).
 DESCRIBE (SELECT 1 AS a) UNION ALL (SELECT 2) FORMAT TSV;
 DESCRIBE TABLE (SELECT 1 AS a) UNION ALL (SELECT 2) FORMAT TSV;
+
+-- A single parenthesized subquery whose body is a set operation is still a table expression
+-- and can carry a trailing alias.
+DESCRIBE TABLE (SELECT 1 AS a UNION ALL SELECT 2) AS source FORMAT TSV;
+DESCRIBE (SELECT 1 AS a UNION ALL SELECT 2) AS source FORMAT TSV;
+DESCRIBE (SELECT 1 AS a UNION ALL SELECT 2) FORMAT TSV;
