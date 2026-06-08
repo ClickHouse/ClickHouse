@@ -367,6 +367,7 @@ def test_alter_settings(started_cluster):
         deduplication_v2=false,
         metadata_cache_size_bytes=12345,
         metadata_cache_size_elements=54321
+        SETTINGS s3queue_allow_unsafe_alter=1
     """
     )
 

@@ -615,10 +615,8 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     {
         LOG_TEST(log_, "Processor {} acquired bucket {} for processing", processor_info, bucket);
 
-        /// Capture the lock node's `czxid` so that the commit can later assert atomically that
-        /// this is still the same lock node (i.e. it was not cleaned up by the TTL cleanup and
-        /// recreated by another processor). `-1` keeps the ownership check disabled if we cannot
-        /// read it (e.g. it was already cleaned up), which only falls back to the previous behaviour.
+        /// Capture the lock node's `czxid` for the commit-time ownership check (see `lock_czxid`).
+        /// `-1` (e.g. if we cannot read it) just disables the check, falling back to prior behaviour.
         int64_t lock_czxid = -1;
         zk_retry.resetFailures();
         zk_retry.retryLoop([&]
@@ -779,9 +777,8 @@ bool ObjectStorageQueueOrderedFileMetadata::prepareBucketOwnershipCheckRequests(
     if (!zk_client->isFeatureEnabled(KeeperFeatureFlag::CHECK_STAT))
         return false;
 
-    /// Validator that matches only the creation id of the lock node; `-1` means "ignore" for
-    /// every other field (see `checkNodeStat`). `czxid` changes if the node is deleted and
-    /// recreated, so this passes only if it is still the exact lock node we acquired.
+    /// Validator matching only the lock node's `czxid`; `-1` means "ignore" for every other field
+    /// (see `checkNodeStat`), so the check passes only if it is still the exact node we acquired.
     Coordination::Stat match{};
     match.czxid = bucket_info->lock_czxid;
     match.mzxid = -1;
@@ -826,6 +823,9 @@ void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
     bool ignore_if_exists,
     LastProcessedFileInfoMapPtr created_nodes)
 {
+    /// On the commit path this is called once per bucket (only for the bucket's max-processed
+    /// file; the other files just reset their processing nodes), so the bucket ownership check and
+    /// heartbeat appended below are added once per bucket, not once per file.
     auto state = getProcessingStateFromKeeper(/* check_failed */false, log);
 
     if (state.last_processed_path.has_value())
@@ -839,11 +839,9 @@ void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
             if (ignore_if_exists)
                 return;
 
-            /// The bucket's processed pointer already moved past this file. For a sole owner that
-            /// cannot happen (it advances the pointer with its own files in order), so this means
-            /// another processor advanced it — i.e. we lost the bucket lock (most likely it was
-            /// cleaned up by the TTL cleanup and re-acquired). Surface that as a retryable error
-            /// instead of a misleading logical error.
+            /// The pointer moved past this file, which cannot happen for a sole owner (it advances
+            /// the pointer with its own files in order) — so another processor did, i.e. we lost
+            /// the bucket lock. Surface a retryable error instead of a misleading logical one.
             if (!stillOwnsBucket())
             {
                 throw Exception(
