@@ -16,6 +16,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -222,8 +223,11 @@ String evaluateSubqueryQueryText(const ASTPtr & query, ContextPtr context)
 
 void checkNoNestedEval(const ASTPtr & ast)
 {
-    if (const auto * function = ast->as<ASTFunction>(); function && function->name == TableFunctionEval::name)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nested table function `eval` is not supported");
+    if (const auto * table_expression = ast->as<ASTTableExpression>(); table_expression && table_expression->table_function)
+    {
+        if (const auto * function = table_expression->table_function->as<ASTFunction>(); function && function->name == TableFunctionEval::name)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nested table function `eval` is not supported");
+    }
 
     for (const auto & child : ast->children)
         checkNoNestedEval(child);
