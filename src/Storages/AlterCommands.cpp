@@ -132,6 +132,24 @@ void applyNullModifier(DataTypePtr & data_type, const std::optional<bool> & null
         data_type = makeNullable(data_type);
 }
 
+ASTPtr makeStoredDefaultExpressionList(const ColumnsDescription & columns)
+{
+    auto default_expr_list = make_intrusive<ASTExpressionList>();
+
+    for (const auto & column : columns)
+    {
+        if (!column.default_desc.expression)
+            continue;
+
+        const auto tmp_column_name = column.name + "_tmp_alter" + toString(randomSeed());
+        default_expr_list->children.emplace_back(setAlias(
+            addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), column.type->getName()), column.name));
+        default_expr_list->children.emplace_back(setAlias(column.default_desc.expression->clone(), tmp_column_name));
+    }
+
+    return default_expr_list;
+}
+
 }
 
 std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
@@ -1523,6 +1541,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     auto all_columns = metadata->columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
+    bool revalidate_stored_defaults = false;
     NameSet modified_columns;
     NameSet renamed_columns;
     for (size_t i = 0; i < size(); ++i)
@@ -1584,6 +1603,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             }
 
             all_columns.add(std::move(column));
+            revalidate_stored_defaults = true;
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
@@ -1716,6 +1736,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 });
             }
 
+            if (command.data_type || command.default_expression || removes_default_expression)
+                revalidate_stored_defaults = true;
             modified_columns.emplace(column_name);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
@@ -1775,6 +1797,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     }
                 }
                 all_columns.remove(command.column_name);
+                revalidate_stored_defaults = true;
             }
             else if (!command.if_exists)
             {
@@ -1947,7 +1970,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     if (!is_parameterized_view && all_columns.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
-    validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns, context);
+    if (revalidate_stored_defaults)
+        validateColumnsDefaultsAndGetSampleBlock(makeStoredDefaultExpressionList(all_columns), all_columns, context);
+    else
+        validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns, context);
 }
 
 bool AlterCommands::hasNonReplicatedAlterCommand() const
