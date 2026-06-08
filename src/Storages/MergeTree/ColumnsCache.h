@@ -29,8 +29,8 @@ struct ColumnsCacheKey
     UUID table_uuid;
     String part_name;
     String column_name;
-    size_t row_begin;
-    size_t row_end;
+    size_t row_begin = 0;
+    size_t row_end = 0;
 
     bool operator==(const ColumnsCacheKey & other) const = default;
 
@@ -204,8 +204,8 @@ public:
     struct EntryMetadata
     {
         Key key;
-        size_t rows;
-        size_t bytes;
+        size_t rows = 0;
+        size_t bytes = 0;
     };
 
     /// Get metadata for all cache entries for introspection (system.columns_cache table).
