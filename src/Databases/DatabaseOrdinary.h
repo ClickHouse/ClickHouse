@@ -2,6 +2,7 @@
 
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
