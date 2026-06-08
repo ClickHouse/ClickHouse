@@ -86,15 +86,24 @@ void INATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, v
                 .subject = subject,
             };
             if (!nats_consumer->received.push(std::move(data)))
+            {
                 LOG_DEBUG(nats_consumer->log, "Consumer {} is shutting down, dropping a message", static_cast<void *>(nats_consumer));
+                nats_consumer->nackMessage(msg);
+            }
         }
     }
     catch (...)
     {
         tryLogCurrentException(nats_consumer->log, "Could not push to received queue");
+        nats_consumer->nackMessage(msg);
     }
 
     natsMsg_Destroy(msg);
+}
+
+void INATSConsumer::nackMessage(natsMsg *)
+{
+    /// Core NATS has no acknowledgements. Nothing to do.
 }
 
 }
