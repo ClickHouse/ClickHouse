@@ -255,6 +255,13 @@ namespace
 
 bool isQueryResultCacheRelatedSetting(const String & setting_name)
 {
+    /// The disk-related settings end with `_disk` rather than `_query_cache`, so spell them out: they only control
+    /// where the query result cache is written/read (the read side is gated separately in `createReader`), they do
+    /// not affect the query result, and must not be part of the cache key. Otherwise a result written with
+    /// `enable_writes_to_query_cache_disk = 1` could never be read back with only `enable_reads_from_query_cache_disk = 1`.
+    if (setting_name == "enable_writes_to_query_cache_disk" || setting_name == "enable_reads_from_query_cache_disk")
+        return true;
+
     return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
 }
 
