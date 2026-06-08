@@ -774,7 +774,6 @@ String StorageNATS::getConsumerName() const
     return getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_consumer_name]);
 }
 
-void registerStorageNATS(StorageFactory & factory);
 void registerStorageNATS(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
