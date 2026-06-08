@@ -250,12 +250,13 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_pipeline_reverse_key"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_lazy_nullable_partition"
 
+# Also checks that LowCardinality(Nullable) types are handled correctly
 $CLICKHOUSE_CLIENT -q "
-    CREATE TABLE t_lazy_nullable_partition (k Nullable(Int32), val UInt64)
+    CREATE TABLE t_lazy_nullable_partition (k LowCardinality(Nullable(Int32)), val UInt64)
     ENGINE = MergeTree
     PARTITION BY k
     ORDER BY k
-    SETTINGS allow_nullable_key = 1;"
+    SETTINGS allow_nullable_key = 1, allow_suspicious_low_cardinality_types = 1;"
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_nullable_partition VALUES (NULL, 999);"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_nullable_partition VALUES (2, 200), (2, 201);"

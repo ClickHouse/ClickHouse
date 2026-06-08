@@ -68,6 +68,7 @@
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
+#include <Columns/ColumnConst.h>
 
 #include <algorithm>
 #include <iterator>
@@ -1399,7 +1400,7 @@ static std::optional<size_t> isPartitionKeyMonotonicInSortKey(
         return std::nullopt;
 
     /// Disabling the optimization to be safe in ORDER BY k ASC NULLS LAST cases
-    if (partition_output->result_type && partition_output->result_type->isNullable())
+    if (partition_output->result_type && isNullableOrLowCardinalityNullable(partition_output->result_type))
         return std::nullopt;
 
     /// Walk the partition key output node back to its INPUT leaf, checking that
