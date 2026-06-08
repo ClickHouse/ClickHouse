@@ -350,3 +350,32 @@ def test_audit_log_whitespace_only_types_defaults_to_ddl(start_cluster):
 
     assert_audit_log_contain_with_retry(node_whitespace_types, "DDL")
     assert_audit_log_count_with_retry(node_whitespace_types, 2)
+
+
+def test_audit_log_truncate_classified_as_dml(start_cluster):
+    """TRUNCATE TABLE is a data-modifying operation and must be classified as DML,
+    not DDL (even though it uses ASTDropQuery with QueryKind::Drop internally)."""
+    node_dml_misc.query("DROP TABLE IF EXISTS test_truncate_audit")
+    node_dml_misc.query("CREATE TABLE test_truncate_audit(a int) ENGINE=Memory")
+    node_dml_misc.query("INSERT INTO test_truncate_audit VALUES (1),(2),(3)")
+    node_dml_misc.query("TRUNCATE TABLE test_truncate_audit")
+
+    assert_audit_log_contain_with_retry(node_dml_misc, "TRUNCATE TABLE test_truncate_audit")
+    log_content = node_dml_misc.grep_in_log("TRUNCATE TABLE test_truncate_audit", from_host=True, filename="clickhouse-server.audit.log")
+    assert "DML" in log_content, "TRUNCATE must be classified as DML, not DDL"
+    assert "DDL" not in log_content, "TRUNCATE must not appear as DDL"
+
+
+def test_audit_log_ddl_object_names_without_log_queries(start_cluster):
+    """DDL audit records must include OBJECT_NAMES even when log_queries=0.
+    The object-name extraction must not depend on the system.query_log write path."""
+    node_ddl.query("SET log_queries=0")
+    node_ddl.query("DROP TABLE IF EXISTS test_no_log_queries_audit")
+    node_ddl.query("CREATE TABLE test_no_log_queries_audit(a int) ENGINE=Memory")
+
+    assert_audit_log_contain_with_retry(node_ddl, "test_no_log_queries_audit")
+    log_content = node_ddl.grep_in_log("test_no_log_queries_audit", from_host=True, filename="clickhouse-server.audit.log")
+    assert "DDL" in log_content, "DDL audit record must be present"
+    lines = [line for line in log_content.strip().split("\n") if "CREATE TABLE" in line and "test_no_log_queries_audit" in line]
+    assert len(lines) >= 1, "CREATE TABLE audit record must mention the table name in OBJECT_NAMES"
+    node_ddl.query("SET log_queries=1")

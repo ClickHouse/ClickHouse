@@ -24,6 +24,7 @@
 #include <Processors/Formats/Impl/NullFormat.h>
 
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -463,31 +464,33 @@ QueryLogElement logQueryStart(
     bool log_queries = settings[Setting::log_queries];
 
     auto query_log = context->getQueryLog();
-    if (!query_log)
+    if (!query_log && !isAuditLogEnabled())
         return elem;
 
-    /// Log into system table start of query execution, if need.
-    if (log_queries)
+    /// Populate object names (tables, views, etc.) from the access info and interpreter.
+    /// This is needed by both system.query_log and the audit log, so it runs regardless
+    /// of the log_queries setting.
+    if (pipeline.initialized())
     {
-        /// This check is not obvious, but without it 01220_scalar_optimization_in_alter fails.
-        if (pipeline.initialized())
-        {
-            const auto & info = context->getQueryAccessInfo();
-            std::lock_guard lock(info.mutex);
-            elem.query_databases = info.databases;
-            elem.query_tables = info.tables;
-            elem.query_columns = info.columns;
-            elem.query_partitions = info.partitions;
-            elem.query_projections = info.projections;
-            elem.query_views = info.views;
-            elem.used_row_policies = info.row_policies;
-        }
+        const auto & info = context->getQueryAccessInfo();
+        std::lock_guard lock(info.mutex);
+        elem.query_databases = info.databases;
+        elem.query_tables = info.tables;
+        elem.query_columns = info.columns;
+        elem.query_partitions = info.partitions;
+        elem.query_projections = info.projections;
+        elem.query_views = info.views;
+        elem.used_row_policies = info.row_policies;
+    }
 
-        if (async_insert)
-            InterpreterInsertQuery::extendQueryLogElemImpl(elem, context);
-        else if (interpreter)
-            interpreter->extendQueryLogElem(elem, query_ast, context, query_database, query_table);
+    if (async_insert)
+        InterpreterInsertQuery::extendQueryLogElemImpl(elem, context);
+    else if (interpreter)
+        interpreter->extendQueryLogElem(elem, query_ast, context, query_database, query_table);
 
+    /// Log into system table start of query execution, if need.
+    if (log_queries && query_log)
+    {
         if (settings[Setting::log_query_settings])
             elem.query_settings = std::make_shared<Settings>(context->getSettingsRef());
 
@@ -744,7 +747,7 @@ void logQueryFinishImpl(
         logProcessorProfile(context, query_pipeline_finalized_info.processors_profile_infos, query_pipeline_finalized_info.pipeline_dump);
 
     if (!internal)
-        auditLog(elem, context);
+        auditLog(elem, context, query_ast);
 }
 
 void logQueryFinish(
@@ -857,7 +860,7 @@ void logQueryException(
     }
 
     if (!internal)
-        auditLog(elem, context);
+        auditLog(elem, context, query_ast);
 }
 
 void logExceptionBeforeStart(
@@ -993,10 +996,10 @@ void logExceptionBeforeStart(
     }
 
     if (!internal)
-        auditLog(elem, context);
+        auditLog(elem, context, ast);
 }
 
-void auditLog(const QueryLogElement & elem, ContextPtr context)
+void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast)
 {
     auto audit_log = getAuditLogger();
     if (!audit_log)
@@ -1023,9 +1026,17 @@ void auditLog(const QueryLogElement & elem, ContextPtr context)
         case IAST::QueryKind::AsyncInsertFlush:
             audit_type = Context::AuditLogTypes::DML;
             break;
+
+        /// TRUNCATE reports QueryKind::Drop but is a data-modifying operation (DML).
+        case IAST::QueryKind::Drop:
+            if (ast && ast->as<ASTDropQuery>() && ast->as<ASTDropQuery>()->kind == ASTDropQuery::Kind::Truncate)
+                audit_type = Context::AuditLogTypes::DML;
+            else
+                audit_type = Context::AuditLogTypes::DDL;
+            break;
+
         /// Statements that create, modify, or remove database objects (including backup/restore).
         case IAST::QueryKind::Create:
-        case IAST::QueryKind::Drop:
         case IAST::QueryKind::Undrop:
         case IAST::QueryKind::Rename:
         case IAST::QueryKind::Alter:
