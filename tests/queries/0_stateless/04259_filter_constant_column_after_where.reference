@@ -50,3 +50,8 @@ UInt8	1
 Tuple(String), Tuple(size = 3, String(size = 3))	616263	3
 Tuple(String), Tuple(size = 3, String(size = 3))	61626300	4
 Tuple(String), Tuple(size = 3, String(size = 3))	6162630000	5
+FixedString(3), FixedString(size = 1)	616263	3	1
+FixedString(3), FixedString(size = 1)	616263	3	1
+FixedString(16), FixedString(size = 1)	00000000000000000000000000000001	1
+FixedString(16), FixedString(size = 1)	00000000000000000000000000000001	1
+Tuple(FixedString(16)), Tuple(size = 1, FixedString(size = 1))	00000000000000000000000000000001	1

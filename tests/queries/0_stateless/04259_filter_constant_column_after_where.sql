@@ -330,8 +330,68 @@ FROM
 WHERE t = CAST(tuple(toFixedString('abc', 5)), 'Dynamic')
 ORDER BY length(tupleElement(t, 1)), hex(tupleElement(t, 1));
 
+DROP TABLE IF EXISTS 04259_filter_constant_column_after_where_fixed_string_result;
+
+CREATE TABLE 04259_filter_constant_column_after_where_fixed_string_result
+(
+    s FixedString(3)
+)
+ENGINE = Memory;
+
+INSERT INTO 04259_filter_constant_column_after_where_fixed_string_result VALUES
+    (toFixedString('abc', 3)),
+    (toFixedString('abd', 3));
+
+SELECT dumpColumnStructure(s), hex(s), length(s), count()
+FROM 04259_filter_constant_column_after_where_fixed_string_result
+WHERE s = toFixedString('abc', 5)
+GROUP BY ALL
+ORDER BY ALL;
+
+SELECT dumpColumnStructure(s), hex(s), length(s), count()
+FROM 04259_filter_constant_column_after_where_fixed_string_result
+WHERE s = unhex('6162630000')
+GROUP BY ALL
+ORDER BY ALL;
+
+DROP TABLE IF EXISTS 04259_filter_constant_column_after_where_ipv6;
+
+CREATE TABLE 04259_filter_constant_column_after_where_ipv6
+(
+    s FixedString(16)
+)
+ENGINE = Memory;
+
+INSERT INTO 04259_filter_constant_column_after_where_ipv6 VALUES
+    (IPv6StringToNum('::1')),
+    (IPv6StringToNum('::2'));
+
+SELECT dumpColumnStructure(s), hex(s), count()
+FROM 04259_filter_constant_column_after_where_ipv6
+WHERE s = toIPv6('::1')
+GROUP BY ALL
+ORDER BY ALL;
+
+SELECT dumpColumnStructure(s), hex(s), count()
+FROM 04259_filter_constant_column_after_where_ipv6
+WHERE s = CAST(toIPv6('::1'), 'Dynamic')
+GROUP BY ALL
+ORDER BY ALL;
+
+SELECT dumpColumnStructure(t), hex(tupleElement(t, 1)), count()
+FROM
+(
+    SELECT tuple(s) AS t
+    FROM 04259_filter_constant_column_after_where_ipv6
+)
+WHERE t = tuple(toIPv6('::1'))
+GROUP BY ALL
+ORDER BY ALL;
+
 DROP TABLE 04259_filter_constant_column_after_where;
 DROP TABLE 04259_filter_constant_column_after_where_decimal;
 DROP TABLE 04259_filter_constant_column_after_where_dynamic;
 DROP TABLE 04259_filter_constant_column_after_where_variant;
 DROP TABLE 04259_filter_constant_column_after_where_fixed_string;
+DROP TABLE 04259_filter_constant_column_after_where_fixed_string_result;
+DROP TABLE 04259_filter_constant_column_after_where_ipv6;

@@ -142,6 +142,9 @@ bool canReplaceColumnWithConstantAfterFilter(
         && (containsFixedString(constant_type) || constant_type_is_dynamic))
         return false;
 
+    if (containsFixedString(result_type) && !result_type->equals(*constant_type))
+        return false;
+
     /// `ColumnConst(Nullable)` has a different physical layout from a filtered full nullable column.
     /// This optimization preserves the post-filter column layout for nullable columns.
     if (isNullableOrLowCardinalityNullable(result_type))
