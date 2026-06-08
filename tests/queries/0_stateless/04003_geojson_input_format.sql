@@ -319,6 +319,59 @@ FROM format('GeoJSON', '{
 }')
 SETTINGS input_format_geojson_unsupported_geometry_handling = 'null'; -- { serverError INCORRECT_DATA }
 
+-- A GeometryCollection whose 'geometries' member is not an array is malformed and is rejected even
+-- with null handling, instead of being silently inserted as NULL.
+SELECT isNull(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "GeometryCollection", "geometries": "not-an-array"}, "properties": {}}
+    ]
+}')
+SETTINGS input_format_geojson_unsupported_geometry_handling = 'null'; -- { serverError INCORRECT_DATA }
+
+-- A GeometryCollection containing a malformed child geometry (a Point missing its coordinates) is
+-- rejected even with null handling, instead of being silently inserted as NULL.
+SELECT isNull(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "GeometryCollection", "geometries": [{"type": "Point"}]}, "properties": {}}
+    ]
+}')
+SETTINGS input_format_geojson_unsupported_geometry_handling = 'null'; -- { serverError INCORRECT_DATA }
+
+-- A GeometryCollection containing a child with a bad coordinate (a non-JSON number) is rejected.
+SELECT isNull(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "GeometryCollection", "geometries": [{"type": "Point", "coordinates": [+Inf, 0]}]}, "properties": {}}
+    ]
+}')
+SETTINGS input_format_geojson_unsupported_geometry_handling = 'null'; -- { serverError INCORRECT_DATA }
+
+-- A GeometryCollection whose members are all well-formed (including a nested collection) is still
+-- inserted as NULL under null handling.
+SELECT isNull(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "GeometryCollection",
+                "geometries": [
+                    {"type": "Point", "coordinates": [0, 0]},
+                    {"type": "GeometryCollection", "geometries": [{"type": "LineString", "coordinates": [[0, 0], [1, 1]]}]}
+                ]
+            },
+            "properties": {}
+        }
+    ]
+}')
+SETTINGS input_format_geojson_unsupported_geometry_handling = 'null';
+
 -- Coordinates must be strict JSON numbers: a non-finite value is rejected, not loaded as a Geometry.
 SELECT variantType(geometry)
 FROM format('GeoJSON', '{

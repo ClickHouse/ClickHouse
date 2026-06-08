@@ -240,6 +240,136 @@ void forEachFieldInJSONObject(ReadBuffer & buf, const FormatSettings::JSON & jso
     }
 }
 
+/// Parse the `coordinates` of a supported GeoJSON geometry type and enforce the GeoJSON shape
+/// invariants (a `LineString` has at least two positions; every `Polygon`/`MultiPolygon` ring is
+/// closed and has at least four positions). Returns the parsed coordinates so the caller can insert
+/// them. `Ring` is accepted as a synonym for `LineString` because it is part of the `Geometry` type.
+Field parseAndValidateGeometryCoordinates(const String & geo_type, ReadBuffer & coord_buf)
+{
+    Field coordinates_field;
+    if (geo_type == "Point")
+        coordinates_field = readGeoJSONPoint(coord_buf);
+    else if (geo_type == "LineString" || geo_type == "Ring")
+    {
+        coordinates_field = readGeoJSONLinearRing(coord_buf);
+        validateLineStringCoordinates(coordinates_field.safeGet<Array>());
+    }
+    else if (geo_type == "MultiLineString")
+    {
+        coordinates_field = readGeoJSONPolygonCoordinates(coord_buf);
+        for (const auto & line : coordinates_field.safeGet<Array>())
+            validateLineStringCoordinates(line.safeGet<Array>());
+    }
+    else if (geo_type == "Polygon")
+    {
+        coordinates_field = readGeoJSONPolygonCoordinates(coord_buf);
+        for (const auto & ring : coordinates_field.safeGet<Array>())
+            validateRingCoordinates(ring.safeGet<Array>());
+    }
+    else if (geo_type == "MultiPolygon")
+    {
+        coordinates_field = readGeoJSONMultiPolygonCoordinates(coord_buf);
+        for (const auto & polygon : coordinates_field.safeGet<Array>())
+            for (const auto & ring : polygon.safeGet<Array>())
+                validateRingCoordinates(ring.safeGet<Array>());
+    }
+    return coordinates_field;
+}
+
+void validateGeoJSONGeometryMembers(
+    const String & geo_type,
+    const String & raw_coordinates,
+    const String & raw_geometries,
+    const FormatSettings & format_settings,
+    size_t current_depth);
+
+/// Validate that a JSON value read from `buf` is a well-formed GeoJSON geometry, throwing
+/// `INCORRECT_DATA` on malformed input. Nothing is inserted: this is used to validate geometries
+/// that are going to be stored as NULL (a top-level unrepresentable geometry, or the members of a
+/// `GeometryCollection`, when `input_format_geojson_unsupported_geometry_handling = 'null'`), so
+/// that truncated or malformed documents are still rejected rather than silently loaded as NULL.
+void validateGeoJSONGeometry(ReadBuffer & buf, const FormatSettings & format_settings, size_t current_depth)
+{
+    if (unlikely(current_depth > format_settings.json.max_depth))
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "GeoJSON is too deep");
+    if (unlikely(current_depth > 0 && current_depth % 1024 == 0))
+        checkStackSize();
+
+    if (!JSONUtils::checkAndSkipObjectStart(buf))
+    {
+        assertString("null", buf);
+        return;
+    }
+
+    String geo_type;
+    String raw_coordinates;
+    String raw_geometries;
+    forEachFieldInJSONObject(buf, format_settings.json, [&](const String & key)
+    {
+        if (key == "type") { readJSONString(geo_type, buf, format_settings.json); return true; }
+        if (key == "coordinates") { readJSONField(raw_coordinates, buf, format_settings.json); return true; }
+        if (key == "geometries") { readJSONField(raw_geometries, buf, format_settings.json); return true; }
+        return false;
+    });
+
+    validateGeoJSONGeometryMembers(geo_type, raw_coordinates, raw_geometries, format_settings, current_depth);
+}
+
+/// Validate the already-parsed members (`type`, `coordinates`, `geometries`) of a GeoJSON geometry.
+/// The members of a `GeometryCollection` are validated recursively, bounded by the JSON nesting
+/// limit. This is shared by `validateGeoJSONGeometry` and by the NULL-handling path of
+/// `GeoJSONRowInputFormat::readGeometry`, which has already buffered these members.
+void validateGeoJSONGeometryMembers(
+    const String & geo_type,
+    const String & raw_coordinates,
+    const String & raw_geometries,
+    const FormatSettings & format_settings,
+    size_t current_depth)
+{
+    if (geo_type == "GeometryCollection")
+    {
+        if (raw_geometries.empty())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "GeoJSON: geometry of type 'GeometryCollection' is missing the 'geometries' member");
+        /// `geometries` must be an array of geometry objects; validate that it is an array and that
+        /// each member is itself a well-formed geometry, so a malformed payload (e.g. a scalar or a
+        /// collection containing a truncated child) is rejected rather than loaded as NULL.
+        ReadBufferFromString geometries_buf(raw_geometries);
+        if (!JSONUtils::checkAndSkipArrayStart(geometries_buf))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "GeoJSON: the 'geometries' member of a 'GeometryCollection' must be an array");
+        bool first = true;
+        while (!JSONUtils::checkAndSkipArrayEnd(geometries_buf))
+        {
+            if (!first)
+                JSONUtils::skipComma(geometries_buf);
+            first = false;
+            validateGeoJSONGeometry(geometries_buf, format_settings, current_depth + 1);
+        }
+        return;
+    }
+
+    /// `MultiPoint` coordinates are an array of positions (validated like a linear ring, without the
+    /// closed/length invariants); all other supported types use the shared coordinate validator.
+    static const std::unordered_set<String> types_with_coordinates
+        = {"Point", "LineString", "MultiLineString", "Polygon", "MultiPolygon", "MultiPoint"};
+    if (!types_with_coordinates.contains(geo_type))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: unknown or invalid geometry type '{}'", geo_type);
+
+    if (raw_coordinates.empty())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "GeoJSON: geometry of type '{}' is missing the 'coordinates' member", geo_type);
+
+    ReadBufferFromString coord_buf(raw_coordinates);
+    if (geo_type == "MultiPoint")
+        readGeoJSONLinearRing(coord_buf);
+    else
+        parseAndValidateGeometryCoordinates(geo_type, coord_buf);
+}
+
 } /// anonymous namespace
 
 
@@ -524,25 +654,10 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
             {
                 /// Even when the value is going to be inserted as NULL, validate that the object is a
                 /// well-formed GeoJSON geometry of its declared type, so truncated/malformed documents
-                /// are still rejected rather than being silently loaded as NULL.
-                if (geo_type == "MultiPoint")
-                {
-                    if (raw_coordinates.empty())
-                        throw Exception(
-                            ErrorCodes::INCORRECT_DATA,
-                            "GeoJSON: geometry of type 'MultiPoint' is missing the 'coordinates' member");
-                    /// MultiPoint coordinates are an array of positions; parse them to validate the shape.
-                    ReadBufferFromString coord_buf(raw_coordinates);
-                    readGeoJSONLinearRing(coord_buf);
-                }
-                else if (geo_type == "GeometryCollection")
-                {
-                    if (raw_geometries.empty())
-                        throw Exception(
-                            ErrorCodes::INCORRECT_DATA,
-                            "GeoJSON: geometry of type 'GeometryCollection' is missing the 'geometries' member");
-                }
-
+                /// (e.g. a missing `coordinates`/`geometries` member, a non-array `geometries`, or a
+                /// `GeometryCollection` containing a malformed child) are still rejected rather than
+                /// being silently loaded as NULL.
+                validateGeoJSONGeometryMembers(geo_type, raw_coordinates, raw_geometries, format_settings, 0);
                 variant_col.insertDefault();
                 return;
             }
@@ -571,38 +686,11 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
     auto local_discr = variant_col.localDiscriminatorByGlobal(global_discr);
     size_t offset = sub_col.size();
 
-    ReadBufferFromString coord_buf(raw_coordinates);
-    Field coordinates_field;
-
     /// Parse the coordinates and enforce the GeoJSON shape invariants for the geometry type before
     /// inserting, so that degenerate lines and unclosed/too-short rings are rejected as malformed
     /// input instead of being stored as valid `Geometry` values.
-    if (geo_type == "Point")
-        coordinates_field = readGeoJSONPoint(coord_buf);
-    else if (geo_type == "LineString" || geo_type == "Ring")
-    {
-        coordinates_field = readGeoJSONLinearRing(coord_buf);
-        validateLineStringCoordinates(coordinates_field.safeGet<Array>());
-    }
-    else if (geo_type == "MultiLineString")
-    {
-        coordinates_field = readGeoJSONPolygonCoordinates(coord_buf);
-        for (const auto & line : coordinates_field.safeGet<Array>())
-            validateLineStringCoordinates(line.safeGet<Array>());
-    }
-    else if (geo_type == "Polygon")
-    {
-        coordinates_field = readGeoJSONPolygonCoordinates(coord_buf);
-        for (const auto & ring : coordinates_field.safeGet<Array>())
-            validateRingCoordinates(ring.safeGet<Array>());
-    }
-    else if (geo_type == "MultiPolygon")
-    {
-        coordinates_field = readGeoJSONMultiPolygonCoordinates(coord_buf);
-        for (const auto & polygon : coordinates_field.safeGet<Array>())
-            for (const auto & ring : polygon.safeGet<Array>())
-                validateRingCoordinates(ring.safeGet<Array>());
-    }
+    ReadBufferFromString coord_buf(raw_coordinates);
+    Field coordinates_field = parseAndValidateGeometryCoordinates(geo_type, coord_buf);
 
     sub_col.insert(coordinates_field);
     variant_col.getLocalDiscriminators().push_back(local_discr);
