@@ -84,8 +84,6 @@ void BackupWriterMemory::removeEmptyDirectories()
 }
 
 
-void registerBackupEngineMemory(BackupFactory & factory);
-
 void registerBackupEngineMemory(BackupFactory & factory)
 {
     auto creator_fn = [](const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>

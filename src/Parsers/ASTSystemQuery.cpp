@@ -1,5 +1,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
+#include <Parsers/IAST_erase.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Poco/String.h>
 #include <Common/quoteString.h>
@@ -62,16 +63,32 @@ String ASTSystemQuery::getTable() const
 
 void ASTSystemQuery::setDatabase(const String & name)
 {
-    reset(database);
+    if (database)
+    {
+        std::erase(children, database);
+        database.reset();
+    }
+
     if (!name.empty())
-        set(database, make_intrusive<ASTIdentifier>(name));
+    {
+        database = make_intrusive<ASTIdentifier>(name);
+        children.push_back(database);
+    }
 }
 
 void ASTSystemQuery::setTable(const String & name)
 {
-    reset(table);
+    if (table)
+    {
+        std::erase(children, table);
+        table.reset();
+    }
+
     if (!name.empty())
-        set(table, make_intrusive<ASTIdentifier>(name));
+    {
+        table = make_intrusive<ASTIdentifier>(name);
+        children.push_back(table);
+    }
 }
 
 void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -183,7 +200,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::START_VIRTUAL_PARTS_UPDATE:
         case Type::STOP_REDUCE_BLOCKING_PARTS:
         case Type::START_REDUCE_BLOCKING_PARTS:
-        case Type::SYNC_MERGES:
         {
             if (table)
             {
@@ -194,23 +210,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             {
                 print_on_volume();
             }
-            break;
-        }
-        case Type::SCHEDULE_MERGE:
-        {
-            chassert(table);
-            ostr << ' ';
-            print_database_table();
-            print_keyword(" PARTS ");
-            chassert(scheduled_merge_parts);
-            scheduled_merge_parts->format(ostr, settings, state, frame);
-            break;
-        }
-        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
-        {
-            ostr << ' ';
-            print_database_table();
-            ostr << " PATH " << quoteString(queue_path);
             break;
         }
         case Type::RESTART_REPLICA:
@@ -381,7 +380,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::UNLOCK_SNAPSHOT:
         {
-            ostr << " " << quoteString(backup_name);
+            ostr << quoteString(backup_name);
             if (backup_source)
             {
                 print_keyword(" FROM ");
@@ -433,12 +432,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                     }
                 }
             }
-            break;
-        }
-        case Type::SET_COVERAGE_TEST:
-        {
-            ostr << ' ';
-            ostr << quoteString(coverage_test_name);
             break;
         }
         case Type::ENABLE_FAILPOINT:
@@ -549,8 +542,13 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                     break;
             }
 
-            for (const auto & arg : instrumentation_arguments)
+            bool whitespace = false;
+            for (const auto & param : instrumentation_parameters)
             {
+                if (!whitespace)
+                    ostr << ' ';
+                else
+                    whitespace = true;
                 std::visit([&](const auto & value)
                 {
                     using T = std::decay_t<decltype(value)>;
@@ -558,7 +556,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                         ostr << ' ' << quoteString(value);
                     else
                         ostr << ' ' << value;
-                }, arg);
+                }, param);
             }
             break;
         }
@@ -602,7 +600,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_S3_CLIENT_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
         case Type::CLEAR_PARQUET_METADATA_CACHE:
-        case Type::CLEAR_AVRO_SCHEMA_CACHE:
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
         case Type::JEMALLOC_PURGE:
@@ -611,6 +608,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::JEMALLOC_DISABLE_PROFILE:
         case Type::SYNC_TRANSACTION_LOG:
         case Type::SYNC_FILE_CACHE:
+        case Type::SYNC_FILESYSTEM_CACHE:
         case Type::REPLICA_READY:   /// Obsolete
         case Type::REPLICA_UNREADY: /// Obsolete
         case Type::RELOAD_DICTIONARIES:
@@ -632,12 +630,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::FREE_MEMORY:
         case Type::RESET_DDL_WORKER:
             break;
-        case Type::SYNC_FILESYSTEM_CACHE:
-        {
-            if (!filesystem_cache_name.empty())
-                ostr << ' ' << quoteString(filesystem_cache_name);
-            break;
-        }
         case Type::UNKNOWN:
         case Type::END:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown SYSTEM command");
