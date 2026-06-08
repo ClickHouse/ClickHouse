@@ -2693,10 +2693,16 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
     /// Test-only: deterministically reproduce the DROP+RECREATE race that originally
     /// surfaced as a `chassert(max_log_ptr == new_max_log_ptr)` LOGICAL_ERROR. The test
     /// enables this failpoint, submits a backup, waits for the pause, runs DROP+RECREATE
-    /// to advance `/max_log_ptr`'s `czxid` and reset its value below `snapshot_version`,
-    /// then notifies the failpoint. On resume, `getConsistentMetadataSnapshotImpl` sees
-    /// the rollback and throws `Replicated database was dropped` from the in-loop
-    /// monotonicity guard, instead of firing the pre-fix chassert / retry-exhaustion path.
+    /// to give `/max_log_ptr` a new `czxid`, then notifies the failpoint. On resume,
+    /// `getConsistentMetadataSnapshotImpl` is called with the `czxid` captured above as
+    /// `expected_max_log_ptr_czxid`; because this pause happens before that call, the
+    /// recreate is caught by the function's entry-time `czxid` identity check (which
+    /// fires regardless of whether the new pointer ended up below or above the original),
+    /// not by the in-loop `max_log_ptr > new_max_log_ptr` rollback guard. Either way it
+    /// throws `Replicated database was dropped` instead of firing the pre-fix chassert /
+    /// retry-exhaustion path. The rollback guard itself is exercised separately by
+    /// `04320_backup_replicated_db_recreate_rollback_guard.sh`, which pauses after the
+    /// entry-time identity check via `database_replicated_pause_after_snapshot_identity_check`.
     FailPointInjection::pauseFailPoint(FailPoints::database_replicated_pause_after_reading_log_pointer);
 
     auto snapshot = getConsistentMetadataSnapshotImpl(

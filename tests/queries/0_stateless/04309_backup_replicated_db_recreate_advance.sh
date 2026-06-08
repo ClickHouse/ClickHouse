@@ -6,14 +6,17 @@
 #   `SYSTEM WAIT FAILPOINT ... PAUSE` to hang or to be unblocked by the wrong query.
 
 # Companion to `04057_backup_replicated_db_recreate.sh`. That test recreates the
-# database with a *smaller* `max_log_ptr` (the new instance starts at 1), so the
-# drop/recreate race is caught by the `max_log_ptr > new_max_log_ptr` rollback
-# guard. That test therefore still passes even if the `expected_max_log_ptr_czxid`
-# identity check is removed or wired incorrectly.
+# database with a *smaller* `max_log_ptr` (the new instance starts at 1), but because
+# it pauses at `database_replicated_pause_after_reading_log_pointer` (before
+# `getConsistentMetadataSnapshotImpl`, while `getTablesForBackup` forwards the
+# captured `czxid`), the recreate is caught by the entry-time `czxid` identity check
+# there too — the smaller value never reaches the in-loop rollback guard. The
+# rollback guard itself is exercised by
+# `04320_backup_replicated_db_recreate_rollback_guard.sh`.
 #
-# This test exercises the harder case the rollback guard cannot catch: the
-# recreated database advances its `max_log_ptr` *past* the captured
-# `snapshot_version` before the backup resumes. With `new_max_log_ptr >=
+# This test exercises the case where the rollback guard could not catch the race even
+# if it were reached: the recreated database advances its `max_log_ptr` *past* the
+# captured `snapshot_version` before the backup resumes. With `new_max_log_ptr >=
 # snapshot_version`, the rollback guard never fires; the only thing that detects
 # the substitution is the entry-time `czxid` identity check in
 # `getConsistentMetadataSnapshotImpl` (the `expected_max_log_ptr_czxid` forwarded

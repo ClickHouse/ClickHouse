@@ -19,12 +19,16 @@
 #
 # This test triggers the race deterministically with the
 # `database_replicated_pause_after_reading_log_pointer` failpoint, which pauses
-# `getTablesForBackup` after it has read `snapshot_version` from the old database
-# but before it calls `getConsistentMetadataSnapshotImpl`. While paused, the test
-# does `DROP DATABASE` + `CREATE DATABASE` at the same Keeper path so the new
-# database starts with `max_log_ptr = 1` (below the captured `snapshot_version`),
-# then notifies the failpoint. On resume, the in-loop monotonicity guard fires
-# with `Replicated database was dropped`.
+# `getTablesForBackup` after it has read `snapshot_version` (and its `czxid`) from
+# the old database but before it calls `getConsistentMetadataSnapshotImpl`. While
+# paused, the test does `DROP DATABASE` + `CREATE DATABASE` at the same Keeper path
+# so the new database gets a fresh `czxid` and starts with `max_log_ptr = 1`, then
+# notifies the failpoint. Because `getTablesForBackup` forwards the captured `czxid`
+# as `expected_max_log_ptr_czxid`, the recreate is caught by the entry-time `czxid`
+# identity check at the top of `getConsistentMetadataSnapshotImpl` (not by the
+# in-loop rollback guard, which is covered by
+# `04320_backup_replicated_db_recreate_rollback_guard.sh`), throwing
+# `Replicated database was dropped`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -46,9 +50,9 @@ cleanup
 
 # Create the original database with a handful of tables so `max_log_ptr` advances
 # above 1 (each `CREATE TABLE` bumps `max_log_ptr`). When we recreate the database
-# below, the new instance starts at `max_log_ptr = 1`, which is strictly less than
-# the `snapshot_version` captured before the recreate. This is the rollback the
-# in-loop monotonicity guard catches.
+# below, the new instance gets a fresh `czxid` and starts at `max_log_ptr = 1`. The
+# changed `czxid` is what the entry-time identity check detects; the smaller value is
+# incidental here (the dedicated rollback-guard coverage lives in `04320`).
 $CLICKHOUSE_CLIENT --query "
     CREATE DATABASE $DB ENGINE = Replicated('$ZK_PATH', 's0', 'r0');
 " > /dev/null
@@ -80,10 +84,12 @@ $CLICKHOUSE_CLIENT --query "
     CREATE DATABASE $DB ENGINE = Replicated('$ZK_PATH', 's0', 'r0');
 " > /dev/null
 
-# Resume the backup. It will enter `getConsistentMetadataSnapshotImpl` with
-# `max_log_ptr = snapshot_version` (e.g. 11, captured from the old database) and
-# read `new_max_log_ptr = 1` from the recreated database. The
-# `max_log_ptr > new_max_log_ptr` branch throws `Replicated database was dropped`.
+# Resume the backup. It enters `getConsistentMetadataSnapshotImpl` with the `czxid`
+# captured before the recreate forwarded as `expected_max_log_ptr_czxid`. The
+# function's entry-time `tryGet` of `/max_log_ptr` now observes the recreated node's
+# new `czxid`, which differs from the expected one, so the entry-time identity check
+# throws `Replicated database was dropped` before the snapshot read or the in-loop
+# rollback guard is reached.
 $CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT $FAILPOINT"
 
 # Wait for the backup to leave `CREATING_BACKUP`. The failpoint fires once and
