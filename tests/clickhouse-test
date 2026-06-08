@@ -1556,6 +1556,26 @@ class SettingsRandomizer:
         "use_join_disjunctions_push_down": lambda: random.random() > 0.05,
         "enable_join_transitive_predicates": lambda: random.random() < 0.3,
         "analyzer_compatibility_prefer_alias_over_subcolumn": lambda: random.randint(0, 1),
+        # Default-true settings added since v26.4: disable with 0.05 probability
+        "optimize_trivial_group_by_limit_query": lambda: random.random() > 0.05,
+        "query_plan_top_k_through_join": lambda: random.random() > 0.05,
+        "query_plan_push_limit_by_into_sort": lambda: random.random() > 0.05,
+        "allow_limit_by_partitions_independently": lambda: random.random() > 0.05,
+        "enable_software_prefetch_in_join": lambda: random.random() > 0.05,
+        "use_statistics_for_part_pruning": lambda: random.random() > 0.05,
+        "use_text_index_like_evaluation_by_dictionary_scan": lambda: random.random() > 0.05,
+        "enable_join_fixed_hash_table_conversion": lambda: random.random() > 0.05,
+        "optimize_rewrite_has_to_in": lambda: random.random() > 0.05,
+        "defer_partition_pruning_after_final": lambda: random.random() > 0.05,
+        # Default-false settings added since v26.4: enable with 0.3 probability
+        "enable_sharding_aggregator": lambda: random.random() < 0.3,
+        "read_in_order_use_virtual_row_per_block": lambda: random.random() < 0.3,
+        "materialize_statistics_on_insert": lambda: random.random() < 0.3,
+        "distributed_index_analysis_only_on_coordinator": lambda: random.random() < 0.3,
+        "optimize_prewhere_after_pushdown": lambda: random.random() < 0.3,
+        "query_cache_for_subqueries": lambda: random.random() < 0.3,
+        "query_plan_optimize_lazy_final": lambda: random.random() < 0.3,
+        "query_plan_max_set_size_for_projection_match": lambda: random.choice([0, 100, 10000, 100000]),
     }
 
     dependent_settings = {
@@ -1573,6 +1593,8 @@ class SettingsRandomizer:
         "use_top_k_dynamic_filtering_for_variable_length_types": "use_top_k_dynamic_filtering",
         # statistics cache is pointless when statistics are disabled
         "use_statistics_cache": "use_statistics",
+        # part pruning via statistics requires statistics to be enabled
+        "use_statistics_for_part_pruning": "use_statistics",
     }
 
     stress_test_only_settings = {
@@ -1701,6 +1723,11 @@ class MergeTreeSettingsRandomizer:
         "map_buckets_coefficient": lambda: round(random.uniform(0.5, 2.0), 2),
         "propagate_types_serialization_versions_to_nested_types": lambda: random.randint(0, 1),
         "compress_per_column_in_compact_parts": lambda: random.randint(0, 1),
+        "add_minmax_index_for_block_number_column": lambda: random.random() < 0.3,
+        "add_minmax_index_for_block_offset_column": lambda: random.random() < 0.3,
+        "share_nested_offsets": lambda: random.random() > 0.05,
+        "concurrent_part_removal_threshold_for_remote_disk": lambda: random.choice([0, 1, 16, 100]),
+        "part_minmax_index_columns": lambda: random.choice(["partition_key_only", "with_block_number_offset"]),
     }
 
     @staticmethod
