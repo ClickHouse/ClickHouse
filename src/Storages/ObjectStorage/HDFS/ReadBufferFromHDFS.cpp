@@ -95,7 +95,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
     bool nextImpl() override
     {
-        size_t num_bytes_to_read;
+        size_t num_bytes_to_read = 0;
         if (read_until_position)
         {
             if (read_until_position == file_offset)
@@ -242,13 +242,13 @@ bool ReadBufferFromHDFS::nextImpl()
     if (use_external_buffer)
     {
         impl->set(internal_buffer.begin(), internal_buffer.size());
-        assert(working_buffer.begin() != nullptr);
-        assert(!internal_buffer.empty());
+        chassert(working_buffer.begin() != nullptr);
+        chassert(!internal_buffer.empty());
     }
     else
     {
         impl->position() = impl->buffer().begin() + offset();
-        assert(!impl->hasPendingData());
+        chassert(!impl->hasPendingData());
     }
 
     Stopwatch watch;
@@ -287,8 +287,8 @@ off_t ReadBufferFromHDFS::seek(off_t offset_, int whence)
         && offset_ < impl->getPosition())
     {
         pos = working_buffer.end() - (impl->getPosition() - offset_);
-        assert(pos >= working_buffer.begin());
-        assert(pos <= working_buffer.end());
+        chassert(pos >= working_buffer.begin());
+        chassert(pos <= working_buffer.end());
 
         return getPosition();
     }
