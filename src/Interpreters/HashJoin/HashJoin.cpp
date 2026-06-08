@@ -2499,7 +2499,7 @@ std::optional<ColumnAccessIndexes> HashJoin::computeColumnAccessIndexes(
 
 void HashJoin::tryConvertToRowStore()
 {
-    if (data->row_store_state != RowStoreState::Enabled)
+    if (data->row_store_state != RowStoreState::Enabled || data->columns.empty())
         return;
     size_t new_allocated_size = 0;
     for (auto & scattered_cols : data->columns)
