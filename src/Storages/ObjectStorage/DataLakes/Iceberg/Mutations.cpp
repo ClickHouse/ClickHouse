@@ -415,8 +415,6 @@ static bool writeMetadataFiles(
     auto manifest_entries_in_storage = std::make_shared<Strings>();
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
-    std::vector<Int64> manifest_entry_added_rows;
-    std::vector<Int64> manifest_entry_added_files;
     std::vector<Iceberg::FileContentType> per_entry_content_types;
 
     auto hint_path = filename_generator.generateVersionHint();
@@ -456,8 +454,6 @@ static bool writeMetadataFiles(
             manifest_entries_in_storage->push_back(path_resolver.resolve(manifest_entry_path));
             manifest_entries.push_back(manifest_entry_path);
             per_entry_content_types.push_back(content_type);
-            manifest_entry_added_rows.push_back(static_cast<Int64>(data_file.total_rows));
-            manifest_entry_added_files.push_back(1);
 
             auto buffer_manifest_entry = object_storage->writeObject(
                 StoredObject(path_resolver.resolve(manifest_entry_path)),
@@ -511,8 +507,6 @@ static bool writeMetadataFiles(
                 manifest_entries,
                 new_snapshot,
                 manifest_entry_sizes,
-                manifest_entry_added_rows,
-                manifest_entry_added_files,
                 *buffer_manifest_list,
                 /* content_type */ Iceberg::FileContentType::POSITION_DELETE,
                 /* use_previous_snapshots */ true,

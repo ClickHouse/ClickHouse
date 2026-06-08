@@ -70,8 +70,6 @@ void generateManifestList(
     const std::vector<Iceberg::IcebergPathFromMetadata> & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
     const std::vector<Int64> & manifest_entry_sizes,
-    const std::vector<Int64> & manifest_entry_added_rows,
-    const std::vector<Int64> & manifest_entry_added_files,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots = true,

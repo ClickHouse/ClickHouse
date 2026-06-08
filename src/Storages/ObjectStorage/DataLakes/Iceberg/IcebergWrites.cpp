@@ -467,8 +467,6 @@ void generateManifestList(
     const std::vector<Iceberg::IcebergPathFromMetadata> & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
     const std::vector<Int64> & manifest_entry_sizes,
-    const std::vector<Int64> & manifest_entry_added_rows,
-    const std::vector<Int64> & manifest_entry_added_files,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots,
@@ -476,12 +474,6 @@ void generateManifestList(
 {
     if (!per_entry_content_types.empty() && per_entry_content_types.size() != manifest_entry_names.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "per_entry_content_types size does not match manifest entries");
-
-    if (manifest_entry_added_rows.size() != manifest_entry_names.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "manifest_entry_added_rows size does not match manifest entries");
-
-    if (manifest_entry_added_files.size() != manifest_entry_names.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "manifest_entry_added_files size does not match manifest entries");
 
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
@@ -538,7 +530,7 @@ void generateManifestList(
 
         if (version == 1)
         {
-            set_versioned_field(static_cast<Int32>(manifest_entry_added_files[entry_idx]), Iceberg::f_added_files_count);
+            set_versioned_field(1, Iceberg::f_added_files_count);
             set_versioned_field(std::stoi(summary->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_files_count);
             set_versioned_field(0, Iceberg::f_deleted_files_count);
             if (summary->has(Iceberg::f_added_position_deletes))
@@ -548,7 +540,7 @@ void generateManifestList(
         }
         else
         {
-            entry.field(Iceberg::f_added_files_count) = static_cast<Int32>(manifest_entry_added_files[entry_idx]);
+            entry.field(Iceberg::f_added_files_count) = 1;
             /// This manifest only contains newly added files; no pre-existing entries.
             entry.field(Iceberg::f_existing_files_count) = 0;
             entry.field(Iceberg::f_deleted_files_count) = 0;
@@ -558,10 +550,20 @@ void generateManifestList(
                 entry.field(Iceberg::f_deleted_rows_count) = 0;
         }
 
-        set_versioned_field(manifest_entry_added_rows[entry_idx], Iceberg::f_added_rows_count);
-        set_versioned_field(0, Iceberg::f_existing_rows_count);
+        if (summary->has(Iceberg::f_added_records))
+        {
+            set_versioned_field(
+                summary->getValue<Int64>(Iceberg::f_added_records),
+                Iceberg::f_added_rows_count);
+        }
+        else
+        {
+            set_versioned_field(summary->getValue<Int64>(Iceberg::f_added_position_deletes), Iceberg::f_added_rows_count);
+        }
+        set_versioned_field(
+            0,
+            Iceberg::f_existing_rows_count);
         set_versioned_field(0, Iceberg::f_deleted_rows_count);
-
         writer.write(entry_datum);
     }
 
@@ -926,8 +928,6 @@ bool IcebergStorageSink::initializeMetadata()
     Strings manifest_entries_in_storage;
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
-    std::vector<Int64> manifest_entry_added_rows;
-    std::vector<Int64> manifest_entry_added_files;
 
     auto cleanup = [&] (bool retry_because_of_metadata_conflict)
     {
@@ -1042,12 +1042,6 @@ bool IcebergStorageSink::initializeMetadata()
                     size = object_storage->getObjectMetadata(resolver.resolve(manifest_entry_path), /*with_tags=*/false).size_bytes;
                 }
                 manifest_entry_sizes.push_back(size);
-
-                Int64 added_rows = 0;
-                for (auto row_count : writer.getDataFileRowCounts())
-                    added_rows += static_cast<Int64>(row_count);
-                manifest_entry_added_rows.push_back(added_rows);
-                manifest_entry_added_files.push_back(static_cast<Int64>(writer.getDataFiles().size()));
             }
             catch (...)
             {
@@ -1067,8 +1061,6 @@ bool IcebergStorageSink::initializeMetadata()
                     manifest_entries,
                     new_snapshot,
                     manifest_entry_sizes,
-                    manifest_entry_added_rows,
-                    manifest_entry_added_files,
                     *buffer_manifest_list,
                     Iceberg::FileContentType::DATA,
                     /* use_previous_snapshots = */ true);
