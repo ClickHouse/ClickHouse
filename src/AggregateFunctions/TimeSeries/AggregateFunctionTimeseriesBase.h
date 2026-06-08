@@ -190,26 +190,21 @@ public:
         return static_cast<TimestampType>(static_cast<Int64>(result_bits));
     }
 
-    /// Returns whether a sample at `timestamp` cannot contribute to any grid point: too old or too new.
+    /// Returns whether a sample at `timestamp` cannot contribute to any bucket because it's too early or too late.
     bool isSampleOutOfGrid(const TimestampType timestamp) const
     {
-        /// Compare as Int128 to avoid signed-overflow `TimestampType` when `window` is set near `INT64_MAX`.
-        const Int128 window_end =
-            static_cast<Int128>(static_cast<Int64>(timestamp)) +
-            static_cast<Int128>(static_cast<Int64>(window)) +
-            static_cast<Int128>(static_cast<Int64>(step));
-        return window_end < static_cast<Int128>(static_cast<Int64>(start_timestamp))
-            || timestamp > end_timestamp;
+        /// If a sample is earlier than `start_timestamp - window` then it's too early for any bucket.
+        return isSampleOutOfWindow(timestamp, start_timestamp) || timestamp > end_timestamp;
     }
 
     /// Returns whether a sample at `timestamp` is past the sliding-window cutoff for grid point `current_timestamp`.
     bool isSampleOutOfWindow(const TimestampType timestamp, const TimestampType current_timestamp) const
     {
         /// Compare as Int128 to avoid signed-overflow `TimestampType` when `window` is set near `INT64_MAX`.
-        const Int128 sum =
+        const Int128 staleness_cutoff =
             static_cast<Int128>(static_cast<Int64>(timestamp)) +
             static_cast<Int128>(static_cast<Int64>(window));
-        return sum <= static_cast<Int128>(static_cast<Int64>(current_timestamp));
+        return staleness_cutoff <= static_cast<Int128>(static_cast<Int64>(current_timestamp));
     }
 
     static const State * data(ConstAggregateDataPtr __restrict place)
