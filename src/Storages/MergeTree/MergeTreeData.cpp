@@ -5802,6 +5802,15 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
 
     modifyPartState(it_part, DataPartState::Deleting, lock);
     asMutableDeletingPart(part)->renameToDetached(prefix, /*ignore_error=*/ replicated);
+
+    /// A PreActive part discarded mid-insert still owns an uncommitted part storage transaction: on
+    /// object-storage disks its writes and the rename into `detached/` are only buffered and are normally
+    /// materialized by `MergeTreeData::Transaction::commit` via `commitTransaction`. Here the part leaves
+    /// the working set without that commit ever happening, so commit the part storage transaction now;
+    /// otherwise the detached part is never materialized and its blobs are orphaned.
+    if (was_preactive && part->getDataPartStorage().hasActiveTransaction())
+        part->getDataPartStorage().commitTransaction();
+
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
 
