@@ -416,9 +416,17 @@ static bool writeMetadataFiles(
     auto manifest_entries_in_storage = std::make_shared<Strings>();
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
+    std::vector<Int64> manifest_entry_added_rows;
+    std::vector<Int64> manifest_entry_added_files;
     std::vector<Iceberg::FileContentType> per_entry_content_types;
 
-    auto cleanup = [object_storage, &delete_files, &data_files, &path_resolver, manifest_entries_in_storage, storage_manifest_list_name]()
+    auto hint_path = filename_generator.generateVersionHint();
+    const bool use_version_hint = data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint];
+
+    Iceberg::MetadataRollbackInfo metadata_rollback;
+
+    auto cleanup = [object_storage, context, &delete_files, &data_files, &path_resolver, manifest_entries_in_storage,
+                    storage_manifest_list_name, metadata_info, hint_path, &metadata_rollback]()
     {
         try
         {
@@ -431,6 +439,9 @@ static bool writeMetadataFiles(
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+
+            Iceberg::removeMetadataFileAndRollbackVersionHint(
+                path_resolver, metadata_info, hint_path, object_storage, context, metadata_rollback);
         }
         catch (...)
         {
@@ -446,6 +457,8 @@ static bool writeMetadataFiles(
             manifest_entries_in_storage->push_back(path_resolver.resolve(manifest_entry_path));
             manifest_entries.push_back(manifest_entry_path);
             per_entry_content_types.push_back(content_type);
+            manifest_entry_added_rows.push_back(static_cast<Int64>(data_file.total_rows));
+            manifest_entry_added_files.push_back(1);
 
             auto buffer_manifest_entry = object_storage->writeObject(
                 StoredObject(path_resolver.resolve(manifest_entry_path)),
@@ -499,6 +512,8 @@ static bool writeMetadataFiles(
                 manifest_entries,
                 new_snapshot,
                 manifest_entry_sizes,
+                manifest_entry_added_rows,
+                manifest_entry_added_files,
                 *buffer_manifest_list,
                 /* content_type */ Iceberg::FileContentType::POSITION_DELETE,
                 /* use_previous_snapshots */ true,
@@ -515,19 +530,22 @@ static bool writeMetadataFiles(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled");
         });
 
-        auto hint_path = filename_generator.generateVersionHint();
         const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
-        if (!catalog_writes_metadata_file && !writeMetadataFileAndVersionHint(
+        if (!catalog_writes_metadata_file)
+        {
+            metadata_rollback = writeMetadataFileAndVersionHint(
                 path_resolver,
                 metadata_info,
                 json_representation,
                 hint_path,
                 object_storage,
                 context,
-                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
-        {
-            cleanup();
-            return false;
+                use_version_hint);
+            if (!metadata_rollback.metadata_file_written)
+            {
+                cleanup();
+                return false;
+            }
         }
 
         if (catalog)
@@ -750,7 +768,7 @@ void alter(
                 hint_path,
                 object_storage,
                 context,
-                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]).metadata_file_written)
         {
             succeeded = true;
             break;

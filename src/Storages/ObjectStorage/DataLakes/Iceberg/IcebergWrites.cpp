@@ -441,6 +441,8 @@ void generateManifestList(
     const std::vector<Iceberg::IcebergPathFromMetadata> & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
     const std::vector<Int64> & manifest_entry_sizes,
+    const std::vector<Int64> & manifest_entry_added_rows,
+    const std::vector<Int64> & manifest_entry_added_files,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots,
@@ -448,6 +450,12 @@ void generateManifestList(
 {
     if (!per_entry_content_types.empty() && per_entry_content_types.size() != manifest_entry_names.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "per_entry_content_types size does not match manifest entries");
+
+    if (manifest_entry_added_rows.size() != manifest_entry_names.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "manifest_entry_added_rows size does not match manifest entries");
+
+    if (manifest_entry_added_files.size() != manifest_entry_names.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "manifest_entry_added_files size does not match manifest entries");
 
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
@@ -502,30 +510,21 @@ void generateManifestList(
         entry.field(Iceberg::f_added_snapshot_id) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
         auto summary = new_snapshot->getObject(Iceberg::f_summary);
 
-        Int64 entry_added_rows = 0;
-        if (entry_content == Iceberg::FileContentType::DATA)
-        {
-            if (summary->has(Iceberg::f_added_records))
-                entry_added_rows = summary->getValue<Int64>(Iceberg::f_added_records);
-        }
-        else if (summary->has(Iceberg::f_added_position_deletes))
-            entry_added_rows = summary->getValue<Int64>(Iceberg::f_added_position_deletes);
-
         if (version == 1)
         {
-            set_versioned_field(1, Iceberg::f_added_files_count);
+            set_versioned_field(manifest_entry_added_files[entry_idx], Iceberg::f_added_files_count);
             set_versioned_field(std::stoi(summary->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_files_count);
             set_versioned_field(0, Iceberg::f_deleted_files_count);
         }
         else
         {
-            entry.field(Iceberg::f_added_files_count) = 1;
+            entry.field(Iceberg::f_added_files_count) = static_cast<Int32>(manifest_entry_added_files[entry_idx]);
             /// This manifest only contains newly added files; no pre-existing entries.
             entry.field(Iceberg::f_existing_files_count) = 0;
             entry.field(Iceberg::f_deleted_files_count) = 0;
         }
 
-        set_versioned_field(entry_added_rows, Iceberg::f_added_rows_count);
+        set_versioned_field(manifest_entry_added_rows[entry_idx], Iceberg::f_added_rows_count);
         set_versioned_field(0, Iceberg::f_existing_rows_count);
         set_versioned_field(0, Iceberg::f_deleted_rows_count);
 
@@ -867,6 +866,8 @@ bool IcebergStorageSink::initializeMetadata()
 {
     const auto & resolver = persistent_table_components.path_resolver;
     auto metadata_info = filename_generator.generateMetadataPathWithInfo();
+    auto hint_path = filename_generator.generateVersionHint();
+    Iceberg::MetadataRollbackInfo metadata_rollback;
 
     Int64 parent_snapshot = -1;
     if (metadata->has(Iceberg::f_current_snapshot_id) && !metadata->isNull(Iceberg::f_current_snapshot_id))
@@ -882,7 +883,7 @@ bool IcebergStorageSink::initializeMetadata()
         total_data_files,
         total_rows,
         total_chunks_size,
-        total_data_files,
+        /* num_partitions */ static_cast<Int64>(writer_per_partition_key.size()),
         /* added_delete_files */ 0,
         /* num_deleted_rows */ 0);
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
@@ -891,6 +892,8 @@ bool IcebergStorageSink::initializeMetadata()
     Strings manifest_entries_in_storage;
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
+    std::vector<Int64> manifest_entry_added_rows;
+    std::vector<Int64> manifest_entry_added_files;
 
     auto cleanup = [&] (bool retry_because_of_metadata_conflict)
     {
@@ -904,6 +907,10 @@ bool IcebergStorageSink::initializeMetadata()
             object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
         object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+
+        Iceberg::removeMetadataFileAndRollbackVersionHint(
+            resolver, metadata_info, hint_path, object_storage, context, metadata_rollback);
+
         if (retry_because_of_metadata_conflict)
         {
             /// When retrying after a metadata conflict, we must read the actual latest
@@ -1001,6 +1008,12 @@ bool IcebergStorageSink::initializeMetadata()
                     size = object_storage->getObjectMetadata(resolver.resolve(manifest_entry_path), /*with_tags=*/false).size_bytes;
                 }
                 manifest_entry_sizes.push_back(size);
+
+                Int64 added_rows = 0;
+                for (auto row_count : writer.getDataFileRowCounts())
+                    added_rows += static_cast<Int64>(row_count);
+                manifest_entry_added_rows.push_back(added_rows);
+                manifest_entry_added_files.push_back(static_cast<Int64>(writer.getDataFiles().size()));
             }
             catch (...)
             {
@@ -1015,7 +1028,15 @@ bool IcebergStorageSink::initializeMetadata()
             try
             {
                 generateManifestList(
-                    persistent_table_components.path_resolver, metadata, object_storage, context, manifest_entries, new_snapshot, manifest_entry_sizes, *buffer_manifest_list, Iceberg::FileContentType::DATA,
+                    persistent_table_components.path_resolver,
+                    metadata, object_storage, context,
+                    manifest_entries,
+                    new_snapshot,
+                    manifest_entry_sizes,
+                    manifest_entry_added_rows,
+                    manifest_entry_added_files,
+                    *buffer_manifest_list,
+                    Iceberg::FileContentType::DATA,
                     /* use_previous_snapshots = */ true);
                 buffer_manifest_list->finalize();
             }
@@ -1037,23 +1058,23 @@ bool IcebergStorageSink::initializeMetadata()
             });
 
             LOG_DEBUG(log, "Writing new metadata file {}", metadata_info.path);
-            auto hint_path = filename_generator.generateVersionHint();
             const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
-            if (!catalog_writes_metadata_file && !writeMetadataFileAndVersionHint(
+            if (!catalog_writes_metadata_file)
+            {
+                metadata_rollback = writeMetadataFileAndVersionHint(
                     persistent_table_components.path_resolver,
                     metadata_info,
                     json_representation,
                     hint_path,
                     object_storage,
                     context,
-                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
-            {
-                LOG_DEBUG(log, "Failed to write metadata {}, retrying", metadata_info.path);
-                cleanup(true);
-                return false;
-            }
-            else
-            {
+                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]);
+                if (!metadata_rollback.metadata_file_written)
+                {
+                    LOG_DEBUG(log, "Failed to write metadata {}, retrying", metadata_info.path);
+                    cleanup(true);
+                    return false;
+                }
                 LOG_DEBUG(log, "Metadata file {} written", metadata_info.path);
             }
 
@@ -1068,6 +1089,8 @@ bool IcebergStorageSink::initializeMetadata()
                     return false;
                 }
             }
+
+            metadata_rollback = {};
         }
 
         /// If there's an active metadata cache, we can't just cache 'our' written version as

@@ -4,6 +4,7 @@
 
 #if USE_AVRO
 
+#include <optional>
 #include <string>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
@@ -50,10 +51,17 @@ void writeMessageToFile(
     const std::string & write_if_match = "",
     DB::CompressionMethod compression_method = DB::CompressionMethod::None);
 
+struct MetadataRollbackInfo
+{
+    bool metadata_file_written = false;
+    bool version_hint_written = false;
+    std::optional<std::string> previous_version_hint;
+};
+
 /// Tries to write metadata file and version hint file. Uses If-None-Match header to avoid overwriting existing files.
 /// Maybe return false if failed to write metadata.json
 /// Will try to write hint multiple times, but will not report failure to write hint.
-bool writeMetadataFileAndVersionHint(
+MetadataRollbackInfo writeMetadataFileAndVersionHint(
     const IcebergPathResolver & resolver,
     const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
     const std::string & metadata_file_content,
@@ -61,6 +69,14 @@ bool writeMetadataFileAndVersionHint(
     DB::ObjectStoragePtr object_storage,
     DB::ContextPtr context,
     bool try_write_version_hint);
+
+void removeMetadataFileAndRollbackVersionHint(
+    const IcebergPathResolver & resolver,
+    const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
+    const IcebergPathFromMetadata & version_hint_path,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context,
+    const MetadataRollbackInfo & rollback_info);
 
 struct TransformAndArgument
 {

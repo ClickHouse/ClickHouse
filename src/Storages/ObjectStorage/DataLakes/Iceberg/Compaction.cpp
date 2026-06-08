@@ -382,6 +382,8 @@ void writeMetadataFiles(
     Poco::JSON::Object::Ptr initial_metadata_object = plan.initial_metadata_object;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Iceberg::IcebergPathFromMetadata> manifest_file_renamings;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Int64> manifest_file_sizes;
+    std::unordered_map<Iceberg::IcebergPathFromMetadata, Int64> manifest_file_added_rows;
+    std::unordered_map<Iceberg::IcebergPathFromMetadata, Int64> manifest_file_added_files;
 
     {
         std::unordered_map<std::shared_ptr<ManifestFilePlan>, std::unordered_set<Iceberg::IcebergPathFromMetadata>> grouped_by_manifest_files_result;
@@ -482,6 +484,10 @@ void writeMetadataFiles(
                 manifest_bytes = file_metadata.size_bytes;
             }
             manifest_file_sizes[manifest_entry->patched_path] += manifest_bytes;
+
+            for (auto row_count : file_row_counts)
+                manifest_file_added_rows[manifest_entry->patched_path] += static_cast<Int64>(row_count);
+            manifest_file_added_files[manifest_entry->patched_path] += static_cast<Int64>(data_files_vec.size());
         }
     }
 
@@ -512,8 +518,14 @@ void writeMetadataFiles(
             }
         }
         std::vector<Int64> per_manifest_sizes;
+        std::vector<Int64> per_manifest_added_rows;
+        std::vector<Int64> per_manifest_added_files;
         for (const auto & entry : renamed_manifest_entries)
+        {
             per_manifest_sizes.push_back(manifest_file_sizes[entry]);
+            per_manifest_added_rows.push_back(manifest_file_added_rows[entry]);
+            per_manifest_added_files.push_back(manifest_file_added_files[entry]);
+        }
         auto buffer_manifest_list = object_storage->writeObject(
             StoredObject(path_resolver.resolve(renamed_manifest_list)),
             WriteMode::Rewrite,
@@ -528,6 +540,8 @@ void writeMetadataFiles(
             renamed_manifest_entries,
             new_snapshots[i].snapshot,
             per_manifest_sizes,
+            per_manifest_added_rows,
+            per_manifest_added_files,
             *buffer_manifest_list,
             Iceberg::FileContentType::DATA,
             false);
