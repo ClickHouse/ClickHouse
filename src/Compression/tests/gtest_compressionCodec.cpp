@@ -1487,6 +1487,54 @@ TEST(T64Test, DecompressMalformedInputShortHeader)
     ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
 }
 
+TEST(ChimpTest, DecompressMalformedInputBitLengthOverflow32)
+{
+    /// Reproducer for the integer underflow / undefined shift in the `0b01` decode branch.
+    /// For a 4-byte stream the quantized leading-zero bucket 7 decodes to 24 and a zero-length
+    /// `data_bits` code decodes to 32, so `32 - 24 - 32` underflows the `UInt8 trailing_zero_bits`
+    /// and the subsequent shift has an invalid count. A clean `CANNOT_DECOMPRESS` is expected instead.
+    constexpr unsigned char block[] = {
+        0x9D,                   /// Chimp method byte
+        0x13, 0x00, 0x00, 0x00, /// compressed_size = 19
+        0x08, 0x00, 0x00, 0x00, /// decompressed_size = 8 (2 items * 4 bytes)
+        0x02, 0x00, 0x00, 0x00, /// items_count = 2
+        0x00, 0x00, 0x00, 0x00, /// first value = 0
+        0x40, 0xE0,             /// 0b01 flag, match_index=0, leading bucket 7 (=24), data_bits code 0 (=32)
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(8);
+
+    auto codec = makeCodec("Chimp", std::make_shared<DataTypeFloat32>());
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
+TEST(ChimpTest, DecompressMalformedInputBitLengthOverflow64)
+{
+    /// Same underflow as the 32-bit case, for an 8-byte stream: leading bucket 7 decodes to 24
+    /// and a zero-length `data_bits` code decodes to 64, so `64 - 24 - 64` underflows.
+    constexpr unsigned char block[] = {
+        0x9D,                   /// Chimp method byte
+        0x18, 0x00, 0x00, 0x00, /// compressed_size = 24
+        0x10, 0x00, 0x00, 0x00, /// decompressed_size = 16 (2 items * 8 bytes)
+        0x02, 0x00, 0x00, 0x00, /// items_count = 2
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /// first value = 0
+        0x40, 0x70, 0x00,       /// 0b01 flag, match_index=0, leading bucket 7 (=24), data_bits code 0 (=64)
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(16);
+
+    auto codec = makeCodec("Chimp", std::make_shared<DataTypeFloat64>());
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
 TEST(CompressionCodecMultipleTest, DecompressMalformedInputReversedRange)
 {
     /// Reproducer for process abort when `compression_methods_size + 1 > source_size`:

@@ -365,6 +365,12 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
                 curr_xored_info.data_bits = static_cast<UInt8>(reader.readBits(DATA_BIT_LENGTH));
                 if (curr_xored_info.data_bits == 0)
                     curr_xored_info.data_bits = sizeof(T) * 8;
+                /// On malformed input the quantized leading-zero count and the decoded data length can together
+                /// exceed the type width (e.g. for UInt32, bucket 7 gives 24 leading bits and a zero-length code
+                /// is decoded as 32 data bits, so 32 - 24 - 32 underflows the UInt8 below and the subsequent shift
+                /// would have an invalid count). Reject such streams instead of relying on undefined behavior.
+                if (static_cast<UInt32>(curr_xored_info.leading_zero_bits) + curr_xored_info.data_bits > sizeof(T) * 8)
+                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Chimp-encoded data: corrupted input data.");
                 curr_xored_info.trailing_zero_bits = sizeof(T) * 8 - curr_xored_info.leading_zero_bits - curr_xored_info.data_bits;
                 xored_data = static_cast<T>(reader.readBits(curr_xored_info.data_bits));
                 xored_data <<= curr_xored_info.trailing_zero_bits;
