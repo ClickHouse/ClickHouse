@@ -704,11 +704,6 @@ void alter(
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
 
-    if (catalog && catalog->isTransactional())
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "ALTER is not supported for Iceberg tables backed by a transactional catalog");
-
     size_t i = 0;
     bool succeeded = false;
     while (i < MAX_TRANSACTION_RETRIES)
@@ -777,26 +772,43 @@ void alter(
         auto hint_path = filename_generator.generateVersionHint();
 
         const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
-        if (!catalog_writes_metadata_file
-            && !writeMetadataFileAndVersionHint(
+        Iceberg::MetadataRollbackInfo metadata_rollback;
+        if (!catalog_writes_metadata_file)
+        {
+            metadata_rollback = writeMetadataFileAndVersionHint(
                 persistent_table_components.path_resolver,
                 metadata_info,
                 json_representation,
                 hint_path,
                 object_storage,
                 context,
-                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]).metadata_file_written)
-        {
-            ++i;
-            continue;
+                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]);
+            if (!metadata_rollback.metadata_file_written)
+            {
+                ++i;
+                continue;
+            }
         }
 
         if (catalog)
         {
             auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id))
+            bool updated = false;
+            try
             {
+                updated = catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id);
+            }
+            catch (...)
+            {
+                Iceberg::removeMetadataFileAndRollbackVersionHint(
+                    persistent_table_components.path_resolver, metadata_info, hint_path, object_storage, context, metadata_rollback);
+                throw;
+            }
+            if (!updated)
+            {
+                Iceberg::removeMetadataFileAndRollbackVersionHint(
+                    persistent_table_components.path_resolver, metadata_info, hint_path, object_storage, context, metadata_rollback);
                 ++i;
                 continue;
             }
