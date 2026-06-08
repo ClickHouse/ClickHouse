@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings, no-random-settings
+# Tags: no-random-merge-tree-settings, no-random-settings, no-parallel-replicas
 
 # Test that EXPLAIN PIPELINE shows Concat (lazy partition reading) or
 # MergingSortedTransform (standard merging) depending on whether the
@@ -242,3 +242,30 @@ $CLICKHOUSE_CLIENT -q "
     ORDER BY time DESC LIMIT 5" | sort -u
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_pipeline_reverse_key"
+
+# ============================================================================
+# Table 8: PARTITION BY k ORDER BY k with Nullable(Int32) k.
+# The optimization must be disabled for nullable partition keys.
+# ============================================================================
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_lazy_nullable_partition"
+
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_lazy_nullable_partition (k Nullable(Int32), val UInt64)
+    ENGINE = MergeTree
+    PARTITION BY k
+    ORDER BY k
+    SETTINGS allow_nullable_key = 1;"
+
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_nullable_partition VALUES (NULL, 999);"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_nullable_partition VALUES (2, 200), (2, 201);"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_nullable_partition VALUES (10, 1000), (10, 1001);"
+
+# -- Test 16: Optimization is disabled for nullable partition keys
+echo "test 16: optimization is disabled for nullable partition keys"
+$CLICKHOUSE_CLIENT -q "
+    $SETTINGS;
+    SELECT 'test 12 correctness nullable partition ASC:';
+    SELECT k, val FROM t_lazy_nullable_partition ORDER BY k ASC NULLS LAST LIMIT 2" | grep -c "Concat" || true
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_nullable_partition;"

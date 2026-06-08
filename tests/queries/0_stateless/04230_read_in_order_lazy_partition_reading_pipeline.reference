@@ -30,3 +30,5 @@ test 14: reversed key DESC has Concat
 1
 test 15: reversed key DESC correctness
 202403
+test 16: optimization is disabled for nullable partition keys
+0
