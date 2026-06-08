@@ -68,8 +68,20 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
         /// in `splitUserFilesAbsolutePath` (so valid directories on the disk would be
         /// reported as missing). Normalize only lexically in that case, preserving the
         /// disk-root prefix so the path stays resolvable through `IDisk`.
+        ///
+        /// `getCreateDatabaseQueryImpl` serializes the already-normalized `path` (which
+        /// carries the disk-root prefix) back into metadata. For an object-storage disk
+        /// the root is itself relative, so on reload `path` is relative again - prepending
+        /// the disk root a second time would produce `<disk_root>/<disk_root>/...` and the
+        /// database would fail to load. Only prepend when the path is not already inside
+        /// the disk root, keeping normalization idempotent across restarts.
         if (user_files_volume)
-            path = (fs::path(user_files_path) / path).lexically_normal().string();
+        {
+            if (pathStartsWith(path, user_files_path))
+                path = fs::path(path).lexically_normal().string();
+            else
+                path = (fs::path(user_files_path) / path).lexically_normal().string();
+        }
         else
             path = fs::absolute(fs::path(user_files_path) / path).lexically_normal().string();
     }

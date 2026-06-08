@@ -449,3 +449,28 @@ def test_s3_filesystem_database():
     node_s3.query("CREATE DATABASE test_fs_db_s3 ENGINE = Filesystem('fsdb_s3')")
     assert node_s3.query("SELECT * FROM test_fs_db_s3.`t.csv`").strip() == "42"
     node_s3.query("DROP DATABASE test_fs_db_s3")
+
+
+def test_s3_filesystem_database_survives_restart():
+    """`getCreateDatabaseQueryImpl` serializes the normalized (disk-root-prefixed) path
+    into metadata. For an object-storage disk the root is itself relative, so on reload
+    the path is relative again; prefixing it a second time would produce
+    `<disk_root>/<disk_root>/...` and the database would fail to load. The constructor
+    must keep normalization idempotent so the database still loads after a restart."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('fsdb_s3_restart/t.csv', 'CSV', 'x UInt64') SELECT 42"
+    )
+    node_s3.query("DROP DATABASE IF EXISTS test_fs_db_s3_restart")
+    node_s3.query(
+        "CREATE DATABASE test_fs_db_s3_restart ENGINE = Filesystem('fsdb_s3_restart')"
+    )
+    assert (
+        node_s3.query("SELECT * FROM test_fs_db_s3_restart.`t.csv`").strip() == "42"
+    )
+
+    node_s3.restart_clickhouse()
+
+    assert (
+        node_s3.query("SELECT * FROM test_fs_db_s3_restart.`t.csv`").strip() == "42"
+    )
+    node_s3.query("DROP DATABASE test_fs_db_s3_restart")
