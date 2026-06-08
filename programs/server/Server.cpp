@@ -2037,6 +2037,16 @@ try
 
     JemallocCacheArena::setEnabled(server_settings[ServerSetting::use_separate_cache_arena]);
 
+    /// Set the base path for filesystem caches before any cache or disk is created.
+    /// Some caches (e.g. the query result cache when configured to use a cache disk) resolve a disk
+    /// during their setup, which lazily initializes the whole disk selector. Disks initialized before
+    /// this point would use the default caches path instead of the configured `filesystem_caches_path`.
+    {
+        String filesystem_caches_path = server_settings[ServerSetting::filesystem_caches_path].value;
+        if (!filesystem_caches_path.empty())
+            global_context->setFilesystemCachesPath(getCanonicalPath(std::move(filesystem_caches_path), path_str));
+    }
+
     const size_t max_cache_size = static_cast<size_t>(static_cast<double>(physical_server_memory) * server_settings[ServerSetting::cache_size_to_ram_max_ratio]);
 
     String uncompressed_cache_policy = server_settings[ServerSetting::uncompressed_cache_policy];
@@ -2950,13 +2960,6 @@ try
     /// Set the path for google proto files
     if (server_settings[ServerSetting::google_protos_path].changed)
         global_context->setGoogleProtosPath(fs::weakly_canonical(server_settings[ServerSetting::google_protos_path].value));
-
-    /// Set path for filesystem caches
-    {
-        String filesystem_caches_path = server_settings[ServerSetting::filesystem_caches_path].value;
-        if (!filesystem_caches_path.empty())
-            global_context->setFilesystemCachesPath(getCanonicalPath(std::move(filesystem_caches_path), path_str));
-    }
 
     /// NOTE: Do sanity checks after we loaded all possible substitutions (for the configuration) from ZK
     /// Additionally, making the check after the default profile is initialized.
