@@ -1,9 +1,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/Types.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/NamesAndTypes.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
@@ -45,7 +43,7 @@ namespace ErrorCodes
 
 /// Both `['a', 'b']` and `array('a', 'b')` are parsed as `_CAST(['a', 'b'], 'Array(String)')` with analyzer.
 /// While for non-analyzer there is no _CAST
-static Strings extractParts(const ASTPtr & argument, const ContextPtr & context)
+std::vector<String> extractParts(const ASTPtr & argument, const ContextPtr & context)
 {
     ASTPtr array = argument;
     if (const auto * func = array->as<ASTFunction>())
@@ -62,7 +60,7 @@ static Strings extractParts(const ASTPtr & argument, const ContextPtr & context)
     {
         if (const auto * literal = array->as<ASTLiteral>())
         {
-            Strings result;
+            std::vector<String> result;
             for (const auto & element : literal->value.safeGet<Array>())
                 result.push_back(element.safeGet<String>());
             return result;
@@ -70,7 +68,7 @@ static Strings extractParts(const ASTPtr & argument, const ContextPtr & context)
 
         if (const auto * expr_list = array->as<ASTExpressionList>())
         {
-            Strings result;
+            std::vector<String> result;
             for (const auto & element : expr_list->children)
                 result.push_back(evaluateConstantExpressionAsLiteral(element, context)->as<ASTLiteral &>().value.safeGet<String>());
             return result;
@@ -91,7 +89,7 @@ public:
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
-    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
 private:
     StoragePtr executeImpl(
@@ -118,12 +116,12 @@ private:
 
     const bool resolve_by_uuid;
     StorageID source_table_id{StorageID::createEmpty()};
-    Strings parts;
+    std::vector<String> parts;
     ASTPtr predicate;
     OptionalVectorSearchParameters vector_search_parameters;
 };
 
-VectorWithMemoryTracking<size_t> TableFunctionMergeTreeAnalyzeIndexes::skipAnalysisForArguments(const QueryTreeNodePtr & /* query_node_table_function */, ContextPtr /* context */) const
+std::vector<size_t> TableFunctionMergeTreeAnalyzeIndexes::skipAnalysisForArguments(const QueryTreeNodePtr & /* query_node_table_function */, ContextPtr /* context */) const
 {
     /// Filter should not be analyzed
     if (resolve_by_uuid)
@@ -212,7 +210,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const 
                 "vector_search_index_analysis requires 6 arguments");
 
         Array field_array = vector_search_args[3].safeGet<Array>();
-        VectorWithMemoryTracking<Float64> reference_vector;
+        std::vector<Float64> reference_vector;
         for (const auto & field_array_value : field_array)
         {
             Float64 float64 = field_array_value.safeGet<Float64>();
@@ -272,7 +270,6 @@ StoragePtr TableFunctionMergeTreeAnalyzeIndexes::executeImpl(
     return res;
 }
 
-void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory)
 {
     factory.registerFunction(mergeTreeAnalyzeIndexFunctionName(/*resolve_by_uuid=*/ false), TableFunctionFactoryData{

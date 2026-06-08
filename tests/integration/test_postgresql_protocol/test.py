@@ -37,7 +37,6 @@ cluster.add_instance(
     ],
     with_postgres=True,
     with_postgresql_java_client=True,
-    with_postgresql_dotnet_client=True,
 )
 
 cluster.add_instance(
@@ -497,80 +496,3 @@ def test_java_client(started_cluster):
         ],
     )
     assert res == reference
-
-
-def test_dotnet_client(started_cluster):
-    node = cluster.instances["node"]
-
-    with open(os.path.join(SCRIPT_DIR, "dotnet.reference")) as fp:
-        reference = fp.read()
-
-    res = started_cluster.exec_in_container(
-        started_cluster.postgresql_dotnet_client_docker_id,
-        [
-            "bash",
-            "-c",
-            f"cd /pg_testapp && dotnet run -- --host {node.hostname} --port {server_port} --username default --password 123",
-        ],
-    )
-    assert res == reference
-
-
-def test_restricted_user_cannot_bypass_grants(started_cluster):
-    """Verify that a user with limited grants can connect via PostgreSQL protocol
-    (pg_type and other system views are initialized internally), but cannot
-    perform operations beyond their granted privileges."""
-    node = started_cluster.instances["node"]
-
-    # Create a restricted user that can only SELECT from default database
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-    )
-    cur = ch.cursor()
-    cur.execute(
-        "CREATE USER IF NOT EXISTS pg_restricted IDENTIFIED WITH plaintext_password BY 'restricted123'"
-    )
-    cur.execute("GRANT SELECT ON default.* TO pg_restricted")
-    ch.close()
-
-    # Connect as the restricted user - should succeed
-    restricted = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="pg_restricted",
-        password="restricted123",
-        dbname="default",
-    )
-    cur = restricted.cursor()
-
-    # The internal pg_type view should be accessible.
-    # ClickHouse currently sends scalar values over the PostgreSQL protocol in
-    # text mode, so result[0] arrives as a string from psycopg.
-    cur.execute("SELECT count() FROM pg_type")
-    result = cur.fetchone()
-    assert int(result[0]) > 0
-
-    # SELECT should work
-    cur.execute("SELECT 1")
-    assert int(cur.fetchone()[0]) == 1
-
-    # CREATE TABLE should be denied
-    with pytest.raises(Exception) as exc:
-        cur.execute("CREATE TABLE default.test_restricted (id Int32) ENGINE = Memory")
-    assert "Not enough privileges" in str(exc.value)
-
-    restricted.close()
-
-    # Clean up
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-    )
-    cur = ch.cursor()
-    cur.execute("DROP USER IF EXISTS pg_restricted")
-    ch.close()

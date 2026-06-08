@@ -47,7 +47,6 @@ struct ExplainFormatSettings
     const bool write_header = false;
     bool compact = false;
     bool pretty = false;
-    bool compact_repeated_processor_chains = false;
     std::unordered_map<String, PrettyColumnName> pretty_names;
     std::unordered_map<String, RuntimeFilterInfo> runtime_filter_names;
 };

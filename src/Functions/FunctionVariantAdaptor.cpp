@@ -1,7 +1,5 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -90,33 +88,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
     };
 
-    /// Helper: execute function, respecting throw_on_type_mismatch.
-    /// Some functions (e.g. comparisons) pass build() but throw during execute()
-    /// because executeGeneric calls getLeastSupertype which can throw NO_COMMON_TYPE.
-    /// Returns nullptr if execution fails with a type-related error and throwing is disabled.
-    auto try_execute = [&](const FunctionBasePtr & func_base, const ColumnsWithTypeAndName & args,
-                           const DataTypePtr & res_type, size_t rows, bool is_dry_run) -> ColumnPtr
-    {
-        if (throw_on_type_mismatch)
-            return func_base->execute(args, res_type, rows, is_dry_run);
-
-        try
-        {
-            return func_base->execute(args, res_type, rows, is_dry_run);
-        }
-        catch (const Exception & e)
-        {
-            /// Only suppress NO_COMMON_TYPE, which is what getLeastSupertype throws when the
-            /// alternative type is incompatible with the other argument (e.g. comparison functions
-            /// calling executeGeneric). All other errors (including ILLEGAL_TYPE_OF_ARGUMENT) are
-            /// value-dependent and must propagate — for example, geoToS2 throws ILLEGAL_TYPE_OF_ARGUMENT
-            /// for NaN coordinates after build() has already succeeded for a Float64 alternative.
-            if (e.code() != ErrorCodes::NO_COMMON_TYPE)
-                throw;
-            return nullptr;
-        }
-    };
-
     /// We use default implementation for Variant type only when default implementation for NULLs is used.
     /// If current column contains only NULLs, result column will also contain only NULLs.
     if (variant_column.hasOnlyNulls())
@@ -162,14 +133,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             return res;
         }
         DataTypePtr nested_result_type = func_base->getResultType();
-        ColumnPtr nested_result = try_execute(func_base, new_arguments, nested_result_type, variant_column.size(), dry_run);
-        if (!nested_result)
-        {
-            /// execute() failed with a type-related error and throw_on_type_mismatch is false — return NULLs for all rows.
-            auto res = result_type->createColumn();
-            res->insertManyDefaults(variant_column.size());
-            return res;
-        }
+        ColumnPtr nested_result = func_base->execute(new_arguments, nested_result_type, variant_column.size(), dry_run);
         removeLowCardinalityFromResult(nested_result_type, nested_result);
 
         /// If result is Nullable(Nothing) or Nothing, just return column filled with NULLs/defaults.
@@ -287,15 +251,8 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             return res;
         }
         DataTypePtr nested_result_type = func_base->getResultType();
-        ColumnPtr nested_result = try_execute(func_base, new_arguments, nested_result_type, new_arguments[0].column->size(), dry_run);
-        if (!nested_result)
-        {
-            /// execute() failed with a type-related error and throw_on_type_mismatch is false — return NULLs for all rows.
-            auto res = result_type->createColumn();
-            res->insertManyDefaults(variant_column.size());
-            return res;
-        }
-        nested_result = nested_result->convertToFullColumnIfConst();
+        ColumnPtr nested_result = func_base->execute(new_arguments, nested_result_type, new_arguments[0].column->size(), dry_run)
+                            ->convertToFullColumnIfConst();
         removeLowCardinalityFromResult(nested_result_type, nested_result);
 
         /// If result is Nullable(Nothing) or Nothing, just return column filled with NULLs/defaults.
@@ -444,7 +401,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     }
 
     /// Create set of arguments for each variant using selector.
-    VectorWithMemoryTracking<ColumnsWithTypeAndName> variants_arguments;
+    std::vector<ColumnsWithTypeAndName> variants_arguments;
     variants_arguments.resize(variants.size());
     for (size_t i = 0; i != arguments.size(); ++i)
     {
@@ -466,8 +423,8 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     }
 
     /// Execute function over all created sets of arguments and remember all results.
-    VectorWithMemoryTracking<ColumnPtr> variants_results;
-    VectorWithMemoryTracking<DataTypePtr> variants_result_types;
+    std::vector<ColumnPtr> variants_results;
+    std::vector<DataTypePtr> variants_result_types;
     variants_results.resize(variants.size());
     variants_result_types.resize(variants.size());
     /// Index num_variants is allocated for rows with NULL values, it doesn't have any result,
@@ -488,14 +445,8 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         auto nested_result_type = func_base->getResultType();
         auto nested_result
-            = try_execute(func_base, variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run);
-        if (!nested_result)
-        {
-            /// execute() failed with a type-related error and throw_on_type_mismatch is false — treat as NULL result.
-            variants_results[i] = nullptr;
-            continue;
-        }
-        nested_result = nested_result->convertToFullColumnIfConst();
+            = func_base->execute(variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run)
+                  ->convertToFullColumnIfConst();
         removeLowCardinalityFromResult(nested_result_type, nested_result);
 
         variants_result_types[i] = nested_result_type;
@@ -571,7 +522,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// 3. None of the result types should be Nullable or LowCardinality(Nullable)
     ///    (casting handles NULL extraction automatically)
     bool can_use_direct_construction = true;
-    UnorderedSetWithMemoryTracking<String> result_type_names;
+    std::unordered_set<String> result_type_names;
 
     for (size_t i = 0; i < num_variants; ++i)
     {
@@ -604,7 +555,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         auto & result_variant = assert_cast<ColumnVariant &>(*result);
 
         /// Map each variant result to its discriminator in the result Variant
-        VectorWithMemoryTracking<std::optional<ColumnVariant::Discriminator>> result_discriminators(variants_results.size());
+        std::vector<std::optional<ColumnVariant::Discriminator>> result_discriminators(variants_results.size());
 
         for (size_t i = 0; i < num_variants; ++i)
         {
@@ -664,7 +615,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     }
     /// General path: cast each result to final Variant type to handle
     /// duplicate result types and nested Variants correctly
-    VectorWithMemoryTracking<ColumnPtr> casted_results(variants_results.size());
+    std::vector<ColumnPtr> casted_results(variants_results.size());
 
     for (size_t i = 0; i < num_variants; ++i)
     {
