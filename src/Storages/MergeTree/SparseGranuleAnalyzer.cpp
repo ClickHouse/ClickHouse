@@ -407,14 +407,22 @@ SparsityReadResultPtr MergeTreeSparsityReader::read(const RangesInDataPart & par
     const size_t total_marks = part.data_part->index_granularity->getMarksCountWithoutFinal();
     result->granules_selected.assign(total_marks, true);
 
+    /// Analysis is a function of `(part, column)` only; predicates differ only in
+    /// `predicate_class`. Cache so unsatisfiable conjuncts like `x = 0 AND x != 0`
+    /// (or `x IS NULL AND x IS NOT NULL`) do not double-read offsets and seed the
+    /// `SparseOffsetsShare` twice for the same column.
+    std::unordered_map<String, std::optional<SparseGranuleAnalysis>> analyses;
     bool any_predicate_used = false;
     for (const auto & predicate : predicates)
     {
         if (is_cancelled.load(std::memory_order_acquire))
             return nullptr;
 
-        auto analysis = analyzeSparseColumnGranules(
-            part.data_part, predicate.column_name, part.ranges, data, storage_snapshot, query_context, offsets_share.get(), log, &is_cancelled);
+        auto [it, inserted] = analyses.try_emplace(predicate.column_name, std::nullopt);
+        if (inserted)
+            it->second = analyzeSparseColumnGranules(
+                part.data_part, predicate.column_name, part.ranges, data, storage_snapshot, query_context, offsets_share.get(), log, &is_cancelled);
+        const auto & analysis = it->second;
         if (!analysis)
             continue;
         any_predicate_used = true;

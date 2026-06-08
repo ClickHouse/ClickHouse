@@ -991,10 +991,17 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
         std::vector<bool> dropped(total_marks, false);
         bool any_conjunct_used = false;
 
+        /// Analysis is a function of `(part, column)` only; cache per column so two
+        /// conjuncts on the same column (e.g. `x = 0 AND x != 0`) do not double-read
+        /// offsets and seed the `SparseOffsetsShare` twice.
+        std::unordered_map<String, std::optional<SparseGranuleAnalysis>> analyses;
         for (const auto & pred : conjuncts)
         {
-            auto analysis = analyzeSparseColumnGranules(
-                part.data_part, pred.column_name, part.ranges, data, storage_snapshot, context, offsets_share, log);
+            auto [it, inserted] = analyses.try_emplace(pred.column_name, std::nullopt);
+            if (inserted)
+                it->second = analyzeSparseColumnGranules(
+                    part.data_part, pred.column_name, part.ranges, data, storage_snapshot, context, offsets_share, log);
+            const auto & analysis = it->second;
             if (!analysis)
                 continue;
 
