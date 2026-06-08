@@ -153,7 +153,7 @@ struct BaseXXDecode
         /// violation into MEMORY_LIMIT_EXCEEDED. The throwing decoder rejects an oversized row outright; the
         /// empty-string decoder skips it. base58 output never exceeds the input length, so the buffer can be
         /// sized from the in-limit rows alone (which, when none are oversized, equals getBufferSize()).
-        size_t max_result_size;
+        size_t max_result_size = 0;
         if constexpr (Traits::max_input_size != 0)
         {
             if (max_input_size != 0)
