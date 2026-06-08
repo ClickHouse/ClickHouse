@@ -21,13 +21,16 @@ discovered empirically (a naive test passes on the buggy code too):
    EOF. A full-scan instead fails earlier in the compression layer
    (CANNOT_READ_ALL_DATA) and never reaches the predownload path.
 
+All three cache read paths -- predownloadForFileSegment, readFromFileSegment and
+readBigAt -- fail a truncated read the same way: a regular CANNOT_READ_ALL_DATA,
+never a LOGICAL_ERROR and never a fabricated EOF.
+
 NOTE on readBigAt: readBigAt is the random-access path used by the Parquet
 reader over object storage, and is not reached by a MergeTree SELECT. It cannot
 be exercised deterministically from a single-node query, because reading a
 truncated object via the s3() table function re-fetches the object size (a fresh
 HEAD returns the new, smaller size) and so never over-reads — it surfaces as a
-plain INCORRECT_DATA "Not a Parquet file" error instead. The readBigAt guard in
-the fix mirrors the readFromFileSegment EOF logic that this test does cover.
+plain INCORRECT_DATA "Not a Parquet file" error instead.
 """
 
 import io
@@ -165,7 +168,7 @@ def test_truncated_object_predownload_no_logical_error(started_cluster):
                 "SELECT s FROM t_trunc WHERE x = 99000 "
                 "SETTINGS enable_filesystem_cache = 1, max_threads = 1"
             )
-            logger.info("Query returned without error (truncation handled as EOF)")
+            logger.info("Query returned without error")
         except Exception as e:
             _assert_no_forbidden_logical_error(str(e))
             logger.info("Query raised acceptable non-LOGICAL_ERROR: %s", str(e)[:200])
