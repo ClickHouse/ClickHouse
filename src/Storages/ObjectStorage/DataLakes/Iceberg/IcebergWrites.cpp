@@ -263,8 +263,7 @@ void generateManifestFile(
     Int64 partition_spec_id,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    std::optional<Int64> user_defined_sequence_number,
-    const std::vector<std::pair<Int64, Int64>> & per_file_metrics)
+    std::optional<Int64> user_defined_sequence_number)
 {
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
@@ -384,29 +383,6 @@ void generateManifestFile(
                 set_fields(upper_statistics, Iceberg::f_upper_bounds, dump_fields);
             }
         }
-        Int64 record_count = 0;
-        Int64 file_size_in_bytes = 0;
-        if (!per_file_metrics.empty())
-        {
-            record_count = per_file_metrics[file_idx].first;
-            file_size_in_bytes = per_file_metrics[file_idx].second;
-        }
-        else
-        {
-            auto summary = new_snapshot->getObject(Iceberg::f_summary);
-            if (summary->has(Iceberg::f_added_records))
-            {
-                record_count = summary->getValue<Int64>(Iceberg::f_added_records);
-                file_size_in_bytes = summary->getValue<Int64>(Iceberg::f_added_files_size);
-            }
-            else
-            {
-                record_count = summary->getValue<Int64>(Iceberg::f_added_position_deletes);
-                file_size_in_bytes = summary->getValue<Int64>(Iceberg::f_added_files_size);
-            }
-        }
-        data_file.field(Iceberg::f_record_count) = avro::GenericDatum(record_count);
-        data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(file_size_in_bytes);
         data_file.field(Iceberg::f_record_count) = avro::GenericDatum(static_cast<Int64>(data_file_row_counts[file_idx]));
         data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(static_cast<Int64>(data_file_byte_counts[file_idx]));
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();

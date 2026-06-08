@@ -60,8 +60,7 @@ void generateManifestFile(
     Int64 partition_spec_id,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    std::optional<Int64> user_defined_sequence_number = std::nullopt,
-    const std::vector<std::pair<Int64, Int64>> & per_file_metrics = {});
+    std::optional<Int64> user_defined_sequence_number = std::nullopt);
 
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
