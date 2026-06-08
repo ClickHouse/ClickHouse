@@ -140,22 +140,46 @@ public:
             visit(*t, ast, data);
     }
 
-    static void extractNestedQualifiedColumnsRegexpMatchers(ASTPtr ast, Data & data)
+    static void extractNestedColumnsRegexpMatchers(ASTPtr ast, Data & data)
     {
         if (!ast || ast->as<ASTSubquery>())
             return;
 
         if (auto * expression_list = ast->as<ASTExpressionList>())
         {
-            extractNestedQualifiedColumnsRegexpMatchers(*expression_list, data);
+            extractNestedColumnsRegexpMatchers(*expression_list, data);
             return;
         }
 
         for (auto & child : ast->children)
-            extractNestedQualifiedColumnsRegexpMatchers(child, data);
+            extractNestedColumnsRegexpMatchers(child, data);
     }
 
 private:
+    static void extractColumnsRegexpMatcher(
+        const ASTColumnsRegexpMatcher & columns_regexp_matcher,
+        ASTs & columns,
+        Data & data)
+    {
+        String pattern = columns_regexp_matcher.getPattern();
+        re2::RE2 regexp(pattern, re2::RE2::Quiet);
+        if (!regexp.ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                "COLUMNS pattern {} cannot be compiled: {}", pattern, regexp.error());
+
+        for (auto & table_name : data.tables_order)
+            data.addTableColumns(
+                table_name,
+                columns,
+                [&](const String & column_name) { return re2::RE2::PartialMatch(column_name, regexp); });
+
+        if (columns_regexp_matcher.transformers)
+        {
+            for (const auto & transformer : columns_regexp_matcher.transformers->children)
+                IASTColumnsTransformer::transform(transformer, columns);
+        }
+    }
+
     static void extractQualifiedColumnsRegexpMatcher(
         const ASTQualifiedColumnsRegexpMatcher & qualified_columns_regexp_matcher,
         ASTs & columns,
@@ -253,24 +277,7 @@ private:
             else if (const auto * columns_regexp_matcher = child->as<ASTColumnsRegexpMatcher>())
             {
                 has_asterisks = true;
-
-                String pattern = columns_regexp_matcher->getPattern();
-                re2::RE2 regexp(pattern, re2::RE2::Quiet);
-                if (!regexp.ok())
-                    throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                        "COLUMNS pattern {} cannot be compiled: {}", pattern, regexp.error());
-
-                for (auto & table_name : data.tables_order)
-                    data.addTableColumns(
-                        table_name,
-                        columns,
-                        [&](const String & column_name) { return re2::RE2::PartialMatch(column_name, regexp); });
-
-                if (columns_regexp_matcher->transformers)
-                {
-                    for (const auto & transformer : columns_regexp_matcher->transformers->children)
-                        IASTColumnsTransformer::transform(transformer, columns);
-                }
+                extractColumnsRegexpMatcher(*columns_regexp_matcher, columns, data);
             }
             else if (const auto * qualified_columns_regexp_matcher = child->as<ASTQualifiedColumnsRegexpMatcher>())
             {
@@ -290,7 +297,7 @@ private:
             data.new_select_expression_list.reset();
     }
 
-    static bool extractNestedQualifiedColumnsRegexpMatchers(ASTExpressionList & node, Data & data)
+    static bool extractNestedColumnsRegexpMatchers(ASTExpressionList & node, Data & data)
     {
         bool has_matchers = false;
         ASTs new_children;
@@ -299,14 +306,19 @@ private:
         for (const auto & child : node.children)
         {
             ASTs columns;
-            if (const auto * qualified_columns_regexp_matcher = child->as<ASTQualifiedColumnsRegexpMatcher>())
+            if (const auto * columns_regexp_matcher = child->as<ASTColumnsRegexpMatcher>())
+            {
+                has_matchers = true;
+                extractColumnsRegexpMatcher(*columns_regexp_matcher, columns, data);
+            }
+            else if (const auto * qualified_columns_regexp_matcher = child->as<ASTQualifiedColumnsRegexpMatcher>())
             {
                 has_matchers = true;
                 extractQualifiedColumnsRegexpMatcher(*qualified_columns_regexp_matcher, columns, data);
             }
             else
             {
-                extractNestedQualifiedColumnsRegexpMatchers(child, data);
+                extractNestedColumnsRegexpMatchers(child, data);
                 new_children.push_back(child);
             }
 
@@ -798,7 +810,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
         if (asterisks_data.new_select_expression_list)
             select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(asterisks_data.new_select_expression_list));
 
-        ExtractAsterisksMatcher::extractNestedQualifiedColumnsRegexpMatchers(select.select(), asterisks_data);
+        ExtractAsterisksMatcher::extractNestedColumnsRegexpMatchers(select.select(), asterisks_data);
     }
 
     /// Collect column identifiers
