@@ -33,6 +33,11 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 
@@ -250,24 +255,12 @@ analyzeSparseColumnGranules(
         r.rows_in_chunk = rows_in_chunk;
 
         Columns result(1);
-        try
-        {
-            const size_t rows_read = chunk_reader->readRows(
-                chunk.begin, chunk.end, /*continue_reading=*/false, rows_in_chunk, /*rows_offset=*/0, result);
-            if (rows_read != rows_in_chunk)
-            {
-                LOG_DEBUG(log, "Short read on range [{}, {}) of part {} ({} rows instead of {}); skipping sparsity classification for this part",
-                    chunk.begin, chunk.end, part->name, rows_read, rows_in_chunk);
-                return r;
-            }
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format(
-                "Failed to read sparse offsets for column {} of part {}; skipping sparsity classification for this part",
-                column_name, part->name));
-            return r;
-        }
+        const size_t rows_read = chunk_reader->readRows(
+            chunk.begin, chunk.end, /*continue_reading=*/false, rows_in_chunk, /*rows_offset=*/0, result);
+        if (rows_read != rows_in_chunk)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Short read on range [{}, {}) of part {} ({} rows instead of {}) while analyzing column {}",
+                chunk.begin, chunk.end, part->name, rows_read, rows_in_chunk, column_name);
 
         const auto * sparse = result[0] ? typeid_cast<const ColumnSparse *>(result[0].get()) : nullptr;
         if (!sparse)
