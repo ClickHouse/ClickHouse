@@ -237,7 +237,8 @@ struct MergeTreeIndexAggregatorVectorSimilarityFlat final : IMergeTreeIndexAggre
     size_t bytes_per_vector = 0;
     size_t num_vectors = 0;
     std::vector<UInt8> codes;
-    std::vector<float> projection; /// sign-flip diagonals for the fast (Walsh-Hadamard) random projection, lazily generated, only for 'b1_projected'
+    std::vector<float> projection;     /// sign-flip diagonals for the fast (Walsh-Hadamard) random projection, lazily generated ('b1_projected'/'turboquant'/'rabitq')
+    std::vector<float> projection_qjl; /// second, independent projection for the 'turboquant' QJL stage, lazily generated
 };
 
 

@@ -1,9 +1,9 @@
 -- Tags: no-fasttest, no-ordinary-database
 
 -- Basic test for the flat "fastknn" vector similarity index, for 'b1' (binary / raw sign),
--- 'b1_projected' (random-projection + sign), 'turboquant' (random-projection + 2-bit Lloyd-Max), and
--- 'rabitq' (random-projection + sign + per-vector correction factor, asymmetric estimator) quantization.
--- Reuses the 20 dbpedia vectors from 02354_vector_search_binary_quantization.sql.
+-- 'b1_projected' (random-projection + sign), 'turboquant' (exact TurboQuant: 1-bit MSE + 1-bit QJL, asymmetric
+-- unbiased estimator), and 'rabitq' (random-projection + sign + per-vector correction factor, asymmetric estimator)
+-- quantization. Reuses the 20 dbpedia vectors from 02354_vector_search_binary_quantization.sql.
 
 SET enable_analyzer = 1;
 SET allow_experimental_vector_similarity_index = 1;

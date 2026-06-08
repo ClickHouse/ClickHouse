@@ -653,6 +653,10 @@ namespace
 /// the flat granule FILE_FORMAT_VERSION must be bumped and existing indexes rebuilt.
 constexpr UInt64 RANDOM_PROJECTION_SEED = 0x9E3779B97F4A7C15ULL;
 
+/// Second, independent seed for the 'turboquant' QJL (Quantized Johnson-Lindenstrauss) projection, applied to the
+/// MSE-quantization residual. Must differ from RANDOM_PROJECTION_SEED so the two projections are independent.
+constexpr UInt64 RANDOM_PROJECTION_SEED_QJL = 0xD1B54A32D192ED03ULL;
+
 /// Number of (sign-flip + Walsh-Hadamard) rounds. Three rounds of HD approximate a random rotation well, so the
 /// resulting sign bits behave as random-hyperplane hashes (angular LSH).
 constexpr int PROJECTION_ROUNDS = 3;
@@ -683,13 +687,13 @@ inline void walshHadamardTransform(float * a, size_t n)
 /// A fast structured random projection: PROJECTION_ROUNDS blocks of (random ±1 diagonal) * Walsh-Hadamard, replacing
 /// a dense d*d Gaussian matrix (O(d*d) per vector) with an O(d log d) transform. Returns the concatenated sign-flip
 /// diagonals (PROJECTION_ROUNDS * padded entries, each +-1), generated deterministically from the fixed seed.
-std::vector<float> generateRandomProjection(size_t dimensions)
+std::vector<float> generateRandomProjection(size_t dimensions, UInt64 seed = RANDOM_PROJECTION_SEED)
 {
     const size_t padded = projectionPaddedSize(dimensions);
     std::vector<float> sign_flips(static_cast<size_t>(PROJECTION_ROUNDS) * padded);
 
     /// splitmix64 bit stream -> +-1
-    UInt64 state = RANDOM_PROJECTION_SEED;
+    UInt64 state = seed;
     for (auto & value : sign_flips)
     {
         UInt64 z = (state += 0x9E3779B97F4A7C15ULL);
@@ -720,102 +724,6 @@ void applyRandomProjection(const std::vector<float> & sign_flips, const T * x, s
             work[i] *= flip[i];
         walshHadamardTransform(work, padded);
     }
-}
-
-/// TurboQuant (MSE), 2 bits per coordinate. After the random projection the coordinates are ~zero-mean Gaussian,
-/// so we normalize each vector to unit coordinate std and apply the FIXED Lloyd-Max 4-level quantizer for the unit
-/// Gaussian. This is data-oblivious - no sampling, no learned codebook, only the fixed projection seed (exactly like
-/// 'b1_projected', which is the 1-bit/sign case). 2 bits/coordinate -> dimensions/4 bytes per vector.
-constexpr float TURBOQUANT_THRESHOLDS[3] = {-0.9816f, 0.0f, 0.9816f};       /// decision boundaries for unit Gaussian
-constexpr float TURBOQUANT_LEVELS[4] = {-1.5104f, -0.4528f, 0.4528f, 1.5104f}; /// reconstruction levels
-
-inline UInt8 turboQuantizeCoord(float x)
-{
-    if (x < TURBOQUANT_THRESHOLDS[0]) return 0;
-    if (x < TURBOQUANT_THRESHOLDS[1]) return 1;
-    if (x < TURBOQUANT_THRESHOLDS[2]) return 2;
-    return 3;
-}
-
-/// Project `x`, normalize to unit coordinate std, 2-bit quantize, and pack into `dst` (dimensions/4 bytes).
-/// `work` is a scratch buffer of `padded` floats (padded = projection.size() / PROJECTION_ROUNDS).
-template <typename T>
-void encodeTurboQuant(const std::vector<float> & projection, const T * x, size_t dimensions, float * work, char * dst)
-{
-    applyRandomProjection(projection, x, dimensions, work);
-
-    double sumsq = 0.0;
-    for (size_t i = 0; i < dimensions; ++i)
-        sumsq += static_cast<double>(work[i]) * static_cast<double>(work[i]);
-    /// normalized coord = work[i] / std, std = sqrt(sumsq / dimensions) -> multiply by sqrt(dimensions / sumsq)
-    const float inv_std = (sumsq > 0.0) ? static_cast<float>(std::sqrt(static_cast<double>(dimensions) / sumsq)) : 0.0f;
-
-    const size_t code_bytes = dimensions / 4;
-    std::memset(dst, 0, code_bytes);
-    for (size_t i = 0; i < dimensions; ++i)
-    {
-        const UInt8 code = turboQuantizeCoord(work[i] * inv_std);
-        dst[i >> 2] |= static_cast<char>(code << ((i & 3u) * 2u));
-    }
-}
-
-/// Squared-L2 between a dequantized query (`query_levels`, `dimensions` floats) and a packed 2-bit code.
-inline float turboQuantDistance(const float * query_levels, const char * code, size_t dimensions)
-{
-    float acc = 0.0f;
-    for (size_t i = 0; i < dimensions; ++i)
-    {
-        const UInt8 c = (static_cast<UInt8>(code[i >> 2]) >> ((i & 3u) * 2u)) & 3u;
-        const float diff = query_levels[i] - TURBOQUANT_LEVELS[c];
-        acc += diff * diff;
-    }
-    return acc;
-}
-
-#if USE_MULTITARGET_CODE
-/// AVX-512 version: 16 coordinates per iteration. The 16 codes of a chunk occupy 4 packed bytes, and coordinate i
-/// within the chunk sits at bit 2*i of that 32-bit word, so a single variable shift (srlv by {0,2,...,30}) + mask
-/// yields the 16 indices; `vpermps` then gathers the 4 reconstruction levels into 16 floats in one instruction.
-X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE
-inline float turboQuantDistanceAVX512(const float * query_levels, const char * code, size_t dimensions)
-{
-    const __m512i shifts = _mm512_set_epi32(30, 28, 26, 24, 22, 20, 18, 16, 14, 12, 10, 8, 6, 4, 2, 0);
-    const __m512i mask3 = _mm512_set1_epi32(3);
-    const __m512 levels = _mm512_set_ps(
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        TURBOQUANT_LEVELS[3], TURBOQUANT_LEVELS[2], TURBOQUANT_LEVELS[1], TURBOQUANT_LEVELS[0]);
-
-    __m512 acc = _mm512_setzero_ps();
-    size_t i = 0;
-    for (; i + 16 <= dimensions; i += 16)
-    {
-        UInt32 packed;
-        std::memcpy(&packed, code + (i >> 2), sizeof(packed)); /// 4 bytes = 16 two-bit codes
-        const __m512i idx = _mm512_and_epi32(_mm512_srlv_epi32(_mm512_set1_epi32(static_cast<int>(packed)), shifts), mask3);
-        const __m512 dequantized = _mm512_permutexvar_ps(idx, levels);
-        const __m512 diff = _mm512_sub_ps(_mm512_loadu_ps(query_levels + i), dequantized);
-        acc = _mm512_fmadd_ps(diff, diff, acc);
-    }
-    float total = _mm512_reduce_add_ps(acc);
-    for (; i < dimensions; ++i)
-    {
-        const UInt8 c = (static_cast<UInt8>(code[i >> 2]) >> ((i & 3u) * 2u)) & 3u;
-        const float diff = query_levels[i] - TURBOQUANT_LEVELS[c];
-        total += diff * diff;
-    }
-    return total;
-}
-#endif
-
-/// Dispatch to the AVX-512 kernel when available (decided once per query), else the scalar version.
-inline float turboQuantDistanceFast(const float * query_levels, const char * code, size_t dimensions, bool use_simd)
-{
-#if USE_MULTITARGET_CODE
-    if (use_simd)
-        return turboQuantDistanceAVX512(query_levels, code, dimensions);
-#endif
-    (void)use_simd;
-    return turboQuantDistance(query_levels, code, dimensions);
 }
 
 /// RaBitQ (1-bit, asymmetric estimator), data-oblivious / no codebook (Gao & Long, "RaBitQ", SIGMOD 2024).
@@ -912,9 +820,10 @@ RaBitQQuery buildRaBitQQuery(const float * q, size_t dimensions)
     return out;
 }
 
-/// Reconstruct `sum_i s_i * q_i` from the popcounts and finish the estimator -> cosineDistance.
-/// `pc = popcount(code)` = number of +1 sign bits; `plane_pc[j] = popcount(code AND query_plane_j)`.
-inline float raBitQFinish(const RaBitQQuery & q, UInt64 pc, const UInt64 * plane_pc, const char * code)
+/// Reconstruct `sum_i s_i * q_i` (the inner product of the +-1 sign code with the bit-sliced query) from the popcounts.
+/// `pc = popcount(code)` = number of +1 sign bits; `plane_pc[j] = popcount(code AND query_plane_j)`. This is the shared
+/// estimator core used by both 'rabitq' and the exact 'turboquant' (which sums two such dots).
+inline float raBitQNumeratorFromCounts(const RaBitQQuery & q, UInt64 pc, const UInt64 * plane_pc)
 {
     /// sum_i b_i * q_tilde_i = sum_j 2^j * popcount(code AND plane_j); approx sum over set bits of q_i:
     ///   sum_{b_i=1} q_i ~= delta * (sum_j 2^j * plane_pc[j]) + q_min * pc.
@@ -922,15 +831,12 @@ inline float raBitQFinish(const RaBitQQuery & q, UInt64 pc, const UInt64 * plane
     for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
         weighted += plane_pc[j] << j;
     const float sum_set = q.delta * static_cast<float>(weighted) + q.q_min * static_cast<float>(pc);
-    const float numerator = 2.0f * sum_set - q.q_total; /// sum_i s_i * q_i
-    float inv_factor;
-    std::memcpy(&inv_factor, code + q.code_bytes, sizeof(float));
-    const float cos = numerator * q.inv_qnorm * inv_factor;
-    return 1.0f - cos;
+    return 2.0f * sum_set - q.q_total; /// sum_i s_i * q_i
 }
 
-/// Scalar bit-sliced scan: AND+popcount the data code against each query bit-plane, 8 bytes at a time.
-inline float raBitQDistanceScalar(const RaBitQQuery & q, const char * code)
+/// Scalar bit-sliced dot: AND+popcount the +-1 sign code against each query bit-plane, 8 bytes at a time, and return
+/// `sum_i s_i * q_i`. `code` points at `q.code_bytes` packed sign bits (no trailing factor is read here).
+inline float raBitQNumeratorScalar(const RaBitQQuery & q, const char * code)
 {
     const size_t code_bytes = q.code_bytes;
     const UInt8 * planes = q.planes.data();
@@ -956,15 +862,15 @@ inline float raBitQDistanceScalar(const RaBitQQuery & q, const char * code)
         for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
             plane_pc[j] += static_cast<UInt64>(std::popcount(cw & static_cast<unsigned>(planes[static_cast<size_t>(j) * code_bytes + b])));
     }
-    return raBitQFinish(q, pc, plane_pc, code);
+    return raBitQNumeratorFromCounts(q, pc, plane_pc);
 }
 
 #if USE_MULTITARGET_CODE
-/// AVX-512 (Ice Lake) bit-sliced scan: VPOPCNTDQ counts 8x 64-bit lanes per instruction, so each 512-bit chunk of the
-/// data code is AND-ed with each query bit-plane and popcounted in one `_mm512_popcnt_epi64`. This keeps the 1-bit
-/// RaBitQ scan in the popcount regime (close to 'b1') rather than the float-arithmetic regime of 'turboquant'.
+/// AVX-512 (Ice Lake) bit-sliced dot: VPOPCNTDQ counts 8x 64-bit lanes per instruction, so each 512-bit chunk of the
+/// sign code is AND-ed with each query bit-plane and popcounted in one `_mm512_popcnt_epi64`. This keeps the 1-bit
+/// scan in the popcount regime (close to 'b1') rather than the float-arithmetic regime of the old 'turboquant'.
 X86_64_ICELAKE_FUNCTION_SPECIFIC_ATTRIBUTE
-inline float raBitQDistanceICELAKE(const RaBitQQuery & q, const char * code)
+inline float raBitQNumeratorICELAKE(const RaBitQQuery & q, const char * code)
 {
     const size_t code_bytes = q.code_bytes;
     const UInt8 * planes = q.planes.data();
@@ -997,19 +903,135 @@ inline float raBitQDistanceICELAKE(const RaBitQQuery & q, const char * code)
         for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
             plane_pc[j] += static_cast<UInt64>(std::popcount(cw & static_cast<unsigned>(planes[static_cast<size_t>(j) * code_bytes + b])));
     }
-    return raBitQFinish(q, pc, plane_pc, code);
+    return raBitQNumeratorFromCounts(q, pc, plane_pc);
 }
 #endif
 
 /// Dispatch to the Ice Lake (VPOPCNTDQ) kernel when available (decided once per query), else the scalar version.
-inline float raBitQDistanceFast(const RaBitQQuery & q, const char * code, bool use_icelake)
+inline float raBitQNumeratorFast(const RaBitQQuery & q, const char * code, bool use_icelake)
 {
 #if USE_MULTITARGET_CODE
     if (use_icelake)
-        return raBitQDistanceICELAKE(q, code);
+        return raBitQNumeratorICELAKE(q, code);
 #endif
     (void)use_icelake;
-    return raBitQDistanceScalar(q, code);
+    return raBitQNumeratorScalar(q, code);
+}
+
+/// 'rabitq' estimator -> cosineDistance: cos = (sum_i s_i q_i) * inv_qnorm * inv_factor. `inv_factor` follows the
+/// `q.code_bytes` sign bits in the code.
+inline float raBitQDistanceFast(const RaBitQQuery & q, const char * code, bool use_icelake)
+{
+    const float numerator = raBitQNumeratorFast(q, code, use_icelake);
+    float inv_factor;
+    std::memcpy(&inv_factor, code + q.code_bytes, sizeof(float));
+    return 1.0f - numerator * q.inv_qnorm * inv_factor;
+}
+
+/// ---- Exact TurboQuant (inner-product / cosine), data-oblivious / no codebook (Zandieh et al., arXiv:2504.19874) ----
+/// The MSE-optimal scalar quantizer is biased for inner products, so TurboQuant uses a two-stage scheme: a (b-1)-bit MSE
+/// quantizer plus a 1-bit QJL (Quantized Johnson-Lindenstrauss) transform on the residual, giving an UNBIASED estimator.
+/// Our 2-bit version is the faithful b=2 case: 1-bit MSE + 1-bit QJL + a per-vector residual norm.
+///
+/// Let `a` be the unit (rotated by P1) data vector (coordinates ~ N(0, 1/d)). MSE 1-bit: s = sign(a), reconstruction
+/// `a~_mse = c0 * s` with c0 = E[|a_i|] = sqrt(2/pi)/sqrt(d). Residual `r = a - a~_mse`, `gamma = ||r||_2`. QJL: a second
+/// independent projection P2, `z = sign(P2 * r)`. The asymmetric cosine estimator (query y stays full precision, only
+/// the data is quantized) is, with q1 = unit(P1 y):
+///   cos(y, x) ~= c0 * <q1, s> + k * gamma * <P2 q1, z>,    k = sqrt(pi/2) / (d * padded).
+/// The (d * padded) in k (vs the paper's sqrt(pi/2)/d) accounts for our unnormalized 3-round Walsh-Hadamard projection,
+/// whose per-coordinate output variance is padded^2 * ||v||^2 rather than the unit-variance Gaussian the paper assumes.
+/// Each <., .> is a sum of a full-precision (bit-sliced) query against a +-1 sign code - the same popcount dot as RaBitQ.
+/// Layout per vector: d/8 MSE sign bits, d/8 QJL sign bits, then the 4-byte `gamma` (d/4 + sizeof(float) bytes total).
+constexpr double TURBOQUANT_PI = 3.14159265358979323846;
+
+template <typename T>
+void encodeTurboQuant(const std::vector<float> & p1, const std::vector<float> & p2,
+                      const T * x, size_t dimensions, float * work1, float * work2, char * dst)
+{
+    const float c0 = static_cast<float>(std::sqrt(2.0 / (TURBOQUANT_PI * static_cast<double>(dimensions))));
+
+    /// Stage 1: rotate by P1 and normalize the first `dimensions` coordinates to unit L2.
+    applyRandomProjection(p1, x, dimensions, work1);
+    double nrm2 = 0.0;
+    for (size_t i = 0; i < dimensions; ++i)
+        nrm2 += static_cast<double>(work1[i]) * static_cast<double>(work1[i]);
+    const float inv_norm = (nrm2 > 0.0) ? static_cast<float>(1.0 / std::sqrt(nrm2)) : 0.0f;
+
+    const size_t code_bytes = dimensions / 8;
+    std::memset(dst, 0, 2 * code_bytes);
+
+    /// MSE signs s = sign(a); residual r = a - c0 * s into `work2`.
+    for (size_t i = 0; i < dimensions; ++i)
+    {
+        const float a = work1[i] * inv_norm;
+        if (a >= 0.0f)
+        {
+            dst[i >> 3] |= static_cast<char>(1u << (i & 7u));
+            work2[i] = a - c0;
+        }
+        else
+            work2[i] = a + c0;
+    }
+
+    double g2 = 0.0;
+    for (size_t i = 0; i < dimensions; ++i)
+        g2 += static_cast<double>(work2[i]) * static_cast<double>(work2[i]);
+    const float gamma = static_cast<float>(std::sqrt(g2));
+
+    /// Stage 2 (QJL): z = sign(P2 * r). `work1` (P1 output) is free to reuse as the P2 output buffer.
+    applyRandomProjection(p2, work2, dimensions, work1);
+    char * z_dst = dst + code_bytes;
+    for (size_t i = 0; i < dimensions; ++i)
+        if (work1[i] >= 0.0f)
+            z_dst[i >> 3] |= static_cast<char>(1u << (i & 7u));
+
+    std::memcpy(dst + 2 * code_bytes, &gamma, sizeof(float));
+}
+
+/// The query state for the exact TurboQuant scan: the bit-sliced unit rotated query (for the MSE-sign dot) and the
+/// bit-sliced P2-projection of it (for the QJL-sign dot), plus the two estimator constants.
+struct TurboQuantQuery
+{
+    RaBitQQuery mse;
+    RaBitQQuery qjl;
+    float c0 = 0.0f;
+    float k = 0.0f;
+};
+
+TurboQuantQuery buildTurboQuantQuery(const std::vector<float> & p1, const std::vector<float> & p2,
+                                     const Float64 * y, size_t dimensions)
+{
+    const size_t padded = p1.size() / PROJECTION_ROUNDS;
+    std::vector<float> work1(padded);
+    std::vector<float> work2(padded);
+
+    applyRandomProjection(p1, y, dimensions, work1.data());
+    double nrm2 = 0.0;
+    for (size_t i = 0; i < dimensions; ++i)
+        nrm2 += static_cast<double>(work1[i]) * static_cast<double>(work1[i]);
+    const float inv_norm = (nrm2 > 0.0) ? static_cast<float>(1.0 / std::sqrt(nrm2)) : 0.0f;
+    for (size_t i = 0; i < dimensions; ++i)
+        work1[i] *= inv_norm; /// q1 = unit(P1 y)
+
+    TurboQuantQuery out;
+    out.mse = buildRaBitQQuery(work1.data(), dimensions);
+    applyRandomProjection(p2, work1.data(), dimensions, work2.data()); /// P2 * q1
+    out.qjl = buildRaBitQQuery(work2.data(), dimensions);
+    out.c0 = static_cast<float>(std::sqrt(2.0 / (TURBOQUANT_PI * static_cast<double>(dimensions))));
+    out.k = static_cast<float>(std::sqrt(TURBOQUANT_PI / 2.0) / (static_cast<double>(dimensions) * static_cast<double>(padded)));
+    return out;
+}
+
+/// Exact TurboQuant cosine estimator -> cosineDistance. `code` is `d/8` MSE sign bits, `d/8` QJL sign bits, then `gamma`.
+inline float turboQuantDistanceFast(const TurboQuantQuery & q, const char * code, bool use_icelake)
+{
+    const size_t code_bytes = q.mse.code_bytes; /// = dimensions / 8
+    const float mse_dot = raBitQNumeratorFast(q.mse, code, use_icelake);
+    const float qjl_dot = raBitQNumeratorFast(q.qjl, code + code_bytes, use_icelake);
+    float gamma;
+    std::memcpy(&gamma, code + 2 * code_bytes, sizeof(float));
+    const float cosine = q.c0 * mse_dot + q.k * gamma * qjl_dot;
+    return 1.0f - cosine;
 }
 
 }
@@ -1031,8 +1053,9 @@ MergeTreeIndexAggregatorVectorSimilarityFlat::MergeTreeIndexAggregatorVectorSimi
     , projected(projected_)
     , turboquant(turboquant_)
     , rabitq(rabitq_)
-    /// 2 bits/coord for turboquant; 1 bit/coord + a 4-byte correction factor for rabitq; else 1 bit/coord
-    , bytes_per_vector(turboquant_ ? dimensions_ / 4 : (rabitq_ ? dimensions_ / 8 + sizeof(float) : dimensions_ / 8))
+    /// turboquant: 2 bits/coord (1-bit MSE + 1-bit QJL) + a 4-byte residual norm; rabitq: 1 bit/coord + a 4-byte factor;
+    /// else 1 bit/coord
+    , bytes_per_vector(turboquant_ ? dimensions_ / 4 + sizeof(float) : (rabitq_ ? dimensions_ / 8 + sizeof(float) : dimensions_ / 8))
 {
 }
 
@@ -1057,7 +1080,7 @@ template <typename Column>
 void quantizeRowsToBinary(
     const ColumnArray * column_array, const ColumnArray::Offsets & offsets,
     size_t dimensions, size_t bytes_per_vector, std::vector<UInt8> & codes, size_t & num_vectors, size_t rows,
-    const std::vector<float> & projection, bool turboquant, bool rabitq)
+    const std::vector<float> & projection, const std::vector<float> & projection_qjl, bool turboquant, bool rabitq)
 {
     const auto & data = typeid_cast<const Column &>(column_array->getData()).getData();
 
@@ -1073,9 +1096,9 @@ void quantizeRowsToBinary(
     const bool projected = !projection.empty() && !turboquant && !rabitq;
     const size_t padded = projection.empty() ? 0 : projection.size() / PROJECTION_ROUNDS;
 
-    /// Encode one row into its (disjoint) packed code slot. `work` is a per-thread scratch buffer of `padded` floats,
-    /// used only on the projected path.
-    auto encode_row = [&](size_t row, float * work)
+    /// Encode one row into its (disjoint) packed code slot. `work`/`work2` are per-thread scratch buffers of `padded`
+    /// floats; `work2` is used only by the 'turboquant' QJL stage, the others use just `work`.
+    auto encode_row = [&](size_t row, float * work, float * work2)
     {
         const size_t start = (row == 0) ? 0 : offsets[row - 1];
         const typename Column::ValueType * src = &data[start];
@@ -1084,8 +1107,8 @@ void quantizeRowsToBinary(
         char * dst = reinterpret_cast<char *>(codes.data() + (base + row) * bytes_per_vector);
         if (turboquant)
         {
-            /// 'turboquant': project, normalize, 2-bit Lloyd-Max quantize, pack 2 bits/coord.
-            encodeTurboQuant(projection, src, dimensions, work, dst);
+            /// 'turboquant': 1-bit MSE quantizer + 1-bit QJL on the residual + per-vector residual norm.
+            encodeTurboQuant(projection, projection_qjl, src, dimensions, work, work2, dst);
         }
         else if (rabitq)
         {
@@ -1126,10 +1149,10 @@ void quantizeRowsToBinary(
 
     if (num_threads <= 1)
     {
-        std::vector<float> work(padded);
+        std::vector<float> work(2 * padded); /// two scratch buffers (turboquant QJL needs both)
         throw_if_killed();
         for (size_t row = 0; row < rows; ++row)
-            encode_row(row, work.data());
+            encode_row(row, work.data(), work.data() + padded);
     }
     else
     {
@@ -1145,9 +1168,9 @@ void quantizeRowsToBinary(
             runner.enqueueAndKeepTrack([&encode_row, &throw_if_killed, padded, begin, end]
             {
                 throw_if_killed();
-                std::vector<float> work(padded);
+                std::vector<float> work(2 * padded);
                 for (size_t row = begin; row < end; ++row)
-                    encode_row(row, work.data());
+                    encode_row(row, work.data(), work.data() + padded);
             });
         }
         runner.waitForAllToFinishAndRethrowFirstError();
@@ -1190,17 +1213,20 @@ void MergeTreeIndexAggregatorVectorSimilarityFlat::update(const Block & block, s
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float32|Float64|BFloat16)");
 
     /// For 'b1_projected', 'turboquant', and 'rabitq', build the (deterministic) random projection once and reuse it.
+    /// 'turboquant' additionally needs the second, independent QJL projection.
     if ((projected || turboquant || rabitq) && projection.empty())
         projection = generateRandomProjection(dimensions);
+    if (turboquant && projection_qjl.empty())
+        projection_qjl = generateRandomProjection(dimensions, RANDOM_PROJECTION_SEED_QJL);
 
     const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
     WhichDataType which(nested_type_index);
     if (which.isFloat32())
-        quantizeRowsToBinary<ColumnFloat32>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, turboquant, rabitq);
+        quantizeRowsToBinary<ColumnFloat32>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, projection_qjl, turboquant, rabitq);
     else if (which.isFloat64())
-        quantizeRowsToBinary<ColumnFloat64>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, turboquant, rabitq);
+        quantizeRowsToBinary<ColumnFloat64>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, projection_qjl, turboquant, rabitq);
     else if (which.isBFloat16())
-        quantizeRowsToBinary<ColumnBFloat16>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, turboquant, rabitq);
+        quantizeRowsToBinary<ColumnBFloat16>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows, projection, projection_qjl, turboquant, rabitq);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
 
@@ -1276,21 +1302,13 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
     /// Quantize the (full-precision) reference vector to the same packed representation as the index.
     /// For 'b1_projected'/'turboquant', project the query with the same fixed-seed transform used at build time.
     std::vector<UInt8> query_code(bytes_per_vector);
-    std::vector<float> query_levels; /// turboquant only: the dequantized query, used by the squared-L2 scan
-    RaBitQQuery rabitq_query;        /// rabitq only: the bit-sliced query for the popcount scan
+    TurboQuantQuery turboquant_query; /// turboquant only: the two bit-sliced query projections for the popcount scan
+    RaBitQQuery rabitq_query;         /// rabitq only: the bit-sliced query for the popcount scan
     if (turboquant)
     {
-        const std::vector<float> projection = generateRandomProjection(granule->dimensions);
-        const size_t padded = projection.size() / PROJECTION_ROUNDS;
-        std::vector<float> work(padded);
-        encodeTurboQuant(projection, parameters->reference_vector.data(), granule->dimensions,
-                         work.data(), reinterpret_cast<char *>(query_code.data()));
-        query_levels.resize(granule->dimensions);
-        for (size_t i = 0; i < granule->dimensions; ++i)
-        {
-            const UInt8 c = (query_code[i >> 2] >> ((i & 3u) * 2u)) & 3u;
-            query_levels[i] = TURBOQUANT_LEVELS[c];
-        }
+        const std::vector<float> p1 = generateRandomProjection(granule->dimensions);
+        const std::vector<float> p2 = generateRandomProjection(granule->dimensions, RANDOM_PROJECTION_SEED_QJL);
+        turboquant_query = buildTurboQuantQuery(p1, p2, parameters->reference_vector.data(), granule->dimensions);
     }
     else if (rabitq)
     {
@@ -1327,13 +1345,13 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
 
     const char * base = reinterpret_cast<const char *>(granule->codes.data());
     const char * query = reinterpret_cast<const char *>(query_code.data());
-    const size_t dims = granule->dimensions;
 
-    /// Decide once whether the turboquant/rabitq scans can use their AVX-512 kernels (rabitq needs VPOPCNTDQ -> Ice Lake).
-    bool use_simd_turboquant = false;
+    /// Decide once whether the turboquant/rabitq scans can use their AVX-512 kernels (both bit-sliced popcount scans
+    /// need VPOPCNTDQ -> Ice Lake).
+    bool use_icelake_turboquant = false;
     bool use_icelake_rabitq = false;
 #if USE_MULTITARGET_CODE
-    use_simd_turboquant = turboquant && isArchSupported(TargetArch::x86_64_v4);
+    use_icelake_turboquant = turboquant && isArchSupported(TargetArch::x86_64_icelake);
     use_icelake_rabitq = rabitq && isArchSupported(TargetArch::x86_64_icelake);
 #endif
 
@@ -1360,7 +1378,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
                 throw_if_killed();
             float dist;
             if (turboquant)
-                dist = turboQuantDistanceFast(query_levels.data(), base + i * bytes_per_vector, dims, use_simd_turboquant);
+                dist = turboQuantDistanceFast(turboquant_query, base + i * bytes_per_vector, use_icelake_turboquant);
             else if (rabitq)
                 dist = raBitQDistanceFast(rabitq_query, base + i * bytes_per_vector, use_icelake_rabitq);
             else
@@ -1565,13 +1583,13 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
 
         if (is_turboquant)
         {
-            /// 'turboquant': fastknn-only, cosine distance, dimension multiple of 4 (2 bits/coord -> 4 codes/byte).
+            /// 'turboquant': fastknn-only, cosine distance, dimension multiple of 8 (two 1-bit sign planes -> dim/8 bytes each).
             if (!is_fastknn)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "'turboquant' quantization is only supported by the 'fastknn' method");
             if (distanceFunctionToMetricKind.at(args[1].safeGet<String>()) != unum::usearch::metric_kind_t::cos_k)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "'turboquant' quantization can only be used with the cosine distance as distance function");
-            if (args[2].safeGet<UInt64>() % 4 != 0)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "'turboquant' quantization requires that the dimension is a multiple of 4");
+            if (args[2].safeGet<UInt64>() % 8 != 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "'turboquant' quantization requires that the dimension is a multiple of 8");
         }
         else if (is_rabitq)
         {
