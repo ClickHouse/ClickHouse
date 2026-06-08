@@ -58,7 +58,7 @@ int digits10(T x)
 /// For Decimal values takes in account their scales: calculates result over underlying int type which is (value * scale).
 /// countDigits(42) = 2, countDigits(42.000) = 5, countDigits(0.04200) = 4.
 /// I.e. you may check decimal overflow for Decimal64 with 'countDecimal(x) > 18'. It's a slow variant of isDecimalOverflow().
-class FunctionCountDigits final : public IFunction
+class FunctionCountDigits : public IFunction
 {
 public:
     static constexpr auto name = "countDigits";

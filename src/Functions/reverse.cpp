@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 namespace
 {
-class FunctionReverse final : public IFunction
+class FunctionReverse : public IFunction
 {
 public:
     static constexpr auto name = "reverse";
@@ -115,7 +115,7 @@ public:
 
 
 /// Also works with arrays.
-class ReverseOverloadResolver final : public IFunctionOverloadResolver
+class ReverseOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "reverse";

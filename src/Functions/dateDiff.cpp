@@ -175,7 +175,7 @@ public:
             /// Adjust res:
             DateTimeComponentsWithFractionalPart a_comp;
             DateTimeComponentsWithFractionalPart b_comp;
-            Int64 adjust_value = 0;
+            Int64 adjust_value;
             auto x_nanoseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(transform_x.getScaleMultiplier()).execute(x, timezone_x);
             auto y_nanoseconds = TransformDateTime64<ToRelativeSubsecondNumImpl<nanosecond_multiplier>>(transform_y.getScaleMultiplier()).execute(y, timezone_y);
 
@@ -325,7 +325,7 @@ private:
   *
   * The timezone matters because days can have different lengths.
   */
-class FunctionDateDiff final : public IFunction
+class FunctionDateDiff : public IFunction
 {
 public:
     FunctionDateDiff(const char * name_, bool is_relative_)
@@ -418,7 +418,7 @@ private:
 /** timeDiff(t1, t2)
   * t1 and t2 can be Date or DateTime
   */
-class FunctionTimeDiff final : public IFunction
+class FunctionTimeDiff : public IFunction
 {
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 public:
