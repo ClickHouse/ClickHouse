@@ -205,7 +205,7 @@ private:
     /// shift the caller's offset interpretation).
     Rope readPhysicalWindow(ByteRange physical_window, bool from_prefetch);
 
-    /// Phase 1 of `readPhysicalWindow`: ensure `window_plan` covers
+    /// Phase 1 of `readPhysicalWindow`: ensure `read_plan` covers
     /// `physical_window` (re-planning if the cursor left the planned span), then
     /// append every resident byte to `result` (recording it in `covered`),
     /// reading it from the plan's held, pinning cache handles. Fastest-tier-first
@@ -230,7 +230,7 @@ private:
     /// Query cache residency ONCE over `[physical_start, physical_start +
     /// plan_look_ahead_window)` (clamped to the file end / read extent) via the
     /// read-only `ICacheProvider::planResidency`, and stash the resident segments
-    /// + their held (pinning) handles in `window_plan`. While the plan is held,
+    /// + their held (pinning) handles in `read_plan`. While the plan is held,
     /// `serveResidentFromPlan` streams resident bytes straight from these handles
     /// — no per-window `lookup`/`getOrSet`. Rebuilt lazily whenever the cursor
     /// leaves the planned span.
@@ -379,11 +379,15 @@ private:
         VectorWithMemoryTracking<ByteRange> resident;
         CacheTier tier;
     };
-    /// The residency plan held across stream windows. `planned` is in cache-tier
-    /// priority order (same order as `caches`), so streaming honours fastest-tier-
-    /// first via the `covered` guard. Empty / `plan_end == plan_start` means no
-    /// valid plan (next read builds one).
-    struct WindowPlan
+
+    /// The plan for one look-ahead window. Queried positionally by
+    /// `readNextWindow`: at the cursor it tells you whether the bytes are
+    /// RESIDENT (stream them from the held, pinning cache handle) or a GAP (read
+    /// them from the source / dispatch a download job). `planned` is in cache-tier
+    /// priority order (same order as `caches`), so `residentAt` returns the
+    /// fastest tier holding a byte. Empty / `plan_end == plan_start` means no
+    /// valid plan (the next read builds one).
+    struct ReadPlan
     {
         size_t plan_start = 0;  /// physical (header-inclusive) coords
         size_t plan_end = 0;    /// [plan_start, plan_end)
@@ -393,8 +397,53 @@ private:
         {
             return plan_end > plan_start && w.offset >= plan_start && w.end() <= plan_end;
         }
+
+        /// What the plan holds at file-level `offset`: the cache handle that can
+        /// stream it (the fastest tier that has it) and the end of that handle's
+        /// contiguous resident range. A null `handle` means `offset` is a gap.
+        struct Resident
+        {
+            ICacheHandle * handle = nullptr;
+            CacheTier tier{};
+            size_t run_end = 0;
+        };
+        Resident residentAt(size_t offset) const
+        {
+            for (const auto & ph : planned)
+                for (const auto & r : ph.resident)
+                    if (offset >= r.offset && offset < r.end())
+                        return {ph.handle.get(), ph.tier, r.end()};
+            return {};
+        }
+
+        /// First non-resident (gap) offset at or after `from`, within the plan;
+        /// `plan_end` if everything from `from` to the plan end is resident.
+        size_t nextGapStart(size_t from) const
+        {
+            size_t pos = std::max(from, plan_start);
+            while (pos < plan_end)
+            {
+                auto r = residentAt(pos);
+                if (!r.handle)
+                    return pos;
+                pos = r.run_end;
+            }
+            return plan_end;
+        }
+
+        /// End of the gap starting at `gap_start`: the next resident range's start
+        /// after it, or `plan_end` if none follows.
+        size_t gapEnd(size_t gap_start) const
+        {
+            size_t end = plan_end;
+            for (const auto & ph : planned)
+                for (const auto & r : ph.resident)
+                    if (r.offset > gap_start && r.offset < end)
+                        end = r.offset;
+            return end;
+        }
     };
-    WindowPlan window_plan;
+    ReadPlan read_plan;
 
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
     /// Single source of truth for "is there a prefetch scheduled":

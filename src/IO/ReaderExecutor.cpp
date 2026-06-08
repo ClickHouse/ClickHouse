@@ -1438,19 +1438,19 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
 
 void ReaderExecutor::serveResidentFromPlan(ByteRange physical_window, bool from_prefetch, Rope & result, IntervalSet & covered)
 {
-    if (!window_plan.covers(physical_window))
+    if (!read_plan.covers(physical_window))
         planResidencyWindow(physical_window.offset);
 
     /// Test hook: pause after residency is planned - the plan's handles are held,
     /// so the resident segments are pinned - but before they are read, so a test
     /// can drop/evict the cache and verify the pinned segments survive and `get`
     /// still honors them. No-op in production.
-    if (!window_plan.planned.empty())
+    if (!read_plan.planned.empty())
         FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_cache_status);
 
     /// The plan is in cache-tier priority order, so the `covered` guard serves
     /// each byte from the fastest tier that holds it.
-    for (const auto & ph : window_plan.planned)
+    for (const auto & ph : read_plan.planned)
     {
         size_t & tier_bytes = ph.tier == CacheTier::PageCache
             ? stats.bytes_from_page_cache
@@ -1687,9 +1687,9 @@ bool ReaderExecutor::fetchAndBackfillGaps(
 
 void ReaderExecutor::planResidencyWindow(size_t physical_start)
 {
-    window_plan.planned.clear();
-    window_plan.plan_start = physical_start;
-    window_plan.plan_end = physical_start;  /// stays invalid (empty) unless we set a span below
+    read_plan.planned.clear();
+    read_plan.plan_start = physical_start;
+    read_plan.plan_end = physical_start;  /// stays invalid (empty) unless we set a span below
 
     size_t want = plan_look_ahead_window;
 
@@ -1718,7 +1718,7 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
         return;
 
     const ByteRange plan_range{physical_start, want};
-    window_plan.plan_end = plan_range.end();
+    read_plan.plan_end = plan_range.end();
 
     /// One read-only residency probe per cache tier per object-piece. Both tiers
     /// are probed independently over the full span; the streaming `covered` guard
@@ -1754,7 +1754,7 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
             if (!ph.resident.empty())
             {
                 ph.handle = std::move(handle);
-                window_plan.planned.push_back(std::move(ph));
+                read_plan.planned.push_back(std::move(ph));
             }
 
             piece_file_start += pr.size;
@@ -1762,7 +1762,7 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
     }
 
     LOG_TRACE(log, "planResidencyWindow: planned [{}, {}), {} resident handles",
-        window_plan.plan_start, window_plan.plan_end, window_plan.planned.size());
+        read_plan.plan_start, read_plan.plan_end, read_plan.planned.size());
 }
 
 bool ReaderExecutor::windowFullyResident(ByteRange physical_window)
@@ -1770,16 +1770,16 @@ bool ReaderExecutor::windowFullyResident(ByteRange physical_window)
     if (physical_window.size == 0)
         return false;
 
-    if (!window_plan.covers(physical_window))
+    if (!read_plan.covers(physical_window))
         planResidencyWindow(physical_window.offset);
-    if (!window_plan.covers(physical_window))
+    if (!read_plan.covers(physical_window))
         return false;
 
     /// Union the plan's resident ranges and check they leave no gap in the
     /// window. `IntervalSet::subtract` returns the uncovered parts; empty means
     /// fully resident.
     IntervalSet resident;
-    for (const auto & ph : window_plan.planned)
+    for (const auto & ph : read_plan.planned)
         for (const auto & r : ph.resident)
         {
             const size_t lo = std::max(r.offset, physical_window.offset);
