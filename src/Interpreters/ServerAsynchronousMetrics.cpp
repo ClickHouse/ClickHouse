@@ -154,15 +154,22 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
 #if defined(OS_LINUX)
-    try
+    /// Only open `/proc/self/smaps` when heavy metrics are enabled. The
+    /// `MemoryThreadStacks*` values are emitted from the heavy-metrics
+    /// path, so without it the fd is unused and the failure-to-open
+    /// warning would be noise on default servers in restricted containers.
+    if (update_heavy_metrics)
     {
-        vm_smaps.emplace("/proc/self/smaps");
-    }
-    catch (...)
-    {
-        /// /proc/self/smaps may not be accessible (sandbox, restricted container, etc.).
-        /// The thread-stack metrics will simply not be published in that case.
-        LOG_WARNING(log, "MemoryThreadStacks* metrics are disabled: failed to access /proc/self/smaps. {}", getCurrentExceptionMessage(/*with_stacktrace=*/ true));
+        try
+        {
+            vm_smaps.emplace("/proc/self/smaps");
+        }
+        catch (...)
+        {
+            /// /proc/self/smaps may not be accessible (sandbox, restricted container, etc.).
+            /// The thread-stack metrics will simply not be published in that case.
+            LOG_WARNING(log, "MemoryThreadStacks* metrics are disabled: failed to access /proc/self/smaps. {}", getCurrentExceptionMessage(/*with_stacktrace=*/ true));
+        }
     }
 #endif
 }
