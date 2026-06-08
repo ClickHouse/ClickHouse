@@ -482,13 +482,16 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach)
                 column.type->getName(), column.name);
         }
 
-        if (isDynamic(column.type) || isVariant(column.type))
+        auto check_not_dynamic_or_variant = [&](const IDataType & type)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "{} data type of column {} is not allowed in minmax index because the column of that type can contain values with different data "
-                "types. Consider using typed subcolumns or cast column to a specific data type",
-                column.type->getName(), column.name);
-        }
+            if (isDynamic(type) || isVariant(type))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "{} data type of column {} is not allowed in minmax index because the values of that data type can contain values "
+                    "with different data types. Consider using typed subcolumns or cast column to a specific data type",
+                    column.type->getName(), column.name);
+        };
+        check_not_dynamic_or_variant(*column.type);
+        column.type->forEachChild(check_not_dynamic_or_variant);
     }
 }
 

@@ -6,6 +6,7 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/FileCache/Guards.h>
 
+class FileCacheTest_MoveEvictionPos_Test;
 
 namespace DB
 {
@@ -162,6 +163,7 @@ private:
     class LRUIterator;
     using LRUQueue = std::list<EntryPtr>;
     friend class SLRUFileCachePriority;
+    friend class ::FileCacheTest_MoveEvictionPos_Test;
 
     LRUQueue queue;
     const std::string description;
@@ -246,7 +248,7 @@ public:
 
     void remove(const CachePriorityGuard::WriteLock &) override;
 
-    void invalidate() override;
+    void invalidate() noexcept override;
 
     void incrementSize(size_t size, const CacheStateGuard::Lock &) override;
 

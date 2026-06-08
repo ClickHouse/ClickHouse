@@ -347,6 +347,9 @@ public:
     void applyNullMap(const ColumnVector<UInt8>::Container & null_map);
     void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map);
 
+    /// Create a null map column from the discriminators: 1 for NULL_DISCRIMINATOR rows, 0 otherwise.
+    ColumnPtr createNullMap() const;
+
     /// Extend current column with new variants. Change global discriminators of current variants to the new
     /// according to the mapping and add new variants with new global discriminators.
     /// This extension doesn't rewrite any data, just adds new empty variants and modifies global/local discriminators matching.

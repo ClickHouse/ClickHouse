@@ -84,8 +84,8 @@ def get_spark(log_dir=None):
             "spark.sql.catalog.spark_catalog.warehouse",
             "/var/lib/clickhouse/user_files/test_storage_delta",
         )
-        .config("spark.driver.memory", "8g")
-        .config("spark.executor.memory", "8g")
+        .config("spark.driver.memory", "2g")
+        .config("spark.executor.memory", "2g")
         .master("local")
     )
 
