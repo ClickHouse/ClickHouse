@@ -118,6 +118,18 @@ def test_exact_num_defaults_compat(started_cluster):
     assert '"exact_num_defaults":true' in read_serialization_json(active_part_name())
     assert_trivial_count_was_used(used=True)
 
+    # 25.12 does not know `compute_exact_num_defaults_for_sparse_columns` and would
+    # refuse to load the CREATE TABLE that still mentions it. The parts are already
+    # written with the `exact_num_defaults` flag, which is what the old binary needs
+    # to tolerate. Strip the setting from the on-disk metadata before downgrading so
+    # the old reader sees a CREATE TABLE it can parse.
+    node.exec_in_container(
+        ["bash", "-c",
+         "sed -i 's/,[[:space:]]*compute_exact_num_defaults_for_sparse_columns[[:space:]]*=[[:space:]]*[0-9]\\+//g' "
+         "/var/lib/clickhouse/metadata/default/t_compat.sql"],
+        user="root",
+    )
+
     node.restart_with_original_version()
     assert node.query("SELECT count() FROM t_compat WHERE x != 0").strip() == BASELINE
 

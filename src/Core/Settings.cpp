@@ -4514,6 +4514,11 @@ counter treats `+0.0` and `-0.0` as distinct (bitwise comparison) so that sparse
 columns preserve the sign of `-0.0` on round-trip, while SQL `col = 0` matches both. Using
 the counter for these predicates would undercount `-0.0` rows.
 
+To take effect, the per-part `num_defaults` counter must be exact. Enable the MergeTree
+table setting `compute_exact_num_defaults_for_sparse_columns` on the target table before
+inserts and merges. Parts written without it are silently opted out of the rewrite, so
+enabling `optimize_trivial_count_with_sparsity_filter` alone is not enough.
+
 Possible values:
 
    - 0 — Optimization disabled.
@@ -4555,8 +4560,12 @@ A granule is dropped under the same condition, applied per-granule from the offs
 marks (sparse-encoded columns only).
 
 Recognised predicate shapes match those of [optimize_trivial_count_with_sparsity_filter](#optimize_trivial_count_with_sparsity_filter).
-Skipped for parts that don't carry the `exact_num_defaults` flag (typically parts written
-by older servers), so it never produces wrong answers.
+
+Parts are silently skipped when they don't carry the `exact_num_defaults` flag (so the
+mode never produces wrong answers). The flag is written when the MergeTree table setting
+`compute_exact_num_defaults_for_sparse_columns` is enabled at insert / merge time;
+parts written by older servers or by the current server with that table setting off
+will not be pruned.
 
 See also:
 
