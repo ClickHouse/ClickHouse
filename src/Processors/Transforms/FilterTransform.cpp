@@ -176,10 +176,6 @@ std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
             break;
     }
     if (!position)
-        position = transformed_header.findPositionByName(column_node->result_name);
-    if (!position && column_node != unwrapped_column_node)
-        position = transformed_header.findPositionByName(unwrapped_column_node->result_name);
-    if (!position)
         return {};
 
     const auto & result_column = transformed_header.getByPosition(*position);
