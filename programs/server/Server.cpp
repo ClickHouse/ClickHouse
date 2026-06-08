@@ -28,7 +28,6 @@
 #include <base/safeExit.h>
 #include <base/Numa.h>
 #include <Common/PoolId.h>
-#include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryWorker.h>
 #include <Common/ClickHouseRevision.h>
@@ -228,7 +227,6 @@ namespace ServerSetting
     extern const ServerSettingsString default_database;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
-    extern const ServerSettingsBool message_queue_disable_insertion;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
@@ -333,7 +331,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
-    extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsString mutation_workload;
     extern const ServerSettingsString query_condition_cache_policy;
@@ -1409,17 +1406,16 @@ try
         PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
 #endif
 
-    /// Under thread sanitizer we use frame-pointer-based unwinding (via abseil) which does not
-    /// call dl_iterate_phdr in the signal handler, so the PHDR cache is not needed.
-#if defined(THREAD_SANITIZER)
-    bool has_trace_collector = config().has("trace_log");
-    LOG_INFO(log, "Query Profiler will use frame-pointer-based stack unwinding under sanitizers.");
-#else
     bool has_trace_collector = hasPHDRCache() && config().has("trace_log");
+
+#if defined(SANITIZER)
+    LOG_INFO(log, "Query Profiler is disabled because it cannot work under sanitizers"
+        " when two different stack unwinding methods will interfere with each other.");
+#endif
+
     if (!hasPHDRCache())
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
             " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
-#endif
 
     // Settings validation for page cache. Ensure that page_cache_max_size is > page_cache_min_size.
     // Otherwise, crash might happen during cache resizing in src/Common/PageCache.cpp::autoResize
@@ -2293,9 +2289,6 @@ try
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
-            CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
-                new_server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
-
             size_t merges_mutations_memory_usage_soft_limit = new_server_settings[ServerSetting::merges_mutations_memory_usage_soft_limit];
 
             const double merges_mutations_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio];
@@ -2363,13 +2356,7 @@ try
             global_context->setUsersToIgnoreEarlyMemoryLimitCheck(new_server_settings[ServerSetting::users_to_ignore_early_memory_limit_check]);
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
 
-            global_context->setMutationsUseAnalyzerOverride(
-                config().has("use_analyzer_for_mutations")
-                    ? std::make_optional(config().getBool("use_analyzer_for_mutations"))
-                    : std::nullopt);
-
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
-            global_context->setMessageQueueDisableInsertion(new_server_settings[ServerSetting::message_queue_disable_insertion]);
 
             global_context->setOSCPUOverloadSettings(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection], new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]);
 
@@ -2410,6 +2397,10 @@ try
 
             if (config().has("keeper_server"))
             {
+#if USE_NURAFT
+                if (config().getBool("keeper_server.standalone_keeper", false))
+                    KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
+#endif
                 global_context->updateKeeperConfiguration(config());
             }
 

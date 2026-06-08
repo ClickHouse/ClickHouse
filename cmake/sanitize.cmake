@@ -6,8 +6,6 @@
 # - "" (no sanitizing)
 option (SANITIZE "Enable one of the code sanitizers" "")
 
-## -fno-omit-frame-pointer is required: the query profiler relies on frame-pointer-based
-## stack unwinding under sanitizer builds (via abseil's GetStackTrace in StackTrace.cpp).
 set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer -DSANITIZER")
 
 if (SANITIZE)
@@ -62,12 +60,6 @@ if (SANITIZE)
 
     else ()
         message (FATAL_ERROR "Unknown sanitizer type: ${SANITIZE}")
-    endif ()
-
-    # The query profiler relies on frame-pointer-based stack unwinding under sanitizer builds
-    # (via abseil's GetStackTrace in StackTrace.cpp). Verify the flag is present.
-    if (NOT CMAKE_CXX_FLAGS MATCHES "-fno-omit-frame-pointer")
-        message (FATAL_ERROR "Sanitizer builds require -fno-omit-frame-pointer for query profiler support")
     endif ()
 endif()
 

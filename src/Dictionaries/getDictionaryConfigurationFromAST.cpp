@@ -13,7 +13,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Core/Names.h>
 #include <Core/Field.h>
-#include <Core/UUID.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>

@@ -45,6 +45,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/IDiskTransaction.h>
 
+#include <cassert>
 #include <chrono>
 
 #include <boost/range/adaptor/map.hpp>
@@ -920,7 +921,7 @@ void StorageLog::saveFileSizes(const WriteLock & /* already locked for writing *
 
 void StorageLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    chassert(table_path != new_path_to_table_data);
+    assert(table_path != new_path_to_table_data);
     {
         disk->createDirectories(new_path_to_table_data);
         disk->moveDirectory(table_path, new_path_to_table_data);

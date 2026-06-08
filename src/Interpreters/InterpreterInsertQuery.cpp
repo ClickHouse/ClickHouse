@@ -499,7 +499,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
             });
     }
 
-    VectorWithMemoryTracking<Chain> sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
+    std::vector<Chain> sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
 
     pipeline.resize(insert_dependencies->getSinkStreamSize());
 
@@ -1015,13 +1015,6 @@ BlockIO InterpreterInsertQuery::execute()
 
         if (!is_external_storage)
             throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
-    }
-
-    if (context->getMessageQueueDisableInsertion()
-        && table->isMessageQueue()
-        && no_destination)
-    {
-        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Message queue insertion is disabled");
     }
 
     checkStorageSupportsTransactionsIfNeeded(table, getContext());

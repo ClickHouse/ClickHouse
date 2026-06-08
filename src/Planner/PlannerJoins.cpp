@@ -865,7 +865,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
             add_necessary_name_if_needed(JoinTableSide::Right, dag_filter_condition_node->result_name);
         }
 
-        chassert(join_clause.getLeftKeyNodes().size() == join_clause.getRightKeyNodes().size());
+        assert(join_clause.getLeftKeyNodes().size() == join_clause.getRightKeyNodes().size());
         size_t join_clause_key_nodes_size = join_clause.getLeftKeyNodes().size();
 
         for (size_t i = 0; i < join_clause_key_nodes_size; ++i)

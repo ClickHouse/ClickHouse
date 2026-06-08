@@ -1,4 +1,3 @@
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/ICompressionCodec.h>
@@ -296,7 +295,7 @@ private:
         UInt32 exceptions_count;
     };
 
-    VectorWithMemoryTracking<EncodingParams> param_candidates;
+    std::vector<EncodingParams> param_candidates;
     BlockState block;
 
     char * encodeBlock(const char * source, const UInt16 float_count, char * dest)
@@ -404,7 +403,7 @@ private:
 
     EncodingParams selectBlockParams(const char * source, const UInt32 float_count)
     {
-        chassert(param_candidates.size() > 0);
+        assert(param_candidates.size() > 0);
         if (param_candidates.size() == 1)
             return param_candidates[0];
 
@@ -449,7 +448,7 @@ private:
             EncodingParams params;
             UInt32 occurred_times;
         };
-        UnorderedMapWithMemoryTracking<UInt16, Estimation> estimations_map;
+        std::unordered_map<UInt16, Estimation> estimations_map;
 
         // Take ALP_PARAMS_ESTIMATION_SAMPLES samples from the entire column for global parameter estimation.
         // Evenly select sample positions across the column.

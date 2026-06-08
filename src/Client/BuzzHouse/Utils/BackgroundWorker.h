@@ -18,10 +18,10 @@ class BackgroundWorker
 public:
     using BackgroundWorkerTask = std::function<void()>;
 
-    explicit BackgroundWorker(LoggerPtr log_)
+    BackgroundWorker()
         : stop_(false)
-        , log(std::move(log_))
         , worker_thread_(&BackgroundWorker::worker_loop, this)
+        , log(getLogger("BackgroundWorker"))
     {
     }
 
@@ -43,8 +43,8 @@ private:
     mutable std::mutex queue_mutex_;
     std::condition_variable cv_;
     std::atomic<bool> stop_;
-    LoggerPtr log;
     std::thread worker_thread_;
+    LoggerPtr log;
 };
 
 }

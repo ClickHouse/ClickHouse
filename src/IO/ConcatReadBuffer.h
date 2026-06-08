@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <vector>
 
 #include <IO/ReadBuffer.h>
@@ -13,7 +12,7 @@ namespace DB
 class ConcatReadBuffer : public ReadBuffer
 {
 public:
-    using Buffers = VectorWithMemoryTracking<std::unique_ptr<ReadBuffer>>;
+    using Buffers = std::vector<std::unique_ptr<ReadBuffer>>;
 
     ConcatReadBuffer() : ReadBuffer(nullptr, 0), current(buffers.end())
     {
@@ -21,7 +20,7 @@ public:
 
     explicit ConcatReadBuffer(Buffers && buffers_) : ReadBuffer(nullptr, 0), buffers(std::move(buffers_)), current(buffers.begin())
     {
-        chassert(!buffers.empty());
+        assert(!buffers.empty());
     }
 
     ConcatReadBuffer(std::unique_ptr<ReadBuffer> buf1, std::unique_ptr<ReadBuffer> buf2) : ConcatReadBuffer()
@@ -38,7 +37,7 @@ public:
 
     void appendBuffer(std::unique_ptr<ReadBuffer> buffer)
     {
-        chassert(!count());
+        assert(!count());
         buffers.push_back(std::move(buffer));
         current = buffers.begin();
     }

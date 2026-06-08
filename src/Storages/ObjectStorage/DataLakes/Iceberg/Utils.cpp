@@ -67,7 +67,6 @@ namespace DB::ErrorCodes
 extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
-extern const int PATH_ACCESS_DENIED;
 extern const int LOGICAL_ERROR;
 }
 
@@ -180,7 +179,7 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
         if (end_pos == String::npos || end_pos <= 1)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `vN-<uuid>.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
+                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
                 file_name);
         version_str = String(file_name.begin() + 1, file_name.begin() + end_pos);
     }
@@ -191,16 +190,14 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
         if (dash_pos == String::npos || dash_pos == 0)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `vN-<uuid>.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
+                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
                 file_name);
         version_str = String(file_name.begin(), file_name.begin() + dash_pos);
     }
 
     if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Bad metadata file name: '{}'. Expected `vN.metadata.json`, `vN-<uuid>.metadata.json`, or `N-<uuid>.metadata.json` where N is a version number",
-            file_name);
+            ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: '{}'. Expected vN.metadata.json where N is a number", file_name);
 
     return MetadataFileWithInfo{
         .version = std::stoi(version_str), .path = path, .compression_method = getCompressionMethodFromMetadataFile(path)};
@@ -1173,25 +1170,6 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     return load_fn();
 }
 
-static String resolveContained(const std::filesystem::path & base, const std::filesystem::path & relative)
-{
-    auto norm_base = base.lexically_normal();
-    auto combined = (norm_base / relative).lexically_normal();
-
-    auto rel = combined.lexically_relative(norm_base);
-
-    if (rel.empty() || rel.begin()->string() == "..")
-    {
-        throw Exception(
-            ErrorCodes::PATH_ACCESS_DENIED,
-            "Explicit metadata file path `{}` should be in the table path directory : `{}`",
-            relative.string(),
-            base.string());
-    }
-
-    return combined.string();
-}
-
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
     const String & table_path,
@@ -1217,7 +1195,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
             if (*it == "." || *it == "..")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative paths are not allowed");
         }
-        String resolved_path = resolveContained(table_path, explicit_metadata_path);
+        String resolved_path = resolvePathInsideTable(table_path, explicit_metadata_path);
         return getMetadataFileAndVersion(resolved_path);
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].changed)

@@ -870,14 +870,12 @@ static ASTPtr makeExplain(const ExplainPlanOptions & options, ASTPtr query)
     return explain_query;
 }
 
-static ASTPtr makeExplainPipeline(bool header, bool distributed, bool compact_repeated_processor_chains, ASTPtr query)
+static ASTPtr makeExplainPipeline(bool header, bool distributed, ASTPtr query)
 {
     auto explain_settings = make_intrusive<ASTSetQuery>();
     explain_settings->is_standalone = false;
     explain_settings->changes.emplace_back("header", int(header));
     explain_settings->changes.emplace_back("distributed", int(distributed));
-    if (compact_repeated_processor_chains)
-        explain_settings->changes.emplace_back("compact_repeated_processor_chains", 1);
 
     auto explain_query = make_intrusive<ASTExplainQuery>(ASTExplainQuery::ExplainKind::QueryPipeline);
     explain_query->setExplainedQuery(query);
@@ -946,11 +944,7 @@ void ReadFromRemote::describeDistributedPipeline(FormatSettings & settings, bool
 
         auto & shard_copy = used_shards.emplace_back(shard);
         shard_copy.header = header;
-        shard_copy.query = makeExplainPipeline(
-            settings.write_header,
-            distributed,
-            settings.compact_repeated_processor_chains,
-            shard.query);
+        shard_copy.query = makeExplainPipeline(settings.write_header, distributed, shard.query);
     }
 
     formatExplain(settings, addPipes(used_shards, header));
@@ -1125,7 +1119,7 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
 
     String query_string = formattedAST(ast, enable_analyzer);
 
-    chassert(output_header);
+    assert(output_header);
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
@@ -1176,7 +1170,7 @@ void ReadFromParallelRemoteReplicasStep::describeDistributedPipeline(FormatSetti
     auto header = std::make_shared<const Block>(
         Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}});
 
-    auto explain_query = makeExplainPipeline(settings.write_header, distributed, settings.compact_repeated_processor_chains, query_ast);
+    auto explain_query = makeExplainPipeline(settings.write_header, distributed, query_ast);
     formatExplain(settings, addPipes(explain_query, header));
 }
 }

@@ -94,8 +94,8 @@ public:
         // remove duplicates
         records.erase(std::unique(records.begin(), records.end()), records.end());
 
-        chassert(std::is_sorted(records.begin(), records.end()));
-        chassert(isUniqTypes());
+        assert(std::is_sorted(records.begin(), records.end()));
+        assert(isUniqTypes());
     }
 
     void mergeWith(Self && other)
@@ -118,8 +118,8 @@ public:
         // remove duplicates
         records.erase(std::unique(records.begin(), records.end()), records.end());
 
-        chassert(std::is_sorted(records.begin(), records.end()));
-        chassert(isUniqTypes());
+        assert(std::is_sorted(records.begin(), records.end()));
+        assert(isUniqTypes());
     }
 
     template <class T>

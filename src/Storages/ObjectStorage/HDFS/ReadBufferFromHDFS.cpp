@@ -50,13 +50,13 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         size_t read_until_position_,
         bool use_external_buffer_,
         std::optional<size_t> file_size_)
-        : BufferWithOwnMemory<SeekableReadBuffer>(use_external_buffer_ ? 0 : read_settings_.remote_fs_settings.buffer_size)
+        : BufferWithOwnMemory<SeekableReadBuffer>(use_external_buffer_ ? 0 : read_settings_.remote_fs_buffer_size)
         , HDFSErrorWrapper(hdfs_uri_, config_)
         , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
         , read_settings(read_settings_)
         , read_until_position(read_until_position_)
-        , enable_pread(read_settings_.remote_fs_settings.enable_hdfs_pread)
+        , enable_pread(read_settings_.enable_hdfs_pread)
     {
         fs = createHDFSFS(builder.get());
         fin = wrapErr<hdfsFile>(hdfsOpenFile, fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, static_cast<int16_t>(0), 0);
@@ -242,13 +242,13 @@ bool ReadBufferFromHDFS::nextImpl()
     if (use_external_buffer)
     {
         impl->set(internal_buffer.begin(), internal_buffer.size());
-        chassert(working_buffer.begin() != nullptr);
-        chassert(!internal_buffer.empty());
+        assert(working_buffer.begin() != nullptr);
+        assert(!internal_buffer.empty());
     }
     else
     {
         impl->position() = impl->buffer().begin() + offset();
-        chassert(!impl->hasPendingData());
+        assert(!impl->hasPendingData());
     }
 
     Stopwatch watch;
@@ -287,8 +287,8 @@ off_t ReadBufferFromHDFS::seek(off_t offset_, int whence)
         && offset_ < impl->getPosition())
     {
         pos = working_buffer.end() - (impl->getPosition() - offset_);
-        chassert(pos >= working_buffer.begin());
-        chassert(pos <= working_buffer.end());
+        assert(pos >= working_buffer.begin());
+        assert(pos <= working_buffer.end());
 
         return getPosition();
     }

@@ -30,7 +30,6 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/randomDelay.h>
 #include <Common/thread_local_rng.h>
-#include <Core/UUID.h>
 
 namespace fs = std::filesystem;
 
@@ -499,7 +498,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
 
     ReadSettings read_settings = context->getReadSettings();
     /// Disable retries for fetches, this will be done by the engine itself.
-    read_settings.http_settings.max_tries = 1;
+    read_settings.http_max_tries = 1;
 
     auto in = BuilderRWBufferFromHTTP(uri)
                   .withConnectionGroup(HTTPConnectionGroupType::HTTP)

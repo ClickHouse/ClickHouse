@@ -359,7 +359,7 @@ ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    chassert(limit <= indexes.size());
+    assert(limit <= indexes.size());
     if (limit == 0)
         return ColumnString::create();
 

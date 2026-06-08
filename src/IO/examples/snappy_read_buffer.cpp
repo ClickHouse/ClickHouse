@@ -30,6 +30,6 @@ int mainEntryExampleSnappyReadBuffer(int, char **)
     copyData(in2, out);
 
     output.resize(out.count());
-    chassert(input == output);
+    assert(input == output);
     return 0;
 }

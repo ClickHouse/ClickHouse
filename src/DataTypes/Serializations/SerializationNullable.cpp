@@ -643,7 +643,7 @@ ReturnType deserializeWholeTextImpl(IColumn & column, ReadBuffer & istr, const F
             return nested->tryDeserializeWholeText(nested_column, buf, settings);
 
         nested->deserializeWholeText(nested_column, buf, settings);
-        chassert(!buf.hasUnreadData());
+        assert(!buf.hasUnreadData());
     };
 
     return deserializeImpl<ReturnType>(column, peekable_buf, check_for_null, deserialize_nested, is_null);

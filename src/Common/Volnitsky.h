@@ -9,7 +9,6 @@
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <base/unaligned.h>
 
 #ifdef __SSE4_1__
@@ -489,12 +488,12 @@ class MultiVolnitskyBase
 {
 private:
     /// needles and their offsets
-    const VectorWithMemoryTracking<std::string_view> & needles;
+    const std::vector<std::string_view> & needles;
 
 
     /// fallback searchers
-    VectorWithMemoryTracking<size_t> fallback_needles;
-    VectorWithMemoryTracking<FallbackSearcher> fallback_searchers;
+    std::vector<size_t> fallback_needles;
+    std::vector<FallbackSearcher> fallback_searchers;
 
     /// because std::pair<> is not POD
     struct OffsetId
@@ -515,7 +514,7 @@ private:
     static constexpr size_t small_limit = VolnitskyTraits::hash_size / 8;
 
 public:
-    explicit MultiVolnitskyBase(const VectorWithMemoryTracking<std::string_view> & needles_) : needles{needles_}, step{0}, last{0}
+    explicit MultiVolnitskyBase(const std::vector<std::string_view> & needles_) : needles{needles_}, step{0}, last{0}
     {
         fallback_searchers.reserve(needles.size());
         hash = std::unique_ptr<OffsetId[]>(new OffsetId[VolnitskyTraits::hash_size]);   /// No zero initialization, it will be done later.
@@ -559,7 +558,7 @@ public:
             else
             {
                 /// put all bigrams
-                VectorWithMemoryTracking<size_t> inserted_cells;
+                std::vector<size_t> inserted_cells;
                 auto callback = [this, &inserted_cells](const VolnitskyTraits::Ngram ngram, const int offset)
                 {
                     return this->putNGramBase(ngram, offset, this->last, inserted_cells);
@@ -741,7 +740,7 @@ public:
       * the caller can roll the inserts back if some later n-gram for the same needle fails to
       * convert (in which case the partial state would otherwise leak into searches for other needles).
       */
-    void putNGramBase(const VolnitskyTraits::Ngram ngram, const int offset, const size_t num, VectorWithMemoryTracking<size_t> & inserted_cells)
+    void putNGramBase(const VolnitskyTraits::Ngram ngram, const int offset, const size_t num, std::vector<size_t> & inserted_cells)
     {
         size_t cell_num = ngram % VolnitskyTraits::hash_size;
 
