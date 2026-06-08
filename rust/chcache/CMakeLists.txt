@@ -3,8 +3,6 @@ if (COMPILER_CACHE STREQUAL "chcache")
         MANIFEST_PATH Cargo.toml
         PROFILE release
         LOCKED
-        FLAGS "--config=${RUST_CONFIG_FILE}"
-        FLAGS --offline
     )
 
     corrosion_set_env_vars(

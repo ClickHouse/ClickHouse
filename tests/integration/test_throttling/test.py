@@ -65,7 +65,6 @@ node = cluster.add_instance(
     minio_certs_dir="minio_certs",
     # Disable `with_remote_database_disk` as the instances does not use the default minIO
     with_remote_database_disk=False,
-    cpu_limit=6
 )
 
 
@@ -144,20 +143,11 @@ def node_update_config(mode, setting, value=None, restart=True):
         node.restart_clickhouse()
 
 
-def skip_if_sanitizer(instance):
-    if (
-        instance.is_built_with_thread_sanitizer()
-        or instance.is_built_with_address_sanitizer()
-        or instance.is_built_with_memory_sanitizer()
-    ):
-        pytest.skip("throttling tests are unreliable under sanitizers")
-
-
 def assert_took(took, should_take):
     # we need to decrease the lower limit because the server limits could
     # be enforced by throttling some server background IO instead of query IO
     # and we have no control over it
-    assert took >= should_take * 0.80
+    assert took >= should_take * 0.85
 
 
 @pytest.mark.parametrize(
@@ -301,7 +291,6 @@ def assert_took(took, should_take):
     ],
 )
 def test_backup_throttling(policy, backup_storage, mode, setting, value, should_take):
-    skip_if_sanitizer(node)
     node_update_config(mode, setting, value)
     node.query(
         f"""
@@ -315,7 +304,6 @@ def test_backup_throttling(policy, backup_storage, mode, setting, value, should_
 
 
 def test_backup_throttling_override():
-    skip_if_sanitizer(node)
     node_update_config("user", "max_backup_bandwidth", "1M")
     node.query(
         """
@@ -387,7 +375,6 @@ def test_backup_throttling_override():
     ],
 )
 def test_read_throttling(policy, mode, setting, value, should_take):
-    skip_if_sanitizer(node)
     node_update_config(mode, setting, value)
     node.query(
         f"""
@@ -401,7 +388,6 @@ def test_read_throttling(policy, mode, setting, value, should_take):
 
 
 def test_remote_read_throttling_reload():
-    skip_if_sanitizer(node)
     node.query(
         f"""
         drop table if exists data;
@@ -433,7 +419,6 @@ def test_remote_read_throttling_reload():
     assert took < 3
 
 def test_local_read_throttling_reload():
-    skip_if_sanitizer(node)
     node.query(
         f"""
         drop table if exists data;
@@ -514,7 +499,6 @@ def test_local_read_throttling_reload():
     ],
 )
 def test_write_throttling(policy, mode, setting, value, should_take):
-    skip_if_sanitizer(node)
     node_update_config(mode, setting, value)
     node.query(
         f"""
@@ -527,7 +511,6 @@ def test_write_throttling(policy, mode, setting, value, should_take):
 
 
 def test_remote_write_throttling_reload():
-    skip_if_sanitizer(node)
     node.query(
         f"""
         drop table if exists data;
@@ -559,7 +542,6 @@ def test_remote_write_throttling_reload():
     assert took < 3
 
 def test_local_write_throttling_reload():
-    skip_if_sanitizer(node)
     node.query(
         f"""
         drop table if exists data;
@@ -591,7 +573,6 @@ def test_local_write_throttling_reload():
     assert took < 3
 
 def test_max_mutations_bandwidth_for_server():
-    skip_if_sanitizer(node)
     node.query(
         """
         drop table if exists data;
@@ -608,7 +589,6 @@ def test_max_mutations_bandwidth_for_server():
 
 
 def test_max_merges_bandwidth_for_server():
-    skip_if_sanitizer(node)
     node.query(
         """
         drop table if exists data;

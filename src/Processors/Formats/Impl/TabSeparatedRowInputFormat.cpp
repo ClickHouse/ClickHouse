@@ -288,11 +288,7 @@ void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
 void TabSeparatedFormatReader::skipPrefixBeforeHeader()
 {
     for (size_t i = 0; i != format_settings.tsv.skip_first_lines; ++i)
-    {
-        if (buf->eof())
-            break;
         readRow();
-    }
 }
 
 void TabSeparatedRowInputFormat::syncAfterError()
@@ -325,7 +321,7 @@ void TabSeparatedFormatReader::skipRow()
     ReadBuffer & istr = *buf;
     while (!istr.eof())
     {
-        char * pos = nullptr;
+        char * pos;
         if (is_raw)
             pos = find_first_symbols<'\r', '\n'>(istr.position(), istr.buffer().end());
         else
@@ -403,7 +399,6 @@ std::optional<DataTypes> TabSeparatedSchemaReader::readRowAndGetDataTypesImpl()
     return std::move(fields_with_types->second);
 }
 
-void registerInputFormatTabSeparated(FormatFactory & factory);
 void registerInputFormatTabSeparated(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})
@@ -427,7 +422,6 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
     }
 }
 
-void registerTSVSchemaReader(FormatFactory & factory);
 void registerTSVSchemaReader(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})
@@ -438,18 +432,21 @@ void registerTSVSchemaReader(FormatFactory & factory)
             {
                 return std::make_shared<TabSeparatedSchemaReader>(buf, with_names, with_types, is_raw, settings);
             });
-            factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names, is_raw](const FormatSettings & settings)
+            if (!with_types)
             {
-                String result = getAdditionalFormatInfoByEscapingRule(
-                    settings, is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped);
-                result += fmt::format(", skip_first_lines={}", settings.tsv.skip_first_lines);
-                if (!with_names)
-                    result += fmt::format(
-                        ", column_names_for_schema_inference={}, try_detect_header={}",
-                        settings.column_names_for_schema_inference,
-                        settings.tsv.try_detect_header);
-                return result;
-            });
+                factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names, is_raw](const FormatSettings & settings)
+                {
+                    String result = getAdditionalFormatInfoByEscapingRule(
+                        settings, is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped);
+                    if (!with_names)
+                        result += fmt::format(
+                            ", column_names_for_schema_inference={}, try_detect_header={}, skip_first_lines={}",
+                            settings.column_names_for_schema_inference,
+                            settings.tsv.try_detect_header,
+                            settings.tsv.skip_first_lines);
+                    return result;
+                });
+            }
         };
 
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
@@ -514,7 +511,6 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
     return {loadAtPosition(in, memory, pos), number_of_rows};
 }
 
-void registerFileSegmentationEngineTabSeparated(FormatFactory & factory);
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})

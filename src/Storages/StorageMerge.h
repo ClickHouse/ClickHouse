@@ -1,7 +1,5 @@
 #pragma once
 
-#include <functional>
-
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/IStorage.h>
@@ -51,7 +49,7 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    bool supportsColumnsWithDynamicStructure() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;
 
@@ -60,7 +58,7 @@ public:
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
-    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -88,12 +86,6 @@ public:
 
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
     DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
-
-    /// True if any of the underlying tables matches `predicate`.
-    /// Used by the planner to decide whether filter analysis must be run when
-    /// a `Merge` wraps tables that would otherwise trigger it (`Distributed`,
-    /// `View`, `ObjectStorageCluster`, etc.) at the top level.
-    bool hasChildTable(std::function<bool(const StoragePtr &)> predicate) const;
 
     static ColumnsDescription getColumnsDescriptionFromSourceTables(
         const ContextPtr & query_context,
@@ -148,8 +140,6 @@ private:
 
     ColumnSizeByName getColumnSizes() const override;
 
-    std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
-
     ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context) const;
 
     static VirtualColumnsDescription createVirtuals();
@@ -188,16 +178,12 @@ public:
     const StorageListWithLocks & getSelectedTables();
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_);
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     QueryPlanRawPtrs getChildPlans() override;
-
-    /// Returns child plans aligned 1:1 with `getSelectedTables()`. Entries for uninitialized
-    /// plans are returned as `nullptr` so that callers can pair tables with their plans.
-    std::vector<QueryPlan *> getAllChildPlans();
 
     void addFilter(FilterDAGInfo filter);
 
@@ -208,6 +194,9 @@ private:
 
     StorageListWithLocks selected_tables;
     Names all_column_names;
+    Names column_names;
+    bool has_database_virtual_column;
+    bool has_table_virtual_column;
     StoragePtr storage_merge;
     StorageSnapshotPtr merge_storage_snapshot;
 
@@ -293,6 +282,12 @@ private:
         ContextMutablePtr modified_context,
         size_t streams_num) const;
 
+    void addVirtualColumns(
+        ChildPlan & child,
+        SelectQueryInfo & modified_query_info,
+        QueryProcessingStage::Enum processed_stage,
+        const StorageWithLockAndName & storage_with_lock) const;
+
     QueryPipelineBuilderPtr buildPipeline(
         ChildPlan & child,
         QueryProcessingStage::Enum processed_stage) const;
@@ -308,7 +303,9 @@ private:
         bool is_smallest_column_requested);
 
     StorageMerge::StorageListWithLocks getSelectedTables(
-        ContextPtr query_context) const;
+        ContextPtr query_context,
+        bool filter_by_database_virtual_column,
+        bool filter_by_table_virtual_column) const;
 };
 
 }

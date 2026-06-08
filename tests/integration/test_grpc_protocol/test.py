@@ -10,7 +10,7 @@ import lz4.frame
 import pytest
 import pytz
 
-from helpers.cluster import ClickHouseCluster, run_and_check
+from helpers.cluster import ClickHouseCluster, is_arm, run_and_check
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 pb2_dir = os.path.join(script_dir, "pb2")
@@ -22,6 +22,10 @@ import clickhouse_grpc_pb2_grpc
 GRPC_PORT = 9100
 DEFAULT_ENCODING = "utf-8"
 
+# GRPC is disabled on ARM build - skip tests
+if is_arm():
+    pytestmark = pytest.mark.skip
+
 
 # Utilities
 
@@ -31,7 +35,7 @@ config_dir = os.path.join(script_dir, "./configs")
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/config.xml"],
+    main_configs=["configs/grpc_config.xml"],
     # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
     env_variables={
         "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
@@ -604,13 +608,7 @@ def test_cancel_while_generating_output():
     output = b""
     for result in results:
         output += result.output
-    # The exact number of rows emitted before the cancel takes effect depends on
-    # how the server-side block production races against the cancel signal,
-    # which is timing-sensitive under load. Verify cancellation interrupted the
-    # query mid-stream by checking the output is a strict prefix of the full result.
-    full_output = b"".join(b"%d\t0\n" % i for i in range(10))
-    assert full_output.startswith(output), f"output not a prefix of full result: {output!r}"
-    assert len(output) < len(full_output), "cancel did not interrupt: got the full result"
+    assert output == b"0\t0\n1\t0\n2\t0\n3\t0\n"
 
 
 def test_compressed_output():

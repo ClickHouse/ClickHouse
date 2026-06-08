@@ -1,6 +1,4 @@
 #include <Storages/MergeTree/ColumnsSubstreams.h>
-#include <Common/escapeForFileName.h>
-#include <DataTypes/NestedUtils.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -52,41 +50,6 @@ size_t ColumnsSubstreams::getSubstreamPosition(size_t column_position, const Str
 
     return it->second;
 }
-
-std::optional<size_t> ColumnsSubstreams::tryGetSubstreamPosition(size_t column_position, const String & substream) const
-{
-    if (column_position >= columns_substreams.size())
-        return std::nullopt;
-
-    auto it = column_position_to_substream_positions[column_position].find(substream);
-    if (it == column_position_to_substream_positions[column_position].end())
-        return std::nullopt;
-
-    return it->second;
-}
-
-size_t ColumnsSubstreams::getSubstreamPosition(
-    size_t column_position,
-    const NameAndTypePair & name_and_type,
-    const ISerialization::SubstreamPath & substream_path,
-    const MergeTreeSettingsPtr & storage_settings) const
-{
-    ISerialization::StreamFileNameSettings stream_file_name_settings(*storage_settings);
-    auto substream = ISerialization::getFileNameForStream(name_and_type, substream_path, stream_file_name_settings);
-    if (auto position = tryGetSubstreamPosition(column_position, substream))
-        return *position;
-
-    /// To be able to read old parts after changes in stream file name settings, try to change settings and try to find it again.
-    if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings))
-    {
-        substream = ISerialization::getFileNameForStream(name_and_type, substream_path, stream_file_name_settings);
-        if (auto position = tryGetSubstreamPosition(column_position, substream))
-            return *position;
-    }
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get position for substream {}: column {} with position {} doesn't have such substream", substream, name_and_type.name, column_position);
-}
-
 
 std::optional<size_t> ColumnsSubstreams::tryGetSubstreamPosition(const String & substream) const
 {
@@ -187,14 +150,14 @@ void ColumnsSubstreams::readText(ReadBuffer & buf)
     total_substreams = 0;
 
     assertString("columns substreams version: 1\n", buf);
-    size_t num_columns = 0;
+    size_t num_columns;
     DB::readText(num_columns, buf);
     assertString(" columns:\n", buf);
     columns_substreams.reserve(num_columns);
     column_position_to_substream_positions.resize(num_columns);
     for (size_t i = 0; i != num_columns; ++i)
     {
-        size_t num_substreams = 0;
+        size_t num_substreams;
         DB::readText(num_substreams, buf);
         assertString(" substreams for column ", buf);
         String column;
@@ -231,47 +194,6 @@ void ColumnsSubstreams::validateColumns(const std::vector<String> & columns) con
         if (columns_substreams[i].first != columns[i])
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column at position {} in columns substreams: expected {}, got {}", i, columns[i], columns_substreams[i].first);
     }
-}
-
-/// Check if substream name has a valid prefix: it must be exactly the prefix
-/// or start with prefix followed by '.' or '%2E' (escaped dot used for Tuple element substreams).
-static bool hasValidPrefix(const String & substream, const String & escaped_prefix)
-{
-    if (!substream.starts_with(escaped_prefix))
-        return false;
-    /// Must be exactly the prefix, or followed by '.' or '%2E' separator.
-    /// Tuple element substreams use escapeForFileName(".element_name") which produces "%2Eelement_name".
-    if (substream.size() == escaped_prefix.size())
-        return true;
-    if (substream[escaped_prefix.size()] == '.')
-        return true;
-    if (substream.substr(escaped_prefix.size(), 3) == "%2E")
-        return true;
-    return false;
-}
-
-std::pair<String, String> ColumnsSubstreams::findInvalidSubstreamName() const
-{
-    for (const auto & [column_name, substreams] : columns_substreams)
-    {
-        auto escaped_column_name = escapeForFileName(column_name);
-        auto nested_table_name = Nested::extractTableName(column_name);
-        auto escaped_nested_table_name = escapeForFileName(nested_table_name);
-        bool has_nested_prefix = (escaped_nested_table_name != escaped_column_name);
-
-        for (const auto & substream : substreams)
-        {
-            if (hasValidPrefix(substream, escaped_column_name))
-                continue;
-
-            if (has_nested_prefix && hasValidPrefix(substream, escaped_nested_table_name))
-                continue;
-
-            return {substream, column_name};
-        }
-    }
-
-    return {};
 }
 
 }

@@ -11,7 +11,6 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
-#include <Storages/extractKeyExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAssignment.h>
 #include <Storages/ColumnsDescription.h>
@@ -33,6 +32,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
+    extern const SettingsBool enable_zstd_qat_codec;
+    extern const SettingsBool enable_deflate_qpl_codec;
 }
 
 namespace ErrorCodes
@@ -229,8 +230,6 @@ TTLDescription TTLDescription::getTTLFromAST(
     else /// It's columns TTL without any additions, just copy it
         result.expression_ast = definition_ast->clone();
 
-    checkExpressionDoesntContainSubqueries(*result.expression_ast);
-
     auto ttl_ast = result.expression_ast->clone();
     auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context).expression;
     result.expression_columns = expression->getRequiredColumnsWithTypes();
@@ -324,7 +323,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             {
                 if (!aggregation_columns_set.contains(column.name) && !used_primary_key_columns_set.contains(column.name))
                 {
-                    ASTPtr expr = makeASTFunction("any", make_intrusive<ASTIdentifier>(column.name));
+                    ASTPtr expr = makeASTFunction("any", std::make_shared<ASTIdentifier>(column.name));
                     aggregations.emplace_back(column.name, std::move(expr));
                 }
             }
@@ -349,7 +348,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs]);
+                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs], context->getSettingsRef()[Setting::enable_deflate_qpl_codec], context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
         }
     }
 

@@ -47,9 +47,9 @@ public:
 private:
     void nextImpl() override;
 
-    void finalFlushBefore() override;
+    void finalizeBefore() override;
 
-    bz_stream stream{};
+    bz_stream stream;
     bool compress_empty = true;
     UInt64 total_in = 0;
 };

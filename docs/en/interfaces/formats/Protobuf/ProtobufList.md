@@ -6,7 +6,6 @@ keywords: ['ProtobufList']
 output_format: true
 slug: /interfaces/formats/ProtobufList
 title: 'ProtobufList'
-doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -47,7 +46,5 @@ message Envelope {
   MessageType row = 1;
 };
 ```
-
-The message type specified in `format_schema` is resolved by first looking for it as a nested type inside a top-level `Envelope` message. If no match is found there — either because the schema has no `Envelope` message, or the `Envelope` does not contain a message with the requested name — the top-level message with that name is used directly.
 
 ## Format settings {#format-settings}

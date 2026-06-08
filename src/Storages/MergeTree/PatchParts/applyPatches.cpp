@@ -6,10 +6,8 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/castColumn.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/logger_useful.h>
 #include <shared_mutex>
 
 namespace ProfileEvents
@@ -71,25 +69,22 @@ public:
         build();
     }
 
-    /// @p converted_columns_storage keeps cast results alive while the returned Patch references them.
-    IColumn::Patch createPatchForColumn(
-        const String & column_name, const ColumnWithTypeAndName & result_column,
-        IColumn::Versions & dst_versions, std::vector<ColumnPtr> & converted_columns_storage);
+    IColumn::Patch createPatchForColumn(const String & column_name, IColumn::Versions & dst_versions) const;
 
 private:
     void build();
 
-    ALWAYS_INLINE UInt64 getResultRowIndex(UInt64 patch_idx, UInt64 row_idx) const
+    UInt64 getResultRowIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
         return patches[patch_idx]->result_row_indices[row_idx];
     }
 
-    ALWAYS_INLINE UInt64 getPatchRowIndex(UInt64 patch_idx, UInt64 row_idx) const
+    UInt64 getPatchRowIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
         return patches[patch_idx]->patch_row_indices[row_idx];
     }
 
-    ALWAYS_INLINE UInt64 getPatchBlockIndex(UInt64 patch_idx, UInt64 row_idx) const
+    UInt64 getPatchBlockIndex(UInt64 patch_idx, UInt64 row_idx) const
     {
         return patches[patch_idx]->getNumSources() == 1 ? 0 : patches[patch_idx]->patch_block_indices[row_idx];
     }
@@ -103,7 +98,6 @@ private:
     IColumn::Offsets src_row_indices;
     /// Index of row in the result block.
     IColumn::Offsets dst_row_indices;
-
 };
 
 void CombinedPatchBuilder::build()
@@ -230,31 +224,19 @@ void CombinedPatchBuilder::build()
     }
 }
 
-IColumn::Patch CombinedPatchBuilder::createPatchForColumn(
-    const String & column_name, const ColumnWithTypeAndName & result_column,
-    IColumn::Versions & dst_versions, std::vector<ColumnPtr> & converted_columns_storage)
+IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_name, IColumn::Versions & dst_versions) const
 {
-    VectorWithMemoryTracking<IColumn::Patch::Source> sources;
+    std::vector<IColumn::Patch::Source> sources;
 
     for (const auto & patch_block : all_patch_blocks)
     {
-        auto patch_col_with_type = patch_block.getByName(column_name);
-        if (!patch_col_with_type.column)
+        const auto & patch_column = patch_block.getByName(column_name).column;
+        if (!patch_column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} has null data in patch block", column_name);
-
-        const IColumn * source_col = patch_col_with_type.column.get();
-
-        /// Patch column may have a different on-disk type when it predates
-        /// an ALTER MODIFY COLUMN that hasn't been materialized yet.
-        if (!result_column.column->structureEquals(*source_col))
-        {
-            converted_columns_storage.push_back(castColumn(patch_col_with_type, result_column.type));
-            source_col = converted_columns_storage.back().get();
-        }
 
         IColumn::Patch::Source source =
         {
-            .column = *source_col,
+            .column = *patch_column,
             .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
         };
 
@@ -302,19 +284,10 @@ Block getUpdatedHeader(const PatchesToApply & patches, const NameSet & updated_c
         headers.push_back(header.sortColumns());
     }
 
-    if (headers.empty())
-        return {};
-
-    /// Schema evolution may cause type mismatches across patch headers.
-    /// Skip assertion in that case — castColumn in apply handles conversion.
-    for (size_t i = 1; i < headers.size(); ++i)
-        if (!isCompatibleHeader(headers[i], headers[0]))
-            return headers.front();
-
     for (size_t i = 1; i < headers.size(); ++i)
         assertCompatibleHeader(headers[i], headers[0], "patch parts");
 
-    return headers.front();
+    return headers.empty() ? Block{} : headers.front();
 }
 
 bool canApplyPatchesRaw(const PatchesToApply & patches)
@@ -355,7 +328,7 @@ void applyPatchesToBlockRaw(
             continue;
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
-        result_column.column = removeSpecialRepresentations(result_column.column);
+        result_column.column = recursiveRemoveSparse(result_column.column);
 
         for (const auto & patch_to_apply : patches)
         {
@@ -365,19 +338,13 @@ void applyPatchesToBlockRaw(
             if (!patch_block.has(result_column.name))
                 continue;
 
-            auto patch_col_with_type = patch_block.getByName(result_column.name);
-            if (!patch_col_with_type.column)
+            const auto & patch_column = patch_block.getByName(result_column.name).column;
+            if (!patch_column)
                 continue;
-
-            /// Patch column may have a different on-disk type when it predates
-            /// an ALTER MODIFY COLUMN that hasn't been materialized yet.
-            ColumnPtr converted_col;
-            if (!result_column.column->structureEquals(*patch_col_with_type.column))
-                converted_col = castColumn(patch_col_with_type, result_column.type);
 
             IColumn::Patch::Source source =
             {
-                .column = converted_col ? *converted_col : *patch_col_with_type.column,
+                .column = *patch_column,
                 .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
             };
 
@@ -416,11 +383,8 @@ void applyPatchesToBlockCombined(
             continue;
 
         auto & result_versions = addDataVersionForColumn(versions_block, result_column.name, result_block.rows(), source_data_version);
-        result_column.column = removeSpecialRepresentations(result_column.column);
-
-        /// Local storage so cast results are released after each column update.
-        std::vector<ColumnPtr> converted_columns;
-        auto multi_patch = builder.createPatchForColumn(result_column.name, result_column, result_versions, converted_columns);
+        auto multi_patch = builder.createPatchForColumn(result_column.name, result_versions);
+        result_column.column = recursiveRemoveSparse(result_column.column);
 
         if (canApplyPatchInplace(*result_column.column))
             result_column.column->assumeMutableRef().updateInplaceFrom(multi_patch);
@@ -537,78 +501,32 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
     patch_to_apply->patch_block_indices.reserve(size_to_reserve);
     patch_to_apply->patch_row_indices.reserve(size_to_reserve);
 
-    struct IteratorsPair
-    {
-        bool found = false;
-        PatchOffsetsMap::const_iterator it;
-        PatchOffsetsMap::const_iterator end;
-    };
-
     UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
-    /// Mapping from block number to iterator in offsets map.
-    absl::flat_hash_map<UInt64, IteratorsPair, HashCRC32<UInt64>> offsets_iterators;
-    IteratorsPair * current_offset_iterators = nullptr;
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    /// Check that offsets are sorted within each block number.
-    absl::flat_hash_map<UInt64, UInt64> last_offset_by_block_number;
-#endif
+    const OffsetsHashMap * offsets_hash_map = nullptr;
 
     for (size_t row = 0; row < num_rows; ++row)
     {
         if (result_block_number[row] < join_entry.min_block || result_block_number[row] > join_entry.max_block)
-            continue;
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
         {
-            auto it = last_offset_by_block_number.find(result_block_number[row]);
-            if (it != last_offset_by_block_number.end() && it->second >= result_block_offset[row])
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Block offsets ({}, {}) are not sorted within block number {}", it->second, result_block_offset[row], result_block_number[row]);
-
-            last_offset_by_block_number[result_block_number[row]] = result_block_offset[row];
+            continue;
         }
-#endif
 
         if (result_block_number[row] != prev_block_number)
         {
             prev_block_number = result_block_number[row];
-            auto [block_number_it, inserted] = offsets_iterators.try_emplace(result_block_number[row]);
-
-            if (inserted)
-            {
-                auto it = join_entry.hash_map.find(result_block_number[row]);
-
-                if (it != join_entry.hash_map.end())
-                {
-                    const auto & offsets_map = it->second;
-                    auto & iterators = block_number_it->second;
-
-                    iterators.found = true;
-                    iterators.it = offsets_map.lower_bound(result_block_offset[row]);
-                    iterators.end = offsets_map.end();
-                }
-            }
-
-            current_offset_iterators = &block_number_it->second;
+            auto it = join_entry.hash_map.find(prev_block_number);
+            offsets_hash_map = it != join_entry.hash_map.end() ? &it->second : nullptr;
         }
 
-        chassert(current_offset_iterators);
-        auto & iterators = *current_offset_iterators;
-
-        if (iterators.found)
+        if (offsets_hash_map)
         {
-            while (iterators.it != iterators.end && iterators.it->first < result_block_offset[row])
-            {
-                ++iterators.it;
-            }
+            auto offset_it = offsets_hash_map->find(result_block_offset[row]);
 
-            if (iterators.it != iterators.end && iterators.it->first == result_block_offset[row])
+            if (offset_it != offsets_hash_map->end())
             {
-                const auto & [patch_block_index, patch_row_index] = iterators.it->second;
-
                 patch_to_apply->result_row_indices.push_back(row);
-                patch_to_apply->patch_block_indices.push_back(patch_block_index);
-                patch_to_apply->patch_row_indices.push_back(patch_row_index);
+                patch_to_apply->patch_block_indices.push_back(offset_it->second.first);
+                patch_to_apply->patch_row_indices.push_back(offset_it->second.second);
             }
         }
     }

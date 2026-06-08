@@ -7,7 +7,6 @@
 #include <base/find_symbols.h>
 #include <base/sort.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils.h>
 
 #include <string_view>
 #include <vector>
@@ -51,7 +50,7 @@ const String & ruleTypeStr(RuleType rule_type)
     }
 }
 
-static RuleType ruleType(const String & s)
+RuleType ruleType(const String & s)
 {
     if (s == "all")
         return RuleTypeAll;
@@ -72,7 +71,7 @@ void Pattern::updateHash(SipHash & hash) const
     {
         hash.update(function->getName());
         for (const auto & p : function->getParameters())
-            hash.update(fieldToString(p));
+            hash.update(toString(p));
     }
     for (const auto & r : retentions)
     {
