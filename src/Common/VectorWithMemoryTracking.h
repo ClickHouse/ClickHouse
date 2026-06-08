@@ -21,4 +21,12 @@ namespace DB
 template <typename T>
 using VectorWithMemoryTracking = std::vector<T, AllocatorWithMemoryTracking<T>>;
 
+/// Like `VectorWithMemoryTracking`, but charges and enforces only the global/total memory tracker,
+/// never the per-query/per-thread one. Use for process-wide containers mutated from arbitrary threads
+/// (e.g. cross-thread scheduler queues), where attributing the memory to whichever query happens to do
+/// the mutation would be wrong and could make a query spuriously fail on its own memory limit, while the
+/// matching free on another thread makes accounting diverge. See `AllocatorWithMemoryTracking`'s `tracking_level`.
+template <typename T>
+using VectorWithGlobalMemoryTracking = std::vector<T, AllocatorWithMemoryTracking<T, VariableContext::User>>;
+
 }

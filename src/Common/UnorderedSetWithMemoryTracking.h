@@ -23,4 +23,11 @@ using UnorderedSetWithMemoryTracking = std::unordered_set<K, Hash, KeyEqual, All
 
 template <typename K, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
 using UnorderedMultiSetWithMemoryTracking = std::unordered_multiset<K, Hash, KeyEqual, AllocatorWithMemoryTracking<K>>;
+
+/// Like `UnorderedSetWithMemoryTracking`, but charges and enforces only the global/total memory tracker,
+/// never the per-query/per-thread one. For process-wide containers mutated from arbitrary threads.
+/// See `VectorWithGlobalMemoryTracking` and `AllocatorWithMemoryTracking`'s `tracking_level`.
+template <typename K, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
+using UnorderedSetWithGlobalMemoryTracking
+    = std::unordered_set<K, Hash, KeyEqual, AllocatorWithMemoryTracking<K, VariableContext::User>>;
 }

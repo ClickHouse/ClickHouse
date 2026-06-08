@@ -1357,7 +1357,7 @@ public:
 
     static Command classifyQuery(const String & query)
     {
-        static const VectorWithMemoryTracking<std::pair<String, Command>> query_patterns = {
+        static const VectorWithGlobalMemoryTracking<std::pair<String, Command>> query_patterns = {
             {"CREATE TEMPORARY TABLE", Command::CREATE_TABLE},
             {"CREATE TABLE", Command::CREATE_TABLE},
             {"CREATE DATABASE", Command::CREATE_DATABASE},

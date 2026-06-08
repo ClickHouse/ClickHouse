@@ -25,4 +25,11 @@ template <typename K, typename V, typename Hash = std::hash<K>, typename KeyEqua
 using UnorderedMultiMapWithMemoryTracking
     = std::unordered_multimap<K, V, Hash, KeyEqual, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
 
+/// Like `UnorderedMapWithMemoryTracking`, but charges and enforces only the global/total memory tracker,
+/// never the per-query/per-thread one. For process-wide containers mutated from arbitrary threads.
+/// See `VectorWithGlobalMemoryTracking` and `AllocatorWithMemoryTracking`'s `tracking_level`.
+template <typename K, typename V, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
+using UnorderedMapWithGlobalMemoryTracking
+    = std::unordered_map<K, V, Hash, KeyEqual, AllocatorWithMemoryTracking<std::pair<const K, V>, VariableContext::User>>;
+
 }
