@@ -201,7 +201,7 @@ test_params_hackernews_10m = {
     TRUTH_SET_FILES: [
         "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_10m_1k.tar"
     ],
-    QUANTIZATION: "b1_projected",
+    QUANTIZATION: "turboquant",
     VECTOR_INDEX_TYPE: "fastknn",
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
@@ -223,7 +223,7 @@ test_params_cohere_wiki_20m = {
     TRUTH_SET_FILES: [
         "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m_25k.tar"
     ],
-    QUANTIZATION: "b1_projected",
+    QUANTIZATION: "turboquant",
     VECTOR_INDEX_TYPE: "fastknn",
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
@@ -681,12 +681,12 @@ class RunTest:
                         "USE_RAW_BYTES_FOR_QUERY_VECTOR requires truth records with a materialised query_vector"
                     )
                 params = {"$search_vector_binary$": query_vector.tobytes()}
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, reinterpret($search_vector_binary$, 'Array(Float32)') ) AS distance LIMIT {self._k} SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 10"
+                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, reinterpret($search_vector_binary$, 'Array(Float32)') ) AS distance LIMIT {self._k} SETTINGS vector_search_with_rescoring = 0, vector_search_index_fetch_multiplier = 1"
                 q_start = current_time_ms()
                 result = chclient.query(ann_search_query, parameters=params)
             else:
                 query_source = self._render_query_source_sql(truth_record)
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k} SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 10"
+                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k} SETTINGS vector_search_with_rescoring = 0, vector_search_index_fetch_multiplier = 1"
                 q_start = current_time_ms()
                 result = chclient.query(ann_search_query)
 
@@ -819,9 +819,9 @@ def install_and_start_clickhouse():
     info = Info()
 
     if Utils.is_arm():
-        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/5fa7cbe6fce1b816049d890ebd7a04a4fd373c59/build_arm_release/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/f00f6a91fefa2dcef4b3198c034272d5b68a5a5d/build_arm_release/clickhouse"
     elif Utils.is_amd():
-        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/5fa7cbe6fce1b816049d890ebd7a04a4fd373c59/build_amd_release/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/f00f6a91fefa2dcef4b3198c034272d5b68a5a5d/build_amd_release/clickhouse"
     else:
         assert False, f"Unknown processor architecture"
 

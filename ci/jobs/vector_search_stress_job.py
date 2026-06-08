@@ -20,9 +20,9 @@ def main():
 
     # Get link to the latest CH binary
     if Utils.is_arm():
-        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/5fa7cbe6fce1b816049d890ebd7a04a4fd373c59/build_arm_release/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/f00f6a91fefa2dcef4b3198c034272d5b68a5a5d/build_arm_release/clickhouse"
     elif Utils.is_amd():
-        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/5fa7cbe6fce1b816049d890ebd7a04a4fd373c59/build_amd_release/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/106629/f00f6a91fefa2dcef4b3198c034272d5b68a5a5d/build_amd_release/clickhouse"
     else:
         assert False, f"Unknown processor architecture"
 
