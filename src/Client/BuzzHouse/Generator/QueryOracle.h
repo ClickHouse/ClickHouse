@@ -120,6 +120,12 @@ public:
     /// Both queries must return the same value, catching any roundtrip failures.
     void generateRoundtripOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2);
 
+    /// ARRAY JOIN oracle: ARRAY JOIN clause vs arrayJoin function.
+    /// Query 1: SELECT s0 FROM <from_clause> ARRAY JOIN expr AS s0 [GROUP BY s0] ORDER BY ALL
+    /// Query 2: SELECT arrayJoin(expr) AS s0 FROM <from_clause> [GROUP BY s0] ORDER BY ALL
+    /// Both must produce identical sorted result sets.
+    void generateArrayJoinOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2);
+
     /// COUNT(DISTINCT expr) consistency oracle
     /// Query 1: SELECT COUNT(DISTINCT expr) FROM <from_clause>
     /// Query 2: SELECT COUNT(*) FROM (SELECT DISTINCT expr FROM <from_clause>) AS sub

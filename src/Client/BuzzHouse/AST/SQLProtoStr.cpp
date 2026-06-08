@@ -5889,6 +5889,11 @@ CONV_FN(SingleSQLQuery, query)
     }
 }
 
+void SQLExprToString(String & ret, const Expr & expr)
+{
+    ExprToString(ret, expr);
+}
+
 void SQLQueryToString(String & ret, const SQLQuery & query)
 {
     SingleSQLQueryToString(ret, query.single_query());

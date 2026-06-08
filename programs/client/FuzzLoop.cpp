@@ -1025,6 +1025,26 @@ bool Client::buzzHouse()
                     {20 * static_cast<uint32_t>(fuzz_config->allow_query_oracles),
                      [&]()
                      {
+                         /// ARRAY JOIN oracle: ARRAY JOIN clause vs arrayJoin function
+                         qo.resetOracleValues();
+                         sq2.Clear();
+                         qo.generateArrayJoinOracleQueries(rg, gen, sq1, sq2);
+
+                         full_query.resize(0);
+                         BuzzHouse::SQLQueryToString(full_query, sq1);
+                         fuzz_config->outf << full_query << std::endl;
+                         server_up &= processBuzzHouseQuery(full_query);
+                         qo.processFirstOracleQueryResult(error_code, *external_integrations);
+
+                         full_query.resize(0);
+                         BuzzHouse::SQLQueryToString(full_query, sq2);
+                         fuzz_config->outf << full_query << std::endl;
+                         server_up &= processBuzzHouseQuery(full_query);
+                         qo.processSecondOracleQueryResult(error_code, *external_integrations, "Array join oracle");
+                     }},
+                    {20 * static_cast<uint32_t>(fuzz_config->allow_query_oracles),
+                     [&]()
+                     {
                          /// COUNT(DISTINCT col) oracle: uniqExact aggregator vs DISTINCT + COUNT
                          qo.resetOracleValues();
                          qo.generateCountDistinctFirstQuery(rg, gen, sq1);

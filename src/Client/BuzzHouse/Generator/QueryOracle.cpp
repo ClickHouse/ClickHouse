@@ -395,39 +395,23 @@ void QueryOracle::generateRoundtripOracleQueries(RandomGenerator & rg, Statement
     const auto u = gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc1->mutable_from());
     UNUSED(u);
 
-    /// Collect all columns from all available relations and pick one for the predicate
-    String val;
-    String col_ref;
-    std::vector<const SQLRelationCol *> all_cols;
+    /// Generate a random expression and serialize it to SQL
+    Expr rand_expr;
+    const bool prev_allow_aggregates = gen.levels[gen.current_level].allow_aggregates;
+    const bool prev_allow_window_funcs = gen.levels[gen.current_level].allow_window_funcs;
+    gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;
+    gen.generateExpression(rg, &rand_expr);
+    gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
+    gen.levels[gen.current_level].allow_window_funcs = prev_allow_window_funcs;
 
-    for (const auto & rel : gen.levels[gen.current_level].rels)
-        for (const auto & c : rel.cols)
-            all_cols.push_back(&c);
-    if (!all_cols.empty())
-    {
-        const SQLRelationCol & rel_col = *rg.pickRandomly(all_cols);
-
-        /// Build a backtick-quoted SQL column reference from the SQLRelationCol
-        if (!rel_col.rel_name.empty())
-            col_ref = fmt::format("`{}`.", escapeSQLString(rel_col.rel_name, '`'));
-        for (size_t i = 0; i < rel_col.path.size(); ++i)
-        {
-            if (i > 0)
-                col_ref += ".";
-            col_ref += "`" + escapeSQLString(rel_col.path[i], '`') + "`";
-        }
-
-        /// For String/FixedString: apply roundtrip directly.
-        /// For all other types (or unknown type): wrap in `toString` so hex/base64 receive a String.
-        const bool is_string = rel_col.tp != nullptr && rel_col.tp->getTypeClass() == SQLTypeClass::STRING;
-        val = is_string ? col_ref : fmt::format("toString({})", col_ref);
-    }
-    else
-    {
-        col_ref = val = "1";
-    }
     gen.levels.clear();
     gen.ctes.clear();
+    gen.enforceFinal(false);
+    gen.setAllowNotDetermistic(true);
+
+    String col_ref;
+    SQLExprToString(col_ref, rand_expr);
+    const String val = fmt::format("toString({})", col_ref);
 
     /// Choose roundtrip function pair
     String roundtrip_pred;
@@ -507,7 +491,7 @@ void QueryOracle::generateRoundtripOracleQueries(RandomGenerator & rg, Statement
         }
     }
 
-    /// Build sq1: SELECT count() AS c0 FROM <from_clause> WHERE col IS NOT NULL  (baseline)
+    /// Build sq1: SELECT count() AS c0 FROM <from_clause> WHERE col IS NOT NULL (baseline)
     ExprColAlias * eca = ssc1->add_result_columns()->mutable_eca();
     eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
     eca->mutable_col_alias()->set_column("s0");
@@ -531,8 +515,101 @@ void QueryOracle::generateRoundtripOracleQueries(RandomGenerator & rg, Statement
         ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->set_no_quote_str(
             fmt::format("{} IS NOT NULL AND {}", col_ref, roundtrip_pred));
     }
+}
+
+/// ARRAY JOIN oracle: compares the ARRAY JOIN clause with the `arrayJoin` function.
+///
+/// Query 1 (sq1):
+///   SELECT s0 FROM <from_clause> [PREWHERE pred] [WHERE pred]
+///   ARRAY JOIN expr AS s0 [GROUP BY s0] ORDER BY ALL INTO OUTFILE ... FORMAT CSV
+///
+/// Query 2 (sq2):
+///   SELECT arrayJoin(expr) AS s0 FROM <from_clause> [PREWHERE pred] [WHERE pred]
+///   [GROUP BY s0] ORDER BY ALL INTO OUTFILE ... FORMAT CSV
+///
+/// Both must produce identical sorted result sets.
+void QueryOracle::generateArrayJoinOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2)
+{
+    can_test_oracle_result = fc.compare_success_results;
+    can_test_success = false;
+
+    gen.setAllowNotDetermistic(false);
+    gen.enforceFinal(true);
+    gen.resetAliasCounter();
+    gen.levels[gen.current_level] = QueryLevel(gen.current_level);
+
+    TopSelect * ts1 = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
+    SelectIntoFile * sif1 = ts1->mutable_intofile();
+    Select * sel1 = ts1->mutable_sel();
+    SelectStatementCore * ssc1 = sel1->mutable_select_core();
+
+    const auto u = gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc1->mutable_from());
+    UNUSED(u);
+
+    /// Generate a random expression for the ARRAY JOIN operand
+    JoinClauseCore * jcc = ssc1->mutable_from()->mutable_tos()->mutable_join_clause()->add_clauses();
+    ArrayJoin * aj = jcc->mutable_arr();
+    aj->set_left(false);
+    ExprColAlias * aj_eca = aj->mutable_constraint();
+    aj_eca->mutable_col_alias()->set_column("s0");
+    const bool prev_allow_aggregates = gen.levels[gen.current_level].allow_aggregates;
+    const bool prev_allow_window_funcs = gen.levels[gen.current_level].allow_window_funcs;
+    gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;
+    Expr * arr_expr = aj_eca->mutable_expr();
+    gen.generateExpression(rg, arr_expr);
+    gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
+    gen.levels[gen.current_level].allow_window_funcs = prev_allow_window_funcs;
+
+    SQLRelation rel("");
+    rel.cols.emplace_back(SQLRelationCol("", {"s0"}));
+    gen.levels[gen.current_level].rels.emplace_back(rel);
+
+    /// Optionally add PREWHERE / WHERE (must be generated while relations are still available)
+    if (rg.nextSmallNumber() < 5)
+        gen.generateWherePredicate(rg, ssc1->mutable_pre_where()->mutable_expr()->mutable_expr());
+    if (rg.nextSmallNumber() < 5)
+        gen.generateWherePredicate(rg, ssc1->mutable_where()->mutable_expr()->mutable_expr());
+    if (rg.nextSmallNumber() < 4)
+        gen.generateGroupBy(rg, 1, rg.nextBool(), false, ssc1);
+
+    gen.levels.clear();
+    gen.ctes.clear();
     gen.enforceFinal(false);
     gen.setAllowNotDetermistic(true);
+
+    ssc1->mutable_orderby()->set_oall(true);
+    ssc1->add_result_columns()
+        ->mutable_eca()
+        ->mutable_expr()
+        ->mutable_comp_expr()
+        ->mutable_expr_stc()
+        ->mutable_col()
+        ->mutable_path()
+        ->mutable_col()
+        ->set_column("s0");
+
+    finishSettings(sel1->mutable_setting_values());
+    ts1->set_format(OutFormat::OUT_CSV);
+    const auto err1 = std::filesystem::remove(qcfile);
+    UNUSED(err1);
+    sif1->set_path(qcfile.generic_string());
+    sif1->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+
+    /// Build sq2: SELECT arrayJoin(col_ref) AS s0 FROM <from_clause> ORDER BY ALL
+    sq2.CopyFrom(sq1);
+    {
+        SelectStatementCore * ssc2
+            = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel()->mutable_select_core();
+
+        /// Replace SELECT x with SELECT arrayJoin(expr)
+        ExprColAlias * eca2 = ssc2->mutable_result_columns(0)->mutable_eca();
+        SQLFuncCall * aj_func = eca2->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+        aj_func->mutable_func()->set_catalog_func("arrayJoin");
+        aj_func->add_args()->mutable_expr()->CopyFrom(*arr_expr);
+
+        /// Remove the ARRAY JOIN clause from sq2
+        ssc2->mutable_from()->mutable_tos()->mutable_join_clause()->clear_clauses();
+    }
 }
 
 /// Row policy correctness oracle.
