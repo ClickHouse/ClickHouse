@@ -390,7 +390,7 @@ namespace
 
     By charging this amount to the `MemoryTracker` for each active pipeline worker, the server-wide tracked memory becomes a much tighter upper bound on the actual memory consumption of in-flight queries.
 
-    Note: the reservation is currently only applied to pipeline-executor threads, not to all `ThreadPool` users (e.g. background merges and fetches), so it covers the query-execution memory but not every job that runs in a `ThreadPool`.
+    Note: the reservation is applied to pipeline-executor threads, including merge and mutation pipelines (which also run via a `PipelineExecutor`), but not to arbitrary `ThreadPool` jobs such as fetch-pool or asynchronous I/O jobs. As a consequence, merge and mutation memory accounting and limits are affected too, and the `peak_memory_usage` they report includes these reservations.
 
     The value should be equal to or slightly greater than `max_untracked_memory`. Setting it to `0` disables the speculative accounting.
     )", 0) \
