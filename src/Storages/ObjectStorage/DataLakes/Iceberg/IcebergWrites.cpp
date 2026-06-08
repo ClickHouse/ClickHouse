@@ -538,9 +538,13 @@ void generateManifestList(
 
         if (version == 1)
         {
-            set_versioned_field(manifest_entry_added_files[entry_idx], Iceberg::f_added_files_count);
+            set_versioned_field(static_cast<Int32>(manifest_entry_added_files[entry_idx]), Iceberg::f_added_files_count);
             set_versioned_field(std::stoi(summary->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_files_count);
             set_versioned_field(0, Iceberg::f_deleted_files_count);
+            if (summary->has(Iceberg::f_added_position_deletes))
+                set_versioned_field(summary->getValue<Int64>(Iceberg::f_added_position_deletes), Iceberg::f_deleted_rows_count);
+            else
+                set_versioned_field(0, Iceberg::f_deleted_rows_count);
         }
         else
         {
@@ -548,6 +552,10 @@ void generateManifestList(
             /// This manifest only contains newly added files; no pre-existing entries.
             entry.field(Iceberg::f_existing_files_count) = 0;
             entry.field(Iceberg::f_deleted_files_count) = 0;
+            if (summary->has(Iceberg::f_added_position_deletes))
+                entry.field(Iceberg::f_deleted_rows_count) = summary->getValue<Int64>(Iceberg::f_added_position_deletes);
+            else
+                entry.field(Iceberg::f_deleted_rows_count) = 0;
         }
 
         set_versioned_field(manifest_entry_added_rows[entry_idx], Iceberg::f_added_rows_count);
