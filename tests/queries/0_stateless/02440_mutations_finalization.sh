@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-shared-merge-tree, no-parallel
+# Tags: no-shared-merge-tree, no-parallel, no-random-detach
 # no-shared-merge-tree -- SMT doesn't assign mutations when merges are stopped.
 # no-parallel -- uses server-wide failpoints that affect all RMT tables.
+# no-random-detach -- the test keeps a mutation pending with merges stopped; a mid-query DETACH/ATTACH reloads the table and resets that state.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
