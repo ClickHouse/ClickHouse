@@ -1,4 +1,4 @@
---- projection-served query is rejected, not crashed ---
+--- projection-served query is rejected ---
 served from a projection
 --- empty table reports a clean baseline ---
   parts:       0
