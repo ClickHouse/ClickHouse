@@ -134,7 +134,7 @@ INSERT INTO t_narrow_alter SELECT number, number::Int64 FROM numbers(500);
 ALTER TABLE t_narrow_alter ADD COLUMN extra String DEFAULT 'default_val';
 
 SELECT '-- 6a. after ADD COLUMN';
-SELECT count(), min(value::Int64), max(value::Int64), any(extra) FROM t_narrow_alter;
+SELECT count(), min(value::Int64), max(value::Int64), min(extra) FROM t_narrow_alter;
 
 -- Insert new data with the extra column
 INSERT INTO t_narrow_alter SELECT number + 500, number::Int64, 'custom' FROM numbers(500);
@@ -146,7 +146,7 @@ SELECT count(), uniq(extra) FROM t_narrow_alter;
 ALTER TABLE t_narrow_alter DROP COLUMN value;
 
 SELECT '-- 6c. after DROP Dynamic column';
-SELECT count(), any(extra) FROM t_narrow_alter;
+SELECT count(), min(extra) FROM t_narrow_alter;
 
 DROP TABLE t_narrow_alter;
 
