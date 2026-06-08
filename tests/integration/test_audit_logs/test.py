@@ -30,6 +30,11 @@ node_mysql_ssl_required = cluster.add_instance(
     main_configs=["configs/logger_audit_mysql_ssl_required.xml"],
     stay_alive=True,
 )
+node_whitespace_types = cluster.add_instance(
+    "node_audit_whitespace_types",
+    main_configs=["configs/logger_audit_whitespace_types.xml"],
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -335,3 +340,13 @@ def test_audit_log_tcp_preauth_failure(start_cluster):
     log_content = node_user_dcl.grep_in_log("tcp_test_user", from_host=True, filename="clickhouse-server.audit.log")
     assert "LoginFailure" in log_content, "LoginFailure must be emitted for failed authentication"
     assert "Unknown Host" not in log_content, "Client IP must be recorded for auth failure, not 'Unknown Host'"
+
+
+def test_audit_log_whitespace_only_types_defaults_to_ddl(start_cluster):
+    """Whitespace-only or separator-only auditlog_types must default to DDL,
+    not silently disable all audit categories."""
+    node_whitespace_types.query("DROP TABLE IF EXISTS test_whitespace_audit")
+    node_whitespace_types.query("CREATE TABLE test_whitespace_audit(a int) ENGINE=Memory")
+
+    assert_audit_log_contain_with_retry(node_whitespace_types, "DDL")
+    assert_audit_log_count_with_retry(node_whitespace_types, 2)

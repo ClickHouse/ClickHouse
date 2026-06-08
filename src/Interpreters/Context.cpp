@@ -8028,6 +8028,11 @@ void Context::loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & c
         }
     }
 
+    /// Whitespace-only or separator-only values (e.g. " " or ",") parse to no bits set;
+    /// treat as the documented empty-value default (DDL) rather than silently disabling all audit categories.
+    if (new_mask == 0)
+        new_mask = static_cast<uint8_t>(Context::AuditLogTypes::DDL);
+
     shared->audit_types_bitmask.store(new_mask, std::memory_order_relaxed);
     LOG_DEBUG(shared->log, "auditlog_types={}", auditlog_types);
 }
