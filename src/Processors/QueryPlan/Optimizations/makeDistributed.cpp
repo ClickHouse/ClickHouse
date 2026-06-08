@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -50,7 +51,7 @@ void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes,
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node);
 void optimizeExchanges(QueryPlan::Node & root);
-void materializeConstantsForUnionBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
 Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step);
@@ -676,18 +677,19 @@ static void materializeBranchConstants(QueryPlan::Node & branch, QueryPlan::Node
             output = &materialize_dag.materializeNode(*output);
     }
 
-    makeExpressionNodeOnTopOf(branch, std::move(materialize_dag), nodes, makeDescription("Materialize constants for UNION"));
+    makeExpressionNodeOnTopOf(branch, std::move(materialize_dag), nodes, makeDescription("Materialize constants for set operation"));
 }
 
 /// Plan serialization stores only column names and types, so constness is re-derived per step on
-/// deserialize. One `UNION` branch can then end up with a full column (aliased from an exchange,
+/// deserialize. A set-operation branch can then end up with a full column (aliased from an exchange,
 /// which produces full columns) while a sibling keeps a freshly computed constant, and the strict
-/// `UnionStep` header check rejects the mismatch. Materialize constants on every branch so all
-/// branches are full and agree.
+/// header check of `UnionStep` and `IntersectOrExceptStep` rejects the mismatch. Materialize constants
+/// on every branch so all branches are full and agree.
 ///
-/// `IntersectOrExceptStep` has the same check but is not serializable for remote execution, so it
-/// never reaches a distributed fragment; it would need the same treatment once it becomes serializable.
-void materializeConstantsForUnionBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+/// `IntersectOrExceptStep` is not itself distributed, but a materialized `UnionStep` beneath one of its
+/// inputs changes that input's constness, so it needs the same treatment to keep its header check
+/// satisfied when its input headers are refreshed.
+void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     struct Frame
     {
@@ -714,15 +716,16 @@ void materializeConstantsForUnionBranches(QueryPlan::Node & root, QueryPlan::Nod
 
         auto & node = *frame.node;
 
-        if (typeid_cast<UnionStep *>(node.step.get()))
+        if (typeid_cast<UnionStep *>(node.step.get()) || typeid_cast<IntersectOrExceptStep *>(node.step.get()))
         {
             for (auto * branch : node.children)
                 materializeBranchConstants(*branch, nodes);
         }
 
         /// Materializing a branch changed a child output header, so refresh this step's input headers
-        /// to keep the plan consistent up to the root. Update all inputs at once: `UnionStep` rechecks
-        /// its header on every update, so a per-input update would run the check on a half-refreshed set.
+        /// to keep the plan consistent up to the root. Update all inputs at once: a set-operation step
+        /// rechecks its header on every update, so a per-input update would run the check on a
+        /// half-refreshed set.
         SharedHeaders child_headers;
         child_headers.reserve(node.children.size());
         bool headers_changed = false;

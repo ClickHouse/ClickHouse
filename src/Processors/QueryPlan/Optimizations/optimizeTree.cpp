@@ -182,7 +182,7 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizeExchanges(QueryPlan::Node & root);
-void materializeConstantsForUnionBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
 
@@ -466,10 +466,10 @@ void optimizeTreeSecondPass(
     if (optimization_settings.make_distributed_plan && optimization_settings.distributed_plan_optimize_exchanges)
         optimizeExchanges(root);
 
-    /// Force `UNION` branches to expose full columns so they agree after a fragment is serialized and
-    /// constness is re-derived per step.
+    /// Force set-operation branches to expose full columns so they agree after a fragment is serialized
+    /// and constness is re-derived per step.
     if (optimization_settings.make_distributed_plan)
-        materializeConstantsForUnionBranches(root, nodes);
+        materializeConstantsForSetOperationBranches(root, nodes);
 
     /// Vector search first pass optimization sets up everything for vector index usage.
     /// In the 2nd pass, we optimize further by attempting to do an "index-only scan".
