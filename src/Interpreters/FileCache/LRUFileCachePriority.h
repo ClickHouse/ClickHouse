@@ -261,7 +261,7 @@ public:
 private:
     bool assertValid() const;
 
-    LRUFileCachePriority * cache_priority{};
+    LRUFileCachePriority * cache_priority;
 
     LRUQueue::iterator iterator;
     /// We store entry separately from iterator,

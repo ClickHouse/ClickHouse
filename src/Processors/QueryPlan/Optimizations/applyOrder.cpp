@@ -39,7 +39,7 @@ struct SortingProperty
     SortScope sort_scope = SortScope::Stream;
 };
 
-static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
+SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(parent->step.get()))
         return {read_from_merge_tree->getSortDescription(), SortingProperty::SortScope::Stream};
@@ -78,11 +78,6 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             for (auto & sort_column_desc : properties->sort_description)
             {
                 if (!columns.contains(sort_column_desc.column_name))
-                    break;
-
-                /// A collated column is ordered by its collation key, not by value, so equal
-                /// values are not adjacent. DISTINCT in order relies on equal rows being adjacent.
-                if (sort_column_desc.collator)
                     break;
 
                 prefix_sort_description.emplace_back(sort_column_desc);
@@ -143,13 +138,13 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
     if (auto * limit_by_step = typeid_cast<LimitByStep *>(parent->step.get()))
     {
         if (properties->sort_scope == SortingProperty::SortScope::Global)
-            limit_by_step->applyOrder(properties->sort_description.hasPrefixWithoutCollation(limit_by_step->getColumns()));
+            limit_by_step->applyOrder(properties->sort_description);
     }
 
     if (auto * negative_limit_by_step = typeid_cast<NegativeLimitByStep *>(parent->step.get()))
     {
         if (properties->sort_scope == SortingProperty::SortScope::Global)
-            negative_limit_by_step->applyOrder(properties->sort_description.hasPrefixWithoutCollation(negative_limit_by_step->getColumns()));
+            negative_limit_by_step->applyOrder(properties->sort_description);
     }
 
     if (auto * transforming = dynamic_cast<ITransformingStep *>(parent->step.get()))

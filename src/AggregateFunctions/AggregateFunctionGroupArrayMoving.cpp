@@ -291,7 +291,6 @@ AggregateFunctionPtr createAggregateFunctionMoving(
 }
 
 
-void registerAggregateFunctionMoving(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMoving(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
