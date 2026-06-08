@@ -1,13 +1,12 @@
 #pragma once
 
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
-#include <Interpreters/FileCache/FileCacheKey.h>
 #include <Core/Types.h>
+#include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/Guards.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 
 #include <atomic>
-#include <functional>
 #include <memory>
 
 #include <fmt/ranges.h>
@@ -16,8 +15,6 @@ namespace DB
 {
 struct FileCacheReserveStat;
 class EvictionCandidates;
-class FileSegment;
-struct FileSegmentInfo;
 class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 struct CacheUsageStatGuard;
@@ -27,22 +24,7 @@ class IFileCachePriority : private boost::noncopyable
 {
 public:
     using Key = FileCacheKey;
-
-    enum class QueueType
-    {
-        Main, /// Global queue
-        Query, /// Per-query queue
-    };
-
-    enum class QueueEntryType : uint8_t
-    {
-        None,
-        LRU,
-        SLRU_Protected,
-        SLRU_Probationary,
-        SplitCache_Data,
-        SplitCache_System,
-    };
+    using QueueEntryType = FileCacheQueueEntryType;
     using OriginInfo = FileCacheOriginInfo;
     using UserID = OriginInfo::UserID;
 
@@ -202,8 +184,6 @@ public:
     };
     virtual Type getType() const = 0;
 
-    QueueType getQueueType() const { return queue_type; }
-
     size_t getSizeLimit(const CacheStateGuard::Lock &) const { return max_size; }
     size_t getSizeLimitApprox() const { return max_size.load(std::memory_order_relaxed); }
 
@@ -289,10 +269,10 @@ public:
     struct IPriorityDump
     {
         std::vector<FileSegmentInfo> infos;
-        IPriorityDump();
-        explicit IPriorityDump(const std::vector<FileSegmentInfo> & infos_);
-        void merge(const IPriorityDump & other);
-        virtual ~IPriorityDump();
+        IPriorityDump() = default;
+        explicit IPriorityDump(const std::vector<FileSegmentInfo> & infos_) : infos(infos_) {}
+        void merge(const IPriorityDump & other) { infos.insert(infos.end(), other.infos.begin(), other.infos.end()); }
+        virtual ~IPriorityDump() = default;
     };
 
     using PriorityDumpPtr = std::shared_ptr<IPriorityDump>;
@@ -413,17 +393,14 @@ public:
 
     virtual void setCacheUsageStatGuard(std::shared_ptr<CacheUsageStatGuard>) {}
 
-    using OnEvictCallback = std::function<void(const FileSegment & segment)>;
-
 protected:
-    IFileCachePriority(QueueType queue_type_, size_t max_size_, size_t max_elements_);
+    IFileCachePriority(size_t max_size_, size_t max_elements_);
 
     virtual void holdImpl(size_t /* size */, size_t /* elements */, const CacheStateGuard::Lock &) {}
     /// No lock is required in releaseImpl unlike holdImpl,
     /// because for releasing hold space we do not need strong guarantees.
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
-    const QueueType queue_type;
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
 };

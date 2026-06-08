@@ -13,8 +13,6 @@ namespace DB
     struct FilterDAGInfo;
     using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
 
-    class ActionsDAG;
-
     struct ReadFromFormatInfo
     {
         /// Header that will return Source from storage.
@@ -47,22 +45,6 @@ namespace DB
         PrewhereInfoPtr prewhere_info;
         FilterDAGInfoPtr row_level_filter;
     };
-
-    /// Inputs reachable by storage-level pushdown consumers. Pass to splitFilterDagForAllowedInputs to drop IN-subqueries which can't be used.
-    Block buildAllowedFilterInputs(
-        const StorageSnapshotPtr & storage_snapshot,
-        const Block & source_header,
-        const PrewhereInfoPtr & prewhere_info,
-        const FilterDAGInfoPtr & row_level_filter);
-
-    /// Eagerly materialise IN-subquery sets that a format-level KeyCondition can consume.
-    void prepareEagerKeyConditionSets(
-        const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
-        const StorageSnapshotPtr & storage_snapshot,
-        const Block & source_header,
-        const PrewhereInfoPtr & prewhere_info,
-        const FilterDAGInfoPtr & row_level_filter,
-        const ContextPtr & context);
 
     struct PrepareReadingFromFormatHiveParams
     {

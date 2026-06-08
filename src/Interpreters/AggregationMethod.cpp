@@ -11,7 +11,7 @@ void AggregationMethodOneNumber<FieldType, TData, consecutive_keys_optimization,
     const Sizes & /*key_sizes*/,
     const IColumn::SerializationSettings *)
 {
-    ColumnFixedSizeHelper * column = nullptr;
+    ColumnFixedSizeHelper * column;
     if constexpr (nullable)
     {
         ColumnNullable & nullable_col = assert_cast<ColumnNullable &>(*key_columns[0]);
@@ -134,8 +134,8 @@ void AggregationMethodKeysFixed<TData, has_nullable_keys, has_low_cardinality, c
 
     for (size_t i = 0; i < keys_size; ++i)
     {
-        IColumn * observed_column = nullptr;
-        ColumnUInt8 * null_map = nullptr;
+        IColumn * observed_column;
+        ColumnUInt8 * null_map;
 
         bool column_nullable = false;
         if constexpr (has_nullable_keys)

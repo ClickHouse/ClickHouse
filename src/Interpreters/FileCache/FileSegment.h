@@ -54,7 +54,7 @@ public:
     using Priority = IFileCachePriority;
     using State = FileSegmentState;
     using Info = FileSegmentInfo;
-    using QueueEntryType = IFileCachePriority::QueueEntryType;
+    using QueueEntryType = FileCacheQueueEntryType;
     using KeyType = FileSegmentKeyType;
 
     FileSegment(

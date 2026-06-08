@@ -17,7 +17,6 @@ public:
     class SLRUIterator;
 
     SLRUFileCachePriority(
-        QueueType queue_type_,
         size_t max_size_,
         size_t max_elements_,
         double size_ratio_,

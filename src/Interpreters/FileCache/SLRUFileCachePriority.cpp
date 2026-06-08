@@ -2,7 +2,6 @@
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
-#include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
@@ -13,7 +12,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event FilesystemCacheDowngradedFileSegments;
+    extern const Event FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease;
 }
 namespace DB
 {
@@ -42,23 +41,20 @@ namespace
 }
 
 SLRUFileCachePriority::SLRUFileCachePriority(
-    QueueType queue_type_,
     size_t max_size_,
     size_t max_elements_,
     double size_ratio_,
     const std::string & description_,
     LRUFileCachePriority::StatePtr probationary_state_,
     LRUFileCachePriority::StatePtr protected_state_)
-    : IFileCachePriority(queue_type_, max_size_, max_elements_)
+    : IFileCachePriority(max_size_, max_elements_)
     , description(description_)
     , size_ratio(size_ratio_)
-    , protected_queue(LRUFileCachePriority(queue_type_,
-                                           getRatio(max_size_, size_ratio),
+    , protected_queue(LRUFileCachePriority(getRatio(max_size_, size_ratio),
                                            getRatio(max_elements_, size_ratio),
                                            description_ + ", protected",
                                            protected_state_))
-    , probationary_queue(LRUFileCachePriority(queue_type_,
-                                              getRatio(max_size_, 1 - size_ratio),
+    , probationary_queue(LRUFileCachePriority(getRatio(max_size_, 1 - size_ratio),
                                               getRatio(max_elements_, 1 - size_ratio),
                                               description_ + ", probationary",
                                               probationary_state_))
@@ -91,7 +87,7 @@ SLRUFileCachePriority::SLRUFileCachePriority(
 FileCachePriorityPtr SLRUFileCachePriority::copy() const
 {
     return std::make_unique<SLRUFileCachePriority>(
-        getQueueType(), max_size, max_elements, size_ratio, description, probationary_queue.state, protected_queue.state);
+        max_size, max_elements, size_ratio, description, probationary_queue.state, protected_queue.state);
 }
 
 size_t SLRUFileCachePriority::getSize(const CacheStateGuard::Lock & lock) const
@@ -424,8 +420,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     CachePriorityGuard & cache_guard,
     CacheStateGuard & state_guard)
 {
-    /// No eviction callback: these candidates are only downgraded (moved), never evicted.
-    auto downgrade_candidates = std::make_shared<EvictionCandidates>(IFileCachePriority::OnEvictCallback{});
+    auto downgrade_candidates = std::make_shared<EvictionCandidates>();
     FileCacheReserveStat downgrade_stat;
     if (!protected_queue.collectCandidatesForEviction(
         eviction_info,
@@ -465,7 +460,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
 
     const bool requires_eviction = probationary_eviction_info->requiresEviction();
     /// FIXME: const_cast is a bad practice.
-    const_cast<EvictionInfo &>(eviction_info).addOrUpdate(std::move(probationary_eviction_info));
+    const_cast<EvictionInfo &>(eviction_info).add(std::move(probationary_eviction_info));
     if (requires_eviction)
     {
         /// If not enough space - we need to "downgrade" lowest priority entries
@@ -590,7 +585,6 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         });
 
         chassert(downgraded_entries->getSize() > 0);
-        ProfileEvents::increment(ProfileEvents::FilesystemCacheDowngradedFileSegments, downgraded_entries->getSize());
         while (true)
         {
             auto info = downgraded_entries->next();
@@ -702,17 +696,14 @@ bool SLRUFileCachePriority::tryIncreasePriority(
 #endif
     }
 
-    /// Holds the real probationary evictions that free room for the downgraded
-    /// protected entries (empty if probationary already has room). The downgrade
-    /// move itself is committed in the afterEvict* callbacks.
-    EvictionCandidates eviction_candidates(&FileCache::onSegmentEvicted);
+    EvictionCandidates downgrade_candidates;
     FileCacheReserveStat downgrade_stat;
     InvalidatedEntriesInfos invalidated_entries;
 
     if (!collectCandidatesForEvictionInProtected(
         *downgrade_info,
         downgrade_stat,
-        eviction_candidates,
+        downgrade_candidates,
         invalidated_entries,
         /* reservee */nullptr,
         /* continue_from_last_eviction_pos */false,
@@ -729,11 +720,17 @@ bool SLRUFileCachePriority::tryIncreasePriority(
             iterator.lru_iterator, is_space_reservation_complete, queue_guard, state_guard);
     }
 
-    eviction_candidates.evict();
+    downgrade_candidates.evict();
+
+    /// Count how much we evict,
+    /// because it could affect performance if we have to do this often.
+    ProfileEvents::increment(
+        ProfileEvents::FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease,
+        downgrade_candidates.size());
 
     auto new_iterator = [&]{
         auto lock = queue_guard.writeLock();
-        eviction_candidates.afterEvictWrite(lock);
+        downgrade_candidates.afterEvictWrite(lock);
         removeEntries(invalidated_entries, lock);
 
         /// PreActive: iterateImpl skips this entry until setIterator atomically transitions it to Active.
@@ -754,7 +751,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         try
         {
             downgrade_info->releaseHoldSpace(lock);
-            eviction_candidates.afterEvictState(lock);
+            downgrade_candidates.afterEvictState(lock);
             new_iterator.incrementSize(prev_entry->size, lock);
         }
         catch (...)

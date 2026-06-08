@@ -33,50 +33,6 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
 String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool throw_if_client_key_empty) const
 {
     const auto & params = enabled.params;
-    auto mask_address = [this](const Poco::Net::IPAddress & addr) -> String
-    {
-        using Family = Poco::Net::IPAddress::Family;
-        /// An IPv4-mapped IPv6 address (such as `::ffff:192.0.2.10`) represents an IPv4 client,
-        /// so it is governed by `IPV4_PREFIX_BITS` and never by `IPV6_PREFIX_BITS`.
-        if (addr.family() == Family::IPv6 && addr.isIPv4Mapped())
-        {
-            /// A /0 prefix is also valid: it puts every IP into a single shared bucket.
-            if (quota->ipv4_prefix_bits)
-            {
-                /// Normalize to a native IPv4 address so that masked mapped clients share quota
-                /// buckets with plain IPv4 clients.
-                Poco::Net::IPAddress native(reinterpret_cast<const char *>(addr.addr()) + 12, 4);
-                Poco::Net::IPAddress mask(static_cast<unsigned>(*quota->ipv4_prefix_bits), Family::IPv4);
-                return (native & mask).toString();
-            }
-            /// No IPv4 prefix configured: keep the original representation to preserve the
-            /// pre-prefix-bits quota key. In particular, do not let `IPV6_PREFIX_BITS` mask an
-            /// IPv4 client.
-            return addr.toString();
-        }
-
-        const auto fam = addr.family();
-        /// A /0 prefix is also valid: it puts every IP into a single shared bucket.
-        if (fam == Family::IPv4)
-        {
-            if (quota->ipv4_prefix_bits)
-            {
-                Poco::Net::IPAddress mask(static_cast<unsigned>(*quota->ipv4_prefix_bits), Family::IPv4);
-                Poco::Net::IPAddress masked = addr & mask;
-                return masked.toString();
-            }
-        }
-        else
-        {
-            if (quota->ipv6_prefix_bits)
-            {
-                Poco::Net::IPAddress mask(static_cast<unsigned>(*quota->ipv6_prefix_bits), Family::IPv6);
-                Poco::Net::IPAddress masked = addr & mask;
-                return masked.toString();
-            }
-        }
-        return addr.toString();
-    };
     switch (quota->key_type)
     {
         case QuotaKeyType::NONE:
@@ -89,29 +45,10 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
         }
         case QuotaKeyType::IP_ADDRESS:
         {
-            return mask_address(params.client_address);
+            return params.client_address.toString();
         }
         case QuotaKeyType::FORWARDED_IP_ADDRESS:
         {
-            /// Fast path: when no prefix masking is configured, return the raw address
-            /// without parsing into `Poco::Net::IPAddress`. This matches pre-prefix-bits
-            /// behavior and avoids extra work on the per-query hot path for users who
-            /// did not opt into prefix masking.
-            if (!quota->ipv4_prefix_bits && !quota->ipv6_prefix_bits)
-                return params.forwarded_address;
-
-            if (!params.forwarded_address.empty())
-            {
-                try
-                {
-                    Poco::Net::IPAddress forwarded_ip(params.forwarded_address);
-                    return mask_address(forwarded_ip);
-                }
-                catch (...) /// Ok: a malformed X-Forwarded-For value should not fail the query; fall back to using the raw string as the quota key, matching pre-prefix-bits behavior.
-                {
-                    return params.forwarded_address;
-                }
-            }
             return params.forwarded_address;
         }
         case QuotaKeyType::CLIENT_KEY:
@@ -137,7 +74,7 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
         {
             if (!params.client_key.empty())
                 return params.client_key;
-            return mask_address(params.client_address);
+            return params.client_address.toString();
         }
         case QuotaKeyType::NORMALIZED_QUERY_HASH:
         {
