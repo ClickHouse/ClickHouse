@@ -137,16 +137,17 @@ class DisksClient(object):
         output = self.execute_query(
             f"list {path} {recursive_adding} {show_hidden_adding}"
         )
+        # Sort on the client side so assertions do not depend on the disks app
+        # sort order.
         if recursive:
             answer: Dict[str, List[str]] = dict()
             blocks = output.split("\n\n")
             for block in blocks:
                 directory = block.split("\n")[0][:-1]
-                files = block.split("\n")[1:]
+                files = sorted(block.split("\n")[1:])
                 answer[directory] = files
             return answer
-        else:
-            return output.split("\n") if output else []
+        return sorted(output.split("\n")) if output else []
 
     def switch_disk(self, disk: str, directory: Optional[str] = None):
         directory_addition = f"--path {directory} " if directory is not None else ""
