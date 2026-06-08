@@ -117,7 +117,12 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
     pollfd.fd = pid_fd;
     pollfd.events = POLLIN;
 
-    int ready = HANDLE_EINTR(poll(&pollfd, 1, timeout_in_ms));
+    /// A signal interrupting `poll` must not restart with the full timeout; returning
+    /// RESTART lets `waitForPid` re-evaluate the deadline-bounded remaining budget.
+    int ready = poll(&pollfd, 1, timeout_in_ms);
+
+    if (ready < 0 && errno == EINTR)
+        return PollPidResult::RESTART;
 
     if (ready <= 0)
         return PollPidResult::FAILED;
@@ -162,9 +167,18 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
     event.ident = 0;
 
     struct timespec remaining_timespec = {.tv_sec = timeout_in_ms / 1000, .tv_nsec = (timeout_in_ms % 1000) * 1000000};
-    int ready = HANDLE_EINTR(kevent(kq, nullptr, 0, &event, 1, &remaining_timespec));
 
-    return ready < 0 ? PollPidResult::FAILED : PollPidResult::RESTART;
+    /// A signal interrupting `kevent` must not restart with the full timeout; returning
+    /// RESTART lets `waitForPid` re-evaluate the deadline-bounded remaining budget.
+    int ret = kevent(kq, nullptr, 0, &event, 1, &remaining_timespec);
+
+    if (ret < 0 && errno == EINTR)
+        return PollPidResult::RESTART;
+
+    if (ret <= 0)
+        return PollPidResult::FAILED;
+
+    return PollPidResult::RESTART;
 }
 #elif defined(OS_SUNOS)
 
