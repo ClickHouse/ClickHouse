@@ -711,7 +711,7 @@ void transformColumnsWithSharedIndex(
     std::function<void(ColumnPtr &)> non_replicated_transform,
     std::span<size_t> positions)
 {
-    std::unordered_map<const IColumn *, ColumnPtr> transformed_indexes;
+    std::unordered_map<const IColumn *, ColumnPtr> transformed_indexes; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     auto transform = [&](size_t pos)
     {
