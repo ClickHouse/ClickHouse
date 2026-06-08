@@ -74,10 +74,16 @@ INSERT INTO t_pco_small VALUES (100, 999);
 SELECT 'single', (SELECT a FROM t_pco_small WHERE id = 100);
 
 -- PCO compresses sequential data far better than NONE.
+-- The compression-block layout (wide part, granularity, block size) is pinned on both tables so the
+-- ratio is comparable regardless of the randomized MergeTree/session settings the flaky check applies:
+-- otherwise tiny compression blocks (e.g. a compact part with `index_granularity = 3`) make every
+-- codec's per-block framing dominate, and PCO's fixed per-chunk metadata can exceed NONE's.
 DROP TABLE IF EXISTS t_pco_ratio;
 DROP TABLE IF EXISTS t_none_ratio;
-CREATE TABLE t_pco_ratio (x Int64 CODEC(PCO)) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE t_none_ratio (x Int64 CODEC(NONE)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_pco_ratio (x Int64 CODEC(PCO)) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, min_compress_block_size = 1048576, max_compress_block_size = 1048576;
+CREATE TABLE t_none_ratio (x Int64 CODEC(NONE)) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, min_compress_block_size = 1048576, max_compress_block_size = 1048576;
 INSERT INTO t_pco_ratio SELECT number * 2 - 5 FROM numbers(100000);
 INSERT INTO t_none_ratio SELECT number * 2 - 5 FROM numbers(100000);
 SELECT 'compresses', (SELECT sum(data_compressed_bytes) FROM system.parts WHERE database = currentDatabase() AND table = 't_pco_ratio' AND active)
