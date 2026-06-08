@@ -148,6 +148,14 @@ public:
 
     Aws::Auth::AWSCredentials getCredentials() const;
 
+    /// Marks the underlying credentials provider so that the next `getCredentials()` call
+    /// forces a `Reload()`. Used to recover from `ExpiredToken` errors that bypass the
+    /// client's own retry loop (e.g. the Rust delta-kernel `object_store` S3 path, which
+    /// is handed static credentials at engine-build time).
+    /// `const` because, like `getCredentials() const`, this only delegates to the
+    /// credentials provider; it does not mutate the client itself.
+    void setCredentialsProviderNeedRefresh() const;
+
     /// We want to manually handle permanent moves (status code 301) because:
     /// - redirect location is written in XML format inside the response body something that doesn't exist for HEAD
     ///   requests so we need to manually find the correct location

@@ -101,6 +101,14 @@ public:
 
     const std::string & getDataPath() const override { return url.key; }
 
+    /// Force the next `client->getCredentials()` call (in `createBuilder` below) to bypass the
+    /// provider's cached snapshot and do a real `Reload()`. Used by the snapshot-init retry path
+    /// after the kernel reports `ExpiredToken`.
+    void refreshCredentials() override
+    {
+        client->setCredentialsProviderNeedRefresh();
+    }
+
     ffi::EngineBuilder * createBuilder() const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(

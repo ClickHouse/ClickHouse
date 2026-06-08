@@ -34,6 +34,13 @@ public:
     /// delta-kernel-rs ffi api and performs all interactions
     /// with object storage layer.
     virtual ffi::EngineBuilder * createBuilder() const = 0;
+
+    /// Invalidate any cached credentials so that the next `createBuilder()` call pulls
+    /// freshly-rotated values from the underlying provider. Used by the snapshot-init
+    /// retry path to recover from `ExpiredToken` errors that the Rust delta-kernel
+    /// `object_store` client cannot self-heal (it gets static creds at build time).
+    /// Default is a noop for backends without rotating credentials.
+    virtual void refreshCredentials() {}
 };
 
 using KernelHelperPtr = std::shared_ptr<IKernelHelper>;

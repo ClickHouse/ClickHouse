@@ -14,6 +14,7 @@
 
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
@@ -39,6 +40,12 @@
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int DELTA_KERNEL_ERROR;
+}
+
+namespace DB::FailPoints
+{
+    extern const char delta_kernel_throw_expired_token[];
 }
 
 namespace DB::Setting
@@ -710,7 +717,38 @@ void TableSnapshot::initOrUpdateSnapshot() const
 
     LOG_TEST(log, "Initializing snapshot");
 
-    kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, snapshot_version_to_read);
+    try
+    {
+        kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, snapshot_version_to_read);
+    }
+    catch (const DB::Exception & e)
+    {
+        /// The Rust delta-kernel `object_store` S3 client receives static credentials at
+        /// engine-build time and can't refresh them on its own. If S3 rejects the token as
+        /// expired (e.g. STS provider silently failed to `Reload()`, or clock-skew put the
+        /// cached creds outside the safety window), invalidate the C++ provider cache and
+        /// retry the snapshot once. The second attempt's `createBuilder()` will pull
+        /// freshly-rotated credentials. A single retry is enough — if those also fail,
+        /// the original exception will resurface unchanged.
+        const bool is_kernel_error = e.code() == DB::ErrorCodes::DELTA_KERNEL_ERROR;
+        const auto & msg = e.message();
+        const bool is_credentials_error =
+            msg.find("ExpiredToken") != std::string::npos
+            || msg.find("InvalidToken") != std::string::npos
+            || msg.find("TokenRefreshRequired") != std::string::npos;
+        if (!is_kernel_error || !is_credentials_error)
+            throw;
+
+        LOG_INFO(
+            log,
+            "DeltaLake kernel call failed with a stale-credentials error, "
+            "refreshing the S3 client's credentials provider and retrying snapshot init once. "
+            "Original error: {}",
+            msg);
+
+        helper->refreshCredentials();
+        kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, snapshot_version_to_read);
+    }
 
     LOG_TRACE(
         log, "Initialized snapshot. Snapshot version: {}",
@@ -727,6 +765,20 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & he
 {
     auto * engine_builder = helper_.createBuilder();
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+
+    /// Mirrors the exact error shape that `delta-kernel-rs` surfaces when the Rust
+    /// `object_store` S3 client is handed a session token that AWS already rejected.
+    /// The kernel bypasses `ReadBufferFromS3`, so the `s3_*_throw_expired_token` failpoints
+    /// can't reach this path — hence a dedicated failpoint.
+    fiu_do_on(DB::FailPoints::delta_kernel_throw_expired_token,
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::DELTA_KERNEL_ERROR,
+            "Received DeltaLake kernel error ObjectStoreError: Error interacting with object store: "
+            "Generic S3 error: Server returned non-2xx status code: 400 Bad Request: "
+            "<Code>ExpiredToken</Code><Message>The provided token has expired.</Message> (in snapshot)");
+    });
+
     if (snapshot_version_.has_value())
     {
         snapshot = KernelUtils::unwrapResult(

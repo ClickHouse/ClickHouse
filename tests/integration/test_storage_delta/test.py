@@ -5409,3 +5409,63 @@ def test_azure_empty_blob_path(started_cluster, use_delta_kernel):
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
         inserted_data
     )
+
+
+def test_delta_kernel_expired_token_on_snapshot_init(started_cluster):
+    """Verify that DeltaLake snapshot init recovers from a stale STS session token.
+
+    The Rust `delta-kernel-rs` / `object_store` S3 client receives static credentials
+    captured at `S3KernelHelper::createBuilder` time and cannot refresh them. When the
+    underlying STS / instance-profile cache hands out a stale session token (e.g. after
+    a silent `Reload()` failure), the kernel call surfaces as `DELTA_KERNEL_ERROR` (742)
+    with `ExpiredToken` in the message.
+
+    The fix invalidates the C++ S3 client's credentials provider and retries the
+    snapshot once. We simulate the kernel-side rejection with a `ONCE` failpoint that
+    fires inside `KernelSnapshotState`'s constructor: the first attempt throws, the
+    retry uses a fresh build (failpoint disarmed) and succeeds.
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_delta_kernel_expired_token")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    # Baseline: query succeeds before the failpoint is armed.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    armed_query_id = f"{TABLE_NAME}_armed"
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_throw_expired_token")
+    try:
+        # With the retry-on-ExpiredToken fix in place, the ONCE failpoint fires on the
+        # first KernelSnapshotState build, the retry uses real credentials, and the
+        # query succeeds end-to-end.
+        assert int(instance.query(
+            f"SELECT count() FROM {TABLE_NAME}",
+            query_id=armed_query_id,
+        )) == 100
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_throw_expired_token")
+
+    # Positive evidence that the retry path actually fired (not just that the failpoint
+    # silently failed to arm and the baseline path passed through). Without this check
+    # the test would still pass even if the registration didn't take effect.
+    instance.query("SYSTEM FLUSH LOGS")
+    retry_log_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{armed_query_id}' "
+        "  AND message ILIKE '%stale-credentials%retrying snapshot init%'"
+    ).strip())
+    assert retry_log_hits >= 1, (
+        f"Expected the snapshot-init retry log line to fire for query {armed_query_id}, "
+        f"found {retry_log_hits} hits."
+    )
+
+    # Sanity check: subsequent queries work without the failpoint as well.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
