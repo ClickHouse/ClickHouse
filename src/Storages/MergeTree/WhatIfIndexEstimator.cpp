@@ -1,16 +1,15 @@
 #include <Storages/MergeTree/WhatIfIndexEstimator.h>
 
 #include <Access/Common/AccessFlags.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/Utils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HypotheticalIndexStore.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/JoinedTables.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -125,6 +124,18 @@ void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTre
 
     for (const auto & child : node->children)
         collectReadSteps(child, steps);
+}
+
+/// Resolve the source table from the query
+StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & context)
+{
+    const auto * union_query = query->as<ASTSelectWithUnionQuery>();
+    if (!union_query || !union_query->list_of_selects || union_query->list_of_selects->children.size() != 1)
+        return nullptr;
+    const auto * select = union_query->list_of_selects->children.front()->as<ASTSelectQuery>();
+    if (!select)
+        return nullptr;
+    return JoinedTables(context, *select).getLeftTableStorage();
 }
 
 /// Empty table, nothing to scan, just mark every candidate not-applicable
@@ -672,19 +683,10 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     QueryPlan plan;
     ContextPtr plan_context = local_context;
 
-    StoragePtr source_storage;
-
     if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(select_query_copy, local_context, query_options);
         plan_context = interpreter.getContext();
-        if (const auto * query_node = interpreter.getQueryTree()->as<QueryNode>())
-        {
-            auto table_nodes = extractTableExpressions(query_node->getJoinTree());
-            if (table_nodes.size() == 1)
-                if (const auto * table_node = table_nodes.front()->as<TableNode>())
-                    source_storage = table_node->getStorage();
-        }
         plan = std::move(interpreter).extractQueryPlan();
     }
     else
@@ -702,7 +704,8 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     if (read_steps.empty())
     {
         /// Empty table -> ReadNothing, no read step, report a zero baseline
-        if (const auto * mt = dynamic_cast<const MergeTreeData *>(source_storage.get());
+        auto storage = tryResolveSingleTable(select_query, local_context);
+        if (const auto * mt = dynamic_cast<const MergeTreeData *>(storage.get());
             mt && mt->getActivePartsCount() == 0)
             return buildEmptyTableResult(*mt, local_context->getHypotheticalIndexStore());
 
