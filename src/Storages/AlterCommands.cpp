@@ -150,6 +150,23 @@ ASTPtr makeStoredDefaultExpressionList(const ColumnsDescription & columns)
     return default_expr_list;
 }
 
+void renameColumnInStoredExpressions(ColumnsDescription & columns, const String & from, const String & to)
+{
+    RenameColumnData rename_data{from, to};
+    RenameColumnVisitor rename_visitor(rename_data);
+
+    for (const auto & column : columns)
+    {
+        columns.modify(column.name, [&](ColumnDescription & column_to_modify)
+        {
+            if (column_to_modify.default_desc.expression)
+                rename_visitor.visit(column_to_modify.default_desc.expression);
+            if (column_to_modify.ttl)
+                rename_visitor.visit(column_to_modify.ttl);
+        });
+    }
+}
+
 }
 
 std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
@@ -1898,21 +1915,30 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 }
             }
 
+            bool renamed_column = false;
             if (from_nested && to_nested)
             {
                 if (from_nested_table_name != to_nested_table_name)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
                 all_columns.rename(command.column_name, command.rename_to);
+                renamed_column = true;
             }
             else if (!from_nested && !to_nested)
             {
                 all_columns.rename(command.column_name, command.rename_to);
+                renamed_column = true;
                 renamed_columns.emplace(command.column_name);
                 renamed_columns.emplace(command.rename_to);
             }
             else
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from nested struct to normal column and vice versa");
+            }
+
+            if (renamed_column)
+            {
+                renameColumnInStoredExpressions(all_columns, command.column_name, command.rename_to);
+                revalidate_stored_defaults = true;
             }
         }
         else if (command.type == AlterCommand::REMOVE_TTL && !metadata->hasAnyTableTTL())
