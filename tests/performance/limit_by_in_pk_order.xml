@@ -136,8 +136,77 @@
         FORMAT NULL
     </query>
 
+    <!-- Merge engine over several MergeTree tables, read in primary-key order. -->
+    <create_query>
+        CREATE TABLE limit_by_in_pk_order_merge_1
+        (a Int32, b UInt32, z UInt32)
+        ENGINE = MergeTree
+        ORDER BY (a, b)
+    </create_query>
+    <create_query>
+        CREATE TABLE limit_by_in_pk_order_merge_2
+        (a Int32, b UInt32, z UInt32)
+        ENGINE = MergeTree
+        ORDER BY (a, b)
+    </create_query>
+    <create_query>
+        CREATE TABLE limit_by_in_pk_order_merge
+        (a Int32, b UInt32, z UInt32)
+        ENGINE = Merge(currentDatabase(), '^limit_by_in_pk_order_merge_[12]$')
+    </create_query>
+
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_merge_1
+        SELECT number % 100000, number % 97, number
+        FROM numbers(5000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_merge_2
+        SELECT number % 100000, number % 97, number
+        FROM numbers(5000000)
+    </fill_query>
+
+    <query>
+        SELECT a, b, z FROM limit_by_in_pk_order_merge
+        LIMIT 5 BY a
+        FORMAT NULL
+    </query>
+
+    <!-- Partition key is a function of the LIMIT BY key (per-partition reading) and the key is also a
+         PK prefix (read in order) -->
+    <create_query>
+        CREATE TABLE limit_by_in_pk_order_part_in_order
+        (a Int32, b UInt32, z UInt32)
+        ENGINE = MergeTree
+        ORDER BY (a, b)
+        PARTITION BY a % 100
+    </create_query>
+
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_part_in_order
+        SELECT number, number % 97, number
+        FROM numbers(50000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_part_in_order
+        SELECT number, number % 97, number
+        FROM numbers(50000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE limit_by_in_pk_order_part_in_order FINAL</fill_query>
+
+    <query>
+        SELECT a, b, z FROM limit_by_in_pk_order_part_in_order
+        LIMIT 5 BY a
+        FORMAT NULL
+        SETTINGS allow_limit_by_partitions_independently = 1
+    </query>
+
     <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_int</drop_query>
     <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_dt</drop_query>
     <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_low</drop_query>
     <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_multi_part</drop_query>
+    <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_merge</drop_query>
+    <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_merge_1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_merge_2</drop_query>
+    <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_part_in_order</drop_query>
 </test>
