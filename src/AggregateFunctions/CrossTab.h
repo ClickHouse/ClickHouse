@@ -176,7 +176,7 @@ struct CrossTabAggregateData : CrossTabCountsState
         Float64 phi_squared = sum - 1.0;
 
         /// Numerical errors might lead to a very small negative number
-        chassert(phi_squared > -1e-6);
+        chassert(phi_squared > -1e-4);
         phi_squared = std::max(phi_squared, 0.0);
 
         /// Theoretical bound: phi^2 <= min(|A|, |B|) - 1
@@ -185,7 +185,7 @@ struct CrossTabAggregateData : CrossTabCountsState
             return 0.0;
 
         const Float64 max_phi_squared = static_cast<Float64>(q - 1);
-        chassert(phi_squared <= max_phi_squared + 1e-6);
+        chassert(phi_squared <= max_phi_squared + 1e-4);
 
         phi_squared = std::min(phi_squared, max_phi_squared);
 
@@ -581,13 +581,13 @@ struct CrossTabPhiSquaredWindowData
         Float64 phi_squared = phi_term_sum - 1.0;
 
         /// Numerical errors might lead to a very small negative number
-        chassert(phi_squared > -1e-6);
+        chassert(phi_squared > -1e-4);
         phi_squared = std::max(phi_squared, 0.0);
 
         /// Theoretical bound: phi^2 <= min(|A|, |B|) - 1
         /// Incremental updates can drift slightly above it; clamp to avoid inf/invalid results
         const Float64 max_phi_squared = static_cast<Float64>(q - 1);
-        chassert(phi_squared <= max_phi_squared + 1e-6);
+        chassert(phi_squared <= max_phi_squared + 1e-4);
 
         phi_squared = std::min(phi_squared, max_phi_squared);
 

@@ -39,7 +39,7 @@ SELECT * FROM (
 ) ORDER BY number;
 
 SET max_threads = 6;
-SET max_bytes_before_external_join = 0;
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 
 SELECT * FROM (
     SELECT number, n, j1, j2

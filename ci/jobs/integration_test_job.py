@@ -122,9 +122,9 @@ _WITH_FLAG_TO_COMPOSE: dict[str, List[str]] = {
     ],
     "hms_catalog": ["docker_compose_iceberg_hms_catalog.yml"],
     "glue_catalog": ["docker_compose_glue_catalog.yml"],
-    "prometheus_writer": ["docker_compose_prometheus.yml"],
-    "prometheus_reader": ["docker_compose_prometheus.yml"],
-    "prometheus_receiver": ["docker_compose_prometheus.yml"],
+    "prometheus_writer": ["docker_compose_prometheus_writer.yml"],
+    "prometheus_reader": ["docker_compose_prometheus_reader.yml"],
+    "prometheus_receiver": ["docker_compose_prometheus_receiver.yml"],
     # with_odbc_drivers implicitly sets up mysql8 + postgres
     "odbc_drivers": ["docker_compose_mysql_8_0.yml", "docker_compose_postgres.yml"],
     # Flags with no separate compose file of their own
@@ -685,6 +685,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 for file in changed_files:
                     if (
                         file.startswith("tests/integration/test")
+                        # e2e tests require external credentials/backends and are
+                        # excluded from the default pytest run via the `e2e`
+                        # marker. Skip them so a mixed PR (both e2e and regular
+                        # integration tests changed) does not try to run them.
+                        and not file.startswith("tests/integration/test_e2e_")
                         and Path(file).name.startswith("test")
                         and file.endswith(".py")
                         and Path(file).is_file()
@@ -692,6 +697,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
                         changed_test_modules.append(
                             file.removeprefix("tests/integration/")
                         )
+                if not changed_test_modules and Labels.CI_FORCE_ALL in info.pr_labels:
+                    print(
+                        f"NOTE: No changed test modules found, but '{Labels.CI_FORCE_ALL}' label forces run - using sanity test"
+                    )
+                    changed_test_modules = ["test_accept_invalid_certificate/test.py"]
 
     if is_bugfix_validation:
         if Utils.is_arm():
@@ -753,7 +763,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             workers,
             args.options,
             info,
-            no_strict=is_targeted_check,  # targeted check might want to run test that was removed on a merge-commit
+            no_strict=is_targeted_check or is_flaky_check,  # targeted check might want to run test that was removed on a merge-commit; flaky check might pick up a changed test filtered out by SKIP_LIST in the private fork
         )
     )
 
@@ -764,12 +774,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
         sequential_test_modules = []
         assert not is_sequential
 
-    if is_targeted_check and not parallel_test_modules and not sequential_test_modules:
-        # All targeted tests were stale (removed or renamed since the CIDB record).
-        # This is expected — skip gracefully instead of producing a "no results" error.
+    if (is_targeted_check or is_flaky_check) and not parallel_test_modules and not sequential_test_modules:
+        # Targeted check: all selected tests were stale (removed or renamed since the CIDB record).
+        # Flaky check: all changed tests were filtered out (e.g. by SKIP_LIST in the private fork).
+        # Either way, skip gracefully instead of producing a "no results" error.
+        skip_info = (
+            "All targeted tests are stale (removed or renamed)"
+            if is_targeted_check
+            else "All changed tests were filtered out (e.g. by SKIP_LIST)"
+        )
         Result.create_from(
             status=Result.Status.SKIPPED,
-            info="All targeted tests are stale (removed or renamed)",
+            info=skip_info,
         ).complete_job()
 
     if is_flaky_check or is_targeted_check:
@@ -806,6 +822,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         Result.create_from(
             status=Result.Status.ERROR,
             info="Failed to pre-pull Docker images needed by the test batch",
+            labels=[Result.Label.INFRA],
         ).complete_job()
 
     test_env = {
@@ -818,6 +835,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
+        # PromQL compliance: deterministic JSON for post-hook (see promql_compliance_hook.py).
+        "COMPLIANCE_RESULT_FILE": os.environ.get(
+            "COMPLIANCE_RESULT_FILE", os.path.join(temp_path, "promql_compliance_result.json")
+        ),
     }
     if is_llvm_coverage:
         test_env["LLVM_PROFILE_FILE"] = f"it-%4m.profraw"
@@ -850,6 +871,24 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if args.session_timeout:
         session_timeout_parallel = args.session_timeout * 2
         session_timeout_sequential = args.session_timeout
+
+    # Flaky-check soft timeout. Mirrors the pattern in `ci/jobs/functional_tests.py`:
+    # bound the total time spent inside pytest so the job has headroom for cleanup,
+    # log collection and reporting before the workflow global timeout fires. Without
+    # this, a flaky-check run over many modified test modules can be hard-killed by
+    # the global timeout, producing `Unknown error (exit status: None)` instead of
+    # a proper report.
+    FLAKY_CHECK_TIME_LIMIT = 90 * 60  # 90 min, integration tests are slower than functional
+    if is_flaky_check:
+        elapsed_for_flaky = int(sw.duration)
+        flaky_check_remaining_s = max(FLAKY_CHECK_TIME_LIMIT - elapsed_for_flaky, 60)
+        print(
+            f"Flaky-check time limit: {FLAKY_CHECK_TIME_LIMIT}s "
+            f"(elapsed so far: {elapsed_for_flaky}s, remaining: {flaky_check_remaining_s}s)"
+        )
+        # Cap per-phase session timeouts so a single phase cannot consume the entire budget.
+        session_timeout_parallel = min(session_timeout_parallel, flaky_check_remaining_s)
+        session_timeout_sequential = min(session_timeout_sequential, flaky_check_remaining_s)
 
     error_info = []
 
@@ -893,21 +932,38 @@ tar -czf ./ci/tmp/logs.tar.gz \
         if test_result_parallel.files:
             failed_tests_files.extend(test_result_parallel.files)
         if test_result_parallel.is_error():
-            if not is_targeted_check:
+            if not is_targeted_check and not is_flaky_check:
                 # In targeted checks we may overload the run with many heavy tests running
-                # in parallel. A session-timeout is an expected risk rather than an
-                # infrastructure problem, so we do not treat such errors as job-level failures.
+                # in parallel; in flaky checks the soft FLAKY_CHECK_TIME_LIMIT may cap the
+                # pytest session-timeout. In both cases a session-timeout is an expected
+                # risk rather than an infrastructure problem, so we do not treat such
+                # errors as job-level failures.
                 has_error = True
                 error_info.append(test_result_parallel.info)
 
     fail_num = len([r for r in test_results if not r.is_ok()])
     if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
         for attempt in range(sequential_repeat_cnt):
+            # Recompute remaining budget for flaky-check at every iteration and stop
+            # scheduling new runs once it is exhausted (soft timeout).
+            iter_session_timeout_sequential = session_timeout_sequential
+            if is_flaky_check:
+                elapsed_for_flaky = int(sw.duration)
+                flaky_check_remaining_s = max(FLAKY_CHECK_TIME_LIMIT - elapsed_for_flaky, 0)
+                if flaky_check_remaining_s < 60:
+                    print(
+                        f"Flaky-check time limit reached after [{attempt}/{sequential_repeat_cnt}] sequential attempts "
+                        f"(elapsed: {elapsed_for_flaky}s, limit: {FLAKY_CHECK_TIME_LIMIT}s); stopping"
+                    )
+                    break
+                iter_session_timeout_sequential = min(
+                    session_timeout_sequential, flaky_check_remaining_s
+                )
             test_result_sequential = run_pytest_and_collect_results(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
+                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
-                timeout=session_timeout_sequential + 600,
+                timeout=iter_session_timeout_sequential + 600,
             )
             test_results.extend(test_result_sequential.results)
             _mark_infrastructure_errors(test_result_sequential.results)
@@ -917,10 +973,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
             if test_result_sequential.files:
                 failed_tests_files.extend(test_result_sequential.files)
             if test_result_sequential.is_error():
-                if not is_targeted_check:
+                if not is_targeted_check and not is_flaky_check:
                     # In targeted checks we may overload the run with many heavy tests running
-                    # sequentially. A session-timeout is an expected risk rather than an
-                    # infrastructure problem, so we do not treat such errors as job-level failures.
+                    # sequentially; in flaky checks the per-iteration `iter_session_timeout_sequential`
+                    # may be capped by FLAKY_CHECK_TIME_LIMIT. In both cases a session-timeout is
+                    # an expected risk rather than an infrastructure problem, so we do not treat
+                    # such errors as job-level failures.
                     has_error = True
                     error_info.append(test_result_sequential.info)
                 break
@@ -1001,9 +1059,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 )
                 attached_files.append("./ci/tmp/dmesg.log")
 
-    # For targeted checks, session-timeout is an expected risk (because of --count N
-    # overloading), so do not propagate the synthetic "Timeout" result as a failure.
-    if is_targeted_check:
+    # For targeted and flaky checks, session-timeout is an expected risk (because of
+    # `--count N` overloading on targeted, and the soft FLAKY_CHECK_TIME_LIMIT on flaky),
+    # so do not propagate the synthetic `Timeout` result as a failure.
+    if is_targeted_check or is_flaky_check:
         test_results = [r for r in test_results if r.name != "Timeout"]
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)

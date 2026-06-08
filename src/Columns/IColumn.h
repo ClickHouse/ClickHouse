@@ -708,7 +708,11 @@ public:
     virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges);
 
     /// Fills column values from list of blocks and row numbers
-    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers);
+    /// A nullptr in the list is interpreted as a default value
+    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers);
+
+    /// Same as above but assumes every entry in the list is non-null
+    virtual void fillFromBlocksAndRowNumbers(size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers);
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
@@ -864,10 +868,12 @@ protected:
 private:
     void assertTypeEquality(const IColumn & rhs) const
     {
-        /// For Sparse and Const columns, we can compare only internal types. It is considered normal to e.g. insert from normal vector column to a sparse vector column.
-        /// This case is specifically handled in ColumnSparse implementation. Similar situation with Const column.
+        /// For Sparse, Const, and Replicated columns, we can compare only internal types. It is considered normal to e.g. insert from normal vector column to a sparse vector column.
+        /// This case is specifically handled in ColumnSparse implementation. Similar situation with Const and Replicated columns.
         /// For the rest of column types we can compare the types directly.
-        chassert((isConst() || isSparse() || isReplicated()) ? getDataType() == rhs.getDataType() : typeid(*this) == typeid(rhs));
+        chassert((isConst() || isSparse() || isReplicated() || rhs.isConst() || rhs.isSparse() || rhs.isReplicated())
+            ? getDataType() == rhs.getDataType()
+            : typeid(*this) == typeid(rhs));
     }
 #endif
 };
@@ -979,7 +985,11 @@ private:
     void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges) override;
 
     /// Fills column values from list of columns and row numbers
-    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers) override;
+    /// A nullptr in the list is interpreted as a default value
+    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers) override;
+
+    /// Same as above but assumes every entry in the list is non-null
+    void fillFromBlocksAndRowNumbers(size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
