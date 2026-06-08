@@ -1048,6 +1048,7 @@ message MySQLFunc {
     optional string address = 4;
     optional string user = 5;
     optional string password = 6;
+    optional SettingValues setting_values = 7;
 }
 
 message PostgreSQLFunc {
@@ -1058,6 +1059,7 @@ message PostgreSQLFunc {
     optional string address = 5;
     optional string user = 6;
     optional string password = 7;
+    optional SettingValues setting_values = 8;
 }
 
 message SQLiteFunc {
@@ -1108,8 +1110,6 @@ message ObjectStoreFunc {
     optional Cluster cluster = 3;
     required string credential = 4;
     repeated KeyValuePair params = 5;
-    optional SettingValues setting_values = 6;
-    repeated HTTPHeader http_headers = 7;
 }
 
 message URLFunc {
@@ -1126,7 +1126,6 @@ message URLFunc {
         InOutFormat inoutformat = 6;
     }
     optional Expr structure = 7;
-    repeated HTTPHeader http_headers = 8;
 }
 
 message SQLTableFuncCall {
@@ -1216,6 +1215,8 @@ message TableFunction {
         MergeTreeAnalyzeIndexesFunc mtanindex = 23;
         SQLTableFuncCall func = 24;
     }
+    optional SettingValues setting_values = 25;
+    repeated HTTPHeader http_headers = 26;
 }
 
 message SampleClause {

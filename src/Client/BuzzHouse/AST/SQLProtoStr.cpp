@@ -1911,7 +1911,6 @@ CONV_FN(FileFunc, ff)
         ret += ", ";
         appendSQLStringLiteral(ret, ff.fcomp());
     }
-    ret += ")";
 }
 
 CONV_FN(FormatFunc, ff)
@@ -1925,7 +1924,7 @@ CONV_FN(FormatFunc, ff)
     }
     ret += ", $$\n";
     ret += ff.data();
-    ret += "$$)";
+    ret += "$$";
 }
 
 CONV_FN(NumbersFunc, gsf)
@@ -1943,7 +1942,6 @@ CONV_FN(NumbersFunc, gsf)
         ret += ", ";
         ExprToString(ret, gsf.expr3());
     }
-    ret += ")";
 }
 
 static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & est, const String & separator)
@@ -1970,7 +1968,6 @@ static void ValuesStatementToString(String & ret, const bool tudf, const ValuesS
         ExprListToString(ret, values.extra_expr_lists(i));
         ret += ")";
     }
-    ret += tudf ? ")" : "";
 }
 
 static void TableOrFunctionToString(String & ret, const bool tudf, const TableOrFunction & tof)
@@ -2058,7 +2055,6 @@ CONV_FN(RemoteFunc, rfunc)
         }
         ExprToString(ret, rfunc.sharding_key());
     }
-    ret += ")";
 }
 
 CONV_FN(MySQLFunc, mfunc)
@@ -2108,7 +2104,6 @@ CONV_FN(MySQLFunc, mfunc)
             ret += "password=";
         appendSQLStringLiteral(ret, mfunc.password());
     }
-    ret += ")";
 }
 
 CONV_FN(PostgreSQLFunc, pfunc)
@@ -2165,7 +2160,6 @@ CONV_FN(PostgreSQLFunc, pfunc)
             ret += "schema=";
         appendSQLStringLiteral(ret, pfunc.rschema());
     }
-    ret += ")";
 }
 
 CONV_FN(SQLiteFunc, sfunc)
@@ -2174,7 +2168,6 @@ CONV_FN(SQLiteFunc, sfunc)
     appendSQLStringLiteral(ret, sfunc.rdatabase());
     ret += ", ";
     appendSQLStringLiteral(ret, sfunc.rtable());
-    ret += ")";
 }
 
 CONV_FN(RedisFunc, rfunc)
@@ -2203,7 +2196,6 @@ CONV_FN(RedisFunc, rfunc)
         ret += ", ";
         ret += std::to_string(rfunc.pool_size());
     }
-    ret += ")";
 }
 
 CONV_FN(MongoDBFunc, mfunc)
@@ -2259,7 +2251,6 @@ CONV_FN(MongoDBFunc, mfunc)
         ret += "structure=";
         ExprToString(ret, mfunc.structure());
     }
-    ret += ")";
 }
 
 CONV_FN(ObjectStoreFunc, ofunc)
@@ -2280,13 +2271,6 @@ CONV_FN(ObjectStoreFunc, ofunc)
         ret += ", ";
         KeyValuePairToString(ret, ofunc.params(i));
     }
-    appendHTTPHeaders(ret, ofunc);
-    if (ofunc.has_setting_values())
-    {
-        ret += ", SETTINGS ";
-        SettingValuesToString(ret, ofunc.setting_values());
-    }
-    ret += ")";
 }
 
 CONV_FN(URLFunc, url)
@@ -2318,8 +2302,6 @@ CONV_FN(URLFunc, url)
         ret += ", ";
         ExprToString(ret, url.structure());
     }
-    appendHTTPHeaders(ret, url);
-    ret += ")";
 }
 
 CONV_FN(SQLTableFuncCall, sfc)
@@ -2351,7 +2333,6 @@ CONV_FN(SQLTableFuncCall, sfc)
             ret += "1";
         }
     }
-    ret += ')';
 }
 
 CONV_FN(MergeFunc, mfunc)
@@ -2364,7 +2345,6 @@ CONV_FN(MergeFunc, mfunc)
         ret += "'), ";
     }
     appendSQLStringLiteral(ret, mfunc.mtable());
-    ret += ")";
 }
 
 CONV_FN(ClusterFunc, cluster)
@@ -2384,7 +2364,6 @@ CONV_FN(ClusterFunc, cluster)
         ret += ", ";
         ExprToString(ret, cluster.sharding_key());
     }
-    ret += ")";
 }
 
 CONV_FN(MergeTreeIndexFunc, mfunc)
@@ -2401,7 +2380,6 @@ CONV_FN(MergeTreeIndexFunc, mfunc)
         ret += ", with_minmax = ";
         ret += mfunc.with_minmax() ? "true" : "false";
     }
-    ret += ")";
 }
 
 CONV_FN(MergeTreeProjectionFunc, mfunc)
@@ -2410,7 +2388,6 @@ CONV_FN(MergeTreeProjectionFunc, mfunc)
     FlatExprSchemaTableToString(ret, mfunc.est(), "', '");
     ret += ", ";
     appendSQLStringLiteral(ret, mfunc.proj().value());
-    ret += ")";
 }
 
 CONV_FN(MergeTreeTextIndexFunc, mttxtidx)
@@ -2419,7 +2396,6 @@ CONV_FN(MergeTreeTextIndexFunc, mttxtidx)
     FlatExprSchemaTableToString(ret, mttxtidx.est(), "', '");
     ret += ", ";
     appendSQLStringLiteral(ret, mttxtidx.idx().value());
-    ret += ")";
 }
 
 CONV_FN(MergeTreeAnalyzeIndexesFunc, mfunc)
@@ -2444,7 +2420,6 @@ CONV_FN(MergeTreeAnalyzeIndexesFunc, mfunc)
         }
         ret += "]";
     }
-    ret += ")";
 }
 
 CONV_FN(GenerateRandomFunc, grfunc)
@@ -2466,7 +2441,6 @@ CONV_FN(GenerateRandomFunc, grfunc)
         ret += ", ";
         ret += std::to_string(grfunc.max_array_length());
     }
-    ret += ")";
 }
 
 CONV_FN(ArrowFlightFunc, afunc)
@@ -2475,7 +2449,6 @@ CONV_FN(ArrowFlightFunc, afunc)
     appendSQLStringLiteral(ret, afunc.address());
     ret += ", ";
     appendSQLStringLiteral(ret, afunc.dataset());
-    ret += ")";
 }
 
 CONV_FN(TableFunction, tf)
@@ -2496,14 +2469,12 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kLoop:
             ret += "loop(";
             TableOrFunctionToString(ret, true, tf.loop());
-            ret += ")";
             break;
         case TableFunctionType::kGrandom: GenerateRandomFuncToString(ret, tf.grandom()); break;
         case TableFunctionType::kValues: ValuesStatementToString(ret, true, tf.values()); break;
         case TableFunctionType::kDictionary:
             ret += "dictionary(";
             FlatExprSchemaTableToString(ret, tf.dictionary(), ".");
-            ret += ")";
             break;
         case TableFunctionType::kUrl: URLFuncToString(ret, tf.url()); break;
         case TableFunctionType::kRedis: RedisFuncToString(ret, tf.redis()); break;
@@ -2511,7 +2482,6 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kNullf:
             ret += "`null`(";
             ExprToString(ret, tf.nullf());
-            ret += ")";
             break;
         case TableFunctionType::kFlight: ArrowFlightFuncToString(ret, tf.flight()); break;
         case TableFunctionType::kMtindex: MergeTreeIndexFuncToString(ret, tf.mtindex()); break;
@@ -2519,8 +2489,15 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kMttxtidx: MergeTreeTextIndexFuncToString(ret, tf.mttxtidx()); break;
         case TableFunctionType::kMtanindex: MergeTreeAnalyzeIndexesFuncToString(ret, tf.mtanindex()); break;
         case TableFunctionType::kFunc: SQLTableFuncCallToString(ret, tf.func()); break;
-        default: ret += "numbers(10)";
+        default: ret += "numbers(10";
     }
+    appendHTTPHeaders(ret, tf);
+    if (tf.has_setting_values())
+    {
+        ret += ", SETTINGS ";
+        SettingValuesToString(ret, tf.setting_values());
+    }
+    ret += ")";
 }
 
 CONV_FN(SampleClause, sc)

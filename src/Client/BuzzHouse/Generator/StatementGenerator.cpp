@@ -1050,7 +1050,8 @@ bool StatementGenerator::tableOrFunctionRef(
               String url;
               String buf;
 
-              URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
+              TableFunction * tf = tof->mutable_tfunc();
+              URLFunc * ufunc = tf->mutable_url();
               const OutFormat outf = (!this->allow_not_deterministic || rg.nextBool())
                   ? rg.pickRandomly(rg.pickRandomly(outFormats))
                   : static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
@@ -1098,7 +1099,7 @@ bool StatementGenerator::tableOrFunctionRef(
                   ufunc->set_outformat(outf);
               }
               ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
-              addRandomHTTPHeaders(rg, ufunc);
+              addRandomHTTPHeaders(rg, tf);
           }},
          {simple_est,
           [&]

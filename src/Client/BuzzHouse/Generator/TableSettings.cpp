@@ -944,7 +944,8 @@ static std::unordered_map<String, CHSetting> mySQLTableSettings = {
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(UINT32_C(1) << rg.randomInt<uint32_t>(0, 6)); }, {}, false)},
     {"connection_max_tries",
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 16)); }, {}, false)},
-    {"connection_auto_close", trueOrFalseSettingNoOracle}};
+    {"connection_auto_close", trueOrFalseSettingNoOracle},
+    {"enable_compression", trueOrFalseSetting}};
 
 static std::unordered_map<String, CHSetting> kafkaTableSettings
     = {{"kafka_schema_registry_skip_bytes",
