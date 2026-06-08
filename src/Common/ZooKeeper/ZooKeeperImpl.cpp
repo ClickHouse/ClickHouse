@@ -35,6 +35,7 @@
 #include <Common/ThreadStackRegistry.h>
 #include <Common/thread_local_rng.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 
@@ -77,6 +78,8 @@ namespace ProfileEvents
     extern const Event ZooKeeperBytesSent;
     extern const Event ZooKeeperBytesReceived;
     extern const Event ZooKeeperWatchResponse;
+    extern const Event ZooKeeperWatchCallbackDurationMicroseconds;
+    extern const Event ZooKeeperWatchCallbackErrors;
 }
 
 namespace CurrentMetrics
@@ -337,6 +340,29 @@ namespace Coordination
 {
 
 using namespace DB;
+
+namespace
+{
+
+void triggerWatchCallback(
+    const WatchCallbackPtrOrEventPtr & event_or_callback,
+    const WatchResponse & response)
+{
+    ProfileEvents::increment(event_or_callback.getTriggeredEvent());
+
+    DB::ProfileEventTimeIncrement<DB::Microseconds> watch_callback_duration(ProfileEvents::ZooKeeperWatchCallbackDurationMicroseconds);
+    try
+    {
+        event_or_callback.invoke(response);
+    }
+    catch (...)
+    {
+        ProfileEvents::increment(ProfileEvents::ZooKeeperWatchCallbackErrors);
+        throw;
+    }
+}
+
+}
 
 template <typename T>
 void ZooKeeper::write(const T & x)
@@ -1072,7 +1098,7 @@ void ZooKeeper::receiveEvent()
                 for (const auto & [event_or_callback, _] : it->second)
                 {
                     if (event_or_callback)
-                        event_or_callback(watch_response);
+                        triggerWatchCallback(event_or_callback, watch_response);
                 }
 
                 CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, it->second.size());
@@ -1426,10 +1452,11 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                         {
                             try
                             {
-                                event_or_callback(response);
+                                triggerWatchCallback(event_or_callback, response);
                             }
                             catch (...)
                             {
+                                /// We must continue to all other callbacks, because the user is waiting for them.
                                 tryLogCurrentException(log);
                             }
                         }
@@ -1480,8 +1507,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                 response.error = Error::ZSESSIONEXPIRED;
                 try
                 {
-                    const WatchCallbackPtrOrEventPtr & event_or_callback = info.watch;
-                    event_or_callback(response);
+                    triggerWatchCallback(info.watch, response);
                 }
                 catch (...)
                 {

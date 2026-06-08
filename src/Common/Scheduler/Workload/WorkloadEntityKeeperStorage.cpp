@@ -14,8 +14,14 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadStackRegistry.h>
 #include <Core/Settings.h>
+
+namespace ProfileEvents
+{
+    extern const Event ZooKeeperWatchTriggeredWorkloadEntity;
+}
 
 namespace DB
 {
@@ -230,11 +236,12 @@ std::pair<String, Int32> WorkloadEntityKeeperStorage::getDataAndSetWatch(const z
 {
     Coordination::Stat stat;
     String data;
-    bool exists = zookeeper->tryGetWatch(zookeeper_path, data, &stat, zookeeper_watch);
+    Coordination::WatchCallbackPtrOrEventPtr labelled_watch{zookeeper_watch, ProfileEvents::ZooKeeperWatchTriggeredWorkloadEntity};
+    bool exists = zookeeper->tryGetWatch(zookeeper_path, data, &stat, labelled_watch);
     if (!exists)
     {
         createRootNodes(zookeeper);
-        data = zookeeper->getWatch(zookeeper_path, &stat, zookeeper_watch);
+        data = zookeeper->getWatch(zookeeper_path, &stat, labelled_watch);
     }
     return {data, stat.version};
 }
