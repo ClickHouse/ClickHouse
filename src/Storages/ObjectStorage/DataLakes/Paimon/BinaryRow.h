@@ -88,7 +88,7 @@ public:
             Int32 sub_offset = static_cast<Int32>(offset_and_size >> 32);
             String bytes_string = copyBytes(offset() + sub_offset, size);
             LOG_TEST(log, "bytes_string: {}", to_hex_string(bytes_string));
-            auto add_leading_zero = [](const String & data, size_t target_size)
+            auto sign_extend = [](const String & data, size_t target_size)
             {
                 if (data.size() == target_size)
                     return data;
@@ -98,7 +98,11 @@ public:
                         "data size larger than target_size, data size: {}, target_size: {}.",
                         data.size(),
                         target_size);
-                String result(target_size, 0);
+                /// Paimon encodes high-precision decimals as signed big-endian two's-complement bytes of
+                /// minimal width. Widening must replicate the sign bit, otherwise a negative value such as
+                /// -1 (byte 0xFF) would be zero-padded into a large positive number.
+                const char pad = (!data.empty() && (static_cast<UInt8>(data[0]) & 0x80)) ? static_cast<char>(0xFF) : 0;
+                String result(target_size, pad);
                 size_t start_pos = target_size - data.size();
                 for (size_t i = 0; i < data.size(); ++i)
                     result[start_pos + i] = data[i];
@@ -118,7 +122,7 @@ public:
                 if (bytes_string.length() > 16)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS, "Get unexpected decimal bytes length: {}, expected <= 16", bytes_string.length());
-                bytes_string = add_leading_zero(bytes_string, 16);
+                bytes_string = sign_extend(bytes_string, 16);
                 UInt64 high = get_uint64_big_endian(bytes_string);
                 UInt64 low = get_uint64_big_endian(bytes_string.substr(8));
                 Int128 value({low, high});
@@ -129,7 +133,7 @@ public:
                 if (bytes_string.length() > 32)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS, "Get unexpected decimal bytes length: {}, expected <= 32", bytes_string.length());
-                bytes_string = add_leading_zero(bytes_string, 32);
+                bytes_string = sign_extend(bytes_string, 32);
                 UInt64 ele1 = get_uint64_big_endian(bytes_string);
                 UInt64 ele2 = get_uint64_big_endian(bytes_string.substr(8));
                 UInt64 ele3 = get_uint64_big_endian(bytes_string.substr(16));

@@ -10,7 +10,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 namespace DB
 {
@@ -114,6 +117,19 @@ namespace Paimon
             if (partition_key_set.contains(field.name))
                 continue;
 
+            /// Skip columns whose min/max stats cannot be decoded safely yet, so that enabling
+            /// `use_paimon_minmax_index_pruning` never turns a valid table into a query exception.
+            /// `BinaryRow::getTimestamp` only supports DateTime64 with scale <= 3; a higher-precision
+            /// timestamp column (e.g. TIMESTAMP(6)) would otherwise throw while reading the bound.
+            if (field.type.root_type == RootDataType::TIMESTAMP_WITHOUT_TIME_ZONE
+                || field.type.root_type == RootDataType::TIMESTAMP_WITH_LOCAL_TIME_ZONE)
+            {
+                const auto * dt64 = typeid_cast<const DB::DataTypeDateTime64 *>(
+                    removeNullable(field.type.clickhouse_data_type).get());
+                if (!dt64 || dt64->getScale() > 3)
+                    continue;
+            }
+
             auto col_ast = DB::make_intrusive<DB::ASTFunction>();
             col_ast->name = "tuple";
             col_ast->arguments = DB::make_intrusive<DB::ASTExpressionList>();
@@ -169,9 +185,11 @@ namespace Paimon
                 col_to_pos[stats_cols[i].safeGet<String>()] = static_cast<Int32>(i);
         }
 
+        const auto & null_counts = file.value_stats.null_counts;
+
         for (const auto & col_cond : column_conditions)
         {
-            Int32 pos;
+            Int32 pos = -1;
             if (!legacy_mode)
             {
                 /// Dense mode: look up column position; skip if column has no stats
@@ -185,6 +203,16 @@ namespace Paimon
                 /// Legacy mode: BinaryRow position = schema field index
                 pos = col_cond.schema_idx;
             }
+
+            /// The min/max bounds only describe the non-null values of a column. If the file contains any null
+            /// in this column, a predicate that matches NULL (e.g. `col IS NULL`) can still be satisfied even
+            /// when the predicate is false everywhere in [min, max]. Only prune when the null count is known
+            /// and equal to zero; otherwise skip pruning for this column to stay correct.
+            if (pos >= static_cast<Int32>(null_counts.size()))
+                continue;
+            const auto & null_count = null_counts[pos];
+            if (null_count.isNull() || DB::applyVisitor(DB::FieldVisitorConvertToNumber<Int64>(), null_count) != 0)
+                continue;
 
             /// Skip if stats are null for this column in this file
             if (min_row.isNullAt(pos) || max_row.isNullAt(pos))

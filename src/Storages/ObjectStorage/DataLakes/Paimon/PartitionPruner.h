@@ -48,7 +48,7 @@ namespace Paimon
         struct ColumnCondition
         {
             String column_name;
-            Int32 schema_idx; /// Position in table_schema.fields (used for legacy mode without _VALUE_STATS_COLS)
+            Int32 schema_idx = -1; /// Position in table_schema.fields (used for legacy mode without _VALUE_STATS_COLS)
             DB::KeyDescription key;
             std::unique_ptr<DB::KeyCondition> condition;
             DataType data_type;
