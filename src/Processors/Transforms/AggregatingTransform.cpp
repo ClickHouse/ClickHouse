@@ -967,6 +967,13 @@ void AggregatingTransform::work()
             variants.invalidate();
             variants.aggregates_pools = { std::make_shared<Arena>() };
             variants.aggregates_pool = variants.aggregates_pools.at(0).get();
+
+            /// Each block is aggregated independently, so the `max_rows_to_group_by` limit must apply per block too.
+            /// `checkLimits` latches `no_more_keys` to `true` once a block crosses the limit (with
+            /// `group_by_overflow_mode = 'any'`); without resetting it the fresh state of the next block would reject
+            /// all new keys and send the rest of the stream to the overflow row instead of producing independent
+            /// per-block partial results.
+            no_more_keys = false;
         }
     }
 }
