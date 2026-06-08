@@ -911,6 +911,11 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
             }
             else if constexpr (std::same_as<DeltaType, SetACLDelta>)
             {
+                /// (Even though acl doesn't affect digest, we must always subtract from `digest`
+                ///  when adding to `zxid_to_nodes`.)
+                if (digest && node_not_yet_in_zxid)
+                    *digest -= node->getDigest(delta.path);
+
                 acls = operation.new_acls;
             }
 
@@ -2198,6 +2203,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
         {
             update_parent_pzxid();
             add_parent_update_delta();
+            return new_deltas;
         }
 
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
