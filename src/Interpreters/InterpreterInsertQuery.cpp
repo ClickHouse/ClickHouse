@@ -591,7 +591,6 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
 
         auto context_for_trivial_select = Context::createCopy(select_context);
         context_for_trivial_select->setSettings(new_settings);
-        context_for_trivial_select->setInsertionTable(select_context->getInsertionTable(), select_context->getInsertionTableColumnNames());
 
         select_context = context_for_trivial_select;
     }
