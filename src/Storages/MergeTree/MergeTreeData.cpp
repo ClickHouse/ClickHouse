@@ -10965,9 +10965,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     if ((*getSettings())[MergeTreeSetting::fsync_part_directory])
         sync_guard = new_data_part_storage->getDirectorySyncGuard();
 
-    /// This effectively chooses minimal compression method:
-    ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
-    auto compression_codec = getContext()->chooseCompressionCodec(0, 0);
+    /// An empty part has zero size, so this chooses the minimal compression method:
+    /// either the table-level `default_compression_codec` setting, or the default lz4 / a
+    /// compression method with zero thresholds on absolute and relative part size.
+    /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected for an empty part.
+    auto compression_codec = getCompressionCodecForPart(0, {}, time(nullptr));
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(
