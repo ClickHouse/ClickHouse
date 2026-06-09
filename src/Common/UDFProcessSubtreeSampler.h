@@ -106,7 +106,7 @@ public:
     /// its stdout may report a near-zero peak: the IO-phase samples never fire
     /// because the child is already gone when the read side runs. CPU and
     /// elapsed time are unaffected (taken from `wait4` rusage).
-    void sampleExecutablePeak(bool is_final = false) noexcept;
+    void sampleExecutablePeak([[maybe_unused]] bool is_final = false) noexcept;
 
     /// Executable (non-pool) path: stamp `elapsed_us` from the wall clock at
     /// `ShellCommandSource` cleanup and compute `peak_memory_byte_seconds` from

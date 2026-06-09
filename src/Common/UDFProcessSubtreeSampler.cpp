@@ -421,7 +421,7 @@ void UDFProcessSubtreeSampler::recordExecutablePid(pid_t root_pid_) noexcept
 }
 
 
-void UDFProcessSubtreeSampler::sampleExecutablePeak(bool is_final) noexcept
+void UDFProcessSubtreeSampler::sampleExecutablePeak([[maybe_unused]] bool is_final) noexcept
 {
     if (executable_root_pid <= 0)
         return;
