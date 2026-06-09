@@ -221,10 +221,12 @@ String evaluateSubqueryQueryText(const ASTPtr & query, ContextPtr context)
     return extractQueryTextFromField((*block.getByPosition(0).column)[0], block.getByPosition(0).type, "input subquery");
 }
 
-bool isTableFunctionAST(const ASTPtr & ast)
+bool isRemoteTableFunctionWithSourceArgument(const ASTFunction & function, size_t argument_index)
 {
-    const auto * function = ast->as<ASTFunction>();
-    return function && TableFunctionFactory::instance().isTableFunctionName(function->name);
+    if (argument_index != 1)
+        return false;
+
+    return function.name == "remote" || function.name == "remoteSecure" || function.name == "cluster" || function.name == "clusterAllReplicas";
 }
 
 void checkNoNestedEvalTableFunction(const ASTPtr & table_function_ast);
@@ -253,9 +255,10 @@ void checkNoNestedEvalTableFunction(const ASTPtr & table_function_ast)
     if (!function->arguments)
         return;
 
-    for (const auto & argument : function->arguments->children)
+    for (size_t argument_index = 0; argument_index != function->arguments->children.size(); ++argument_index)
     {
-        if (isTableFunctionAST(argument))
+        const auto & argument = function->arguments->children[argument_index];
+        if (isRemoteTableFunctionWithSourceArgument(*function, argument_index))
             checkNoNestedEvalTableFunction(argument);
         else
             checkNoNestedEval(argument);
