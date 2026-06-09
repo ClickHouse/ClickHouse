@@ -43,6 +43,8 @@ public:
     void setLocation(const std::string & location_);
     std::string getLocation() const;
     std::string getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style = DB::S3UriStyle::AUTO) const;
+    /// Despite the name, returns the metadata file path *relative* to the table data location
+    /// (consumed as `iceberg_metadata_file_path`), not an absolute location.
     std::string getMetadataLocation(const std::string & iceberg_metadata_file_location) const;
 
     void setEndpoint(const std::string & endpoint_);
