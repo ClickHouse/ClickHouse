@@ -25,6 +25,7 @@ ColumnsDescription StorageSystemKeeperSnapshots::getColumnsDescription()
         {"size_bytes", std::make_shared<DataTypeUInt64>(), "Size of the snapshot file on disk."},
         {"last_modified_at", std::make_shared<DataTypeDateTime>(), "Last modification time of the snapshot file."},
         {"is_received", DataTypeFactory::instance().get("Bool"), "True if the snapshot is currently being received from the leader. For such rows `size_bytes` and `last_modified_at` reflect the partial file as written so far and may underreport."},
+        {"exists_on_disk", DataTypeFactory::instance().get("Bool"), "Whether the snapshot file is currently present on disk. Always true for finalized snapshots (`is_received` = false) unless the file was removed out of band or is corrupted; may be false for snapshots being received (`is_received` = true) before any bytes are written."},
     };
 }
 
@@ -42,16 +43,14 @@ void StorageSystemKeeperSnapshots::fillData(MutableColumns & res_columns, Contex
     {
         UInt64 size_bytes = 0;
         UInt32 last_modified_at = 0;
+        bool exists_on_disk = false;
         try
         {
             if (entry.disk->existsFile(entry.path))
             {
+                exists_on_disk = true;
                 size_bytes = entry.disk->getFileSize(entry.path);
                 last_modified_at = static_cast<UInt32>(entry.disk->getLastModified(entry.path).epochTime());
-            }
-            else if (!entry.is_received)
-            {
-                LOG_WARNING(log, "Finalized snapshot file {} on disk {} is missing", entry.path, entry.disk->getName());
             }
         }
         catch (...)
@@ -66,6 +65,7 @@ void StorageSystemKeeperSnapshots::fillData(MutableColumns & res_columns, Contex
         res_columns[i++]->insert(size_bytes);
         res_columns[i++]->insert(last_modified_at);
         res_columns[i++]->insert(static_cast<UInt8>(entry.is_received));
+        res_columns[i++]->insert(static_cast<UInt8>(exists_on_disk));
     }
 }
 
