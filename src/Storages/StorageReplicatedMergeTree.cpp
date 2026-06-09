@@ -33,6 +33,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 
+#include <Disks/DiskFromAST.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/SingleDiskVolume.h>
 
@@ -6757,13 +6758,20 @@ void StorageReplicatedMergeTree::alter(
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
         merge_strategy_picker.refreshState();
-        changeSettings(future_metadata.settings_changes, table_lock_holder);
+        /// Caller-owned disk-registration scope: any inline `disk = disk(...)` setting in
+        /// `future_metadata.settings_changes` is registered tentatively. The scope is
+        /// committed only after `alterTable` has succeeded; if `alterTable` throws, the
+        /// scope's destructor rolls the new disk back from `DiskSelector` /
+        /// `FileCacheFactory`. See `MergeTreeData::changeSettings` and issue #63019.
+        DiskFromAST::CustomDiskRegistrationScope disk_scope(query_context);
+        changeSettings(future_metadata.settings_changes, table_lock_holder, &disk_scope);
 
         if (statistics_changed)
             setInMemoryMetadata(future_metadata);
 
         /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        disk_scope.commit();
         return;
     }
 
@@ -6798,6 +6806,16 @@ void StorageReplicatedMergeTree::alter(
 
     std::optional<ReplicatedMergeTreeLogEntryData> alter_entry;
     std::optional<String> mutation_znode;
+
+    /// Caller-owned disk-registration scope. Spans the ZBADVERSION retry loop and the
+    /// subsequent ZooKeeper `tryMulti` commit. `changeSettings` (called inside the loop
+    /// when `settings_are_changed`) registers any inline `disk = disk(...)` setting
+    /// tentatively; the scope is committed only after the ZK commit succeeds. If anything
+    /// in the loop or after throws (including `tryMulti` non-ZOK responses, ALTER_METADATA
+    /// pull races, replica wait failures), the scope's destructor rolls the new disk back
+    /// from `DiskSelector` / `FileCacheFactory`. See `MergeTreeData::changeSettings` and
+    /// issue #63019.
+    DiskFromAST::CustomDiskRegistrationScope disk_scope(query_context);
 
     while (true)
     {
@@ -6887,9 +6905,11 @@ void StorageReplicatedMergeTree::alter(
 
             if (settings_are_changed)
             {
-                /// Just change settings
+                /// Just change settings. The outer-scope `disk_scope` carries ownership of
+                /// any inline disk registration; the scope is committed only after the ZK
+                /// `tryMulti` commit succeeds further down.
                 metadata_copy.settings_changes = future_metadata.settings_changes;
-                changeSettings(metadata_copy.settings_changes, table_lock_holder);
+                changeSettings(metadata_copy.settings_changes, table_lock_holder, &disk_scope);
             }
 
             /// The comment is not replicated as of today, but we can implement it later.
@@ -7028,6 +7048,11 @@ void StorageReplicatedMergeTree::alter(
 
         throw Coordination::Exception::fromMessage(rc, "Alter cannot be assigned because of Zookeeper error");
     }
+
+    /// ZooKeeper `tryMulti` returned ZOK. The metadata transition is now durable in ZK and
+    /// the new inline disk (if any) is permanently part of the table; commit the scope so
+    /// the destructor does not roll the disk back.
+    disk_scope.commit();
 
     table_lock_holder.unlock();
 

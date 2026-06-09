@@ -5050,18 +5050,32 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
 
 void MergeTreeData::changeSettings(
     const ASTPtr & new_settings,
-    AlterLockHolder & /* table_lock_holder */)
+    AlterLockHolder & /* table_lock_holder */,
+    DiskFromAST::CustomDiskRegistrationScope * caller_disk_scope)
 {
     if (new_settings)
     {
         bool has_storage_policy_changed = false;
 
-        /// Apply scope: track newly-registered custom disks and roll them back if anything
-        /// in this block throws. Committed only after the metadata transition has been
-        /// committed via `setInMemoryMetadata`, so that a crash in
-        /// `checkStoragePolicy(getStoragePolicyFromDisk(...))` or `existsDirectory(...)` here
-        /// does not leak the new disk's name in the global selector (issue #63019, bot review).
-        DiskFromAST::CustomDiskRegistrationScope disk_scope(getContext());
+        /// Apply scope: track newly-registered custom disks. If the caller passes a non-null
+        /// `caller_disk_scope`, that scope owns the registrations and the caller is responsible
+        /// for committing it AFTER its outer metadata transition has succeeded (e.g.
+        /// `DatabaseCatalog::alterTable` + ZooKeeper commit). If the caller passes null, this
+        /// function manages a local scope and commits it once `setInMemoryMetadata` returns —
+        /// the legacy mode used by the catch-block revert call where `new_settings` is the old
+        /// settings AST and is not expected to introduce any new inline disks.
+        ///
+        /// The caller-owned mode (used by `StorageMergeTree::alter` and
+        /// `StorageReplicatedMergeTree::alter`) closes the gap reported by the bot on
+        /// PR #103818: previously this function committed the scope right after
+        /// `setInMemoryMetadata`, but the outer caller still had to run `alterTable` (and a
+        /// ZooKeeper `tryMulti` on the replicated path) which can throw. After commit a thrown
+        /// outer step would revert the in-memory metadata via a second `changeSettings(old)` call,
+        /// yet the newly registered inline disk would already be permanently in `DiskSelector`.
+        std::optional<DiskFromAST::CustomDiskRegistrationScope> local_disk_scope;
+        if (!caller_disk_scope)
+            local_disk_scope.emplace(getContext());
+        DiskFromAST::CustomDiskRegistrationScope * disk_scope = caller_disk_scope ? caller_disk_scope : &*local_disk_scope;
 
         /// Take a non-const copy so an inline `disk = disk(...)` setting (a `CustomType` `Field`
         /// produced by the parser) is converted to a registered disk name string before any
@@ -5070,7 +5084,7 @@ void MergeTreeData::changeSettings(
         /// path; without it, every ALTER that re-applies the table's settings would throw
         /// `Bad get: has CustomType, requested String` (issue #63019).
         SettingsChanges new_changes = new_settings->as<const ASTSetQuery &>().changes;
-        DiskFromAST::convertCustomDiskSettings(new_changes, getContext(), /* attach */ false, &disk_scope);
+        DiskFromAST::convertCustomDiskSettings(new_changes, getContext(), /* attach */ false, disk_scope);
 
         StoragePolicyPtr new_storage_policy = nullptr;
 
@@ -5153,12 +5167,20 @@ void MergeTreeData::changeSettings(
 
         setInMemoryMetadata(new_metadata);
 
-        /// Metadata transition committed: the new custom disk registration is now referenced
-        /// by the in-memory metadata and must persist for the lifetime of the table. Anything
-        /// thrown after this point (`startBackgroundMovesIfNeeded`, statistics cache restart)
-        /// would leave the metadata pointing at a registered disk; rolling back would corrupt
-        /// state. Mark the scope committed.
-        disk_scope.commit();
+        /// In-memory metadata transition done. If we own the scope (legacy mode, used by the
+        /// catch-block revert), commit it here so the rolled-back-to settings AST stays
+        /// permanently registered: anything thrown after this point inside this function
+        /// (`startBackgroundMovesIfNeeded`, statistics cache restart) would corrupt state if
+        /// the destructor un-registered already-committed disks.
+        ///
+        /// In caller-owned mode (`caller_disk_scope != nullptr`), we deliberately do NOT
+        /// commit here. The outer caller (`StorageMergeTree::alter` /
+        /// `StorageReplicatedMergeTree::alter`) still has to run `DatabaseCatalog::alterTable`
+        /// (and a ZooKeeper `tryMulti` on the replicated path) which can throw; only after
+        /// that succeeds is the metadata transition truly committed. The caller is
+        /// responsible for invoking `caller_disk_scope->commit()` at that point.
+        if (local_disk_scope)
+            local_disk_scope->commit();
 
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();

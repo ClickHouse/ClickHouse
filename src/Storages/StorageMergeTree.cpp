@@ -11,6 +11,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Databases/IDatabase.h>
+#include <Disks/DiskFromAST.h>
 #include <Disks/supportWritingWithAppend.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/copyData.h>
@@ -468,13 +469,20 @@ void StorageMergeTree::alter(
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {
-        changeSettings(new_metadata.settings_changes, table_lock_holder);
+        /// Caller-owned disk-registration scope: any inline `disk = disk(...)` setting in
+        /// `new_metadata.settings_changes` is registered tentatively. The scope is committed
+        /// only after `alterTable` has succeeded; if `alterTable` throws, the scope's
+        /// destructor rolls the new disk back. See `MergeTreeData::changeSettings` and
+        /// issue #63019.
+        DiskFromAST::CustomDiskRegistrationScope disk_scope(local_context);
+        changeSettings(new_metadata.settings_changes, table_lock_holder, &disk_scope);
 
         if (statistics_changed)
             setInMemoryMetadata(new_metadata);
 
         /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        disk_scope.commit();
     }
     else if (commands.isCommentAlter())
     {
@@ -505,7 +513,15 @@ void StorageMergeTree::alter(
         }
 
         {
-            changeSettings(new_metadata.settings_changes, table_lock_holder);
+            /// Caller-owned disk-registration scope. `changeSettings` registers any inline
+            /// `disk = disk(...)` setting tentatively against this scope; the scope is
+            /// committed only after `alterTable` succeeds. If `alterTable` throws, the
+            /// catch-block reverts metadata via a second `changeSettings(old, ...)` call
+            /// (with no scope so the legacy local-scope path commits immediately) and the
+            /// outer scope's destructor rolls the new disk back from `DiskSelector` /
+            /// `FileCacheFactory`. See `MergeTreeData::changeSettings` and issue #63019.
+            DiskFromAST::CustomDiskRegistrationScope disk_scope(local_context);
+            changeSettings(new_metadata.settings_changes, table_lock_holder, &disk_scope);
             checkTTLExpressions(new_metadata, old_metadata);
 
             /// Reinitialize primary key because primary key column types might have changed.
@@ -522,6 +538,7 @@ void StorageMergeTree::alter(
                 setProperties(old_metadata, new_metadata, false, local_context);
                 throw;
             }
+            disk_scope.commit();
 
             {
                 auto parts_lock = lockParts();

@@ -7,6 +7,17 @@ rejector_iter_6_rejected
 rejector_iter_7_rejected
 rejector_iter_8_rejected
 3	6
+8
 3	6
 2	30
+shadow_1	1	100
+shadow_2	1	200
+shadow_3	1	300
+shadow_4	1	400
+shadow_5	1	500
+shadow_6	1	600
+shadow_7	1	700
+shadow_8	1	800
+redefine_with_different_settings_rejected
+sequential_rejector_rejected
 2	300
