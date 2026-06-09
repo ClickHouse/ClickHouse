@@ -1074,7 +1074,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
 
                 {
                     auto thread_group = ThreadGroup::createForQuery(startup_context);
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::STARTUP_SCRIPT, /*allow_existing_group=*/ true);
+                    ThreadGroupSwitcher switcher(thread_group, /*allow_existing_group=*/ true);
                     executeQuery(condition_read_buffer, condition_write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
                 }
 
@@ -1108,7 +1108,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
             startup_context->setCurrentQueryId("");
 
             auto thread_group = ThreadGroup::createForQuery(startup_context);
-            ThreadGroupSwitcher switcher(thread_group, ThreadName::STARTUP_SCRIPT, /*allow_existing_group=*/ true);
+            ThreadGroupSwitcher switcher(thread_group, /*allow_existing_group=*/ true);
 
             executeQuery(read_buffer, write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
