@@ -1,4 +1,3 @@
--- Tags: no-shared-merge-tree
 -- Test that two conjuncts on the same column (different SparsityPredicateClass)
 -- do not double-seed the `SparseOffsetsShare`. Without dedup, a scan window
 -- straddling a chunk boundary would walk two copies of the offsets and

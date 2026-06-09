@@ -1,5 +1,3 @@
--- Tags: no-shared-merge-tree
-
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_sparse_enum;
