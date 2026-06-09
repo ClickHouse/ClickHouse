@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-shared-merge-tree
+-- Tags: no-ordinary-database, no-replicated-database, no-shared-merge-tree
 -- ^ Atomic database is required for CREATE OR REPLACE.
 
 DROP TABLE IF EXISTS t04326;
