@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <base/arithmeticOverflow.h>
+#include <base/scope_guard.h>
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -67,6 +68,11 @@ std::vector<pid_t> walkSubtree(pid_t root_pid, bool & truncated)
         if (!dir)
             continue;
 
+        /// Release the handle on every path, including an exception thrown while
+        /// building `children_path` or opening the `ifstream` under a memory limit;
+        /// otherwise the swallowed sample failure would leak a directory fd.
+        SCOPE_EXIT(::closedir(dir));
+
         struct dirent * entry = nullptr;
         /// NOLINTNEXTLINE(concurrency-mt-unsafe) -- `dir` is a local `DIR *` not shared across threads.
         while ((entry = ::readdir(dir)) != nullptr)
@@ -101,8 +107,6 @@ std::vector<pid_t> walkSubtree(pid_t root_pid, bool & truncated)
             if (result.size() >= MAX_PIDS)
                 break;
         }
-
-        ::closedir(dir);
     }
 #endif
 
