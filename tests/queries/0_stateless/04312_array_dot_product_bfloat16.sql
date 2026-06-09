@@ -6,17 +6,24 @@
 DROP TABLE IF EXISTS bf16_vectors;
 CREATE TABLE bf16_vectors (id UInt64, v Array(BFloat16)) ENGINE = Memory;
 
--- 200 rows of length-80 vectors (80 > the unroll width exercises the main loop and the scalar tail).
--- Positive values keep the dot product away from sign cancellation, so relative error reflects accuracy.
+-- Length 150 is not a multiple of the kernel unroll width (16), so both the unrolled body and the
+-- scalar tail loop are exercised. Positive values keep the dot product away from sign cancellation,
+-- so relative error reflects accuracy.
 INSERT INTO bf16_vectors
-SELECT number, arrayMap(i -> toBFloat16(((number * 7 + i * 13) % 97) / 7.0 + 1.0), range(80))
+SELECT number, arrayMap(i -> toBFloat16(((number * 7 + i * 13) % 97) / 7.0 + 1.0), range(150))
 FROM numbers(200);
 
--- SIMD path: the left argument is a constant vector, the right one is the column.
+-- Constant-left SIMD path (dotProductConstBatchImpl): a constant vector against the column.
 WITH (SELECT v FROM bf16_vectors WHERE id = 0) AS a
 SELECT
     max(abs(arrayDotProduct(a, v) - arraySum(arrayMap((x, y) -> toFloat64(x) * toFloat64(y), a, v)))
         / arraySum(arrayMap((x, y) -> toFloat64(x) * toFloat64(y), a, v))) < 0.001
+FROM bf16_vectors;
+
+-- Column-vs-column SIMD path (dotProductBatchImpl): both arguments are the column.
+SELECT
+    max(abs(arrayDotProduct(v, v) - arraySum(arrayMap(x -> toFloat64(x) * toFloat64(x), v)))
+        / arraySum(arrayMap(x -> toFloat64(x) * toFloat64(x), v))) < 0.001
 FROM bf16_vectors;
 
 -- The result type is Float32 (matching arrayNorm / arrayDistance for BFloat16 inputs).
