@@ -238,6 +238,11 @@ public:
         return server->getKeeperLogInfo();
     }
 
+    std::vector<KeeperChangelogStatus> getChangelogsStatus() const
+    {
+        return server->getChangelogsStatus();
+    }
+
     /// Request to be leader.
     bool requestLeader()
     {
