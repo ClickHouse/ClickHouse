@@ -1,9 +1,4 @@
--- Regression test: a CROSS JOIN combined with an INNER join whose predicate spans all
--- relations used to make the greedy join-order optimizer throw
--- `Join restriction violated` (LOGICAL_ERROR). The CROSS join was wrongly registered as an
--- outer-join boundary and its `forbidden_partners` tainted the cross relation, so the
--- fallback "join two smallest components" step selected a pair the (bogus) restriction forbade.
--- A CROSS join imposes no reordering constraint, so the query must just run.
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t04303;
 CREATE TABLE t04303 (minute DateTime, value Float64) ENGINE = MergeTree ORDER BY minute;
