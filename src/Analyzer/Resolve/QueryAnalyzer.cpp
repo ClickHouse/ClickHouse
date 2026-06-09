@@ -3402,11 +3402,15 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     /// fed into the inner subquery are post-rollup `Nullable`s. The walk below continues
     /// past the inner `QUERY` scope so that the outer scope's `nullable_group_by_keys`
     /// is consulted — but only when the `node` is a column whose source table expression
-    /// is NOT registered in the inner scope's FROM (i.e. the column is correlated).
-    /// At each scope, the aggregate-function exclusion is evaluated against THAT scope's
-    /// expression-resolve stack: an outer scope's `nullable_group_by_keys` may apply
-    /// even when the inner subquery is currently inside an aggregate function call,
-    /// because the inner aggregate is operating on the outer's already-Nullable values.
+    /// is NOT registered in the inner scope's FROM (i.e. the column is correlated), and
+    /// only the outer query that actually owns that source may apply its keys (an
+    /// intermediate query with a same-named GROUP BY key must not match — see below).
+    /// The aggregate-function exclusion is OR-accumulated across the LAMBDA scopes within
+    /// a query and reset at each `QUERY` boundary (see the `in_aggregate_function_scope`
+    /// comment below): so an inner aggregate suppresses wrapping for that subquery's own
+    /// keys, but an outer scope's `nullable_group_by_keys` may still apply to a correlated
+    /// reference even when the inner subquery is currently inside an aggregate function
+    /// call, because the inner aggregate operates on the outer's already-Nullable values.
     ///
     /// In the correlated case the matching node is mutated in place rather than replaced
     /// with a clone of the GROUP BY key. The same `shared_ptr` is referenced by the
@@ -3441,14 +3445,27 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     && scope_ptr != &scope;
                 if (is_correlated_to_outer_scope)
                 {
-                    node->convertToNullable();
+                    /// `nullable_group_by_keys` matching uses query-tree equality, which for
+                    /// columns (`ColumnNode::isEqualImpl`) compares only the column name and
+                    /// type, not the column source. For a correlated reference this means an
+                    /// intermediate query with a same-named, same-typed GROUP BY key could
+                    /// match `node` even though that query's rollup does not produce `NULL`s
+                    /// for the outer column. Only the outer query that actually owns the
+                    /// column's source table expression may apply its `group_by_use_nulls`
+                    /// nullability, so require source ownership before wrapping; otherwise keep
+                    /// walking outwards to the owning scope.
+                    if (scope_ptr->registered_table_expression_nodes.contains(column_source))
+                    {
+                        node->convertToNullable();
+                        break;
+                    }
                 }
                 else
                 {
                     node = it->node->clone();
                     node->convertToNullable();
+                    break;
                 }
-                break;
             }
         }
 
