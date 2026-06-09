@@ -61,12 +61,12 @@ RETRIES_SIGN = "Some tests were restarted"
 
 # Regex pattern to match test result lines.
 # The shape `name: [ STATUS ] N.NN sec.` is specific enough that we don't pin
-# the leading timestamp - the bounded `^.{0,32}?` lets through any expected
-# framing (raw=0, `ts`=20, `[YYYY-MM-DD HH:MM:SS] `=22) but rules out matches
-# embedded deeper in an error/exception message (see PR #88825). Test names
-# can contain letters, digits, underscores, hyphens, and dots.
+# the leading timestamp or the counter - the bounded `^.{0,36}?` lets through
+# any expected framing (raw=0, `ts`=20, `[YYYY-MM-DD HH:MM:SS] `=22) but rules
+# out matches embedded deeper in an error/exception message (see PR #88825).
+# Test names can contain letters, digits, underscores, hyphens, and dots.
 TEST_RESULT_PATTERN = re.compile(
-    r"^.{0,32}?"
+    r"^.{0,36}?"
     r"([\w\-\.]+):\s+(\[ (?:OK|FAIL|SKIPPED|UNKNOWN|NOT_FAILED) \])\s+([\d.]+) sec\."
 )
 
