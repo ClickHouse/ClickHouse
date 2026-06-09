@@ -101,6 +101,7 @@ namespace FailPoints
 {
     extern const char mt_mutate_task_pause_in_prepare[];
     extern const char merge_task_projection_stage_pause[];
+    extern const char mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc[];
 }
 
 namespace ErrorCodes
@@ -2554,6 +2555,20 @@ private:
             auto changed_checksums = out_mut->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
+            /// Add checksums of projection parts that were rebuilt during this mutation.
+            /// `MergedColumnOnlyOutputStream::fillChecksums` no longer adds them because that addition
+            /// is redundant during vertical merge (`MergedBlockOutputStream::finalizePartAsync` adds
+            /// them later). For mutations there is no such later step, so add them here.
+            for (const auto & [projection_name, projection_part] : ctx->new_data_part->getProjectionParts())
+            {
+                if (projection_part->checksums.empty())
+                    continue;
+                ctx->new_data_part->checksums.addFile(
+                    projection_name + ".proj",
+                    projection_part->checksums.getTotalSizeOnDisk(),
+                    projection_part->checksums.getTotalChecksumUInt128());
+            }
+
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
             if (!new_columns_substreams.empty())
             {
@@ -2803,8 +2818,12 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
         return false;
 
     /// We need to rewrite statistics because they have different serialization with nullable type.
+    /// `column_desc` can be `nullptr` if the column was concurrently dropped from the metadata
+    /// snapshot used here (mutation commands and metadata can drift apart under concurrent ALTERs).
+    /// Skip this optimization in that case; the normal mutation path will surface the error.
     const auto * column_desc = metadata_snapshot->getColumns().tryGet(command.column_name);
-    if (!column_desc->statistics.empty())
+    fiu_do_on(FailPoints::mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc, { column_desc = nullptr; });
+    if (!column_desc || !column_desc->statistics.empty())
         return false;
 
     return true;
