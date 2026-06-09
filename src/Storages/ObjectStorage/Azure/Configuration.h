@@ -73,7 +73,7 @@ struct AzureStorageParsedArguments : private StorageParsedArguments
     void initializeForOneLake(
         ASTs & args,
         ContextPtr context,
-        bool use_blob_endpoint = true);
+        bool use_blob_endpoint);
 
     Path blob_path;
     AzureBlobStorage::ConnectionParams connection_params;
