@@ -257,6 +257,7 @@ private:
 
 ColumnPtr makeNullable(const ColumnPtr & column);
 ColumnPtr makeNullableSafe(const ColumnPtr & column);
+ColumnConstPtr makeNullableSafe(const ColumnConstPtr & column);
 ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column);
 ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column);
 
