@@ -8,14 +8,22 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/scope_guard_safe.h>
+#include <base/scope_guard.h>
 #include <limits>
 #include <utility>
 
 namespace DB::ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace ProfileEvents
+{
+    extern const Event GlobalMemoryLimitExceeded;
+    extern const Event QueryMemoryLimitExceeded;
 }
 
 using namespace DB;
@@ -254,6 +262,53 @@ TEST(AllocationInterceptors, MinAllocSizeToThrowDoesNotAffectExplicitAllocPath)
     EXPECT_THROW({
         std::ignore = CurrentMemoryTracker::alloc(allocation_size);
     }, DB::Exception);
+}
+
+TEST(AllocationInterceptors, GlobalMemoryLimitExceededOnlyIncrementsForGlobalTracker)
+{
+    MainThreadStatus::getInstance();
+
+    MemoryLimitGuard limit_guard;
+    auto & thread_tracker = CurrentThread::get().memory_tracker;
+    MemoryTracker query_tracker(&total_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor=*/ false);
+    MemoryTracker * prev_parent = thread_tracker.getParent();
+    Int64 prev_hard_limit = thread_tracker.getHardLimit();
+    const auto reset_test_counters = [&]
+    {
+        total_memory_tracker.resetCounters();
+        thread_tracker.resetCounters();
+        query_tracker.resetCounters();
+        CurrentThread::getProfileEvents().resetCounters();
+    };
+
+    CurrentThread::flushUntrackedMemory();
+
+    SCOPE_EXIT({
+        CurrentThread::flushUntrackedMemory();
+        reset_test_counters();
+        thread_tracker.setHardLimit(prev_hard_limit);
+        thread_tracker.setParent(prev_parent);
+    });
+
+    thread_tracker.setParent(&query_tracker);
+
+    reset_test_counters();
+
+    query_tracker.setHardLimit(query_tracker.get() + 1024);
+    EXPECT_THROW({
+        std::ignore = CurrentMemoryTracker::alloc(allocation_size);
+    }, DB::Exception);
+    EXPECT_EQ(1, CurrentThread::getProfileEvents()[ProfileEvents::QueryMemoryLimitExceeded]);
+    EXPECT_EQ(0, CurrentThread::getProfileEvents()[ProfileEvents::GlobalMemoryLimitExceeded]);
+
+    reset_test_counters();
+
+    total_memory_tracker.setHardLimit(total_memory_tracker.get() + 1024);
+    EXPECT_THROW({
+        std::ignore = CurrentMemoryTracker::alloc(allocation_size);
+    }, DB::Exception);
+    EXPECT_EQ(1, CurrentThread::getProfileEvents()[ProfileEvents::QueryMemoryLimitExceeded]);
+    EXPECT_EQ(1, CurrentThread::getProfileEvents()[ProfileEvents::GlobalMemoryLimitExceeded]);
 }
 
 TEST(AllocationInterceptors, MinAllocSizeToThrowDoesNotAffectMalloc)
