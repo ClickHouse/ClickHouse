@@ -1046,13 +1046,21 @@ ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column)
     return ColumnNullable::create(column, ColumnUInt8::create(column->size(), static_cast<UInt8>(0)));
 }
 
+ColumnConstPtr makeNullableSafe(const ColumnConstPtr & column)
+{
+    if (isColumnNullable(column->getDataColumn()))
+        return column;
+
+    return ColumnConst::create(makeNullableSafe(column->getDataColumnPtr()), column->size());
+}
+
 ColumnPtr makeNullableSafe(const ColumnPtr & column)
 {
     if (isColumnNullable(*column))
         return column;
 
-    if (isColumnConst(*column))
-        return ColumnConst::create(makeNullableSafe(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
+        return makeNullableSafe(column_const->getPtr());
 
     if (column->canBeInsideNullable())
         return makeNullable(column);
