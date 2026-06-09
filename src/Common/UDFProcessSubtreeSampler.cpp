@@ -421,7 +421,7 @@ void UDFProcessSubtreeSampler::recordExecutablePid(pid_t root_pid_) noexcept
 }
 
 
-void UDFProcessSubtreeSampler::sampleExecutablePeak() noexcept
+void UDFProcessSubtreeSampler::sampleExecutablePeak(bool is_final) noexcept
 {
     if (executable_root_pid <= 0)
         return;
@@ -431,15 +431,19 @@ void UDFProcessSubtreeSampler::sampleExecutablePeak() noexcept
     /// a subtree walk per fill while streaming large output. VmHWM is monotonic, so
     /// the running max survives sparse sampling: throttle to at most one walk per
     /// ~5 ms. The first call always samples (last_sample_us == 0) so a
-    /// short-lived child is measured at least once.
-    static constexpr UInt64 sample_interval_us = 5000;
+    /// short-lived child is measured at least once. The final (EOF) call bypasses
+    /// the throttle to ensure the tail sample always executes.
+    if (!is_final)
+    {
+        static constexpr UInt64 sample_interval_us = 5000;
 
-    const UInt64 now_us = entry_watch.elapsedMicroseconds();
-    UInt64 last = last_sample_us.load(std::memory_order_relaxed);
-    if (last != 0 && now_us < last + sample_interval_us)
-        return;
-    if (!last_sample_us.compare_exchange_strong(last, now_us, std::memory_order_relaxed))
-        return;
+        const UInt64 now_us = entry_watch.elapsedMicroseconds();
+        UInt64 last = last_sample_us.load(std::memory_order_relaxed);
+        if (last != 0 && now_us < last + sample_interval_us)
+            return;
+        if (!last_sample_us.compare_exchange_strong(last, now_us, std::memory_order_relaxed))
+            return;
+    }
 
     /// walkSubtree and readPeakRss allocate (path strings, ifstream); an exception
     /// thrown under a memory limit must not cross this noexcept boundary.
@@ -455,10 +459,12 @@ void UDFProcessSubtreeSampler::sampleExecutablePeak() noexcept
             UInt64 hwm_bytes = 0;
             if (!UDFProcfs::readPeakRss(pid, hwm_bytes))
             {
-                /// A descendant can exit between walkSubtree and this read (benign
-                /// TOCTOU). A root failure signals degradation (e.g. seccomp blocking /proc).
-                if (pid == executable_root_pid)
-                    read_peak_rss_failed_any.store(true, std::memory_order_relaxed);
+                /// A read can fail because the pid exited since `walkSubtree` (a
+                /// short-lived child, or the root after it closed stdout) or because
+                /// a sandbox denies `/proc`. The executable path cannot tell these
+                /// apart — the child's lifetime is not under our control — so it does
+                /// not raise the degradation flag here, unlike the pool path where the
+                /// borrowed worker is provably alive during sampling.
                 continue;
             }
 

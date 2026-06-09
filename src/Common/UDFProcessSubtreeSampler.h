@@ -44,20 +44,22 @@ namespace DB
   *   ctor                    -- starts the wall clock for elapsed measurement
   *   recordExecutablePid     -- process created; stores pid for subtree sampling
   *   recordInputBytes / recordOutputBytes -- IO buffers report bytes pushed
-  *   sampleExecutablePeak    -- called on every IO read and input write, while
-  *                              the child is provably alive; walks the subtree
-  *                              from executable_root_pid and keeps a running max
-  *                              of VmHWM across pids
+  *   sampleExecutablePeak    -- called on each IO read and input write (child
+  *                              provably alive), plus one best-effort tail sample
+  *                              at stdout EOF (child may have already exited);
+  *                              keeps a running max of VmHWM across the subtree
   *   recordExecutableElapsed -- ShellCommandSource cleanup; stamps elapsed_us
   *                              and computes peak_memory_byte_seconds
   *   recordExecutableFinished -- records CPU from wait4 rusage
   *
   * Procfs failures (ENOENT after a worker died, EACCES, malformed content) are
   * silently skipped on both the pool and executable paths: CPU/memory increments
-  * are dropped but the other events still fire. On the executable path, a failed
-  * read for a descendant pid is treated as that pid having exited since
-  * enumeration; only a failed read for the root pid signals genuine degradation
-  * (e.g. seccomp blocking /proc).
+  * are dropped but the other events still fire. On the pool path, a failed read
+  * for the root pid signals genuine degradation (e.g. seccomp blocking `/proc`)
+  * because the borrowed worker is provably alive during sampling. On the
+  * executable path, `readPeakRss` failures are never flagged as degradation:
+  * the child's lifetime is not under our control and a root read failure is
+  * indistinguishable from a legitimately exited short-lived UDF.
   */
 class UDFProcessSubtreeSampler
 {
@@ -78,27 +80,33 @@ public:
     /// Executable (non-pool) path: walk the subtree from `executable_root_pid`,
     /// read `VmHWM` from `/proc/<pid>/status` for each pid, and keep a running
     /// max in `executable_peak_rss_bytes`. Invoked from both IO loops (stdout
-    /// read and stdin write). The first call always samples; subsequent calls are
-    /// throttled to at most one subtree walk per ~5 ms. `VmHWM` monotonicity
-    /// keeps the running max correct under sparse sampling. No-op when
-    /// `executable_root_pid <= 0`. Thread-safe: may be called concurrently from
-    /// the write-buffer send thread and the read-buffer pull thread.
+    /// read and stdin write). The first call always samples; subsequent non-final
+    /// calls are throttled to at most one subtree walk per ~5 ms. `VmHWM`
+    /// monotonicity keeps the running max correct under sparse sampling. No-op
+    /// when `executable_root_pid <= 0`. Thread-safe: may be called concurrently
+    /// from the write-buffer send thread and the read-buffer pull thread.
     ///
-    /// Contract: sampling covers only the input/output phase and ends when the
-    /// function stops producing output (stdout EOF). Memory the child allocates
-    /// after closing stdout — e.g. while `check_exit_code=true` blocks in
-    /// `command->wait` — is NOT included in the peak, even though that interval
-    /// still contributes to `ExecutableUserDefinedFunctionElapsedMicroseconds`
-    /// and the `wait4` CPU events.
+    /// When the stdout read reaches EOF, the caller passes `is_final=true` to
+    /// take one best-effort concluding ("tail") sample that bypasses the throttle.
+    /// This is a single attempt at the point the child has closed stdout and is
+    /// typically still resident; it is NOT continuous sampling during the
+    /// post-output reap. A failed `/proc` read on the final call is expected
+    /// (the child may have already exited) and does not flag degradation.
+    /// Memory the child allocates strictly after closing stdout is captured only
+    /// on a best-effort basis: it may or may not be observed depending on whether
+    /// the child is still resident when EOF is detected.
     ///
     /// Limitation: only the UDF process and its live descendants at a sample
     /// point are captured. A short-lived child that allocates and is reaped
     /// between two consecutive throttled samples is best-effort and may be
     /// under-counted. A process that is alive at least once after reaching its
-    /// peak is captured exactly, because `VmHWM` is monotonic. Because no sample
-    /// is taken at stdout EOF, a peak reached within the last throttle interval
-    /// (~5 ms) of output, after the final sample, is likewise not captured.
-    void sampleExecutablePeak() noexcept;
+    /// peak is captured exactly, because `VmHWM` is monotonic.
+    /// Additionally, a short-lived UDF that allocates, writes small output
+    /// that fits entirely in the pipe buffer, and exits before ClickHouse reads
+    /// its stdout may report a near-zero peak: the IO-phase samples never fire
+    /// because the child is already gone when the read side runs. CPU and
+    /// elapsed time are unaffected (taken from `wait4` rusage).
+    void sampleExecutablePeak(bool is_final = false) noexcept;
 
     /// Executable (non-pool) path: stamp `elapsed_us` from the wall clock at
     /// `ShellCommandSource` cleanup and compute `peak_memory_byte_seconds` from
@@ -109,10 +117,18 @@ public:
 
     /// Executable (non-pool) path: fill `user_time_us` and `system_time_us`
     /// from the scalars returned by `ShellCommand::getChild*` (CPU from `wait4`
-    /// rusage). Calls `recordExecutableElapsed` if it has not been called yet.
-    /// Peak memory is taken from `/proc VmHWM` sampled during IO and is already
-    /// set by `recordExecutableElapsed`; this method does not receive or touch it.
-    /// Idempotent.
+    /// rusage). Two independent idempotency guards operate here:
+    ///   - `recordExecutableElapsed` is guarded by `executable_finished`: it
+    ///     stamps `elapsed_us` and `peak_memory_byte_seconds` on the first call
+    ///     and is a no-op thereafter.
+    ///   - `recordExecutableFinished` itself is guarded by
+    ///     `executable_rusage_recorded`: it stores CPU scalars on the first call
+    ///     and is a no-op thereafter, even if `recordExecutableElapsed` was
+    ///     already invoked by the caller.
+    /// `recordExecutableElapsed` is always called from here so that elapsed and
+    /// peak are stamped even when CPU is recorded first.
+    /// Peak memory is taken from `/proc VmHWM` sampled during IO; this method
+    /// does not receive or touch it.
     void recordExecutableFinished(UInt64 user_time_us, UInt64 system_time_us) noexcept;
 
     /// Pool wait = entry → borrow acquired.

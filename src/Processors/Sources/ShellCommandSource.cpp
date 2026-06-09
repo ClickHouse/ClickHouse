@@ -292,6 +292,22 @@ public:
         }
         else
         {
+            /// Concluding best-effort tail sample. The function has closed stdout, so
+            /// this is the last point it is typically still alive; take one final
+            /// subtree sample (bypassing the throttle) to catch a peak reached after
+            /// the last IO sample but before EOF. Fired once; a no-op on the pool path
+            /// and harmless if the child has already exited. This is a single tail
+            /// attempt, not continuous sampling during the post-output reap.
+            /// This concluding sample is best-effort and is intentionally NOT covered
+            /// by a deterministic test — whether the child is still resident when EOF
+            /// is detected is timing-dependent, so any assertion on it would be
+            /// flaky; the deterministic guarantees (output-phase capture, max-not-sum,
+            /// parent-independence) are covered by the integration tests.
+            if (sampler && !final_sample_taken)
+            {
+                final_sample_taken = true;
+                sampler->sampleExecutablePeak(/*is_final=*/true);
+            }
             return false;
         }
 
@@ -346,6 +362,7 @@ private:
     size_t timeout_milliseconds;
     ExternalCommandStderrReaction stderr_reaction;
     UDFProcessSubtreeSampler * sampler;
+    bool final_sample_taken = false;
 
     static constexpr size_t BUFFER_SIZE = 4_KiB;
     static constexpr size_t MAX_STDERR_SIZE = 1_MiB;  /// Safety limit for stderr accumulation

@@ -11,9 +11,6 @@
 namespace DB
 {
 
-/// Forward-declared so this header does not include `<sys/resource.h>`.
-struct ChildResourceUsage;
-
 
 /** Lets you run the command,
   *  read it stdout and stderr; write to stdin;
@@ -140,7 +137,13 @@ private:
     Config config;
     bool wait_called = false;
     bool do_not_terminate = false;
-    std::unique_ptr<ChildResourceUsage> resource_usage;
+
+    /// CPU time of the reaped child, taken from `wait4` rusage and stored by value
+    /// at reap time. The reap path performs no allocation, so a memory-limit
+    /// `exception` can never fail a query whose child has already exited.
+    bool child_resource_usage_captured = false;
+    UInt64 child_user_time_us = 0;
+    UInt64 child_system_time_us = 0;
 
     ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const Config & config);
 

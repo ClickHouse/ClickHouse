@@ -29,19 +29,6 @@
 #include <Common/waitForPid.h>
 
 
-namespace DB
-{
-
-/// Opaque wrapper around `::rusage` so callers of `ShellCommand` do not need
-/// to include `<sys/resource.h>`.
-struct ChildResourceUsage
-{
-    ::rusage rusage{};
-};
-
-}
-
-
 namespace
 {
     /// By these return codes from the child process, we learn (for sure) about errors when creating it.
@@ -365,8 +352,11 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking, bool check_
             wait_called = true;
             if (config.collect_resource_usage)
             {
-                resource_usage = std::make_unique<ChildResourceUsage>();
-                resource_usage->rusage = local_rusage;
+                child_user_time_us = static_cast<UInt64>(local_rusage.ru_utime.tv_sec) * 1000000ULL
+                    + static_cast<UInt64>(local_rusage.ru_utime.tv_usec);
+                child_system_time_us = static_cast<UInt64>(local_rusage.ru_stime.tv_sec) * 1000000ULL
+                    + static_cast<UInt64>(local_rusage.ru_stime.tv_usec);
+                child_resource_usage_captured = true;
             }
             break;
         }
@@ -464,27 +454,19 @@ void ShellCommand::wait()
 
 bool ShellCommand::wasChildResourceUsageCaptured() const noexcept
 {
-    return resource_usage != nullptr;
+    return child_resource_usage_captured;
 }
 
 
 UInt64 ShellCommand::getChildUserTimeMicroseconds() const noexcept
 {
-    if (!resource_usage)
-        return 0;
-    const auto & ru = resource_usage->rusage;
-    return static_cast<UInt64>(ru.ru_utime.tv_sec) * 1000000ULL
-        + static_cast<UInt64>(ru.ru_utime.tv_usec);
+    return child_user_time_us;
 }
 
 
 UInt64 ShellCommand::getChildSystemTimeMicroseconds() const noexcept
 {
-    if (!resource_usage)
-        return 0;
-    const auto & ru = resource_usage->rusage;
-    return static_cast<UInt64>(ru.ru_stime.tv_sec) * 1000000ULL
-        + static_cast<UInt64>(ru.ru_stime.tv_usec);
+    return child_system_time_us;
 }
 
 

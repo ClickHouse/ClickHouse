@@ -124,6 +124,9 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
     if (ready < 0 && errno == EINTR)
         return PollPidResult::RESTART;
 
+    /// `ready == 0` is a poll timeout; `ready < 0` (non-EINTR) is a real error.
+    /// Both return FAILED: `waitForPid`'s outer deadline loop treats either as
+    /// "stop waiting" — the timeout is re-evaluated there, not here.
     if (ready <= 0)
         return PollPidResult::FAILED;
 
