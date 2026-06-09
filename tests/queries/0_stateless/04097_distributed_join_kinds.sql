@@ -11,6 +11,7 @@
 --   2. Distributed execution result
 --   3. Single-node baseline for correctness comparison
 
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;

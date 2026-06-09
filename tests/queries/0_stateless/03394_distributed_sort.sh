@@ -5,6 +5,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+$CLICKHOUSE_CLIENT -q "SET explain_query_plan_default = 'legacy'"
+
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test(src_ip UInt32, dst_ip UInt32, bytes UInt64) ENGINE MergeTree() ORDER BY src_ip"
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO test SELECT number%3, number%4, number FROM numbers(10)"
