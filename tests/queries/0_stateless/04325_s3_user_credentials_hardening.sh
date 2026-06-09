@@ -26,7 +26,6 @@ NC_ENV_OFF="s3_env_off_${DB}"
 NC_BACKUP_ROLE="s3_backup_role_${DB}"
 NC_BACKUP_ENV="s3_backup_env_${DB}"
 NC_BACKUP_NOSIGN="s3_backup_nosign_${DB}"
-NC_NOKEYS="s3_nokeys_${DB}"
 NC_GCP_OAUTH="s3_gcp_oauth_${DB}"
 NC_GCP_OAUTH_NOSIGN="s3_gcp_oauth_nosign_${DB}"
 NC_GCP_OAUTH_CASE="s3_gcp_oauth_case_${DB}"
@@ -48,7 +47,6 @@ cleanup() {
         DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_ROLE};
         DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_ENV};
         DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_NOSIGN};
-        DROP NAMED COLLECTION IF EXISTS ${NC_NOKEYS};
         DROP NAMED COLLECTION IF EXISTS ${NC_GCP_OAUTH};
         DROP NAMED COLLECTION IF EXISTS ${NC_GCP_OAUTH_NOSIGN};
         DROP NAMED COLLECTION IF EXISTS ${NC_GCP_OAUTH_CASE};
@@ -125,21 +123,6 @@ $CLICKHOUSE_CLIENT -q "
     FROM s3('http://localhost:11111/test/${DB}.tsv', format = 'TSV',
             structure = 'x UInt8',
             extra_credentials(role_arn = '${ROLE_ARN}'))
-    -- { serverError ACCESS_DENIED }
-"
-
-# Named collection with no credentials at all and `use_environment_credentials = 0`. Without explicit
-# credentials and NOSIGN, the only remaining credential source is the server's AWS config/credentials
-# file (the always-present ProfileConfigFileAWSCredentialsProvider), which must not be used.
-$CLICKHOUSE_CLIENT -m -q "
-    CREATE NAMED COLLECTION ${NC_NOKEYS} AS
-        url = 'http://localhost:11111/test/${DB}.tsv',
-        use_environment_credentials = 0;
-"
-
-$CLICKHOUSE_CLIENT -q "
-    SELECT *
-    FROM s3(${NC_NOKEYS}, format = 'TSV', structure = 'x UInt8')
     -- { serverError ACCESS_DENIED }
 "
 

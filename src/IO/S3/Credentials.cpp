@@ -1341,6 +1341,15 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
             && !configuration.google_adc_client_secret.empty()
             && !configuration.google_adc_refresh_token.empty();
 
+        /// Refuse only when the query explicitly asks for a server-managed credential mechanism:
+        /// `use_environment_credentials` (which also covers IMDS/IRSA/ECS/instance-profile/SSO) or a
+        /// `role_arn` to assume. When nothing ambient is requested, the request is simply sent unsigned
+        /// (anonymous): the provider chain below returns before adding any environment / IMDS /
+        /// instance-profile / AWS config-file provider, so the server's own credentials are never resolved
+        /// either way. This keeps anonymous access to public buckets working without an explicit NOSIGN.
+        const bool wants_server_credentials
+            = credentials_configuration.use_environment_credentials || !credentials_configuration.role_arn.empty();
+
         if (uses_gcp_oauth)
         {
             if (!has_explicit_gcp_adc)
@@ -1352,7 +1361,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
                     "token from the server's GCP metadata service. Enable the setting "
                     "`s3_allow_server_credentials_in_user_queries` to allow it.");
         }
-        else if (!credentials_configuration.no_sign_request && !has_explicit_credentials)
+        else if (!credentials_configuration.no_sign_request && !has_explicit_credentials && wants_server_credentials)
             throw DB::Exception(
                 DB::ErrorCodes::ACCESS_DENIED,
                 "S3 access from user queries is not allowed to use server-managed credentials "
