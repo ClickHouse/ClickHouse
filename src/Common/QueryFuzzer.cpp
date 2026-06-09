@@ -5280,7 +5280,17 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     else if (auto * partition = typeid_cast<ASTPartition *>(ast.get()))
     {
         if (fuzz_rand() % 10 == 0)
-            partition->all = !partition->all;
+        {
+            if (partition->all)
+            {
+                if (partition->value || partition->id)
+                    partition->all = false;
+            }
+            else
+            {
+                partition->all = true;
+            }
+        }
         fuzz(partition->children);
     }
     else if (auto * dict = typeid_cast<ASTDictionary *>(ast.get()))

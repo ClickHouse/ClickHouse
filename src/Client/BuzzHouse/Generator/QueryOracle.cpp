@@ -601,11 +601,12 @@ void QueryOracle::generateArrayJoinOracleQueries(RandomGenerator & rg, Statement
         SelectStatementCore * ssc2
             = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel()->mutable_select_core();
 
-        /// Replace SELECT x with SELECT arrayJoin(expr)
+        /// Replace SELECT s0 with SELECT arrayJoin(expr) AS s0
         ExprColAlias * eca2 = ssc2->mutable_result_columns(0)->mutable_eca();
         SQLFuncCall * aj_func = eca2->mutable_expr()->mutable_comp_expr()->mutable_func_call();
         aj_func->mutable_func()->set_catalog_func("arrayJoin");
         aj_func->add_args()->mutable_expr()->CopyFrom(*arr_expr);
+        eca2->mutable_col_alias()->set_column("s0");
 
         /// Remove only the ARRAY JOIN clause (the last one we appended) from sq2
         ssc2->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_clauses()->RemoveLast();
