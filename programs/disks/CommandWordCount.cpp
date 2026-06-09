@@ -86,8 +86,6 @@ public:
             write_count(words);
         if (count_bytes)
             write_count(bytes);
-        out.write(' ');
-        writeString(path_arg, out);
         out.write('\n');
         out.finalize();
     }
