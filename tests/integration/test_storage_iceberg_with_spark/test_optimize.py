@@ -329,6 +329,96 @@ def test_optimize_manifest_files(started_cluster_iceberg_with_spark, storage_typ
     assert spark_ids == clickhouse_ids
 
 
+@pytest.mark.parametrize("format_version", ["2", "3"])
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_optimize_manifest_files_with_deletes(started_cluster_iceberg_with_spark, storage_type, format_version):
+    """
+    OPTIMIZE TABLE ... MANIFEST must preserve delete files. It consolidates only the data
+    manifests, while delete-file manifests are carried forward unchanged into the new manifest
+    list. If they were dropped, the previously deleted rows would reappear after compaction.
+
+    Covers both v2 (position delete files) and v3 (deletion vectors) row-level deletes.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_manifest_deletes_v" + format_version + "_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES (
+            'format-version' = '{format_version}',
+            'write.update.mode' = 'merge-on-read',
+            'write.delete.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+
+    # Separate inserts so the current snapshot accumulates several data manifests
+    # (above the compaction threshold set below).
+    for lo in range(10, 100, 10):
+        spark.sql(
+            f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range({lo}, {lo + 10})"
+        )
+
+    # Merge-on-read delete: produces a row-level delete (position-delete file in v2, deletion
+    # vector in v3) tracked by a delete-file manifest.
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    # 90 inserted, ids 10..19 deleted -> 80 live rows.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == instance.query(
+        "SELECT number FROM numbers(20, 80)"
+    )
+
+    optimize_settings = {
+        "allow_experimental_iceberg_compaction": 1,
+        "iceberg_manifest_min_count_to_compact": 2,
+    }
+    instance.query(f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST", settings=optimize_settings)
+
+    # The deletes must still be applied after manifest compaction (no resurrected rows).
+    # ClickHouse reads directly from storage, so no download is needed for these checks.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == instance.query(
+        "SELECT number FROM numbers(20, 80)"
+    )
+
+    # Download the ClickHouse-written metadata/manifests from storage so we can inspect the
+    # new snapshot summary locally and let Spark read the table back.
+    default_download_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    # A manifest-only rewrite must have happened (replace operation).
+    summary = get_current_snapshot_summary(
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+    )
+    assert summary.get("operation") == "replace", (
+        f"Expected operation='replace', got: {summary.get('operation')}"
+    )
+
+    # Spark must still read the same rows after ClickHouse rewrote the manifests.
+    spark_rows = spark.read.format("iceberg").load(
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    ).collect()
+    assert len(spark_rows) == 80
+    spark_ids = sorted(row["id"] for row in spark_rows)
+    assert spark_ids == list(range(20, 100))
+
+
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_optimize_manifest_files_partitioned(started_cluster_iceberg_with_spark, storage_type):
     """
