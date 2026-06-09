@@ -6,7 +6,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 server_path=$(${CLICKHOUSE_CLIENT} -q "SELECT value FROM system.server_settings WHERE name = 'path'")
-flags_dir="${server_path}flags"
+# `server_path` may or may not end with `/`; normalize before appending `/flags`.
+flags_dir="${server_path%/}/flags"
 flag_file="${flags_dir}/force_drop_table"
 
 mkdir -p "$flags_dir" 2>/dev/null || :
