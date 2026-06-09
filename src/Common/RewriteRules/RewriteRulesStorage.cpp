@@ -416,7 +416,25 @@ RewriteRuleObjectsList RewriteRulesStorage::getAll() const
                 "Found duplicate rewrite rule `{}`",
                 rule_name);
         }
-        result.emplace_back(rule_name, get(rule_name));
+        try
+        {
+            result.emplace_back(rule_name, get(rule_name));
+        }
+        catch (const Coordination::Exception & e)
+        {
+            /// A concurrent `DROP RULE` on another replica may have removed the rule
+            /// znode between listing and reading it. This is expected in a replicated
+            /// setup - the next reload cycle will reflect the converged state.
+            if (e.code == Coordination::Error::ZNONODE)
+            {
+                LOG_DEBUG(
+                    getLogger("RewriteRulesStorage"),
+                    "Rewrite rule `{}` was removed while reading, skipping",
+                    rule_name);
+                continue;
+            }
+            throw;
+        }
     }
     return result;
 }
