@@ -316,8 +316,8 @@ requests a vector of the given size; otherwise the model's native size is return
            {"dimensions", "Optional target dimensionality for the output vector. `0` or omitted means the model's native size.", {"UInt64"}}},
         .returned_value = {"The embedding vector, or an empty array if the input is NULL or empty, the request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled.", {"Array(Float32)"}},
         .examples
-        = {{"Embed a single string", "SELECT aiEmbed('Hello world') SETTINGS ai_credentials = 'ai_creds'", ""},
-           {"With explicit dimensions", "SELECT aiEmbed('Hello world', 256) SETTINGS ai_credentials = 'ai_creds'", ""},
+        = {{"Embed a single string", "SELECT aiEmbed('Hello world') SETTINGS ai_credentials = 'my_ai_credentials'", ""},
+           {"With explicit dimensions", "SELECT aiEmbed('Hello world', 256) SETTINGS ai_credentials = 'my_ai_credentials'", ""},
            {"Embed a column of texts", "SELECT aiEmbed(title, 256) FROM articles LIMIT 10", ""}},
         .introduced_in = {26, 6},
         .category = FunctionDocumentation::Category::AI});

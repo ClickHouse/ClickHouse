@@ -241,7 +241,7 @@ Provider credentials and configuration are taken from the named collection named
         },
         .returned_value = {"A single extracted value (instruction mode) or a JSON object string (schema mode). Returns the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
-            {"Free-form instruction", "SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint') SETTINGS ai_credentials = 'ai_creds'", "late and damaged package"},
+            {"Free-form instruction", "SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint') SETTINGS ai_credentials = 'my_ai_credentials'", "late and damaged package"},
             {"Schema extraction", R"(SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5)", ""},
         },
         .introduced_in = {26, 4},

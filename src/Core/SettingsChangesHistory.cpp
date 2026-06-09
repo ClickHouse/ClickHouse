@@ -175,6 +175,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_column_name_matching_mode", "match_case", "match_case", "New setting."},
             {"enable_join_fixed_hash_table_conversion", false, true, "New setting to enable converting the hash table to a flat array for joins when the key is a single integer with a small value range."},
             {"allow_experimental_ai_functions", false, false, "New setting"},
+            {"ai_credentials", "", "", "New setting"},
             {"ai_function_request_timeout_sec", 60, 60, "New setting"},
             {"ai_function_max_retries", 0, 0, "New setting"},
             {"ai_function_retry_initial_delay_ms", 1000, 1000, "New setting"},

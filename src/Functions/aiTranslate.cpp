@@ -99,7 +99,7 @@ Provider credentials and configuration are taken from the named collection named
         },
         .returned_value = {"The translated text, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
-            {"Translate to French", "SELECT aiTranslate('Hello, world!', 'French') SETTINGS ai_credentials = 'ai_creds'", "Bonjour le monde!"},
+            {"Translate to French", "SELECT aiTranslate('Hello, world!', 'French') SETTINGS ai_credentials = 'my_ai_credentials'", "Bonjour le monde!"},
             {"Translate to Japanese with style instructions", "SELECT aiTranslate(body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5", ""},
         },
         .introduced_in = {26, 4},

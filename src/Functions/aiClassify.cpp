@@ -201,7 +201,7 @@ Provider credentials and configuration are taken from the named collection named
         },
         .returned_value = {"One of the provided category labels, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
-            {"Classify sentiment", "SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']) SETTINGS ai_credentials = 'ai_creds'", "positive"},
+            {"Classify sentiment", "SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']) SETTINGS ai_credentials = 'my_ai_credentials'", "positive"},
             {"Classify a column", "SELECT body, aiClassify(body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5", ""},
         },
         .introduced_in = {26, 4},
