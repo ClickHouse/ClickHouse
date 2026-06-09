@@ -1299,12 +1299,9 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
 
     AssumeRoleRequest request(role_arn, session_name, external_id);
     auto outcome = client->assumeRole(request);
-    /// Reset the base provider's `m_needsRefresh` flag so an external `SetNeedRefresh()`
-    /// signal isn't latched indefinitely. Mirrors the WebIdentity and SSO providers above
-    /// (see `AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Reload`).
-    AWSCredentialsProvider::Reload();
     if (!outcome.IsSuccess())
     {
+        /// Keep `m_needsRefresh` and cached `credentials` so the next call retries STS.
         LOG_WARNING(logger, "Failed to get credentials using AssumeRule. Error: {}", outcome.GetError().GetMessage());
         return;
     }
@@ -1314,6 +1311,9 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
     credentials.SetAWSSecretKey(result.getSecretAccessKey());
     credentials.SetSessionToken(result.getSessionToken());
     credentials.SetExpiration(result.getExpiration());
+
+    /// Clear `m_needsRefresh` so an external `SetNeedRefresh()` isn't latched.
+    AWSCredentialsProvider::Reload();
 
     LOG_TRACE(logger, "Successfully retrieved credentials");
 }
