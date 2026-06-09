@@ -121,7 +121,24 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
         version = SETTINGS_IN_ZK_VERSION;
 
     if (version >= SETTINGS_IN_ZK_VERSION)
+    {
         settings.emplace(context->getSettingsRef().changes());
+
+        /// These settings are interpreted only at the initiator: they shape the final query
+        /// (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`, `additional_result_filter`)
+        /// or shape how the result is serialised to the user (`format`, `output_format`,
+        /// `default_format`, `compression`), or select the initiator's default database (`database`,
+        /// the equivalent of `USE`). Forwarding them to the hosts that pick up this DDL entry is at
+        /// best meaningless for a DDL query and at worst harmful — `database` in particular makes the
+        /// executing host `USE` the initiator's database, which may not exist there and aborts the
+        /// task, leaving `ON CLUSTER` queries hanging until `distributed_ddl_task_timeout`. Strip them
+        /// here, mirroring the distributed-query fan-out cleanup in `ClusterProxy::executeQuery`.
+        static constexpr std::array initiator_only_settings = {
+            "database", "select", "order", "sort", "filter", "additional_result_filter",
+            "limit", "offset", "page", "format", "output_format", "default_format", "compression"};
+        for (const auto * name : initiator_only_settings)
+            settings->removeSetting(name);
+    }
 }
 
 String DDLLogEntry::toString() const
