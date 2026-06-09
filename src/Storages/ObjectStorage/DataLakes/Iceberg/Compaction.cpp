@@ -1,4 +1,5 @@
 #include <string>
+#include <unordered_set>
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
@@ -512,12 +513,25 @@ static bool writeConsolidatedManifestFile(
     // may still appear as EXISTING in an older snapshot's manifest — reading all history
     // would incorrectly resurrect such deleted files.
     size_t total_data_files = 0;
+    // Only data manifests are consolidated. Delete-file manifests (position/equality deletes) are
+    // carried forward unchanged into the new manifest list — rewriting only the data manifests must
+    // not drop them, otherwise the deleted rows would reappear. We collect their paths here and copy
+    // their manifest-list entries verbatim below.
+    size_t num_data_manifests = 0;
+    std::unordered_set<String> delete_manifest_paths;
 
     auto current_manifest_list = getManifestList(
         object_storage, persistent_table_components, context, IcebergPathFromMetadata::deserialize(current_manifest_list_path), log);
 
     for (const auto & manifest_file : current_manifest_list)
     {
+        if (manifest_file.content_type == ManifestFileContentType::DELETE)
+        {
+            delete_manifest_paths.insert(manifest_file.manifest_file_path.serialize());
+            continue;
+        }
+        ++num_data_manifests;
+
         auto files_handle = getManifestFileEntriesHandle(
             object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
 
@@ -548,13 +562,15 @@ static bool writeConsolidatedManifestFile(
         }
     }
 
-    /// Manifests are already optimally consolidated (at most one per unique partition):
+    /// Data manifests are already optimally consolidated (at most one per unique partition):
     /// rewriting cannot reduce the count, so skip the write and report success to the caller.
+    /// Compared against the data-manifest count only, since delete manifests are carried forward
+    /// unchanged and do not participate in consolidation.
     /// Returning true here means the outer retry loop terminates instead of re-walking on conflict.
-    if (partitions_map.size() >= current_manifest_list.size())
+    if (partitions_map.size() >= num_data_manifests)
     {
-        LOG_INFO(log, "Manifests already optimally consolidated ({} manifests, {} unique partitions); nothing to do",
-                 current_manifest_list.size(), partitions_map.size());
+        LOG_INFO(log, "Manifests already optimally consolidated ({} data manifests, {} unique partitions); nothing to do",
+                 num_data_manifests, partitions_map.size());
         return true;
     }
 
@@ -702,7 +718,8 @@ static bool writeConsolidatedManifestFile(
             *buffer_manifest_list,
             Iceberg::FileContentType::DATA,
             false,
-            existing_entry_counts);
+            existing_entry_counts,
+            /* carry_forward_manifest_paths */ delete_manifest_paths);
         buffer_manifest_list->finalize();
 
         // Commit: write metadata file with If-None-Match + update version hint with ETag-based CAS.

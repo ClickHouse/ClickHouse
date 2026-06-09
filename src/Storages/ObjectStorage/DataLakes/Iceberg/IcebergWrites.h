@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <unordered_set>
 #include <Core/Range.h>
 #include <Core/SortDescription.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -89,7 +90,12 @@ void generateManifestList(
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots = true,
-    const std::vector<ManifestListEntryExistingCounts> & existing_entry_counts = {});
+    const std::vector<ManifestListEntryExistingCounts> & existing_entry_counts = {},
+    /// Manifest-list entry paths (as stored in the parent snapshot's manifest list) to copy
+    /// verbatim from the parent into the new manifest list. Used by manifest-only compaction to
+    /// carry delete-file manifests forward unchanged, since it rewrites only the data manifests.
+    /// Copied in addition to manifest_entry_names and independent of use_previous_snapshots.
+    const std::unordered_set<String> & carry_forward_manifest_paths = {});
 
 class IcebergStorageSink final : public SinkToStorage
 {

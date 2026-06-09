@@ -477,7 +477,8 @@ void generateManifestList(
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots,
-    const std::vector<ManifestListEntryExistingCounts> & existing_entry_counts)
+    const std::vector<ManifestListEntryExistingCounts> & existing_entry_counts,
+    const std::unordered_set<String> & carry_forward_manifest_paths)
 {
     /// When provided, existing_entry_counts must be parallel to manifest_entry_names: it marks
     /// this as a manifest-only rewrite and supplies the existing-file/row counts per entry.
@@ -589,7 +590,11 @@ void generateManifestList(
         writer.write(entry_datum);
     }
 
-    if (use_previous_snapshots)
+    /// Copy entries verbatim from the parent snapshot's manifest list. `use_previous_snapshots`
+    /// copies all of them (normal append on top of the parent); a non-empty
+    /// `carry_forward_manifest_paths` copies only the listed manifests (manifest-only compaction
+    /// carrying delete-file manifests forward while replacing the data manifests).
+    if (use_previous_snapshots || !carry_forward_manifest_paths.empty())
     {
         auto parent_snapshot_id = new_snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id);
         auto snapshots = metadata->getArray(Iceberg::f_snapshots);
@@ -605,6 +610,11 @@ void generateManifestList(
                     [&](const avro::GenericDatum & datum)
                     {
                         const avro::GenericRecord & old_entry = datum.value<avro::GenericRecord>();
+                        /// When a path filter is supplied, copy only those entries (the rest of the
+                        /// parent's manifests — the data manifests — are replaced by the new ones).
+                        if (!carry_forward_manifest_paths.empty()
+                            && !carry_forward_manifest_paths.contains(old_entry.field(Iceberg::f_manifest_path).value<std::string>()))
+                            return;
                         avro::GenericDatum new_datum(schema.root());
                         avro::GenericRecord & new_entry = new_datum.value<avro::GenericRecord>();
                         new_entry.field(f_manifest_path) = old_entry.field(Iceberg::f_manifest_path);
@@ -651,7 +661,11 @@ void generateManifestList(
                         add_field_to_datum(Iceberg::f_existing_rows_count);
                         add_field_to_datum(Iceberg::f_deleted_rows_count);
                         add_field_to_datum(Iceberg::f_key_metadata);
-                        if (version == 2)
+                        /// v2 and v3 share the manifest-list schema, so these fields exist for both.
+                        /// (The new-entry path above likewise gates them on `version > 1`.) Without
+                        /// this, carrying a delete manifest forward in a v3 table would drop its
+                        /// content/sequence-number fields and corrupt the manifest list.
+                        if (version > 1)
                         {
                             add_field_to_datum(Iceberg::f_content);
                             add_field_to_datum(Iceberg::f_sequence_number);
