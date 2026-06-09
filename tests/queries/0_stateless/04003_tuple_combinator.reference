@@ -52,12 +52,12 @@ multiple nested combinators
 (2,3)
 (7,10)
 distinct combinators
-(9,12)
-(9,12)
-(6,8)
-(3,4)
+(10,15)
+(9,15)
+(6,11)
+(3,3.75)
 AggregateFunction(sumDistinctTuple, Tuple(Int64, Float64))
-(9,12)
+(9,15)
 multi argument error
 sparse tuple
 (1,2)
