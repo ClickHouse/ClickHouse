@@ -451,7 +451,7 @@ void FileCache::initializeImpl(bool load_metadata)
 
     try
     {
-        /// Start the priority background operations before loading metadata.
+        /// Publish the invalidate notifier before loadMetadata spawns threads that can invalidate entries.
         main_priority->startup(Context::getGlobalContextInstance()->getSchedulePool(), cache_guard);
 
         if (load_metadata)
@@ -461,6 +461,9 @@ void FileCache::initializeImpl(bool load_metadata)
     }
     catch (...)
     {
+        /// startup() may have scheduled the background cleanup task; stop it so a retried
+        /// initialization does not leave an orphaned task rescheduling on `this`.
+        main_priority->deactivateBackgroundOperations();
         init_exception = std::current_exception();
         tryLogCurrentException(__PRETTY_FUNCTION__);
         throw;

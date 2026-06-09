@@ -102,12 +102,6 @@ void IFileCachePriority::removeEntries(
 
 void IFileCachePriority::startup(BackgroundSchedulePool & pool, CachePriorityGuard & cache_guard)
 {
-    /// startup() can run again if a previous initialization attempt failed and is retried.
-    /// Deactivate any task scheduled by the previous attempt before replacing it, otherwise
-    /// the old task keeps rescheduling and captures `this` past FileCache destruction.
-    if (cleanup_task)
-        cleanup_task->deactivate();
-
     cleanup_guard = &cache_guard;
     cleanup_task = pool.createTask(StorageID::createEmpty(), "FileCacheInvalidatedEntriesCleanup", [this] { cleanupTaskFunc(); });
     /// Propagate the wake hook (and threshold) to all sub-queues so any of them can

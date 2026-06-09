@@ -360,10 +360,8 @@ public:
         cleanup_batch = batch;
     }
 
-    /// Start background operations.
     void startup(BackgroundSchedulePool & pool, CachePriorityGuard & cache_guard);
 
-    /// Stop the background operations created in startup().
     void deactivateBackgroundOperations();
 
     struct UsageStat
