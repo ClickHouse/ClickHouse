@@ -36,10 +36,11 @@ struct ActionsDAGWithInversionPushDown
     std::optional<ActionsDAG> dag;
     const ActionsDAG::Node * predicate = nullptr;
 
-    /// `boolean_context` must be true only when `predicate_` is a truth-tested filter (WHERE/PREWHERE
-    /// or another predicate used for pruning). Pass false when canonicalizing a value expression,
-    /// e.g. reconstructing a captured-lambda column name, where truthiness-only rewrites must not apply.
-    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context, bool boolean_context = true);
+    /// Defaults to false (conservative): the boolean-position `ifNull`/`coalesce` unwrap is skipped
+    /// unless a caller opts in. Pass true only when `predicate_` is a truth-tested filter
+    /// (WHERE/PREWHERE or another predicate used for pruning), never for value-expression
+    /// canonicalization such as reconstructing a captured-lambda column name.
+    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context, bool boolean_context = false);
 };
 
 
