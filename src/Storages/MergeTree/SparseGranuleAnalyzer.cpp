@@ -120,6 +120,7 @@ struct AnalysisPlan
     NamesAndTypesList cols;
     StorageSnapshotPtr storage_snapshot;
     MergeTreeSettingsPtr storage_settings;
+    MergeTreeReaderSettings reader_settings;
     std::shared_ptr<MarkCache> mark_cache_keepalive;
     MarkCache * mark_cache_raw = nullptr;
     DataPartInfoForReaderPtr part_info;
@@ -226,6 +227,10 @@ PreparedAnalysis preparePlan(
     plan.cols.push_back(*column_in_storage);
     plan.storage_snapshot = storage_snapshot;
     plan.storage_settings = storage.getSettings();
+    /// Respect the query's read settings (filesystem cache, throttlers, remote/local
+    /// read method, prefetch knobs). The offsets read here is part of the user's
+    /// query, so it must go through the same read pipeline as the regular scan.
+    plan.reader_settings = MergeTreeReaderSettings::createFromSettings(query_context->getReadSettings());
     plan.mark_cache_keepalive = storage.getContext()->getMarkCache();
     plan.mark_cache_raw = plan.mark_cache_keepalive.get();
     plan.part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, std::make_shared<AlterConversions>());
@@ -295,7 +300,7 @@ ChunkResult processChunk(const AnalysisPlan & plan, const MarkRange & chunk)
         /*uncompressed_cache=*/nullptr,
         plan.mark_cache_raw,
         /*deserialization_prefixes_cache=*/nullptr,
-        MergeTreeReaderSettings::createFromSettings(),
+        plan.reader_settings,
         /*avg_value_size_hints=*/{},
         /*profile_callback=*/{});
 
