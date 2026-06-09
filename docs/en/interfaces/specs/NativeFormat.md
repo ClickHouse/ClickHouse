@@ -180,6 +180,17 @@ A Column appears `num_columns` times within a Block.
 
 A decoder dispatches on the `type` string. Type strings often carry parameters in parentheses; the decoder strips the `(...)` suffix to find the base type and then parses the parameters for size, scale, or inner-type decisions. Parsing a parameter list with nested types (a `Tuple` inside an `Array`, say) needs a depth-aware comma splitter that tracks parenthesis nesting rather than a naive split on `,`.
 
+```mermaid
+flowchart TD
+    T["type string<br/>(e.g. Array(String))"]
+    T --> P["strip outer (...)<br/>to find the base type"]
+    P --> F{"base type family?"}
+    F -->|fixed-width| FW["read bytes_per_value × num_rows<br/>(no per-row framing)"]
+    F -->|variable-length| VL["read per-value length prefixes"]
+    F -->|composite| CO["read each sub-stream;<br/>recurse on the inner types"]
+    F -->|versioned| VE["read state prefix (version) once,<br/>then the per-block payload"]
+```
+
 #### kind_stack and sparse encoding {#kind-stack-and-sparse-encoding}
 
 The `kind_stack` byte enumerates a non-default per-column serialization, mirroring `KindStackBinarySerializationType` in `ClickHouse/src/DataTypes/Serializations/SerializationInfo.cpp`:
@@ -732,6 +743,19 @@ Values (5 × UInt32 LE = 20 bytes):
 32 00 00 00                  50
 ```
 
+Each offset is the cumulative *end* of a row's slice of the shared values stream; the start is the previous offset (or `0` for row 0). Equal consecutive offsets are an empty row:
+
+```mermaid
+flowchart LR
+    subgraph V["values stream: [10, 20, 30, 40, 50]"]
+        direction LR
+        v0["10"] --- v1["20"] --- v2["30"] --- v3["40"] --- v4["50"]
+    end
+    r0["row 0"] -->|"[0 .. offsets[0]=3)"| v0
+    r1["row 1"] -.->|"[3 .. offsets[1]=3) empty"| V
+    r2["row 2"] -->|"[offsets[1]=3 .. offsets[2]=5)"| v3
+```
+
 `Array(String)` with rows `[["a", "bb"], []]` (20 bytes total):
 
 ```text
@@ -846,6 +870,14 @@ Values (2 × UInt32 LE = 8 bytes):
 
 The on-wire representation of `Nested` depends on the server-side `flatten_nested` setting, which gives two distinct cases.
 
+```mermaid
+flowchart TD
+    N["column declared Nested(a T1, b T2, ...)"]
+    N --> Q{"flatten_nested?"}
+    Q -->|"= 1 (server default)"| A["N parallel Array(T_i) columns<br/>with dotted names (n.a, n.b)<br/>— no Nested wire type"]
+    Q -->|"= 0"| B["one column, type string Nested(...)<br/>laid out byte-identically to<br/>Array(Tuple(T1, ..., Tn))"]
+```
+
 **Case A: `flatten_nested = 1` (server default).** When the table was created under default settings, `Nested` is **not a wire type**. The server stores and presents the column as N parallel `Array(T_i)` columns with **dotted names** (`outer.field1`, `outer.field2`, and so on). For the format layer there is nothing new — every dotted column is a regular [Array](#array):
 
 ```text
@@ -943,6 +975,22 @@ It is distinct from the protocol version:
 | Mandatory to read      | Yes                        | Yes, for each versioned column       |
 
 Most versioned types write the version as a little-endian UInt64 immediately before any other state-prefix data; a few use VarUInt or UInt8. A decoder reads the version first and rejects unknown values — a higher version implies a newer sender format the decoder does not understand, and mis-parsing it corrupts every subsequent byte.
+
+The state prefix is emitted **once per column per query**, immediately before the first block whose row count is greater than zero. Header blocks (rows = 0) and empty blocks emit nothing, and every later data block carries only its payload — the prefix is never repeated. A decoder must therefore track, per column, whether it has already consumed the prefix:
+
+```mermaid
+sequenceDiagram
+    participant S as Server (writer)
+    participant C as Client (decoder)
+    S->>C: Header block (num_rows = 0)
+    Note right of C: no state prefix
+    S->>C: First block with rows > 0
+    Note right of C: read state prefix once,<br/>then block payload
+    S->>C: Next block with rows > 0
+    Note right of C: block payload only<br/>(prefix already consumed)
+    S->>C: Empty block (end marker)
+    Note right of C: no state prefix
+```
 
 #### Serialization version reference {#serialization-version-reference}
 
@@ -1088,6 +1136,27 @@ Variant elements that are themselves stateful (`LowCardinality`, `Variant`, `Dyn
 
 Reconstructed: row 0 = UInt64 run[0] = `42`; row 1 = String run[0] = `"hi"`; row 2 = NULL.
 
+The discriminator stream is the index; each non-NULL discriminator pulls the next value from its type's dense run, while `255` (NULL) consumes nothing. This same walk reconstructs [Dynamic](#dynamic), which differs only in how NULL is encoded:
+
+```mermaid
+flowchart LR
+    subgraph D["discriminators (one per row)"]
+        direction TB
+        d0["row 0 → 1"]
+        d1["row 1 → 0"]
+        d2["row 2 → 255"]
+    end
+    subgraph SR["String run (discriminator 0)"]
+        s0["[0] = hi"]
+    end
+    subgraph UR["UInt64 run (discriminator 1)"]
+        u0["[0] = 42"]
+    end
+    d0 -->|"counter[1] = 0"| u0
+    d1 -->|"counter[0] = 0"| s0
+    d2 -.->|"255 = NULL,<br/>no value consumed"| X["(skip)"]
+```
+
 #### Dynamic {#dynamic}
 
 A column whose value type is discovered at runtime: each row holds a value of one of a runtime-determined set of types, or NULL. Unlike `Variant`, the type set is **not** in the column's type string — it is carried in the state prefix.
@@ -1188,7 +1257,21 @@ When compression is active, every Block body (the bytes after the `table_name` s
 [N bytes:  compressed body]        ← N = compressed_size - 9
 ```
 
-The total framed size is `16 + compressed_size` = `16 + 9 + body_size` = `25 + body_size`.
+The total framed size is `16 + compressed_size` = `16 + 9 + body_size` = `25 + body_size`. Note the two spans: the checksum covers the 9-byte header plus the body, while `compressed_size` counts the header plus body but **not** the checksum itself:
+
+```mermaid
+flowchart LR
+    CK["checksum<br/>16 B<br/>CityHash128"]
+    subgraph SPAN["counted by compressed_size (9 + N)"]
+        direction LR
+        M["method<br/>1 B"]
+        CS["compressed_size<br/>4 B LE"]
+        US["uncompressed_size<br/>4 B LE"]
+        BODY["compressed body<br/>N = compressed_size − 9 B"]
+        M --> CS --> US --> BODY
+    end
+    CK --> M
+```
 
 ### Method byte values {#method-byte-values}
 
