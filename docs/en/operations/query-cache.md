@@ -171,6 +171,51 @@ SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 2';
 
 To remove only entries with tag `tag` from the query cache, you can use statement `SYSTEM CLEAR QUERY CACHE TAG 'tag'`.
 
+## Caching to disk {#caching-to-disk}
+
+By default, the query cache lives only in memory (DRAM) and is therefore lost when the server restarts. Optionally, query results can
+additionally be stored on disk so that they survive a restart and so that the cache can grow beyond the available memory.
+
+The disk cache is controlled by two query-level settings (both `false` by default):
+
+- [enable_writes_to_query_cache_disk](/operations/settings/settings#enable_writes_to_query_cache_disk) controls whether query results are
+  written to the disk cache (in addition to the in-memory cache).
+- [enable_reads_from_query_cache_disk](/operations/settings/settings#enable_reads_from_query_cache_disk) controls whether the server may
+  serve a query result from the disk cache (after a memory cache miss).
+
+```sql
+SELECT some_expensive_calculation(column_1, column_2)
+FROM table
+SETTINGS use_query_cache = true, enable_writes_to_query_cache_disk = true, enable_reads_from_query_cache_disk = true;
+```
+
+A lookup first checks the in-memory cache and, on a miss, the disk cache. When a disk entry is served, it is also loaded back into the
+in-memory cache. After a restart the in-memory cache is empty, but on-disk entries (that have not yet expired) are restored from their
+on-disk metadata, so the first matching query becomes a disk hit again. The number of disk hits is reported by the `QueryCacheDiskHits`
+event in system table [system.events](system-tables/events.md).
+
+The disk cache preserves the same per-user isolation as the in-memory cache: an entry written by one user is not served to another user
+unless it was explicitly marked as shared (see [query_cache_share_between_users](/operations/settings/settings#query_cache_share_between_users)).
+
+The location and capacity of the disk cache are configured via [server configuration options](/operations/server-configuration-parameters/settings#query_cache):
+
+```xml
+<query_cache>
+    <!-- The disk used to store the on-disk cache (a disk defined in the `storage_configuration`). -->
+    <disk>default</disk>
+    <!-- The path of the on-disk cache, relative to the disk root. -->
+    <path>query_result_cache</path>
+    <!-- The maximum size of the on-disk cache in bytes. -->
+    <max_disk_size_in_bytes>10737418240</max_disk_size_in_bytes>
+    <!-- The maximum number of entries in the on-disk cache. -->
+    <max_disk_entries>10240</max_disk_entries>
+</query_cache>
+```
+
+Column `type` in system table [system.query_cache](system-tables/query_cache.md) shows whether an entry is stored in `Memory` or on
+`Disk`. By default `SYSTEM DROP QUERY CACHE` clears both. To clear only one tier, use `SYSTEM DROP QUERY CACHE TYPE 'Memory'` or
+`SYSTEM DROP QUERY CACHE TYPE 'Disk'`.
+
 ## Subquery Caching {#subquery-caching}
 
 By default, `use_query_cache` on the outer query does not propagate to subqueries. This means each subquery must explicitly opt in to caching:

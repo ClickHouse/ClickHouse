@@ -168,10 +168,12 @@ Clears the query condition cache.
 
 ```sql
 SYSTEM CLEAR QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TYPE '<type>';
 SYSTEM CLEAR QUERY CACHE TAG '<tag>'
 ````
 
 Clears the [query cache](../../operations/query-cache.md).
+If a type (`Memory` or `Disk`) is specified, only entries of that type are deleted (by default both tiers are cleared).
 If a tag is specified, only query cache entries with the specified tag are deleted.
 
 ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
