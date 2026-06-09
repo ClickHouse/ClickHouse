@@ -31,6 +31,11 @@ SELECT name FROM system.users WHERE name = 'test_pushdown_alice' AND name IN ('t
 -- Fast path: equality combined with an unrelated condition still narrows by name
 SELECT name FROM system.users WHERE name = 'test_pushdown_alice' AND default_database = '' SETTINGS max_rows_to_read = 1;
 
+-- Fallback path: a constant alias named 'name' must not be mistaken for the column.
+-- Here 'name' in WHERE refers to the alias (a constant), so the predicate is constant-true
+-- and every user must be returned, just like the full scan.
+SELECT count() > 1 FROM (SELECT 'test_pushdown_alice' AS name FROM system.users WHERE name = 'test_pushdown_alice');
+
 -- Fallback path: LIKE predicate still works
 SELECT name FROM system.users WHERE name LIKE 'test_pushdown_%' ORDER BY name;
 

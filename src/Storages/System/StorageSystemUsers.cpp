@@ -49,7 +49,12 @@ namespace
     {
         while (node->type == ActionsDAG::ActionType::ALIAS)
             node = node->children.at(0);
-        return node->result_name == "name";
+        /// Require the stripped node to be the actual `name` input column from
+        /// `getFilterSampleBlock`, not merely something named `name`. Otherwise a constant or
+        /// projection alias named `name` (for example `SELECT 'alice' AS name FROM system.users
+        /// WHERE name = 'alice'`, where `name` in `WHERE` refers to the alias) would be mistaken
+        /// for the column and diverge from the full-scan semantics.
+        return node->type == ActionsDAG::ActionType::INPUT && node->result_name == "name";
     }
 
     /// Extract candidate user names from the predicate for O(1) lookups.
