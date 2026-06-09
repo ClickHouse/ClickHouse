@@ -293,9 +293,22 @@ class RandomServerRestarter(RandomRestarter):
         deadline = self._restart_deadline
 
         port_timeout = min(60, max(0, deadline - time.monotonic()) / 2)
-        self._wait_port_free(9000, timeout=port_timeout)
-        self._wait_port_free(9009, timeout=port_timeout)
-        self._wait_port_free(9181, timeout=port_timeout)
+        for port in (
+            8123,  # HTTP
+            8443,  # HTTPS
+            9000,  # Native TCP
+            9004,  # MySQL compatibility
+            9005,  # PostgreSQL compatibility
+            9009,  # Interserver HTTP
+            9010,  # TCP with proxy protocol
+            9022,  # SSH
+            9100,  # gRPC
+            9181,  # Keeper
+            9234,  # Keeper Raft
+            9440,  # Native TCP TLS
+            9988,  # Prometheus
+        ):
+            self._wait_port_free(port, timeout=port_timeout)
 
         remaining = max(0, deadline - time.monotonic())
         logging.info(

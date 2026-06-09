@@ -276,13 +276,28 @@ function wait_server_port_free()
     fi
 }
 
+function wait_server_ports_free()
+{
+    # Wait for all ClickHouse listen ports to become available.
+    # In debug+ThreadFuzzer builds, shutdown is slow and the kernel
+    # may still hold sockets from the previous server instance.
+    #   8123  HTTP               9010  TCP with proxy protocol
+    #   8443  HTTPS              9022  SSH
+    #   9000  Native TCP         9100  gRPC
+    #   9004  MySQL compat       9181  Keeper
+    #   9005  PostgreSQL compat  9234  Keeper Raft
+    #   9009  Interserver HTTP   9440  Native TCP TLS
+    #                            9988  Prometheus
+    for port in 8123 8443 9000 9004 9005 9009 9010 9022 9100 9181 9234 9440 9988; do
+        wait_server_port_free "$port"
+    done
+}
+
 function start_server()
 {
     # After safeExit (forceful shutdown), the kernel may still be cleaning up sockets,
     # especially under sanitizer builds. Wait for the server ports to become available.
-    wait_server_port_free 9000
-    wait_server_port_free 9009
-    wait_server_port_free 9181
+    wait_server_ports_free
 
     counter=0
     max_attempt=${1:-6}
@@ -297,6 +312,12 @@ function start_server()
             tail -n100 /var/log/clickhouse-server/stderr.log
             tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n100
             return 1
+        fi
+        # Wait for ports before each retry, not just the first attempt.
+        # In debug+ThreadFuzzer builds, the previous `clickhouse start` may
+        # have spawned a server that is still binding ports or crashing.
+        if [ "$counter" -gt 0 ]; then
+            wait_server_ports_free
         fi
         # use root to match with current uid
         clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
