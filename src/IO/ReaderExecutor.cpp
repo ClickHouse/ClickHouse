@@ -154,7 +154,7 @@ ReaderExecutor::~ReaderExecutor()
 
     /// A live connection still open here was never drained to its bound (else
     /// releaseLiveConnectionAtBound would have reset it): an incomplete connection.
-    accountLiveConnectionDrop(/*at_eof=*/false);
+    accountLiveConnectionDrop(/*at_eof=*/false, stats);
 
     ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromPageCache, stats.bytes_from_page_cache);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromFilesystemCache, stats.bytes_from_filesystem_cache);
@@ -473,15 +473,15 @@ void ReaderExecutor::releaseLiveConnectionAtBound()
     }
 }
 
-void ReaderExecutor::accountLiveConnectionDrop(bool at_eof)
+void ReaderExecutor::accountLiveConnectionDrop(bool at_eof, Stats & out_stats)
 {
     /// A connection dropped before it was fully consumed (not read to its right
     /// bound or to EOF) is abandoned mid-response and not pool-reusable.
     if (live_connection && !live_connection->isComplete(at_eof))
-        ++stats.incomplete_connections;
+        ++out_stats.incomplete_connections;
 }
 
-void ReaderExecutor::maybeKeepLiveConnectionBefore(size_t next_physical)
+void ReaderExecutor::maybeKeepLiveConnectionBefore(size_t next_physical, Stats & out_stats)
 {
     if (!live_connection || reached_eof)
         return;
@@ -496,14 +496,14 @@ void ReaderExecutor::maybeKeepLiveConnectionBefore(size_t next_physical)
         && live_connection->canContinueTo(next_physical - next_obj_file_offset, min_bytes_for_seek);
     if (!keep)
     {
-        maybeDrainLiveTail();
-        accountLiveConnectionDrop(/*at_eof=*/false);
+        maybeDrainLiveTail(out_stats);
+        accountLiveConnectionDrop(/*at_eof=*/false, out_stats);
         live_connection.reset();
         inflight_segment_pin.reset();
     }
 }
 
-void ReaderExecutor::maybeDrainLiveTail()
+void ReaderExecutor::maybeDrainLiveTail(Stats & out_stats)
 {
     /// Drain a small remaining tail before dropping a live connection so it completes
     /// and is returned to the pool reusable rather than counted incomplete. The
@@ -512,8 +512,8 @@ void ReaderExecutor::maybeDrainLiveTail()
     if (!live_connection)
         return;
     const size_t drained = live_connection->drainTail(max_tail_for_drain, block_size);
-    stats.bytes_from_source += drained;
-    stats.over_read_bytes += drained;
+    out_stats.bytes_from_source += drained;
+    out_stats.over_read_bytes += drained;
 }
 
 void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
@@ -622,11 +622,12 @@ void ReaderExecutor::maybeTriggerPrefetch()
     prefetch_submit_time = std::chrono::system_clock::now();
     prefetch_execution_watch.reset();
 
-    /// Snapshot the issued counters BEFORE submit (the worker may start the moment
-    /// submit returns), so a later discard attributes exactly this prefetch's
-    /// source/cache bytes - the delta the worker adds - to wasted.
-    prefetch_issued_source_at_submit = stats.prefetch_issued_source_bytes;
-    prefetch_issued_cache_at_submit = stats.prefetch_issued_cache_bytes;
+    /// The worker accumulates its served-byte counters into this job-local `Stats`,
+    /// co-owned with the lambda - never the shared `this->stats`. Merged into
+    /// `this->stats` at join (`mergePrefetchJobStats`). Starting at zero, its
+    /// `prefetch_issued_*` are exactly this prefetch's issued bytes, so a discard
+    /// attributes precisely them to wasted - no submit-time snapshot needed.
+    auto job_stats = std::make_shared<Stats>();
 
     /// Reserve the stash slot up front so a later discard of this prefetch (seek or
     /// the readNextWindow cancel path) can move the handle into `abandoned_prefetches`
@@ -637,10 +638,10 @@ void ReaderExecutor::maybeTriggerPrefetch()
     /// discard paths.
     abandoned_prefetches.reserve(abandoned_prefetches.size() + 1);
 
-    auto handle = prefetch_pool->submit([this, next_physical_window]()
+    auto handle = prefetch_pool->submit([this, next_physical_window, job_stats]()
     {
         Stopwatch watch;
-        auto rope = readWindowLogical(next_physical_window, /*from_prefetch=*/true);
+        auto rope = readWindowLogical(next_physical_window, /*from_prefetch=*/true, *job_stats);
         watch.stop();
         prefetch_execution_watch = watch;
         return rope;
@@ -659,6 +660,8 @@ void ReaderExecutor::maybeTriggerPrefetch()
     }
 
     prefetch_handle = std::move(handle);
+    /// Co-own the worker's job-local stats so the foreground can merge them at join.
+    prefetch_job_stats = std::move(job_stats);
     /// Track prefetch_range in logical coordinates — same space as `position`
     /// and as the decrypted rope returned by the handle.
     prefetch_range = ByteRange{next_logical_offset, next_size};
@@ -687,38 +690,62 @@ void ReaderExecutor::discardPrefetch(FilesystemPrefetchState reason)
         /// includes seek-cancelled prefetches.
         if (reason != FilesystemPrefetchState::UNNEEDED)
             ++stats.prefetch_cancelled;
-        /// Still queued: the worker will take the cancellation path and never
-        /// touch our state. Stash it for the destructor to join.
+        /// Still queued: the worker will take the cancellation path and never run,
+        /// so its job-local stats stay zero - drop our ref (the lambda keeps its own
+        /// until the pool frees the cancelled task). Stash the handle for the
+        /// destructor to join.
+        prefetch_job_stats.reset();
         abandoned_prefetches.push_back(std::move(local_handle));
     }
     else
     {
-        /// Already running and mutating our state via the captured `this`; block
+        /// Already running and mutating shared state via the captured `this`; block
         /// until it finishes so the caller can safely overwrite it. Work wasted.
         ++stats.prefetch_discarded_running;
         StopwatchAccumulator wait_scope(stats.prefetch_discard_wait_us);
         try
         {
             auto rope = local_handle->get();
-            /// The worker's reads since submit (the delta of the issued counters)
-            /// are exactly this discarded prefetch's bytes; attribute them to
-            /// wasted, split source vs cache (sum == rope.totalBytes()).
-            stats.prefetch_wasted_source_bytes
-                += stats.prefetch_issued_source_bytes - prefetch_issued_source_at_submit;
-            stats.prefetch_wasted_cache_bytes
-                += stats.prefetch_issued_cache_bytes - prefetch_issued_cache_at_submit;
             prefetched_size = static_cast<Int64>(rope.totalBytes());
         }
         catch (...)
         {
             tryLogCurrentException(log, "Discarded prefetch task threw", LogsLevel::debug);
         }
+        /// The worker ran (tryCancel lost), so its job-local stats hold this
+        /// prefetch's I/O. Merge it in and attribute the issued bytes to wasted -
+        /// the bytes crossed the wire even though the rope is discarded. Safe here:
+        /// `get()` returning or throwing both establish the happens-before edge.
+        mergePrefetchJobStats(/*wasted=*/true);
     }
 
     /// Log the dropped prefetch (seek-away). Destructor cleanup passes
     /// `UNNEEDED`, which the legacy path never logs — skip it too.
     if (reason != FilesystemPrefetchState::UNNEEDED)
         emitPrefetchLog(reason, prefetched_size);
+}
+
+void ReaderExecutor::mergePrefetchJobStats(bool wasted)
+{
+    if (!prefetch_job_stats)
+        return;
+
+    /// The prefetch's I/O really happened - fold every counter into the executor
+    /// totals. This is also where the worker's `prefetch_issued_*` (accumulated by
+    /// the `from_prefetch` path) land in `this->stats`.
+    stats += *prefetch_job_stats;
+
+    /// A discarded running prefetch read these bytes but never served them. A
+    /// job-local `Stats` starts at zero, so its `prefetch_issued_*` ARE exactly this
+    /// prefetch's issued bytes - attribute them to wasted (the source/cache split
+    /// sums to the discarded rope's size; cache `put`s persist and are not wasted).
+    if (wasted)
+    {
+        stats.prefetch_wasted_source_bytes += prefetch_job_stats->prefetch_issued_source_bytes;
+        stats.prefetch_wasted_cache_bytes += prefetch_job_stats->prefetch_issued_cache_bytes;
+    }
+
+    prefetch_job_stats.reset();
 }
 
 void ReaderExecutor::drainAbandonedPrefetches(bool wait_finished)
@@ -789,7 +816,7 @@ void ReaderExecutor::initDecryption()
     LOG_DEBUG(log, "initDecryption: reading {} headers ({} bytes)",
         decryption_layers.size(), data_start_offset);
 
-    Rope header_rope = readPhysicalWindow(ByteRange{0, data_start_offset}, /*from_prefetch=*/false);
+    Rope header_rope = readPhysicalWindow(ByteRange{0, data_start_offset}, /*from_prefetch=*/false, stats);
 
     /// Under size-unknown sources `readPhysicalWindow` latches `reached_eof`
     /// on short returns instead of throwing, so an empty rope means
@@ -854,9 +881,9 @@ void ReaderExecutor::initDecryption()
 #endif
 }
 
-Rope ReaderExecutor::readWindowLogical(ByteRange physical_window, bool from_prefetch)
+Rope ReaderExecutor::readWindowLogical(ByteRange physical_window, bool from_prefetch, Stats & out_stats)
 {
-    Rope rope = readPhysicalWindow(physical_window, from_prefetch);
+    Rope rope = readPhysicalWindow(physical_window, from_prefetch, out_stats);
     /// Physical offsets include the encryption header prefix; the consumer works
     /// in logical (post-header) offsets. Shift once here. No-op when not encrypted.
     if (data_start_offset)
@@ -922,7 +949,7 @@ Rope ReaderExecutor::readNextWindow()
         LOG_TRACE(log, "readNextWindow: EOF at position {}", position);
         /// Release per-stream resources at EOF instead of waiting for the caller to
         /// drop the `PipelineReadBuffer`; a subsequent seek-back re-opens and re-acquires.
-        accountLiveConnectionDrop(/*at_eof=*/true);
+        accountLiveConnectionDrop(/*at_eof=*/true, stats);
         live_connection.reset();
         inflight_segment_pin.reset();
         pre_acquired_slot.reset();
@@ -979,7 +1006,7 @@ Rope ReaderExecutor::readNextWindow()
                 : stats.bytes_from_filesystem_cache) += got;
             /// Promote this run up into any faster tier that misses it (no-op when
             /// served from the fastest tier or nothing faster populates).
-            maybePromote(run.tier, ByteRange{pos, got}, chunk);
+            maybePromote(run.tier, ByteRange{pos, got}, chunk, stats);
             rope.append(std::move(chunk));
             pos += got;
             if (pos < serve_end)
@@ -991,7 +1018,7 @@ Rope ReaderExecutor::readNextWindow()
         /// Cache-only serve: settle the open live connection for the next read
         /// (keep it if the next read bridges, else drop it). Safe to touch
         /// `live_connection` here - no prefetch worker runs at a resident cursor.
-        maybeKeepLiveConnectionBefore(position_phys + rope.range().size);
+        maybeKeepLiveConnectionBefore(position_phys + rope.range().size, stats);
 
         if (data_start_offset)
             rope.shift(-static_cast<ssize_t>(data_start_offset));
@@ -1028,10 +1055,13 @@ Rope ReaderExecutor::readNextWindow()
                 /// read below throws, the handle would otherwise be dropped on the
                 /// unwind and the destructor would never wait (see `discardPrefetch`).
                 abandoned_prefetches.push_back(std::move(local_handle));
+                /// The worker never ran (cancelled while queued), so its job-local
+                /// stats stay zero - drop our ref (the lambda keeps its own).
+                prefetch_job_stats.reset();
 
                 ensurePreAcquiredSlot();
                 StopwatchAccumulator sync_scope(stats.sync_read_us);
-                rope = readWindowLogical(physical_window, /*from_prefetch=*/false);
+                rope = readWindowLogical(physical_window, /*from_prefetch=*/false, stats);
                 HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
                     static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
             }
@@ -1043,6 +1073,9 @@ Rope ReaderExecutor::readNextWindow()
                 StopwatchAccumulator wait_scope(stats.prefetch_wait_us);
                 rope = local_handle->get();
                 ++stats.prefetch_hits;
+                /// Consumed: the worker is done (get() established the happens-before
+                /// edge), so fold its job-local I/O counters into `this->stats`.
+                mergePrefetchJobStats(/*wasted=*/false);
                 HistogramMetrics::ReaderExecutorPrefetchWaitLatency.observe(
                     static_cast<HistogramMetrics::Value>(wait_scope.elapsedMicroseconds()));
                 /// Log before the seek-trim below so `size` is the full prefetched
@@ -1062,7 +1095,7 @@ Rope ReaderExecutor::readNextWindow()
             LOG_TRACE(log, "readNextWindow: synchronous gap read physical [{}, {})",
                 physical_window.offset, physical_window.end());
             StopwatchAccumulator sync_scope(stats.sync_read_us);
-            rope = readWindowLogical(physical_window, /*from_prefetch=*/false);
+            rope = readWindowLogical(physical_window, /*from_prefetch=*/false, stats);
             HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
         }
@@ -1078,7 +1111,7 @@ Rope ReaderExecutor::readNextWindow()
     /// release the live connection + slot now rather than leaking it.
     if (reached_eof)
     {
-        accountLiveConnectionDrop(/*at_eof=*/true);
+        accountLiveConnectionDrop(/*at_eof=*/true, stats);
         live_connection.reset();
         inflight_segment_pin.reset();
         pre_acquired_slot.reset();
@@ -1133,8 +1166,8 @@ void ReaderExecutor::seek(size_t new_position)
         {
             LOG_TRACE(log, "seek: live connection for {} (at {}) no longer matches target, closing",
                 live_connection->slot.objectPath(), live_connection->current_position);
-            maybeDrainLiveTail();
-            accountLiveConnectionDrop(/*at_eof=*/false);
+            maybeDrainLiveTail(stats);
+            accountLiveConnectionDrop(/*at_eof=*/false, stats);
             live_connection.reset();
             inflight_segment_pin.reset();
         }
@@ -1264,7 +1297,7 @@ size_t ReaderExecutor::LiveConnection::drainTail(size_t max_tail, size_t block_b
 
 Rope ReaderExecutor::readFromSource(
     const StoredObject & object, size_t offset,
-    VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset)
+    VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset, Stats & out_stats)
 {
     size_t want = 0;
     for (const auto & block : blocks)
@@ -1292,8 +1325,8 @@ Rope ReaderExecutor::readFromSource(
             /// is saved. A short skip means the source hit EOF inside the gap
             /// (unknown size) - the connection is spent, fall through to reopen.
             const size_t skipped = live_connection->skipForward(gap, block_size);
-            stats.bytes_from_source += skipped;
-            stats.over_read_bytes += skipped;
+            out_stats.bytes_from_source += skipped;
+            out_stats.over_read_bytes += skipped;
             ready = skipped == gap;  // skipForward advanced the frontier to `offset`
         }
 
@@ -1313,8 +1346,8 @@ Rope ReaderExecutor::readFromSource(
     {
         LOG_TRACE(log, "readFromSource: closing live connection for {} (was at {}), need {}:{}",
             live_connection->slot.objectPath(), live_connection->current_position, object.remote_path, offset);
-        maybeDrainLiveTail();
-        accountLiveConnectionDrop(/*at_eof=*/false);
+        maybeDrainLiveTail(out_stats);
+        accountLiveConnectionDrop(/*at_eof=*/false, out_stats);
         live_connection.reset();
         inflight_segment_pin.reset();
     }
@@ -1386,7 +1419,7 @@ Rope ReaderExecutor::readFromSource(
                 .buffer = std::move(opened),
                 .slot = std::move(*slot),
             });
-            ++stats.source_requests;
+            ++out_stats.source_requests;
 
             Rope rope = live_connection->readInto(std::move(blocks), logical_offset, log);
 
@@ -1419,7 +1452,7 @@ Rope ReaderExecutor::readFromSource(
         opened->setReadUntilPosition(offset + want);
 
     auto & buf = *opened;
-    ++stats.source_requests;
+    ++out_stats.source_requests;
 
     Rope rope;
     size_t total_read = 0;
@@ -1448,12 +1481,12 @@ Rope ReaderExecutor::readFromSource(
     /// bound above was skipped) that did not reach EOF is dropped mid-response —
     /// not reusable.
     if (!stateless_bounded && !hit_eof)
-        ++stats.incomplete_connections;
+        ++out_stats.incomplete_connections;
 
     return rope;
 }
 
-Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_prefetch)
+Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_prefetch, Stats & out_stats)
 {
     LOG_TRACE(log, "readPhysicalWindow [{}, {}) from_prefetch={}",
         physical_window.offset, physical_window.end(), from_prefetch);
@@ -1477,14 +1510,14 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
     /// `~DiskCacheHandle`), and so the in-flight segment can be pinned from them below.
     WritePlan write_plan;
 
-    serveResidentFromPlan(physical_window, from_prefetch, result, covered);
+    serveResidentFromPlan(physical_window, from_prefetch, result, covered, out_stats);
     const bool fetched_from_source = fetchAndBackfillGaps(
-        physical_window, from_prefetch, result, covered, write_plan);
+        physical_window, from_prefetch, result, covered, write_plan, out_stats);
 
     /// A cache-only window (no source read) leaves the live connection idle; keep
     /// it only if the next window bridges, else drop it (see the helper).
     if (!fetched_from_source)
-        maybeKeepLiveConnectionBefore(physical_window.end());
+        maybeKeepLiveConnectionBefore(physical_window.end(), out_stats);
 
     /// Strategy A pin: re-point to the partial segment under the new frontier
     /// (dropping any previous pin); clear it when there's nothing partial.
@@ -1525,7 +1558,8 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
     return sliced;
 }
 
-void ReaderExecutor::serveResidentFromPlan(ByteRange physical_window, bool from_prefetch, Rope & result, IntervalSet & covered)
+void ReaderExecutor::serveResidentFromPlan(
+    ByteRange physical_window, bool from_prefetch, Rope & result, IntervalSet & covered, Stats & out_stats)
 {
     if (!read_plan.covers(physical_window))
         planResidencyWindow(physical_window.offset);
@@ -1551,8 +1585,8 @@ void ReaderExecutor::serveResidentFromPlan(ByteRange physical_window, bool from_
     for (const auto & ph : read_plan.planned)
     {
         size_t & tier_bytes = ph.tier == CacheTier::PageCache
-            ? stats.bytes_from_page_cache
-            : stats.bytes_from_filesystem_cache;
+            ? out_stats.bytes_from_page_cache
+            : out_stats.bytes_from_filesystem_cache;
 
         for (const auto & res : ph.resident)
         {
@@ -1565,8 +1599,8 @@ void ReaderExecutor::serveResidentFromPlan(ByteRange physical_window, bool from_
             auto useful = covered.subtract(clamped);
             if (useful.empty())
                 continue;
-            ++stats.cache_get_requests;
-            StopwatchAccumulator get_scope(stats.cache_get_us);
+            ++out_stats.cache_get_requests;
+            StopwatchAccumulator get_scope(out_stats.cache_get_us);
             Rope resident_rope = ph.handle->get(clamped);
             HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
@@ -1584,7 +1618,7 @@ void ReaderExecutor::serveResidentFromPlan(ByteRange physical_window, bool from_
                 covered.add(sub);
                 tier_bytes += sub.size;
                 if (from_prefetch)
-                    stats.prefetch_issued_cache_bytes += sub.size;
+                    out_stats.prefetch_issued_cache_bytes += sub.size;
             }
         }
     }
@@ -1595,7 +1629,8 @@ bool ReaderExecutor::fetchAndBackfillGaps(
     bool from_prefetch,
     Rope & result,
     IntervalSet & covered,
-    WritePlan & write_plan)
+    WritePlan & write_plan,
+    Stats & out_stats)
 {
     /// Whatever the plan left uncovered is a remote gap. Walk the tiers to create
     /// each tier's backfill segments (`getOrSet`) and segment-align the misses.
@@ -1606,8 +1641,8 @@ bool ReaderExecutor::fetchAndBackfillGaps(
     {
         VectorWithMemoryTracking<ByteRange> still_missing;
         size_t & tier_bytes = cache->tier() == CacheTier::PageCache
-            ? stats.bytes_from_page_cache
-            : stats.bytes_from_filesystem_cache;
+            ? out_stats.bytes_from_page_cache
+            : out_stats.bytes_from_filesystem_cache;
 
         for (const auto & r : remaining)
         {
@@ -1640,8 +1675,8 @@ bool ReaderExecutor::fetchAndBackfillGaps(
                     auto useful = covered.subtract(clamped);
                     if (useful.empty())
                         continue;
-                    ++stats.cache_get_requests;
-                    StopwatchAccumulator get_scope(stats.cache_get_us);
+                    ++out_stats.cache_get_requests;
+                    StopwatchAccumulator get_scope(out_stats.cache_get_us);
                     Rope hit_rope = handle->get(clamped);
                     HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
                         static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
@@ -1656,7 +1691,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
                         covered.add(sub);
                         tier_bytes += sub.size;
                         if (from_prefetch)
-                            stats.prefetch_issued_cache_bytes += sub.size;
+                            out_stats.prefetch_issued_cache_bytes += sub.size;
                     }
                     any_hit_done = true;
                 }
@@ -1714,14 +1749,14 @@ bool ReaderExecutor::fetchAndBackfillGaps(
             std::sort(splits.begin(), splits.end());
 
             auto blocks = allocateBlocks(pr.size, window_block_size, splits);
-            StopwatchAccumulator src_scope(stats.source_read_us);
-            Rope source_rope = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos);
+            StopwatchAccumulator src_scope(out_stats.source_read_us);
+            Rope source_rope = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos, out_stats);
             HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
             size_t actual = source_rope.totalBytes();
-            stats.bytes_from_source += actual;
+            out_stats.bytes_from_source += actual;
             if (from_prefetch)
-                stats.prefetch_issued_source_bytes += actual;
+                out_stats.prefetch_issued_source_bytes += actual;
             /// Size-known short reads are fatal (the map promised those bytes).
             /// Size-unknown short reads are how EOF is learned - latch it.
             if (actual != pr.size)
@@ -1746,7 +1781,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
                 if (hi > lo)
                     for (const auto & sub : covered.subtract(ByteRange{lo, hi - lo}))
                         needed += sub.size;
-                stats.over_read_bytes += actual - needed;
+                out_stats.over_read_bytes += actual - needed;
             }
             for (const auto & sub : covered.subtract(pr_range))
             {
@@ -1758,12 +1793,12 @@ bool ReaderExecutor::fetchAndBackfillGaps(
         }
     }
 
-    flushWritePlan(write_plan, result, from_prefetch);
+    flushWritePlan(write_plan, result, from_prefetch, out_stats);
 
     return !fetch_ranges.empty();
 }
 
-void ReaderExecutor::flushWritePlan(WritePlan & write_plan, const Rope & result, bool from_prefetch)
+void ReaderExecutor::flushWritePlan(WritePlan & write_plan, const Rope & result, bool from_prefetch, Stats & out_stats)
 {
     /// Write the fetched bytes back into every tier that missed. `result` is
     /// disjoint by construction, so each slice has at most one node per byte (it
@@ -1776,11 +1811,11 @@ void ReaderExecutor::flushWritePlan(WritePlan & write_plan, const Rope & result,
             auto slice = result.slice(miss);
             if (slice.empty())
                 continue;
-            ++stats.cache_populate_requests;
-            StopwatchAccumulator put_scope(stats.cache_populate_us);
+            ++out_stats.cache_populate_requests;
+            StopwatchAccumulator put_scope(out_stats.cache_populate_us);
             size_t & pushed_bytes = from_prefetch
-                ? stats.bytes_pushed_to_cache_async
-                : stats.bytes_pushed_to_cache_sync;
+                ? out_stats.bytes_pushed_to_cache_async
+                : out_stats.bytes_pushed_to_cache_sync;
             pushed_bytes += handle->put(miss, std::move(slice));
             HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
                 static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
@@ -1788,7 +1823,7 @@ void ReaderExecutor::flushWritePlan(WritePlan & write_plan, const Rope & result,
     }
 }
 
-void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Rope & bytes)
+void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Rope & bytes, Stats & out_stats)
 {
     /// Walk tiers fastest-first. Everything before `from_tier` is faster and
     /// missed `range` (else it would have served it), so write `bytes` up into
@@ -1842,9 +1877,9 @@ void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Ro
                 auto slice = bytes.slice(sub);
                 if (slice.empty())
                     continue;
-                ++stats.cache_populate_requests;
-                StopwatchAccumulator put_scope(stats.cache_populate_us);
-                stats.bytes_promoted += ph.write_handle->put(sub, std::move(slice));
+                ++out_stats.cache_populate_requests;
+                StopwatchAccumulator put_scope(out_stats.cache_populate_us);
+                out_stats.bytes_promoted += ph.write_handle->put(sub, std::move(slice));
                 HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
                     static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
             }
