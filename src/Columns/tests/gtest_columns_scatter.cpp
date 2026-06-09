@@ -5,6 +5,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
@@ -694,6 +695,83 @@ TEST(ColumnsScatter, FallbackArrayMixedNestedRepresentation)
     // Oracle: scatter two full-nested arrays with the same values and same pids.
     auto ref_col0 = make_full_array(N);
     auto ref_col1 = make_full_array(N);
+    std::vector<const IColumn *> ref_ptrs = {ref_col0.get(), ref_col1.get()};
+    auto ref = referenceScatter(ref_ptrs, pids, NUM_SHARDS);
+
+    ASSERT_EQ(got.size(), NUM_SHARDS);
+    for (size_t s = 0; s < NUM_SHARDS; ++s)
+        assertColumnsEqual(*got[s], *ref[s]);
+}
+
+TEST(ColumnsScatter, FallbackMapMixedNestedRepresentation)
+{
+    // Map(UInt64, UInt64) goes through scatterFallback (no fast-path entry). ColumnMap wraps a
+    // ColumnArray(Tuple(key, value)); ColumnMap::scatter preserves that nested representation.
+    // When one chunk's value element is a full ColumnUInt64 and another's is a ColumnSparse(UInt64)
+    // with the same logical values, the cross-chunk insertRangeFrom in scatterFallback must not
+    // fail. Without the Map branch in deepNormalizeForFallback, ColumnUInt64::insertRangeFrom
+    // assert-casts on the sparse source and fails in sanitized builds.
+    constexpr size_t NUM_SHARDS = 3;
+    const size_t N = 8;
+
+    auto make_offsets = [](size_t n) -> MutableColumnPtr
+    {
+        auto offs = ColumnArray::ColumnOffsets::create();
+        for (size_t i = 0; i < n; ++i)
+            offs->insertValue(static_cast<UInt64>(i + 1));
+        return offs;
+    };
+
+    auto make_full_keys = [](size_t n) -> MutableColumnPtr
+    {
+        auto keys = ColumnUInt64::create();
+        for (size_t i = 0; i < n; ++i)
+            keys->insertValue(static_cast<UInt64>(i + 1));
+        return keys;
+    };
+
+    // Chunk 0: full nested value column. Each row is a single-entry map {i+1: i+1}.
+    auto make_full_map = [&](size_t n) -> ColumnPtr
+    {
+        auto values = ColumnUInt64::create();
+        for (size_t i = 0; i < n; ++i)
+            values->insertValue(static_cast<UInt64>(i + 1));
+        auto tuple = ColumnTuple::create(Columns{make_full_keys(n), std::move(values)});
+        auto nested = ColumnArray::create(std::move(tuple), make_offsets(n));
+        return ColumnMap::create(nested);
+    };
+
+    // Chunk 1: sparse nested value column with identical logical values.
+    // ColumnSparse: values[0] = default (0), values[k] = k for k = 1..N; all positions non-default.
+    auto make_sparse_map = [&](size_t n) -> ColumnPtr
+    {
+        auto vals = ColumnUInt64::create();
+        vals->insertValue(0); // default value at index 0
+        auto sparse_offs = ColumnUInt64::create();
+        for (size_t i = 0; i < n; ++i)
+        {
+            vals->insertValue(static_cast<UInt64>(i + 1));
+            sparse_offs->insertValue(static_cast<UInt64>(i));
+        }
+        auto sparse_values = ColumnSparse::create(std::move(vals), std::move(sparse_offs), n);
+        auto tuple = ColumnTuple::create(Columns{make_full_keys(n), std::move(sparse_values)});
+        auto nested = ColumnArray::create(std::move(tuple), make_offsets(n));
+        return ColumnMap::create(nested);
+    };
+
+    auto full_col = make_full_map(N);
+    auto sparse_col = make_sparse_map(N);
+
+    std::vector<std::vector<UInt32>> pids = {randomPids(N, NUM_SHARDS), randomPids(N, NUM_SHARDS)};
+
+    std::vector<const IColumn *> col_ptrs = {full_col.get(), sparse_col.get()};
+    std::vector<std::span<const UInt32>> pid_spans = {pids[0], pids[1]};
+    // Must not throw or produce garbage despite mismatched nested representations.
+    auto got = ColumnsScatter::scatter(col_ptrs, pid_spans, NUM_SHARDS);
+
+    // Oracle: scatter two full-nested maps with the same values and same pids.
+    auto ref_col0 = make_full_map(N);
+    auto ref_col1 = make_full_map(N);
     std::vector<const IColumn *> ref_ptrs = {ref_col0.get(), ref_col1.get()};
     auto ref = referenceScatter(ref_ptrs, pids, NUM_SHARDS);
 

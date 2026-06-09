@@ -20,7 +20,6 @@
 #include <Core/BlockNameMap.h>
 
 #include <base/FnTraits.h>
-#include <algorithm>
 #include <ranges>
 
 namespace DB

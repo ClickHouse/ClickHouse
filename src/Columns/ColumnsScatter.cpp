@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -79,8 +80,7 @@ template <typename T>
     const size_t num_shards = rows_per_shard.size();
 
     /// Write-pointer cache: inline (stack) for num_shards <= SCATTER_INLINE_SHARDS,
-    /// heap-backed beyond. The hot loop indexes the raw `wp` data pointer, so its
-    /// codegen is identical to the previous fixed C array.
+    /// heap-backed beyond. The hot loop indexes the raw `wp` data pointer.
     absl::InlinedVector<T *, SCATTER_INLINE_SHARDS> wp_storage(num_shards);
     T ** wp = wp_storage.data();
 
@@ -159,7 +159,7 @@ template <typename DecimalT>
 }
 
 // ── FixedString scatter ───────────────────────────────────────────────────────
-// Runtime element size n = getN(); SWWC not supported (slot count not compile-time).
+// Runtime element size n = getN().
 
 [[gnu::hot]] MutableColumns scatterFixedString(
     std::span<const IColumn * const> source_columns,
@@ -239,7 +239,7 @@ template <typename DecimalT>
     /// Triple per-partition scratch arrays: offsets writer, chars writer,
     /// running absolute byte cursor. Inline (stack) for num_shards <=
     /// SCATTER_INLINE_SHARDS, heap-backed beyond. The hot loop indexes the raw
-    /// data pointers, so codegen matches the previous fixed C arrays.
+    /// data pointers.
     /// UInt8 = char8_t (ClickHouse convention).
     absl::InlinedVector<UInt64 *, SCATTER_INLINE_SHARDS> off_ptrs_storage(num_shards);
     absl::InlinedVector<UInt8 *, SCATTER_INLINE_SHARDS> char_ptrs_storage(num_shards);
@@ -302,11 +302,11 @@ template <typename DecimalT>
 // Does not use rows_per_shard (IColumn::scatter computes counts internally).
 
 /// Deep-normalize a column for the fallback scatter path: strip Const, Sparse, and
-/// Replicated at every nesting level (including inside ColumnArray data and ColumnTuple
-/// elements), preserving LowCardinality. This is required before calling IColumn::scatter
-/// + insertRangeFrom across source chunks: IColumn::scatter preserves the nested
-/// representation of each source, and insertRangeFrom uses assert_cast on the concrete
-/// nested type, so mismatched nested representations across chunks (e.g. full
+/// Replicated at every nesting level (including inside ColumnArray data, ColumnTuple
+/// elements, and the ColumnMap nested array), preserving LowCardinality. This is required
+/// before calling IColumn::scatter + insertRangeFrom across source chunks: IColumn::scatter
+/// preserves the nested representation of each source, and insertRangeFrom uses assert_cast
+/// on the concrete nested type, so mismatched nested representations across chunks (e.g. full
 /// ColumnUInt64 nested inside one Array chunk vs ColumnSparse(UInt64) inside another)
 /// cause assert_cast failures in release builds or UB in sanitized builds.
 ColumnPtr deepNormalizeForFallback(ColumnPtr col)
@@ -339,6 +339,18 @@ ColumnPtr deepNormalizeForFallback(ColumnPtr col)
         if (!changed)
             return col;
         return ColumnTuple::create(std::move(normalized));
+    }
+
+    /// ColumnMap wraps a ColumnArray(Tuple(key, value)); ColumnMap::scatter preserves that
+    /// nested representation, so without normalizing the nested array a mixed-nested Map batch
+    /// would reach the same invalid insertRangeFrom/assert_cast path the Array branch fixes.
+    if (col->getDataType() == TypeIndex::Map)
+    {
+        const auto & map = assert_cast<const ColumnMap &>(*col);
+        auto new_nested = deepNormalizeForFallback(map.getNestedColumnPtr());
+        if (new_nested.get() == map.getNestedColumnPtr().get())
+            return col;
+        return ColumnMap::create(new_nested);
     }
 
     return col;
@@ -542,10 +554,10 @@ MutableColumns scatter(
     /// Fast compact path for a homogeneous batch of equal-valued `ColumnConst` sources.
     /// `ColumnConst::scatter` expands the constant into one value per row per shard,
     /// but when all sources carry the same constant value, shard s only needs
-    /// `ColumnConst(value, rows_per_shard[s])` — no materialization required. This
-    /// preserves the O(1)-memory behavior the legacy per-chunk scatter had for
-    /// constant-key workloads (e.g. `GROUP BY toUInt64(1)`) and avoids expanding large
-    /// const-heavy batches that `BufferedShardByHashTransform` accumulates before a flush.
+    /// `ColumnConst(value, rows_per_shard[s])` — no materialization required. This keeps
+    /// memory O(1) for constant-key workloads (e.g. `GROUP BY toUInt64(1)`) and avoids
+    /// expanding large const-heavy batches that `BufferedShardByHashTransform`
+    /// accumulates before a flush.
     const bool all_const = std::all_of(
         source_columns.begin(), source_columns.end(), [](const IColumn * c) { return c->isConst(); });
     if (all_const)
@@ -580,11 +592,10 @@ MutableColumns scatter(
     /// constant folding or `UNION`). The typed kernels `assert_cast` every source to
     /// the probe's concrete class and `getDataType()` is representation-blind, so a
     /// mixed batch would mis-cast or materialize wrong values. Materialize any
-    /// transparent wrappers up front so the dispatch below sees a single representation.
-    /// `materializeTransparentWrappers` strips only `Const`/`Replicated`/`Sparse`
-    /// (preserving `LowCardinality`, whose type must not change) and returns `getPtr()`
-    /// (no copy) for already-full columns, so this only costs anything on the rare
-    /// mixed/wrapped batch.
+    /// transparent wrappers up front so the dispatch below sees a single representation
+    /// (see `materializeTransparentWrappers` for what is stripped vs preserved; it is a
+    /// no-op copy-free pass for already-full columns, so this only costs anything on the
+    /// rare mixed/wrapped batch).
     absl::InlinedVector<ColumnPtr, SCATTER_INLINE_SOURCES> materialized;
     absl::InlinedVector<const IColumn *, SCATTER_INLINE_SOURCES> full_ptrs;
     const auto any_wrapper = std::any_of(
@@ -625,13 +636,12 @@ MutableColumns scatter(
 namespace
 {
 
-/// Materialize transparent wrappers (Const/Sparse/Replicated) collected from a composite
-/// column's subcolumns so the recursive scatterDispatch sees a single concrete
-/// representation per position. The top-level scatter() only normalizes the outer column,
-/// not subcolumns that differ across chunks — e.g. a sparse tuple element in one chunk and
-/// a full one in another. `LowCardinality` is deliberately left intact (see
-/// `materializeTransparentWrappers`). Materialized columns are owned by `holder`, which must
-/// outlive the dispatch call. No-op (no copy) when every column is already full.
+/// Materialize transparent wrappers collected from a composite column's subcolumns so the
+/// recursive scatterDispatch sees a single concrete representation per position. The top-level
+/// scatter() only normalizes the outer column, not subcolumns that differ across chunks — e.g.
+/// a sparse tuple element in one chunk and a full one in another. Strips/preserves the same
+/// way as `materializeTransparentWrappers`. Materialized columns are owned by `holder`, which
+/// must outlive the dispatch call. No-op (no copy) when every column is already full.
 void materializeWrappers(
     std::vector<const IColumn *> & cols, // STYLE_CHECK_ALLOW_STD_CONTAINERS
     absl::InlinedVector<ColumnPtr, SCATTER_INLINE_SOURCES> & holder)

@@ -9,10 +9,9 @@ namespace DB::ColumnsScatter
 
 /// Count rows routed to each shard from a batch of pids spans.
 ///
-/// `rows_per_shard` must be pre-zeroed with size == num_shards. Call once per
-/// flush in BufferedShardByHashTransform before the per-column scatter loop;
-/// pass the result to every `scatter` call in that loop to eliminate the
-/// K − 1 redundant pids re-scans that the internal counting path would do.
+/// `rows_per_shard` must be pre-zeroed with size == num_shards. Compute it once and
+/// pass the result to every `scatter` call for that batch (one per column-position) to
+/// eliminate the K − 1 redundant pids re-scans that the internal counting path would do.
 void countRowsPerShard(std::span<const std::span<const UInt32>> pids_per_source, std::span<UInt32> rows_per_shard);
 
 /// Batched, type-dispatched physical scatter.

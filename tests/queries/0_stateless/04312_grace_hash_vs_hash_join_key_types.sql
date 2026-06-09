@@ -1,9 +1,9 @@
 -- grace_hash routes rows to buckets via IColumn::computeHashInto (JoinUtils::scatterBlockByHash).
 -- If a key column's computeHashInto mis-routes equal keys, grace_hash silently drops join
 -- matches while the default hash join does not. This test asserts grace_hash == hash for the
--- key families whose computeHashInto this PR changed: UInt, String, Nullable, LowCardinality,
--- Array, Tuple. Each family compares an order-independent checksum (sum of per-row cityHash64)
--- of an ALL INNER JOIN run under grace_hash (forced into multiple hash-routed buckets) vs hash.
+-- key families UInt, String, Nullable, LowCardinality, Array, Tuple. Each family compares an
+-- order-independent checksum (sum of per-row cityHash64) of an ALL INNER JOIN run under
+-- grace_hash (forced into multiple hash-routed buckets) vs hash.
 
 SELECT 'uint64' AS t,
     (SELECT sum(cityHash64(a.k, b.x)) FROM (SELECT number % 5000 AS k FROM numbers(20000)) AS a ALL INNER JOIN (SELECT number AS k, number * 7 AS x FROM numbers(5000)) AS b ON a.k = b.k

@@ -122,12 +122,12 @@ void BM_ComputeHashInto(benchmark::State & state, const std::vector<ColumnPtr> &
     state.counters["K"] = static_cast<double>(ncols);
 }
 
-/// ─── End-to-end hash → selector benchmark ────────────────────────────────
+/// ─── End-to-end hash → partition-id benchmark ────────────────────────────────
 ///
-/// Captures the full pipeline exactly as executed by
-/// BufferedShardByHashTransform::generateOutputChunks:
-/// seed hash_buffer with WEAK_HASH32_INITIAL_VALUE, chain computeHashInto with
-/// initial=false over every key column (0 allocations), then mapToRange SIMD.
+/// Mirrors the hash-production step of the hash-partitioning consumers
+/// (BufferedShardByHashTransform, ScatterByPartitionTransform): seed hash_buffer
+/// with WEAK_HASH32_INITIAL_VALUE, chain computeHashInto with initial=false over
+/// every key column (0 allocations), then mapToRange SIMD to UInt32 pids.
 ///
 /// The per-iteration std::fill is part of the consumer hot path (the buffer is
 /// re-seeded for every block), so it is measured here rather than hoisted out.
@@ -139,7 +139,7 @@ void BM_HashAndFastrange_New(benchmark::State & state, const std::vector<ColumnP
     const size_t n = cols[0]->size();
     const size_t ncols = cols.size();
     PaddedPODArray<UInt32> hash_buf(n);
-    PaddedPODArray<UInt64> pids(n); // mapToRange writes a UInt64 selector
+    PaddedPODArray<UInt32> pids(n); // mapToRange writes UInt32 partition ids
     const UInt32 p32 = static_cast<UInt32>(num_shards);
     for (auto _ : state)
     {
