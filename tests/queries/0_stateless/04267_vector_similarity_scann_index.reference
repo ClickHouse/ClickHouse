@@ -47,3 +47,4 @@
 20. Large Float64 cosine vectors: float32 overflow in normalization regression
 0
 0
+21. Unquoted scann identifier requires allow_experimental_scann_index

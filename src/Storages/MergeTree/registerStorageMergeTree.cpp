@@ -47,6 +47,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
+    extern const SettingsBool allow_experimental_scann_index;
     extern const SettingsBool allow_experimental_unique_key;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -893,6 +894,25 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 }
             }
         }
+
+#if USE_SCANN
+        if (args.mode <= LoadingStrictnessLevel::CREATE)
+        {
+            for (const auto & index : metadata.secondary_indices)
+            {
+                if (index.type != "vector_similarity")
+                    continue;
+                FieldVector index_args = getFieldsFromIndexArgumentsAST(index.arguments);
+                if (!index_args.empty()
+                    && index_args[0].getType() == Field::Types::String
+                    && index_args[0].safeGet<String>() == "scann"
+                    && !local_settings[Setting::allow_experimental_scann_index])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "vector_similarity index with method 'scann' is experimental. "
+                        "Set allow_experimental_scann_index = 1 to use it.");
+            }
+        }
+#endif
 
         /// Try to add "implicit" min-max indexes on all columns
         for (const auto & column : metadata.columns)

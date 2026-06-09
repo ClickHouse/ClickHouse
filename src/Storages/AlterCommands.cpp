@@ -1359,13 +1359,13 @@ bool AlterCommands::hasScannVectorSimilarityIndex(const StorageInMemoryMetadata 
 {
     for (const auto & index : metadata.secondary_indices)
     {
-        if (index.type != "vector_similarity" || !index.arguments)
+        if (index.type != "vector_similarity")
             continue;
-        const auto * args = typeid_cast<const ASTExpressionList *>(index.arguments.get());
-        if (args && !args->children.empty())
-            if (const auto * lit = typeid_cast<const ASTLiteral *>(args->children[0].get()))
-                if (lit->value.safeGet<String>() == "scann")
-                    return true;
+        FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
+        if (args.empty() || args[0].getType() != Field::Types::String)
+            continue;
+        if (args[0].safeGet<String>() == "scann")
+            return true;
     }
     return false;
 }

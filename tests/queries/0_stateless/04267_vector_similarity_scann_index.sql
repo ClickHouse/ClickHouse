@@ -455,3 +455,18 @@ SELECT count() FROM (
     SETTINGS use_skip_indexes = 0
 );
 DROP TABLE tab_scann_cos_f64_large;
+
+-- Test 21: Unquoted 'scann' identifier must be treated as method name 'scann' and
+-- require allow_experimental_scann_index = 1, same as the quoted form.
+-- Before the fix, hasScannVectorSimilarityIndex only checked ASTLiteral, so
+-- vector_similarity(scann, ...) bypassed the experimental guard.
+SELECT '21. Unquoted scann identifier requires allow_experimental_scann_index';
+SET allow_experimental_scann_index = 0;
+DROP TABLE IF EXISTS tab_scann_unquoted;
+-- CREATE TABLE path
+CREATE TABLE tab_scann_unquoted (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity(scann, 'L2Distance', 2) GRANULARITY 1) ENGINE = MergeTree ORDER BY id; -- { serverError SUPPORT_IS_DISABLED }
+-- ALTER TABLE path
+CREATE TABLE tab_scann_unquoted (id Int32, vec Array(Float32)) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE tab_scann_unquoted ADD INDEX idx vec TYPE vector_similarity(scann, 'L2Distance', 2) GRANULARITY 1; -- { serverError SUPPORT_IS_DISABLED }
+DROP TABLE tab_scann_unquoted;
+SET allow_experimental_scann_index = 1;
