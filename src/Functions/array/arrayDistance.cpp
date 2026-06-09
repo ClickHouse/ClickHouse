@@ -391,6 +391,19 @@ constexpr bool is_common_mixed_pair = is_unordered_pair<LeftType, RightType, UIn
     || is_unordered_pair<LeftType, RightType, UInt8, Float64>
     || is_unordered_pair<LeftType, RightType, Float32, Float64>;
 
+/// Per-row accumulator unroll width for the four distance hot loops below.
+///
+/// Fixed at 8, not the wider `128 / sizeof(ResultType)`. These loops run once
+/// per row, so the per-row fixed cost (scalar remainder tail + horizontal
+/// reduction over the partial states) grows with the unroll width. For the
+/// short vectors typical of vector search (e.g. 150 dims) a width of 32 leaves
+/// ~15% of each row in the scalar tail and regresses L1/L2/Linf/cosine on both
+/// x86 and ARM; widths >= 16 also overflow the register file for the
+/// three-accumulator cosineDistance kernel. 8 was the measured sweet spot over
+/// dims 150..1024 on both ISAs, matching the previous hand-tuned const-path
+/// value. See PR #101310.
+constexpr size_t distance_unroll_count = 8;
+
 /// Multi-target hot loop for the native same-type path (LeftType == RightType == ResultType).
 /// The MULTITARGET macro generates _x86_64_v4, _x86_64_v3, and default versions
 /// so the compiler can auto-vectorize with the best available ISA.
@@ -410,7 +423,7 @@ MULTITARGET_FUNCTION_HEADER(
     size_t row_count,
     const typename Kernel::ConstParams & params)
 {
-    constexpr size_t unroll_count = 128 / sizeof(ResultType);
+    constexpr size_t unroll_count = distance_unroll_count;
 
     ColumnArray::Offset prev = 0;
     for (size_t row = 0; row < row_count; ++row)
@@ -484,7 +497,7 @@ MULTITARGET_FUNCTION_HEADER(
     size_t row_count,
     const typename Kernel::ConstParams & params)
 {
-    constexpr size_t unroll_count = 128 / sizeof(ResultType);
+    constexpr size_t unroll_count = distance_unroll_count;
 
     ColumnArray::Offset prev = 0;
     for (size_t row = 0; row < row_count; ++row)
@@ -559,7 +572,7 @@ MULTITARGET_FUNCTION_HEADER(
     size_t row_count,
     const typename Kernel::ConstParams & params)
 {
-    constexpr size_t unroll_count = 128 / sizeof(ResultType);
+    constexpr size_t unroll_count = distance_unroll_count;
 
     ColumnArray::Offset prev = 0;
     for (size_t row = 0; row < row_count; ++row)
@@ -630,7 +643,7 @@ MULTITARGET_FUNCTION_HEADER(
     size_t row_count,
     const typename Kernel::ConstParams & params)
 {
-    constexpr size_t unroll_count = 128 / sizeof(ResultType);
+    constexpr size_t unroll_count = distance_unroll_count;
 
     ColumnArray::Offset prev = 0;
     for (size_t row = 0; row < row_count; ++row)
