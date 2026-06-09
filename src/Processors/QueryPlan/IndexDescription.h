@@ -36,16 +36,16 @@ enum class SearchAlgorithm : uint8_t
 struct DistributedIndexStat
 {
     std::string address;
-    size_t num_parts_send;
-    size_t num_parts_received;
-    size_t num_granules_send;
-    size_t num_granules_received;
+    size_t num_parts_send = 0;
+    size_t num_parts_received = 0;
+    size_t num_granules_send = 0;
+    size_t num_granules_received = 0;
 };
 
 /// Information about an applied index. Used for introspection only, in EXPLAIN query.
 struct IndexStat
 {
-    IndexType type;
+    IndexType type = IndexType::None;
     std::string name = {};
     std::string part_name = {};
     std::string description = {};
