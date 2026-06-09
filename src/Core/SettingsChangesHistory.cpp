@@ -49,6 +49,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"show_remote_databases_in_system_tables", false, false, "Renamed from `show_data_lake_catalogs_in_system_tables` and broadened to also hide `MySQL` and `PostgreSQL` databases from `system.tables`, `system.columns` and `system.completions` by default, since enumerating their tables requires expensive remote calls. Users who relied on the previous behavior must set this setting to `true`. The old name is kept as an alias."},
             {"enable_streaming_queries", false, false, "New setting"},
             {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
+            {"wait_for_part_commit_in_dependent_materialized_views", false, false, "New setting"},
             {"output_format_float_precision", 0, 0, "A new setting to control decimal digits in float output"},
             {"file_like_engine_default_partition_strategy", "wildcard", "hive", "Change the default partition strategy for file-like table engines (S3, AzureBlobStorage, etc.) from `wildcard` to `hive` when no `partition_strategy` is provided."},
             {"allow_limit_by_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `LIMIT BY` when the partition expression is a deterministic function of the `LIMIT BY` columns."},
@@ -64,6 +65,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"obfuscate_markov_frequency_add", 0, 0, "New setting: constant added to every frequency count in the obfuscate table function's Markov model."},
             {"obfuscate_markov_frequency_desaturate", 0.0, 0.0, "New setting: frequency desaturation factor in [0,1] for the obfuscate table function's Markov model."},
             {"obfuscate_markov_determinator_sliding_window_size", 8, 8, "New setting: sliding-window size used to seed the RNG in the obfuscate table function's Markov model."},
+            {"function_base58_max_input_size", 0, 10000, "New setting that limits the input size of `base58Encode`, `base58Decode` and `tryBase58Decode` (whose conversion is quadratic in the input length) to 10 KB by default. The compatibility value `0` disables the limit, restoring the previous behavior of accepting arbitrarily large inputs."},
+            {"format_avro_schema_registry_max_retries", 0, 5, "New setting controlling the maximum number of retries for transient failures (transport timeouts, connection refused, DNS errors, HTTP 5xx/408/429) when communicating with the Confluent Schema Registry. Set to 0 to disable retries. Previous behavior (no retries) is preserved by `compatibility = '26.5'`."},
+            {"format_avro_schema_registry_retry_initial_backoff_ms", 100, 100, "New setting controlling the initial backoff (in milliseconds) before retrying a failed Confluent Schema Registry request. The backoff doubles on each retry, capped at 10 seconds. Has no effect when `format_avro_schema_registry_max_retries = 0` (the pre-26.6 behavior restored by `compatibility = '26.5'`)."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
