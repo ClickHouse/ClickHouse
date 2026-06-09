@@ -3,6 +3,8 @@
 #include <Columns/FilterDescription.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/AlterConversions.h>
@@ -45,8 +47,19 @@ void populatePartAggregationCache(
     std::sort(columns_to_read.begin(), columns_to_read.end());
     columns_to_read.erase(std::unique(columns_to_read.begin(), columns_to_read.end()), columns_to_read.end());
 
+    /// On a cold cache this path reads and aggregates every uncached part before the normal query
+    /// pipeline exists. Attach the query's process-list element so the per-part reads honour the
+    /// same cancellation (`KILL QUERY`) and time limits (`max_execution_time`) as the query they
+    /// serve; otherwise warmup would keep doing the expensive work for an already-cancelled query.
+    auto process_list_element = context->getProcessListElement();
+
     for (const auto & part : parts)
     {
+        /// Stop populating promptly if the query was cancelled or timed out, instead of warming the
+        /// cache for the remaining parts.
+        if (process_list_element && (process_list_element->isKilled() || !process_list_element->checkTimeLimitSoft()))
+            break;
+
         PartAggregationCache::Key key{query_hash, table_id, part.data_part->name};
 
         if (cache->get(key))
@@ -71,6 +84,7 @@ void populatePartAggregationCache(
                 /* prefetch = */ false);
 
             QueryPipeline pipeline(std::move(pipe));
+            pipeline.setProcessListElement(process_list_element);
             PullingPipelineExecutor executor(pipeline);
 
             auto params_copy = params;
@@ -179,8 +193,6 @@ void populatePartAggregationCache(
             tryLogCurrentException(log, "Failed to populate cache for part " + part.data_part->name);
         }
     }
-
-    (void)context;
 }
 
 }
