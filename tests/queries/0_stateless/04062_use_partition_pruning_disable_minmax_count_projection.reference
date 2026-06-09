@@ -1,5 +1,6 @@
 -- { echo }
 
+SET materialize_statistics_on_insert = 0;
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (x Int32) ENGINE = MergeTree PARTITION BY x ORDER BY tuple();
 INSERT INTO t VALUES (1), (2), (3);
