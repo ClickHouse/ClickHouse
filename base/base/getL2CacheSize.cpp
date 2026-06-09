@@ -1,5 +1,6 @@
 #include <base/getL2CacheSize.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <unistd.h>
@@ -75,7 +76,7 @@ namespace
             return 0;
 
         char * end = nullptr;
-        unsigned long long value = std::strtoull(buf, &end, 10);
+        uint64_t value = std::strtoull(buf, &end, 10);
         if (end == buf)
             return 0;
         if (*end == 'K' || *end == 'k')
