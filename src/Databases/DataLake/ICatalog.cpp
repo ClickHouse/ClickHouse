@@ -277,18 +277,10 @@ std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metad
     std::string metadata_location = iceberg_metadata_file_location;
     if (!metadata_location.empty())
     {
-        /// The table location the metadata file path is made relative to, reconstructed
-        /// from the values parsed by `setLocation`.
-        ///
-        /// We intentionally do NOT use `getLocation` here. When a REST catalog (e.g. Apache
-        /// Polaris) vends an `s3.endpoint`, `getLocation` rebuilds the URI around that endpoint
-        /// (such as `http://minio:9000/...`), whose scheme and host no longer match the
-        /// `s3://<bucket>/...` prefix of the Iceberg metadata file URI. The prefix comparison
-        /// below would then fail and the absolute URI would leak into the returned path,
-        /// producing a duplicated location. `location_without_path` and `path` come straight
-        /// from the table location and are unaffected by the vended endpoint, so they always
-        /// share their prefix with the metadata file location, regardless of the endpoint shape
-        /// (bare host `http://minio:9000` or bucket-included `http://minio:9000/bucket`).
+        /// Anchor on the endpoint-independent values from `setLocation`, not `getLocation`:
+        /// with a REST-catalog-vended `s3.endpoint`, `getLocation` rebuilds the URI around the
+        /// endpoint, so its prefix no longer matches the `s3://<bucket>/...` metadata URI and the
+        /// absolute URI would leak below, duplicating the path.
         const std::string data_location = std::filesystem::path(location_without_path) / path;
 
         if (metadata_location.starts_with(data_location))
