@@ -1224,6 +1224,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
         {
+            {"allow_experimental_adaptive_codec_selection", false, false, "New setting."},
             {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup", false, false, "New setting which allows SMT download parts data from replicas instead of S3 on startup"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
@@ -1232,7 +1233,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"add_minmax_index_for_block_number_column", false, false, "New setting."},
             {"add_minmax_index_for_block_offset_column", false, false, "New setting."},
             {"concurrent_part_removal_threshold_for_remote_disk", 100, 16, "New setting. Lower threshold to enter the concurrent part removal path when any part being removed is on a remote disk, where each removal is typically one network round-trip. The old value (100) matches the legacy `concurrent_part_removal_threshold` default, so older `compatibility` modes preserve the previous behavior."},
-            {"allow_experimental_adaptive_codec_selection", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {
