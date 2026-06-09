@@ -678,10 +678,12 @@ Baseline (after PK + partition + existing indexes):
   table:       db.t
   parts:       1
   marks:       100
+  est_bytes:   1.50 MiB             (only when the query reads rows)
 
 With idx_b (minmax, hypothetical):
   status:       applicable
   marks:        1
+  est_bytes:    15.00 KiB           (only when baseline bytes are known)
   skip_ratio:   99.0%
 
 Estimation:
@@ -697,6 +699,7 @@ Estimation:
   - `statistical`: derived from column statistics. Used when empirical is disabled (`empirical = 0`) or empirical couldn't produce a result, and column statistics are defined on the relevant columns.
   - `applicability_only`: the index is applicable to the predicate but neither empirical nor statistical estimation produced a result (e.g. `empirical = 0` and no column statistics defined). Reports `skip_ratio: 0.0%` as a conservative bound.
 - `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Shows what fraction of the table survived PK, partition, and existing-index pruning, i.e. the input to the hypothetical index.
+- `est_bytes` — an estimate of the bytes read, derived from the table's average row size, so it is approximate and varies with storage and compression. The baseline line appears only when the query reads rows; the per-candidate line only when the baseline byte estimate is known.
 
 The setting is written inline between `WHATIF` and the `SELECT` — there is no `SETTINGS` keyword (this matches how other `EXPLAIN` variants accept their options).
 
@@ -720,10 +723,12 @@ Baseline (after PK + partition + existing indexes):
   table:       default.t
   parts:       1
   marks:       100
+  est_bytes:   85.52 KiB
 
 With idx_b (minmax, hypothetical):
   status:       applicable
   marks:        1
+  est_bytes:    875.00 B
   skip_ratio:   99.0%
 
 Estimation:
@@ -733,7 +738,7 @@ Estimation:
   sampled_marks:    100 / 100
 ```
 
-The hypothetical `minmax` would prune from 100 marks down to 1 — `skip_ratio: 99.0%`.
+The hypothetical `minmax` would prune from 100 marks down to 1 — `skip_ratio: 99.0%`. (`est_bytes` is an estimate from the average row size, so the exact figure varies.)
 
 **Statistical example**
 
@@ -753,10 +758,13 @@ EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
 ```text
 With idx_b (minmax, hypothetical):
   status:       applicable
+  marks:        1
+  est_bytes:    1.66 KiB
   skip_ratio:   99.9%
 
 Estimation:
   source:           statistical
+  empirical_status: disabled
 ```
 
 The number comes from the column-statistic selectivity of `b < 10` (about 10 rows out of 10000) and is reported as an upper bound on `skip_ratio`. There are no `sampled_parts` / `sampled_marks` — no data was read.

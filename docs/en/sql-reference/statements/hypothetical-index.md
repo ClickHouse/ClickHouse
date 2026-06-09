@@ -57,10 +57,12 @@ Baseline (after PK + partition + existing indexes):
   table:       default.t
   parts:       1
   marks:       100
+  est_bytes:   85.52 KiB
 
 With idx_b (minmax, hypothetical):
   status:       applicable
   marks:        1
+  est_bytes:    875.00 B
   skip_ratio:   99.0%
 
 Estimation:
@@ -70,6 +72,8 @@ Estimation:
   sampled_marks:    100 / 100
   elapsed_us:       631
 ```
+
+`est_bytes` is an estimate from the table's average row size, so the exact figure varies with storage and compression.
 
 To skip the in-memory empirical scan and estimate from [column statistics](/engines/table-engines/mergetree-family/mergetree#column-statistics) instead, define them on the relevant columns first (they are off by default), wait for the materialize mutation to finish, then disable the empirical path:
 
@@ -83,10 +87,13 @@ EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
 ```text
 With idx_b (minmax, hypothetical):
   status:       applicable
+  marks:        1
+  est_bytes:    1.66 KiB
   skip_ratio:   99.9%
 
 Estimation:
   source:           statistical
+  empirical_status: disabled
 ```
 
 See the [`EXPLAIN WHATIF`](/sql-reference/statements/explain#explain-whatif) reference for the full output schema and settings.
