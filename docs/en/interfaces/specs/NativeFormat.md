@@ -1,6 +1,7 @@
 ---
 description: 'Specification of the ClickHouse Native columnar format: wire primitives, the Block and Column structure, every data type encoding, and the compression frame'
 sidebar_label: 'Native Format'
+sidebar_position: 30
 slug: /interfaces/specs/NativeFormat
 title: 'Native Format'
 doc_type: 'reference'
@@ -133,25 +134,31 @@ A single byte. `0x00` is false; any non-zero value is true (canonically `0x01`).
 ### Block wire layout {#block-wire-layout}
 
 ```text
-[BlockInfo]               metadata (when the BLOCK_INFO feature is active)
+[BlockInfo]               metadata (only on the TCP Data-packet path; see below)
 [VarUInt: num_columns]    number of columns in this block
 [VarUInt: num_rows]       number of rows in this block
 [Column × num_columns]    column entries, omitted when num_columns = 0
 ```
 
-When the enclosing protocol predates `BLOCK_INFO` (version 51903), the BlockInfo prefix is omitted and everything else is identical.
+Whether the `BlockInfo` prefix is present depends on the channel, because the writer is parameterized by a *revision*:
+
+- On the **native TCP protocol**, the server writes blocks at the connection's negotiated revision (a large value — `DBMS_TCP_PROTOCOL_VERSION` is `54484` in this release). `BlockInfo` is written whenever that revision is greater than zero, which is always the case for a real connection. The `has_custom_serialization` byte in each column (see [column wire layout](#column-wire-layout)) is written at revision `54454` and above.
+- The `Native` *output format* — `SELECT ... FORMAT Native` over HTTP, `INTO OUTFILE ... FORMAT Native`, and the `Native` format produced by `clickhouse-client` — serializes at revision `0`. At revision `0` the `BlockInfo` prefix and the `has_custom_serialization` byte are both omitted, so a block is just `num_columns`, `num_rows`, and the columns.
+
+In other words, the byte examples in this section that begin with a `BlockInfo` prefix describe the TCP Data-packet payload. The same query taken through `FORMAT Native` produces the shorter form shown alongside them.
 
 ### BlockInfo {#blockinfo}
 
-BlockInfo uses **field-tagged encoding** for forward compatibility. Each field is preceded by a VarUInt field ID, and a field ID of `0` terminates the structure. A decoder skips unknown field IDs by reading the value according to the type implied by the ID.
+BlockInfo is a sequence of fields, each preceded by a VarUInt field ID, terminated by a field ID of `0`. The wire format is **not** self-describing: a field ID does not encode the length or type of its value, so a reader must already know the type of every field ID it might encounter. ClickHouse's own reader treats an unrecognized field ID as corruption and raises an exception (`UNKNOWN_BLOCK_INFO_FIELD`). Forward compatibility is handled instead by the protocol revision: the sender only writes a field if the negotiated revision is at least that field's minimum revision, so an older receiver never sees a field it does not know.
 
-| Field ID | Field         | Type  | Description                                    |
-|----------|---------------|-------|------------------------------------------------|
-| 1        | is_overflows  | UInt8 | Overflow block from GROUP BY. `0` for non-overflow blocks. |
-| 2        | bucket_number | Int32 | Aggregation bucket. `-1` for non-bucketed blocks. |
-| 0        | (terminator)  | —     | End of BlockInfo. Always required.             |
+| Field ID | Field                | Type             | Min revision | Description                                    |
+|----------|----------------------|------------------|--------------|------------------------------------------------|
+| 1        | is_overflows         | UInt8            | 0            | Overflow block from GROUP BY. `0` for non-overflow blocks. |
+| 2        | bucket_number        | Int32            | 0            | Aggregation bucket. `-1` for non-bucketed blocks. |
+| 3        | out_of_order_buckets | List of Int32    | 54480        | Buckets delayed during distributed aggregation. Encoded as a VarUInt count followed by that many `Int32` values. |
+| 0        | (terminator)         | —                | —            | End of BlockInfo. Always required.             |
 
-Wire layout:
+Fields `1` and `2` have minimum revision `0`, so they are present whenever a `BlockInfo` is written at all. Field `3` is written only at revision `54480` and above. Wire layout for the common case (revision below `54480`):
 
 ```text
 [VarUInt: 1] [UInt8: is_overflows]
@@ -219,6 +226,8 @@ All Data-family packets share the same Block wire format. The variants differ on
 
 ### Byte-level examples {#byte-level-examples}
 
+All examples in this section are taken from the **TCP Data-packet path**, so they include the `BlockInfo` prefix and the `has_custom_serialization` byte. Over `FORMAT Native` the same blocks are shorter — the equivalent short form is given where it helps.
+
 An empty block (with BlockInfo), 8 bytes total:
 
 ```text
@@ -256,6 +265,18 @@ The result block for the same query, with one row:
 00                      Column[0].has_custom_serialization = 0
 01                      Column[0].data: one UInt8 byte = 1
 ```
+
+Through `FORMAT Native` (revision `0`), the same result block has no `BlockInfo` and no `has_custom_serialization` byte — `SELECT 1 FORMAT Native` is 11 bytes:
+
+```text
+01                      num_columns = 1
+01                      num_rows = 1
+01 "1"                  Column[0].name = "1"
+05 "UInt8"              Column[0].type = "UInt8"
+01                      Column[0].data: one UInt8 byte = 1
+```
+
+(A zero-row result, such as a header-only block, produces no bytes at all over `FORMAT Native`: the output format does not emit empty blocks.)
 
 ## Data types {#data-types}
 
@@ -976,9 +997,9 @@ The per-block metadata UInt64 is a bitfield:
 | Bit range    | Meaning |
 |--------------|---------|
 | 0..7         | Key type code: `0` = UInt8, `1` = UInt16, `2` = UInt32, `3` = UInt64. The smallest type that can index `dict_size` entries is chosen. |
-| 9 (`0x200`)  | `HasAdditionalKeysBit` — set when the block contains new dict entries. |
-| 10 (`0x400`) | `NeedUpdateDictionary` — set when the dict in this block extends the global dict. |
-| 11 (`0x800`) | `NeedGlobalDictionaryBit` — set when this block references entries from a global dict shared across blocks. |
+| 8 (`0x100`)  | `NeedGlobalDictionaryBit` — set when the column uses a single dictionary shared across blocks rather than a fresh per-block dictionary. |
+| 9 (`0x200`)  | `HasAdditionalKeysBit` — set when the block carries additional dictionary keys (written before the indexes). |
+| 10 (`0x400`) | `NeedUpdateDictionary` — set when this block's dictionary differs from the previous block's and must be updated. |
 
 For a typical query response with a single data block per column, the metadata is `0x600` (HasAdditionalKeys + NeedUpdateDictionary).
 
@@ -1024,11 +1045,10 @@ The state prefix value is `1` (`JSONStringSerializationVersion`); other values (
 
 ```text
 01 00 00 00 00 00 00 00      state prefix Int64 = 1
-09 7B 22 61 22 3A 22 31 22   String: 9 bytes "{"a":"1"}"
-7D
+07 7B 22 61 22 3A 31 7D      String: 7 bytes {"a":1}
 ```
 
-ClickHouse re-stringifies non-string JSON values when emitting in Tier 1 mode — the integer `1` becomes the JSON string `"1"`. Tier 1 is enough when the client receives JSON for opaque transit; faithful round-tripping of types requires the Tier 2 encoding below.
+The value is emitted as its compact JSON text — `{"a":1}`, with the integer left as an integer. The text is just a `String` value, so the client receives the JSON for opaque transit but does not recover the individual paths and their ClickHouse types; faithful per-path typing requires the Tier 2 encoding below.
 
 #### Variant(T1, T2, ...) {#variant}
 
@@ -1097,19 +1117,19 @@ The state prefix (version + type list) is read once per column per query, before
 Runtime types whose serialization is stateful (`LowCardinality`, `Variant`, `Dynamic`, `JSON`) carry nested state prefixes after the type-name list.
 :::
 
-`Dynamic` with runtime types `["UInt64", "String"]` and rows `[42, "hi", NULL]` (discriminator 0 = UInt64, 1 = String, 2 = NULL):
+The runtime type list is written in **type-name order** (sorted by name), the same canonicalization `Variant` uses, so the wire order does not follow insertion order. For rows `[42::UInt64, "hi", NULL]` the two types are `String` and `UInt64`, and `"String"` sorts before `"UInt64"`, so the discriminators are `0` = String, `1` = UInt64, `2` = NULL:
 
 ```text
 03 00 00 00 00 00 00 00      state prefix: UInt64 version = 3 (FLATTENED)
 02                           VarUInt num_types = 2
-06 55 49 6E 74 36 34         type[0] = "UInt64"
-06 53 74 72 69 6E 67         type[1] = "String"
-00 01 02                     discriminators (3 rows): 0 (UInt64), 1 (String), 2 (NULL)
-2A 00 00 00 00 00 00 00      UInt64 run (1 value): 42
-02 68 69                     String run (1 value): len=2 "hi"
+06 53 74 72 69 6E 67         type[0] = "String"
+06 55 49 6E 74 36 34         type[1] = "UInt64"
+01 00 02                     discriminators (3 rows): 1 (UInt64), 0 (String), 2 (NULL)
+02 68 69                     String run (type[0], 1 value): len=2 "hi"
+2A 00 00 00 00 00 00 00      UInt64 run (type[1], 1 value): 42
 ```
 
-Reconstructed: row 0 = UInt64 run[0] = `42`; row 1 = String run[0] = `"hi"`; row 2 = NULL.
+Reconstructed: row 0 = UInt64 run[0] = `42`; row 1 = String run[0] = `"hi"`; row 2 = NULL. The per-type runs follow the same wire order as the type list (`String` before `UInt64`).
 
 #### JSON (Tier 2: FLATTENED Object) {#json-tier-2-flattened-object}
 
@@ -1204,7 +1224,7 @@ With compression on, the server may also route columns through the parallel bloc
 
 **Block** — the unit of data exchange in the Native format. A self-describing chunk of rows stored columnar. See [block and column structure](#block-and-column-structure).
 
-**BlockInfo** — the metadata header that precedes a Block when the protocol-level `BLOCK_INFO` feature is active (v51903+). Field-tagged for forward compatibility. See [BlockInfo](#blockinfo).
+**BlockInfo** — the metadata header that precedes a Block on the TCP Data-packet path (written whenever the connection revision is greater than zero). A sequence of revision-gated, field-ID-tagged fields. Omitted by the `Native` output format, which serializes at revision `0`. See [BlockInfo](#blockinfo).
 
 **Column body** — the bytes of a Column that hold the actual values, after the column header (name, type, has_custom_serialization byte). Layout is type-specific. See [column wire layout](#column-wire-layout).
 
