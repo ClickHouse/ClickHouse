@@ -927,6 +927,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     /// whose state spans the whole part and cannot be reconstructed by concatenating per-chunk
     /// results: the disjunction bitset, the top-K min-max optimization, FINAL exact mode, or a
     /// vector-similarity index (whose filtering early-returns unless the input covers the whole part).
+    ///
+    /// We also fall back to whole-part analysis when exact ranges are requested (find_exact_ranges).
+    /// The primary-key binary search rounds outward at the boundary of each input range it is given,
+    /// so splitting a part into sub-ranges can select a few extra boundary granules (bounded by the
+    /// number of chunks). That never changes query results - the extra granules are filtered while
+    /// reading - but it makes the selected ranges marginally looser, which is unacceptable when a
+    /// precise/exact answer is required. So when precision is requested, the optimization is disabled.
     const size_t min_marks_per_task = settings[Setting::min_marks_per_index_analysis_task];
 
     auto part_uses_vector_similarity_index = [&](size_t part_index) -> bool
@@ -941,6 +948,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     auto is_whole_part_only = [&](size_t part_index) -> bool
     {
         return min_marks_per_task == 0
+            || find_exact_ranges
             || use_skip_indexes_for_disjunctions
             || perform_top_k_optimization
             || (is_final_query && use_skip_indexes_if_final_exact_mode_)

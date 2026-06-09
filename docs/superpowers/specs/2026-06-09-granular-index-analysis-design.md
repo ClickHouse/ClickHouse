@@ -87,11 +87,15 @@ New settings:
 
 `whole_part = true` when the part's query uses any of:
 
+- exact ranges requested (`find_exact_ranges`) — the precision guard (see "Caveat"
+  under per-chunk processing); looser PK boundaries are unacceptable here,
 - the disjunction bitset path (`use_skip_indexes_for_disjunctions`,
   `partial_eval_results` + `mergePartialResultsForDisjunctions`, `:1007`–`:1069`),
 - the top-K min-max optimization (`perform_top_k_optimization`, `:1074`–`:1093`),
 - FINAL exact mode (`is_final_query && use_skip_indexes_if_final_exact_mode_`,
-  `:982`).
+  `:982`),
+- a vector-similarity index (filtering early-returns unless the input covers the
+  whole part).
 
 These carry per-part-global state (a part-wide bitset with word-level bit sharing;
 a part-global top-K that needs all granules; a whole-part snapshot). Such a part
@@ -113,19 +117,32 @@ process_chunk(item):
 ```
 
 **Correctness of concatenation (key argument).** Both PK algorithms are
-range-local:
+range-local: binary search returns the intersection of the predicate's continuous
+interval with its input ranges, and generic-exclusion search seeds its stack from
+the input ranges and only subdivides within them. Concatenating a part's chunk
+results in chunk order therefore reproduces a **superset-or-equal** of the
+whole-part selection that contains exactly the same matching rows — so **query
+results are identical**. The skip-index filtering pass is granule-disjoint and so
+is bit-for-bit identical across chunkings.
 
-- Binary search returns the intersection of the predicate's single continuous
-  interval with its input ranges.
-- Generic-exclusion search seeds its stack from the input ranges and only
-  subdivides within them.
+**Caveat — PK pruning is marginally looser under chunking (verified empirically).**
+`markRangesFromPKRange`'s binary search rounds *outward* at the boundary of each
+input range it is handed (it keeps a boundary granule that "may be true"). The
+whole-part call has only the two true endpoints of the predicate's interval;
+splitting a part into N sub-ranges introduces up to N artificial boundaries, each of
+which can keep one extra edge granule. So the selected marks are **not** bit-for-bit
+identical — chunking selects a bounded number of extra granules (`O(chunk count)`),
+which are then filtered out while reading. Measured: a continuous PK range over a
+~3900-mark part selected 2345 granules whole-part vs 2347 with ~12 chunks and 2364
+with ~490 chunks; the query `count` was identical in every case. At production chunk
+sizes (floor in the low thousands of marks → a handful of chunks per part) the
+excess is negligible; it is only visible under deliberate stress (`min_marks=8`).
 
-Running either on a contiguous sub-range therefore yields exactly the portion of
-the global result lying in that sub-range. Concatenating a part's chunk results in
-chunk order reproduces the current whole-part result exactly. The algorithm chosen
-depends on `key_condition` (a whole-query property), not on the sub-range, so it is
-identical across a part's chunks. `find_exact_ranges` is computed per sub-range and
-concatenated the same way.
+**Precision guard (fail-close).** When the caller requests exact ranges
+(`find_exact_ranges`), looser PK boundaries are unacceptable, so such a part is
+forced onto the whole-part path (added to the `whole_part` predicate alongside
+disjunctions / top-K / FINAL-exact / vector indexes). When a precise result is
+needed, the optimization is disabled rather than approximated.
 
 ### Stats and limits
 
