@@ -183,7 +183,7 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
         else
             function->name = "in";
 
-        if ((type == SubqueryFunctionType::ANY && function_equals)
+        if (type == SubqueryFunctionType::ANY
             || (type == SubqueryFunctionType::ALL && function_not_equals))
         {
             return true;
@@ -233,7 +233,7 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     auto new_subquery = make_intrusive<ASTSubquery>(std::move(select_with_union_query));
     ast->children[0]->children.back() = std::move(new_subquery);
 
-    if (aggregate_function_name == "singleValueOrNull")
+    if (type == SubqueryFunctionType::ALL)
     {
         /// Vacuous truth: x op ALL (empty set) must return TRUE.
         /// The singleValueOrNull rewrite returns NULL for an empty set, making x IN (NULL) = FALSE.
