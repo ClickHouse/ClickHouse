@@ -66,6 +66,11 @@ private:
     String current_url;
     size_t buf_size;
 
+    /// Must outlive `impl`: the buffer created in `initialize` stores a reference to these credentials,
+    /// and with delayed initialization the HTTP request (which reads them) fires in `nextImpl`, long
+    /// after `initialize` returns.
+    Poco::Net::HTTPBasicCredentials credentials;
+
     std::unique_ptr<SeekableReadBuffer> impl;
 
     ReadSettings read_settings;

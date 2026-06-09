@@ -103,8 +103,10 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
         /// `enable_url_encoding`, follow up to `max_http_get_redirects` redirects, and authenticate with
         /// credentials parsed from the URL's userinfo (e.g. `http://user:pass@host`).
         Poco::URI uri(url, enable_url_encoding);
-        Poco::Net::HTTPBasicCredentials url_credentials;
-        setCredentialsFromURL(url_credentials, uri);
+        /// `credentials` is a member so that it outlives the buffer created below, which stores a
+        /// reference to it. With delayed initialization the HTTP request — and thus the read of these
+        /// credentials — happens in `nextImpl`, long after `initialize` returns.
+        setCredentialsFromURL(credentials, uri);
         try
         {
             /// External buffer reads require `delay_initialization = true`, which defers the HTTP
@@ -124,7 +126,7 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
                     .withHeaders(headers)
                     .withExternalBuf(false)
                     .withDelayInit(false)
-                    .create(url_credentials);
+                    .create(credentials);
             }
 
             auto res = BuilderRWBufferFromHTTP(uri)
@@ -138,7 +140,7 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
                            .withHeaders(headers)
                            .withExternalBuf(use_external_buffer)
                            .withDelayInit(true)
-                           .create(url_credentials);
+                           .create(credentials);
 
             if (offset)
                 res->seek(offset, SEEK_SET);
