@@ -504,6 +504,10 @@ static bool writeConsolidatedManifestFile(
         /// Parallel to file_paths: the source file's sort_order_id, preserved so a manifest-only
         /// rewrite keeps the table's sortedness (a missing sort_order_id is treated as unsorted).
         std::vector<std::optional<Int32>> file_sort_order_ids;
+        /// Parallel to file_paths: the source entry's lineage (adding snapshot-id and effective
+        /// data sequence number), preserved so a manifest-only rewrite emits each file as an
+        /// EXISTING entry retaining its original lineage instead of an ADDED entry of the new snapshot.
+        std::vector<DataFileEntryLineage> file_entry_lineage;
 
         explicit PartitionData(Poco::JSON::Array::Ptr /*schema*/)
         {}
@@ -565,6 +569,17 @@ static bool writeConsolidatedManifestFile(
                 pd.file_metrics.emplace_back(data_file->parsed_entry->record_count, data_file->parsed_entry->file_size_in_bytes);
                 pd.file_formats.push_back(data_file->parsed_entry->file_format);
                 pd.file_sort_order_ids.push_back(data_file->parsed_entry->sort_order_id);
+
+                /// Preserve the entry's lineage. The sequence number can be inherited (null on the
+                /// entry) for ADDED entries; the effective value is the manifest's added sequence
+                /// number from the manifest list. EXISTING entries written below require a non-null
+                /// sequence number, so resolve the inheritance here.
+                DataFileEntryLineage lineage;
+                lineage.added_snapshot_id = data_file->parsed_entry->parsed_snapshot_id;
+                lineage.sequence_number = data_file->parsed_entry->parsed_sequence_number;
+                if (!lineage.sequence_number.has_value())
+                    lineage.sequence_number = manifest_file.added_sequence_number;
+                pd.file_entry_lineage.push_back(lineage);
 
                 /// Carry the source file's per-column stats over verbatim. Bounds are kept as the
                 /// raw serialized bytes the source manifest stored (value_bounds holds them as
@@ -727,7 +742,8 @@ static bool writeConsolidatedManifestFile(
                 /* user_defined_sequence_number */ std::nullopt,
                 /* data_file_formats */ pd.file_formats,
                 /* per_file_statistics */ pd.file_statistics,
-                /* data_file_sort_order_ids */ pd.file_sort_order_ids);
+                /* data_file_sort_order_ids */ pd.file_sort_order_ids,
+                /* per_file_entry_lineage */ pd.file_entry_lineage);
 
             buffer_manifest->finalize();
             Int64 manifest_size = buffer_manifest->count();

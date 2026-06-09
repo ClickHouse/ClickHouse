@@ -58,6 +58,15 @@ struct DataFileColumnStatistics
     std::vector<std::pair<Int32, String>> upper_bounds;
 };
 
+/// Per-file manifest-entry lineage carried over for a manifest-only rewrite. `sequence_number` is
+/// the file's effective (inheritance-resolved) data sequence number; it is also written as the
+/// `file_sequence_number`. `added_snapshot_id` is the snapshot that originally added the file.
+struct DataFileEntryLineage
+{
+    std::optional<Int64> added_snapshot_id;
+    std::optional<Int64> sequence_number;
+};
+
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
@@ -88,7 +97,14 @@ void generateManifestFile(
     /// it is written back so a manifest-only rewrite preserves the table's sortedness (otherwise a
     /// missing sort_order_id makes ClickHouse treat the table as unsorted). Empty / nullopt leaves
     /// the field unset (null), matching the append path which writes unsorted data.
-    const std::vector<std::optional<Int32>> & data_file_sort_order_ids = {});
+    const std::vector<std::optional<Int32>> & data_file_sort_order_ids = {},
+    /// Optional per-file manifest-entry lineage parallel to data_file_names. When non-empty, the
+    /// rewrite is treated as metadata-only: every entry is written with status EXISTING and keeps
+    /// the snapshot-id and sequence number that originally added the file, instead of being
+    /// re-stamped as ADDED by the new snapshot (which would corrupt row lineage and break
+    /// delete-file sequence-number matching). When empty, entries are written as ADDED with the
+    /// new snapshot's id and sequence number (the append path).
+    const std::vector<DataFileEntryLineage> & per_file_entry_lineage = {});
 
 /// Per manifest-list entry counts for a manifest-only rewrite (a `replace` operation), where
 /// every data file referenced by the new manifest already existed in the table. When supplied to

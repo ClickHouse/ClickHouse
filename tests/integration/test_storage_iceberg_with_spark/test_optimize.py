@@ -514,6 +514,102 @@ def test_optimize_manifest_files_preserves_sort_order_id(started_cluster_iceberg
     assert data_file_sort_order_ids(new_manifests) == source_sort_order_ids
 
 
+def test_optimize_manifest_files_preserves_entry_lineage(started_cluster_iceberg_with_spark):
+    """
+    OPTIMIZE TABLE ... MANIFEST is metadata-only, so each rewritten manifest entry must stay an
+    EXISTING entry (status 0) keeping the snapshot-id / sequence number that originally added the
+    file. Re-stamping them as ADDED by the new snapshot would corrupt row lineage and delete-file
+    sequence-number matching.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    storage_type = "local"
+    TABLE_NAME = "test_optimize_manifest_lineage_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg "
+        f"TBLPROPERTIES ('format-version' = '2')"
+    )
+    # Several separate inserts → several snapshots, so files carry distinct original snapshot-ids.
+    for lo in range(0, 50, 10):
+        spark.sql(
+            f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range({lo}, {lo + 10})"
+        )
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    table_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+    metadata_dir = f"{table_path}metadata"
+
+    def list_data_manifests():
+        return set(
+            instance.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f"find '{metadata_dir}' -maxdepth 1 -name '*.avro' "
+                    f"-not -name 'snap-*.avro' -type f",
+                ]
+            )
+            .strip()
+            .splitlines()
+        )
+
+    manifests_before = list_data_manifests()
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 2,
+        },
+    )
+
+    # The replace snapshot created by the compaction.
+    new_snapshot_id = get_last_snapshot(table_path)
+
+    new_manifests = sorted(list_data_manifests() - manifests_before)
+    assert new_manifests, "OPTIMIZE TABLE ... MANIFEST did not produce a consolidated manifest"
+
+    entries_checked = 0
+    for manifest in new_manifests:
+        result = instance.query(
+            f"""
+            SELECT
+                status,
+                snapshot_id,
+                sequence_number,
+                tupleElement(data_file, 'content') AS content
+            FROM file('{manifest}', Avro)
+            FORMAT TSV
+            """
+        ).strip()
+        if not result:
+            continue
+        for line in result.splitlines():
+            status, snapshot_id, sequence_number, content = line.split("\t")
+            if int(content) != 0:  # data files only
+                continue
+            # EXISTING, not ADDED.
+            assert int(status) == 0, f"expected EXISTING entry, got status {status}"
+            # The original adding snapshot is preserved, not the new replace snapshot.
+            assert snapshot_id != "\\N" and int(snapshot_id) != new_snapshot_id, (
+                f"entry snapshot_id {snapshot_id} should be the original adder, not the "
+                f"replace snapshot {new_snapshot_id}"
+            )
+            # EXISTING entries require a concrete (inheritance-resolved) sequence number.
+            assert sequence_number != "\\N", "sequence_number must be preserved (non-null)"
+            entries_checked += 1
+
+    assert entries_checked > 0, "no data-file entries found in consolidated manifest(s)"
+
+
 @pytest.mark.parametrize("format_version", ["2", "3"])
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_optimize_manifest_files_with_deletes(started_cluster_iceberg_with_spark, storage_type, format_version):
