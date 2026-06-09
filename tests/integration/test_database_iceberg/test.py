@@ -1,4 +1,5 @@
 import glob
+import io
 import json
 import logging
 import os
@@ -110,6 +111,13 @@ def create_table(
         partition_spec=partition_spec,
         sort_order=sort_order,
     )
+
+
+def split_s3_path(path):
+    assert path.startswith("s3://")
+    bucket_and_key = path[len("s3://") :]
+    bucket, key = bucket_and_key.split("/", 1)
+    return bucket, key
 
 
 def generate_record():
@@ -340,7 +348,7 @@ def test_check_database(started_cluster):
         node.query(
             f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
-    
+
         assert "fault when checking database" in node.query_and_get_error(
             f"CHECK DATABASE {CATALOG_NAME}"
         )
@@ -736,6 +744,39 @@ def test_insert(started_cluster):
 
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (NULL, 'Pavel Ivanov (pudge1000-7) pereezhai v amsterdam', 193.24, 193.31, tuple('bot'));", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` ORDER BY ALL") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n\\N\tPavel Ivanov (pudge1000-7) pereezhai v amsterdam\t193.24\t193.31\t('bot')\n"
+
+
+def test_insert_into_empty_table_without_refs(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_insert_without_refs_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
+
+    iceberg_table = catalog.load_table(f"{root_namespace}.{table_name}")
+    metadata_bucket, metadata_key = split_s3_path(iceberg_table.metadata_location)
+    metadata = json.loads(get_file_contents(started_cluster.minio_client, metadata_bucket, metadata_key))
+    # Imitate the behaviour when metadata can be created without refs, for example for empty tables created not from ClickHouse
+    metadata.pop("refs", None)
+    metadata_bytes = json.dumps(metadata).encode()
+    started_cluster.minio_client.put_object(
+        metadata_bucket,
+        metadata_key,
+        io.BytesIO(metadata_bytes),
+        len(metadata_bytes),
+        content_type="application/json",
+    )
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'));",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n"
 
 
 def test_create(started_cluster):
