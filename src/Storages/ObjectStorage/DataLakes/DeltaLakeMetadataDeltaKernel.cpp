@@ -259,7 +259,16 @@ void DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
                 log);
 
         size_t version = latest_snapshot->getVersion();
-        snapshots.getOrSet(version, [&]() { return latest_snapshot; });
+        /// Always replace the cached snapshot for this version with the freshly-built
+        /// `latest_snapshot`. `S3KernelHelper::createBuilder` embeds the C++ S3 client's
+        /// current credentials as static options into the Rust delta-kernel-rs engine, and
+        /// the engine cannot refresh them on its own. A snapshot cached longer than the
+        /// STS session TTL (~1 h) holds expired credentials, so the next kernel S3 call
+        /// surfaces `DELTA_KERNEL_ERROR` (`ExpiredToken`). The fresh `latest_snapshot` we
+        /// just built captured the provider's *current* credentials inside `getVersion()`,
+        /// so dropping the stale entry here keeps subsequent kernel operations on
+        /// freshly-credentialed engines without adding any extra S3 / STS round-trips.
+        snapshots.set(version, latest_snapshot);
 
         LOG_TEST(
             log, "Updating latest snapshot version from {} to {}",
