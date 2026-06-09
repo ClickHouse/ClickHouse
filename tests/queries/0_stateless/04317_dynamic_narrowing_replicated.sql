@@ -8,12 +8,12 @@ DROP TABLE IF EXISTS t_narrow_r2;
 CREATE TABLE t_narrow_r1 (id UInt64, value Dynamic)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_narrow_repl', 'r1')
 ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 CREATE TABLE t_narrow_r2 (id UInt64, value Dynamic)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_narrow_repl', 'r2')
 ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 -- Insert into replica 1 (homogeneous Int64 — triggers narrowing)
 INSERT INTO t_narrow_r1 SELECT number, number::Int64 FROM numbers(500);

@@ -333,6 +333,11 @@ public:
         /// for prefixes/suffixes and for data to be able to seek to them separately.
         bool use_specialized_prefixes_and_suffixes_substreams = false;
 
+        /// Serialization version that should be used for Dynamic column. Currently only Dynamic
+        /// itself needs this on the write path — when set to `v4`, narrowing is attempted from
+        /// the in-memory column statistics, which changes the substream layout from full Variant
+        /// streams to a single `Nullable(narrowed_type)` substream.
+        MergeTreeDynamicSerializationVersion dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V2;
         /// Serialization version that should be used for Object column.
         MergeTreeObjectSerializationVersion object_serialization_version = MergeTreeObjectSerializationVersion::V2;
         /// Serialization version that should be used for shared data inside Object column.

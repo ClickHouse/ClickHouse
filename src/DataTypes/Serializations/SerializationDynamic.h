@@ -51,17 +51,17 @@ public:
             ///
             /// This serialization is used in Native format only for easier support for Dynamic type in clients.
             FLATTENED = 3,
-            /// NARROWED serialization:
-            /// Used when all values in the Dynamic column share a single concrete type (no type mixing).
-            /// Bypasses the Variant wrapper entirely, storing data as a plain typed column.
+            /// NARROWED serialization (in-part variant of V4):
             /// - DynamicStructure stream:
-            ///     <version = NARROWED>
-            ///     <concrete type name in binary encoding>
-            ///     <number of rows>
-            ///     <number of null rows>
-            ///     <statistics> (only in MergeTree serialization)
-            /// - DynamicData stream: contains only the concrete type's serialization (no discriminators,
-            ///     no SharedVariant, no Variant wrapper). File count per path: 2 instead of ~10.
+            ///     V3-style header (variant list + statistics)
+            ///     <narrowed_type encoded with `encodeDataType`>
+            ///     <bool: stored_as_nullable>
+            /// - DynamicData stream:
+            ///     The substreams of `Nullable(narrowed_type)` (or just `narrowed_type` when
+            ///     `stored_as_nullable` is false). No Variant discriminator/offset streams.
+            ///
+            /// Only chosen by the writer when statistics are reliable and indicate a single non-empty
+            /// variant. Used in MergeTree only; client/Native protocol always uses V3 or FLATTENED.
             NARROWED = 5,
         };
 
@@ -170,13 +170,15 @@ private:
         size_t num_dynamic_types{};
         ColumnDynamic::StatisticsPtr statistics;
 
+        /// For NARROWED serialization only.
+        /// Concrete variant type that the part was narrowed to (without Nullable wrapper).
+        DataTypePtr narrowed_type;
+        /// Whether the on-disk data is `Nullable(narrowed_type)` (true) or just `narrowed_type` (false).
+        bool narrowed_stored_as_nullable = false;
+
         /// For flattened serialization only.
         DataTypes flattened_data_types;
         DataTypePtr flattened_indexes_type;
-
-        /// For narrowed serialization only.
-        DataTypePtr narrowed_type;
-        size_t narrowed_total_rows{};
 
         explicit DeserializeBinaryBulkStateDynamicStructure(UInt64 structure_version_)
             : structure_version(structure_version_)

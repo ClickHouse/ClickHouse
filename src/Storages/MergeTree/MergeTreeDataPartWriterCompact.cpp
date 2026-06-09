@@ -112,6 +112,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
 
     ISerialization::EnumerateStreamsSettings enumerate_settings;
     enumerate_settings.use_specialized_prefixes_and_suffixes_substreams = true;
+    enumerate_settings.dynamic_serialization_version = settings.dynamic_serialization_version;
     enumerate_settings.object_serialization_version = settings.object_serialization_version;
     enumerate_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     enumerate_settings.object_shared_data_buckets = settings.object_shared_data_buckets;

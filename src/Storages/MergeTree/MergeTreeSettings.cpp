@@ -356,6 +356,10 @@ namespace ErrorCodes
     - `v1`
     - `v2`
     - `v3`
+    - `v4` (experimental): adds single-type narrowing. When part-level statistics show a Dynamic
+      column holds rows of exactly one variant type (possibly with NULLs), the on-disk layout is
+      collapsed to `Nullable(T)` instead of full Variant streams. Other parts continue to use the
+      `v3` layout. Reading remains compatible with `v3` parts.
     )", 0) \
     DECLARE(Bool, propagate_types_serialization_versions_to_nested_types, true, R"(
     If true, serialization versions like string_serialization_version will be propagated inside nested types like Array/Map/Nullable/JSON/etc. If disabled, the serialization version will take affect only to top-level columns of this type and Tuple el
@@ -799,13 +803,6 @@ namespace ErrorCodes
     **See Also**
     - [Workload Scheduling](/operations/workload-scheduling.md)
     )", 0) \
-    DECLARE(String, json_schema_hints, "", R"(
-    JSON object specifying per-partition schema hints for JSON columns.
-    When a partition matches a hint rule, the specified paths are initialized
-    with declared types instead of being inferred from data, reducing Dynamic
-    type overhead. Format: {"column": [{"when": "expr", "paths": {"path": "Type"}}]}.
-    The `when` expression may only reference columns from the partition key.
-    )", EXPERIMENTAL) \
     DECLARE(Milliseconds, background_task_preferred_step_execution_time_ms, 50, R"(
     Target time to execution of one step of merge or mutation. Can be exceeded if
     one step takes longer time
@@ -1905,7 +1902,7 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
-    Supported statistics types: tdigest, countmin, minmax, uniq.
+    Supported statistics types: basic, tdigest, countmin, minmax, uniq.
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in

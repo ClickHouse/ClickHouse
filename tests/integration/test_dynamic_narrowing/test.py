@@ -41,7 +41,7 @@ def test_restart_with_narrowed_parts(started_cluster):
         """
         CREATE TABLE t_narrow_restart (id UInt64, value Dynamic)
         ENGINE = MergeTree ORDER BY id
-        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4'
         """
     )
 
@@ -74,7 +74,7 @@ def test_restart_with_nullable_narrowing(started_cluster):
         """
         CREATE TABLE t_narrow_nullable (id UInt64, value Dynamic)
         ENGINE = MergeTree ORDER BY id
-        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4'
         """
     )
 
@@ -125,7 +125,7 @@ def test_replicated_narrowing_with_restart(started_cluster):
             CREATE TABLE t_narrow_repl (id UInt64, value Dynamic)
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/t_narrow_repl', '{}')
             ORDER BY id
-            SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+            SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4'
             """.format(
                 node.name
             )
@@ -185,7 +185,7 @@ def test_json_partitioned_restart(started_cluster):
         ENGINE = MergeTree
         PARTITION BY action_type
         ORDER BY id
-        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4'
         """
     )
 
@@ -231,7 +231,7 @@ def test_merge_after_restart(started_cluster):
         """
         CREATE TABLE t_merge_restart (id UInt64, value Dynamic)
         ENGINE = MergeTree ORDER BY id
-        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4'
         """
     )
 

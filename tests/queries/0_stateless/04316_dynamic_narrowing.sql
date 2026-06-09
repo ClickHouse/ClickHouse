@@ -7,7 +7,7 @@
 DROP TABLE IF EXISTS t_narrow;
 CREATE TABLE t_narrow (id UInt64, value Dynamic)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 INSERT INTO t_narrow SELECT number, number::Int64 FROM numbers(1000);
 
@@ -40,7 +40,7 @@ SELECT value::String FROM t_narrow WHERE dynamicType(value) = 'String' ORDER BY 
 DROP TABLE IF EXISTS t_narrow_null;
 CREATE TABLE t_narrow_null (id UInt64, value Dynamic)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 INSERT INTO t_narrow_null SELECT number, if(number % 3 = 0, NULL, number::Int64) FROM numbers(900);
 
@@ -54,7 +54,7 @@ SELECT min(value::Int64), max(value::Int64) FROM t_narrow_null WHERE value IS NO
 DROP TABLE IF EXISTS t_narrow_allnull;
 CREATE TABLE t_narrow_allnull (id UInt64, value Dynamic)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 INSERT INTO t_narrow_allnull SELECT number, NULL FROM numbers(100);
 
@@ -67,7 +67,7 @@ SELECT count(), countIf(value IS NULL) FROM t_narrow_allnull;
 DROP TABLE IF EXISTS t_narrow_single;
 CREATE TABLE t_narrow_single (id UInt64, value Dynamic)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 INSERT INTO t_narrow_single VALUES (1, 42::Int64);
 
@@ -80,7 +80,7 @@ SELECT id, value::Int64, dynamicType(value) FROM t_narrow_single;
 DROP TABLE IF EXISTS t_narrow_empty;
 CREATE TABLE t_narrow_empty (id UInt64, value Dynamic)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 INSERT INTO t_narrow_empty SELECT number, number::Int64 FROM numbers(0);
 
@@ -93,7 +93,7 @@ SELECT count() FROM t_narrow_empty;
 DROP TABLE IF EXISTS t_narrow_restart;
 CREATE TABLE t_narrow_restart (id UInt64, value Dynamic)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 INSERT INTO t_narrow_restart SELECT number, number::Float64 FROM numbers(500);
 
@@ -112,7 +112,7 @@ SELECT count(), min(value::Float64), max(value::Float64) FROM t_narrow_restart;
 DROP TABLE IF EXISTS t_narrow_mixed;
 CREATE TABLE t_narrow_mixed (id UInt64, value Dynamic)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 -- Part 1: homogeneous Int64 → narrowed
 INSERT INTO t_narrow_mixed SELECT number, number::Int64 FROM numbers(100);
@@ -135,7 +135,7 @@ SELECT dynamicType(value) AS t, count() AS c FROM t_narrow_mixed GROUP BY t ORDE
 DROP TABLE IF EXISTS t_narrow_multi;
 CREATE TABLE t_narrow_multi (id UInt64, value Dynamic)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 INSERT INTO t_narrow_multi SELECT number, number::Int64 FROM numbers(100);
 INSERT INTO t_narrow_multi SELECT number + 100, number::Float64 FROM numbers(100);
@@ -163,7 +163,7 @@ CREATE TABLE t_json_narrow
 ENGINE = MergeTree
 PARTITION BY action_type
 ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 INSERT INTO t_json_narrow FORMAT JSONEachRow
 {"id": 1, "action_type": 4, "payload": {"battle_type": 10, "win": true, "damage": 12345}}
@@ -193,13 +193,56 @@ SELECT id, payload.item_id, payload.count FROM t_json_narrow WHERE action_type =
 DROP TABLE IF EXISTS t_narrow_array;
 CREATE TABLE t_narrow_array (id UInt64, arr Array(Dynamic))
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 INSERT INTO t_narrow_array VALUES (1, [1::Int64, 2::Int64, 3::Int64]);
 INSERT INTO t_narrow_array VALUES (2, [10::Int64, 20::Int64]);
 
 SELECT '-- 12. Array(Dynamic)';
 SELECT id, arr FROM t_narrow_array ORDER BY id;
+
+-- ============================================================
+-- 13. Dynamic element subcolumn reads on narrowed parts
+-- ============================================================
+DROP TABLE IF EXISTS t_narrow_subcol;
+CREATE TABLE t_narrow_subcol (id UInt64, value Dynamic)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
+
+INSERT INTO t_narrow_subcol SELECT number, number::Int64 FROM numbers(100);
+
+SELECT '-- 13a. subcolumn matching narrowed type';
+SELECT value.Int64 FROM t_narrow_subcol ORDER BY id LIMIT 3;
+SELECT '-- 13b. subcolumn NOT matching narrowed type (all NULL)';
+SELECT value.String FROM t_narrow_subcol ORDER BY id LIMIT 3;
+SELECT '-- 13c. null_map subcolumn on no-null narrowed part';
+SELECT count(), countIf(value.Int64.null = 0) FROM t_narrow_subcol;
+
+-- Same with NULLs
+DROP TABLE IF EXISTS t_narrow_subcol_null;
+CREATE TABLE t_narrow_subcol_null (id UInt64, value Dynamic)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
+
+INSERT INTO t_narrow_subcol_null SELECT number, if(number % 4 = 0, NULL, number::Int64) FROM numbers(100);
+
+SELECT '-- 13d. null_map subcolumn on with-null narrowed part';
+SELECT count(), sum(value.Int64.null) AS nulls FROM t_narrow_subcol_null;
+
+-- ============================================================
+-- 14. Mutations that PRESERVE narrowed type (safe)
+-- ============================================================
+DROP TABLE IF EXISTS t_narrow_mut_safe;
+CREATE TABLE t_narrow_mut_safe (id UInt64, value Dynamic)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
+
+INSERT INTO t_narrow_mut_safe SELECT number, number::Int64 FROM numbers(1000);
+ALTER TABLE t_narrow_mut_safe UPDATE value = (value::Int64 + 100)::Int64 WHERE id < 50 SETTINGS mutations_sync = 1;
+
+SELECT '-- 14. mutation preserving type';
+SELECT count(), sum(value::Int64 >= 100) FROM t_narrow_mut_safe WHERE id < 50;
+SELECT count() FROM t_narrow_mut_safe;
 
 -- ============================================================
 -- Cleanup
@@ -213,4 +256,7 @@ DROP TABLE IF EXISTS t_narrow_restart;
 DROP TABLE IF EXISTS t_narrow_mixed;
 DROP TABLE IF EXISTS t_narrow_multi;
 DROP TABLE IF EXISTS t_json_narrow;
+DROP TABLE IF EXISTS t_narrow_subcol;
+DROP TABLE IF EXISTS t_narrow_subcol_null;
+DROP TABLE IF EXISTS t_narrow_mut_safe;
 DROP TABLE IF EXISTS t_narrow_array;

@@ -24,7 +24,7 @@ DROP TABLE t_narrow_compact;
 DROP TABLE IF EXISTS t_narrow_large;
 CREATE TABLE t_narrow_large (id UInt64, value Dynamic)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 256;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 256, dynamic_serialization_version = 'v4';
 -- Small granularity to force many granules
 
 INSERT INTO t_narrow_large SELECT number, number::Int64 FROM numbers(50000);
@@ -47,7 +47,7 @@ CREATE TABLE t_narrow_nested_json
     data JSON
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 INSERT INTO t_narrow_nested_json FORMAT JSONEachRow
 {"id": 1, "data": {"items": [{"name": "sword", "level": 10}, {"name": "shield", "level": 5}]}}
@@ -78,7 +78,7 @@ CREATE TABLE t_narrow_multi_col
     col_c Dynamic
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 -- Each column gets a different homogeneous type
 INSERT INTO t_narrow_multi_col
@@ -104,11 +104,11 @@ DROP TABLE IF EXISTS t_narrow_dst;
 
 CREATE TABLE t_narrow_src (id UInt64, value Dynamic)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 CREATE TABLE t_narrow_dst (id UInt64, value Dynamic)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 INSERT INTO t_narrow_src SELECT number, number::Int64 FROM numbers(1000);
 
@@ -126,7 +126,7 @@ DROP TABLE t_narrow_dst;
 DROP TABLE IF EXISTS t_narrow_alter;
 CREATE TABLE t_narrow_alter (id UInt64, value Dynamic)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 INSERT INTO t_narrow_alter SELECT number, number::Int64 FROM numbers(500);
 
@@ -156,7 +156,7 @@ DROP TABLE t_narrow_alter;
 DROP TABLE IF EXISTS t_narrow_mutation;
 CREATE TABLE t_narrow_mutation (id UInt64, value Dynamic)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 INSERT INTO t_narrow_mutation SELECT number, number::Int64 FROM numbers(1000);
 
@@ -184,7 +184,7 @@ DROP TABLE t_narrow_mutation;
 DROP TABLE IF EXISTS t_narrow_shared;
 CREATE TABLE t_narrow_shared (id UInt64, value Dynamic(max_types=2))
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 -- Insert 3 different types: Int64, String, Float64 — exceeds max_dynamic_types=2
 -- The third type will go to SharedVariant
@@ -208,7 +208,7 @@ DROP TABLE t_narrow_shared;
 DROP TABLE IF EXISTS t_narrow_bool;
 CREATE TABLE t_narrow_bool (id UInt64, flag Dynamic)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 INSERT INTO t_narrow_bool SELECT number, (number % 2 = 0)::Bool FROM numbers(1000);
 
@@ -229,7 +229,7 @@ DROP TABLE t_narrow_bool;
 DROP TABLE IF EXISTS t_narrow_date;
 CREATE TABLE t_narrow_date (id UInt64, ts Dynamic)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 INSERT INTO t_narrow_date SELECT number, toDateTime('2026-01-01 00:00:00') + number FROM numbers(1000);
 
@@ -244,7 +244,7 @@ DROP TABLE t_narrow_date;
 DROP TABLE IF EXISTS t_narrow_sparse_null;
 CREATE TABLE t_narrow_sparse_null (id UInt64, value Dynamic)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, dynamic_serialization_version = 'v4';
 
 -- 90% NULLs, 10% Int64
 INSERT INTO t_narrow_sparse_null

@@ -63,3 +63,18 @@ String	100
 -- 12. Array(Dynamic)
 1	[1,2,3]
 2	[10,20]
+-- 13a. subcolumn matching narrowed type
+0
+1
+2
+-- 13b. subcolumn NOT matching narrowed type (all NULL)
+\N
+\N
+\N
+-- 13c. null_map subcolumn on no-null narrowed part
+100	100
+-- 13d. null_map subcolumn on with-null narrowed part
+100	25
+-- 14. mutation preserving type
+50	50
+1000

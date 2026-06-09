@@ -5,10 +5,12 @@
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadHelpers.h>
 
@@ -50,12 +52,24 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
     ColumnPtr shared_variant;
     size_t shared_variant_size = 0;
 
+    /// For NARROWED parts.
+    /// True when this element is read directly from the narrowed Nullable(T)/T storage column.
+    bool read_from_narrowed = false;
+    /// Storage serialization (`Nullable(narrowed_type)` or `narrowed_type`).
+    SerializationPtr narrowed_serialization;
+    ISerialization::DeserializeBinaryBulkStatePtr narrowed_state;
+    /// `narrowed_stored_as_nullable` copied from structure state for convenience.
+    bool narrowed_stored_as_nullable = false;
+    /// Type of the narrowed variant (non-Nullable). Same as `structure_state->narrowed_type`.
+    DataTypePtr narrowed_type;
+
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateDynamicElement>(*this);
         new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
         new_state->variant_element_state = variant_element_state ? variant_element_state->clone() : nullptr;
+        new_state->narrowed_state = narrowed_state ? narrowed_state->clone() : nullptr;
         return new_state;
     }
 };
@@ -77,6 +91,24 @@ void SerializationDynamicElement::enumerateStreams(
 
     auto * deserialize_state = checkAndGetState<DeserializeBinaryBulkStateDynamicElement>(data.deserialize_state);
     /// If we don't have this variant, no need to enumerate streams for it as we won't read from any stream.
+    if (deserialize_state->read_from_narrowed)
+    {
+        /// The element is read from the storage column of a NARROWED part. Expose the storage's
+        /// substreams (`Nullable(narrowed_type)` or `narrowed_type`).
+        auto storage_type = deserialize_state->narrowed_stored_as_nullable
+            ? makeNullable(deserialize_state->narrowed_type)
+            : deserialize_state->narrowed_type;
+        settings.path.push_back(Substream::DynamicData);
+        auto storage_data = SubstreamData(deserialize_state->narrowed_serialization)
+                                .withType(storage_type)
+                                .withSerializationInfo(data.serialization_info)
+                                .withDeserializeState(deserialize_state->narrowed_state);
+        settings.path.back().data = storage_data;
+        deserialize_state->narrowed_serialization->enumerateStreams(settings, callback, storage_data);
+        settings.path.pop_back();
+        return;
+    }
+
     if (!deserialize_state->variant_serialization)
         return;
 
@@ -112,8 +144,32 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
 
     auto dynamic_element_state = std::make_shared<DeserializeBinaryBulkStateDynamicElement>();
     dynamic_element_state->structure_state = std::move(structure_state);
-    const auto & variant_type = assert_cast<const DataTypeVariant &>(
-        *checkAndGetState<SerializationDynamic::DeserializeBinaryBulkStateDynamicStructure>(dynamic_element_state->structure_state)->variant_type);
+    auto * structure_state_typed = checkAndGetState<SerializationDynamic::DeserializeBinaryBulkStateDynamicStructure>(dynamic_element_state->structure_state);
+
+    /// NARROWED parts: the storage column is `Nullable(narrowed_type)` (or `narrowed_type`).
+    /// - If the requested element matches `narrowed_type` exactly, read it directly from storage.
+    /// - Otherwise this part has no values for the requested element; leave both serializations
+    ///   unset, and `deserializeBinaryBulkWithMultipleStreams` will produce defaults/NULLs.
+    if (structure_state_typed->structure_version.value == SerializationDynamic::SerializationVersion::NARROWED)
+    {
+        dynamic_element_state->narrowed_type = structure_state_typed->narrowed_type;
+        dynamic_element_state->narrowed_stored_as_nullable = structure_state_typed->narrowed_stored_as_nullable;
+        if (dynamic_element_name == structure_state_typed->narrowed_type->getName())
+        {
+            auto storage_type = structure_state_typed->narrowed_stored_as_nullable
+                ? makeNullable(structure_state_typed->narrowed_type)
+                : structure_state_typed->narrowed_type;
+            dynamic_element_state->narrowed_serialization = storage_type->getSerialization({});
+            dynamic_element_state->read_from_narrowed = true;
+            settings.path.push_back(Substream::DynamicData);
+            dynamic_element_state->narrowed_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_element_state->narrowed_state, cache);
+            settings.path.pop_back();
+        }
+        state = std::move(dynamic_element_state);
+        return;
+    }
+
+    const auto & variant_type = assert_cast<const DataTypeVariant &>(*structure_state_typed->variant_type);
     /// Check if we actually have required element in the Variant.
     if (auto global_discr = variant_type.tryGetVariantDiscriminator(dynamic_element_name))
     {
@@ -170,6 +226,66 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     }
 
     auto * dynamic_element_state = checkAndGetState<DeserializeBinaryBulkStateDynamicElement>(state);
+
+    /// NARROWED part: either read directly from the narrowed storage column, or — if the requested
+    /// element doesn't match the narrowed type — produce a column of NULLs/defaults of length `limit`.
+    if (dynamic_element_state->read_from_narrowed)
+    {
+        settings.path.push_back(Substream::DynamicData);
+        if (is_null_map_subcolumn)
+        {
+            /// We need only the null map of `Nullable(narrowed_type)`. Read the storage column and
+            /// project its null map.
+            auto storage_type = dynamic_element_state->narrowed_stored_as_nullable
+                ? makeNullable(dynamic_element_state->narrowed_type)
+                : dynamic_element_state->narrowed_type;
+            ColumnPtr storage_column = storage_type->createColumn();
+            dynamic_element_state->narrowed_serialization->deserializeBinaryBulkWithMultipleStreams(
+                storage_column, rows_offset, limit, settings, dynamic_element_state->narrowed_state, cache);
+            auto mutable_column = result_column->assumeMutable();
+            auto & null_map = assert_cast<ColumnUInt8 &>(*mutable_column).getData();
+            const size_t prev_size = null_map.size();
+            null_map.resize(prev_size + storage_column->size());
+            if (dynamic_element_state->narrowed_stored_as_nullable)
+            {
+                const auto & storage_null_map = assert_cast<const ColumnNullable &>(*storage_column).getNullMapData();
+                for (size_t i = 0; i != storage_column->size(); ++i)
+                    null_map[prev_size + i] = storage_null_map[i];
+            }
+            else
+            {
+                /// No null map on storage → none of the rows are NULL.
+                std::fill(null_map.begin() + prev_size, null_map.end(), 0);
+            }
+            settings.path.pop_back();
+            return;
+        }
+
+        /// Non-null-map case: read storage column and append to result_column. The result_column's
+        /// type should match the narrowed element subcolumn type, which is what we set up as
+        /// `storage_type`.
+        dynamic_element_state->narrowed_serialization->deserializeBinaryBulkWithMultipleStreams(
+            result_column, rows_offset, limit, settings, dynamic_element_state->narrowed_state, cache);
+        settings.path.pop_back();
+        return;
+    }
+
+    /// NARROWED part but the requested element is not the narrowed type → no values; emit `limit` defaults/nulls.
+    if (dynamic_element_state->narrowed_type && !dynamic_element_state->read_from_narrowed)
+    {
+        auto mutable_column = result_column->assumeMutable();
+        if (is_null_map_subcolumn)
+        {
+            auto & data = assert_cast<ColumnUInt8 &>(*mutable_column).getData();
+            data.resize_fill(data.size() + limit, 1);
+        }
+        else
+        {
+            for (size_t i = 0; i != limit; ++i)
+                mutable_column->insertDefault();
+        }
+        return;
+    }
 
     /// Check if this subcolumn should not be read from shared variant.
     /// In this case just read data from the corresponding variant.
