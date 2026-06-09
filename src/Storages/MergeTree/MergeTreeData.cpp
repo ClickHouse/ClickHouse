@@ -9718,6 +9718,12 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
 {
     const auto settings = getSettings();
 
+    /// A non-adaptive part stores no per-mark row count: its granularity is reconstructed from the table's
+    /// `index_granularity` setting on load. With `index_granularity = 0` that reconstruction yields zero-row
+    /// granules, making the part unreadable. Reject bringing such a part into a zero-granularity table.
+    if ((*settings)[MergeTreeSetting::index_granularity] == 0 && !src_part->index_granularity_info.mark_type.adaptive)
+        return false;
+
     if (!(*settings)[MergeTreeSetting::enable_mixed_granularity_parts] || (*settings)[MergeTreeSetting::index_granularity_bytes] == 0)
     {
         if (!canUseAdaptiveGranularity() && src_part->index_granularity_info.mark_type.adaptive)
