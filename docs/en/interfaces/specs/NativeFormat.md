@@ -288,6 +288,7 @@ Each value occupies a constant number of bytes. A column of `M` rows occupies ex
 | `Int256`            | 32              | Signed 256-bit, two's complement                  | Little-endian |
 | `Float32`           | 4               | IEEE 754 single-precision                         | Little-endian |
 | `Float64`           | 8               | IEEE 754 double-precision                         | Little-endian |
+| `BFloat16`          | 2               | High 16 bits of an IEEE 754 `Float32`             | Little-endian |
 | `Bool`              | 1               | `0x00` = false, `0x01` = true                     | Raw byte      |
 | `Date`              | 2               | Days since `1970-01-01`                           | Little-endian UInt16 |
 | `Date32`            | 4               | Days since `1970-01-01` (signed; pre-1970 ok)     | Little-endian Int32 |
@@ -295,6 +296,9 @@ Each value occupies a constant number of bytes. A column of `M` rows occupies ex
 | `DateTime(tz)`      | 4               | Same as `DateTime`; timezone is metadata          | Little-endian UInt32 |
 | `DateTime64(s)`     | 8               | Ticks at scale `s` (10^-s seconds since epoch)    | Little-endian Int64 |
 | `DateTime64(s, tz)` | 8               | Same as `DateTime64(s)`; timezone is metadata     | Little-endian Int64 |
+| `Time`              | 4               | Signed clock duration in seconds                  | Little-endian Int32 |
+| `Time64(s)`         | 8               | Signed clock duration in ticks at scale `s`       | Little-endian Int64 |
+| `Interval<Unit>`    | 8               | Signed count; the unit lives in the type string   | Little-endian Int64 |
 | `UUID`              | 16              | 128-bit identifier                                | Two byte-swapped LE UInt64 halves (see [UUID](#uuid)) |
 | `IPv4`              | 4               | IPv4 address                                      | Little-endian UInt32 |
 | `IPv6`              | 16              | IPv6 address                                      | Network byte order, no swap |
@@ -335,6 +339,16 @@ Standard IEEE 754 binary floats: 4 bytes single-precision (`binary32`) and 8 byt
 
 ```text
 00 00 00 00 00 00 F8 3F  little-endian IEEE 754
+```
+
+#### BFloat16 {#bfloat16}
+
+The brain-floating-point format: the high 16 bits of an IEEE 754 `Float32` — 1 sign bit, 8 exponent bits, 7 mantissa bits. Each value is 2 bytes, little-endian, holding the raw 16-bit pattern. To recover the numeric value, widen it back to `Float32` by placing the pattern in the high half and zeroing the low half (`bits << 16` reinterpreted as `Float32`); the widened value then shares `Float32`'s text formatting.
+
+`BFloat16` value `1.5` (pattern `0x3FC0`, the top half of `Float32` `0x3FC00000`):
+
+```text
+C0 3F                    little-endian, widens to Float32 1.5
 ```
 
 #### Bool {#bool-type}
@@ -403,6 +417,38 @@ The type appears as `DateTime64(s)` (implicit server-default timezone) or `DateT
 75 25 A5 65 00 00 00 00  Int64 LE = 1705321845
 ```
 
+#### Time and Time64(scale) {#time-and-time64}
+
+A clock duration rather than a point in time. `Time` is a signed second count, 4 bytes little-endian Int32; `Time64(scale)` is a signed tick count at the given decimal scale (0–9), 8 bytes little-endian Int64 — the same wire shape as `DateTime64`.
+
+The textual form is `[-]HH:MM:SS[.fraction]`, but unlike `DateTime` the hour field is **not** wrapped to a 24-hour day: it is the total hour count and may exceed 23. The displayed magnitude is capped at `999:59:59` (`3599999` seconds); a larger magnitude renders at the cap with a zeroed fraction (`999:59:59.000`). `CAST` clamps the stored value to this range as well, though arithmetic can produce out-of-range values that are clamped only on display. None of this affects the wire bytes, which are the plain signed integer.
+
+`Time` value `45296` (`12:34:56`):
+
+```text
+F0 B0 00 00              Int32 LE = 45296
+```
+
+`Time64(3)` value `45296789` ticks (`12:34:56.789`):
+
+```text
+95 2C B3 02 00 00 00 00  Int64 LE = 45296789
+```
+
+:::note
+`Time` and `Time64` are experimental and require `allow_experimental_time_time64_type = 1` on the server.
+:::
+
+#### Interval {#interval}
+
+`Interval<Unit>` — `IntervalSecond`, `IntervalMinute`, `IntervalHour`, `IntervalDay`, `IntervalWeek`, `IntervalMonth`, `IntervalQuarter`, `IntervalYear`, `IntervalNanosecond`, and so on. Every unit shares one wire encoding: the count as a signed 8-byte little-endian Int64. The unit lives **only** in the type string — it changes neither the wire bytes nor the textual form, which is the bare integer. A single decoder path handles every unit.
+
+`IntervalDay` value `5`:
+
+```text
+05 00 00 00 00 00 00 00  Int64 LE = 5
+```
+
 #### UUID {#uuid}
 
 16 bytes per value. The wire encoding is **not** the canonical 16 big-endian bytes — each 8-byte half is byte-reversed independently.
@@ -456,7 +502,7 @@ Enum8('active' = 1, 'inactive' = 2, 'banned' = -1)
 Enum16('a' = 1, 'b' = 30000)
 ```
 
-A decoder may strip the `(...)` parameter suffix and dispatch as `Int8` / `Int16`. Clients that need the human-readable label parse the type string.
+A decoder may strip the `(...)` parameter suffix and dispatch as `Int8` / `Int16` — the wire bytes are just the integer index. A client that surfaces the label parses the `'name' = value` map out of the type string and keeps it alongside the column: the integer alone does not recover the label. Text-oriented output renders the label (`active`) rather than the index, single-quoted (`'active'`) when the enum is nested inside a composite. Because the map is not recoverable from the integer column, it must be retained for nested enums such as `Array(Enum8(...))` or `Map(Enum16(...), V)`.
 
 An `Enum8('active' = 1, 'inactive' = 2)` column `[active, inactive, active]`:
 
@@ -698,7 +744,9 @@ The wire layout is *N* concatenated streams, one per element type, in declaratio
 [stream for Tn]    inner Tn's encoding for num_rows values
 ```
 
-Each stream encodes exactly `num_rows` values. There is no length prefix, no offsets stream, and no separators between streams. A tuple has at least one element (`n >= 1`); empty tuples are rejected at type-parse time. An empty column (`num_rows == 0`) writes zero bytes per stream. Element types may be any type, including other composites — `Tuple(Tuple(...), ...)`, `Tuple(Array(...), ...)`, and `Tuple(Nullable(T1), T2)` are all legal.
+Each stream encodes exactly `num_rows` values. There is no length prefix, no offsets stream, and no separators between streams. An empty column (`num_rows == 0`) writes zero bytes per stream. Element types may be any type, including other composites — `Tuple(Tuple(...), ...)`, `Tuple(Array(...), ...)`, and `Tuple(Nullable(T1), T2)` are all legal.
+
+The zero-element tuple `Tuple()` is also legal — it arises from expressions like `SELECT tuple()` or `CAST(x AS Tuple())`. Having no element streams, it instead serializes like [Nothing](#nothing): **one placeholder byte (`0x30`, ASCII `'0'`) per row**, which the deserializer discards. The row count comes from the block header, exactly as for `Nothing`.
 
 `Tuple(UInt8, UInt8)` with 3 rows `(1,4), (2,5), (3,6)`:
 
@@ -829,6 +877,30 @@ Field 'a' stream (3 × UInt8 = 3 bytes):
 Field 'b' stream (3 strings, 6 bytes):
 01 'x' 01 'y' 01 'z'         "x", "y", "z"
 ```
+
+### Type aliases {#type-aliases}
+
+Several types are pure aliases: the server sends the alias name in the column header, but the bytes that follow are those of an underlying type. A decoder maps the alias to that type and reuses its codec — no new wire format is involved.
+
+The geographic types alias to nested arrays and tuples:
+
+| Type string              | Underlying wire type        |
+|--------------------------|-----------------------------|
+| `Point`                  | `Tuple(Float64, Float64)`   |
+| `Ring`, `LineString`     | `Array(Point)`              |
+| `Polygon`, `MultiLineString` | `Array(Ring)`           |
+| `MultiPolygon`           | `Array(Polygon)`            |
+
+So a `Point` column is decoded exactly as `Tuple(Float64, Float64)` (rendering as `(1,2)`), a `Ring` as `Array(Tuple(Float64, Float64))` (`[(0,0),(1,1)]`), and so on up the hierarchy.
+
+`SimpleAggregateFunction(func, T)` is an alias for its value type `T`. It stores an already-finalized aggregate value, so its wire form and rendering are exactly those of `T` (`SimpleAggregateFunction(sum, UInt64)` is decoded as `UInt64`). Only the single-value-type form is an alias this way; the underlying type may itself be a composite.
+
+:::note
+Two related types are **not** aliases and carry their own specialized encodings, outside the scope of this page:
+
+- `AggregateFunction(func, ...)` holds an *intermediate* aggregation state (not a finalized value); its binary layout is specific to the aggregate function.
+- `QBit(T, N)` stores a vector with its bit planes transposed for vector-search workloads.
+:::
 
 ### Versioned types {#versioned-types}
 
