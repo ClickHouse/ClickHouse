@@ -8,6 +8,7 @@
 #include <IO/SourceBufferLimit.h>
 
 #include <Common/Logger.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/Stopwatch.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
@@ -275,6 +276,7 @@ private:
         WritePlan & write_plan,
         ConnState & conn,
         bool & eof_latch,
+        MemoryPressureLevel pressure_level,
         Stats & out_stats);
 
     /// Write every fetched miss range collected in `write_plan` into its tier
@@ -366,21 +368,23 @@ private:
 
     /// Effective window size for the next read: `effectiveBlockSize()` when we're
     /// (or about to be) on the live path, otherwise the constructor-supplied
-    /// `window_size` clamped down by the current `MemoryPressureMonitor` level.
-    /// Caller still caps by remaining file bytes.
-    size_t effectiveWindowSize() const;
+    /// `window_size` clamped down by `level`. Caller still caps by remaining file
+    /// bytes. `level` is the per-plan cached `MemoryPressureLevel` (from the
+    /// `read_geometry`/job snapshot) - NOT a fresh global query per call.
+    size_t effectiveWindowSize(MemoryPressureLevel level) const;
 
     /// Effective per-block allocation size: the configured `block_size` at
-    /// normal memory, shrinks under pressure (see `MemoryPressureMonitor`). Sizes
+    /// normal memory, shrinks under `level` (see `MemoryPressureMonitor`). Sizes
     /// the `allocateBlocks` source-read tile so the in-flight allocation per call
     /// falls when free memory does.
-    size_t effectiveBlockSize() const;
+    size_t effectiveBlockSize(MemoryPressureLevel level) const;
 
     /// Read-ahead window for the next prefetch: the full `effectiveWindowSize` (the
     /// same window a synchronous read uses) at Normal/Elevated, and 0 — prefetch
     /// suppressed — at High/Critical. Read-ahead is speculative, so once memory is
-    /// tight it stops entirely rather than reading a shrunken window.
-    size_t effectivePrefetchWindowSize() const;
+    /// tight it stops entirely rather than reading a shrunken window. `level` is the
+    /// per-plan cached level.
+    size_t effectivePrefetchWindowSize(MemoryPressureLevel level) const;
 
     /// Shrink `win_size` so the read does not pass `read_extent_end` (the
     /// `makeTransientForReadAt` one-shot extent, or a sequential reader's
@@ -465,6 +469,13 @@ private:
         size_t plan_start = 0;  /// physical (header-inclusive) coords
         size_t plan_end = 0;    /// [plan_start, plan_end)
         VectorWithMemoryTracking<GeometryEntry> entries;
+
+        /// The `MemoryPressureMonitor` level sampled ONCE when this plan was built
+        /// (`planResidencyWindow`). Reads within the plan use this cached level for
+        /// their effective block/window sizing instead of re-querying the global
+        /// monitor per call - so a warm cache-hit scan does zero pressure queries, and
+        /// a prefetch worker reads it from its co-owned snapshot (stays a pure job).
+        MemoryPressureLevel pressure_level{};
 
         bool covers(ByteRange w) const
         {

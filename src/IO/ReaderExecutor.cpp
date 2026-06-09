@@ -417,9 +417,9 @@ constexpr bool PREFETCH_ENABLED[memoryPressureLevelCount()] = {true, true, false
 /// The configured base is the ceiling; the 128 KiB floor only bounds the
 /// pressure shrink and never raises a base that is itself below it (e.g. a tiny
 /// test/manual window). The block never exceeds the window.
-WindowAndBlock sizesAtCurrentPressure(size_t base_window, size_t base_block)
+WindowAndBlock sizesAtPressure(MemoryPressureLevel pressure, size_t base_window, size_t base_block)
 {
-    const size_t level = static_cast<size_t>(memoryPressureMonitor().currentLevel());
+    const size_t level = static_cast<size_t>(pressure);
     static constexpr size_t FLOOR = 128ULL << 10;
     const size_t window = std::min(std::max(base_window / WINDOW_REDUCTION[level], FLOOR), base_window);
     size_t block = std::min(std::max(base_block / BLOCK_REDUCTION[level], FLOOR), base_block);
@@ -429,14 +429,14 @@ WindowAndBlock sizesAtCurrentPressure(size_t base_window, size_t base_block)
 
 }
 
-size_t ReaderExecutor::effectiveBlockSize() const
+size_t ReaderExecutor::effectiveBlockSize(MemoryPressureLevel level) const
 {
-    return sizesAtCurrentPressure(window_size, block_size).block_bytes;
+    return sizesAtPressure(level, window_size, block_size).block_bytes;
 }
 
-size_t ReaderExecutor::effectiveWindowSize() const
+size_t ReaderExecutor::effectiveWindowSize(MemoryPressureLevel level) const
 {
-    const auto sizes = sizesAtCurrentPressure(window_size, block_size);
+    const auto sizes = sizesAtPressure(level, window_size, block_size);
     /// Only the live path streams one block at a time, reusing the open
     /// connection across windows. Stateless reads - local files and remote
     /// reads with live connections disabled - keep the full (pressure-scaled)
@@ -451,14 +451,13 @@ size_t ReaderExecutor::effectiveWindowSize() const
     return sizes.window_bytes;
 }
 
-size_t ReaderExecutor::effectivePrefetchWindowSize() const
+size_t ReaderExecutor::effectivePrefetchWindowSize(MemoryPressureLevel level) const
 {
-    const size_t level = static_cast<size_t>(memoryPressureMonitor().currentLevel());
-    if (!PREFETCH_ENABLED[level])
+    if (!PREFETCH_ENABLED[static_cast<size_t>(level)])
         return 0;
     /// Prefetch reads the same window as a synchronous read; under High/Critical it
     /// is suppressed entirely (above) rather than shrunk.
-    return effectiveWindowSize();
+    return effectiveWindowSize(level);
 }
 
 size_t ReaderExecutor::clampToExtent(size_t win_size) const
@@ -591,7 +590,7 @@ void ReaderExecutor::maybeTriggerPrefetch()
     /// only on the committed-submit path below (after these early returns).
     ensurePreAcquiredSlot(foreground_conn);
 
-    const size_t prefetch_window = effectivePrefetchWindowSize();
+    const size_t prefetch_window = effectivePrefetchWindowSize(read_geometry->pressure_level);
     if (prefetch_window == 0)
     {
         /// Read-ahead suppressed under High/Critical memory pressure. Release the
@@ -1005,7 +1004,6 @@ void ReaderExecutor::decryptInPlace(
 Rope ReaderExecutor::readNextWindow()
 {
     const size_t logical_size = totalSize();
-    Rope rope;
 
     /// EOF return - but a prefetch launched before EOF can have its worker latch
     /// `reached_eof` via a short read on an unknown-size source while still holding
@@ -1026,19 +1024,39 @@ Rope ReaderExecutor::readNextWindow()
     }
 
     const size_t position_phys = position + data_start_offset;
-    const size_t win_size = clampToExtent(std::min(effectiveWindowSize(), logical_size - position));
+    /// Pressure-free "is there anything left to read?" (the old `win_size > 0` guard,
+    /// minus the `effectiveWindowSize` memory-pressure query): clamp to the advertised
+    /// extent / file end. An unknown-size source has no known end here (EOF is latched
+    /// by a short read), so it reads up to the extent (or is effectively unbounded).
+    const size_t to_read = offset_map.hasUnknownSize()
+        ? clampToExtent(window_size)
+        : clampToExtent(logical_size - position);
 
-    /// Plan-first: build/refresh the ReadPlan and ask what sits at the cursor.
+    Rope rope;
+
+    /// Plan-first: build/refresh the geometry and ask what sits at the cursor.
     /// RESIDENT -> stream the run from the held cache handle; GAP -> consume the
-    /// in-flight gap read-ahead (launched last call) or fetch synchronously. A
-    /// prefetch is only ever scheduled for a gap cursor (see `maybeTriggerPrefetch`),
-    /// so the resident path never runs while a worker owns `live_connection`.
+    /// in-flight gap read-ahead (launched last call) or fetch synchronously.
     ReadPlanGeometry::Resident at;
-    if (win_size > 0)
+    if (to_read > 0)
     {
-        if (!read_geometry || !read_geometry->covers(ByteRange{position_phys, win_size}))
+        /// Re-plan only when the cursor leaves the planned span. The margin is the
+        /// BASE `window_size` (a constant), so deciding whether to plan never queries
+        /// memory pressure; the plan span and every read are clamped to `plan_end`,
+        /// and the per-plan pressure level is sampled once inside `planResidencyWindow`.
+        /// NB: never re-plan while a prefetch is in flight. A prefetch is launched only
+        /// at a gap cursor, so this cursor IS a gap and must be consumed via the gap
+        /// branch below. A re-plan here would re-probe residency and could see the
+        /// worker's just-backfilled gap as RESIDENT, wrongly taking the resident
+        /// fast-path while `prefetch_handle` is still set (the invariant the
+        /// resident-path `chassert(!prefetch_handle)` guards).
+        if (!prefetch_handle
+            && (!read_geometry
+                || position_phys < read_geometry->plan_start
+                || position_phys + window_size > read_geometry->plan_end))
             planResidencyWindow(position_phys);
-        at = read_geometry->residentAt(position_phys);
+        if (read_geometry)
+            at = read_geometry->residentAt(position_phys);
     }
 
     if (at.resident())
@@ -1057,7 +1075,12 @@ Rope ReaderExecutor::readNextWindow()
         /// the same hook. No-op in production.
         FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_cache_status);
 
-        const size_t window_end = position_phys + win_size;
+        /// Serve a BLOCK at a time from cache (not a full window): a cache hit has no
+        /// remote open to amortise over a window, so block-sizing just bounds the
+        /// in-flight Rope memory per call. Uses the per-plan cached pressure level (no
+        /// global query); the loop also stops at the resident run end / `plan_end`.
+        const size_t window_end = position_phys
+            + std::min(effectiveBlockSize(read_geometry->pressure_level), to_read);
         StopwatchAccumulator get_scope(stats.cache_get_us);
         for (size_t pos = position_phys; pos < window_end;)
         {
@@ -1106,9 +1129,13 @@ Rope ReaderExecutor::readNextWindow()
         /// next resident run is served from cache on the following call. The live
         /// connection still bridges a sub-`min_bytes_for_seek` cached hole across
         /// these calls (kept past the resident serve, skips the hole on the open GET).
-        size_t gap_size = win_size;
-        if (win_size > 0)
-            gap_size = std::min(win_size, read_geometry->gapEnd(position_phys) - position_phys);
+        /// A remote gap reads a full (pressure-scaled, cached-level) window to amortise
+        /// the source open, clamped to the extent and to the plan gap `[position, gapEnd)`
+        /// so each call returns one pure run.
+        size_t gap_size = to_read;
+        if (to_read > 0)
+            gap_size = std::min(clampToExtent(effectiveWindowSize(read_geometry->pressure_level)),
+                read_geometry->gapEnd(position_phys) - position_phys);
         const ByteRange physical_window{position_phys, gap_size};
 
         /// Ensure a (possibly empty) geometry snapshot exists to pass to the read
@@ -1628,7 +1655,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
     serveResidentFromPlan(physical_window, from_prefetch, result, covered,
         geometry, from_prefetch ? nullptr : &read_handles, out_stats);
     const bool fetched_from_source = fetchAndBackfillGaps(
-        physical_window, from_prefetch, result, covered, write_plan, conn, eof_latch, out_stats);
+        physical_window, from_prefetch, result, covered, write_plan, conn, eof_latch, geometry.pressure_level, out_stats);
 
     /// A cache-only window (no source read) leaves the live connection idle; keep
     /// it only if the next window bridges, else drop it (see the helper).
@@ -1761,6 +1788,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
     WritePlan & write_plan,
     ConnState & conn,
     bool & eof_latch,
+    MemoryPressureLevel pressure_level,
     Stats & out_stats)
 {
     /// Whatever the plan left uncovered is a remote gap. Walk the tiers to create
@@ -1853,10 +1881,10 @@ bool ReaderExecutor::fetchAndBackfillGaps(
         LOG_TRACE(log, "fetchAndBackfillGaps: merged {} gaps into {} fetch ranges (min_gap={})",
             remaining.size(), fetch_ranges.size(), min_bytes_for_seek);
 
-    /// Sample the pressure-scaled block size ONCE per call - `effectiveBlockSize`
-    /// queries the memory-pressure monitor, and a wide-table read would otherwise
-    /// hit it per block across thousands of concurrent executors.
-    const size_t window_block_size = effectiveBlockSize();
+    /// Block size for the source-read tiles, from the per-plan cached pressure level
+    /// (`pressure_level`) - no per-call global query (a worker passes its co-owned
+    /// `job->geometry->pressure_level`, the foreground passes `read_geometry`'s).
+    const size_t window_block_size = effectiveBlockSize(pressure_level);
 
     for (const auto & fr : fetch_ranges)
     {
@@ -2034,6 +2062,10 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
     auto geom = std::make_shared<ReadPlanGeometry>();
     geom->plan_start = physical_start;
     geom->plan_end = physical_start;
+    /// Sample memory pressure ONCE here, per plan. Every read within this plan (cache
+    /// and remote, foreground and the co-owning worker) sizes off this cached level
+    /// instead of re-querying the global monitor per call.
+    geom->pressure_level = memoryPressureMonitor().currentLevel();
 
     size_t want = plan_look_ahead_window;
     bool valid = true;
