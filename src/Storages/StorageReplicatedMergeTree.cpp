@@ -649,6 +649,20 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
             if (same_structure)
             {
+                /// checkTableStructure uses ColumnsDescription::operator== which ignores
+                /// column comments. If the ZK columns have different comments (e.g. from
+                /// a replicated COMMENT COLUMN alter), adopt them so that new replicas
+                /// pick up the correct comments.
+                auto columns_from_zk = ColumnsDescription::parse(
+                    getZooKeeper()->get(fs::path(zookeeper_path) / "columns"));
+                if (columns_from_zk.toString(true) != metadata_snapshot->getColumns().toString(true))
+                {
+                    LOG_INFO(log, "Columns structure is the same, but column comments differ from ZooKeeper. Adopting comments from ZooKeeper.");
+                    StorageInMemoryMetadata updated_metadata = *metadata_snapshot;
+                    updated_metadata.columns = columns_from_zk;
+                    metadata_snapshot = std::make_shared<const StorageInMemoryMetadata>(updated_metadata);
+                }
+
                 /** We change metadata_snapshot so that `createReplica` method will create `metadata_version` node in ZooKeeper
                   * with version of table '/metadata' node in Zookeeper.
                   *
@@ -6783,8 +6797,11 @@ void StorageReplicatedMergeTree::alter(
         return;
     }
 
-    if (commands.isCommentAlter())
+    if (commands.isTableCommentAlter())
     {
+        /// Table comment is not stored in ZooKeeper metadata, so it's a local-only operation.
+        /// Column comments, on the other hand, are part of the ZK /columns node
+        /// and must go through the normal replicated alter path.
         setInMemoryMetadata(future_metadata);
 
         /// It is safe to ignore exceptions here as only the comment is changed, which is not validated in `alterTable`

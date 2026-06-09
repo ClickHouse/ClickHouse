@@ -1230,6 +1230,11 @@ bool AlterCommand::isCommentAlter() const
     return false;
 }
 
+bool AlterCommand::isTableCommentAlter() const
+{
+    return type == COMMENT_TABLE;
+}
+
 bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
 {
     if (type == MODIFY_TTL)
@@ -1920,12 +1925,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
 bool AlterCommands::hasNonReplicatedAlterCommand() const
 {
-    return std::any_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter() || c.isCommentAlter(); });
+    return std::any_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter() || c.isTableCommentAlter(); });
 }
 
 bool AlterCommands::areNonReplicatedAlterCommands() const
 {
-    return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter() || c.isCommentAlter(); });
+    return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter() || c.isTableCommentAlter(); });
 }
 
 bool AlterCommands::isSettingsAlter() const
@@ -1936,6 +1941,11 @@ bool AlterCommands::isSettingsAlter() const
 bool AlterCommands::isCommentAlter() const
 {
     return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isCommentAlter(); });
+}
+
+bool AlterCommands::isTableCommentAlter() const
+{
+    return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isTableCommentAlter(); });
 }
 
 static MutationCommand createMaterializeTTLCommand()
