@@ -263,7 +263,7 @@ public:
             /// Typed paths are always present in a JSON column, even when the key was missing
             /// from the inserted JSON (they get the type's default value). For non-typed paths
             /// the combined subcolumn returns a Dynamic column where NULL means absent.
-            bool is_typed_path = !isDynamic(merged_type);
+            bool is_typed_path = data_type_object.getTypedPaths().contains(path);
 
             /// JSONHas must be UInt8 {0,1} from path presence. The generic `else` below would
             /// cast the extracted value to UInt8 and silently return the value itself.

@@ -40,3 +40,25 @@ SELECT 'Nullable typed path JSONHas';
 SELECT JSONHas(json, 'a') AS has_a, JSONHas(json, 'b') AS has_b FROM test_json_nullable_typed ORDER BY rowNumberInAllBlocks();
 
 DROP TABLE test_json_nullable_typed;
+
+-- Test with Dynamic typed path: the type hint is Dynamic, so the subcolumn type
+-- is also Dynamic, but it is still a typed path and must be treated as always present.
+DROP TABLE IF EXISTS test_json_dynamic_typed;
+CREATE TABLE test_json_dynamic_typed (json JSON(a Dynamic)) ENGINE = Memory;
+INSERT INTO test_json_dynamic_typed VALUES ('{"a": 0}'), ('{"a": "hello"}'), ('{"a": null}');
+
+SELECT 'Dynamic typed path JSONExtractRaw';
+SELECT JSONExtractRaw(json, 'a') AS raw_a FROM test_json_dynamic_typed ORDER BY rowNumberInAllBlocks();
+
+SELECT 'Dynamic typed path JSONHas';
+SELECT JSONHas(json, 'a') AS has_a FROM test_json_dynamic_typed ORDER BY rowNumberInAllBlocks();
+
+-- Absent key for Dynamic typed path should still be treated as present.
+TRUNCATE TABLE test_json_dynamic_typed;
+INSERT INTO test_json_dynamic_typed VALUES ('{"b": 1}');
+
+SELECT 'absent Dynamic typed path';
+SELECT JSONExtractRaw(json, 'a') AS raw_a FROM test_json_dynamic_typed;
+SELECT JSONHas(json, 'a') AS has_a FROM test_json_dynamic_typed;
+
+DROP TABLE test_json_dynamic_typed;

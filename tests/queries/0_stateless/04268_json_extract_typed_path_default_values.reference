@@ -21,3 +21,14 @@ Nullable typed path JSONHas
 1	1
 1	1
 1	1
+Dynamic typed path JSONExtractRaw
+0
+"hello"
+null
+Dynamic typed path JSONHas
+1
+1
+1
+absent Dynamic typed path
+null
+1
