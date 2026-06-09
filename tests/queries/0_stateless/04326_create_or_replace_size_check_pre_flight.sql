@@ -6,10 +6,11 @@ DROP TABLE IF EXISTS t04326;
 CREATE TABLE t04326 (a UInt64) ENGINE = MergeTree() ORDER BY a;
 INSERT INTO t04326 SELECT number FROM numbers(1000);
 
--- Pre-flight check fires BEFORE creating the temporary table, so the original
--- `t04326` keeps its data and no `_tmp_replace_*` is left behind. Before the
--- fix the size guard fired AFTER EXCHANGE, leaving the user with an empty
--- replacement and a stranded `_tmp_replace_*` table holding the data.
+-- Pre-flight check fires after the temporary replacement is created and filled,
+-- but BEFORE the destructive `EXCHANGE`, so the original `t04326` keeps its data
+-- and no `_tmp_replace_*` is left behind. Before the fix the size guard fired
+-- AFTER `EXCHANGE`, leaving the user with an empty replacement and a stranded
+-- `_tmp_replace_*` table holding the data.
 CREATE OR REPLACE TABLE t04326 (b UInt64) ENGINE = MergeTree() ORDER BY b
 SETTINGS max_table_size_to_drop = 1;  -- { serverError TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT }
 

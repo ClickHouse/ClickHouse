@@ -11,6 +11,7 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
 #include <Common/SipHash.h>
@@ -158,6 +159,11 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_table_num_to_throw;
     extern const ServerSettingsUInt64 max_replicated_table_num_to_throw;
     extern const ServerSettingsUInt64 max_view_num_to_throw;
+}
+
+namespace FailPoints
+{
+    extern const char create_or_replace_after_size_check_before_rename[];
 }
 
 namespace ErrorCodes
@@ -2235,14 +2241,16 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     /// Before actually creating/replacing the table, check if it will lead to cyclic dependencies.
     checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, create_context);
 
-    auto make_drop_context = [&]() -> ContextMutablePtr
+    auto make_drop_context = [&](bool bypass_size_guard) -> ContextMutablePtr
     {
         ContextMutablePtr drop_context = Context::createCopy(current_context);
         drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
-        /// Size guard is enforced once by the pre-flight check below; the implicit DROP must
-        /// not re-check, otherwise a consumed `force_drop_table` flag would strand the data.
-        drop_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
-        drop_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+        /// Bypass = "the size guard was already enforced upstream; do not re-check or consume `force_drop_table` twice".
+        if (bypass_size_guard)
+        {
+            drop_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+            drop_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+        }
         return drop_context;
     };
 
@@ -2343,14 +2351,17 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             ast_rename->exchange = true;
         }
 
-        /// Size guard fires here, after the fill, before the destructive EXCHANGE.
-        /// `make_drop_context` zeroes `max_table_size_to_drop` so the implicit drop below
-        /// does not re-check (and does not consume `force_drop_table` twice).
-        /// The dedicated size-only API avoids side effects from `checkTableCanBeDropped`
-        /// overrides on dictionaries / NATS / RabbitMQ.
+        /// Size guard, after fill, before EXCHANGE. Capture the storage UUID so the
+        /// post-rename drop can detect a concurrent swap of the target.
+        UUID checked_uuid = UUIDHelpers::Nil;
         if (auto existing = DatabaseCatalog::instance().tryGetTable(
                 StorageID{create.getDatabase(), table_to_replace_name}, current_context))
+        {
             existing->checkTableSizeBelowDropLimit(current_context);
+            checked_uuid = existing->getStorageID().uuid;
+        }
+
+        FailPointInjection::pauseFailPoint(FailPoints::create_or_replace_after_size_check_before_rename);
 
         InterpreterRenameQuery interpreter_rename{ast_rename, current_context};
         interpreter_rename.execute();
@@ -2358,8 +2369,18 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         if (!interpreter_rename.renamedInsteadOfExchange())
         {
-            /// Target table was replaced with new one, drop old table
-            auto drop_context = make_drop_context();
+            /// Target table was replaced with new one, drop old table.
+            /// Bypass the size guard only if the storage now under the temp name (where `ast_drop`
+            /// points after EXCHANGE) is the one we size-checked above; otherwise the normal
+            /// `max_table_size_to_drop` from the user's settings applies.
+            bool bypass_size_guard = false;
+            if (checked_uuid != UUIDHelpers::Nil)
+            {
+                if (auto to_drop = DatabaseCatalog::instance().tryGetTable(
+                        StorageID{create.getDatabase(), create.getTable()}, current_context))
+                    bypass_size_guard = to_drop->getStorageID().uuid == checked_uuid;
+            }
+            auto drop_context = make_drop_context(bypass_size_guard);
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
 
@@ -2369,10 +2390,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     }
     catch (...)
     {
-        /// Drop temporary table if it was successfully created, but was not renamed to target name
+        /// Drop the temp table we just created if it was not renamed to the target name.
+        /// Bypassing the size guard is safe here: the temp name is unique to this call.
         if (created && !renamed)
         {
-            auto drop_context = make_drop_context();
+            auto drop_context = make_drop_context(/*bypass_size_guard=*/true);
             try
             {
                 InterpreterDropQuery(ast_drop, drop_context).execute();
