@@ -1,6 +1,3 @@
-#include <exception>
-#include <Common/ThreadStatus.h>
-#include <memory>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Storages/StorageMergeTree.h>
@@ -14,6 +11,10 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/setThreadName.h>
 #include <Core/Settings.h>
+#include <Common/ThreadStatus.h>
+
+#include <exception>
+#include <memory>
 
 namespace ProfileEvents
 {
@@ -36,6 +37,7 @@ namespace Setting
 {
     extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
+    extern const SettingsBool wait_for_part_commit_in_dependent_materialized_views;
 }
 
 namespace MergeTreeSetting
@@ -72,6 +74,12 @@ MergeTreeSink::MergeTreeSink(
     , deduplicate((*storage.getSettings())[MergeTreeSetting::non_replicated_deduplication_window] > 0 && storage.getDeduplicationLog() != nullptr)
 {
     LOG_DEBUG(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
+}
+
+void MergeTreeSink::setHasDependentMaterializedViews(bool has_dependent_views)
+{
+    synchronously_commit_part_for_dependent_views
+        = has_dependent_views && context->getSettingsRef()[Setting::wait_for_part_commit_in_dependent_materialized_views];
 }
 
 void MergeTreeSink::onStart()
@@ -208,12 +216,16 @@ void MergeTreeSink::consume(Chunk & chunk)
     deduplication_info->setPartWriterHashes(all_partwriter_hashes, chunk.getNumRows());
 
     finishDelayedChunk();
+
     delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
     /// Streaming `INSERT` flushes partial blocks on a timeout, so commit the just-written
     /// part immediately to make its rows visible without waiting for the next consume()
     /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
     if (settings[Setting::input_format_max_block_wait_ms] != 0)
+        finishDelayedChunk();
+
+    if (synchronously_commit_part_for_dependent_views)
         finishDelayedChunk();
 
     ++num_blocks_processed;
