@@ -194,6 +194,16 @@ void LocalConnection::sendQuery(
     if (!current_database.empty() && current_database != query_context->getCurrentDatabase())
         query_context->setCurrentDatabase(current_database);
 
+    /// Keep the `database` setting consistent with the connection's current database. The setting is
+    /// applied by `executeQuery` (it is documented as equivalent to `USE`), and the per-query context
+    /// is rebuilt from the session on every query while the client-sent settings are not forwarded by
+    /// `LocalConnection`. Without this, the `database` value inherited from the server's startup
+    /// configuration (e.g. from `--database`) would be re-applied by `executeQuery` and override the
+    /// database just selected by a `USE` statement (which only updates `current_database` above). A
+    /// query's own `SETTINGS database = ...` is applied later and still takes precedence.
+    if (!current_database.empty())
+        query_context->setSetting("database", current_database);
+
     query_context->addQueryParameters(query_parameters);
 
     state.reset();
