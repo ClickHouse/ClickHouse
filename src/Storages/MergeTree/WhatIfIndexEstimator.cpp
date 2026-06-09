@@ -670,13 +670,14 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     local_context->setSetting("enable_parallel_replicas", Field{UInt64{0}});
     local_context->setSetting("use_skip_indexes_on_data_read", Field{UInt64{0}});
     /// Grab the forced index names, drop them for baseline planning, re-check them at the end
-    std::vector<String> forced_strings;
-    if (context->getSettingsRef()[Setting::force_data_skipping_indices].changed)
-        forced_strings.push_back(context->getSettingsRef()[Setting::force_data_skipping_indices]);
     local_context->resetSettingsToDefaultValue({"force_data_skipping_indices"});
 
     auto select_query_copy = select_query->clone();
+    std::vector<String> forced_strings;
     stripWhatIfControlledSettings(select_query_copy.get(), forced_strings);
+
+    if (forced_strings.empty() && context->getSettingsRef()[Setting::force_data_skipping_indices].changed)
+        forced_strings.push_back(context->getSettingsRef()[Setting::force_data_skipping_indices]);
 
     SelectQueryOptions query_options;
     query_options.setExplain();
