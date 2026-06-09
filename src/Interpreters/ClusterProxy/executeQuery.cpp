@@ -71,6 +71,7 @@ namespace Setting
     extern const SettingsString output_format;
     extern const SettingsString default_format;
     extern const SettingsString compression;
+    extern const SettingsString database;
     extern const SettingsString select;
     extern const SettingsString order;
     extern const SettingsString sort;
@@ -266,6 +267,20 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     {
         new_settings[Setting::compression] = "";
         new_settings[Setting::compression].changed = false;
+    }
+
+    /// `database` is an initiator-only setting as well: it selects the default database for the
+    /// user's query (the equivalent of `USE`), and the remote shard applies it the same way. But a
+    /// distributed fan-out relies on the shard's own default database — set from the cluster config
+    /// (`default_database` per replica) or from the connection — to resolve an unqualified remote
+    /// table. `rewriteSelectQuery` may leave the remote table unqualified (e.g. a `Distributed`
+    /// table created with an empty database argument). Forwarding `database` would make the shard
+    /// `USE` the initiator's database before resolving that table, reading the wrong same-named
+    /// table or failing with `UNKNOWN_TABLE`. Strip it so the shard keeps its own default database.
+    if (!settings[Setting::database].value.empty())
+    {
+        new_settings[Setting::database] = "";
+        new_settings[Setting::database].changed = false;
     }
 
     /// Setting additional_table_filters may be applied to Distributed table.
