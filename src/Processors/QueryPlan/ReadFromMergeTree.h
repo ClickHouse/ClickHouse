@@ -268,6 +268,11 @@ public:
     /// Such a read cannot be distributed: a worker reads from its own snapshot and cannot reproduce it.
     bool hasPinnedBlockNumbers() const { return max_block_numbers_to_read != nullptr; }
 
+    /// Direct reads from a text index (see `createReadTasksForTextIndex`). The tasks are self-contained,
+    /// so the get/set pair lets another step reading the same table (e.g. one built by lazy FINAL) reproduce them.
+    const IndexReadTasks & getIndexReadTasks() const { return index_read_tasks; }
+    void setIndexReadTasks(IndexReadTasks index_read_tasks_) { index_read_tasks = std::move(index_read_tasks_); }
+
     StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }

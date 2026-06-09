@@ -213,6 +213,12 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
 
     non_final_reading->disableQueryConditionCache();
 
+    /// The synthetic step inherits the filter rewritten to `__text_index_*` virtual columns, but not the read tasks that produce them
+    /// from the index.
+    /// Copy them over, otherwise the filter drops every row.
+    if (const IndexReadTasks & index_read_tasks = reading_step->getIndexReadTasks(); !index_read_tasks.empty())
+        non_final_reading->setIndexReadTasks(index_read_tasks); // Pass by value
+
     if (filter_step)
         non_final_reading->addFilter(filter_step->getExpression().clone(), filter_step->getFilterColumnName());
     non_final_reading->SourceStepWithFilterBase::applyFilters();
@@ -234,7 +240,9 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
 struct SplitResult
 {
     std::unique_ptr<QueryPlan> non_intersecting_plan;
-    bool fully_replaced = false; /// True when all parts are non-intersecting and the plan was replaced in-place.
+    /// Set when `optimizeLazyFinal` must stop right after the split: either the plan was replaced in-place
+    /// (all parts non-intersecting), or lazy FINAL does not apply and the reading step was left untouched.
+    bool fully_replaced = false;
 };
 
 /// Try to split parts into non-intersecting and intersecting by primary key.
@@ -282,6 +290,13 @@ static SplitResult trySplitNonIntersectingParts(
         query_plan.replaceNodeWithPlan(read_node, std::move(*plan), expected_header);
         return {.non_intersecting_plan = nullptr, .fully_replaced = true};
     }
+
+    /// The set/true-branch machinery built for intersecting parts reads through the lazy true-branch
+    /// source, which cannot produce the `__text_index_*` virtual columns of a direct read from a text
+    /// index. Leave the reading step untouched so the query falls back to a regular FINAL read.
+    /// Must come before the `non_intersecting_parts_ranges.empty()` check to cover the all-intersecting case.
+    if (!reading_step->getIndexReadTasks().empty())
+        return {.non_intersecting_plan = nullptr, .fully_replaced = true};
 
     if (split.non_intersecting_parts_ranges.empty())
         return {};
