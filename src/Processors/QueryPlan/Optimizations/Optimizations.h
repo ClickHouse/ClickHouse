@@ -68,6 +68,12 @@ struct Optimization
         /// functions back above a `SortingStep` that `tryPushDownVolumeReducingFunction`
         /// pushed below it.
         bool push_down_volume_reducing_functions = false;
+        /// Top-K optimizations rely on a runtime `TopKThresholdTracker` shared between
+        /// `SortingStep` and `ReadFromMergeTree`, and the dynamic-filtering path adds
+        /// an internal `__topKFilter` function that is not registered in `FunctionFactory`.
+        /// Neither can survive serialization to remote workers, so we suppress the
+        /// optimization when the plan is going to be distributed.
+        bool make_distributed_plan = false;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);
