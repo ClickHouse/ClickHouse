@@ -9,6 +9,11 @@ from ci.praktika.utils import Shell
 class FuzzerLogParser:
     UNKNOWN_ERROR = "Unknown error"
     MAX_INLINE_REPRODUCE_COMMANDS = 20
+    SANITIZER_ERROR_PATTERN = (
+        r"(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|"
+        r".*[a-zA-Z]+Sanitizer: CHECK failed:.*"
+    )
+    RUNTIME_ERROR_PATTERN = r".*runtime error: .*|.*is located.*"
     SQL_COMMANDS = [
         "SELECT",
         "INSERT",
@@ -63,7 +68,7 @@ class FuzzerLogParser:
             (
                 "Sanitizer",
                 "is_sanitizer_error",
-                r"(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*",
+                self.SANITIZER_ERROR_PATTERN,
             ),
             ("Logical error", "is_logical_error", r"Logical error.*"),
             (
@@ -74,7 +79,7 @@ class FuzzerLogParser:
             (
                 "Runtime error",
                 "is_sanitizer_error",
-                r".*runtime error: .*|.*is located.*",
+                self.RUNTIME_ERROR_PATTERN,
             ),
             ("SegFault", "is_segfault", r"Segmentation fault.*"),
             (
@@ -294,7 +299,8 @@ class FuzzerLogParser:
         def _extract_sanitizer_trace(log_file):
             ansi_escape = re.compile(r"\x1b\[[0-9;]*m")
             sanitizer_start = re.compile(
-                r"(==\d+==\s*)?(ERROR|WARNING): \w+Sanitizer:|: runtime error: "
+                r"(==\d+==\s*)?(ERROR|WARNING): \w+Sanitizer:|"
+                r"\b\w+Sanitizer: CHECK failed:|: runtime error: "
             )
             summary_pattern = re.compile(r"SUMMARY: \w+Sanitizer:")
             # ClickHouse log line: "2024.01.15 12:34:56.789 [ 123 ] {id} <Level>"
@@ -308,6 +314,7 @@ class FuzzerLogParser:
             result_lines = []
             in_report = False
             is_runtime_error = False
+            is_check_failed_report = False
             consecutive_blank = 0
 
             for line in all_lines:
@@ -318,11 +325,16 @@ class FuzzerLogParser:
                     if sanitizer_start.search(clean_line):
                         in_report = True
                         is_runtime_error = ": runtime error: " in clean_line
+                        is_check_failed_report = (
+                            "Sanitizer: CHECK failed:" in clean_line
+                        )
                         result_lines.append(stripped)
                         consecutive_blank = 0
                 else:
                     if summary_pattern.search(stripped):
                         result_lines.append(stripped)
+                        break
+                    elif is_check_failed_report and not stripped:
                         break
                     elif not stripped:
                         consecutive_blank += 1
