@@ -558,6 +558,14 @@ protected:
                 /// `SHOW COLUMNS` gates DDL-revealing columns to match `DESCRIBE` / `SHOW CREATE`.
                 const bool can_show_columns = access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
 
+                /// Dependency arrays expose other tables' names — `SHOW TABLES`-grade info about *those*
+                /// tables. Filter per element; skip only for users with global `SHOW TABLES`.
+                auto is_dependency_visible = [&](const StorageID & dependency_id)
+                {
+                    return !need_to_check_access_for_databases
+                        || access->isGranted(AccessType::SHOW_TABLES, dependency_id.database_name, dependency_id.table_name);
+                };
+
                 size_t src_index = 0;
                 size_t res_index = 0;
 
@@ -623,10 +631,7 @@ protected:
                         views_database_name_array.reserve(view_ids.size());
                         for (const auto & view_id : view_ids)
                         {
-                            /// Each dependent name leaks `SHOW TABLES` info about *that* table.
-                            /// Filter per view; skip only when the user has global `SHOW TABLES`.
-                            if (need_to_check_access_for_databases
-                                && !access->isGranted(AccessType::SHOW_TABLES, view_id.database_name, view_id.table_name))
+                            if (!is_dependency_visible(view_id))
                                 continue;
 
                             views_table_name_array.push_back(view_id.table_name);
@@ -902,6 +907,9 @@ protected:
                     dependencies_tables.reserve(dependencies.size());
                     for (const auto & dependency : dependencies)
                     {
+                        if (!is_dependency_visible(dependency))
+                            continue;
+
                         dependencies_databases.push_back(dependency.database_name);
                         dependencies_tables.push_back(dependency.table_name);
                     }
@@ -912,6 +920,9 @@ protected:
                     dependents_tables.reserve(dependents.size());
                     for (const auto & dependent : dependents)
                     {
+                        if (!is_dependency_visible(dependent))
+                            continue;
+
                         dependents_databases.push_back(dependent.database_name);
                         dependents_tables.push_back(dependent.table_name);
                     }

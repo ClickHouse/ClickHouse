@@ -114,9 +114,50 @@ SELECT
     arrayExists(x -> x = 'cross_dep', dependencies_table)
 FROM system.tables WHERE database = '$db' AND name = 'secret'"
 
+echo "--- cross-db loading dependency filter ---"
+# The loading-dependency graph carries dictionary edges absent from the view graph.
+# Names in the loading_* arrays must be filtered by SHOW TABLES per element, otherwise
+# a dictionary in $db2 sourcing from $db leaks $db2 names to a user with rights on $db only.
+${CLICKHOUSE_CLIENT} <<EOF
+CREATE TABLE $db.dict_src (id UInt64, v String) ENGINE = MergeTree ORDER BY id;
+CREATE DICTIONARY $db.local_dict (id UInt64, v String) PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' PASSWORD '' DB '$db' TABLE 'dict_src'))
+LAYOUT(FLAT()) LIFETIME(0);
+CREATE DICTIONARY $db2.cross_dict (id UInt64, v String) PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' PASSWORD '' DB '$db' TABLE 'dict_src'))
+LAYOUT(FLAT()) LIFETIME(0);
+CREATE TABLE $db2.hidden_src (id UInt64, v String) ENGINE = MergeTree ORDER BY id;
+CREATE DICTIONARY $db.leaky_dict (id UInt64, v String) PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' PASSWORD '' DB '$db2' TABLE 'hidden_src'))
+LAYOUT(FLAT()) LIFETIME(0);
+EOF
+
+loading_dependents_probe="
+SELECT
+    arrayExists(x -> x = 'local_dict', loading_dependent_table),
+    arrayExists(x -> x = 'cross_dict', loading_dependent_table),
+    arrayExists(x -> x = '$db2', loading_dependent_database)
+FROM system.tables WHERE database = '$db' AND name = 'dict_src'"
+
+loading_dependencies_probe="
+SELECT length(loading_dependencies_database), length(loading_dependencies_table)
+FROM system.tables WHERE database = '$db' AND name = 'leaky_dict'"
+
+# Unfiltered view (sanity): both dictionaries are dependents of dict_src,
+# and leaky_dict's dependency on $db2.hidden_src is registered.
+${CLICKHOUSE_CLIENT} --query "$loading_dependents_probe"
+${CLICKHOUSE_CLIENT} --query "$loading_dependencies_probe"
+
+# User with SHOW TABLES on $db.* only: $db2 names filtered out, $db names kept.
+run_user "$loading_dependents_probe"
+run_user "$loading_dependencies_probe"
+
 ${CLICKHOUSE_CLIENT} <<EOF
 DROP DATABASE IF EXISTS $db2;
 DROP USER IF EXISTS $user;
+DROP DICTIONARY IF EXISTS $db.local_dict;
+DROP DICTIONARY IF EXISTS $db.leaky_dict;
+DROP TABLE IF EXISTS $db.dict_src;
 DROP TABLE IF EXISTS $db.dep_view;
 DROP TABLE IF EXISTS $db.secret;
 EOF
