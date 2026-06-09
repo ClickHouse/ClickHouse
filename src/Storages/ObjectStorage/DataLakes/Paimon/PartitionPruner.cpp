@@ -25,6 +25,41 @@ extern const int BAD_ARGUMENTS;
 
 namespace Paimon
 {
+    /// Whether a column's min/max stats can be decoded by `getFieldFromBinaryRow` and used for pruning.
+    /// This must stay in sync with the `switch` in `getFieldFromBinaryRow`: building a `ColumnCondition`
+    /// for a type that `getFieldFromBinaryRow` cannot decode (e.g. `BINARY`/`VARBINARY`/`ARRAY`/`MAP`/`ROW`,
+    /// or a `TIMESTAMP` with precision > 3) would turn `use_paimon_minmax_index_pruning=1` into a query
+    /// exception whenever the predicate references such a column. For those columns pruning is simply disabled.
+    static bool canDecodeMinMaxStats(const DataType & type)
+    {
+        switch (type.root_type)
+        {
+            case RootDataType::CHAR:
+            case RootDataType::VARCHAR:
+            case RootDataType::BOOLEAN:
+            case RootDataType::DECIMAL:
+            case RootDataType::TINYINT:
+            case RootDataType::SMALLINT:
+            case RootDataType::INTEGER:
+            case RootDataType::BIGINT:
+            case RootDataType::FLOAT:
+            case RootDataType::DOUBLE:
+            case RootDataType::DATE:
+            case RootDataType::TIME_WITHOUT_TIME_ZONE:
+                return true;
+            case RootDataType::TIMESTAMP_WITHOUT_TIME_ZONE:
+            case RootDataType::TIMESTAMP_WITH_LOCAL_TIME_ZONE:
+            {
+                /// `BinaryRow::getTimestamp` only supports DateTime64 with scale <= 3; a higher-precision
+                /// timestamp column (e.g. TIMESTAMP(6)) would otherwise throw while reading the bound.
+                const auto * dt64 = typeid_cast<const DB::DataTypeDateTime64 *>(removeNullable(type.clickhouse_data_type).get());
+                return dt64 && dt64->getScale() <= 3;
+            }
+            default:
+                return false;
+        }
+    }
+
     static boost::intrusive_ptr<DB::IAST> createPartitionKeyAST(const DB::PaimonTableSchema & table_schema)
     {
         auto partition_key_ast = DB::make_intrusive<DB::ASTFunction>();
@@ -117,18 +152,10 @@ namespace Paimon
             if (partition_key_set.contains(field.name))
                 continue;
 
-            /// Skip columns whose min/max stats cannot be decoded safely yet, so that enabling
+            /// Skip columns whose min/max stats cannot be decoded safely, so that enabling
             /// `use_paimon_minmax_index_pruning` never turns a valid table into a query exception.
-            /// `BinaryRow::getTimestamp` only supports DateTime64 with scale <= 3; a higher-precision
-            /// timestamp column (e.g. TIMESTAMP(6)) would otherwise throw while reading the bound.
-            if (field.type.root_type == RootDataType::TIMESTAMP_WITHOUT_TIME_ZONE
-                || field.type.root_type == RootDataType::TIMESTAMP_WITH_LOCAL_TIME_ZONE)
-            {
-                const auto * dt64 = typeid_cast<const DB::DataTypeDateTime64 *>(
-                    removeNullable(field.type.clickhouse_data_type).get());
-                if (!dt64 || dt64->getScale() > 3)
-                    continue;
-            }
+            if (!canDecodeMinMaxStats(field.type))
+                continue;
 
             auto col_ast = DB::make_intrusive<DB::ASTFunction>();
             col_ast->name = "tuple";

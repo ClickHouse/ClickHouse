@@ -148,7 +148,12 @@ DB::Field getFieldFromBinaryRow(BinaryRow & row, Int32 pos, const DataType & dat
         case RootDataType::TIMESTAMP_WITHOUT_TIME_ZONE:
         case RootDataType::TIMESTAMP_WITH_LOCAL_TIME_ZONE: {
             const auto * type = typeid_cast<const DataTypeDateTime64 *>(removeNullable(data_type.clickhouse_data_type).get());
-            return DecimalField<DateTime64>(row.getTimestamp(pos, type->getScale()), type->getScale());
+            /// Paimon stores a TIMESTAMP with precision <= 3 as a millisecond count, so `getTimestamp` always
+            /// returns the value in milliseconds (scale 3) regardless of the column's declared scale. The field
+            /// must therefore be built with scale 3; `KeyCondition` rescales it to the column scale when comparing.
+            /// Using `type->getScale()` here would mislabel a lower-scale column (e.g. `DateTime64(1)`) and break
+            /// min/max pruning for it.
+            return DecimalField<DateTime64>(row.getTimestamp(pos, type->getScale()), 3);
         }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type {} in BinaryRow field", data_type.root_type);
