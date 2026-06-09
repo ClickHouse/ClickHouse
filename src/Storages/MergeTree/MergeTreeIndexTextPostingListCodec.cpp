@@ -216,10 +216,11 @@ void PostingListAccumulatorBitpacking::finalize(WriteBuffer & out, TokenPostings
         info.header |= SingleBlock;
 }
 
-void PostingListAccumulatorNone::sealSegment()
+void PostingListAccumulatorNone::sealSegment(roaring::BulkContext & bulk_context)
 {
     segments.push_back(std::move(current_segment));
     current_segment = PostingList{};
+    bulk_context = roaring::BulkContext{};
     rows_in_current_segment = 0;
 }
 

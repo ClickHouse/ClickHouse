@@ -226,7 +226,9 @@ private:
 class PostingListAccumulatorBitpacking final : public IPostingListAccumulator
 {
 public:
-    void insert(UInt32 row_id, size_t posting_list_block_size) { impl.insert(row_id, posting_list_block_size); }
+    /// The bulk context is part of the shared per-row `insert` signature (see `PostingListBuilder::add`);
+    /// the bitpacking codec streams deltas into a vector and does not use it.
+    void insert(UInt32 row_id, size_t posting_list_block_size, roaring::BulkContext &) { impl.insert(row_id, posting_list_block_size); }
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
     UInt32 cardinality() const override { return static_cast<UInt32>(impl.cardinality()); }
@@ -271,17 +273,16 @@ public:
 class PostingListAccumulatorNone final : public IPostingListAccumulator
 {
 public:
-    /// The `bulk_context` caches the current bitmap's container, so it is reset at every segment boundary.
-    /// The segment size is passed in (rather than stored) because it is a per-index constant.
-    void insert(UInt32 row_id, size_t posting_list_block_size)
+    /// `bulk_context` caches the current bitmap's container. It is owned by the caller (the
+    /// `PostingListBuilder`, where it stays cache-warm next to the token's hash-map entry) and passed in
+    /// by reference; it is reset at every segment boundary. The segment size is passed in (rather than
+    /// stored) because it is a per-index constant.
+    ALWAYS_INLINE void insert(UInt32 row_id, size_t posting_list_block_size, roaring::BulkContext & bulk_context)
     {
-        if (rows_in_current_segment == 0)
-            bulk_context = roaring::BulkContext{};
-
         current_segment.addBulk(bulk_context, row_id);
 
         if (++rows_in_current_segment == posting_list_block_size)
-            sealSegment();
+            sealSegment(bulk_context);
     }
 
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
@@ -300,11 +301,11 @@ public:
     size_t memoryUsageBytes() const override;
 
 private:
-    /// Seals the current (full) segment and starts a new one. Cold path.
-    void sealSegment();
+    /// Seals the current (full) segment and starts a new one. Resets the caller-owned `bulk_context`
+    /// because the new segment is a fresh bitmap with no cached container. Cold path.
+    void sealSegment(roaring::BulkContext & bulk_context);
 
     PostingList current_segment;
-    roaring::BulkContext bulk_context;
     size_t rows_in_current_segment = 0;
     std::vector<PostingList> segments;
 };
