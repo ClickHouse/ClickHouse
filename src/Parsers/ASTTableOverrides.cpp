@@ -142,12 +142,15 @@ void ASTTableOverride::writeJSON(WriteBuffer & out) const
 void ASTTableOverrideList::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
-    children = r.readChildren();
+    /// `TableOverrideList` must contain only `TableOverride` nodes: semantic lookup through
+    /// `tryGetTableOverride` / `hasOverride` only sees children registered in `positions`,
+    /// so a foreign child would still be formatted but silently ignored. Reject it here.
+    children = r.readChildrenOfType<ASTTableOverride>("TableOverrideList");
     positions.clear();
     for (size_t i = 0; i < children.size(); ++i)
     {
-        if (auto * override = children[i]->as<ASTTableOverride>())
-            positions[override->table_name] = i;
+        auto & override = children[i]->as<ASTTableOverride &>();
+        positions[override.table_name] = i;
     }
 }
 

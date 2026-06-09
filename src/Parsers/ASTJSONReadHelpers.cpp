@@ -70,6 +70,12 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
             "Structured Field value exceeds maximum AST depth limit ({}) during JSON AST deserialization",
             max_depth);
 
+    /// `field_type` is `Field::getTypeName()` of the original value, always emitted as a JSON
+    /// string by `writeFieldJSON`. Validate it explicitly so a missing or non-string
+    /// `field_type` is rejected as `BAD_ARGUMENTS` instead of throwing a raw `Poco` exception.
+    if (!obj.has("field_type") || !obj.get("field_type").isString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Field JSON requires a string 'field_type' during AST JSON deserialization");
     String field_type = obj.getValue<String>("field_type");
 
     if (field_type == "Null")
@@ -92,10 +98,28 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Unexpected 'value' for Null field during AST JSON deserialization (expected null, '-Inf', or '+Inf')");
     }
+    /// The scalar branches below validate the exact JSON type emitted by `writeFieldJSON`
+    /// before extracting. `Poco::Dynamic::Var` otherwise coerces freely (e.g. the string
+    /// `"yes"` becomes `true`, `"123"` becomes a number), which would let malformed
+    /// `clickhouse_json` deserialize into a different valid literal instead of being
+    /// rejected at the boundary. A JSON boolean is reported as `isInteger()`/`isNumeric()`
+    /// too (`bool` is integral in Poco), so the numeric branches exclude `isBoolean()`.
     if (field_type == "UInt64")
+    {
+        const auto value_var = obj.get("value");
+        if (!value_var.isInteger() || value_var.isBoolean())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected an integer 'value' for UInt64 field during AST JSON deserialization");
         return Field(static_cast<UInt64>(obj.getValue<Poco::UInt64>("value")));
+    }
     if (field_type == "Int64")
+    {
+        const auto value_var = obj.get("value");
+        if (!value_var.isInteger() || value_var.isBoolean())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected an integer 'value' for Int64 field during AST JSON deserialization");
         return Field(static_cast<Int64>(obj.getValue<Poco::Int64>("value")));
+    }
     if (field_type == "Float64")
     {
         /// Non-finite values (`nan`, `inf`, `-inf`) are encoded as string sentinels by the
@@ -113,12 +137,25 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Unexpected string sentinel '{}' for Float64 `value` during AST JSON deserialization", val);
         }
+        if (!value_var.isNumeric() || value_var.isBoolean())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected a number or string sentinel 'value' for Float64 field during AST JSON deserialization");
         return Field(obj.getValue<double>("value"));
     }
     if (field_type == "Bool")
+    {
+        if (!obj.get("value").isBoolean())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected a boolean 'value' for Bool field during AST JSON deserialization");
         return Field(obj.getValue<bool>("value"));
+    }
     if (field_type == "String")
+    {
+        if (!obj.get("value").isString())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected a string 'value' for String field during AST JSON deserialization");
         return Field(obj.getValue<String>("value"));
+    }
 
     if (field_type == "Array")
     {

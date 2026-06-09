@@ -47,3 +47,30 @@ SELECT formatQueryFromJSON('{"type":"UserNamesWithHost","children":[{"type":"Ide
 
 -- `RENAME` requires a non-empty `elements` list:
 SELECT formatQueryFromJSON('{"type":"RenameQuery"}'); -- { serverError BAD_ARGUMENTS }
+
+-- More typed containers downcast their children during execution, so a foreign child type
+-- from malformed `clickhouse_json` must be rejected at the boundary instead of reaching a
+-- downcast / internal-exception path (or being silently dropped) later:
+SELECT formatQueryFromJSON('{"type":"TablesInSelectQuery","children":[{"type":"Identifier","name":"a"}]}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"TableOverrideList","children":[{"type":"Identifier","name":"a"}]}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ColumnsTransformerList","children":[{"type":"Identifier","name":"a"}]}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ColumnsReplaceTransformer","children":[{"type":"Identifier","name":"a"}]}'); -- { serverError BAD_ARGUMENTS }
+
+-- `INTERSECT` / `EXCEPT` operands must be selects, not arbitrary nodes (otherwise the AST would
+-- format with an operator separator while `getListOfSelects` silently drops the foreign child):
+SELECT formatQueryFromJSON('{"type":"SelectIntersectExceptQuery","final_operator":"INTERSECT ALL","children":[{"type":"Identifier","name":"a"},{"type":"Identifier","name":"b"}]}'); -- { serverError BAD_ARGUMENTS }
+
+-- Output options (compression / APPEND / TRUNCATE / AND STDOUT) are only formatted inside the
+-- `INTO OUTFILE` branch, so they must not be accepted without an `out_file` target:
+SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","compression":{"type":"Identifier","name":"gz"}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","is_outfile_append":true}'); -- { serverError BAD_ARGUMENTS }
+-- `compression_level` (the `LEVEL` clause) is only formatted inside the `compression` branch:
+SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","out_file":{"type":"Identifier","name":"f"},"compression_level":{"type":"Identifier","name":"1"}}'); -- { serverError BAD_ARGUMENTS }
+
+-- Strict scalar typing for `Field` payloads: each `value` must have exactly the JSON type the
+-- writer emits, so coercible mismatches (string-for-number, number-for-string, string-for-bool)
+-- are rejected instead of being silently rewritten into a different literal:
+SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"UInt64","value":"123"}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"Int64","value":"123"}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"String","value":123}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"Bool","value":"yes"}}'); -- { serverError BAD_ARGUMENTS }

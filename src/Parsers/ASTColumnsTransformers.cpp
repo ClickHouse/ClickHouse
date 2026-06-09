@@ -430,6 +430,18 @@ void ASTColumnsTransformerList::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     children = r.readChildren();
+
+    /// `IASTColumnsTransformer::transform` only dispatches `ColumnsApplyTransformer`,
+    /// `ColumnsExceptTransformer`, and `ColumnsReplaceTransformer`, silently ignoring any
+    /// other child type. Reject foreign children from malformed `clickhouse_json` here so
+    /// they cannot be formatted in the AST while being skipped during semantic transformation.
+    for (const auto & child : children)
+        if (!child
+            || !(child->as<ASTColumnsApplyTransformer>()
+                 || child->as<ASTColumnsExceptTransformer>()
+                 || child->as<ASTColumnsReplaceTransformer>()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected child node type in ColumnsTransformerList during AST JSON deserialization");
 }
 
 void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
@@ -516,7 +528,10 @@ void ASTColumnsReplaceTransformer::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     is_strict = r.getBool("is_strict");
-    children = r.readChildren();
+    /// `transform` downcasts every child with `replace_child->as<Replacement &>()` and then
+    /// reads `replacement.children[0]`, so a foreign child type from malformed `clickhouse_json`
+    /// must be rejected here instead of reaching that downcast during execution.
+    children = r.readChildrenOfType<ASTColumnsReplaceTransformer::Replacement>("ColumnsReplaceTransformer");
 }
 
 void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const

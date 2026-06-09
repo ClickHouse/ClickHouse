@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 void ASTQueryWithOutput::writeOutputOptionsJSON(JSONObjectWriter & w) const
 {
     w.writeChild("out_file", out_file);
@@ -46,6 +51,21 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
     setIsOutfileAppend(r.getBool("is_outfile_append"));
     setIsOutfileTruncate(r.getBool("is_outfile_truncate"));
     setIsIntoOutfileWithStdout(r.getBool("is_into_outfile_with_stdout"));
+
+    /// `compression`, `compression_level`, and the `APPEND` / `TRUNCATE` / `AND STDOUT` flags
+    /// are only emitted by `formatImpl` inside the `INTO OUTFILE` branch; without `out_file`
+    /// they would be accepted here and silently dropped on the next format. Reject that shape
+    /// so the deserialized AST round-trips to the same SQL it was built from.
+    if (!out_file
+        && (compression || compression_level
+            || isOutfileAppend() || isOutfileTruncate() || isIntoOutfileWithStdout()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Output options (compression / APPEND / TRUNCATE / AND STDOUT) require an INTO OUTFILE target during AST JSON deserialization");
+
+    /// `compression_level` (the `LEVEL` clause) is only formatted inside the `compression` branch.
+    if (compression_level && !compression)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Output 'compression_level' requires 'compression' during AST JSON deserialization");
 }
 
 void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const

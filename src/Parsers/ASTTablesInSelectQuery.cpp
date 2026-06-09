@@ -436,7 +436,11 @@ static JoinLocality parseJoinLocality(const String & s)
 void ASTTablesInSelectQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
-    children = r.readChildren();
+    /// `TablesInSelectQuery` is not a generic expression list: callers such as
+    /// `ASTSelectQuery::setDatabaseName` / `replaceDatabaseAndTable` downcast every child
+    /// with `child->as<ASTTablesInSelectQueryElement &>()`, so a foreign child type must be
+    /// rejected at the `clickhouse_json` boundary instead of reaching that downcast later.
+    children = r.readChildrenOfType<ASTTablesInSelectQueryElement>("TablesInSelectQuery");
 }
 
 void ASTTablesInSelectQueryElement::readJSON(const Poco::JSON::Object & json)

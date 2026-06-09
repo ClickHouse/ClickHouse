@@ -116,5 +116,17 @@ void ASTSelectIntersectExceptQuery::readJSON(const Poco::JSON::Object & json)
     if (children.size() < 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Expected at least two select operands in `SelectIntersectExceptQuery`, got {}, during AST JSON deserialization", children.size());
+
+    /// Every child must be a select operand: `getListOfSelects` (and the interpreter built on
+    /// top of it) only recognizes these three node types and silently drops any other, while
+    /// `formatImpl` would still print it with the operator separator. Reject foreign children
+    /// from malformed `clickhouse_json` so the AST cannot format as different SQL than it means.
+    for (const auto & child : children)
+        if (!child
+            || !(child->as<ASTSelectQuery>()
+                 || child->as<ASTSelectWithUnionQuery>()
+                 || child->as<ASTSelectIntersectExceptQuery>()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected only select operands in `SelectIntersectExceptQuery` during AST JSON deserialization");
 }
 }

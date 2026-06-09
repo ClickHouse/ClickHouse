@@ -124,6 +124,22 @@ public:
         return result;
     }
 
+    /// Read the "children" array and require every element to be of the concrete AST type `T`.
+    /// Typed-container nodes (e.g. `TablesInSelectQuery`, `TableOverrideList`) downcast their
+    /// children unconditionally during semantic processing, so an unexpected child type from
+    /// malformed `clickhouse_json` must be rejected here instead of reaching a
+    /// `typeid_cast`/internal-exception path (or being silently dropped) later.
+    template <typename T>
+    ASTs readChildrenOfType(std::string_view node_name) const
+    {
+        ASTs result = readChildren();
+        for (const auto & child : result)
+            if (!child || !child->as<T>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Unexpected child node type in {} during AST JSON deserialization", node_name);
+        return result;
+    }
+
     /// Read a Field value from a nested JSON object.
     /// Returns a default `Field` when the key is absent.
     /// Throws `BAD_ARGUMENTS` when the key exists but its value is not a JSON object,
