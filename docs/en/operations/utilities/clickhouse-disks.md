@@ -67,3 +67,5 @@ In these documentation file all mandatory positional arguments are referred as `
   Switch to disk `disk` on path `path` (if `path` is not specified default value is a previous path on disk `disk`).
 * `write (w) [--path-from path] <path-to>`.
   Write a file from `path` (`stdin` if `path` is not supplied, input must finish by Ctrl+D) to `path-to`.
+* `wc <path> [--bytes] [--lines] [--words]`
+  Count bytes, lines and words in the file at `path` on the current disk (like Unix `wc`). With no flag all three counts are printed in the order lines, words, bytes, followed by the path. Use `--bytes` (`-c`), `--lines` (`-l`), `--words` (`-w`) to select specific counts.
