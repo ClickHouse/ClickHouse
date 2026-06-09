@@ -1,4 +1,4 @@
-#include "SnapshotAnalyzer.h"
+#include <SnapshotAnalyzer.h>
 
 #include <array>
 #include <bit>
@@ -15,7 +15,7 @@
 #include <Coordination/CompactChildrenSet.h>
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperSnapshotManager.h>
-#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -81,10 +81,23 @@ struct SnapshotStats
 
 std::unique_ptr<ReadBuffer> openSnapshotFile(const std::string & path)
 {
-    std::unique_ptr<ReadBuffer> buf = std::make_unique<ReadBufferFromFile>(path);
-    if (path.ends_with(".zstd"))
-        buf = wrapReadBufferWithCompressionMethod(std::move(buf), CompressionMethod::Zstd);
-    return buf;
+    /// Mirror KeeperSnapshotManager: a snapshot is either zstd-compressed (the default,
+    /// keeper_server.coordination_settings.compress_snapshots_with_zstd_format=true) or compressed
+    /// with ClickHouse's CompressedWriteBuffer otherwise. The file extension is not authoritative
+    /// (both formats are written to *.bin / *.bin.zstd depending on the setting), so detect the
+    /// format by the leading magic bytes exactly like KeeperSnapshotManager::isZstdCompressed.
+    static constexpr unsigned char ZSTD_COMPRESSED_MAGIC[4] = {0x28, 0xB5, 0x2F, 0xFD};
+
+    auto file = std::make_unique<ReadBufferFromFile>(path);
+
+    unsigned char magic[sizeof(ZSTD_COMPRESSED_MAGIC)]{};
+    size_t bytes_read = file->read(reinterpret_cast<char *>(magic), sizeof(magic));
+    file->seek(0, SEEK_SET);
+
+    if (bytes_read == sizeof(magic) && memcmp(magic, ZSTD_COMPRESSED_MAGIC, sizeof(magic)) == 0)
+        return wrapReadBufferWithCompressionMethod(std::move(file), CompressionMethod::Zstd);
+
+    return std::make_unique<CompressedReadBufferFromFile>(std::move(file));
 }
 
 /// Estimate heap memory used by CompactChildrenSet.
@@ -418,8 +431,15 @@ void printStats(const SnapshotStats & stats)
     std::cout << fmt::format("  Uncompressed snapshot size: {} bytes\n", stats.uncompressed_size);
     std::cout << fmt::format("  Number of nodes: {}\n", stats.num_nodes);
     std::cout << fmt::format("  Ephemeral nodes: {}\n", stats.num_ephemeral);
-    std::cout << fmt::format("  Digest: {}\n", stats.nodes_digest);
-    std::cout << fmt::format("  ZXID: {}\n", stats.zxid);
+    /// Both fields are only present in newer snapshots; don't print a misleading 0 when they are absent.
+    if (stats.has_digest)
+        std::cout << fmt::format("  Digest: {}\n", stats.nodes_digest);
+    else
+        std::cout << "  Digest: NO_DIGEST\n";
+    if (stats.version >= SnapshotVersion::V5)
+        std::cout << fmt::format("  ZXID: {}\n", stats.zxid);
+    else
+        std::cout << "  ZXID: n/a (pre-V5 snapshot)\n";
     std::cout << fmt::format("  Session ID counter: {}\n", stats.session_id_counter);
     std::cout << fmt::format("  Nodes with non-empty data: {}\n", stats.num_nonempty_data);
     std::cout << fmt::format("  Total node data size: {} bytes (avg {:.1f})\n", stats.total_data_size, avg(stats.total_data_size));

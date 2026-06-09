@@ -30,7 +30,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
 
-#include "SnapshotAnalyzer.h"
+#include <SnapshotAnalyzer.h>
 
 using namespace Coordination;
 using namespace DB;
@@ -40,7 +40,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_SNAPSHOT;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
