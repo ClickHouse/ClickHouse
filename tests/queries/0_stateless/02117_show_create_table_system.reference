@@ -112,6 +112,17 @@ CREATE TABLE system.current_roles
 )
 ENGINE = SystemCurrentRoles
 COMMENT 'Contains active roles of a current user. SET ROLE changes the contents of this table.'
+CREATE TABLE system.data_skipping_index_types
+(
+    `name` String,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
+)
+ENGINE = SystemDataSkippingIndexTypes
+COMMENT 'Contains a list of all available data skipping index types along with their embedded documentation.'
 CREATE TABLE system.data_skipping_indices
 (
     `database` String,
@@ -617,6 +628,7 @@ CREATE TABLE system.parts_columns
     `estimates.min` Nullable(String),
     `estimates.max` Nullable(String),
     `estimates.cardinality` Nullable(UInt64),
+    `estimates.null_count` Nullable(UInt64),
     `serialization_kind` String,
     `substreams` Array(String),
     `filenames` Array(String),
@@ -871,7 +883,9 @@ CREATE TABLE system.quotas
     `durations` Array(UInt32),
     `apply_to_all` UInt8,
     `apply_to_list` Array(String),
-    `apply_to_except` Array(String)
+    `apply_to_except` Array(String),
+    `ipv4_prefix_bits` Nullable(UInt8),
+    `ipv6_prefix_bits` Nullable(UInt8)
 )
 ENGINE = SystemQuotas
 COMMENT 'Contains information about quotas.'

@@ -7,6 +7,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
@@ -25,6 +26,7 @@
 #include <IO/MMapReadBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/EmptyReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -52,6 +54,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/checkStackSize.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
@@ -76,6 +79,7 @@
 #include <algorithm>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/String.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -137,12 +141,16 @@ namespace ErrorCodes
     extern const int CANNOT_DETECT_FORMAT;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 using String = std::string;
 
 namespace
 {
+/// Bound on the recursion depth of `listFilesWithRegexpMatchingImpl`.
+constexpr size_t MAX_LIST_FILES_RECURSION_DEPTH = 1000;
+
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
@@ -151,8 +159,19 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
-    bool recursive)
+    bool recursive,
+    size_t depth)
 {
+    if (depth > MAX_LIST_FILES_RECURSION_DEPTH)
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+            "Maximum recursion depth ({}) exceeded while listing files for pattern '{}'.",
+            MAX_LIST_FILES_RECURSION_DEPTH, for_match);
+
+    /// On systems with small stacks (e.g., Musl) the depth cap above is not enough on its own,
+    /// because each recursion frame can be large. Probe the remaining stack periodically.
+    if (depth % 16 == 0)
+        checkStackSize();
+
     const size_t first_glob_pos = for_match.find_first_of("*?{");
 
     if (first_glob_pos == std::string::npos)
@@ -234,12 +253,11 @@ void listFilesWithRegexpMatchingImpl(
             {
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
                                                 looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
-                                                total_bytes_to_read, result, recursive);
+                                                total_bytes_to_read, result, recursive, depth + 1);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
-                /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result, false);
+                                                total_bytes_to_read, result, false, depth + 1);
         }
     }
 }
@@ -253,7 +271,7 @@ std::vector<std::string> listFilesWithRegexpMatching(
     Strings for_match_paths_expanded = expandSelectionGlob(for_match);
 
     for (const auto & for_match_expanded : for_match_paths_expanded)
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false);
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, 0);
 
     return result;
 }
@@ -1469,6 +1487,8 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
 
 Chunk StorageFileSource::generate()
 {
+    const bool is_one_format = Poco::toLower(storage->format_name) == "one";
+
     while (!finished_generate)
     {
         /// Open file lazily on first read. This is needed to avoid too many open files from different streams.
@@ -1495,12 +1515,23 @@ Chunk StorageFileSource::generate()
                         if (need_only_count && tryGetCountFromCache(file_stat))
                             continue;
 
-                        read_buf = archive_reader->readFile(*filename_override, /*throw_on_not_found=*/false);
-                        if (!read_buf)
-                            continue;
+                        if (is_one_format)
+                        {
+                            if (!archive_reader->fileExists(*filename_override))
+                                continue;
 
-                        if (auto progress_callback = getContext()->getFileProgressCallback())
-                            progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
+                            /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
+                            read_buf = std::make_unique<EmptyReadBuffer>();
+                        }
+                        else
+                        {
+                            read_buf = archive_reader->readFile(*filename_override, /*throw_on_not_found=*/false);
+                            if (!read_buf)
+                                continue;
+
+                            if (auto progress_callback = getContext()->getFileProgressCallback())
+                                progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
+                        }
                     }
                     else
                     {
@@ -1547,9 +1578,17 @@ Chunk StorageFileSource::generate()
                         if (need_only_count && tryGetCountFromCache(current_archive_stat))
                             continue;
 
-                        read_buf = archive_reader->readFile(std::move(file_enumerator));
-                        if (auto progress_callback = getContext()->getFileProgressCallback())
-                            progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
+                        if (is_one_format)
+                        {
+                            /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
+                            read_buf = std::make_unique<EmptyReadBuffer>();
+                        }
+                        else
+                        {
+                            read_buf = archive_reader->readFile(std::move(file_enumerator));
+                            if (auto progress_callback = getContext()->getFileProgressCallback())
+                                progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
+                        }
                     }
                 }
                 else
@@ -1598,7 +1637,13 @@ Chunk StorageFileSource::generate()
                 if (need_only_count && tryGetCountFromCache(file_stat))
                     continue;
 
-                read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+                if (is_one_format)
+                {
+                    /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
+                    read_buf = std::make_unique<EmptyReadBuffer>();
+                }
+                else
+                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
             }
 
             size_t file_num = 0;
@@ -1830,6 +1875,12 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
+
+    if (boost::iequals(storage->format_name, "Parquet") || boost::iequals(storage->format_name, "ORC"))
+        prepareEagerKeyConditionSets(
+            filter_actions_dag,
+            storage_snapshot, info.source_header,
+            query_info.prewhere_info, query_info.row_level_filter, getContext());
 
     createIterator(predicate);
 }
