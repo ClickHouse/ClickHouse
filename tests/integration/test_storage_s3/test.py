@@ -59,6 +59,7 @@ def started_cluster():
         cluster.add_instance(
             "restricted_dummy",
             main_configs=["configs/config_for_test_remote_host_filter.xml"],
+            user_configs=["configs/allow_server_credentials.xml"],
             with_minio=True,
         )
         cluster.add_instance(
@@ -103,6 +104,7 @@ def started_cluster():
                 "configs/s3_max_redirects.xml",
                 "configs/s3_retry.xml",
                 "configs/sync_insert.xml",
+                "configs/allow_server_credentials.xml",
             ],
         )
         cluster.add_instance(
