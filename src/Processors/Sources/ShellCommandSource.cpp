@@ -276,9 +276,9 @@ public:
                     if (sampler)
                     {
                         sampler->recordOutputBytes(static_cast<size_t>(res));
-                        /// Child is provably alive — it just wrote output.
-                        /// Sample its subtree VmHWM for the executable path;
-                        /// no-op on the pool path (executable_root_pid <= 0).
+                        /// The child produced this output, so it was running; sample its subtree VmHWM.
+                        /// It may have already exited (short-lived UDF) — then the read finds no VmHWM
+                        /// and this is a harmless no-op. Also a no-op on the pool path (executable_root_pid <= 0).
                         sampler->sampleExecutablePeak();
                     }
                 }
