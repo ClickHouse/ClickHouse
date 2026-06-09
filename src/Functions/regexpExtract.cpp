@@ -271,6 +271,8 @@ SELECT
 
     /// For Spark compatibility.
     factory.registerAlias("REGEXP_EXTRACT", "regexpExtract", FunctionFactory::Case::Insensitive);
+    /// For Oracle/MySQL/Snowflake compatibility.
+    factory.registerAlias("REGEXP_SUBSTR", "regexpExtract", FunctionFactory::Case::Insensitive);
 }
 
 }

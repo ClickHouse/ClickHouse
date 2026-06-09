@@ -11,6 +11,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnQBit.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Columns/ColumnVariant.h>
@@ -2846,12 +2847,25 @@ struct ConvertImplGenericFromString
 
 struct ConvertImplFromDynamicToColumn
 {
-    /// Variant and Dynamic hold NULLs natively via NULL_DISCRIMINATOR, so they
-    /// do not need Nullable wrapping. `canBeInsideNullable` returns false for them
-    /// (meaning they cannot be *wrapped* in Nullable), but that does not mean they
-    /// cannot represent NULL — so we must exclude them from the throw check.
-    static bool shouldThrowOnNull(bool keep_nullable, const DataTypePtr & result_type);
+    /// Returns true when a NULL in Dynamic/Variant must cause an exception
+    /// rather than being silently replaced with a default value.
+    /// This only fires when cast_keep_nullable is on AND the result type
+    /// is neither nullable-like nor wrappable in Nullable (e.g. Array).
+    static bool shouldThrowOnNull(bool keep_nullable, const DataTypePtr & result_type)
+    {
+        return keep_nullable && !canContainNull(*result_type) && !result_type->canBeInsideNullable();
+    }
 
+    static ColumnPtr execute(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert,
+        bool throw_on_null = false);
+};
+
+struct ConvertImplFromVariantToColumn
+{
     static ColumnPtr execute(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
@@ -3069,6 +3083,20 @@ public:
     {
         NullPresence null_presence = getNullPresense(arguments);
 
+        /// When cast_keep_nullable is enabled, treat Dynamic and Variant
+        /// as Nullable because they can contain nulls.
+        if (settings.cast_keep_nullable)
+        {
+            for (const auto & arg : arguments)
+            {
+                if (isDynamic(*arg.type) || isVariant(*arg.type))
+                {
+                    null_presence.has_nullable = true;
+                    break;
+                }
+            }
+        }
+
         if (null_presence.has_null_constant)
         {
             return makeNullable(std::make_shared<DataTypeNothing>());
@@ -3204,7 +3232,23 @@ public:
         /// Maybe it's a bug, or maybe there's some logic behind it that I couldn't comprehend.
         /// For now, here's a workaround.
         DataTypePtr result_type = weird_result_type;
-        if (getNullPresense(arguments).has_nullable && !isNullableOrLowCardinalityNullable(result_type))
+        auto null_presence = getNullPresense(arguments);
+        /// When cast_keep_nullable is enabled, treat Dynamic and Variant
+        /// as Nullable because they can contain nulls.
+        bool has_dynamic_or_variant = false;
+        if (settings.cast_keep_nullable)
+        {
+            for (const auto & arg : arguments)
+            {
+                if (isDynamic(*arg.type) || isVariant(*arg.type))
+                {
+                    null_presence.has_nullable = true;
+                    has_dynamic_or_variant = true;
+                    break;
+                }
+            }
+        }
+        if (null_presence.has_nullable && !isNullableOrLowCardinalityNullable(result_type))
             result_type = std::make_shared<DataTypeNullable>(std::move(result_type));
 
         try
@@ -3212,7 +3256,10 @@ public:
             /// Do something like IExecutableFunction::defaultImplementationForNulls.
             /// We can't just enable default implementation for nulls because we need to know
             /// whether the result is nullable (`to_nullable`).
-            if (result_type->isNullable() && !std::is_same_v<ToDataType, DataTypeString>)
+            /// For DataTypeString we normally skip this branch (toString handles nullable
+            /// arguments itself, e.g. nullable timezone), but for Dynamic/Variant we must
+            /// enter it to extract their null map.
+            if (result_type->isNullable() && (!std::is_same_v<ToDataType, DataTypeString> || has_dynamic_or_variant))
             {
                 if (result_type->onlyNull())
                     return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -3220,27 +3267,78 @@ public:
                 ColumnPtr result_null_map;
                 for (const auto & arg : arguments)
                 {
-                    if (!arg.type->isNullable())
-                        continue;
-                    if (isColumnConst(*arg.column))
+                    if (arg.type->isNullable())
                     {
-                        if (arg.column->onlyNull())
-                            return result_type->createColumnConstWithDefaultValue(input_rows_count);
-                        else
+                        if (isColumnConst(*arg.column))
+                        {
+                            if (arg.column->onlyNull())
+                                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
                             continue;
+                        }
+                        if (result_null_map)
+                        {
+                            MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                            auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                            const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                                result_null_map_data[i] |= null_map[i];
+                            result_null_map = std::move(mut);
+                        }
+                        else
+                        {
+                            result_null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                        }
                     }
-                    if (result_null_map)
+                    else if (isDynamic(*arg.type))
                     {
-                        MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
-                        auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
-                        const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
-                        for (size_t i = 0; i < input_rows_count; ++i)
-                            result_null_map_data[i] |= null_map[i];
-                        result_null_map = std::move(mut);
+                        if (isColumnConst(*arg.column))
+                        {
+                            if (arg.column->onlyNull())
+                                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+                            continue;
+                        }
+                        const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arg.column);
+                        auto dynamic_null_map = column_dynamic.getVariantColumn().createNullMap();
+                        if (result_null_map)
+                        {
+                            MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                            auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                            const auto & null_map_data = assert_cast<const ColumnUInt8 &>(*dynamic_null_map).getData();
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                                result_null_map_data[i] |= null_map_data[i];
+                            result_null_map = std::move(mut);
+                        }
+                        else
+                        {
+                            result_null_map = std::move(dynamic_null_map);
+                        }
                     }
-                    else
+                    else if (isVariant(*arg.type))
                     {
-                        result_null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                        if (isColumnConst(*arg.column))
+                        {
+                            if (arg.column->onlyNull())
+                                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+                            continue;
+                        }
+                        const auto & column_variant = assert_cast<const ColumnVariant &>(*arg.column);
+                        auto variant_null_map = column_variant.createNullMap();
+                        if (result_null_map)
+                        {
+                            MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                            auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                            const auto & null_map_data = assert_cast<const ColumnUInt8 &>(*variant_null_map).getData();
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                                result_null_map_data[i] |= null_map_data[i];
+                            result_null_map = std::move(mut);
+                        }
+                        else
+                        {
+                            result_null_map = std::move(variant_null_map);
+                        }
                     }
                 }
 
@@ -3329,6 +3427,18 @@ private:
             };
 
             return ConvertImplFromDynamicToColumn::execute(
+                arguments, result_type, input_rows_count, nested_convert,
+                ConvertImplFromDynamicToColumn::shouldThrowOnNull(settings.cast_keep_nullable, result_type));
+        }
+
+        if (isVariant(from_type))
+        {
+            auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & to_type) -> ColumnPtr
+            {
+                return executeInternal(args, to_type, args[0].column->size(), /*to_nullable=*/ false);
+            };
+
+            return ConvertImplFromVariantToColumn::execute(
                 arguments, result_type, input_rows_count, nested_convert,
                 ConvertImplFromDynamicToColumn::shouldThrowOnNull(settings.cast_keep_nullable, result_type));
         }

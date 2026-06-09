@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <Functions/IFunction.h>
