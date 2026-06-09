@@ -204,7 +204,7 @@ analyzeSparseColumnGranules(
 
     struct ChunkResult
     {
-        MarkRange range;
+        MarkRange range{0, 0};
         size_t rows_in_chunk = 0;
         /// The chunk's offsets column with positions in `[0, rows_in_chunk)`. After all
         /// chunks complete, these get concatenated per original `MarkRange` (with each
