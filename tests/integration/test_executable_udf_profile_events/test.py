@@ -498,15 +498,16 @@ def test_check_exit_code_false_lingering_child_is_bounded_and_flushes_bytes(star
     )
 
 
-def test_peak_memory_includes_post_eof_allocation(started_cluster):
+def test_peak_memory_excludes_post_eof_allocation(started_cluster):
     _skip_msan()
     # udf_post_eof_alloc writes every expected row, closes stdout, then allocates
-    # 256 MiB and holds it for ~2 s before exiting 0 (default check_exit_code=true).
-    # The peak sampler keeps sampling the child's subtree at its end-of-stream
-    # cadence while the child lingers through the blocking reap, so this post-output
-    # allocation is observed in the peak — consistent with the CPU and elapsed that
-    # wait4/recordExecutableElapsed attribute to the same post-EOF interval. The 2 s
-    # hold spans many sample intervals, so capture is deterministic, not racy.
+    # 256 MiB and touches every page before exiting 0 (default check_exit_code=true).
+    # Sampling stops at stdout EOF (output-phase contract), so the post-close 256 MiB
+    # must NOT appear in the peak; only the ~10 MiB interpreter footprint is measured.
+    # Elapsed time and CPU still include the post-EOF interval by design.
+    #
+    # Mentally-revert: if sampling continued post-EOF, the implied peak would be
+    # ~256 MiB and the < 64 MiB assertion below would fail.
     qid = "exec-post-eof-alloc-1"
     _run(
         "SELECT sum(test_udf_post_eof_alloc(number)) FROM numbers(4)",
@@ -519,11 +520,9 @@ def test_peak_memory_includes_post_eof_allocation(started_cluster):
     assert elapsed_us > 0, "ElapsedMicroseconds is 0; implied-peak calculation would divide by zero"
 
     implied_peak_mib = byte_seconds * 1e6 / elapsed_us / 1048576
-    # The only large allocation (256 MiB) happens after stdout EOF, so observing it
-    # proves sampling continues through the post-EOF reap rather than freezing at
-    # the EOF sample. A ~10 MiB reading (the interpreter alone) would mean the peak
-    # stopped at EOF.
-    assert implied_peak_mib >= 200, (
-        f"post-EOF 256 MiB allocation not observed: implied peak {implied_peak_mib:.1f} MiB < 200 MiB "
+    # The 256 MiB is allocated only after stdout EOF and must be excluded from the
+    # peak; the output-phase peak is the ~10 MiB interpreter.
+    assert implied_peak_mib < 64, (
+        f"post-EOF 256 MiB allocation leaked into peak: implied peak {implied_peak_mib:.1f} MiB >= 64 MiB "
         f"(byte_seconds={byte_seconds}, elapsed_us={elapsed_us})"
     )

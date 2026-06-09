@@ -78,22 +78,27 @@ public:
     /// Executable (non-pool) path: walk the subtree from `executable_root_pid`,
     /// read `VmHWM` from `/proc/<pid>/status` for each pid, and keep a running
     /// max in `executable_peak_rss_bytes`. Invoked from both IO loops (stdout
-    /// read and stdin write). The first call always samples (start); subsequent
-    /// calls with `is_final=false` are throttled to at most one walk per ~5 ms.
-    /// One best-effort final call (`is_final=true`) is issued at stdout EOF. The
-    /// final call does not flag a failed root read: the child has closed stdout
-    /// and has often already exited at that point, so a failed root read is
-    /// expected rather than a seccomp/sandbox degradation. `VmHWM` monotonicity
+    /// read and stdin write). The first call always samples; subsequent calls are
+    /// throttled to at most one subtree walk per ~5 ms. `VmHWM` monotonicity
     /// keeps the running max correct under sparse sampling. No-op when
     /// `executable_root_pid <= 0`. Thread-safe: may be called concurrently from
     /// the write-buffer send thread and the read-buffer pull thread.
+    ///
+    /// Contract: sampling covers only the input/output phase and ends when the
+    /// function stops producing output (stdout EOF). Memory the child allocates
+    /// after closing stdout — e.g. while `check_exit_code=true` blocks in
+    /// `command->wait` — is NOT included in the peak, even though that interval
+    /// still contributes to `ExecutableUserDefinedFunctionElapsedMicroseconds`
+    /// and the `wait4` CPU events.
     ///
     /// Limitation: only the UDF process and its live descendants at a sample
     /// point are captured. A short-lived child that allocates and is reaped
     /// between two consecutive throttled samples is best-effort and may be
     /// under-counted. A process that is alive at least once after reaching its
-    /// peak is captured exactly, because `VmHWM` is monotonic.
-    void sampleExecutablePeak(bool is_final = false) noexcept;
+    /// peak is captured exactly, because `VmHWM` is monotonic. Because no sample
+    /// is taken at stdout EOF, a peak reached within the last throttle interval
+    /// (~5 ms) of output, after the final sample, is likewise not captured.
+    void sampleExecutablePeak() noexcept;
 
     /// Executable (non-pool) path: stamp `elapsed_us` from the wall clock at
     /// `ShellCommandSource` cleanup and compute `peak_memory_byte_seconds` from
