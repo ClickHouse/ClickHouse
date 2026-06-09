@@ -71,6 +71,12 @@ bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNo
         candidates.pop_back();
 
         bool found = keys.contains(candidate);
+
+        /// A key reached through a non-deterministic function is not determined by the keys, so the
+        /// expression is not a function of them (for example rand64(g) takes the key g but is random).
+        if (found && !parents_are_only_deterministic)
+            return false;
+
         found_at_least_one_usage |= found;
 
         switch (candidate->getNodeType())
