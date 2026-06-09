@@ -3,6 +3,7 @@
 
 #include <Core/Joins.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
