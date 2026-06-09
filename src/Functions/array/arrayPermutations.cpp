@@ -205,7 +205,7 @@ using FunctionArrayPartialPermutations = FunctionArrayPermutationsImpl<true>;
 
 REGISTER_FUNCTION(ArrayPermutations)
 {
-    FunctionDocumentation::Description description = "Returns all permutations of the input array.";
+    FunctionDocumentation::Description description = "Returns all permutations of the input array. To guard against excessive memory usage, the total number of output elements per block is capped at 1000000; exceeding this limit raises a `TOO_LARGE_ARRAY_SIZE` exception.";
     FunctionDocumentation::Syntax syntax = "arrayPermutations(arr)";
     FunctionDocumentation::Arguments arguments = {
         {"arr", "The input array.", {"Array(T)"}},
@@ -221,7 +221,7 @@ REGISTER_FUNCTION(ArrayPermutations)
 
 REGISTER_FUNCTION(ArrayPartialPermutations)
 {
-    FunctionDocumentation::Description description = "Returns all k-length partial permutations (ordered selections) of the input array.";
+    FunctionDocumentation::Description description = "Returns all k-length partial permutations (ordered selections) of the input array. To guard against excessive memory usage, the total number of output elements per block is capped at 1000000; exceeding this limit raises a `TOO_LARGE_ARRAY_SIZE` exception.";
     FunctionDocumentation::Syntax syntax = "arrayPartialPermutations(arr, k)";
     FunctionDocumentation::Arguments arguments = {
         {"arr", "The input array.", {"Array(T)"}},

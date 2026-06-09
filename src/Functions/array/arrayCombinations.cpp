@@ -146,7 +146,7 @@ public:
 
 REGISTER_FUNCTION(ArrayCombinations)
 {
-    FunctionDocumentation::Description description = "Returns all combinations of k elements from the input array. The order of elements inside each combination matches the original array order.";
+    FunctionDocumentation::Description description = "Returns all combinations of k elements from the input array. The order of elements inside each combination matches the original array order. To guard against excessive memory usage, the total number of output elements per block is capped at 1000000; exceeding this limit raises a `TOO_LARGE_ARRAY_SIZE` exception.";
     FunctionDocumentation::Syntax syntax = "arrayCombinations(arr, k)";
     FunctionDocumentation::Arguments arguments = {
         {"arr", "The input array.", {"Array(T)"}},
