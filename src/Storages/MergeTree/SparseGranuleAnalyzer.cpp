@@ -525,15 +525,15 @@ analyzeSparseColumnGranulesBatched(
     /// tasks: pool workers can never end up blocked on each other.
     {
         ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_SPARSE_GRANULE_ANALYSIS);
-        for (size_t u = 0; u < units.size(); ++u)
+        for (auto & unit : units)
         {
-            const size_t n_chunks = units[u].plan.chunks.size();
+            const size_t n_chunks = unit.plan.chunks.size();
             for (size_t k = 0; k < n_chunks; ++k)
             {
                 runner.enqueueAndKeepTrack(
-                    [u, k, &units]
+                    [k, &unit]
                     {
-                        units[u].chunk_results[k] = processChunk(units[u].plan, units[u].plan.chunks[k]);
+                        unit.chunk_results[k] = processChunk(unit.plan, unit.plan.chunks[k]);
                     });
             }
         }
