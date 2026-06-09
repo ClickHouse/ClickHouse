@@ -170,7 +170,7 @@ std::string X509Certificate::subjectName() const
 
 std::string X509Certificate::issuerName(uint nid) const
 {
-    if (X509_NAME * issuer = X509_get_issuer_name(certificate))
+    if (const X509_NAME * issuer = X509_get_issuer_name(certificate))
     {
         char buffer[X509Certificate::NAME_BUFFER_SIZE];
         if (X509_NAME_get_text_by_NID(issuer, nid, buffer, sizeof(buffer)) >= 0)
@@ -181,7 +181,7 @@ std::string X509Certificate::issuerName(uint nid) const
 
 std::string X509Certificate::subjectName(uint nid) const
 {
-    if (X509_NAME * subj = X509_get_subject_name(certificate))
+    if (const X509_NAME * subj = X509_get_subject_name(certificate))
     {
         char buffer[X509Certificate::NAME_BUFFER_SIZE];
         if (X509_NAME_get_text_by_NID(subj, nid, buffer, sizeof(buffer)) >= 0)
@@ -214,14 +214,14 @@ std::string X509Certificate::publicKeyAlgorithm() const
 
 std::string X509Certificate::validFrom() const
 {
-    ASN1_TIME * valid_from = X509_get_notBefore(certificate);
-    return reinterpret_cast<char *>(valid_from->data);
+    const ASN1_TIME * valid_from = X509_get_notBefore(certificate);
+    return reinterpret_cast<const char *>(ASN1_STRING_get0_data(valid_from));
 }
 
 std::string X509Certificate::expiresOn() const
 {
-    ASN1_TIME * not_before = X509_get_notAfter(certificate);
-    return reinterpret_cast<char *>(not_before->data);
+    const ASN1_TIME * not_after = X509_get_notAfter(certificate);
+    return reinterpret_cast<const char *>(ASN1_STRING_get0_data(not_after));
 }
 
 const X509Certificate::Subjects::container & X509Certificate::Subjects::at(Type type_) const
@@ -298,11 +298,11 @@ X509Certificate::Subjects X509Certificate::extractAllSubjects()
     if (!cert_names)
         return subjects;
 
-    const auto * names = reinterpret_cast<const STACK_OF(GENERAL_NAME) *>(cert_names.get());
-    int count = OPENSSL_sk_num(reinterpret_cast<const _STACK *>(names));
+    const auto * names = cert_names.get();
+    int count = sk_GENERAL_NAME_num(names);
     for (int i = 0; i < count; ++i)
     {
-        const GENERAL_NAME * name = static_cast<const GENERAL_NAME *>(OPENSSL_sk_value(reinterpret_cast<const _STACK *>(names), i));
+        const GENERAL_NAME * name = sk_GENERAL_NAME_value(names, i);
 
         if (name->type == GEN_DNS || name->type == GEN_URI)
         {

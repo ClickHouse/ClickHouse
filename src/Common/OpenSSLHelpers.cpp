@@ -202,7 +202,8 @@ std::string generateCSR(const std::vector<std::string> domain_names, EVP_PKEY * 
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Error creating X509_REQ: {}", getOpenSSLErrors());
 
     /// Owned by X509_REQ, does not need to be freed.
-    X509_NAME * subject_name = X509_REQ_get_subject_name(req.get());
+    /// OpenSSL 4.0 made the getter return const, but we need to mutate it.
+    X509_NAME * subject_name = const_cast<X509_NAME *>(X509_REQ_get_subject_name(req.get()));
     if (!subject_name)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Error getting subject name from X509_REQ: {}", getOpenSSLErrors());
 
