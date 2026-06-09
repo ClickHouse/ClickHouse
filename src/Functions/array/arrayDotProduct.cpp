@@ -485,8 +485,8 @@ The sizes of the two vectors must be equal. Arrays and Tuples may also contain m
 )";
     FunctionDocumentation::Syntax syntax = "arrayDotProduct(v1, v2)";
     FunctionDocumentation::Arguments arguments = {
-        {"v1", "First vector.", {"Array((U)Int* | Float* | Decimal)", "Tuple((U)Int* | Float* | Decimal)"}},
-        {"v2", "Second vector.", {"Array((U)Int* | Float* | Decimal)", "Tuple((U)Int* | Float* | Decimal)"}},
+        {"v1", "First vector.", {"Array((U)Int* | Float* | BFloat16 | Decimal)", "Tuple((U)Int* | Float* | Decimal)"}},
+        {"v2", "Second vector.", {"Array((U)Int* | Float* | BFloat16 | Decimal)", "Tuple((U)Int* | Float* | Decimal)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value
         = {R"(
@@ -494,6 +494,7 @@ The dot product of the two vectors.
 
 :::note
 The return type is determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
+Two `BFloat16` arrays accumulate in and return `Float32` (the same rule as two `Float32` arrays).
 :::
 
 )",

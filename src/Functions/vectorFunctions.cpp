@@ -2067,13 +2067,15 @@ If either the tuple or div contain non-integer elements then the result is calcu
     FunctionDocumentation::Description description_dotProduct = R"(
 Calculates the [dot product](https://en.wikipedia.org/wiki/Dot_product) (scalar product) of two vectors (tuples or arrays of equal size).
 Returns the sum of the products of the corresponding elements.
+
+Array arguments may also have `BFloat16` elements; two `BFloat16` arrays accumulate in and return `Float32` (the same rule as two `Float32` arrays).
     )";
     FunctionDocumentation::Syntax syntax_dotProduct = "dotProduct(vector1, vector2)";
     FunctionDocumentation::Arguments arguments_dotProduct = {
         {"vector1", "First vector.", {"Array(T)", "Tuple(T)"}},
         {"vector2", "Second vector. Must be the same size as the first vector.", {"Array(T)", "Tuple(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_dotProduct = {"Returns the dot product of the two vectors.", {"(U)Int*", "Float*", "Decimal"}};
+    FunctionDocumentation::ReturnedValue returned_value_dotProduct = {"Returns the dot product of the two vectors. Two `BFloat16` arrays accumulate in and return `Float32`.", {"(U)Int*", "Float*", "Decimal"}};
     FunctionDocumentation::Examples examples_dotProduct = {
         {"Basic usage", "SELECT dotProduct((1, 2), (3, 4))", "11"}
     };
