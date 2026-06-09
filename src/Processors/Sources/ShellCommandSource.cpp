@@ -405,9 +405,9 @@ public:
                 if (sampler)
                 {
                     sampler->recordInputBytes(static_cast<size_t>(res));
-                    /// Child is alive — it is consuming this stdin write.
-                    /// Sample its subtree VmHWM for the executable path;
-                    /// no-op on the pool path (executable_root_pid <= 0).
+                    /// The child's stdin is still open (this write succeeded), so it was
+                    /// running; sample its subtree VmHWM. It may exit before we sample — a
+                    /// harmless no-op. Also a no-op on the pool path (executable_root_pid <= 0).
                     sampler->sampleExecutablePeak();
                 }
             }
