@@ -289,26 +289,49 @@ class RandomServerRestarter(RandomRestarter):
                 except OSError:
                     pass
 
+    _PORTS = (
+        8123,  # HTTP
+        8443,  # HTTPS
+        9000,  # Native TCP
+        9004,  # MySQL compatibility
+        9005,  # PostgreSQL compatibility
+        9009,  # Interserver HTTP
+        9010,  # TCP with proxy protocol
+        9022,  # SSH
+        9100,  # gRPC
+        9181,  # Keeper
+        9234,  # Keeper Raft
+        9440,  # Native TCP TLS
+        9988,  # Prometheus
+    )
+
     def _start_and_wait(self) -> None:
         deadline = self._restart_deadline
 
-        port_timeout = min(60, max(0, deadline - time.monotonic()) / 2)
-        for port in (
-            8123,  # HTTP
-            8443,  # HTTPS
-            9000,  # Native TCP
-            9004,  # MySQL compatibility
-            9005,  # PostgreSQL compatibility
-            9009,  # Interserver HTTP
-            9010,  # TCP with proxy protocol
-            9022,  # SSH
-            9100,  # gRPC
-            9181,  # Keeper
-            9234,  # Keeper Raft
-            9440,  # Native TCP TLS
-            9988,  # Prometheus
-        ):
-            self._wait_port_free(port, timeout=port_timeout)
+        ports_deadline = time.monotonic() + min(
+            60, max(0, deadline - time.monotonic()) / 2
+        )
+        sport_filter = " or ".join(f"sport = :{p}" for p in self._PORTS)
+        while time.monotonic() < ports_deadline:
+            ret = subprocess.run(
+                f"ss -tanH state listening '{sport_filter}' | grep -q .",
+                shell=True,
+                capture_output=True,
+            )
+            if ret.returncode != 0:
+                break
+            time.sleep(1)
+        else:
+            ret = subprocess.run(
+                f"ss -tanH state listening '{sport_filter}'",
+                shell=True,
+                capture_output=True,
+            )
+            if ret.stdout:
+                logging.warning(
+                    "ports still in use after deadline: %s",
+                    ret.stdout.decode().strip(),
+                )
 
         remaining = max(0, deadline - time.monotonic())
         logging.info(
