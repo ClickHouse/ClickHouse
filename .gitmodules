@@ -326,7 +326,7 @@
 	url = https://github.com/ClickHouse/rust_vendor.git
 [submodule "contrib/openssl"]
 	path = contrib/openssl
-	url = https://github.com/ClickHouse/openssl.git
+	url = https://github.com/openssl/openssl.git
 [submodule "contrib/double-conversion"]
 	path = contrib/double-conversion
 	url = https://github.com/ClickHouse/double-conversion.git
