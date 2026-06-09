@@ -286,13 +286,27 @@ public:
                 };
 
                 SetWithMemoryTracking<String> seen;
-                auto try_add = [&](std::string_view candidate)
+                auto add_match = [&](std::string_view matched)
                 {
-                    if (!match_case_insensitive(candidate, path))
-                        return;
-                    String s(candidate);
+                    String s(matched);
                     if (seen.insert(s).second)
                         case_insensitive_matches.emplace_back(std::move(s));
+                };
+                auto try_add = [&](std::string_view candidate)
+                {
+                    /// Full match: the stored path equals the requested key ignoring case.
+                    if (match_case_insensitive(candidate, path))
+                    {
+                        add_match(candidate);
+                        return;
+                    }
+                    /// Prefix match: the requested key names a sub-object whose leaves are stored as
+                    /// dotted paths, e.g. requested `nested` against stored leaf `Nested.InnerKey`. Add the
+                    /// original-cased prefix (`Nested`) so the combined `@` subcolumn can merge the whole
+                    /// sub-object, mirroring how case-sensitive extraction resolves a sub-object key.
+                    if (candidate.size() > path.size() && candidate[path.size()] == '.'
+                        && match_case_insensitive(candidate.substr(0, path.size()), path))
+                        add_match(candidate.substr(0, path.size()));
                 };
 
                 /// Prefer the exact-case match when present so a query key like `name` is resolved

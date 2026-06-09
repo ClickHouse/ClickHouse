@@ -44,3 +44,10 @@ SELECT 'mixed rows int', id, JSONExtractIntCaseInsensitive(j, 'val') FROM t_0409
 
 DROP TABLE t_04092_mixed_case;
 DROP TABLE t_04092_mixed_case_int;
+
+-- Extracting a whole sub-object by a differently-cased key. The leaf is stored as a dotted
+-- path (e.g. `Nested.InnerKey`), so the resolver must match the requested key against the
+-- path prefix, mirroring case-sensitive sub-object extraction.
+SELECT 'nested object raw',  JSONExtractRawCaseInsensitive('{"Nested": {"InnerKey": 42}}'::JSON, 'nested');
+SELECT 'nested object raw exact', JSONExtractRaw('{"Nested": {"InnerKey": 42}}'::JSON, 'Nested');
+SELECT 'nested object deep raw', JSONExtractRawCaseInsensitive('{"Nested": {"Inner": {"Deep": 7}}}'::JSON, 'nested', 'inner');
