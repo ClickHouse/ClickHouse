@@ -3,7 +3,6 @@
 #include <Columns/ColumnSparse.h>
 #include <Core/Settings.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <IO/SharedThreadPools.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/AlterConversions.h>
@@ -16,6 +15,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/SipHash.h>
+#include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -103,6 +103,7 @@ analyzeSparseColumnGranules(
     const ContextPtr & query_context,
     SparseOffsetsShare * offsets_share,
     LoggerPtr log,
+    ThreadPool * chunk_pool,
     const std::atomic<bool> * is_cancelled)
 {
     auto check_cancelled = [&] { return is_cancelled && is_cancelled->load(std::memory_order_acquire); };
@@ -166,13 +167,12 @@ analyzeSparseColumnGranules(
     auto alter_conversions = std::make_shared<AlterConversions>();
     auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, alter_conversions);
 
-    /// Split the input ranges across roughly `max_threads` chunks so the parallel pass
-    /// on the global IO thread pool finishes in a single round instead of stair-stepping
-    /// through multiple rounds when chunks > cores. Clamp to a [MIN, MAX] band so very
-    /// small parts don't dispatch microscopic chunks (per-chunk reader setup would
-    /// dominate) and very large parts don't create huge chunks that under-utilise cores.
+    /// Split the input ranges into exactly `max_threads` chunks (one per worker the
+    /// caller-supplied pool will run concurrently). Floor the chunk size at
+    /// `MIN_ANALYZER_CHUNK_MARKS` so tiny parts don't dispatch microscopic chunks where
+    /// per-chunk reader setup would dominate. No upper clamp: chunk count is bounded
+    /// by `max_threads`, so total concurrent chunks stays under the user's thread cap.
     constexpr size_t MIN_ANALYZER_CHUNK_MARKS = 256;
-    constexpr size_t MAX_ANALYZER_CHUNK_MARKS = 8192;
 
     size_t total_marks_in_ranges = 0;
     for (const auto & range : ranges)
@@ -183,10 +183,7 @@ analyzeSparseColumnGranules(
         = std::max<size_t>(1, static_cast<UInt64>(query_context->getSettingsRef()[Setting::max_threads]));
     const size_t chunk_marks = total_marks_in_ranges == 0
         ? 0
-        : std::clamp(
-            (total_marks_in_ranges + target_chunks - 1) / target_chunks,
-            MIN_ANALYZER_CHUNK_MARKS,
-            MAX_ANALYZER_CHUNK_MARKS);
+        : std::max<size_t>(MIN_ANALYZER_CHUNK_MARKS, (total_marks_in_ranges + target_chunks - 1) / target_chunks);
 
     std::vector<MarkRange> chunks;
     for (const auto & range : ranges)
@@ -297,15 +294,23 @@ analyzeSparseColumnGranules(
         return r;
     };
 
+    /// `chunk_pool` is supplied only by callers that are *not* themselves running on
+    /// a shared IO pool. The `data_read` entry runs inside a `MergeTreeSource` async
+    /// read job sitting on `getIOThreadPool`; nesting another fanout there could
+    /// deadlock the pool, so it passes `nullptr` and the chunks run inline. The
+    /// planning entry runs on the query thread and supplies a dedicated pool sized
+    /// at `max_threads` so intra-part chunk concurrency is bounded by the user's
+    /// thread cap.
     std::vector<ChunkResult> results(chunks.size());
 
-    if (chunks.size() == 1)
+    if (chunks.size() == 1 || chunk_pool == nullptr)
     {
-        results[0] = process_chunk(chunks[0]);
+        for (size_t i = 0; i < chunks.size(); ++i)
+            results[i] = process_chunk(chunks[i]);
     }
     else
     {
-        ThreadPoolCallbackRunnerLocal<void> runner(getIOThreadPool().get(), ThreadName::MERGETREE_READ);
+        ThreadPoolCallbackRunnerLocal<void> runner(*chunk_pool, ThreadName::MERGETREE_SPARSE_GRANULE_ANALYSIS);
         for (size_t i = 0; i < chunks.size(); ++i)
         {
             runner.enqueueAndKeepTrack(
@@ -421,7 +426,8 @@ SparsityReadResultPtr MergeTreeSparsityReader::read(const RangesInDataPart & par
         auto [it, inserted] = analyses.try_emplace(predicate.column_name, std::nullopt);
         if (inserted)
             it->second = analyzeSparseColumnGranules(
-                part.data_part, predicate.column_name, part.ranges, data, storage_snapshot, query_context, offsets_share.get(), log, &is_cancelled);
+                part.data_part, predicate.column_name, part.ranges, data, storage_snapshot, query_context,
+                offsets_share.get(), log, /*chunk_pool=*/ nullptr, &is_cancelled);
         const auto & analysis = it->second;
         if (!analysis)
             continue;

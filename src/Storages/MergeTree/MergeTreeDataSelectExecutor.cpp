@@ -89,6 +89,7 @@ namespace Setting
     extern const SettingsBool force_index_by_date;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
@@ -974,6 +975,18 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
         return analysis.granule_has_only_non_defaults[mark];
     };
 
+    /// Local pool for the analyzer's per-chunk fanout, sized at `max_threads` so the
+    /// concurrent chunk count is bounded by the user's thread cap rather than by the
+    /// global IO pool size. Threads are borrowed from the global pool. We pass this
+    /// to each per-part `analyzeSparseColumnGranules` call so all parts share the
+    /// same worker set.
+    const size_t chunk_pool_size = std::max<size_t>(1, static_cast<UInt64>(settings[Setting::max_threads]));
+    ThreadPool chunk_pool(
+        CurrentMetrics::MergeTreeDataSelectExecutorThreads,
+        CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
+        CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
+        chunk_pool_size);
+
     RangesInDataParts res_parts;
     res_parts.reserve(parts.size());
 
@@ -1000,7 +1013,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
             auto [it, inserted] = analyses.try_emplace(pred.column_name, std::nullopt);
             if (inserted)
                 it->second = analyzeSparseColumnGranules(
-                    part.data_part, pred.column_name, part.ranges, data, storage_snapshot, context, offsets_share, log);
+                    part.data_part, pred.column_name, part.ranges, data, storage_snapshot, context, offsets_share, log, &chunk_pool);
             const auto & analysis = it->second;
             if (!analysis)
                 continue;

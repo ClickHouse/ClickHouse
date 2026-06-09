@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/SparseOffsetsShare.h>
 #include <Storages/MergeTree/SparsityFilter.h>
 #include <Common/Logger.h>
+#include <Common/ThreadPool_fwd.h>
 
 #include <atomic>
 
@@ -35,9 +36,16 @@ struct SparseGranuleAnalysis
 /// granule. Returns `std::nullopt` when the column isn't sparse-encoded on this part
 /// (there is no offsets stream to inspect, and a dense scan can't be served cheaper
 /// than just running the predicate).
+///
 /// `offsets_share` (optional): when non-null, the analyzer persists the per-range
 /// decompressed offsets it reads so the data scan can serve its own reads of the
 /// same column without going back to disk.
+///
+/// `chunk_pool` (optional): when non-null, the per-chunk passes are dispatched onto
+/// this pool. The caller owns sizing and lifetime. Pass `nullptr` from callers that
+/// already run on a shared pool (e.g. the `data_read` entry inside a `MergeTreeSource`
+/// async read job): nesting a fanout onto the same pool can deadlock under load. With
+/// `chunk_pool == nullptr` chunks run sequentially in the caller's thread.
 std::optional<SparseGranuleAnalysis>
 analyzeSparseColumnGranules(
     const DataPartPtr & part,
@@ -48,6 +56,7 @@ analyzeSparseColumnGranules(
     const ContextPtr & query_context,
     SparseOffsetsShare * offsets_share,
     LoggerPtr log,
+    ThreadPool * chunk_pool = nullptr,
     const std::atomic<bool> * is_cancelled = nullptr);
 
 

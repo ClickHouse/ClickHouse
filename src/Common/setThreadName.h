@@ -97,6 +97,7 @@ namespace DB
     M(MERGETREE_PARTS_CLEANUP, "PartsCleaning") \
     M(MERGETREE_PREWARM_CACHE, "PrewarmCaches") \
     M(MERGETREE_READ, "MergeTreeRead") \
+    M(MERGETREE_SPARSE_GRANULE_ANALYSIS, "SparseGranAna") \
     M(MERGETREE_VECTOR_SIM_INDEX, "VectorSimIndex") \
     M(METRIC_LOG, "MetricLog") \
     M(METRICS_TRANSMITTER, "MetricsTransmtr") \
