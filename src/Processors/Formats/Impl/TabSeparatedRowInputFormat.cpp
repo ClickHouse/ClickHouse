@@ -438,21 +438,18 @@ void registerTSVSchemaReader(FormatFactory & factory)
             {
                 return std::make_shared<TabSeparatedSchemaReader>(buf, with_names, with_types, is_raw, settings);
             });
-            if (!with_types)
+            factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names, is_raw](const FormatSettings & settings)
             {
-                factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names, is_raw](const FormatSettings & settings)
-                {
-                    String result = getAdditionalFormatInfoByEscapingRule(
-                        settings, is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped);
-                    if (!with_names)
-                        result += fmt::format(
-                            ", column_names_for_schema_inference={}, try_detect_header={}, skip_first_lines={}",
-                            settings.column_names_for_schema_inference,
-                            settings.tsv.try_detect_header,
-                            settings.tsv.skip_first_lines);
-                    return result;
-                });
-            }
+                String result = getAdditionalFormatInfoByEscapingRule(
+                    settings, is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped);
+                result += fmt::format(", skip_first_lines={}", settings.tsv.skip_first_lines);
+                if (!with_names)
+                    result += fmt::format(
+                        ", column_names_for_schema_inference={}, try_detect_header={}",
+                        settings.column_names_for_schema_inference,
+                        settings.tsv.try_detect_header);
+                return result;
+            });
         };
 
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
