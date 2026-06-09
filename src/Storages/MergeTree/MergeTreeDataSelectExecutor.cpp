@@ -87,6 +87,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_threads_for_indexes;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 min_marks_per_index_analysis_task;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
@@ -977,14 +978,36 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::atomic<bool> abort_analysis{false};
 
+    /// Thread budget for index analysis.
+    ///
+    /// Without sub-part chunking the work is one task per part, so the budget is bounded by the number
+    /// of read streams (the original behavior). With chunking we deliberately DECOUPLE the budget from
+    /// num_streams: the whole point of the feature is to let a few large parts use the full query thread
+    /// budget. num_streams is small exactly in the few-parts case (e.g. a single-part `count()`), so
+    /// keeping the cap at num_streams would make the chunked path run almost serially and defeat the
+    /// optimization. When `max_threads_for_indexes` is set it takes precedence as an explicit override.
+    size_t analysis_thread_budget;
+    if (settings[Setting::max_threads_for_indexes])
+    {
+        analysis_thread_budget = settings[Setting::max_threads_for_indexes];
+        if (min_marks_per_task == 0)
+            analysis_thread_budget = std::min<size_t>(num_streams, analysis_thread_budget);
+    }
+    else if (min_marks_per_task != 0)
+    {
+        const size_t max_threads = settings[Setting::max_threads];
+        analysis_thread_budget = std::max<size_t>(num_streams, max_threads ? max_threads : num_streams);
+    }
+    else
+    {
+        analysis_thread_budget = num_streams;
+    }
+
     std::vector<WorkItem> work_items;
     {
-        /// Global mark budget: aim for roughly provisional_threads * OVERSUBSCRIBE work items across all
-        /// parts combined, but never smaller than min_marks_per_task.
+        /// Global mark budget: aim for roughly analysis_thread_budget * OVERSUBSCRIBE work items across
+        /// all parts combined, but never smaller than min_marks_per_task.
         constexpr size_t OVERSUBSCRIBE = 3;
-        const size_t provisional_threads = settings[Setting::max_threads_for_indexes]
-            ? std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes])
-            : num_streams;
 
         size_t total_marks = 0;
         for (const auto & part : parts_with_ranges)
@@ -993,7 +1016,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         size_t chunk_marks = 0;
         if (min_marks_per_task != 0)
         {
-            const size_t divisor = std::max<size_t>(1, provisional_threads * OVERSUBSCRIBE);
+            const size_t divisor = std::max<size_t>(1, analysis_thread_budget * OVERSUBSCRIBE);
             chunk_marks = std::max<size_t>(min_marks_per_task, (total_marks + divisor - 1) / divisor);
         }
 
@@ -1015,10 +1038,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         }
     }
 
-    size_t num_threads = num_streams;
-    if (settings[Setting::max_threads_for_indexes])
-        num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
-    num_threads = std::min<size_t>(num_threads, std::max<size_t>(1, work_items.size()));
+    size_t num_threads = std::min<size_t>(analysis_thread_budget, std::max<size_t>(1, work_items.size()));
 
     /// Let's find what range to read from each part.
     {
