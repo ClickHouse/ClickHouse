@@ -66,3 +66,38 @@ SELECT * FROM t04326_dict;
 
 DROP DICTIONARY t04326_dict;
 DROP TABLE t04326_src;
+
+-- A `CREATE OR REPLACE MATERIALIZED VIEW` that owns an over-limit inner
+-- `MergeTree` table must fail the size guard for the same reason a plain
+-- `DROP TABLE mv` does (see `03667_drop_inner_table_size_limits.sql`):
+-- replace must not be a privileged path that bypasses what plain drop refuses.
+CREATE TABLE t04326_mv_src (id UInt64) ENGINE = MergeTree() ORDER BY id;
+CREATE MATERIALIZED VIEW t04326_mv (id UInt64) ENGINE = MergeTree() ORDER BY id
+AS SELECT id FROM t04326_mv_src;
+INSERT INTO t04326_mv_src SELECT number FROM numbers(1000);
+
+CREATE OR REPLACE MATERIALIZED VIEW t04326_mv (id UInt64) ENGINE = MergeTree() ORDER BY id
+AS SELECT id FROM t04326_mv_src
+SETTINGS max_table_size_to_drop = 1;  -- { serverError TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT }
+
+-- The view and its inner table must both still be there.
+SELECT count() FROM t04326_mv;
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '%tmp_replace%';
+
+DROP TABLE t04326_mv SETTINGS max_table_size_to_drop = 0;
+DROP TABLE t04326_mv_src;
+
+-- Success path for `CREATE OR REPLACE TABLE ... AS SELECT`: the size check
+-- now runs after the fill, but the old target is small enough so the guard
+-- still passes and the swap completes.
+CREATE TABLE t04326_select (a UInt64) ENGINE = MergeTree() ORDER BY a;
+INSERT INTO t04326_select VALUES (0);
+
+CREATE OR REPLACE TABLE t04326_select (b UInt64) ENGINE = MergeTree() ORDER BY b
+AS SELECT number FROM numbers(100);
+
+SELECT count() FROM t04326_select;
+SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 't04326_select' ORDER BY name;
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '%tmp_replace%';
+
+DROP TABLE t04326_select;

@@ -2261,14 +2261,6 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(table_to_replace_name);
-
-        /// Pre-flight: enforce the DROP size guard on the existing target before EXCHANGE,
-        /// so a violation aborts cleanly instead of stranding data under `_tmp_replace_*`.
-        /// Use the dedicated size-only API so we do not trigger side effects from
-        /// `checkTableCanBeDropped` overrides (e.g. `StorageDictionary` rejecting
-        /// `DROP TABLE`, or `StorageNATS`/`StorageRabbitMQ` latching their broker-cleanup flag).
-        if (auto existing = database->tryGetTable(table_to_replace_name, current_context))
-            existing->checkTableSizeBelowDropLimit(current_context);
     }
 
     {
@@ -2350,6 +2342,15 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             /// Will execute EXCHANGE query and fail if the target table does not exist
             ast_rename->exchange = true;
         }
+
+        /// Size guard fires here, after the fill, before the destructive EXCHANGE.
+        /// `make_drop_context` zeroes `max_table_size_to_drop` so the implicit drop below
+        /// does not re-check (and does not consume `force_drop_table` twice).
+        /// The dedicated size-only API avoids side effects from `checkTableCanBeDropped`
+        /// overrides on dictionaries / NATS / RabbitMQ.
+        if (auto existing = DatabaseCatalog::instance().tryGetTable(
+                StorageID{create.getDatabase(), table_to_replace_name}, current_context))
+            existing->checkTableSizeBelowDropLimit(current_context);
 
         InterpreterRenameQuery interpreter_rename{ast_rename, current_context};
         interpreter_rename.execute();

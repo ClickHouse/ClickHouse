@@ -544,6 +544,19 @@ void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr 
         InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Truncate, getContext(), local_context, getTargetTableId(), true);
 }
 
+void StorageMaterializedView::checkTableSizeBelowDropLimit(ContextPtr query_context) const
+{
+    /// `MATERIALIZED VIEW ... TO <existing_table>` keeps no on-disk data of its own;
+    /// the implicit drop will not touch the user-owned target.
+    if (!has_inner_table)
+        return;
+
+    /// On a race (e.g. `SYSTEM RESTART REPLICA` detached the inner table),
+    /// `dropInnerTableIfAny` is a no-op too, so we mirror its tolerance.
+    if (auto inner = tryGetTargetTable())
+        inner->checkTableSizeBelowDropLimit(query_context);
+}
+
 void StorageMaterializedView::checkStatementCanBeForwarded() const
 {
     if (!has_inner_table)
