@@ -235,6 +235,16 @@ void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID 
             "Cannot INSERT into view {} because its query contains a SETTINGS clause",
             view_id.getFullTableName());
 
+    /// Plain `ORDER BY` is allowed and ignored on the insert path, because sorting does not change
+    /// which rows the view represents. `ORDER BY ... WITH FILL` (optionally with `INTERPOLATE`) is
+    /// different: at read time it synthesizes rows that are not present in the underlying table, so
+    /// the view no longer represents a one-to-one projection. Accepting it would silently ignore the
+    /// row-generating read semantics on writes, so reject it like the other read-only clauses.
+    if (select.withFill() || select.interpolate())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains ORDER BY ... WITH FILL or INTERPOLATE",
+            view_id.getFullTableName());
+
     /// If the view has a WHERE clause with identifiers, we need to ensure they can be evaluated.
     /// For now, we accept WHERE clauses as-is and rely on runtime validation during INSERT execution.
     /// Lambda parameters (e.g., in WHERE arrayExists(x -> x > 0, [1])) are not table columns
