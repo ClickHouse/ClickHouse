@@ -1,3 +1,11 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: A materialized CTE's temporary `StorageMemory` lives only on the
+-- initiator. With parallel replicas, the `IN (... UNION ALL ...)` runtime-set subquery that
+-- references the CTE is sent to the replicas, which have no such table registered, so their
+-- re-analysis fails with `Unknown table expression identifier '_materialized_cte_ct_...'`
+-- (UNKNOWN_TABLE). Shipping materialized CTE storage to replicas for non-GLOBAL runtime sets
+-- is a separate piece of work; this test only exercises the planner fix.
+
 SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
