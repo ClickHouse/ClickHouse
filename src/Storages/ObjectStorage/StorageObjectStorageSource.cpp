@@ -382,9 +382,7 @@ Chunk StorageObjectStorageSource::generate()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     read_from_format_info.hive_partition_columns_to_read_from_file_path,
-                    path,
-                    format_settings,
-                    read_context);
+                    path);
             }
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -399,8 +397,7 @@ Chunk StorageObjectStorageSource::generate()
                     .tags = &(object_metadata->tags),
                     .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
                 },
-                read_context,
-                format_settings);
+                read_context);
 
 #if USE_PARQUET
             if (chunk_size && chunk.hasColumns())
