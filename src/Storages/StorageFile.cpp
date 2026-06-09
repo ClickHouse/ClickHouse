@@ -161,6 +161,7 @@ void listFilesWithRegexpMatchingImpl(
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
     bool recursive,
+    bool recursive_anywhere,
     size_t depth,
     std::unordered_set<std::string> & active_dirs_on_stack)
 {
@@ -224,15 +225,16 @@ void listFilesWithRegexpMatchingImpl(
     if (!fs::exists(prefix_without_globs, prefix_exists_ec) || prefix_exists_ec)
         return;
 
-    /// Activate the recursion-stack cycle guard ONLY for unbounded (`**`) patterns.
-    /// Finite globs cannot recurse without bound, and adding the guard for them would
-    /// silently drop legitimate matches that traverse ancestor symlinks (the bot's
-    /// `file('root/*/*/*.txt')` with `root/a/back -> ..` case). When recursive,
-    /// insert the canonical path of the directory about to be listed on entry, so a
-    /// descendant symlink whose target is an ancestor (including the initial glob
-    /// root) is recognized as a cycle on the next entry.
+    /// Activate the recursion-stack cycle guard whenever the EXPANDED pattern contains a
+    /// `**` segment ANYWHERE (`recursive_anywhere`), not only when the current segment
+    /// is the `**` itself. Finite ancestor segments (`*`) traversed before reaching `**`
+    /// must also be seeded so a deeper symlink whose canonical resolves to one of those
+    /// ancestors (including the initial glob root) is recognized as a cycle.
+    /// Patterns without any `**` (purely finite globs) skip the guard entirely so that
+    /// legitimate matches through ancestor symlinks like `file('root/*/*/*.txt')` with
+    /// `root/a/back -> ..` continue to work.
     std::optional<std::string> active_dir_to_erase;
-    if (recursive)
+    if (recursive_anywhere)
     {
         std::error_code prefix_canon_ec;
         const auto prefix_canonical = fs::canonical(prefix_without_globs, prefix_canon_ec);
@@ -297,11 +299,11 @@ void listFilesWithRegexpMatchingImpl(
             {
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
                                                 looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
-                                                total_bytes_to_read, result, recursive, depth + 1, active_dirs_on_stack);
+                                                total_bytes_to_read, result, recursive, recursive_anywhere, depth + 1, active_dirs_on_stack);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result, false, depth + 1, active_dirs_on_stack);
+                                                total_bytes_to_read, result, false, recursive_anywhere, depth + 1, active_dirs_on_stack);
         }
     }
 }
@@ -318,7 +320,17 @@ std::vector<std::string> listFilesWithRegexpMatching(
     /// without affecting sibling brace-expansion alternatives.
     std::unordered_set<std::string> active_dirs_on_stack;
     for (const auto & for_match_expanded : for_match_paths_expanded)
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, 0, active_dirs_on_stack);
+    {
+        /// `recursive_anywhere` is true when the EXPANDED pattern contains a `**` segment.
+        /// When true, the cycle guard activates for every directory descent (including
+        /// finite-glob segments like `*` that precede the `**`), seeding bounded ancestors
+        /// before the `**` so a deeper symlink whose canonical points back to one of them
+        /// is recognized as a cycle. Detected per-expansion: `expandSelectionGlob` resolves
+        /// brace alternatives, so e.g. `root/{*,**}/*.txt` may have one alternative without
+        /// `**` and one with it.
+        const bool recursive_anywhere = for_match_expanded.find("**") != std::string::npos;
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, recursive_anywhere, 0, active_dirs_on_stack);
+    }
 
     return result;
 }

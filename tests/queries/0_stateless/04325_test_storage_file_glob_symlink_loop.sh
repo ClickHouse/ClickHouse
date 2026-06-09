@@ -60,6 +60,18 @@ printf "row1\n" > "$TEST_DIR_ABS/mutual/sub/real.txt"
 ln -s b "$TEST_DIR_ABS/mutual/sub/a"
 ln -s a "$TEST_DIR_ABS/mutual/sub/b"
 
+# Pre-asterisk ancestor: `preast/root/a/back -> ..`, `preast/root/b/sub/file.txt`.
+# Pattern `preast/root/*/**/*.txt` traverses the finite `*` over `a` and `b` BEFORE
+# reaching the `**` segment. Without seeding bounded ancestors when the expanded
+# pattern contains `**` anywhere, the inner `**` walk under `root/a` only seeds
+# canonical(`root/a`) and accepts `back -> ..` as a fresh directory; the resulting
+# descent re-reads `b/sub/file.txt` while the top-level `*` walk also reads it
+# through `b`, producing a duplicate row. The fix seeds ALL bounded ancestors
+# (including the initial glob root) for any expansion containing `**`.
+mkdir -p "$TEST_DIR_ABS/preast/root/a" "$TEST_DIR_ABS/preast/root/b/sub"
+printf "row1\n" > "$TEST_DIR_ABS/preast/root/b/sub/file.txt"
+ln -s .. "$TEST_DIR_ABS/preast/root/a/back"
+
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
 # Ancestor-loop symlink: `loop/dir1/dir2/loop_to_root` points back at `loop/dir1`,
@@ -106,6 +118,13 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/finite/*/*/
 # unresolvable entries are skipped and the real file is returned.
 echo "mutual-symlink-cycle"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/mutual/**/*.txt', 'TSV', 'val String')"
+
+# Pre-asterisk ancestor seed: must return 1 (no duplicate row). The pattern uses
+# a finite `*` before `**`, and a deeper symlink resolves to the initial glob
+# root. Without seeding bounded ancestors when the expansion contains `**` the
+# guard only protects the `**` recursion and the same file is read twice.
+echo "pre-asterisk-ancestor-seed"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/preast/root/*/**/*.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"
