@@ -508,7 +508,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
-    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(alter.getDatabase(), "", nullptr);
+    auto ddl_guard = (!alter.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(alter.getDatabase(), "", nullptr) : nullptr);
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.getDatabase());
 
 #if CLICKHOUSE_CLOUD
