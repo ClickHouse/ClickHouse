@@ -72,6 +72,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -150,7 +151,14 @@ ProcessList::EntryPtr ProcessList::insert(
         if (!memory_reservation_resource_name.empty())
         {
             if (ResourceLink link = query_context->getWorkloadClassifier()->get(memory_reservation_resource_name))
+            {
+                // The link must point to a space-shared resource; fail loudly instead of dereferencing null.
+                if (!link.allocation_queue)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
+                        memory_reservation_resource_name);
                 memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory]);
+            }
         }
     }
 
