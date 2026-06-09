@@ -4,3 +4,11 @@
 1
 --- SETTINGS after FORMAT ---
 1
+--- double FORMAT ---
+1
+--- trailing semicolon ---
+1
+--- roundtrip stability ---
+stable
+stable
+stable

@@ -1,6 +1,7 @@
 #include <Parsers/ParserExplainQuery.h>
 
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -149,34 +150,32 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             /// SELECT (so the FORMAT does not describe any insert input). It must stay on the INSERT
             /// only when the data comes FROM INFILE or via the `input` table function, where the
             /// FORMAT is required for the insert input. The output format name (e.g. `Values`) and
-            /// the presence of SETTINGS do not matter here.
+            /// the presence and position of SETTINGS do not matter here.
             if (insert_query->select && !insert_query->format.empty() && !insert_query->infile && !input_function)
             {
                 ParserKeyword s_format(Keyword::FORMAT);
-                /// Skip the rewind when another FORMAT keyword follows: the user wrote the explicit
-                /// double-FORMAT form and the first FORMAT genuinely belongs to the INSERT.
+                /// Skip the move when another FORMAT keyword follows: the user wrote the explicit
+                /// double-FORMAT form, the first FORMAT genuinely belongs to the INSERT, and the
+                /// second one is parsed as the EXPLAIN output format by ParserQueryWithOutput.
                 if (!s_format.checkWithoutMoving(pos, expected))
                 {
-                    /// The rewind is only safe when the INSERT ends exactly with `FORMAT <name>`,
-                    /// i.e. the format name is the last consumed token and the FORMAT keyword the one
-                    /// before it. This is the case for `INSERT ... SELECT ... [SETTINGS ...] FORMAT
-                    /// <name>` (SETTINGS written before the FORMAT stay on the INSERT), but not when
-                    /// SETTINGS follow the FORMAT (allow_settings_after_format_in_insert). Verify the
-                    /// two trailing tokens before rewinding so we never strip a non-FORMAT clause.
-                    Pos format_name = pos;
-                    --format_name;
-                    Pos format_keyword = format_name;
-                    --format_keyword;
+                    /// Move the FORMAT from the INSERT to the EXPLAIN output. We set the output
+                    /// format on the EXPLAIN query directly instead of rewinding `pos` and letting
+                    /// ParserQueryWithOutput re-parse it: a `pos` rewind is only correct when
+                    /// `FORMAT <name>` is the last thing the INSERT consumed, which is not the case
+                    /// when SETTINGS follow the FORMAT (allow_settings_after_format_in_insert).
+                    /// Setting the output format directly keeps the decision independent of the
+                    /// clause order, so it is stable across a formatting roundtrip (the formatter
+                    /// always emits SETTINGS before the SELECT and the INSERT FORMAT last, which
+                    /// would otherwise flip a position-dependent decision on re-parsing).
+                    ASTPtr format_ast = make_intrusive<ASTIdentifier>(insert_query->format);
+                    setIdentifierSpecial(format_ast);
+                    explain_query->format_ast = format_ast;
+                    explain_query->children.push_back(format_ast);
 
-                    Pos check = format_keyword;
-                    Expected check_expected;
-                    if (s_format.ignore(check, check_expected) && check == format_name)
-                    {
-                        pos = format_keyword;
-                        insert_query->format.clear();
-                        insert_query->data = nullptr;
-                        insert_query->end = nullptr;
-                    }
+                    insert_query->format.clear();
+                    insert_query->data = nullptr;
+                    insert_query->end = nullptr;
                 }
             }
         }
