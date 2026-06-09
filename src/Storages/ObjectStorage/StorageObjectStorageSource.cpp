@@ -222,7 +222,12 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     /// (e.g. `http://{host1,host2}/data/**`). Including `read_source_index` keeps schema/count cache
     /// identity aligned with the scheduling/read identity, so one shard cannot reuse another shard's
     /// cached schema or row count without reading the correct object.
-    if (object_info.relative_path_with_metadata.read_source_index)
+    ///
+    /// This suffix is internal to the cache/task identity and must not leak into user-visible values:
+    /// when `include_connection_info` is false the result is also used as the `_path` virtual column
+    /// and as the `_path` / `_file` filter values in `GlobIterator`, where the `read_source_index`
+    /// suffix would both expose the internal index and break predicates written against the real path.
+    if (include_connection_info && object_info.relative_path_with_metadata.read_source_index)
         result += fmt::format("#read_source_index={}", *object_info.relative_path_with_metadata.read_source_index);
 
     return result;
