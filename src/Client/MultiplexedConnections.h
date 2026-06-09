@@ -67,9 +67,6 @@ public:
 
     void setDistributedFanout(size_t total_connections) override { distributed_fanout = total_connections; }
 
-    ConnectionPoolPtr getReplicaPool() override { return replica_pool; }
-    void setReplicaPool(ConnectionPoolPtr pool) { replica_pool = std::move(pool); }
-
     void setAsyncCallback(AsyncCallback async_callback) override;
 
 private:
@@ -119,9 +116,6 @@ private:
 
     /// A mutex for the sendCancel function to execute safely in separate thread.
     mutable std::mutex cancel_mutex;
-
-    /// The pool of the replica we connected to, for error tracking during retries.
-    ConnectionPoolPtr replica_pool;
 
     friend struct RemoteQueryExecutorRoutine;
 };

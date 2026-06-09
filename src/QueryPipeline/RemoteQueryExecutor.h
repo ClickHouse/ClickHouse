@@ -132,6 +132,10 @@ public:
 
     /// Query is resent to a replica, the query itself can be modified.
     bool resent_query { false };
+    /// Query was resent specifically to retry without duplicated part UUIDs.
+    /// Tracked separately from `resent_query` so that a shard-level retry (which also
+    /// resends the query) does not trip the single-resend guard for duplicated UUIDs.
+    bool resent_query_without_duplicate_uuids { false };
     bool recreate_read_context { false };
 
     struct ReadResult
@@ -318,6 +322,14 @@ private:
       */
     bool received_data_from_replica = false;
 
+    /** Track if we've accepted a PartUUIDs packet from the current replica.
+      * Those UUIDs are recorded in the query context immediately and cannot be
+      * rolled back, so retrying on another replica would make it report the same
+      * UUIDs as duplicates and skip the corresponding parts. Disable shard retry
+      * once any PartUUIDs packet has been accepted.
+      */
+    bool accepted_part_uuids = false;
+
     size_t retry_count = 0;
 
     /** Store the error code that triggered the last retry
@@ -330,6 +342,12 @@ private:
     /** Store connection pool with failover for retrying with different replicas
      */
     ConnectionPoolWithFailoverPtr connection_pool_with_failover;
+
+    /** The nested pool of the replica we are currently connected to.
+     * Captured when connections are created so that retryQuery() can deprioritize
+     * the failing replica via connection_pool_with_failover->incrementErrorCount().
+     */
+    ConnectionPoolPtr connected_replica_pool;
 
 #if defined(OS_LINUX)
     bool packet_in_progress = false;

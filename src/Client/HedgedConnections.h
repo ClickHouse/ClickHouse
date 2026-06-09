@@ -130,7 +130,8 @@ public:
     void setDistributedFanout(size_t total_connections) override { distributed_fanout = total_connections; }
 
     /// Return the pool of the connected replica, used for error tracking during retries.
-    ConnectionPoolPtr getReplicaPool() override { return replica_pool; }
+    /// Not part of IConnections: called directly on the concrete type by RemoteQueryExecutor.
+    ConnectionPoolPtr getReplicaPool() const { return replica_pool; }
 
     void setAsyncCallback(AsyncCallback async_callback) override;
 

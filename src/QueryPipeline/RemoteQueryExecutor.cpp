@@ -70,11 +70,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
 }
 
-namespace FailPoints
-{
-    extern const char remote_query_executor_exception_after_receiving_data[];
-}
-
 RemoteQueryExecutor::RemoteQueryExecutor(
     const String & query_,
     SharedHeader header_,
@@ -114,6 +109,14 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     std::shared_ptr<const QueryPlan> query_plan_)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, query_plan_, extension_)
 {
+    /// Note: connection_pool_with_failover_ is intentionally NOT stored into the
+    /// connection_pool_with_failover member here, so the shard-level retry path in processPacket()
+    /// stays disabled for this constructor. It is bound to a single replica's pool, and its
+    /// create_connections re-establishes against that same pool, so a retry could only re-hit the
+    /// same replica rather than fail over. This constructor is used by parallel replicas
+    /// (ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica), which handle replica
+    /// failure through the reading coordinator (markReplicaAsUnavailable) instead. The failover
+    /// pool is still used below for connect-time error tracking via incrementErrorCount.
     create_connections = [this, pool, throttler, extension_, connection_pool_with_failover_](AsyncCallback)
     {
         const Settings & settings = context->getSettingsRef();
@@ -271,6 +274,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
             auto res = std::make_unique<HedgedConnections>(
                 pool, context, timeouts, throttler, pool_mode, table_to_check, std::move(async_callback), priority_func);
+            connected_replica_pool = res->getReplicaPool();
             if (extension && extension->replica_info)
                 res->setReplicaInfo(*extension->replica_info);
             return res;
@@ -303,13 +307,18 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         }
         else
         {
+            /// Table-function queries (e.g. remote()/cluster()) use getMany(), which returns bare
+            /// connection entries without the originating nested pool. As a result replica_pool stays
+            /// null here, so a retry will not deprioritize the failing replica via incrementErrorCount.
+            /// The retry itself still works; only the load-balancing hint is missing. We do not switch
+            /// to getManyForTableFunction() because its signature drops async_callback, priority_func
+            /// and skip_unavailable_endpoints, which would change behavior for all table-function queries.
             connection_entries = pool->getMany(
                 timeouts, current_settings, pool_mode, std::move(async_callback), skip_unavailable_endpoints, priority_func);
         }
 
         auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), context, throttler);
-        if (replica_pool)
-            res->setReplicaPool(std::move(replica_pool));
+        connected_replica_pool = std::move(replica_pool);
         if (extension && extension->replica_info)
             res->setReplicaInfo(*extension->replica_info);
         return res;
@@ -694,12 +703,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicat
         connections->disconnect();
 
         /// Only resend once, otherwise throw an exception
-        if (resent_query)
+        if (resent_query_without_duplicate_uuids)
             throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate uuids while processing query");
 
         if (log)
             LOG_DEBUG(log, "Found duplicate UUIDs, will retry query without those parts");
 
+        resent_query_without_duplicate_uuids = true;
         resetQueryState();
         got_duplicated_part_uuids = false;
     }
@@ -715,6 +725,16 @@ bool RemoteQueryExecutor::isRetryableError(int error_code) const
     /// These are typically transient errors or indicate a problem with
     /// a particular replica. This typically means there's a high probability
     /// that the same query will succeed on a different replica.
+    ///
+    /// - TOO_MANY_SIMULTANEOUS_QUERIES: the replica is at its concurrency limit; either
+    ///   another replica or a later retry on the same replica (once a slot frees up) can succeed.
+    /// - CANNOT_OPEN_FILE: seen in practice when a replica hits its open file descriptor
+    ///   limit (EMFILE/ENFILE) or transiently cannot open a part's file; another replica
+    ///   usually has the data available.
+    /// - NETWORK_ERROR: only relevant here for distributed-over-distributed queries, where an
+    ///   intermediate server forwards the error to us inside an exception packet. A network
+    ///   error against our own direct connection is surfaced before processPacket() and is
+    ///   not handled by this retry path.
     return error_code == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES
         || error_code == ErrorCodes::CANNOT_OPEN_FILE
         || error_code == ErrorCodes::NETWORK_ERROR;
@@ -727,8 +747,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::retryQuery()
         if (was_cancelled)
             return ReadResult(Block());
 
+        /// We must never retry after returning data to the caller: re-running the query on
+        /// another replica would duplicate the already-returned rows. processPacket() only sets
+        /// should_retry when no data has been received yet, so this should always hold here.
+        chassert(!received_data_from_replica);
+
         /// Deprioritize the failed replica so it's less likely to be chosen on the next attempt.
-        auto failed_pool = connections->getReplicaPool();
+        auto failed_pool = connected_replica_pool;
         if (connection_pool_with_failover && failed_pool)
         {
             connection_pool_with_failover->incrementErrorCount(failed_pool);
@@ -779,6 +804,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             processReadTaskRequest();
             break;
         case Protocol::Server::PartUUIDs:
+            accepted_part_uuids = true;
             if (!setPartUUIDs(packet.part_uuids))
                 got_duplicated_part_uuids = true;
             break;
@@ -801,6 +827,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             const auto max_retries = context->getSettingsRef()[Setting::distributed_shard_retry_count];
             if (isRetryableError(packet.exception->code())
                 && !received_data_from_replica
+                && !accepted_part_uuids
                 && retry_count < max_retries
                 && connection_pool_with_failover)
             {
@@ -809,7 +836,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
 
                 if (log)
                 {
-                    auto pool_for_log = connections->getReplicaPool();
+                    auto pool_for_log = connected_replica_pool;
                     LOG_DEBUG(log, "try {} of {} failed due to error code {} from host {}",
                               retry_count, static_cast<uint64_t>(max_retries) + 1, packet.exception->code(),
                               pool_for_log ? pool_for_log->getHost() : connections->dumpAddresses());
@@ -825,10 +852,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
         }
 
         case Protocol::Server::EndOfStream:
-            fiu_do_on(FailPoints::remote_query_executor_exception_after_receiving_data, {
-                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Injected TOO_MANY_SIMULTANEOUS_QUERIES error after receiving data");
-            });
-
             if (!connections->hasActiveConnections())
             {
                 finished = true;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Client/Connection.h>
-#include <Client/ConnectionPool.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
 namespace DB
@@ -78,9 +77,6 @@ public:
 
     /// Check if there are any valid replicas.
     virtual bool hasActiveConnections() const = 0;
-
-    /// Return the pool of the connected replica, used for error tracking during retries.
-    virtual ConnectionPoolPtr getReplicaPool() { return nullptr; }
 
     virtual ~IConnections() = default;
 

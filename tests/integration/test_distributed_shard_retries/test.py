@@ -87,30 +87,29 @@ def test_leaf_queries_retried(started_cluster):
 
 
 def test_leaf_queries_not_retried_after_receiving_data(started_cluster):
-    """
-    Test that queries are NOT retried if we've already received data from a replica.
-    Retrying after receiving data could lead to incorrect results (duplicate data).
-    """
     prepare_cluster()
 
-    # Enable failpoint that will throw an exception after receiving data
-    node1.query(
-        "SYSTEM ENABLE FAILPOINT remote_query_executor_exception_after_receiving_data"
-    )
+    for node in [node1, node2, node3, node4]:
+        node.query(
+            "SYSTEM ENABLE FAILPOINT remote_query_executor_exception_after_sending_data"
+        )
 
     query_id = str(uuid.uuid4())
+    try:
+        with pytest.raises(
+            QueryRuntimeException,
+            match="TOO_MANY_SIMULTANEOUS_QUERIES",
+        ):
+            node1.query(
+                "SELECT i FROM distributed_table SETTINGS load_balancing='in_order', prefer_localhost_replica=0",
+                query_id=query_id,
+            )
+    finally:
+        for node in [node1, node2, node3, node4]:
+            node.query(
+                "SYSTEM DISABLE FAILPOINT remote_query_executor_exception_after_sending_data"
+            )
 
-    with pytest.raises(
-        QueryRuntimeException,
-        match="Injected TOO_MANY_SIMULTANEOUS_QUERIES error after receiving data",
-    ):
-        node1.query("SELECT max(i) FROM distributed_table SETTINGS load_balancing='in_order', prefer_localhost_replica=0", query_id=query_id)
-
-    node1.query(
-        "SYSTEM DISABLE FAILPOINT remote_query_executor_exception_after_receiving_data"
-    )
-
-    # Check that no retries happened (DistributedTryCount should be 0)
     node1.query("SYSTEM FLUSH LOGS query_log")
     retry_count = int(
         node1.query(
