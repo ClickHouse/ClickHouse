@@ -84,8 +84,8 @@ def get_spark(log_dir=None):
             "spark.sql.catalog.spark_catalog.warehouse",
             "/var/lib/clickhouse/user_files/test_storage_delta",
         )
-        .config("spark.driver.memory", "8g")
-        .config("spark.executor.memory", "8g")
+        .config("spark.driver.memory", "2g")
+        .config("spark.executor.memory", "2g")
         .master("local")
     )
 
@@ -1711,14 +1711,23 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
         zk = started_cluster.get_kazoo_client("zoo1")
         zk.set(replica_path + "/digest", "123456".encode())
 
-        assert "123456" in node2.query(
-            f"SELECT * FROM system.zookeeper WHERE path = '{replica_path}'"
+        # Compare the `digest` value exactly instead of substring-matching the
+        # whole dump of all znodes: the recomputed digest is a 64-bit hash whose
+        # decimal representation can incidentally contain "123456" as a substring.
+        assert (
+            node2.query(
+                f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'"
+            ).strip()
+            == "123456"
         )
 
         node2.restart_clickhouse()
 
-        assert "123456" not in node2.query(
-            f"SELECT * FROM system.zookeeper WHERE path = '{replica_path}'"
+        assert (
+            node2.query(
+                f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'"
+            ).strip()
+            != "123456"
         )
 
 
@@ -5425,3 +5434,46 @@ def test_azure_url_encoded_partition_path(started_cluster, use_delta_kernel):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 3
 
     instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+
+@pytest.mark.parametrize(
+    "use_delta_kernel",
+    ["0", "1"],
+)
+def test_azure_empty_blob_path(started_cluster, use_delta_kernel):
+    """based off test_single_log_file_azure_connection_string but parameterized for delta_kernel"""
+
+    instance = get_node(started_cluster, use_delta_kernel)
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_azure_empty_blob_path")
+
+    inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(100)"
+    parquet_data_path = create_initial_data_file(
+        started_cluster, instance, inserted_data, TABLE_NAME, node_name=instance.name
+    )
+
+    delta_path = f"/{TABLE_NAME}"
+    write_delta_from_file(spark, parquet_data_path, delta_path)
+
+    files = default_upload_directory(
+        started_cluster,
+        "azure",
+        delta_path,
+        "/",  # empty remote_path ends up inferring from local_path otherwise
+    )
+
+    assert len(files) == 2  # 1 metadata file + 1 data file
+
+    empty_blob_path = ""
+    connection_string = started_cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME}
+        ENGINE=DeltaLakeAzure('{connection_string}', '{started_cluster.azure_container_name}', '{empty_blob_path}', Parquet)
+        """
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
+        inserted_data
+    )

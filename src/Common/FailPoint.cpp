@@ -71,6 +71,7 @@ static struct InitFiu
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_choose_server) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
+    PAUSEABLE(file_cache_pause_before_do_eviction) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(file_segment_range_writer_partial_write_then_network_error) \
     REGULAR(distributed_cache_simulate_writer_not_keeping_up) \
@@ -86,6 +87,8 @@ static struct InitFiu
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
     REGULAR(cache_warmer_stall) \
     REGULAR(file_cache_dynamic_resize_fail_to_evict) \
+    REGULAR(file_cache_slru_downgrade_fail_before_finalize) \
+    REGULAR(file_cache_modify_size_limits_fail) \
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \

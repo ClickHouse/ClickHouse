@@ -2634,13 +2634,13 @@ Possible values:
 - Positive integer.
 )", 0) \
     DECLARE(UInt64, http_max_fields, 1000, R"(
-Maximum number of fields in HTTP header
+Maximum number of fields in HTTP request headers, query parameters, and form data.
 )", 0) \
     DECLARE(UInt64, http_max_field_name_size, 4 * 1024, R"(
-Maximum length of field name in HTTP header
+Maximum length of a field name in HTTP request headers, query parameters, and form data.
 )", 0) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, R"(
-Maximum length of field value in HTTP header
+Maximum length of a field value in HTTP request headers, query parameters, and form data.
 )", 0) \
     DECLARE(UInt64, http_max_request_header_size, 10 * 1024 * 1024, R"(
 Maximum total size of all HTTP request headers (names and values combined) in bytes.
@@ -4725,8 +4725,17 @@ This setting is useful for ensuring that materialized views do not contain dupli
 
 - [NULL Processing in IN Operators](/guides/developer/deduplicating-inserts-on-retries#insert-deduplication-with-materialized-views)
 )", 0) \
+    DECLARE(Bool, wait_for_part_commit_in_dependent_materialized_views, false, R"(
+Controls whether each sink commits its just-written part before its own dependent materialized view cascade runs, so a cascade that reads back from the source via `JOIN` observes the part written by that sink.
+
+The guarantee is per sink instance — parts written by other sink threads of the same `INSERT` may not yet be visible. The setting does not provide cross-thread commit ordering.
+
+Has no effect on inserts into tables with no dependent materialized views.
+)", 0) \
     DECLARE(Bool, materialized_views_ignore_errors, false, R"(
-Allows to ignore errors for MATERIALIZED VIEW, and deliver original block to the table regardless of MVs
+If enabled, exceptions thrown while pushing data to a dependent materialized view (in its `SELECT` or in the inner table sink) are logged as a warning and the `INSERT` statement succeeds. If disabled (default), such an exception propagates and the `INSERT` statement fails.
+
+This setting controls only error reporting. It does not roll back a write to the source table, and it does not guarantee whether the original block has already been committed to the source table when an error occurs in a dependent view's pipeline. When disabled (default), the `INSERT` fails on a view error — retry it with insert deduplication (`insert_deduplicate`, `deduplicate_blocks_in_dependent_materialized_views`) for exactly-once delivery to the source table and all dependent views. When enabled, the `INSERT` reports success despite partial delivery to failing views and their downstream chains; use this only when source-table writes must not be blocked by view-side problems (for example, `system.*_log` tables). See the `CREATE VIEW` docs for full semantics.
 )", 0) \
     DECLARE(Bool, ignore_materialized_views_with_dropped_target_table, false, R"(
 Ignore MVs with dropped target table during pushing to views
@@ -5672,6 +5681,9 @@ Supported only with the analyzer (`enable_analyzer = 1`).
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, true, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
+    DECLARE(Bool, optimize_rewrite_has_to_in, true, R"(
+Rewrite `has` functions to `IN` when the first argument is a constant array. For example, `has([1, 2, 3], x)` can be rewritten to `x IN [1, 2, 3]` for better performance with constant arrays
+)", 0) \
     DECLARE(Bool, optimize_dictget_tuple_element, true, R"(
 Rewrite `tupleElement(dictGet('dict', ('a', 'b', 'c'), key), 2)` into `dictGet('dict', 'b', key)` to avoid fetching unnecessary dictionary attributes. Supports positional (`.1`, `.2`, ...) and named (`.b`) access, and also applies to `dictGetOrDefault` when the default argument is a constant tuple or a `tuple(...)` of constants.
 )", 0) \
@@ -6233,10 +6245,10 @@ Minimum ratio of marks filtered by index analysis for lazy FINAL optimization. I
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
 )", 0) \
-    DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
-)", 0) \
-    DECLARE(UInt64, query_plan_min_columns_for_join_lazy_indexing, 3, R"(
-Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN. 0 means the optimization is disabled.
+    DECLARE(UInt64, query_plan_max_set_size_for_projection_match, 10000, R"(
+Maximum number of rows in an `IN`-clause set for which the projection matcher computes and compares content hashes when deciding whether two sets are equal. Sets larger than this are treated as non-matching and skip the projection. Zero disables content-hash comparison entirely: a projection match never succeeds for nodes containing `IN`-clause sets.
+
+Used by the aggregate projection matcher (and any future projection matcher that needs to compare `IN`-clause sets). Computing the content hash is `O(N log N)` in the number of set elements; this setting bounds the cost paid during planning when many `IN`-clauses appear in the query or the projection.
 )", 0) \
     DECLARE(Bool, enable_software_prefetch_in_join, true, R"(
 Enable use of software prefetch in hash join probe phase to hide memory access latency for large hash tables.
@@ -6335,6 +6347,9 @@ Possible values:
 )", 0) \
     DECLARE(UInt64, function_sleep_max_microseconds_per_block, 3000000, R"(
 Maximum number of microseconds the function `sleep` is allowed to sleep for each block. If a user called it with a larger value, it throws an exception. It is a safety threshold.
+)", 0) \
+    DECLARE(UInt64, function_base58_max_input_size, 10000, R"(
+Maximum size, in bytes, of a single input value for the functions `base58Encode`, `base58Decode` and `tryBase58Decode`. The generic `base58` conversion is quadratic in the input length, so a single large value can run for a very long time. `base58` is meant for short data (keys, hashes, addresses), so the default of 10 KB is a generous safety threshold. `base58Encode` and `base58Decode` throw `TOO_LARGE_STRING_SIZE` for larger inputs, while `tryBase58Decode` returns an empty string. A value of `0` disables the limit (the behavior before this setting was introduced). The linear `base32` and `base64` functions are unaffected.
 )", 0) \
     DECLARE(UInt64, function_visible_width_behavior, 1, R"(
 The version of `visibleWidth` behavior. 0 - only count the number of code points; 1 - correctly count zero-width and combining characters, count full-width characters as two, estimate the tab width, count delete characters.
@@ -7289,9 +7304,9 @@ Query Iceberg table using the specific snapshot id.
     DECLARE(Bool, allow_experimental_geo_types_in_iceberg, false, R"(
 Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
 )", 0) \
-    DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
-Enables showing data lake catalogs in system tables.
-)", 0) \
+    DECLARE_WITH_ALIAS(Bool, show_remote_databases_in_system_tables, false, R"(
+Enables showing remote databases (data lake catalogs, MySQL, PostgreSQL) in system tables.
+)", 0, show_data_lake_catalogs_in_system_tables) \
     DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
 Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
 )", 0) \
@@ -7321,6 +7336,9 @@ Enables delta-kernel writes feature.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
+)", 0) \
+    DECLARE(FileLikeEngineDefaultPartitionStrategy, file_like_engine_default_partition_strategy, FileLikeEngineDefaultPartitionStrategy::HIVE, R"(
+Default partition strategy for file like engines.
 )", 0) \
     DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
 Use Iceberg partition pruning for Iceberg tables
@@ -7515,6 +7533,9 @@ Force to resolve identifier in JOIN USING from projection (for example, in `SELE
 )", 0) \
     DECLARE(Bool, analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested, true, R"(
 Allow to add compound identifiers to nested. This is a compatibility setting because it changes the query result. When disabled, `SELECT a.b.c FROM table ARRAY JOIN a` does not work, and `SELECT a FROM table` does not include `a.b.c` column into `Nested a` result.
+    )", 0) \
+    DECLARE(Bool, analyzer_compatibility_prefer_alias_over_subcolumn, false, R"(
+When a multi-part identifier like `b.id` could refer to either the column `id` of a table aliased `b` or to a Tuple subcolumn `b.id` of some other column, prefer the alias-prefix interpretation (column `id` of `b`). By default the new analyzer prefers the subcolumn. Enable to match the old analyzer's resolution.
     )", 0) \
     \
     DECLARE(Timezone, session_timezone, "", R"(
@@ -7886,6 +7907,9 @@ Allows creation of tables with the [TimeSeries](../../engines/table-engines/inte
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
 )", EXPERIMENTAL) \
+    DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
+Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_unique_key, false, R"(
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 )", EXPERIMENTAL) \
@@ -8218,15 +8242,22 @@ If true (default), an AI function call that fails permanently after exhausting a
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_input_tokens_per_query, 1000000, R"(
 Maximum total input (prompt) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by one call's worth of input tokens, since the number of input tokens of a call are not known in advance. Set to 0 to disable.
+
+This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_output_tokens_per_query, 500000, R"(
 Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by one call's worth of output tokens, since the number of output tokens of a call are not known in advance. Set to 0 to disable.
+
+This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to embedding functions (notably aiEmbed), which never produce output tokens.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_api_calls_per_query, 0, R"(
 Maximum number of HTTP requests that AI functions may dispatch per query. Set to 0 to disable.
 )", EXPERIMENTAL) \
     DECLARE(Bool, ai_function_throw_on_quota_exceeded, true, R"(
 If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String).
+)", EXPERIMENTAL) \
+    DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
+Maximum number of texts to include in a single HTTP request made by `aiEmbed`. Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
 )", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \
@@ -8577,9 +8608,7 @@ Settings::Settings(const Settings & settings)
     : impl(std::make_unique<SettingsImpl>(*settings.impl))
 {}
 
-Settings::Settings(Settings && settings) noexcept
-    : impl(std::make_unique<SettingsImpl>(std::move(*settings.impl)))
-{}
+Settings::Settings(Settings && settings) noexcept = default;
 
 Settings::~Settings() = default;
 
