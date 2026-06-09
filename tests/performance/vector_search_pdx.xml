@@ -1,0 +1,201 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>rows</name>
+            <values>
+                <value>100000</value>
+            </values>
+        </substitution>
+
+        <substitution>
+            <name>dims</name>
+            <values>
+                <value>100</value>
+            </values>
+        </substitution>
+
+        <substitution>
+            <name>k</name>
+            <values>
+                <value>10</value>
+            </values>
+        </substitution>
+
+        <substitution>
+            <name>ef</name>
+            <values>
+                <value>64</value>
+                <value>256</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>DROP TABLE IF EXISTS vector_search_pdx_source</create_query>
+    <create_query>DROP TABLE IF EXISTS vector_search_pdx_hnsw</create_query>
+    <create_query>DROP TABLE IF EXISTS vector_search_pdx_pdx</create_query>
+
+    <create_query>
+        CREATE TABLE vector_search_pdx_source
+        (
+            id UInt64,
+            category UInt16,
+            vec Array(Float32)
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+    </create_query>
+
+    <create_query>
+        CREATE TABLE vector_search_pdx_hnsw
+        (
+            id UInt64,
+            category UInt16,
+            vec Array(Float32),
+            INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', {dims})
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+    </create_query>
+
+    <create_query>
+        CREATE TABLE vector_search_pdx_pdx
+        (
+            id UInt64,
+            category UInt16,
+            vec Array(Float32),
+            INDEX idx vec TYPE vector_similarity('pdx', 'cosineDistance', {dims})
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+    </create_query>
+
+    <fill_query>
+        INSERT INTO vector_search_pdx_source
+        SELECT
+            number AS id,
+            toUInt16(number % 10) AS category,
+            arrayMap(i -> toFloat32((cityHash64(number, i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS vec
+        FROM numbers({rows})
+    </fill_query>
+
+    <fill_query>INSERT INTO vector_search_pdx_hnsw SELECT * FROM vector_search_pdx_source</fill_query>
+    <fill_query>INSERT INTO vector_search_pdx_pdx SELECT * FROM vector_search_pdx_source</fill_query>
+
+    <!-- exact baseline (no vector_similarity index) -->
+    <query>
+        WITH
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1001), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref1,
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1002), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref2,
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1003), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref3,
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1004), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref4
+        SELECT sum(id)
+        FROM
+        (
+            SELECT id FROM vector_search_pdx_source ORDER BY cosineDistance(vec, ref1) ASC LIMIT {k}
+            UNION ALL
+            SELECT id FROM vector_search_pdx_source ORDER BY cosineDistance(vec, ref2) ASC LIMIT {k}
+            UNION ALL
+            SELECT id FROM vector_search_pdx_source ORDER BY cosineDistance(vec, ref3) ASC LIMIT {k}
+            UNION ALL
+            SELECT id FROM vector_search_pdx_source ORDER BY cosineDistance(vec, ref4) ASC LIMIT {k}
+        )
+        FORMAT Null
+    </query>
+
+    <!-- ANN baseline path (HNSW index) -->
+    <query>
+        WITH
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1001), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref1,
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1002), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref2,
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1003), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref3,
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1004), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref4
+        SELECT sum(id)
+        FROM
+        (
+            SELECT id FROM vector_search_pdx_hnsw ORDER BY cosineDistance(vec, ref1) ASC LIMIT {k}
+            UNION ALL
+            SELECT id FROM vector_search_pdx_hnsw ORDER BY cosineDistance(vec, ref2) ASC LIMIT {k}
+            UNION ALL
+            SELECT id FROM vector_search_pdx_hnsw ORDER BY cosineDistance(vec, ref3) ASC LIMIT {k}
+            UNION ALL
+            SELECT id FROM vector_search_pdx_hnsw ORDER BY cosineDistance(vec, ref4) ASC LIMIT {k}
+        )
+        SETTINGS hnsw_candidate_list_size_for_search = {ef}
+        FORMAT Null
+    </query>
+
+    <!-- ANN path under test (PDX index) -->
+    <query>
+        WITH
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1001), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref1,
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1002), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref2,
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1003), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref3,
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1004), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref4
+        SELECT sum(id)
+        FROM
+        (
+            SELECT id FROM vector_search_pdx_pdx ORDER BY cosineDistance(vec, ref1) ASC LIMIT {k}
+            UNION ALL
+            SELECT id FROM vector_search_pdx_pdx ORDER BY cosineDistance(vec, ref2) ASC LIMIT {k}
+            UNION ALL
+            SELECT id FROM vector_search_pdx_pdx ORDER BY cosineDistance(vec, ref3) ASC LIMIT {k}
+            UNION ALL
+            SELECT id FROM vector_search_pdx_pdx ORDER BY cosineDistance(vec, ref4) ASC LIMIT {k}
+        )
+        SETTINGS hnsw_candidate_list_size_for_search = {ef}
+        FORMAT Null
+    </query>
+
+    <!-- filtered ANN baseline path (HNSW index) -->
+    <query>
+        WITH
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1001), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref1,
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1002), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref2,
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1003), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref3,
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1004), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref4
+        SELECT sum(id)
+        FROM
+        (
+            SELECT id FROM vector_search_pdx_hnsw WHERE category = 3 ORDER BY cosineDistance(vec, ref1) ASC LIMIT {k}
+            UNION ALL
+            SELECT id FROM vector_search_pdx_hnsw WHERE category = 3 ORDER BY cosineDistance(vec, ref2) ASC LIMIT {k}
+            UNION ALL
+            SELECT id FROM vector_search_pdx_hnsw WHERE category = 3 ORDER BY cosineDistance(vec, ref3) ASC LIMIT {k}
+            UNION ALL
+            SELECT id FROM vector_search_pdx_hnsw WHERE category = 3 ORDER BY cosineDistance(vec, ref4) ASC LIMIT {k}
+        )
+        SETTINGS hnsw_candidate_list_size_for_search = {ef}
+        FORMAT Null
+    </query>
+
+    <!-- filtered ANN path under test (PDX index) -->
+    <query>
+        WITH
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1001), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref1,
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1002), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref2,
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1003), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref3,
+            arrayMap(i -> toFloat32((cityHash64(toUInt64(1004), i) % 1000000) / 1000000.), range(toUInt64({dims}))) AS ref4
+        SELECT sum(id)
+        FROM
+        (
+            SELECT id FROM vector_search_pdx_pdx WHERE category = 3 ORDER BY cosineDistance(vec, ref1) ASC LIMIT {k}
+            UNION ALL
+            SELECT id FROM vector_search_pdx_pdx WHERE category = 3 ORDER BY cosineDistance(vec, ref2) ASC LIMIT {k}
+            UNION ALL
+            SELECT id FROM vector_search_pdx_pdx WHERE category = 3 ORDER BY cosineDistance(vec, ref3) ASC LIMIT {k}
+            UNION ALL
+            SELECT id FROM vector_search_pdx_pdx WHERE category = 3 ORDER BY cosineDistance(vec, ref4) ASC LIMIT {k}
+        )
+        SETTINGS hnsw_candidate_list_size_for_search = {ef}
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS vector_search_pdx_hnsw</drop_query>
+    <drop_query>DROP TABLE IF EXISTS vector_search_pdx_pdx</drop_query>
+    <drop_query>DROP TABLE IF EXISTS vector_search_pdx_source</drop_query>
+</test>

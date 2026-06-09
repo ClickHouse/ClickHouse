@@ -213,6 +213,13 @@ else ()
     message(STATUS "Not using USearch")
 endif ()
 
+option(ENABLE_PDX "Enable PDX" ${ENABLE_LIBRARIES})
+if (ENABLE_PDX)
+    add_contrib (pdx-cmake pdx)
+else ()
+    message(STATUS "Not using PDX")
+endif ()
+
 add_contrib (xxHash-cmake xxHash)
 
 add_contrib (libbcrypt-cmake libbcrypt)

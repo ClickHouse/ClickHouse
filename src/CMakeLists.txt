@@ -752,6 +752,10 @@ if (TARGET ch_contrib::usearch)
     target_link_libraries(dbms PUBLIC ch_contrib::usearch)
 endif()
 
+if (TARGET ch_contrib::pdx)
+    target_link_libraries(dbms PUBLIC ch_contrib::pdx)
+endif()
+
 if (TARGET ch_contrib::prometheus_protobufs)
     target_link_libraries(dbms PUBLIC ch_contrib::prometheus_protobufs)
 endif()

@@ -4,8 +4,13 @@
 
 #if USE_USEARCH
 
+#if USE_PDX
+#include <pdx/index.hpp>
+#endif
+
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Common/Logger.h>
+#include <vector>
 
 /// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
 #if defined(__x86_64__) || defined(__i386__)
@@ -15,6 +20,15 @@
 
 namespace DB
 {
+
+class ReadBuffer;
+class WriteBuffer;
+
+enum class VectorSimilarityMethod : UInt8
+{
+    HNSW = 0,
+    PDX = 1,
+};
 
 /// Defaults for HNSW parameters. Instead of using the default parameters provided by USearch (default_connectivity(),
 /// default_expansion_add(), default_expansion_search()), we experimentally came up with our own default parameters. They provide better
@@ -76,40 +90,47 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
 {
     MergeTreeIndexGranuleVectorSimilarity(
         const String & index_name_,
+        VectorSimilarityMethod method_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
         UsearchHnswParams usearch_hnsw_params_);
 
     MergeTreeIndexGranuleVectorSimilarity(
         const String & index_name_,
+        VectorSimilarityMethod method_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
         UsearchHnswParams usearch_hnsw_params_,
-        USearchIndexWithSerializationPtr index_);
+        USearchIndexWithSerializationPtr hnsw_index_
+#if USE_PDX
+        ,
+        std::shared_ptr<PDX::IPDXIndex> pdx_index_
+#endif
+        );
 
     ~MergeTreeIndexGranuleVectorSimilarity() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return !index || index->size() == 0; }
+    bool empty() const override;
 
-    size_t memoryUsageBytes() const override { return index->memoryUsageBytes(); }
+    size_t memoryUsageBytes() const override;
 
     const String index_name;
+    const VectorSimilarityMethod method;
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     const UsearchHnswParams usearch_hnsw_params;
-    USearchIndexWithSerializationPtr index;
+    USearchIndexWithSerializationPtr hnsw_index;
+#if USE_PDX
+    std::shared_ptr<PDX::IPDXIndex> pdx_index;
+#endif
 
     LoggerPtr logger = getLogger("VectorSimilarityIndex");
 
 private:
-    /// The version of the persistence format of USearch index. Increment whenever you change the format.
-    /// Note: USearch prefixes the serialized data with its own version header. We can't rely on that because 1. the index in ClickHouse
-    /// is (at least in theory) agnostic of specific vector search libraries, and 2. additional data (e.g. the number of dimensions)
-    /// outside USearch exists which we should version separately.
-    static constexpr UInt64 FILE_FORMAT_VERSION = 1;
+    static constexpr UInt64 FILE_FORMAT_VERSION = 2;
 };
 
 
@@ -118,6 +139,7 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
     MergeTreeIndexAggregatorVectorSimilarity(
         const String & index_name_,
         const Block & index_sample_block,
+        VectorSimilarityMethod method_,
         UInt64 dimensions_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
@@ -125,17 +147,23 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
 
     ~MergeTreeIndexAggregatorVectorSimilarity() override = default;
 
-    bool empty() const override { return !index || index->size() == 0; }
+    bool empty() const override;
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
 
     const String index_name;
     const Block index_sample_block;
+    const VectorSimilarityMethod method;
     const UInt64 dimensions;
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     const UsearchHnswParams usearch_hnsw_params;
-    USearchIndexWithSerializationPtr index;
+    USearchIndexWithSerializationPtr hnsw_index;
+#if USE_PDX
+    std::vector<float> pdx_embeddings;
+    size_t pdx_rows = 0;
+    std::shared_ptr<PDX::IPDXIndex> pdx_index;
+#endif
 };
 
 
@@ -145,6 +173,7 @@ public:
     explicit MergeTreeIndexConditionVectorSimilarity(
         const std::optional<VectorSearchParameters> & parameters_,
         const String & index_column_,
+        VectorSimilarityMethod method_,
         unum::usearch::metric_kind_t metric_kind_,
         ContextPtr context);
 
@@ -158,6 +187,7 @@ public:
 private:
     std::optional<VectorSearchParameters> parameters;
     const String index_column;
+    const VectorSimilarityMethod method;
     const unum::usearch::metric_kind_t metric_kind;
     const size_t expansion_search;
     const float index_fetch_multiplier;
@@ -171,6 +201,7 @@ class MergeTreeIndexVectorSimilarity : public IMergeTreeIndex
 public:
     MergeTreeIndexVectorSimilarity(
         const IndexDescription & index_,
+        VectorSimilarityMethod method_,
         UInt64 dimensions_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
@@ -185,6 +216,7 @@ public:
     bool isVectorSimilarityIndex() const override { return true; }
 
 private:
+    const VectorSimilarityMethod method;
     const UInt64 dimensions;
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
