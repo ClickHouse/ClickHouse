@@ -92,6 +92,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool log_queries;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
@@ -687,6 +688,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             /// because this table is actually stateless like a table function.
             /* is_table_function */true);
 
+        if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
+            context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, storage_cluster->getName());
+
         storage_cluster->startup();
         return storage_cluster;
     }
@@ -700,7 +704,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         context_->getClientInfo().collaborate_with_initiator
         && can_use_parallel_replicas;
 
-    return std::make_shared<StorageObjectStorage>(
+    auto result_storage = std::make_shared<StorageObjectStorage>(
         configuration,
         configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name, table_uuid))),
         context_copy,
@@ -720,6 +724,11 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /// because this table is actually stateless like a table function.
         /* is_table_function */true,
         /* lazy_init */true);
+
+    if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
+        context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, result_storage->getName());
+
+    return result_storage;
 }
 
 void DatabaseDataLake::dropTable( /// NOLINT
