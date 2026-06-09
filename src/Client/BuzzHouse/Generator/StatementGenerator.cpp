@@ -1749,7 +1749,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                  }
              }},
             /// Materialize column
-            {2 * static_cast<uint32_t>(can_merge),
+            {2 * static_cast<uint32_t>(no_oracle && can_merge),
              [&]
              {
                  ColInPartition * mcol = ati->mutable_materialize_column();
@@ -1876,7 +1876,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                  ccol->set_comment(nextComment(rg));
              }},
             /// Delete mask
-            {8 * static_cast<uint32_t>(can_merge),
+            {8 * static_cast<uint32_t>(no_oracle && can_merge),
              [&]
              {
                  OptionalPartitionExpr * ope = ati->mutable_delete_mask();
@@ -2060,7 +2060,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                      rg, 0, rg.nextSmallNumber() < 3, false, t, apf->mutable_single_partition()->mutable_partition());
                  t2.setName(apf->mutable_est(), false);
              }},
-            {5 * static_cast<uint32_t>(is_mt),
+            {5 * static_cast<uint32_t>(no_oracle && is_mt),
              [&]
              {
                  ClearColumnInPartition * ccip = ati->mutable_clear_column_partition();
@@ -2105,14 +2105,14 @@ std::optional<String> StatementGenerator::alterSingleTable(
                  generateStorage(rg, mp->mutable_storage());
              }},
             /// TTL
-            {5 * static_cast<uint32_t>(!t.is_deterministic && can_merge),
+            {5 * static_cast<uint32_t>(no_oracle && !t.is_deterministic && can_merge),
              [&]
              {
                  flatTableColumnPath(flat_tuple | flat_nested, t.cols, [](const SQLColumn &) { return true; });
                  generateNextTTL(rg, std::make_optional<SQLTable>(t), nullptr, ati->mutable_modify_ttl());
                  this->entries.clear();
              }},
-            {2 * static_cast<uint32_t>(!t.is_deterministic), [&] { ati->set_remove_ttl(true); }},
+            {2 * static_cast<uint32_t>(no_oracle && !t.is_deterministic), [&] { ati->set_remove_ttl(true); }},
             /// Attach/replace partition from
             {5 * static_cast<uint32_t>(no_oracle && is_mt),
              [&]
@@ -2123,7 +2123,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                      rg, 0, rg.nextSmallNumber() < 3, true, t2, apf->mutable_single_partition()->mutable_partition());
                  t2.setName(apf->mutable_est(), false);
              }},
-            {5 * static_cast<uint32_t>(is_mt),
+            {5 * static_cast<uint32_t>(no_oracle && is_mt),
              [&]
              {
                  AttachPartitionFrom * apf = ati->mutable_replace_partition_from();
@@ -2144,7 +2144,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                          rg, 0, rg.nextSmallNumber() < 3, false, t, ope->mutable_single_partition()->mutable_partition());
              }},
             /// Apply patches
-            {3,
+            {3 * static_cast<uint32_t>(no_oracle),
              [&]
              {
                  OptionalPartitionExpr * ope = ati->mutable_apply_patches();

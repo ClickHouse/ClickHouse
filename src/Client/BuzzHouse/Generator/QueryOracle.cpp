@@ -1273,6 +1273,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 Truncate * trunc = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
                 t.setName(trunc->mutable_est(), false);
                 maybeSetClusterAndSettings(trunc);
+                finishSettings(trunc->mutable_setting_values());
             }
             else if (choice == 1)
             {
@@ -1282,6 +1283,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 del->mutable_del()->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
                     SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
                 maybeSetClusterAndSettings(del);
+                finishSettings(del->mutable_setting_values());
             }
             else
             {
@@ -1292,6 +1294,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 del->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
                     SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
                 maybeSetClusterAndSettings(at);
+                finishSettings(at->mutable_setting_values());
             }
             intermediate_queries.emplace_back(next);
         }
