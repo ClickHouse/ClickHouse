@@ -2093,43 +2093,36 @@ struct ConvertImpl
         else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
             && std::is_same_v<ToDataType, DataTypeTime>)
         {
-            /// Conversion of Time64 to Time: drop sub-second part by dividing by the scale multiplier.
-            /// Unlike `DateTime64 -> Time`, no timezone offset is applied: both Time64 and Time are
-            /// timezone-unaware seconds-of-day, so the cast is a pure scale conversion. Applying the
-            /// session timezone offset here would silently shift values (see #104038 for the Arrow
-            /// analogue of this class of bug).
-            const auto & arg = arguments[0];
-            const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arg.type).getScale();
-            const auto scale_mult = DecimalUtils::scaleMultiplier<Time64::NativeType>(from_scale);
-
-            const auto & from_col = assert_cast<const ColumnDecimal<Time64> &>(*arg.column);
-            auto to_col = ColumnVector<Int32>::create(input_rows_count);
-            auto & to_data = to_col->getData();
-            const auto & from_data = from_col.getData();
-            for (size_t i = 0; i < input_rows_count; ++i)
-                to_data[i] = static_cast<Int32>(from_data[i].value / scale_mult);
-            return to_col;
+            /// Conversion of Time64 to Time: drop the sub-second part.
+            /// `TransformTime64` extracts the whole-second part flooring towards negative infinity
+            /// (so `-00:00:00.5` becomes `-00:00:01`, not `00:00:00`), and `ToTimeTransform64Signed`
+            /// applies the `Time` range handling (`[-MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP]`) honoring
+            /// `date_time_overflow_behavior`. Unlike `DateTime64 -> Time`, no timezone offset is applied:
+            /// both `Time64` and `Time` are timezone-unaware seconds-of-day, so the cast is a pure scale
+            /// conversion. Applying the session timezone offset here would silently shift values (see
+            /// issue #104038 for the Arrow analogue of this class of bug).
+            using TimeTransform = TransformTime64<ToTimeTransform64Signed<Int64, Int32, date_time_overflow_behavior>>;
+            const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arguments[0].type).getScale();
+            return DateTimeTransformImpl<FromDataType, ToDataType, TimeTransform, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, TimeTransform(from_scale));
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
             && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
-            /// Conversion of Time64 to DateTime: Time64 stores sub-seconds since midnight; the
-            /// integer seconds part is reinterpreted as seconds-since-epoch, producing a 1970-01-01
+            /// Conversion of Time64 to DateTime: `Time64` stores sub-seconds since midnight; the
+            /// whole-second part is reinterpreted as seconds-since-epoch, producing a 1970-01-01
             /// wall-clock timestamp. This preserves the value produced by the legacy
-            /// Parquet `TIME` -> `DateTime` path used in 00900_parquet_time_to_ch_date_time.sh
+            /// Parquet `TIME` -> `DateTime` path used in `00900_parquet_time_to_ch_date_time.sh`
             /// (which previously routed through `DateTime64 -> DateTime`).
-            /// No timezone offset is applied; the result is the same regardless of `session_timezone`.
-            const auto & arg = arguments[0];
-            const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arg.type).getScale();
-            const auto scale_mult = DecimalUtils::scaleMultiplier<Time64::NativeType>(from_scale);
-
-            const auto & from_col = assert_cast<const ColumnDecimal<Time64> &>(*arg.column);
-            auto to_col = ColumnVector<UInt32>::create(input_rows_count);
-            auto & to_data = to_col->getData();
-            const auto & from_data = from_col.getData();
-            for (size_t i = 0; i < input_rows_count; ++i)
-                to_data[i] = static_cast<UInt32>(from_data[i].value / scale_mult);
-            return to_col;
+            /// `TransformTime64` extracts the whole-second part flooring towards negative infinity, and
+            /// `ToDateTimeImpl` applies the `DateTime` range handling (`[0, MAX_DATETIME_TIMESTAMP)`)
+            /// honoring `date_time_overflow_behavior`, instead of the previous unchecked wrap through
+            /// `UInt32`. No timezone offset is applied; the result is the same regardless of
+            /// `session_timezone`.
+            using DateTimeTransform = TransformTime64<ToDateTimeImpl<date_time_overflow_behavior>>;
+            const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arguments[0].type).getScale();
+            return DateTimeTransformImpl<FromDataType, ToDataType, DateTimeTransform, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, DateTimeTransform(from_scale));
         }
         /// Conversion of Date or DateTime to DateTime64: add zero sub-second part.
         else if constexpr ((
