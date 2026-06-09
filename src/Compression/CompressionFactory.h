@@ -42,6 +42,10 @@ public:
     /// Return default codec (currently LZ4)
     CompressionCodecPtr getDefaultCodec() const;
 
+    /// True if `codec` is the default codec: no CODEC clause (null), or a lone CODEC(Default).
+    /// A compound such as CODEC(Delta, Default) would return false.
+    static bool isDefaultCodec(const ASTPtr & codec);
+
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
     ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs) const;
 
