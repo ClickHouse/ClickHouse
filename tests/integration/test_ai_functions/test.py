@@ -101,6 +101,14 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        # `api_key` is optional (some providers, e.g. a local Ollama, need no auth).
+        # This collection omits it so we can assert no `Authorization` header is sent.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_no_key AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/completions', "
+            f"model = 'test-model'"
+        )
         instance.query(
             f"CREATE NAMED COLLECTION ai_embed AS "
             f"provider = 'openai', "
@@ -208,6 +216,35 @@ def test_generate_content_error_graceful(started_cluster):
         settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
     )
     assert result.strip() == ""
+
+
+def last_request():
+    return json.loads(
+        instance.exec_in_container(
+            ["curl", "-s", f"http://localhost:{MOCK_PORT}/last-request"]
+        )
+    )
+
+
+def test_generate_without_api_key(started_cluster):
+    """A named collection that omits `api_key` resolves and runs end-to-end, and the
+    provider sends no `Authorization` header (rather than an empty/dummy token)."""
+    result = instance.query(
+        "SELECT aiGenerate('ai_no_key', 'no key here')",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "no key here"
+    assert "authorization" not in last_request()["headers"]
+
+
+def test_generate_with_api_key_sends_auth_header(started_cluster):
+    """A keyed collection forwards the key as a `Bearer` `Authorization` header."""
+    result = instance.query(
+        "SELECT aiGenerate('ai_mock', 'with key')",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "with key"
+    assert last_request()["headers"].get("authorization") == "Bearer test-key"
 
 
 # ---------------------------------------------------------------------------
@@ -547,7 +584,7 @@ def test_embed_duplicate_index_rejected(started_cluster):
         "SELECT aiEmbed('ai_embed_dup_index', x) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
         settings={**AI_SETTINGS, "ai_function_max_retries": 0},
     )
-    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+    assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
     assert "duplicates" in error or "duplicate" in error.lower()
 
 
@@ -557,7 +594,7 @@ def test_embed_wrong_count_rejected(started_cluster):
         "SELECT aiEmbed('ai_embed_wrong_count', x) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
         settings={**AI_SETTINGS, "ai_function_max_retries": 0},
     )
-    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+    assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
 
 
 def test_embed_empty_input_table(started_cluster):

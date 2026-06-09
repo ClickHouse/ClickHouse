@@ -3,9 +3,11 @@ Mock OpenAI-compatible HTTP server for AI function integration tests.
 
 Endpoints:
   GET  /health                       — readiness probe, returns "OK"
-  GET  /last-request                 — returns JSON `{"path": ..., "body": ...}` of the most
-      recent POST received, so tests can assert on request contents (e.g. that
-      `aiTranslate`'s `instructions` argument is forwarded in the prompt).
+  GET  /last-request                 — returns JSON `{"path": ..., "body": ..., "headers": ...}`
+      of the most recent POST received, so tests can assert on request contents (e.g. that
+      `aiTranslate`'s `instructions` argument is forwarded in the prompt, or that the
+      `Authorization` header is omitted when the named collection has no `api_key`).
+      Header names are lower-cased for case-insensitive lookup.
   POST /v1/chat/completions          — returns response based on request content:
       - If response_format with json_schema is present, returns JSON matching the schema
         with values derived from the user message.
@@ -30,7 +32,7 @@ MOCK_PORT = 18123
 DEFAULT_EMBED_DIM = 4
 
 # Single-threaded `HTTPServer` handles one request at a time, so a plain dict is safe.
-LAST_REQUEST = {"path": None, "body": None}
+LAST_REQUEST = {"path": None, "body": None, "headers": {}}
 
 
 def extract_user_message(body):
@@ -151,6 +153,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         LAST_REQUEST["path"] = parsed.path
         LAST_REQUEST["body"] = body
+        LAST_REQUEST["headers"] = {k.lower(): v for k, v in self.headers.items()}
 
         if parsed.path == "/v1/chat/completions":
             user_msg = extract_user_message(body)
