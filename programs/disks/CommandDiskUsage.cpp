@@ -5,6 +5,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 class CommandDiskUsage final : public ICommand
 {
 public:
@@ -22,6 +27,9 @@ public:
         const auto & disk = client.getCurrentDiskWithPath();
         String path = getValueFromCommandLineOptionsWithDefault<String>(options, "path", ".");
         bool human_readable = options.contains("human-readable");
+
+        if (!disk.isDirectory(path) && !disk.getDisk()->existsFile(disk.getRelativeFromRoot(path)))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} on disk {} doesn't exist", path, disk.getDisk()->getName());
 
         LOG_INFO(log, "Computing disk usage of '{}' at disk '{}'", path, disk.getDisk()->getName());
         UInt64 size = computeSize(disk, path);

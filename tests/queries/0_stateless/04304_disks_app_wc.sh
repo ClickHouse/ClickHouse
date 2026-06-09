@@ -40,3 +40,11 @@ printf "" | run "write $file"
 echo "--- empty ---"
 run "wc $file"
 run "remove $file"
+
+# A directory is not a regular file: wc should fail rather than count.
+dir="wc_dir"
+run "mkdir $dir"
+echo "--- directory ---"
+clickhouse-disks -C "$config" --disk "$disk_name" --query "wc $dir" 2>&1 >/dev/null \
+    | grep -o "Is a directory" | head -n1
+run "remove $dir"

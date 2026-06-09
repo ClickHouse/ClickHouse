@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 class CommandWordCount final : public ICommand
 {
 public:
@@ -29,6 +34,12 @@ public:
         String path_arg = getValueFromCommandLineOptionsThrow<String>(options, "path");
         String path = disk.getRelativeFromRoot(path_arg);
 
+        auto disk_ptr = disk.getDisk();
+        if (disk_ptr->existsDirectory(path))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot count '{}': Is a directory", path_arg);
+        if (!disk_ptr->existsFile(path))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} on disk {} doesn't exist", path_arg, disk_ptr->getName());
+
         bool count_bytes = options.contains("bytes");
         bool count_lines = options.contains("lines");
         bool count_words = options.contains("words");
@@ -41,7 +52,7 @@ public:
         size_t words = 0;
         bool in_word = false;
 
-        auto in = disk.getDisk()->readFile(path, getReadSettings());
+        auto in = disk_ptr->readFile(path, getReadSettings());
         /// Single pass over the buffered chunks read from the disk.
         while (!in->eof())
         {

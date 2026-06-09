@@ -41,5 +41,9 @@ disks "du $dir"
 printf 'x%.0s' $(seq 1536) | disks "write $dir/big"
 disks "du -h $dir/big"
 
+# A nonexistent path reports a clear error rather than a low-level failure.
+clickhouse-disks -C "$config" --disk "$disk" --query "du $dir/does_not_exist" 2>&1 >/dev/null \
+    | grep -o "doesn't exist" | head -n1
+
 # Clean up.
 disks "remove -r $dir"
