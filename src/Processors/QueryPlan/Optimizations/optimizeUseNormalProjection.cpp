@@ -1,4 +1,6 @@
 #include <Core/Settings.h>
+#include <Columns/ColumnConst.h>
+#include <Common/FieldAccurateComparison.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -20,9 +22,10 @@
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST.h>
-#include <unordered_set>
 
 
 namespace DB
@@ -41,19 +44,94 @@ namespace DB::QueryPlanOptimizations
 {
 
 /// Extract AND-connected conjuncts from an AST expression tree.
-/// For example, (a = 1 AND b = 2 AND c = 3) yields {"a = 1", "b = 2", "c = 3"}.
-static void extractConjunctsFromAST(const ASTPtr & expr, std::vector<String> & result)
+/// For example, (a = 1 AND b = 2 AND c = 3) yields {a = 1, b = 2, c = 3}.
+static void extractConjunctsFromAST(const ASTPtr & expr, std::vector<ASTPtr> & result)
 {
-    if (const auto * func = expr->as<ASTFunction>(); func && func->name == "and")
+    if (const auto * func = expr->as<ASTFunction>(); func && func->name == "and" && func->arguments)
     {
         for (const auto & child : func->arguments->children)
             extractConjunctsFromAST(child, result);
     }
     else
     {
-        /// Use the canonical column-name representation for comparison.
-        result.push_back(expr->getColumnName());
+        result.push_back(expr);
     }
+}
+
+/// Strip a leading analyzer table qualifier (e.g. `__table1.`) from a column name.
+/// The analyzer decorates input column names with a per-table-expression qualifier that is
+/// absent from the projection's WHERE AST, so it must be ignored when comparing identifiers.
+static std::string_view stripTableQualifier(std::string_view name)
+{
+    static constexpr std::string_view prefix = "__table";
+    if (!name.starts_with(prefix))
+        return name;
+
+    size_t pos = prefix.size();
+    while (pos < name.size() && isdigit(static_cast<unsigned char>(name[pos])))
+        ++pos;
+
+    if (pos > prefix.size() && pos < name.size() && name[pos] == '.')
+        return name.substr(pos + 1);
+
+    return name;
+}
+
+/// Structurally compare a query-filter DAG node against a projection-WHERE AST conjunct.
+///
+/// Textual comparison of names is unreliable here: the analyzer decorates query-filter DAG
+/// `result_name`s with table qualifiers (`__table1.event_type`) and literal type suffixes
+/// (`'pageview'_String`), none of which appear in the projection's WHERE AST. So we compare
+/// the structure instead, conservatively:
+///   - FUNCTION    vs ASTFunction:   same function name and positionally matching arguments;
+///   - INPUT       vs ASTIdentifier: same column name, ignoring a leading `__tableN.` qualifier;
+///   - COLUMN const vs ASTLiteral:   equal constant value (accurate, type-aware comparison).
+/// ALIAS nodes are unwrapped first. Any other node kind, or a mismatch, yields false.
+///
+/// This may reject some valid equivalences (e.g. reordered commutative arguments, or a predicate
+/// rewritten by the analyzer), but it never accepts a predicate that is not literally present in
+/// the query filter — preserving the conservative containment guarantee.
+static bool matchDAGNodeToAST(const ActionsDAG::Node * node, const ASTPtr & ast)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        node = node->children.front();
+
+    if (const auto * func = ast->as<ASTFunction>())
+    {
+        if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+            return false;
+        if (node->function_base->getName() != func->name)
+            return false;
+
+        const auto & ast_args = func->arguments ? func->arguments->children : ASTs{};
+        if (node->children.size() != ast_args.size())
+            return false;
+
+        for (size_t i = 0; i < ast_args.size(); ++i)
+            if (!matchDAGNodeToAST(node->children[i], ast_args[i]))
+                return false;
+
+        return true;
+    }
+
+    if (const auto * ident = ast->as<ASTIdentifier>())
+    {
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            return false;
+        return stripTableQualifier(node->result_name) == ident->name();
+    }
+
+    if (const auto * literal = ast->as<ASTLiteral>())
+    {
+        if (node->type != ActionsDAG::ActionType::COLUMN || !node->column)
+            return false;
+        const auto * const_col = typeid_cast<const ColumnConst *>(node->column.get());
+        if (!const_col)
+            return false;
+        return accurateEquals(const_col->getField(), literal->value);
+    }
+
+    return false;
 }
 
 /// Recursively check if an AST tree contains any aliases.
@@ -168,23 +246,31 @@ static bool doesQueryFilterImplyProjectionWhere(
     }
 
     /// Extract projection's WHERE conjuncts from the AST.
-    std::vector<String> proj_conjuncts;
+    std::vector<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);
+
+    /// Unwrap a leading ALIAS wrapper before splitting conjuncts. `QueryDAG::build` wraps the
+    /// query filter in an ALIAS named `_projection_filter`, and `extractConjunctionAtoms` only
+    /// descends into `and` functions, not aliases. Without unwrapping, a top-level `and` stays
+    /// hidden behind the alias, so the stricter-`AND` case would yield a single `and(...)` atom
+    /// instead of its individual conjuncts.
+    const auto * filter_root = query_filter_node;
+    while (filter_root->type == ActionsDAG::ActionType::ALIAS && !filter_root->children.empty())
+        filter_root = filter_root->children.front();
 
     /// Extract query's filter conjuncts using ClickHouse's built-in DAG utility.
     /// This is the same function used by the filter pushdown optimizer.
-    auto query_atoms = ActionsDAG::extractConjunctionAtoms(query_filter_node);
+    auto query_atoms = ActionsDAG::extractConjunctionAtoms(filter_root);
 
-    /// Build a set of query conjunct names for O(1) lookup.
-    std::unordered_set<String> query_conjunct_names;
-    query_conjunct_names.reserve(query_atoms.size());
-    for (const auto * atom : query_atoms)
-        query_conjunct_names.insert(atom->result_name);
-
-    /// Check that every projection conjunct has an exact match in the query conjuncts.
+    /// Every projection conjunct must structurally match at least one query conjunct.
     for (const auto & proj_conj : proj_conjuncts)
     {
-        if (!query_conjunct_names.contains(proj_conj))
+        bool found = std::any_of(
+            query_atoms.begin(),
+            query_atoms.end(),
+            [&](const auto * atom) { return matchDAGNodeToAST(atom, proj_conj); });
+
+        if (!found)
             return false;
     }
 

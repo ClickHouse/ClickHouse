@@ -21,3 +21,4 @@ Test 7: Projection with WITH clause
 Test 8: Mutation with filtered projection
 2024-01-03 00:00:00	c
 2024-01-04 00:00:00	d
+Test 9: Aggregate projection with WHERE is rejected
