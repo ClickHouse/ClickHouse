@@ -11,6 +11,7 @@
 #include <Analyzer/MatcherNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/WindowFunctionsUtils.h>
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Storages/ColumnsDescription.h>
@@ -89,6 +90,12 @@ struct OrderByLimitRewriteVisitor : public InDepthQueryTreeVisitorWithContext<Or
             return {};
         if (query_node.hasWindow())
             return {};
+        /// `hasWindow` only covers the named `WINDOW` clause; `QueryAnalysisPass` clears that section,
+        /// so an inline window function (`row_number() OVER (...)`) in the projection or `ORDER BY` leaves
+        /// it false. Window functions are evaluated over the full result set before `LIMIT`, but the rewrite
+        /// filters rows by their physical offset before they are computed, which would change their values.
+        if (hasWindowFunctionNodes(query_node.getProjectionNode()) || hasWindowFunctionNodes(query_node.getOrderByNode()))
+            return {};
         if (query_node.hasHaving())
             return {};
         if (query_node.hasInterpolate())
@@ -146,7 +153,18 @@ struct OrderByLimitRewriteVisitor : public InDepthQueryTreeVisitorWithContext<Or
         if (auto * tb_node = query_node.getJoinTree()->as<TableNode>())
         {
             if (columns.size() >= min_columns_to_use_fetch)
-                return tb_node->getStorage();
+            {
+                auto storage = tb_node->getStorage();
+                /// A physical column named `_part_starting_offset`/`_part_offset` shadows the virtual
+                /// row-offset columns during read planning, so the generated `ColumnNode`s would read
+                /// user data instead of physical offsets and build a wrong `IN` filter.
+                auto metadata = storage->getInMemoryMetadataPtr(getContext(), false);
+                if (metadata
+                    && (metadata->getColumns().hasPhysical("_part_starting_offset")
+                        || metadata->getColumns().hasPhysical("_part_offset")))
+                    return {};
+                return storage;
+            }
         }
 
         return {};
