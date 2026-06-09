@@ -85,7 +85,8 @@ public:
         size_t pos = enqueue_pos.load(std::memory_order_relaxed);
         while (true)
         {
-            Slot & slot = slots[pos & mask];
+            size_t slot_idx = pos & mask;
+            Slot & slot = slots[slot_idx];
             size_t slot_pos = slot.pos.load(std::memory_order_acquire);
             if (slot_pos < pos)
             {
@@ -104,6 +105,28 @@ public:
                 continue;
             }
 
+            /// We're seeing very rare TSAN error saying there's data race between the slot.value
+            /// write in tryPush and slot.value read in tryPop. For the life of me I can't see how
+            /// this is possible. The code is isomorphic to dvykov's original implementation.
+            /// Best guess is TSAN false positive of some kind.
+            /// So here's a desperate hack that re-loads slot.pos in hopes it would un-confuse TSAN.
+            ///
+            /// Appendix:
+            /// Reasoning for why that tryPush and tryPop can't race on slot.value:
+            ///  * Let i be slot's index in `slots`, i.e. pos & mask.
+            ///    Notice that i has the same parity as pos.
+            ///  * If (slot.pos - i) is even, slot.value may be written to.
+            ///    If (slot.pos - i) is odd, slot.value may be read from.
+            ///  * tryPush does slot.pos.load(acquire), then effectively checks that (slot.pos - i)
+            ///    is even (by checking slot_pos == pos; pos has same parity as i), then
+            ///    writes slot.value, then does slot.pos.store(release) that flips the
+            ///    (slot.pos - i) parity to odd.
+            ///  * tryPop symmetrically does slot.pos.load(acquire), checks that parity is odd,
+            ///    does the read, does slot.pos.store(release) that flips parity back to even.
+            size_t slot_pos_again = slot.pos.load(std::memory_order_acquire);
+            if (slot_pos_again != pos || (slot_pos_again - slot_idx) % 2 != 0)
+                std::abort();
+
             slot.value = std::move(value);
             slot.pos.store(pos + 1, std::memory_order_release);
             return true;
@@ -116,7 +139,8 @@ public:
         size_t pos = dequeue_pos.load(std::memory_order_relaxed);
         while (true)
         {
-            Slot & slot = slots[pos & mask];
+            size_t slot_idx = pos & mask;
+            Slot & slot = slots[slot_idx];
             size_t slot_pos = slot.pos.load(std::memory_order_acquire);
             if (slot_pos < pos + 1)
             {
@@ -134,6 +158,11 @@ public:
                 /// Another consumer won a different race.
                 continue;
             }
+
+            /// Same hack as in tryPush.
+            size_t slot_pos_again = slot.pos.load(std::memory_order_acquire);
+            if (slot_pos_again != pos + 1 || (slot_pos_again - slot_idx) % 2 != 1)
+                std::abort();
 
             out_value = std::move(slot.value);
             slot.pos.store(pos + mask + 1, std::memory_order_release);
