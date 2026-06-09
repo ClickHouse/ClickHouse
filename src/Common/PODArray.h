@@ -76,7 +76,7 @@ void protectMemoryRegion(void * addr, size_t len, int prot);
 /// The amount of memory occupied by the num_elements of the elements.
 inline size_t byte_size(size_t num_elements, size_t element_size)
 {
-    size_t amount;
+    size_t amount = 0;
     if (__builtin_mul_overflow(num_elements, element_size, &amount))
         throw_alloc_error();
     return amount;
@@ -85,7 +85,7 @@ inline size_t byte_size(size_t num_elements, size_t element_size)
 /// Minimum amount of memory to allocate for num_elements, including padding.
 inline size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, size_t pad_left, size_t pad_right)
 {
-    size_t amount;
+    size_t amount = 0;
     if (__builtin_add_overflow(byte_size(num_elements, element_size), pad_left + pad_right, &amount))
         throw_alloc_error();
     return amount;

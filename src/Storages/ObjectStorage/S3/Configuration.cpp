@@ -107,6 +107,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "partition_strategy",
     "partition_columns_in_data_file",
     "storage_class_name",
+    "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
@@ -704,8 +705,11 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->auth_settings[S3AuthSetting::no_sign_request] = no_sign_value.value();
     }
 
-    if (auto storage_class_name = getFromPositionOrKeyValue<String>("storage_class_name", args, engine_args_to_idx, key_value_args);
-        storage_class_name.has_value())
+    /// `storage_class` is an interchangeable alias for `storage_class_name` (see issue #68551).
+    auto storage_class_name = getFromPositionOrKeyValue<String>("storage_class_name", args, engine_args_to_idx, key_value_args);
+    if (!storage_class_name.has_value())
+        storage_class_name = getFromPositionOrKeyValue<String>("storage_class", args, {}, key_value_args);
+    if (storage_class_name.has_value())
     {
         s3_settings->request_settings[S3RequestSetting::storage_class_name] = storage_class_name.value();
     }
@@ -759,7 +763,10 @@ static void addStructureAndFormatToArgsIfNeededS3(
         if (count > max_number_of_arguments)
         {
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function s3, got {}", max_number_of_arguments, count);
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Expected 1 to {} arguments in table function s3, got {}",
+                max_number_of_arguments,
+                count);
         }
 
         auto format_literal = make_intrusive<ASTLiteral>(format_);

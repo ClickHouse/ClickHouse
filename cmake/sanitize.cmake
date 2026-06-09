@@ -20,9 +20,71 @@ if (SANITIZE)
         # MemorySanitizer flags are set according to the official documentation:
         # https://clang.llvm.org/docs/MemorySanitizer.html#usage
 
+        # Origin-tracking level: 2 records the full propagation chain (calls
+        # __msan_chain_origin at every value-propagation step), 1 records only
+        # the source allocation, 0 disables origin tracking.
+        #
+        # On x86-64-v3+ we drop to 1. Reason: with AVX2 the compiler keeps
+        # YMM live in hot vectorized loops; LLVM's vzeroupper-inserter then
+        # emits a vzeroupper before every external call from such a block.
+        # With track-origins=2, __msan_chain_origin is called on the hot
+        # path of every uninit-propagation step, so every such call pays a
+        # vzeroupper. Across millions of shadow propagations per query this
+        # produces a 30-60% slowdown that pushes stateless tests over the
+        # 10-minute CI timeout (regression observed from 2026-05-13 after
+        # x86-64-v3 became the default in PR #90043).
+        #
+        # Level 1 still surfaces the originating allocation of an uninit
+        # value, which is the punchline of most MSan reports. What is lost
+        # is the chain through intermediate copies, useful for deep
+        # value-shuffling bugs (e.g. parser -> planner -> exec) but a small
+        # minority of cases.
+        #
+        # Alternatives for future iteration if the chain is missed or
+        # level 1 still isn't fast enough:
+        #   * Downgrade the MSan build to -DX86_ARCH_LEVEL=2 (no chain
+        #     loss, but gives up any v3 wins for the whole build).
+        #   * Patch LLVM so X86VZeroUpperInserter or the MemorySanitizer
+        #     pass marks __msan_chain_origin (and other RTL calls) as
+        #     YMM-preserving so vzeroupper is elided at those call sites.
+        #   * Enable LTO on the MSan build so the inserter can see the
+        #     RTL is AVX-clean (heavy build change).
+        #
+        # cpu_features.cmake runs after this file, so X86_ARCH_LEVEL isn't
+        # in the cache yet on a first configure. If the user passed
+        # -DX86_ARCH_LEVEL=N on the command line, cmake populates the cache
+        # before any include runs and that override is honored; otherwise
+        # mirror the default from cpu_features.cmake.
+        if (ARCH_AMD64)
+            if (DEFINED CACHE{X86_ARCH_LEVEL})
+                set (_msan_x86_arch_level $CACHE{X86_ARCH_LEVEL})
+            else ()
+                set (_msan_x86_arch_level "3")
+            endif ()
+            if (_msan_x86_arch_level VERSION_GREATER_EQUAL 3)
+                set (MSAN_TRACK_ORIGINS_LEVEL 1)
+                # On v3+ MSan, AVX2 codegen keeps YMM live across the per-allocation MSan RTL calls
+                # (operator new, free, __msan_set_alloca_origin*, __msan_memcpy, etc.), and LLVM's
+                # `X86VZeroUpperInserter` emits a `vzeroupper` before every such call. For ClickHouse
+                # workloads that's ~1.78M vzeroupper instructions in the binary, almost all on hot
+                # paths.
+                #
+                # On Zen3+ and Ice Lake (current AMD CI runners) the AVX-to-SSE transition penalty
+                # that vzeroupper exists to mitigate is essentially zero. Disable the inserter under
+                # MSan v3+ so we skip executing those instructions.
+                set (MSAN_X86_VZEROUPPER_FLAGS "-mno-vzeroupper")
+            else ()
+                set (MSAN_TRACK_ORIGINS_LEVEL 2)
+                set (MSAN_X86_VZEROUPPER_FLAGS "")
+            endif ()
+        else ()
+            set (MSAN_TRACK_ORIGINS_LEVEL 2)
+            set (MSAN_X86_VZEROUPPER_FLAGS "")
+        endif ()
+
         # Linking can fail due to relocation overflows (see #49145), caused by too big object files / libraries.
         # Work around this with position-independent builds (-fPIC and -fpie), this is slightly slower than non-PIC/PIE but that's okay.
-        set (MSAN_FLAGS "-fsanitize=memory -fsanitize-memory-use-after-dtor -fsanitize-memory-track-origins -fPIC -fpie")
+        set (MSAN_FLAGS "-fsanitize=memory -fsanitize-memory-use-after-dtor -fsanitize-memory-track-origins=${MSAN_TRACK_ORIGINS_LEVEL} -fPIC -fpie ${MSAN_X86_VZEROUPPER_FLAGS}")
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")
 
