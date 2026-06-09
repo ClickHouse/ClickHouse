@@ -72,7 +72,8 @@ struct AzureStorageParsedArguments : private StorageParsedArguments
     void fromAST(ASTs & args, ContextPtr context, bool with_structure);
     void initializeForOneLake(
         ASTs & args,
-        ContextPtr context);
+        ContextPtr context,
+        bool use_blob_endpoint = true);
 
     Path blob_path;
     AzureBlobStorage::ConnectionParams connection_params;
@@ -124,11 +125,12 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
-    void setInitializationAsOneLake(const String & client_id_, const String & client_secret_, const String & tenant_id_)
+    void setInitializationAsOneLake(const String & client_id_, const String & client_secret_, const String & tenant_id_, bool use_blob_endpoint_)
     {
         onelake_client_id = client_id_;
         onelake_client_secret = client_secret_;
         onelake_tenant_id = tenant_id_;
+        onelake_use_blob_endpoint = use_blob_endpoint_;
     }
 
 protected:
@@ -146,6 +148,7 @@ private:
     String onelake_client_id;
     String onelake_client_secret;
     String onelake_tenant_id;
+    bool onelake_use_blob_endpoint = true;
 
     void initializeFromParsedArguments(const AzureStorageParsedArguments & parsed_arguments);
 };
