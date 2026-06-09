@@ -72,6 +72,19 @@ mkdir -p "$TEST_DIR_ABS/preast/root/a" "$TEST_DIR_ABS/preast/root/b/sub"
 printf "row1\n" > "$TEST_DIR_ABS/preast/root/b/sub/file.txt"
 ln -s .. "$TEST_DIR_ABS/preast/root/a/back"
 
+# Finite glob with adjacent asterisks: `adj/root/file.txt`, `adj/root/a/back -> ..`.
+# Pattern `adj/root/a**/back/*.txt` has NO recursive `**` path segment: `a**` is a
+# finite component (it matches the literal directory `a` here, since `*` and `*`
+# both expand to empty). The cycle guard must NOT activate for this expansion,
+# otherwise the walk through `a/back` resolves canonical to the seeded `adj/root`
+# and the legitimate match through `back/file.txt` is silently dropped. A naive
+# substring `find("**") != npos` over the expanded pattern would falsely classify
+# this as recursive; the correct detector mirrors the per-segment recursion test
+# in `listFilesWithRegexpMatchingImpl` (a path component must equal exactly `**`).
+mkdir -p "$TEST_DIR_ABS/adj/root/a"
+printf "row1\n" > "$TEST_DIR_ABS/adj/root/file.txt"
+ln -s .. "$TEST_DIR_ABS/adj/root/a/back"
+
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
 # Ancestor-loop symlink: `loop/dir1/dir2/loop_to_root` points back at `loop/dir1`,
@@ -125,6 +138,13 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/mutual/**/*
 # guard only protects the `**` recursion and the same file is read twice.
 echo "pre-asterisk-ancestor-seed"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/preast/root/*/**/*.txt', 'TSV', 'val String')"
+
+# Finite glob with adjacent asterisks: must return 1 (the file reached via the
+# legitimate `a/back` symlink path). The pattern has no `**` path segment, so the
+# cycle guard must stay inactive. A naive substring detector would falsely treat
+# `a**` as recursive, activate the guard, and drop the match.
+echo "finite-glob-with-adjacent-asterisks"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/adj/root/a**/back/*.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"

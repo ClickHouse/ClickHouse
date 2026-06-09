@@ -321,14 +321,18 @@ std::vector<std::string> listFilesWithRegexpMatching(
     std::unordered_set<std::string> active_dirs_on_stack;
     for (const auto & for_match_expanded : for_match_paths_expanded)
     {
-        /// `recursive_anywhere` is true when the EXPANDED pattern contains a `**` segment.
-        /// When true, the cycle guard activates for every directory descent (including
-        /// finite-glob segments like `*` that precede the `**`), seeding bounded ancestors
-        /// before the `**` so a deeper symlink whose canonical points back to one of them
-        /// is recognized as a cycle. Detected per-expansion: `expandSelectionGlob` resolves
-        /// brace alternatives, so e.g. `root/{*,**}/*.txt` may have one alternative without
-        /// `**` and one with it.
-        const bool recursive_anywhere = for_match_expanded.find("**") != std::string::npos;
+        /// True when the expansion has a path component equal to `**`. Mirrors the
+        /// per-segment test inside `listFilesWithRegexpMatchingImpl` (`current_glob == "/**"`):
+        /// finite components like `a**` or `**.txt` must NOT count.
+        bool recursive_anywhere = false;
+        for (auto seg : fs::path(for_match_expanded))
+        {
+            if (seg == "**")
+            {
+                recursive_anywhere = true;
+                break;
+            }
+        }
         listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, recursive_anywhere, 0, active_dirs_on_stack);
     }
 
