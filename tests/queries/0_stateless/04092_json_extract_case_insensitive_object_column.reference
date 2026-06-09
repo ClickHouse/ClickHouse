@@ -18,3 +18,6 @@ mixed rows int	1	11
 mixed rows int	2	22
 mixed rows int	3	33
 mixed rows int	4	0
+nested object raw	{"InnerKey":42}
+nested object raw exact	{"InnerKey":42}
+nested object deep raw	{"Deep":7}
