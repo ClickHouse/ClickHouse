@@ -6,9 +6,12 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
+#include <Common/scope_guard_safe.h>
 #include <limits>
+#include <utility>
 
 namespace DB::ErrorCodes
 {
@@ -153,6 +156,37 @@ TEST(AllocationInterceptors, MallocZeroFreeDoesNotCauseNegativeDrift)
 
     EXPECT_GE(CurrentThread::get().memory_tracker.get() - before_thread, -64 * 1024);
     EXPECT_GE(total_memory_tracker.get() - before_global, -64 * 1024);
+}
+
+TEST(AllocationInterceptors, CurrentProcessorMemoryUsageDeltaTracksAllocFreeEvents)
+{
+    MainThreadStatus::getInstance();
+    CurrentThread::flushUntrackedMemory();
+
+    auto & thread = CurrentThread::get();
+    Int64 delta = 0;
+    Int64 * previous_delta = std::exchange(thread.current_processor_memory_usage_delta, &delta);
+    SCOPE_EXIT_SAFE({
+        thread.current_processor_memory_usage_delta = previous_delta;
+        CurrentThread::flushUntrackedMemory();
+    });
+
+    std::ignore = CurrentMemoryTracker::alloc(4096);
+    EXPECT_EQ(delta, 4096);
+
+    std::ignore = CurrentMemoryTracker::free(1024);
+    EXPECT_EQ(delta, 3072);
+
+    std::ignore = CurrentMemoryTracker::free(3072);
+    EXPECT_EQ(delta, 0);
+
+    {
+        MemoryTrackerBlockerInThread blocker(VariableContext::Process);
+        std::ignore = CurrentMemoryTracker::alloc(2048);
+        std::ignore = CurrentMemoryTracker::free(2048);
+    }
+
+    EXPECT_EQ(delta, 0);
 }
 
 namespace

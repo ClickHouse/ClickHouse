@@ -2,10 +2,8 @@
 #include <Processors/Executors/ExecutionThreadContext.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/CurrentThread.h>
-#include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
-#include <Common/VariableContext.h>
 
 #include <optional>
 
@@ -48,20 +46,29 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
-static std::optional<Int64> getCurrentThreadMemoryUsage()
+class ProcessorMemoryUsageScope
 {
-    auto * memory_tracker = CurrentThread::getMemoryTracker();
-    if (!memory_tracker)
-        return std::nullopt;
+public:
+    explicit ProcessorMemoryUsageScope(Int64 & memory_usage_delta_)
+        : thread(current_thread)
+    {
+        if (thread)
+        {
+            previous_memory_usage_delta = thread->current_processor_memory_usage_delta;
+            thread->current_processor_memory_usage_delta = &memory_usage_delta_;
+        }
+    }
 
-    Int64 result = memory_tracker->get();
-    /// Do not flush untracked memory here. Keep this profiling path read-only and count only memory
-    /// that would be charged to the query-thread tracker when eventually flushed.
-    if (current_thread && current_thread->untracked_memory_blocker_level == VariableContext::Max)
-        result += current_thread->untracked_memory;
+    ~ProcessorMemoryUsageScope()
+    {
+        if (thread)
+            thread->current_processor_memory_usage_delta = previous_memory_usage_delta;
+    }
 
-    return result;
-}
+private:
+    ThreadStatus * thread = nullptr;
+    Int64 * previous_memory_usage_delta = nullptr;
+};
 
 void ExecutionThreadContext::executeJob()
 {
@@ -75,30 +82,15 @@ void ExecutionThreadContext::executeJob()
                 group->memory_spill_scheduler->checkAndSpill(node->processor());
         }
 
-        std::optional<Int64> memory_usage_before;
         if (profile_processors)
-            memory_usage_before = getCurrentThreadMemoryUsage();
-
-        auto add_memory_usage = [&]
         {
-            if (!memory_usage_before)
-                return;
-
-            if (auto memory_usage_after = getCurrentThreadMemoryUsage())
-                processor.memory_usage_delta += *memory_usage_after - *memory_usage_before;
-        };
-
-        try
+            ProcessorMemoryUsageScope memory_usage_scope(processor.memory_usage_delta);
+            processor.work();
+        }
+        else
         {
             processor.work();
         }
-        catch (...)
-        {
-            add_memory_usage();
-            throw;
-        }
-
-        add_memory_usage();
 
         /// Update read progress only for source nodes.
         bool is_source = node->back_edges.empty();
