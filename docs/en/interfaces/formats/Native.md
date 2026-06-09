@@ -15,6 +15,8 @@ doc_type: 'reference'
 
 ## Description {#description}
 
+The full official specification of the `Native` format is available [here](/interfaces/specs/NativeFormat).
+
 The `Native` format is ClickHouse's most efficient format because it is truly "columnar" 
 in that it does not convert columns to rows.  
 
