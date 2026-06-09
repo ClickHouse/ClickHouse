@@ -328,11 +328,13 @@ ColumnsDescription TableFunctionEval::getActualTableStructure(ContextPtr context
     chassert(create.children.size() == 1);
     chassert(create.children[0]->as<ASTSelectWithUnionQuery>());
 
+    auto query_for_schema = create.children[0]->clone();
+
     SharedHeader sample_block;
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_for_schema, context);
     else
-        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
+        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query_for_schema, context);
 
     return ColumnsDescription(sample_block->getNamesAndTypesList());
 }

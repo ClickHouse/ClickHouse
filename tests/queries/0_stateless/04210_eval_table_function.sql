@@ -19,6 +19,7 @@ SELECT * FROM eval(SELECT toLowCardinality(CAST('SELECT 7 AS lcn', 'Nullable(Str
 SELECT count() > 0 FROM (EXPLAIN PLAN SELECT * FROM eval('SELECT 8 AS explain_value'));
 WITH 'SELECT 9 AS with_alias_value' AS q SELECT * FROM eval(q);
 WITH 'SEL' AS a, 'ECT 10 AS with_concat_value' AS b SELECT * FROM eval(a || b);
+SELECT count() FROM eval('SELECT number FROM numbers(3) SETTINGS limit = 1');
 
 SET enable_analyzer = 0;
 WITH 'SELECT 1' AS x SELECT * FROM eval(arrayElement(arrayMap(x -> x, ['SELECT 11 AS lambda_value']), 1));
