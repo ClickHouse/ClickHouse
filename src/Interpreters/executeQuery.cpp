@@ -1508,27 +1508,45 @@ static BlockIO executeQueryImpl(
                     };
 
                     /// A multi-table `DROP TABLE a.t1, b.t2` keeps its targets in `database_and_tables`
-                    /// while `getDatabase` stays empty, so inspect every listed table and skip auto-fill
-                    /// if any of them lives in a `Replicated` database or resolves to a temporary table.
+                    /// while `getDatabase` stays empty, so inspect every listed table and classify each
+                    /// one: targets in a `Replicated` database or temporary tables must stay local, while
+                    /// ordinary tables should be distributed `ON CLUSTER`.
                     if (drop_query->database_and_tables)
                     {
                         const auto & list = drop_query->database_and_tables->as<ASTExpressionList &>();
+                        bool has_replicated_target = false;
+                        bool has_temporary_target = false;
+                        bool has_on_cluster_target = false;
                         for (const auto & child : list.children)
                         {
                             const auto * identifier = child->as<ASTTableIdentifier>();
                             if (!identifier)
                                 continue;
                             if (is_replicated_database(identifier->getDatabaseName()))
-                            {
-                                target_is_replicated_database = true;
-                                break;
-                            }
-                            if (resolves_to_temporary(StorageID(*identifier)))
-                            {
-                                target_is_temporary = true;
-                                break;
-                            }
+                                has_replicated_target = true;
+                            else if (resolves_to_temporary(StorageID(*identifier)))
+                                has_temporary_target = true;
+                            else
+                                has_on_cluster_target = true;
                         }
+
+                        /// A single `DROP` carries one `cluster` value for the whole statement, but
+                        /// `InterpreterDropQuery::getRewrittenASTsOfSingleTable` later splits it into
+                        /// independent single-table drops. When the statement mixes targets that must
+                        /// stay local (a `Replicated` database or a temporary table) with ordinary
+                        /// targets that should be distributed, no single value is correct: filling the
+                        /// cluster would push the local-only targets through distributed DDL, while
+                        /// leaving it empty would run the ordinary targets only on the initiator. Reject
+                        /// such statements so the user issues separate drops per group.
+                        if ((has_replicated_target || has_temporary_target) && has_on_cluster_target)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot automatically fill ON CLUSTER for a multi-table DROP that mixes "
+                                "targets in Replicated databases or temporary tables with ordinary tables. "
+                                "Issue a separate statement for each group, or specify ON CLUSTER explicitly.");
+
+                        target_is_replicated_database = has_replicated_target;
+                        target_is_temporary = target_is_temporary || has_temporary_target;
                     }
                     else if (drop_query->table)
                     {

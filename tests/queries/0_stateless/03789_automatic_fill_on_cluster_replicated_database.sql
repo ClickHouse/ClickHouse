@@ -58,11 +58,15 @@ SELECT count() = 0 FROM system.query_log WHERE current_database = currentDatabas
   AND query LIKE '%DROP TABLE test_repl_auto%'
   AND query LIKE '%ON CLUSTER%';
 
-SELECT 'Test 5: multi-table DROP listing a Replicated-DB table is not rewritten ON CLUSTER';
--- A multi-table `DROP TABLE a.t1, b.t2` keeps its targets in `database_and_tables` while the
--- query-level database stays empty. Operate from an ordinary current database so the guard must
--- inspect the per-target databases instead of falling back to the current one. The drop must skip
--- auto-fill because one of the listed tables lives in a Replicated database.
+SELECT 'Test 5: multi-table DROP mixing a Replicated-DB table with an ordinary table is rejected';
+-- A multi-table `DROP TABLE a.t1, b.t2` keeps its targets in `database_and_tables`. A single DROP
+-- carries one cluster value for the whole statement, but it is later split into independent
+-- single-table drops. When it mixes a target that must stay local (here a Replicated-database table)
+-- with an ordinary target that should be distributed, no single value is correct: filling the cluster
+-- would push the Replicated-database table through distributed DDL, while leaving it empty would run
+-- the ordinary table only on the initiator. Auto-fill rejects such statements so the user issues
+-- separate drops. Operate from an ordinary current database so the guard must inspect the per-target
+-- databases instead of falling back to the current one.
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic;
 
@@ -70,19 +74,15 @@ CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.test_repl_multi (id UInt32) ENGINE
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.test_ord_multi (id UInt32) ENGINE = MergeTree ORDER BY id;
 
 USE {CLICKHOUSE_DATABASE_1:Identifier};
-DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.test_repl_multi, {CLICKHOUSE_DATABASE_1:Identifier}.test_ord_multi;
+DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.test_repl_multi, {CLICKHOUSE_DATABASE_1:Identifier}.test_ord_multi; -- { serverError BAD_ARGUMENTS }
+
+-- The statement was rejected, so both tables still exist; drop them with separate single-table
+-- statements (each is auto-filled correctly: the Replicated-database table stays local, the
+-- ordinary table is distributed ON CLUSTER).
+DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.test_repl_multi;
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.test_ord_multi;
 
 USE {CLICKHOUSE_DATABASE:Identifier};
-SYSTEM FLUSH LOGS query_log;
-SELECT 'Test 5 verification: multi-table DROP does NOT contain ON CLUSTER';
--- The multi-table DROP runs while the current database is `{CLICKHOUSE_DATABASE_1}`, so scope the
--- lookup to it. Without this, the verification SELECT itself contains the literals `DROP TABLE`,
--- `test_repl_multi` and `ON CLUSTER`, and on a repeated run (e.g. the flaky check) the previous
--- run's already-logged verification SELECT would match and make the count non-zero.
-SELECT count() = 0 FROM system.query_log WHERE type = 'QueryFinish'
-  AND current_database = {CLICKHOUSE_DATABASE_1:String}
-  AND query LIKE '%DROP TABLE%test_repl_multi%'
-  AND query LIKE '%ON CLUSTER%';
 
 SELECT 'Test 6: DROP DATABASE of a Replicated database IS rewritten ON CLUSTER';
 -- A database-level DROP is not a table DDL that a Replicated database coordinates on its own:
