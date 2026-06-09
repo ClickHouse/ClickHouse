@@ -36,16 +36,16 @@ enum class FilesystemPrefetchState : uint8_t;
 /// Reads a logical file (one or more `StoredObject`s mapped by `OffsetMap`)
 /// through a fastest-first cache chain, falling back to the source. Tuned for
 /// sequential scans: keeps one source connection alive across windows
-/// (`live_buffer`), reads the next gap ahead on a `PrefetchThreadPool`, and
+/// (`live_connection`), reads the next gap ahead on a `PrefetchThreadPool`, and
 /// shrinks its window/block sizes under memory pressure. Owns its cache and
 /// decryption layers internally, so it is NOT wrapped by the legacy
 /// async/decrypt/cache read buffers. One instance per column-stream; not
 /// thread-safe beyond the prefetch-worker handoff: while a prefetch is in flight
-/// the worker exclusively owns `live_buffer`, `inflight_segment_pin` and the
+/// the worker exclusively owns `live_connection`, `inflight_segment_pin` and the
 /// served-byte `stats`, and the foreground must establish the `get()`/`tryCancel`
 /// happens-before edge before touching them (enforced by a `chassert` in
 /// `readPhysicalWindow`). A foreground read that skips that handoff reintroduces the
-/// `live_buffer` use-after-free.
+/// `live_connection` use-after-free.
 class ReaderExecutor
 {
 public:
@@ -79,7 +79,7 @@ public:
         size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN,
         size_t plan_look_ahead_window = DEFAULT_PLAN_LOOK_AHEAD);
 
-    /// Destructor must be out-of-line because LiveBuffer holds unique_ptr<ReadBufferFromFileBase>.
+    /// Destructor must be out-of-line because LiveConnection holds unique_ptr<ReadBufferFromFileBase>.
     ~ReaderExecutor();
 
     /// Returns an empty Rope at EOF.
@@ -90,7 +90,7 @@ public:
 
     /// A fresh executor for the half-open logical range `[start_position,
     /// start_position + read_size)`, sharing immutable state (caches, source,
-    /// objects, decryption) but owning its own position / live buffer. Drives
+    /// objects, decryption) but owning its own position / live connection. Drives
     /// `PipelineReadBuffer::readBigAt` as a one-shot read. Shares `buffer_limit`
     /// (its connection counts against the server budget) but gets no
     /// `prefetch_pool`/log: a one-shot read can't amortise prefetch and would
@@ -263,23 +263,12 @@ private:
     /// leaves the planned span.
     void planResidencyWindow(size_t physical_start);
 
-    /// Read from source into the pre-allocated `blocks`. Tries live buffer first, falls back to stateless.
+    /// Read from source into the pre-allocated `blocks`. Tries live connection first, falls back to stateless.
     /// `blocks` is consumed: blocks that receive data become RopeNodes in the returned Rope;
     /// blocks that receive no data (e.g., file ended early) are released when this function returns.
     Rope readFromSource(
         const StoredObject & object, size_t offset,
         VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset);
-
-    /// Uses `set()` + `next()` so data lands directly in block memory instead
-    /// of being copied through the live buffer's internal working buffer.
-    Rope readFromLiveBufferIntoRope(
-        VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset);
-
-    /// Discard `gap` bytes from the open live source read so its frontier
-    /// advances over an already-cached gap, keeping the connection reusable
-    /// instead of reopening. Bytes cross the wire (charged as over-read); only
-    /// the source request is saved. Returns bytes skipped (< `gap` only at EOF).
-    size_t skipLiveBufferForward(size_t gap);
 
     /// Before dropping the live connection away from its bound, if only a small
     /// tail (<= `max_tail_for_drain`) remains, read it out so the connection
@@ -319,8 +308,8 @@ private:
 
     /// Try to acquire a buffer_limit slot up front so the next source read can
     /// be promoted to live without re-checking. When a slot is held (either
-    /// pre-acquired or via an existing live_buffer), the read window shrinks
-    /// to one `block_size` block because the live buffer streams a block at a
+    /// pre-acquired or via an existing live_connection), the read window shrinks
+    /// to one `block_size` block because the live connection streams a block at a
     /// time and allocating a larger rope just inflates the in-flight memory.
     void ensurePreAcquiredSlot();
 
@@ -359,11 +348,11 @@ private:
     /// right bound (the advertised extent, or a one-shot block): it is fully
     /// drained and reusable, and dropping it lets the next read open a fresh
     /// streamed connection instead of falling to the stateless one-shot path.
-    void releaseLiveBufferAtBound();
-    /// Account a `live_buffer` about to be dropped: count it as an incomplete
+    void releaseLiveConnectionAtBound();
+    /// Account a `live_connection` about to be dropped: count it as an incomplete
     /// (not pool-reusable) connection unless it was drained to its effective end.
     /// `at_eof` lets EOF drop sites treat a reached-EOF connection as complete.
-    void accountLiveBufferDrop(bool at_eof);
+    void accountLiveConnectionDrop(bool at_eof);
 
     /// Decide an open live connection's fate before the next read at
     /// `next_physical`: keep it only while that read is a small bridgeable forward
@@ -371,7 +360,7 @@ private:
     /// of reopening); otherwise drain its tail and drop it (and its pin) so the
     /// slot isn't held idle. No-op without a live connection or at EOF. Called
     /// after every cache-only serve (resident run, or a cache-only gap window).
-    void maybeKeepLiveBufferBefore(size_t next_physical);
+    void maybeKeepLiveConnectionBefore(size_t next_physical);
 
     /// readPhysicalWindow + remap the window's offsets to logical (subtract the
     /// encryption header). Payload decryption is deferred to the consumer
@@ -540,22 +529,58 @@ private:
     /// short-circuits to EOF without re-issuing a read.
     bool reached_eof = false;
 
-    /// Live buffer: keeps a connection open for sequential reads. The
-    /// object path lives inside `slot.objectPath()` (one source of truth).
-    struct LiveBuffer
+    /// One kept-open source connection for a sequential cold scan: the open source
+    /// buffer, the `SourceBufferLimit` slot it occupies, the object-local frontier
+    /// (`current_position`) it has streamed to, and the right bound (`read_until`,
+    /// `nullopt` = open-ended) it was opened to via `setReadUntilPosition`. Reused
+    /// across windows while the next read continues forward within the bound; a read
+    /// past it reopens, so the connection is always read to its bound and returned to
+    /// the pool drained and reusable. The object path lives in `slot.objectPath()`.
+    /// Owns the mechanics of reading/skipping/draining its own connection; the
+    /// executor owns the policy (when to keep or drop it) and the stats.
+    struct LiveConnection
     {
         size_t current_position = 0;
-        /// Object-local position the connection is bounded to via
-        /// `setReadUntilPosition` (`nullopt` = open-ended). Reused for a
-        /// continuation only while it stays within this bound; a read that would
-        /// pass it reopens, so the connection is always read to its bound and
-        /// returned to the pool drained and reusable.
         std::optional<size_t> read_until;
         std::unique_ptr<ReadBufferFromFileBase> buffer;
         SourceBufferSlot slot;
+
+        /// Read to its right bound — fully consumed and pool-reusable. Always false
+        /// for an open-ended connection.
+        bool atBound() const { return read_until && current_position >= *read_until; }
+
+        /// Dropping now leaves the connection pool-reusable: read to its bound, or EOF.
+        bool isComplete(bool at_eof) const { return at_eof || atBound(); }
+
+        /// Can be continued forward to object-local `next_local` without reopening:
+        /// forward, within `min_gap` of the frontier, and not past the bound (the same
+        /// over-read-vs-reopen trade `min_bytes_for_seek` makes; the executor supplies it).
+        bool canContinueTo(size_t next_local, size_t min_gap) const
+        {
+            return next_local >= current_position
+                && next_local - current_position <= min_gap
+                && (!read_until || next_local <= *read_until);
+        }
+
+        /// Read the pre-allocated `blocks` off the open connection into a Rope using
+        /// `set()`/`next()` (data lands directly in block memory), advancing the
+        /// frontier and the slot's reported position.
+        Rope readInto(VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks,
+                      size_t logical_offset, const LoggerPtr & logger);
+
+        /// Discard up to `gap` bytes off the open connection so the frontier advances
+        /// over an already-cached hole; the bytes cross the wire (over-read), only the
+        /// source request is saved. Returns bytes skipped (< `gap` only at EOF).
+        size_t skipForward(size_t gap, size_t block_bytes);
+
+        /// If only a small tail (<= `max_tail`) remains to the bound, read it out so
+        /// the connection completes and is returned to the pool reusable rather than
+        /// abandoned. Returns bytes drained (0 when open-ended, already at the bound,
+        /// or the tail is larger); drained bytes are over-read (the caller accounts them).
+        size_t drainTail(size_t max_tail, size_t block_bytes);
     };
 
-    std::optional<LiveBuffer> live_buffer;
+    std::optional<LiveConnection> live_connection;
     /// While streaming sequentially through a DiskCache/FileCache segment, hold
     /// a bare ref to that segment so a mid-read eviction can't snap the next
     /// miss head back to the segment start and force a connection reset + a
@@ -572,7 +597,7 @@ private:
     String prefetch_reader_id;
 
     /// Slot reserved at the top of `readNextWindow` so the next source read is
-    /// promoted to live without re-checking; consumed into `live_buffer` on
+    /// promoted to live without re-checking; consumed into `live_connection` on
     /// that read (released here if the open fails). Reserved-for-path is
     /// `pre_acquired_slot->objectPath()`.
     std::optional<SourceBufferSlot> pre_acquired_slot;

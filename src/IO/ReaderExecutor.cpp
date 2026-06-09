@@ -153,8 +153,8 @@ ReaderExecutor::~ReaderExecutor()
         return;
 
     /// A live connection still open here was never drained to its bound (else
-    /// releaseLiveBufferAtBound would have reset it): an incomplete connection.
-    accountLiveBufferDrop(/*at_eof=*/false);
+    /// releaseLiveConnectionAtBound would have reset it): an incomplete connection.
+    accountLiveConnectionDrop(/*at_eof=*/false);
 
     ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromPageCache, stats.bytes_from_page_cache);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromFilesystemCache, stats.bytes_from_filesystem_cache);
@@ -369,7 +369,7 @@ std::optional<SourceBufferSlot> ReaderExecutor::acquireSlotCounted(const StoredO
 
 void ReaderExecutor::ensurePreAcquiredSlot()
 {
-    if (live_buffer || pre_acquired_slot || !buffer_limit)
+    if (live_connection || pre_acquired_slot || !buffer_limit)
         return;
 
     const size_t physical_position = position + data_start_offset;
@@ -441,7 +441,7 @@ size_t ReaderExecutor::effectiveWindowSize() const
     /// reads with live connections disabled - keep the full (pressure-scaled)
     /// window so each one-shot open amortises its setup over a window, not a
     /// block.
-    if (live_buffer || pre_acquired_slot)
+    if (live_connection || pre_acquired_slot)
         return sizes.block_bytes;
     return sizes.window_bytes;
 }
@@ -464,73 +464,56 @@ size_t ReaderExecutor::clampToExtent(size_t win_size) const
     return std::min(win_size, remaining);
 }
 
-void ReaderExecutor::releaseLiveBufferAtBound()
+void ReaderExecutor::releaseLiveConnectionAtBound()
 {
-    if (live_buffer && live_buffer->read_until && live_buffer->current_position >= *live_buffer->read_until)
+    if (live_connection && live_connection->atBound())
     {
-        live_buffer.reset();
+        live_connection.reset();
         inflight_segment_pin.reset();
     }
 }
 
-void ReaderExecutor::accountLiveBufferDrop(bool at_eof)
+void ReaderExecutor::accountLiveConnectionDrop(bool at_eof)
 {
-    if (!live_buffer)
-        return;
-    /// Reusable iff the response was fully consumed: read to its right bound, or
-    /// to EOF. An open-ended buffer dropped before EOF, or a bounded one dropped
-    /// before its bound, is abandoned mid-response and not pool-reusable.
-    bool drained = false;
-    if (at_eof)
-        drained = true;
-    else if (live_buffer->read_until)
-        drained = live_buffer->current_position >= *live_buffer->read_until;
-    if (!drained)
+    /// A connection dropped before it was fully consumed (not read to its right
+    /// bound or to EOF) is abandoned mid-response and not pool-reusable.
+    if (live_connection && !live_connection->isComplete(at_eof))
         ++stats.incomplete_connections;
 }
 
-void ReaderExecutor::maybeKeepLiveBufferBefore(size_t next_physical)
+void ReaderExecutor::maybeKeepLiveConnectionBefore(size_t next_physical)
 {
-    if (!live_buffer || reached_eof)
+    if (!live_connection || reached_eof)
         return;
 
+    /// Keep the connection only if the next read continues it forward within its
+    /// bound (a small, bridgeable gap on the same object); otherwise drain its tail
+    /// and drop it so the slot is not held idle.
     size_t next_obj_file_offset = 0;
     const StoredObject * next_obj = offset_map.findObjectAt(next_physical, &next_obj_file_offset);
-    const bool same_object = next_obj
-        && live_buffer->slot.objectPath() == next_obj->remote_path;
-    const size_t next_local = same_object ? next_physical - next_obj_file_offset : 0;
-    const bool bridgeable = same_object
-        && next_local >= live_buffer->current_position
-        && next_local - live_buffer->current_position <= min_bytes_for_seek
-        && (!live_buffer->read_until || next_local <= *live_buffer->read_until);
-    if (!bridgeable)
+    const bool keep = next_obj
+        && live_connection->slot.objectPath() == next_obj->remote_path
+        && live_connection->canContinueTo(next_physical - next_obj_file_offset, min_bytes_for_seek);
+    if (!keep)
     {
         maybeDrainLiveTail();
-        accountLiveBufferDrop(/*at_eof=*/false);
-        live_buffer.reset();
+        accountLiveConnectionDrop(/*at_eof=*/false);
+        live_connection.reset();
         inflight_segment_pin.reset();
     }
 }
 
 void ReaderExecutor::maybeDrainLiveTail()
 {
-    /// Called just before dropping a live connection that is not at its bound. If
-    /// only a small tail remains, read it out so the connection completes and is
-    /// returned to the pool reusable (no incomplete connection) rather than reset.
-    /// The drained bytes cross the wire - charged as over-read. Worth it only for a
-    /// tail below the I-weight/bandwidth breakeven; bounded by `max_tail_for_drain`.
-    if (!live_buffer || !live_buffer->read_until)
+    /// Drain a small remaining tail before dropping a live connection so it completes
+    /// and is returned to the pool reusable rather than counted incomplete. The
+    /// drained bytes cross the wire (over-read) - worth it only below the
+    /// I-weight/bandwidth breakeven, bounded by `max_tail_for_drain`.
+    if (!live_connection)
         return;
-    const size_t bound = *live_buffer->read_until;
-    if (live_buffer->current_position >= bound)
-        return; /// already drained; releaseLiveBufferAtBound covers this
-    const size_t tail = bound - live_buffer->current_position;
-    if (tail > max_tail_for_drain)
-        return;
-    const size_t skipped = skipLiveBufferForward(tail);
-    stats.bytes_from_source += skipped;
-    stats.over_read_bytes += skipped;
-    live_buffer->current_position += skipped;
+    const size_t drained = live_connection->drainTail(max_tail_for_drain, block_size);
+    stats.bytes_from_source += drained;
+    stats.over_read_bytes += drained;
 }
 
 void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
@@ -588,7 +571,7 @@ void ReaderExecutor::maybeTriggerPrefetch()
     /// straight from cache by the next `readNextWindow`, so prefetching it is pure
     /// coordination overhead; skipping here also preserves the invariant that no
     /// prefetch is in flight at a resident cursor (the resident fast-path never races
-    /// the worker over `live_buffer`).
+    /// the worker over `live_connection`).
     if (!read_plan.covers(ByteRange{position_phys, probe_size}))
         planResidencyWindow(position_phys);
     if (read_plan.residentAt(position_phys).handle)
@@ -939,8 +922,8 @@ Rope ReaderExecutor::readNextWindow()
         LOG_TRACE(log, "readNextWindow: EOF at position {}", position);
         /// Release per-stream resources at EOF instead of waiting for the caller to
         /// drop the `PipelineReadBuffer`; a subsequent seek-back re-opens and re-acquires.
-        accountLiveBufferDrop(/*at_eof=*/true);
-        live_buffer.reset();
+        accountLiveConnectionDrop(/*at_eof=*/true);
+        live_connection.reset();
         inflight_segment_pin.reset();
         pre_acquired_slot.reset();
         return {};
@@ -953,7 +936,7 @@ Rope ReaderExecutor::readNextWindow()
     /// RESIDENT -> stream the run from the held cache handle; GAP -> consume the
     /// in-flight gap read-ahead (launched last call) or fetch synchronously. A
     /// prefetch is only ever scheduled for a gap cursor (see `maybeTriggerPrefetch`),
-    /// so the resident path never runs while a worker owns `live_buffer`.
+    /// so the resident path never runs while a worker owns `live_connection`.
     ReadPlan::Resident at;
     if (win_size > 0)
     {
@@ -1007,8 +990,8 @@ Rope ReaderExecutor::readNextWindow()
 
         /// Cache-only serve: settle the open live connection for the next read
         /// (keep it if the next read bridges, else drop it). Safe to touch
-        /// `live_buffer` here - no prefetch worker runs at a resident cursor.
-        maybeKeepLiveBufferBefore(position_phys + rope.range().size);
+        /// `live_connection` here - no prefetch worker runs at a resident cursor.
+        maybeKeepLiveConnectionBefore(position_phys + rope.range().size);
 
         if (data_start_offset)
             rope.shift(-static_cast<ssize_t>(data_start_offset));
@@ -1030,7 +1013,7 @@ Rope ReaderExecutor::readNextWindow()
         if (prefetch_handle)
         {
             /// A read-ahead for this gap is already in flight (launched last call):
-            /// consume it. The worker may own `live_buffer` mid-read, so the
+            /// consume it. The worker may own `live_connection` mid-read, so the
             /// `get()`/`tryCancel` handoff must complete before any source touch.
             auto local_handle = std::move(prefetch_handle);
 
@@ -1095,8 +1078,8 @@ Rope ReaderExecutor::readNextWindow()
     /// release the live connection + slot now rather than leaking it.
     if (reached_eof)
     {
-        accountLiveBufferDrop(/*at_eof=*/true);
-        live_buffer.reset();
+        accountLiveConnectionDrop(/*at_eof=*/true);
+        live_connection.reset();
         inflight_segment_pin.reset();
         pre_acquired_slot.reset();
     }
@@ -1131,28 +1114,28 @@ void ReaderExecutor::seek(size_t new_position)
     /// path-mismatch reset in `readFromSource`.
     releaseStalePreAcquiredSlot(new_obj ? new_obj->remote_path : String{});
 
-    /// Decide the live buffer's fate across the seek. Keep it for a forward seek
+    /// Decide the live connection's fate across the seek. Keep it for a forward seek
     /// small enough to bridge within its right bound: the next `readFromSource`
     /// skips the seeked-over gap on the open GET instead of reopening (the same
     /// rule and `min_bytes_for_seek` bound used there). A backward seek, a
     /// different object, or a gap past that bound closes it. A cache-hit path
     /// skips `readFromSource`'s check, so this is also where a stale connection +
     /// slot would otherwise leak until EOF/destruction.
-    if (live_buffer)
+    if (live_connection)
     {
-        const bool same_obj = new_obj && live_buffer->slot.objectPath() == new_obj->remote_path;
+        const bool same_obj = new_obj && live_connection->slot.objectPath() == new_obj->remote_path;
         const size_t new_local = same_obj ? new_physical - new_obj_file_offset : 0;
         const bool keep = same_obj
-            && new_local >= live_buffer->current_position
-            && new_local - live_buffer->current_position <= min_bytes_for_seek
-            && (!live_buffer->read_until || new_local <= *live_buffer->read_until);
+            && new_local >= live_connection->current_position
+            && new_local - live_connection->current_position <= min_bytes_for_seek
+            && (!live_connection->read_until || new_local <= *live_connection->read_until);
         if (!keep)
         {
-            LOG_TRACE(log, "seek: live buffer for {} (at {}) no longer matches target, closing",
-                live_buffer->slot.objectPath(), live_buffer->current_position);
+            LOG_TRACE(log, "seek: live connection for {} (at {}) no longer matches target, closing",
+                live_connection->slot.objectPath(), live_connection->current_position);
             maybeDrainLiveTail();
-            accountLiveBufferDrop(/*at_eof=*/false);
-            live_buffer.reset();
+            accountLiveConnectionDrop(/*at_eof=*/false);
+            live_connection.reset();
             inflight_segment_pin.reset();
         }
     }
@@ -1219,21 +1202,18 @@ static size_t readIntoBlock(ReadBuffer & buf, char * dest, size_t chunk)
     return buf.read(dest, chunk);
 }
 
-Rope ReaderExecutor::readFromLiveBufferIntoRope(
-    VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset)
+Rope ReaderExecutor::LiveConnection::readInto(
+    VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset, const LoggerPtr & logger)
 {
-    chassert(live_buffer);
-    auto & buf = *live_buffer->buffer;
-
     Rope rope;
     size_t total_read = 0;
 
     for (auto & block : blocks)
     {
         size_t chunk = block->size();
-        size_t got = readIntoBlock(buf, block->data(), chunk);
+        size_t got = readIntoBlock(*buffer, block->data(), chunk);
 
-        LOG_DEBUG(log, "readFromLiveBufferIntoRope: block {}, chunk={}, got={}, first_byte=0x{:02x}",
+        LOG_DEBUG(logger, "LiveConnection::readInto: block {}, chunk={}, got={}, first_byte=0x{:02x}",
             rope.getNodes().size(), chunk, got,
             got > 0 ? static_cast<unsigned char>(block->data()[0]) : 0);
 
@@ -1244,32 +1224,42 @@ Rope ReaderExecutor::readFromLiveBufferIntoRope(
         total_read += got;
     }
 
+    current_position += total_read;
+    slot.updatePosition(current_position);
     return rope;
 }
 
-size_t ReaderExecutor::skipLiveBufferForward(size_t gap)
+size_t ReaderExecutor::LiveConnection::skipForward(size_t gap, size_t block_bytes)
 {
-    chassert(live_buffer);
-    auto & buf = *live_buffer->buffer;
-
-    /// Discard `gap` bytes from the open source read so the connection's
-    /// frontier advances over an already-cached gap. Uses a scratch block
-    /// because the source is in external-buffer mode (mirrors `readIntoBlock`);
-    /// the bytes are transferred and thrown away - only the source request is
-    /// saved. Returns bytes actually skipped (< `gap` only if the source hit EOF).
-    const size_t scratch_size = std::min(gap, block_size);
+    /// Discard `gap` bytes from the open source read so the frontier advances over an
+    /// already-cached gap. Uses a scratch block because the source is in
+    /// external-buffer mode (mirrors `readIntoBlock`); the bytes are transferred and
+    /// thrown away - only the source request is saved. Returns bytes actually skipped
+    /// (< `gap` only if the source hit EOF).
+    const size_t scratch_size = std::min(gap, block_bytes);
     auto scratch = std::make_shared<OwnedRopeBuffer>(scratch_size);
 
     size_t skipped = 0;
     while (skipped < gap)
     {
         const size_t chunk = std::min(gap - skipped, scratch_size);
-        const size_t got = readIntoBlock(buf, scratch->data(), chunk);
+        const size_t got = readIntoBlock(*buffer, scratch->data(), chunk);
         if (got == 0)
             break;
         skipped += got;
     }
+    current_position += skipped;
     return skipped;
+}
+
+size_t ReaderExecutor::LiveConnection::drainTail(size_t max_tail, size_t block_bytes)
+{
+    if (!read_until || current_position >= *read_until)
+        return 0;
+    const size_t tail = *read_until - current_position;
+    if (tail > max_tail)
+        return 0;
+    return skipForward(tail, block_bytes);
 }
 
 Rope ReaderExecutor::readFromSource(
@@ -1287,13 +1277,13 @@ Rope ReaderExecutor::readFromSource(
     /// as the gap bound (0 for local sources, which never bridge). A read that
     /// would pass the right bound still reopens (the bounded connection is
     /// already drained at that point and reusable).
-    if (live_buffer
-        && live_buffer->slot.objectPath() == object.remote_path
-        && offset >= live_buffer->current_position
-        && offset - live_buffer->current_position <= min_bytes_for_seek
-        && (!live_buffer->read_until || offset + want <= *live_buffer->read_until))
+    if (live_connection
+        && live_connection->slot.objectPath() == object.remote_path
+        && offset >= live_connection->current_position
+        && offset - live_connection->current_position <= min_bytes_for_seek
+        && (!live_connection->read_until || offset + want <= *live_connection->read_until))
     {
-        const size_t gap = offset - live_buffer->current_position;
+        const size_t gap = offset - live_connection->current_position;
         bool ready = gap == 0;
         if (gap > 0)
         {
@@ -1301,44 +1291,36 @@ Rope ReaderExecutor::readFromSource(
             /// cross the wire (charged as over-read); only the source request
             /// is saved. A short skip means the source hit EOF inside the gap
             /// (unknown size) - the connection is spent, fall through to reopen.
-            const size_t skipped = skipLiveBufferForward(gap);
+            const size_t skipped = live_connection->skipForward(gap, block_size);
             stats.bytes_from_source += skipped;
             stats.over_read_bytes += skipped;
-            if (skipped == gap)
-            {
-                live_buffer->current_position = offset;
-                ready = true;
-            }
+            ready = skipped == gap;  // skipForward advanced the frontier to `offset`
         }
 
         if (ready)
         {
-            LOG_TRACE(log, "readFromSource: live buffer hit for {}, position={}", object.remote_path, offset);
+            LOG_TRACE(log, "readFromSource: live connection hit for {}, position={}", object.remote_path, offset);
             ProfileEvents::increment(ProfileEvents::LiveSourceBufferHits);
 
-            Rope rope = readFromLiveBufferIntoRope(std::move(blocks), logical_offset);
-            size_t total_read = rope.totalBytes();
-
-            ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, total_read);
-            live_buffer->current_position += total_read;
-            live_buffer->slot.updatePosition(live_buffer->current_position);
-            releaseLiveBufferAtBound();
+            Rope rope = live_connection->readInto(std::move(blocks), logical_offset, log);
+            ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, rope.totalBytes());
+            releaseLiveConnectionAtBound();
             return rope;
         }
     }
 
-    if (live_buffer)
+    if (live_connection)
     {
-        LOG_TRACE(log, "readFromSource: closing live buffer for {} (was at {}), need {}:{}",
-            live_buffer->slot.objectPath(), live_buffer->current_position, object.remote_path, offset);
+        LOG_TRACE(log, "readFromSource: closing live connection for {} (was at {}), need {}:{}",
+            live_connection->slot.objectPath(), live_connection->current_position, object.remote_path, offset);
         maybeDrainLiveTail();
-        accountLiveBufferDrop(/*at_eof=*/false);
-        live_buffer.reset();
+        accountLiveConnectionDrop(/*at_eof=*/false);
+        live_connection.reset();
         inflight_segment_pin.reset();
     }
 
     /// The slot is decided by the caller (ensurePreAcquiredSlot): a held slot
-    /// means an open-ended live buffer continued across windows; no slot means a
+    /// means an open-ended live connection continued across windows; no slot means a
     /// bounded one-shot range read below. readFromSource never acquires one
     /// itself, so the window size (effectiveWindowSize) and the read shape agree.
     releaseStalePreAcquiredSlot(object.remote_path); // drop a slot pre-acquired for another object
@@ -1398,7 +1380,7 @@ Rope ReaderExecutor::readFromSource(
                     opened->setReadUntilPosition(*read_until);
             }
 
-            live_buffer.emplace(LiveBuffer{
+            live_connection.emplace(LiveConnection{
                 .current_position = offset,
                 .read_until = read_until,
                 .buffer = std::move(opened),
@@ -1406,23 +1388,19 @@ Rope ReaderExecutor::readFromSource(
             });
             ++stats.source_requests;
 
-            Rope rope = readFromLiveBufferIntoRope(std::move(blocks), logical_offset);
-            size_t total_read = rope.totalBytes();
-
-            live_buffer->current_position += total_read;
-            live_buffer->slot.updatePosition(live_buffer->current_position);
+            Rope rope = live_connection->readInto(std::move(blocks), logical_offset, log);
 
             ProfileEvents::increment(ProfileEvents::LiveSourceBufferCreated);
-            ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, total_read);
-            LOG_TRACE(log, "readFromSource: opened live buffer for {}, read {} bytes, position={}",
-                object.remote_path, total_read, live_buffer->current_position);
-            releaseLiveBufferAtBound();
+            ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, rope.totalBytes());
+            LOG_TRACE(log, "readFromSource: opened live connection for {}, read {} bytes, position={}",
+                object.remote_path, rope.totalBytes(), live_connection->current_position);
+            releaseLiveConnectionAtBound();
             return rope;
         }
     }
 
     /// No slot available — open a one-shot connection without storing it as
-    /// `live_buffer`. Dropped when this function returns.
+    /// `live_connection`. Dropped when this function returns.
     ProfileEvents::increment(ProfileEvents::LiveSourceBufferFallbacks);
 
     auto opened = source->open(object);
@@ -1481,13 +1459,13 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
         physical_window.offset, physical_window.end(), from_prefetch);
 
     /// Concurrency invariant: a foreground (non-prefetch) physical read must never
-    /// run while a prefetch is in flight. The worker exclusively owns `live_buffer`,
+    /// run while a prefetch is in flight. The worker exclusively owns `live_connection`,
     /// `inflight_segment_pin` and the served-byte `stats` until the foreground
     /// establishes the prefetch handoff (`get()`/`tryCancel`) happens-before edge.
     /// Every foreground entry here is reached either with no prefetch scheduled (the
     /// plain gap branch) or after the in-flight prefetch was consumed/cancelled
     /// (`prefetch_handle` moved out). A path that touches the connection without that
-    /// handoff reintroduces the `live_buffer` use-after-free the gap-async experiment hit.
+    /// handoff reintroduces the `live_connection` use-after-free the gap-async experiment hit.
     chassert(from_prefetch || !prefetch_handle);
 
     Rope result;
@@ -1506,11 +1484,11 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
     /// A cache-only window (no source read) leaves the live connection idle; keep
     /// it only if the next window bridges, else drop it (see the helper).
     if (!fetched_from_source)
-        maybeKeepLiveBufferBefore(physical_window.end());
+        maybeKeepLiveConnectionBefore(physical_window.end());
 
     /// Strategy A pin: re-point to the partial segment under the new frontier
     /// (dropping any previous pin); clear it when there's nothing partial.
-    if (live_buffer && !reached_eof)
+    if (live_connection && !reached_eof)
     {
         inflight_segment_pin = write_plan.pinFrontier(physical_window.end());
 
@@ -1527,8 +1505,8 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
 
     /// Release a slot that never opened a connection (warm-cache window), else
     /// it lingers as a phantom `max_remote_read_connections` holder. (A promoted
-    /// read already emptied `pre_acquired_slot` into `live_buffer.slot`.)
-    if (pre_acquired_slot && !live_buffer)
+    /// read already emptied `pre_acquired_slot` into `live_connection.slot`.)
+    if (pre_acquired_slot && !live_connection)
         pre_acquired_slot.reset();
 
     auto sliced = result.slice(physical_window);
