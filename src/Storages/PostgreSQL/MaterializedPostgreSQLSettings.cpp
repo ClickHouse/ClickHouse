@@ -45,10 +45,7 @@ MaterializedPostgreSQLSettings::MaterializedPostgreSQLSettings(const Materialize
 {
 }
 
-MaterializedPostgreSQLSettings::MaterializedPostgreSQLSettings(MaterializedPostgreSQLSettings && settings) noexcept
-    : impl(std::make_unique<MaterializedPostgreSQLSettingsImpl>(std::move(*settings.impl)))
-{
-}
+MaterializedPostgreSQLSettings::MaterializedPostgreSQLSettings(MaterializedPostgreSQLSettings && settings) noexcept = default;
 
 MaterializedPostgreSQLSettings::~MaterializedPostgreSQLSettings() = default;
 

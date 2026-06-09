@@ -67,7 +67,6 @@ namespace DB::ErrorCodes
 extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
-extern const int PATH_ACCESS_DENIED;
 extern const int LOGICAL_ERROR;
 }
 
@@ -409,7 +408,7 @@ std::optional<TransformAndArgument> parseTransformAndArgument(const String & tra
 
         auto argument_width = transform_name.length() - 2 - argument_start;
         std::string argument_string_representation = transform_name.substr(argument_start + 1, argument_width);
-        size_t argument;
+        size_t argument = 0;
         bool parsed = DB::tryParse<size_t>(argument, argument_string_representation);
 
         if (!parsed)
@@ -619,15 +618,21 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
             return "string";
         case TypeIndex::Nullable:
         {
+            /// Iceberg manifest partition fields backed by ClickHouse `Nullable(T)`
+            /// must be encoded as an Avro `["null", T]` union so the manifest can
+            /// distinguish NULL from the inner type's default value (issue #105852).
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
-            return getAvroType(type_nullable->getNestedType());
+            Poco::JSON::Array::Ptr union_array = new Poco::JSON::Array;
+            union_array->add("null");
+            union_array->add(getAvroType(type_nullable->getNestedType()));
+            return union_array;
         }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
     }
 }
 
-Poco::JSON::Object::Ptr getPartitionField(
+static Poco::JSON::Object::Ptr getPartitionField(
     ASTPtr partition_by_element,
     const std::unordered_map<String, Int32> & column_name_to_source_id,
     Int32 & partition_iter)
@@ -729,7 +734,7 @@ Poco::JSON::Object::Ptr getPartitionField(
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported function for iceberg partitioning {}", partition_function->name);
 }
 
-std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
+static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     ASTPtr partition_by,
     const std::unordered_map<String, Int32> & column_name_to_source_id)
 {
@@ -1173,25 +1178,6 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     return load_fn();
 }
 
-static String resolveContained(const std::filesystem::path & base, const std::filesystem::path & relative)
-{
-    auto norm_base = base.lexically_normal();
-    auto combined = (norm_base / relative).lexically_normal();
-
-    auto rel = combined.lexically_relative(norm_base);
-
-    if (rel.empty() || rel.begin()->string() == "..")
-    {
-        throw Exception(
-            ErrorCodes::PATH_ACCESS_DENIED,
-            "Explicit metadata file path `{}` should be in the table path directory : `{}`",
-            relative.string(),
-            base.string());
-    }
-
-    return combined.string();
-}
-
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
     const String & table_path,
@@ -1217,7 +1203,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
             if (*it == "." || *it == "..")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative paths are not allowed");
         }
-        String resolved_path = resolveContained(table_path, explicit_metadata_path);
+        String resolved_path = resolvePathInsideTable(table_path, explicit_metadata_path);
         return getMetadataFileAndVersion(resolved_path);
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].changed)

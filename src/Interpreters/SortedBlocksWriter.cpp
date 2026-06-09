@@ -195,7 +195,7 @@ private:
     bool done;
 };
 
-Pipe streamFromFile(const TemporaryBlockStreamHolder & file)
+static Pipe streamFromFile(const TemporaryBlockStreamHolder & file)
 {
     return Pipe(std::make_shared<TemporaryFileLazySource>(file.getReadStream()));
 }

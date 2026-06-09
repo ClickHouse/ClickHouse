@@ -1,4 +1,3 @@
-#include <Columns/ColumnReplicated.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/ISink.h>
@@ -195,7 +194,6 @@ void MergeSortingTransform::consume(Chunk chunk)
     }
 
     removeConstColumns(chunk);
-    compactReplicatedColumns(chunk);
 
     sum_rows_in_blocks += chunk.getNumRows();
     sum_bytes_in_blocks += chunk.allocatedBytes();
