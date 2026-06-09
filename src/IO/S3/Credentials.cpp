@@ -1389,7 +1389,10 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
             = std::make_shared<S3CredentialsProviderChain>(configuration, credentials, credentials_configuration);
     }
 
-    if (!credentials_configuration.role_arn.empty())
+    /// `no_sign_request` means anonymous access, which is mutually exclusive with assuming a role; skip the
+    /// STS assume-role wrapper so a stray `role_arn` alongside NOSIGN does not trigger credential resolution
+    /// on top of the anonymous provider.
+    if (!credentials_configuration.no_sign_request && !credentials_configuration.role_arn.empty())
     {
         credentials_provider = AwsAuthSTSAssumeRoleCredentialsProvider::create(
             credentials_configuration.role_arn,

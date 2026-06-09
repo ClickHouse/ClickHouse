@@ -29,6 +29,8 @@ NC_BACKUP_NOSIGN="s3_backup_nosign_${DB}"
 NC_GCP_OAUTH="s3_gcp_oauth_${DB}"
 NC_GCP_OAUTH_NOSIGN="s3_gcp_oauth_nosign_${DB}"
 NC_GCP_OAUTH_CASE="s3_gcp_oauth_case_${DB}"
+NC_NOCREDS="s3_nocreds_${DB}"
+NC_NOSIGN_ROLE="s3_nosign_role_${DB}"
 
 TABLE="s3_hardening_${DB}"
 DISK="s3_hardening_disk_${DB}"
@@ -50,6 +52,8 @@ cleanup() {
         DROP NAMED COLLECTION IF EXISTS ${NC_GCP_OAUTH};
         DROP NAMED COLLECTION IF EXISTS ${NC_GCP_OAUTH_NOSIGN};
         DROP NAMED COLLECTION IF EXISTS ${NC_GCP_OAUTH_CASE};
+        DROP NAMED COLLECTION IF EXISTS ${NC_NOCREDS};
+        DROP NAMED COLLECTION IF EXISTS ${NC_NOSIGN_ROLE};
     " > /dev/null
 }
 
@@ -164,6 +168,34 @@ $CLICKHOUSE_CLIENT -q "
     SELECT *
     FROM s3(${NC_GCP_OAUTH_CASE}, format = 'TSV', structure = 'x UInt8')
     -- { serverError ACCESS_DENIED }
+"
+
+# Anonymous fallback: a named collection that only specifies a URL must NOT be refused. It defaults
+# `use_environment_credentials` to 0, so the request goes unsigned (anonymous) and reaches S3, failing with
+# an S3 error on the missing object rather than ACCESS_DENIED.
+$CLICKHOUSE_CLIENT -m -q "
+    CREATE NAMED COLLECTION ${NC_NOCREDS} AS
+        url = 'http://localhost:11111/test/${DB}_missing.tsv';
+"
+$CLICKHOUSE_CLIENT -q "
+    SELECT *
+    FROM s3(${NC_NOCREDS}, format = 'TSV', structure = 'x UInt8')
+    -- { serverError S3_ERROR }
+"
+
+# NOSIGN must bypass credential resolution entirely: a stray `role_arn` alongside NOSIGN must not trigger an
+# STS assume-role. The request stays anonymous and reaches S3 (S3 error on the missing object), not an STS
+# failure or ACCESS_DENIED.
+$CLICKHOUSE_CLIENT -m -q "
+    CREATE NAMED COLLECTION ${NC_NOSIGN_ROLE} AS
+        url = 'http://localhost:11111/test/${DB}_missing.tsv',
+        no_sign_request = 1,
+        role_arn = '${ROLE_ARN}';
+"
+$CLICKHOUSE_CLIENT -q "
+    SELECT *
+    FROM s3(${NC_NOSIGN_ROLE}, format = 'TSV', structure = 'x UInt8')
+    -- { serverError S3_ERROR }
 "
 
 # `disk(type=s3, use_environment_credentials=1)` in CREATE TABLE.

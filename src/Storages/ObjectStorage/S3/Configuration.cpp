@@ -222,8 +222,11 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
 
     s3_settings->auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
     s3_settings->auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
+    /// Default to 0 (do not use the server's environment credentials) for named collections used in user
+    /// queries, so a collection that only specifies a URL reads anonymously instead of authenticating with
+    /// the server's own cloud identity. A collection can still opt in with `use_environment_credentials = 1`.
     s3_settings->auth_settings[S3AuthSetting::use_environment_credentials]
-        = collection.getOrDefault<UInt64>("use_environment_credentials", 1);
+        = collection.getOrDefault<UInt64>("use_environment_credentials", 0);
     s3_settings->auth_settings[S3AuthSetting::no_sign_request] = collection.getOrDefault<bool>("no_sign_request", false);
     s3_settings->auth_settings[S3AuthSetting::expiration_window_seconds]
         = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
