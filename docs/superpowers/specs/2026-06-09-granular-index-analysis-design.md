@@ -208,8 +208,36 @@ oversized chunk outlives all others.
   perf suite to confirm no regression on the many-tiny-parts case (task overhead).
   Run on the metal box.
 
-## Open items (resolve during planning)
+## Benchmark results (metal box, 192-vCPU Xeon 6975P-C, EBS) and default decision
 
-- `read_hints` merge semantics across chunks: confirm how `filterMarksUsingIndex`
-  returns `ranges.read_hints` and that per-chunk hints concatenate correctly.
-- Default values for `MIN_MARKS_PER_TASK` and `K`.
+A fully-merged single part of 937,501 marks with four skip indexes (`minmax`,
+two `bloom_filter`, `set`) was queried with a fully-selective predicate so that
+index analysis dominates and almost no data is read. Sweep of
+`min_marks_per_index_analysis_task ∈ {0, 256, 1024, 4096, 16384}`:
+
+- **Warm** (page cache hot): analysis CPU is ~1 ms for ~3.7M bloom checks; total
+  query ~7–10 ms regardless of the setting. Nothing to parallelize.
+- **Truly cold** (server restart + `drop_caches` before each run): ~2.0 s for
+  *every* setting (0 → 2.04 s, 4096 → 2.07 s, 16384 → 1.93 s). **Chunking gives no
+  cold speedup**: the cold cost is reading the index-granule files and is
+  **I/O-bandwidth-bound**, which spreading across threads cannot accelerate.
+- **Many-tiny-parts**: no regression (parts below the floor are never chunked).
+
+**Conclusion / default = `0` (opt-in).** On local/EBS storage there is no
+measurable wall-clock benefit (warm analysis is ~1 ms; cold is bandwidth-bound) and
+no regression. The benefit is expected to materialize only on **high-latency remote
+/ object storage** (the DiskWeb / IO-amplification case), where issuing granule
+reads in parallel overlaps per-request *latency* rather than competing for local
+disk bandwidth — a scenario not reproducible on this EBS box. Shipping a non-zero
+global default is therefore not justified by the evidence; the setting stays `0`
+and is documented as an opt-in for remote-storage / latency-bound deployments. A
+follow-up benchmark on object storage (e.g. an S3 disk) is the way to justify any
+future non-zero default. `K` (oversubscribe) remains an internal constant (3).
+
+## Resolved items
+
+- `read_hints` merge: vector-similarity indexes force the whole-part path (they
+  early-return unless the input covers the whole part), and text-index
+  `index_granules` are whole-part and identical across chunks (merged by name). So
+  the chunked path never produces unmergeable hints.
+- `find_exact_ranges` forces the whole-part path (precision guard).
