@@ -18,7 +18,6 @@ struct ScatterByPartitionTransform : IProcessor
     void work() override;
 
 private:
-
     void generateOutputChunks();
 
     size_t output_size;
@@ -30,7 +29,8 @@ private:
     Chunk chunk;
 
     PaddedPODArray<UInt32> hash;
-    IColumn::Selector selector;
+    PaddedPODArray<UInt32> pids;
+    PaddedPODArray<UInt32> rows_per_shard;
     Chunks output_chunks;
 };
 

@@ -3998,6 +3998,18 @@ Possible values:
 - 0 — Sharded aggregation optimization is disabled.
 - 1 — Sharded aggregation optimization is enabled.
 )", 0) \
+    DECLARE(UInt64, shard_by_hash_input_batch_bytes, 2097152, R"(
+When `enable_sharding_aggregator = 1`, controls the number of source bytes accumulated in `BufferedShardByHashTransform` before a batch scatter-flush is performed via `DB::ColumnsScatter::scatter`.
+
+Setting this to a non-zero value enables input batching: the transform collects multiple input chunks until their total size in bytes reaches or exceeds this budget, then scatters them all at once. This amortises the K×P `IColumn` allocation cost over many input chunks and eliminates the associated cold-page TLB flushes, yielding a wall-clock improvement on high-cardinality GROUP BY workloads. Using a byte budget (rather than a row count) keeps each flush short and its per-shard buffers small for wide rows, while narrow rows still accumulate until the budget is reached.
+
+Chunks are never split; a batch may exceed the budget by at most one input chunk's bytes.
+
+Possible values:
+
+- 0 — Disabled. Input chunks are scattered one at a time through the same `DB::ColumnsScatter::scatter` path (no batching across chunks).
+- Any positive value — Enable batching. Default: `2097152` (2 MiB).
+)", 0) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0) \
