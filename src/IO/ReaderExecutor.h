@@ -209,6 +209,17 @@ private:
     /// shared counter.
     struct Stats;
 
+    /// The in-flight prefetch's co-owned job: the worker's job-local `Stats` plus the
+    /// source-connection cluster (`ConnState`) it owns for the job's duration.
+    /// Forward-declared so the `prefetch_job` member can be a `shared_ptr<PrefetchJob>`
+    /// (defined below, after `Stats`).
+    struct PrefetchJob;
+
+    /// The source-connection cluster threaded as a `ConnState &` through the read
+    /// path (defined below, after `LiveConnection`). Forward-declared so the
+    /// conn-touching method signatures can take a `ConnState &`.
+    struct ConnState;
+
     /// Assemble the bytes for `physical_window` from the residency plan, then the
     /// source. Two phases, no per-window cache discovery:
     ///   1. `serveResidentFromPlan` — copy every byte the held plan reports
@@ -222,7 +233,7 @@ private:
     /// - the foreground passes `this->stats`, a worker passes its job-local `Stats`.
     /// Returns one contiguous run from the window start (a hole would shift the
     /// caller's offset interpretation).
-    Rope readPhysicalWindow(ByteRange physical_window, bool from_prefetch, Stats & out_stats);
+    Rope readPhysicalWindow(ByteRange physical_window, bool from_prefetch, ConnState & conn, Stats & out_stats);
 
     /// Phase 1 of `readPhysicalWindow`: ensure `read_plan` covers
     /// `physical_window` (re-planning if the cursor left the planned span), then
@@ -247,13 +258,14 @@ private:
         Rope & result,
         IntervalSet & covered,
         WritePlan & write_plan,
+        ConnState & conn,
         Stats & out_stats);
 
     /// Write every fetched miss range collected in `write_plan` into its tier
     /// (`put`), splitting the populated bytes by foreground vs prefetch context.
     /// The write side of `readPhysicalWindow` - the seam a lower->upper promotion
     /// rule and a dedicated async write pool will attach to.
-    void flushWritePlan(WritePlan & write_plan, const Rope & result, bool from_prefetch, Stats & out_stats);
+    void flushWritePlan(WritePlan & write_plan, const Rope & result, bool from_prefetch, Stats & out_stats) const;
 
     /// Promote a range just served from `from_tier` up into every populatable
     /// cache faster than it (those all miss it, since `from_tier` was the fastest
@@ -280,15 +292,17 @@ private:
     /// blocks that receive no data (e.g., file ended early) are released when this function returns.
     Rope readFromSource(
         const StoredObject & object, size_t offset,
-        VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset, Stats & out_stats);
+        VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset,
+        ConnState & conn, Stats & out_stats);
 
     /// Before dropping the live connection away from its bound, if only a small
     /// tail (<= `max_tail_for_drain`) remains, read it out so the connection
     /// completes and returns to the pool reusable instead of counting an
     /// incomplete connection. No-op when there is no bound or the tail is larger.
     /// Over-read bytes are charged to `out_stats` (the worker's job-local stats on
-    /// a prefetch drain, `this->stats` on a foreground drop).
-    void maybeDrainLiveTail(Stats & out_stats);
+    /// a prefetch drain, `this->stats` on a foreground drop). Operates on `conn`
+    /// (const: touches no `this` state).
+    void maybeDrainLiveTail(ConnState & conn, Stats & out_stats) const;
 
     /// Allocate enough OwnedRopeBuffers to cover `size` bytes, each ≤ `block_size`.
     /// `splits` (sorted, relative offsets within `[0, size)`) forces a block boundary at each
@@ -325,7 +339,8 @@ private:
     /// pre-acquired or via an existing live_connection), the read window shrinks
     /// to one `block_size` block because the live connection streams a block at a
     /// time and allocating a larger rope just inflates the in-flight memory.
-    void ensurePreAcquiredSlot();
+    /// Reserves into `conn.pre_acquired_slot`.
+    void ensurePreAcquiredSlot(ConnState & conn);
 
     /// Acquire a `buffer_limit` slot for `object` and record the outcome in the
     /// `ReaderExecutorBufferSlot{Acquired,Failed}` counters. Shared by the
@@ -362,13 +377,14 @@ private:
     /// right bound (the advertised extent, or a one-shot block): it is fully
     /// drained and reusable, and dropping it lets the next read open a fresh
     /// streamed connection instead of falling to the stateless one-shot path.
-    void releaseLiveConnectionAtBound();
+    /// Operates on `conn` (const: touches no `this` state).
+    void releaseLiveConnectionAtBound(ConnState & conn) const;
     /// Account a `live_connection` about to be dropped: count it as an incomplete
     /// (not pool-reusable) connection unless it was drained to its effective end.
     /// `at_eof` lets EOF drop sites treat a reached-EOF connection as complete.
     /// The incomplete-connection count lands in `out_stats` (job-local on a worker
-    /// drop, `this->stats` on a foreground drop).
-    void accountLiveConnectionDrop(bool at_eof, Stats & out_stats);
+    /// drop, `this->stats` on a foreground drop). Inspects `conn.live_connection`.
+    void accountLiveConnectionDrop(ConnState & conn, bool at_eof, Stats & out_stats) const;
 
     /// Decide an open live connection's fate before the next read at
     /// `next_physical`: keep it only while that read is a small bridgeable forward
@@ -377,12 +393,13 @@ private:
     /// slot isn't held idle. No-op without a live connection or at EOF. Called
     /// after every cache-only serve (resident run, or a cache-only gap window).
     /// Drain/drop accounting lands in `out_stats` (see `maybeDrainLiveTail`).
-    void maybeKeepLiveConnectionBefore(size_t next_physical, Stats & out_stats);
+    /// Operates on `conn` (const: touches no `this` state beyond read-only members).
+    void maybeKeepLiveConnectionBefore(size_t next_physical, ConnState & conn, Stats & out_stats) const;
 
     /// readPhysicalWindow + remap the window's offsets to logical (subtract the
     /// encryption header). Payload decryption is deferred to the consumer
     /// (PipelineReadBuffer), so unconsumed read-ahead is never decrypted.
-    Rope readWindowLogical(ByteRange physical_window, bool from_prefetch, Stats & out_stats);
+    Rope readWindowLogical(ByteRange physical_window, bool from_prefetch, ConnState & conn, Stats & out_stats);
 
     std::shared_ptr<ISourceReader> source;
     StoredObjects stored_objects;  /// retained for makeTransientForReadAt
@@ -522,20 +539,25 @@ private:
     /// the handle is non-null.
     std::shared_ptr<PrefetchHandle> prefetch_handle;
     ByteRange prefetch_range;
-    /// The in-flight prefetch worker's job-local `Stats`, co-owned with the worker
-    /// lambda. The worker accumulates ALL its served-byte counters here (never into
-    /// the shared `this->stats`), and the foreground merges it into `this->stats` at
-    /// join via `mergePrefetchJobStats` - once the `get()`/`tryCancel` happens-before
-    /// edge is established. Because a job-local `Stats` starts at zero, its
-    /// `prefetch_issued_*` ARE this prefetch's issued bytes, so a discard attributes
-    /// exactly them to wasted (no snapshot needed). Null when no prefetch is in
-    /// flight; a cancelled-while-queued prefetch leaves it at zero (worker never ran).
-    std::shared_ptr<Stats> prefetch_job_stats;
+    /// The in-flight prefetch worker's job, co-owned with the worker lambda. Holds
+    /// the worker's job-local `Stats` AND the source-connection cluster (`conn`) it
+    /// took ownership of at submit. The worker writes ONLY `prefetch_job->stats` and
+    /// operates ONLY on `prefetch_job->conn` (never the shared `this->stats` /
+    /// `this->conn`); the foreground reconciles at join once the `get()`/`tryCancel`
+    /// happens-before edge is established: `mergePrefetchJobStats` folds the stats in,
+    /// and the connection cluster is moved back into `this->conn` (consume /
+    /// cancel-queued) or dropped (discard-running). Because a job-local `Stats` starts
+    /// at zero, its `prefetch_issued_*` ARE this prefetch's issued bytes, so a discard
+    /// attributes exactly them to wasted (no snapshot needed). Null when no prefetch
+    /// is in flight; a cancelled-while-queued job is untouched (worker never ran), so
+    /// its `conn` is reclaimed and its stats stay zero.
+    std::shared_ptr<PrefetchJob> prefetch_job;
     /// Merge a resolved prefetch's job-local stats into `this->stats`. `wasted` ⟹
     /// the rope was discarded unconsumed (a running prefetch dropped by seek /
     /// extent-change): the bytes still crossed the wire so they count as issued I/O,
-    /// and additionally as wasted. Clears `prefetch_job_stats`. No-op (and harmless)
-    /// for a cancelled-while-queued prefetch whose job stats are still zero.
+    /// and additionally as wasted. Clears `prefetch_job` is the CALLER's job (it also
+    /// reclaims/drops the connection cluster); this only touches the stats half.
+    /// No-op (and harmless) for a cancelled-while-queued job whose stats are zero.
     void mergePrefetchJobStats(bool wasted);
     /// Prefetch-log metadata for the in-flight prefetch. `submit_time` is set
     /// at submit; `execution_watch` is set by the worker around its
@@ -606,13 +628,36 @@ private:
         size_t drainTail(size_t max_tail, size_t block_bytes);
     };
 
-    std::optional<LiveConnection> live_connection;
-    /// While streaming sequentially through a DiskCache/FileCache segment, hold
-    /// a bare ref to that segment so a mid-read eviction can't snap the next
-    /// miss head back to the segment start and force a connection reset + a
-    /// re-read of bytes already delivered. Re-pointed each window to the
-    /// segment under the live frontier; dropped on seek/EOF/connection reset.
-    ICacheHandle::CacheSegmentPin inflight_segment_pin;
+    /// The source-connection cluster a prefetch worker takes ownership of for the
+    /// duration of its job. Bundled and threaded as a `ConnState &` (exactly like
+    /// `Stats & out_stats`) so a worker operates on its OWN cluster
+    /// (`prefetch_job->conn`) and the foreground on `this->conn` — the
+    /// shared-`live_connection` use-after-free becomes a compile-time impossibility,
+    /// not a runtime invariant. Move-only (holds the connection's `unique_ptr`).
+    struct ConnState
+    {
+        std::optional<LiveConnection> live_connection;
+
+        /// While streaming sequentially through a DiskCache/FileCache segment, hold
+        /// a bare ref to that segment so a mid-read eviction can't snap the next
+        /// miss head back to the segment start and force a connection reset + a
+        /// re-read of bytes already delivered. Re-pointed each window to the
+        /// segment under the live frontier; dropped on seek/EOF/connection reset.
+        ICacheHandle::CacheSegmentPin inflight_segment_pin;
+
+        /// Slot reserved at the top of `readNextWindow` so the next source read is
+        /// promoted to live without re-checking, AND the slot the worker opens its
+        /// connection WITH; consumed into `live_connection` on that read (released
+        /// if the open fails). Reserved-for-path is `pre_acquired_slot->objectPath()`.
+        std::optional<SourceBufferSlot> pre_acquired_slot;
+    };
+
+    /// The foreground's connection cluster. EMPTY while a prefetch is in flight —
+    /// the cluster is moved into `prefetch_job->conn` at submit and moved back on
+    /// consume / cancel-queued (dropped on discard-running). Named distinctly from
+    /// the read-path `ConnState & conn` parameter (which a worker binds to
+    /// `prefetch_job->conn` instead) so the two never shadow.
+    ConnState foreground_conn;
     std::shared_ptr<SourceBufferLimit> buffer_limit;
     std::shared_ptr<ReaderExecutorLog> reader_executor_log;
     std::shared_ptr<FilesystemReadPrefetchesLog> prefetches_log;
@@ -621,12 +666,6 @@ private:
     /// `system.filesystem_read_prefetches_log` (random 8-char, like the legacy
     /// per-buffer id). Empty until the prefetches-log sink is attached.
     String prefetch_reader_id;
-
-    /// Slot reserved at the top of `readNextWindow` so the next source read is
-    /// promoted to live without re-checking; consumed into `live_connection` on
-    /// that read (released here if the open fails). Reserved-for-path is
-    /// `pre_acquired_slot->objectPath()`.
-    std::optional<SourceBufferSlot> pre_acquired_slot;
 
     /// Logical end of the advertised read region: the `makeTransientForReadAt`
     /// one-shot extent, or a sequential reader's `setReadExtent` (from
@@ -644,11 +683,11 @@ private:
     /// transients' stats into this one parent.
     std::mutex transient_stats_mutex;
 
-    /// Drop `pre_acquired_slot` when it was reserved for an object other than
+    /// Drop `conn.pre_acquired_slot` when it was reserved for an object other than
     /// `target_path`. Must run before a `readFromSource` / `seek` into a
     /// different object, else the stale slot leaks while `readFromSource`'s
     /// fallback acquires a second one — halving `max_remote_read_connections`.
-    void releaseStalePreAcquiredSlot(const String & target_path);
+    void releaseStalePreAcquiredSlot(ConnState & conn, const String & target_path) const;
 
 #if USE_SSL
     /// Decryption
@@ -774,9 +813,19 @@ private:
     /// `mutable` so `const` read helpers can accumulate timings. Stats are
     /// observability, not state. The foreground owns this aggregate; a prefetch
     /// worker never writes it - it accumulates into its own job-local `Stats`
-    /// (`prefetch_job_stats`), merged here at join under the future's `get()`
+    /// (`prefetch_job->stats`), merged here at join under the future's `get()`
     /// happens-before edge.
     mutable Stats stats;
+
+    /// The in-flight prefetch's co-owned job (see the `prefetch_job` member). Bundles
+    /// the worker's job-local `Stats` and the source-connection cluster it owns for
+    /// the job's duration, so a prefetch worker touches ONLY job state — never a
+    /// shared `this->` member. Defined here, after `Stats` and `ConnState`.
+    struct PrefetchJob
+    {
+        Stats stats;
+        ConnState conn;
+    };
 
     LoggerPtr log = getLogger("ReaderExecutor");
 };

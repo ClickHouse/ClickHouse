@@ -358,6 +358,48 @@ TEST(ReaderExecutor, PrefetchTriggersOnReadNextWindow)
     EXPECT_TRUE(rope4.empty());
 }
 
+TEST(ReaderExecutor, PrefetchBoxRoundTripKeepsSingleConnection)
+{
+    /// Cold sequential scan driven by a REAL prefetch pool. The source-connection
+    /// cluster is moved foreground -> job at submit and reclaimed back at consume /
+    /// cancel-queued every window. Assert the round-trip is faithful: the source
+    /// connection is opened EXACTLY once and reused across all windows (no churn of
+    /// the server-shared slot), with no data corruption. The no-pool R=1 tests
+    /// (`MultipleEvictionsKeepSingleConnection` etc.) never exercise the box move, so
+    /// this is the regression guard for the Step-2 connection-ownership transfer.
+    String content(8000, 0);
+    for (size_t i = 0; i < content.size(); ++i)
+        content[i] = static_cast<char>('A' + (i % 26));
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 8000);
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    auto limit = std::make_shared<SourceBufferLimit>(10);
+    /// min_bytes_for_seek=0: contiguous windows continue the open connection.
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
+    executor.setPrefetchPool(pool);
+    executor.setBufferLimit(limit);
+
+    String result;
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (rope.empty())
+            break;
+        for (const auto & node : rope.getNodes())
+            result.append(node.data(), node.size);
+        /// The cluster lives in exactly one place (foreground or the in-flight job),
+        /// so at most one connection slot is ever active - never two.
+        EXPECT_LE(limit->getActive().size(), 1u);
+    }
+
+    EXPECT_EQ(result, content);                       /// no corruption across the box move
+    EXPECT_EQ(executor.getSourceRequestsCount(), 1u); /// one connection, round-tripped, never reopened
+}
+
 TEST(ReaderExecutor, SeekInsidePrefetchedWindow)
 {
     /// After the first window read, a prefetch is in flight for [500, 1000).
