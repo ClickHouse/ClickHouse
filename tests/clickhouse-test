@@ -1278,7 +1278,7 @@ def auto_statistics_generator():
         if random.random() < 0.3:
             return ""
 
-        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin']
+        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin', 'basic']
         return ",".join(random.sample(all_statistic_types, random.randint(0, len(all_statistic_types))))
 
     return gen
@@ -1556,6 +1556,7 @@ class SettingsRandomizer:
         "allow_calculating_subcolumns_sizes_for_merge_tree_reading": lambda: random.random() > 0.05,
         "use_join_disjunctions_push_down": lambda: random.random() > 0.05,
         "enable_join_transitive_predicates": lambda: random.random() < 0.3,
+        "analyzer_compatibility_prefer_alias_over_subcolumn": lambda: random.randint(0, 1),
     }
 
     dependent_settings = {
@@ -1575,7 +1576,10 @@ class SettingsRandomizer:
         "use_statistics_cache": "use_statistics",
     }
 
-    stress_test_only_settings = {"query_plan_optimize_join_order_randomize"}
+    stress_test_only_settings = {
+        "query_plan_optimize_join_order_randomize",
+        "analyzer_compatibility_prefer_alias_over_subcolumn",
+    }
 
     @staticmethod
     def adjust_settings_for_autopr(args, tags, random_settings):
@@ -3816,6 +3820,11 @@ class TestSuite:
             tags_str = tags_str[len(tags_prefix) :]  # noqa: ignore E203
             tags = tags_str.split(",")
             tags = {tag.strip() for tag in tags}
+            if "no-stress" in tags:
+                raise ValueError(
+                    "The 'no-stress' tag is not supported: stress tests must be "
+                    "able to run every test. Remove it from the test."
+                )
             return tags
 
         def parse_memory_limits_from_line(
@@ -4305,6 +4314,8 @@ def run_tests_array(
         multiprocessing.managers.ListProxy,
         int,
         multiprocessing.sharedctypes.Synchronized,
+        multiprocessing.sharedctypes.Synchronized,
+        int,
     ],
 ):
     (
@@ -4319,6 +4330,8 @@ def run_tests_array(
         restarted_tests,
         process_index,
         total_failures_shared,
+        progress_counter,
+        total_tests,
     ) = all_tests_with_params
 
     os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-proc{process_index}-%2m.profraw"
@@ -4425,7 +4438,8 @@ def run_tests_array(
                 description = f"{test_case_name:72}"
             else:
                 sys.stdout.flush()
-                sys.stdout.write(f"{test_case_name:72}")
+                progress = get_next_test_progress(progress_counter, total_tests)
+                sys.stdout.write(f"{progress}{test_case_name:72}")
                 # This flush is needed so you can see the test name of the long
                 # running test before it will finish. But don't do it in parallel
                 # mode, so that the lines don't mix.
@@ -4488,6 +4502,11 @@ def run_tests_array(
                 description += cleanup_output.getvalue()
                 if not cleanup_output.getvalue().endswith("\n"):
                     description += "\n"
+
+            if is_concurrent:
+                description = (
+                    get_next_test_progress(progress_counter, total_tests) + description
+                )
 
             sys.stdout.write(description)
             sys.stdout.flush()
@@ -4840,6 +4859,15 @@ def run_tests_process(*args_, **kwargs):
     return run_tests_array(*args_, **kwargs)
 
 
+def get_next_test_progress(progress_counter, total_tests: int) -> str:
+    width = len(str(total_tests))
+    with progress_counter.get_lock():
+        progress_counter.value += 1
+        current_test_number = progress_counter.value
+
+    return f"[{current_test_number:>{width}} / {total_tests}] "
+
+
 def do_run_tests(
     jobs,
     test_suite: TestSuite,
@@ -4857,6 +4885,7 @@ def do_run_tests(
         "sequential tests",
     )
     total_tests = len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
+    progress_counter = multiprocessing.Value('i', 0)
 
     if test_suite.parallel_tests:
         tests_n = len(test_suite.parallel_tests)
@@ -4916,6 +4945,8 @@ def do_run_tests(
                         restarted_tests,
                         i,  # process index
                         total_failures_shared,
+                        progress_counter,
+                        total_tests,
                     ),
                 ),
             )
@@ -5061,6 +5092,8 @@ def do_run_tests(
                 restarted_tests,
                 jobs + 1,
                 seq_total_failures,
+                progress_counter,
+                total_tests,
             )
         )
 

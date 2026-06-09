@@ -322,12 +322,14 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         size_t total_number_of_tables = 0;
 
         size_t total_number_of_bytes = 0;
+        size_t total_number_of_bytes_uncompressed = 0;
         size_t total_number_of_rows = 0;
         size_t total_number_of_parts = 0;
 
         size_t total_number_of_tables_system = 0;
 
         size_t total_number_of_bytes_system = 0;
+        size_t total_number_of_bytes_uncompressed_system = 0;
         size_t total_number_of_rows_system = 0;
         size_t total_number_of_parts_system = 0;
 
@@ -365,16 +367,19 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
 
                     size_t bytes = table_merge_tree->totalBytes(getContext()).value();
+                    size_t bytes_uncompressed = table_merge_tree->totalBytesUncompressed(getContext()->getSettingsRef()).value();
                     size_t rows = table_merge_tree->totalRows(getContext()).value();
                     size_t parts = table_merge_tree->getActivePartsCount();
 
                     total_number_of_bytes += bytes;
+                    total_number_of_bytes_uncompressed += bytes_uncompressed;
                     total_number_of_rows += rows;
                     total_number_of_parts += parts;
 
                     if (is_system)
                     {
                         total_number_of_bytes_system += bytes;
+                        total_number_of_bytes_uncompressed_system += bytes_uncompressed;
                         total_number_of_rows_system += rows;
                         total_number_of_parts_system += parts;
                     }
@@ -456,6 +461,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             " The excluded database engines are those who generate the set of tables on the fly, like `Lazy`, `MySQL`, `PostgreSQL`, `SQlite`."};
 
         new_values["TotalBytesOfMergeTreeTables"] = { total_number_of_bytes, "Total amount of bytes (compressed, including data and indices) stored in all tables of MergeTree family." };
+        new_values["TotalUncompressedBytesOfMergeTreeTables"] = { total_number_of_bytes_uncompressed, "Total amount of uncompressed bytes, as reported by the part checksums, stored in all tables of MergeTree family. It is the same source as the `total_bytes_uncompressed` column of `system.tables`, and it does not include files that are stored uncompressed, such as marks and primary key indices." };
         new_values["TotalRowsOfMergeTreeTables"] = { total_number_of_rows, "Total amount of rows (records) stored in all tables of MergeTree family." };
         new_values["TotalPartsOfMergeTreeTables"] = { total_number_of_parts, "Total amount of data parts in all tables of MergeTree family."
             " Numbers larger than 10 000 will negatively affect the server startup time and it may indicate unreasonable choice of the partition key." };
@@ -463,6 +469,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["NumberOfTablesSystem"] = { total_number_of_tables_system, "Total number of tables in the system database on the server stored in tables of MergeTree family." };
 
         new_values["TotalBytesOfMergeTreeTablesSystem"] = { total_number_of_bytes_system, "Total amount of bytes (compressed, including data and indices) stored in tables of MergeTree family in the system database." };
+        new_values["TotalUncompressedBytesOfMergeTreeTablesSystem"] = { total_number_of_bytes_uncompressed_system, "Total amount of uncompressed bytes, as reported by the part checksums, stored in tables of MergeTree family in the system database. It is the same source as the `total_bytes_uncompressed` column of `system.tables`, and it does not include files that are stored uncompressed, such as marks and primary key indices." };
         new_values["TotalRowsOfMergeTreeTablesSystem"] = { total_number_of_rows_system, "Total amount of rows (records) stored in tables of MergeTree family in the system database." };
         new_values["TotalPartsOfMergeTreeTablesSystem"] = { total_number_of_parts_system, "Total amount of data parts in tables of MergeTree family in the system database." };
 

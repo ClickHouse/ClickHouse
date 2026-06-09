@@ -89,6 +89,8 @@ static struct InitFiu
     REGULAR(file_cache_dynamic_resize_fail_to_evict) \
     PAUSEABLE_ONCE(reader_executor_pause_after_window) \
     PAUSEABLE_ONCE(reader_executor_pause_after_cache_status) \
+    REGULAR(file_cache_slru_downgrade_fail_before_finalize) \
+    REGULAR(file_cache_modify_size_limits_fail) \
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
@@ -189,7 +191,8 @@ static struct InitFiu
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
     REGULAR(transaction_force_unknown_state_after_commit) \
-    PAUSEABLE(transaction_after_commit_pause)
+    PAUSEABLE(transaction_after_commit_pause) \
+    REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc)
 
 namespace FailPoints
 {
