@@ -644,7 +644,10 @@ public:
 
     /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
     /// This method allows read-only replicas of tables on a shared storage.
+    /// `refreshDataParts` is the background-task entry point: it reschedules itself afterwards.
+    /// `refreshDataPartsOnce` performs a single refresh and is also used by `SYSTEM RESTART DISK`.
     void refreshDataParts(UInt64 interval_milliseconds);
+    void refreshDataPartsOnce(UInt64 interval_milliseconds);
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
@@ -1154,6 +1157,10 @@ public:
 
     StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
 
+    /// Whether the per-part metadata version is stored in the engine's metadata storage instead of
+    /// the on-disk `metadata_version.txt` file. When true, the file is not written for new parts.
+    virtual bool storesMetadataVersionInPartAttributes() const { return false; }
+
     String getRelativeDataPath() const { return relative_data_path; }
 
     /// Get table path on disk
@@ -1343,6 +1350,10 @@ public:
     mutable StreamSubscriptionManager subscription_manager;
 
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
+
+    /// Last-resort guard for the post-vtable-demotion window of STID 3631-4165;
+    /// derived overrides are always picked in normal operation.
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
     /// Schedules job to move parts between disks/volumes and so on.
     bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) override;
@@ -1654,7 +1665,6 @@ protected:
         const StorageInMemoryMetadata & old_metadata,
         bool attach,
         bool allow_empty_sorting_key,
-        bool allow_reverse_sorting_key,
         bool allow_nullable_key_,
         ContextPtr local_context) const;
 
@@ -1897,6 +1907,12 @@ protected:
 
     BackgroundSchedulePoolTaskHolder refresh_parts_task;
 
+    /// Serializes refreshDataPartsOnce so the background refresh task and SYSTEM RESTART DISK
+    /// cannot scan and load the same new part concurrently (which would throw a duplicate-part
+    /// LOGICAL_ERROR, because the "is this part already present" check and the actual load are
+    /// not done under a single lock).
+    std::mutex refresh_parts_mutex;
+
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
 
     mutable std::mutex stats_mutex;
@@ -1972,7 +1988,6 @@ private:
     virtual void startBackgroundMovesIfNeeded() = 0;
 
     bool allow_nullable_key = false;
-    bool allow_reverse_key = false;
 
     void addPartContributionToDataVolume(const DataPartPtr & part);
     void removePartContributionToDataVolume(const DataPartPtr & part);
