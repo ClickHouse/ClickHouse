@@ -101,3 +101,21 @@ SELECT name FROM system.columns WHERE database = currentDatabase() AND table = '
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '%tmp_replace%';
 
 DROP TABLE t04326_select;
+
+-- The `CREATE OR REPLACE MATERIALIZED VIEW` success path with a small inner
+-- still works, even with a strict `max_table_size_to_drop`. The pre-flight
+-- now runs after the fill but the old inner is small, so the guard passes
+-- and the swap completes without leaving a stranded `_tmp_replace_*`.
+CREATE TABLE t04326_mv2_src (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE MATERIALIZED VIEW t04326_mv2 (id UInt64) ENGINE = MergeTree ORDER BY id
+AS SELECT id FROM t04326_mv2_src;
+INSERT INTO t04326_mv2_src VALUES (1);
+
+CREATE OR REPLACE MATERIALIZED VIEW t04326_mv2 (id UInt64) ENGINE = MergeTree ORDER BY id
+AS SELECT id FROM t04326_mv2_src
+SETTINGS max_table_size_to_drop = 0;
+
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '%tmp_replace%';
+
+DROP TABLE t04326_mv2 SETTINGS max_table_size_to_drop = 0;
+DROP TABLE t04326_mv2_src;

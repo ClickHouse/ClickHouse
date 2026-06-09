@@ -551,10 +551,23 @@ void StorageMaterializedView::checkTableSizeBelowDropLimit(ContextPtr query_cont
     if (!has_inner_table)
         return;
 
-    /// On a race (e.g. `SYSTEM RESTART REPLICA` detached the inner table),
-    /// `dropInnerTableIfAny` is a no-op too, so we mirror its tolerance.
-    if (auto inner = tryGetTargetTable())
-        inner->checkTableSizeBelowDropLimit(query_context);
+    /// Mirror `dropInnerTableIfAny`: it builds `to_drop` from `getTargetTableId()` and,
+    /// when `!fixed_uuid` (refreshable / non-append), additionally from the `.tmp` inner
+    /// table name. We must size-check every table that the implicit drop could delete,
+    /// otherwise the zeroed `max_table_size_to_drop` context would silently bypass the
+    /// guard for a non-empty `.tmp.inner...` produced by a previous refresh.
+    auto target_id = getTargetTableId();
+    std::vector<StorageID> to_check = {target_id};
+    if (!fixed_uuid)
+        to_check.push_back(StorageID(target_id.getDatabaseName(), ".tmp" + target_id.getTableName()));
+
+    for (const StorageID & inner_id : to_check)
+    {
+        /// On a race (e.g. `SYSTEM RESTART REPLICA` detached the inner table),
+        /// `dropInnerTableIfAny` is a no-op too, so we mirror its tolerance.
+        if (auto inner = DatabaseCatalog::instance().tryGetTable(inner_id, getContext()))
+            inner->checkTableSizeBelowDropLimit(query_context);
+    }
 }
 
 void StorageMaterializedView::checkStatementCanBeForwarded() const
