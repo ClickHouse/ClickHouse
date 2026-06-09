@@ -29,3 +29,30 @@ WHERE current_database = currentDatabase()
   AND query NOT LIKE '%system.query_log%'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
+
+-- A nested query (UNION ALL + scalar subquery) exercises nested planners and nested
+-- analysis. After the outermost-only fix the three events must still fire (> 0) — this
+-- guards against over-suppression. We intentionally do NOT assert an upper bound (timing).
+SELECT count() AS c -- query_phase_pe_nested_marker
+FROM
+(
+    SELECT number FROM numbers(2000)
+    UNION ALL
+    SELECT number FROM numbers(2000) WHERE number < (SELECT max(number) FROM numbers(500))
+)
+SETTINGS enable_analyzer = 1
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    ProfileEvents['QueryAnalysisMicroseconds'] > 0,
+    ProfileEvents['QueryTreeOptimizeMicroseconds'] > 0,
+    ProfileEvents['QueryPlanningMicroseconds'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE '%query_phase_pe_nested_marker%'
+  AND query NOT LIKE '%system.query_log%'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
