@@ -1,6 +1,10 @@
 #include <Storages/System/StorageSystemTables.h>
 
 #include <Access/ContextAccess.h>
+#include <Core/UUID.h>
+#if CLICKHOUSE_CLOUD
+#include <Backups/BackupsHelper.h>
+#endif
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -24,6 +28,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -42,7 +47,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
-    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+    extern const SettingsBool show_remote_databases_in_system_tables;
 }
 
 namespace detail
@@ -52,7 +57,7 @@ ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr co
     MutableColumnPtr column = ColumnString::create();
 
     const auto & settings = context->getSettingsRef();
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = settings[Setting::show_remote_databases_in_system_tables]});
     for (const auto & database_name : databases | boost::adaptors::map_keys)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -92,7 +97,7 @@ ColumnPtr getFilteredTables(
                 filter_by_uuid = true;
         }
 
-        if (filter_by_engine)
+        if (filter_by_engine && !is_detached)
             engine_column = ColumnString::create();
 
         if (filter_by_uuid)
@@ -112,6 +117,8 @@ ColumnPtr getFilteredTables(
             for (; table_it->isValid(); table_it->next())
             {
                 table_column->insert(table_it->table());
+                if (uuid_column)
+                    uuid_column->insert(table_it->uuid());
             }
         }
         else
@@ -188,6 +195,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"sorting_key", std::make_shared<DataTypeString>(), "The sorting key expression specified in the table."},
         {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
         {"sampling_key", std::make_shared<DataTypeString>(), "The sampling key expression specified in the table."},
+        {"unique_key", std::make_shared<DataTypeString>(), "The unique key expression specified in the table (UNIQUE KEY clause)."},
         {"storage_policy", std::make_shared<DataTypeString>(), "The storage policy. Relevant for tables using MergeTree and Distributed engines."},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise NULL (including underlying Buffer table)."
@@ -231,6 +239,14 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"loading_dependent_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "Dependent loading table."
         },
+        {"target_database", std::make_shared<DataTypeString>(),
+            "For a materialized view, the database of the destination table the view writes to "
+            "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."
+        },
+        {"target_table", std::make_shared<DataTypeString>(),
+            "For a materialized view, the name of the destination table the view writes to "
+            "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."
+        },
         {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
     };
 
@@ -239,8 +255,8 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
     });
 
     storage_metadata.setColumns(std::move(description));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemTables::createVirtuals()
@@ -251,7 +267,7 @@ VirtualColumnsDescription StorageSystemTables::createVirtuals()
     return desc;
 }
 
-class TablesBlockSource : public ISource
+class TablesBlockSource final : public ISource
 {
 public:
     TablesBlockSource(
@@ -311,6 +327,8 @@ protected:
     }
 
 
+    /// The caller has already verified `SHOW_TABLES` for this database,
+    /// so no per-table access check is needed.
     size_t fillTableNamesOnly(MutableColumns & res_columns)
     {
         auto table_details = database->getLightweightTablesIterator(context,
@@ -319,7 +337,6 @@ protected:
 
         size_t count = 0;
 
-        const auto access = context->getAccess();
         for (const auto & table_detail: table_details)
         {
             if (!tables.contains(table_detail.name))
@@ -327,9 +344,6 @@ protected:
 
             size_t src_index = 0;
             size_t res_index = 0;
-
-            if (!access->isGranted(AccessType::SHOW_TABLES, database_name, table_detail.name))
-                continue;
 
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(database_name);
@@ -453,7 +467,7 @@ protected:
                                 // parameterized view parameters
                                 fillParametralizedViewData(res_columns, table.second, res_index);
                             }
-                            else if (src_index == 20 && columns_mask[src_index])
+                            else if (src_index == 21 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -471,7 +485,7 @@ protected:
                                 ++res_index;
                             }
                             // total_bytes
-                            else if (src_index == 21 && columns_mask[src_index])
+                            else if (src_index == 22 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -709,6 +723,14 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
+                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getUniqueKeyAST()))
+                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
                     auto policy = table ? table->tryGetStoragePolicy().value_or(nullptr) : nullptr;
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
@@ -906,6 +928,26 @@ protected:
                 else
                 {
                     src_index += 4;
+                }
+
+                if (columns_mask[src_index] || columns_mask[src_index + 1])
+                {
+                    String target_database;
+                    String target_table;
+                    if (auto * mv = table ? dynamic_cast<StorageMaterializedView *>(table.get()) : nullptr)
+                    {
+                        const auto target_id = mv->getTargetTableId();
+                        target_database = target_id.database_name;
+                        target_table = target_id.table_name;
+                    }
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(target_database);
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(target_table);
+                }
+                else
+                {
+                    src_index += 2;
                 }
 
                 if (columns_mask[src_index++])

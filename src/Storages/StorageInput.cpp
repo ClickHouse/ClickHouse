@@ -27,8 +27,8 @@ StorageInput::StorageInput(const StorageID & table_id, const ColumnsDescription 
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageInput::createVirtuals()
@@ -40,7 +40,7 @@ VirtualColumnsDescription StorageInput::createVirtuals()
 }
 
 
-class StorageInputSource : public ISource, WithContext
+class StorageInputSource final : public ISource, WithContext
 {
 public:
     StorageInputSource(ContextPtr context_, SharedHeader sample_block) : ISource(std::move(sample_block)), WithContext(context_) {}

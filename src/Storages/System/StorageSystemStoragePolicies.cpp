@@ -54,8 +54,8 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const StorageID & tab
             {"load_balancing", std::make_shared<DataTypeEnum8>(getTypeEnumValues<VolumeLoadBalancing>()), "Policy for disk balancing, `round_robin` or `least_used`."}
     }));
     // TODO: Add string column with custom volume-type-specific options
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemStoragePolicies::createVirtuals()

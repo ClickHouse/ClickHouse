@@ -1,16 +1,17 @@
-#include <Storages/System/StorageSystemParts.h>
 #include <atomic>
 #include <memory>
 #include <string_view>
+#include <Interpreters/MergeTreeTransaction.h>
+#include <Storages/System/StorageSystemParts.h>
 
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <Interpreters/TransactionVersionMetadata.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 
 
 namespace
@@ -90,10 +91,10 @@ Name of the data part. The part naming structure can be used to determine many a
         {"max_block_number",                            std::make_shared<DataTypeInt64>(),     "The maximum number of data parts that make up the current part after merging."},
         {"level",                                       std::make_shared<DataTypeUInt32>(),    "Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts."},
         {"data_version",                                std::make_shared<DataTypeUInt64>(),    "Number that is used to determine which mutations should be applied to the data part (mutations with a version higher than data_version)."},
-        {"primary_key_bytes_in_memory",                 std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by primary key values. Will be 0 when `primary_key_lazy_load` is enabled and the key is not loaded."},
-        {"primary_key_bytes_in_memory_allocated",       std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) reserved for primary key values. Will be 0 when `primary_key_lazy_load` is enabled and the key is not loaded."},
-        {"index_granularity_bytes_in_memory",           std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by index granularity values (will be 0 in case of primary_key_lazy_load=1 and use_primary_key_cache=1)."},
-        {"index_granularity_bytes_in_memory_allocated", std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) reserved for index granularity values (will be 0 in case of primary_key_lazy_load=1 and use_primary_key_cache=1)."},
+        {"primary_key_bytes_in_memory",                 std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by primary key values. Will be 0 when `primary_key_lazy_load` is enabled and the key is not loaded. When non-zero the bytes live in the part itself and are accounted within `jemalloc.mergetree_arena.active_bytes`. They are NEVER counted in `PrimaryIndexCacheBytes` — those are mutually exclusive per part: an index lives either in the part (this metric) or in the shared `PrimaryIndexCache` (the other), depending on `primary_key_lazy_load` and `use_primary_key_cache`."},
+        {"primary_key_bytes_in_memory_allocated",       std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) reserved for primary key values. Will be 0 when `primary_key_lazy_load` is enabled and the key is not loaded. When non-zero, included in `jemalloc.mergetree_arena.active_bytes`. See the note on `primary_key_bytes_in_memory` for the relationship with `PrimaryIndexCacheBytes`."},
+        {"index_granularity_bytes_in_memory",           std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by index granularity values (will be 0 in case of primary_key_lazy_load=1 and use_primary_key_cache=1). When non-zero the bytes are part-owned and accounted within `jemalloc.mergetree_arena.active_bytes`."},
+        {"index_granularity_bytes_in_memory_allocated", std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) reserved for index granularity values (will be 0 in case of primary_key_lazy_load=1 and use_primary_key_cache=1). When non-zero, included in `jemalloc.mergetree_arena.active_bytes`."},
         {"is_frozen",                                   std::make_shared<DataTypeUInt8>(),     "Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. For more details, see FREEZE PARTITION."},
 
         {"database",                                    std::make_shared<DataTypeString>(),    "Name of the database."},
@@ -351,7 +352,7 @@ void StorageSystemParts::processNextStorage(
         {
             auto txn = context->getCurrentTransaction();
             if (txn)
-                columns[res_index++]->insert(part->version.isVisible(*txn));
+                columns[res_index++]->insert(part->version->isVisible(txn->getSnapshot(), txn->tid));
             else
                 columns[res_index++]->insert(part_state == State::Active);
         }
@@ -361,16 +362,17 @@ void StorageSystemParts::processNextStorage(
             return Tuple{tid.start_csn, tid.local_tid, tid.host_id};
         };
 
+        auto current_version_info = part->version->getInfo();
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(get_tid_as_field(part->version.creation_tid));
+            columns[res_index++]->insert(get_tid_as_field(current_version_info.creation_tid));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->version.removal_tid_lock.load(std::memory_order_relaxed));
+            columns[res_index++]->insert(part->version->getRemovalTIDLockHash());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(get_tid_as_field(part->version.getRemovalTID()));
+            columns[res_index++]->insert(get_tid_as_field(current_version_info.removal_tid));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->version.creation_csn.load(std::memory_order_relaxed));
+            columns[res_index++]->insert(current_version_info.creation_csn);
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->version.removal_csn.load(std::memory_order_relaxed));
+            columns[res_index++]->insert(current_version_info.removal_csn);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->hasLightweightDelete());
         if (columns_mask[src_index++])

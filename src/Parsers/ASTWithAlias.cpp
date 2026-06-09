@@ -28,21 +28,40 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
     {
         settings.writeIdentifier(ostr, alias, /*ambiguous=*/false);
     }
+    else if (frame.parenthesize_alias_inner_only && !alias.empty())
+    {
+        /// `IAST::format` deferred parens emission to us so we can produce `(expr) AS alias`
+        /// instead of `(expr AS alias)`. At the top level of an expression / SELECT element /
+        /// WHERE clause the latter re-formats to the former because the outer parens are not
+        /// needed. Inside an operator chain `IAST::format` keeps the parens itself, producing
+        /// `(expr AS alias)` so the alias does not terminate the SELECT element parser early.
+        ostr.write('(');
+        FormatStateStacked inner = frame;
+        inner.parenthesize_alias_inner_only = false;
+        inner.need_parens = false;
+        formatImplWithoutAlias(ostr, settings, state, inner);
+        ostr.write(')');
+        writeAlias(alias, ostr, settings);
+    }
     else
     {
-        /// If there is an alias, then parentheses are required around the entire expression, including the alias.
-        /// Because a record of the form `0 AS x + 0` is syntactically invalid.
-        if (frame.need_parens && !alias.empty())
-            ostr << '(';
-
-        formatImplWithoutAlias(ostr, settings, state, frame);
-
-        if (!alias.empty())
+        /// When the parent operator requires parentheses around this expression and the
+        /// expression has an alias, wrap the entire `expr AS alias` in parentheses.
+        /// Without the wrap, `a AND b AS x AND c` would re-parse with the alias attached
+        /// to `b` only instead of to `(a AND b)`. After re-parsing, the parser sets
+        /// `parenthesized=true` on the aliased node; the next format goes through the
+        /// `parenthesize_alias_inner_only` branch above.
+        const bool wrap_around_alias = frame.need_parens && !alias.empty();
+        if (wrap_around_alias)
         {
-            writeAlias(alias, ostr, settings);
-            if (frame.need_parens)
-                ostr << ')';
+            ostr.write('(');
+            frame.need_parens = false;
         }
+        formatImplWithoutAlias(ostr, settings, state, frame);
+        if (!alias.empty())
+            writeAlias(alias, ostr, settings);
+        if (wrap_around_alias)
+            ostr.write(')');
     }
 }
 

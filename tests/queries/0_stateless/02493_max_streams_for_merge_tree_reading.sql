@@ -8,6 +8,17 @@ insert into t select number from numbers_mt(10000000) settings max_insert_thread
 
 set allow_prefetched_read_pool_for_remote_filesystem = 0;
 set allow_prefetched_read_pool_for_local_filesystem = 0;
+-- Pin to prevent two-level merge from changing pipeline structure when parts > threshold
+-- (randomized 0-100, INSERT with max_insert_threads=8 creates ~8 parts)
+set read_in_order_two_level_merge_threshold = 100;
+
+-- The pipeline shape depends on the exact thread count;
+-- disable the free-memory limiter to keep `max_threads` as set in the queries.
+-- Without this, on `per_test_coverage` and other memory-constrained builds
+-- `max_threads=32` is clamped to fewer threads and `Resize 16 → 32` becomes
+-- e.g. `Resize 16 → 24`. See PR #100383.
+set max_threads_min_free_memory_per_thread = 0;
+set max_insert_threads_min_free_memory_per_thread = 0;
 
 -- { echo }
 

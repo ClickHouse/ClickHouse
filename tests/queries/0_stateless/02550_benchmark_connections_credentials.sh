@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-llvm-coverage
 # - no-fasttest: require SSL
+# - no-llvm-coverage: flaky under coverage instrumentation, clickhouse-benchmark
+#   can finish before the slow server emits the expected error text, causing
+#   missing lines in the captured output (e.g. "MySQL: Authentication failed").
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 

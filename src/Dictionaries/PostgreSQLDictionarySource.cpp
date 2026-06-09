@@ -138,9 +138,7 @@ bool PostgreSQLDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (response == invalidate_query_response)
-            return false;
-        invalidate_query_response = response;
+        return invalidate_query_response.updateAndCheckModified(response);
     }
     return true;
 }
@@ -211,6 +209,7 @@ static void validateConfigKeys(
 
 #endif
 
+void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory);
 void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -352,7 +351,14 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource("postgresql", create_table_source);
+    factory.registerSource("postgresql", create_table_source, Documentation{
+        .description = "Reads dictionary data from a table in a PostgreSQL server."
+#if !USE_LIBPQXX
+            " Currently unavailable, because this ClickHouse build does not include PostgreSQL support."
+#endif
+        ,
+        .syntax = "SOURCE(POSTGRESQL(host 'host' port 5432 user 'user' password '' db 'db' table 'table'))",
+        .related = {"mysql", "clickhouse"}});
 }
 
 }

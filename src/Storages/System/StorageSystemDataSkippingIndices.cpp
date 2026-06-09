@@ -46,8 +46,8 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
             { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
             { "marks_bytes", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."},
         }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemDataSkippingIndices::createVirtuals()
@@ -58,7 +58,7 @@ VirtualColumnsDescription StorageSystemDataSkippingIndices::createVirtuals()
     return desc;
 }
 
-class DataSkippingIndicesSource : public ISource
+class DataSkippingIndicesSource final : public ISource
 {
 public:
     DataSkippingIndicesSource(
@@ -284,7 +284,7 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
     for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)

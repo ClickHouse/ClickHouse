@@ -6,6 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/Exception.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -36,9 +37,9 @@ enum class ErrorHandling : uint8_t
     Null
 };
 
-using ScaleFactors = std::unordered_map<std::string_view, size_t>;
+using ScaleFactors = UnorderedMapWithMemoryTracking<std::string_view, size_t>;
 
-class FunctionParseReadable : public IFunction
+class FunctionParseReadable final : public IFunction
 {
 public:
     FunctionParseReadable(const char * name_, ErrorHandling error_handling_)
@@ -202,10 +203,12 @@ private:
         }
 
         Float64 num_bytes_with_decimals = base * static_cast<Float64>(iter->second);
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-        if (num_bytes_with_decimals > std::numeric_limits<UInt64>::max())
-#pragma clang diagnostic pop
+        // As the input might be an arbitrary decimal number we might end up with a non-integer amount of bytes when parsing binary (eg MiB) units.
+        // This doesn't make sense so we round up to indicate the byte size that can fit the passed size.
+        num_bytes_with_decimals = std::ceil(num_bytes_with_decimals);
+        /// Use >= because UInt64 max (2^64-1) rounds up to 2^64 when converted to Float64,
+        /// and casting 2^64 back to UInt64 is undefined behavior.
+        if (num_bytes_with_decimals >= 18446744073709551616.0 /* 2^64 */)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -214,9 +217,7 @@ private:
                 num_bytes_with_decimals
             );
         }
-        // As the input might be an arbitrary decimal number we might end up with a non-integer amount of bytes when parsing binary (eg MiB) units.
-        // This doesn't make sense so we round up to indicate the byte size that can fit the passed size.
-        return static_cast<UInt64>(std::ceil(num_bytes_with_decimals));
+        return static_cast<UInt64>(num_bytes_with_decimals);
     }
 };
 

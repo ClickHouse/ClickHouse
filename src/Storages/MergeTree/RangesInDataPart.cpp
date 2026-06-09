@@ -107,12 +107,14 @@ RangesInDataPart::RangesInDataPart(
     const DataPartPtr & parent_part_,
     size_t part_index_in_query_,
     size_t part_starting_offset_in_query_,
-    const MarkRanges & ranges_)
+    const MarkRanges & ranges_,
+    const RangesInDataPartReadHints & read_hints_)
     : data_part{data_part_}
     , parent_part{parent_part_}
     , part_index_in_query{part_index_in_query_}
     , part_starting_offset_in_query{part_starting_offset_in_query_}
     , ranges{ranges_}
+    , read_hints{read_hints_}
 {
 }
 

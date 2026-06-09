@@ -40,7 +40,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-class SetOrJoinSink : public SinkToStorage, WithContext
+class SetOrJoinSink final : public SinkToStorage, WithContext
 {
 public:
     SetOrJoinSink(
@@ -155,8 +155,8 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     if (relative_path_.empty())
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Join and Set storages require data path");
@@ -345,6 +345,7 @@ void StorageSetOrJoinBase::rename(const String & new_path_to_table_data, const S
 }
 
 
+void registerStorageSet(StorageFactory & factory);
 void registerStorageSet(StorageFactory & factory)
 {
     factory.registerStorage("Set", [](const StorageFactory::Arguments & args)
