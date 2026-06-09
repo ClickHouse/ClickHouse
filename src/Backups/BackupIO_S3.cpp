@@ -254,6 +254,7 @@ BackupReaderS3::BackupReaderS3(
     const String & role_arn,
     const String & role_session_name,
     bool no_sign_request,
+    std::optional<bool> use_environment_credentials,
     bool allow_s3_native_copy,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
@@ -275,6 +276,12 @@ BackupReaderS3::BackupReaderS3(
     /// by the server-managed-credentials check, which permits unsigned access).
     if (no_sign_request)
         s3_settings.auth_settings[S3AuthSetting::no_sign_request] = true;
+
+    /// Carry the named collection's `use_environment_credentials` (it defaults to 0 for named collections),
+    /// so a URL-only backup collection reads anonymously instead of using the server's own credentials. The
+    /// explicit url/key form leaves this unset and keeps the server `<s3>` config default.
+    if (use_environment_credentials.has_value())
+        s3_settings.auth_settings[S3AuthSetting::use_environment_credentials] = *use_environment_credentials;
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
@@ -358,6 +365,7 @@ BackupWriterS3::BackupWriterS3(
     const String & role_arn,
     const String & role_session_name,
     bool no_sign_request,
+    std::optional<bool> use_environment_credentials,
     bool allow_s3_native_copy,
     const String & storage_class_name,
     const ReadSettings & read_settings_,
@@ -381,6 +389,12 @@ BackupWriterS3::BackupWriterS3(
     /// Carry NOSIGN from the query / named collection so unsigned access is honored.
     if (no_sign_request)
         s3_settings.auth_settings[S3AuthSetting::no_sign_request] = true;
+
+    /// Carry the named collection's `use_environment_credentials` (defaults to 0 for named collections), so a
+    /// URL-only backup collection writes anonymously instead of using the server's own credentials. The
+    /// explicit url/key form leaves this unset and keeps the server `<s3>` config default.
+    if (use_environment_credentials.has_value())
+        s3_settings.auth_settings[S3AuthSetting::use_environment_credentials] = *use_environment_credentials;
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;

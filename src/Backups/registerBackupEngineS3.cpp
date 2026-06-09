@@ -70,6 +70,8 @@ void registerBackupEngineS3(BackupFactory & factory)
         String role_arn;
         String role_session_name;
         bool no_sign_request = false;
+        /// nullopt for explicit url/key args (keep the global default); set for named collections.
+        std::optional<bool> use_environment_credentials;
 
         if (auto collection = params.backup_info.getNamedCollection(params.context))
         {
@@ -79,6 +81,9 @@ void registerBackupEngineS3(BackupFactory & factory)
             role_arn = collection->getOrDefault<String>("role_arn", "");
             role_session_name = collection->getOrDefault<String>("role_session_name", "");
             no_sign_request = collection->getOrDefault<bool>("no_sign_request", false);
+            /// Default to 0 for named collections so a URL-only backup collection reads anonymously
+            /// instead of authenticating with the server's own cloud identity (matches s3 table functions).
+            use_environment_credentials = collection->getOrDefault<bool>("use_environment_credentials", false);
 
             if (collection->has("filename"))
                 s3_uri = std::filesystem::path(s3_uri) / collection->get<String>("filename");
@@ -141,6 +146,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 role_arn,
                 role_session_name,
                 no_sign_request,
+                use_environment_credentials,
                 params.allow_s3_native_copy,
                 params.read_settings,
                 params.write_settings,
@@ -161,6 +167,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 role_arn,
                 role_session_name,
                 no_sign_request,
+                use_environment_credentials,
                 params.allow_s3_native_copy,
                 params.read_settings,
                 params.write_settings,
@@ -181,6 +188,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                     role_arn,
                     role_session_name,
                     no_sign_request,
+                    use_environment_credentials,
                     params.allow_s3_native_copy,
                     params.read_settings,
                     params.write_settings,
@@ -199,6 +207,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 std::move(role_arn),
                 std::move(role_session_name),
                 no_sign_request,
+                use_environment_credentials,
                 params.allow_s3_native_copy,
                 params.s3_storage_class,
                 params.read_settings,

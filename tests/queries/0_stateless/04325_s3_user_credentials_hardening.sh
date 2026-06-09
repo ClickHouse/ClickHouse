@@ -26,6 +26,7 @@ NC_ENV_OFF="s3_env_off_${DB}"
 NC_BACKUP_ROLE="s3_backup_role_${DB}"
 NC_BACKUP_ENV="s3_backup_env_${DB}"
 NC_BACKUP_NOSIGN="s3_backup_nosign_${DB}"
+NC_BACKUP_NOCREDS="s3_backup_nocreds_${DB}"
 NC_GCP_OAUTH="s3_gcp_oauth_${DB}"
 NC_GCP_OAUTH_NOSIGN="s3_gcp_oauth_nosign_${DB}"
 NC_GCP_OAUTH_CASE="s3_gcp_oauth_case_${DB}"
@@ -49,6 +50,7 @@ cleanup() {
         DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_ROLE};
         DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_ENV};
         DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_NOSIGN};
+        DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_NOCREDS};
         DROP NAMED COLLECTION IF EXISTS ${NC_GCP_OAUTH};
         DROP NAMED COLLECTION IF EXISTS ${NC_GCP_OAUTH_NOSIGN};
         DROP NAMED COLLECTION IF EXISTS ${NC_GCP_OAUTH_CASE};
@@ -399,4 +401,18 @@ if echo "${backup_nosign_out}" | grep -q "ACCESS_DENIED"; then
     echo "backup_nosign: fail (${backup_nosign_out//$'\n'/ })"
 else
     echo "backup_nosign: pass"
+fi
+
+# A backup named collection that only specifies a URL defaults `use_environment_credentials` to 0, so it must
+# not authenticate with the server's credentials: the backup goes anonymous and is not rejected with
+# ACCESS_DENIED (it may fail later contacting S3).
+$CLICKHOUSE_CLIENT -m -q "
+    CREATE NAMED COLLECTION ${NC_BACKUP_NOCREDS} AS
+        url = 'http://localhost:11111/test/${DB}_backup_nocreds/';
+" > /dev/null
+backup_nocreds_out="$($CLICKHOUSE_CLIENT -q "BACKUP TABLE ${TABLE} TO S3(${NC_BACKUP_NOCREDS})" 2>&1)"
+if echo "${backup_nocreds_out}" | grep -q "ACCESS_DENIED"; then
+    echo "backup_url_only: fail (${backup_nocreds_out//$'\n'/ })"
+else
+    echo "backup_url_only: pass"
 fi
