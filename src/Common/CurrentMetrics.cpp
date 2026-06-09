@@ -505,6 +505,9 @@
     M(StatelessWorkerThreads, "Number of threads in the stateless worker thread pool.") \
     M(StatelessWorkerThreadsActive, "Number of threads in the stateless worker thread pool running a task.") \
     M(StatelessWorkerThreadsScheduled, "Number of queued or active jobs in the stateless worker thread pool.") \
+    M(ExchangeServerThreads, "Number of threads in the distributed exchange server handshake thread pool.") \
+    M(ExchangeServerThreadsActive, "Number of threads in the distributed exchange server handshake thread pool running a task.") \
+    M(ExchangeServerThreadsScheduled, "Number of queued or active jobs in the distributed exchange server handshake thread pool.") \
     M(ReadonlyDisks, "Number of disks that were marked as readonly during disk check.") \
     M(BrokenDisks, "Number of disks disks that were marked as broken during disk check.") \
     M(TaskTrackerThreads, "Number of threads used by the distributed query remote task tracker.") \
