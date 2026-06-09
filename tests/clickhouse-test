@@ -1565,7 +1565,6 @@ class SettingsRandomizer:
         "use_text_index_like_evaluation_by_dictionary_scan": lambda: random.random() > 0.05,
         "enable_join_fixed_hash_table_conversion": lambda: random.random() > 0.05,
         "optimize_rewrite_has_to_in": lambda: random.random() > 0.05,
-        "enable_sharding_aggregator": lambda: random.random() < 0.3,
         "read_in_order_use_virtual_row_per_block": lambda: random.random() < 0.3,
         "materialize_statistics_on_insert": lambda: random.random() < 0.3,
         "distributed_index_analysis_only_on_coordinator": lambda: random.random() < 0.3,
@@ -1718,10 +1717,11 @@ class MergeTreeSettingsRandomizer:
         "map_buckets_coefficient": lambda: round(random.uniform(0.5, 2.0), 2),
         "propagate_types_serialization_versions_to_nested_types": lambda: random.randint(0, 1),
         "compress_per_column_in_compact_parts": lambda: random.randint(0, 1),
-        "add_minmax_index_for_block_number_column": lambda: random.random() < 0.3,
-        "add_minmax_index_for_block_offset_column": lambda: random.random() < 0.3,
+        # Wait for issue https://github.com/ClickHouse/ClickHouse/issues/106780 to be fixed
+        #"add_minmax_index_for_block_number_column": lambda: random.random() < 0.3,
+        #"add_minmax_index_for_block_offset_column": lambda: random.random() < 0.3,
         "concurrent_part_removal_threshold_for_remote_disk": lambda: random.choice([0, 1, 16, 100]),
-        "part_minmax_index_columns": lambda: random.choice(["partition_key_only", "with_block_number_offset"]),
+        #"part_minmax_index_columns": lambda: random.choice(["partition_key_only", "with_block_number_offset"]),
     }
 
     @staticmethod
@@ -1737,9 +1737,9 @@ class MergeTreeSettingsRandomizer:
 
             random_settings[setting] = value
 
-        if random_settings.get("part_minmax_index_columns") == "with_block_number_offset":
-            random_settings["enable_block_number_column"] = 1
-            random_settings["enable_block_offset_column"] = 1
+        #if random_settings.get("part_minmax_index_columns") == "with_block_number_offset":
+        #    random_settings["enable_block_number_column"] = 1
+        #    random_settings["enable_block_offset_column"] = 1
 
         return random_settings
 
