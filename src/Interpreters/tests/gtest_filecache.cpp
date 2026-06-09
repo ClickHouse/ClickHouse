@@ -2395,6 +2395,90 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics)
     EXPECT_GT(sum_dim("filesystem_cache_evictions_by_client_total") - by_client_pre_pc, 0.0);
 }
 
+TEST_F(FileCacheTest, EvictionMetricsRuntimeToggle)
+{
+    /// The eviction-metric settings are advertised as runtime-reloadable
+    /// (SYSTEM RELOAD CONFIG -> applySettingsIfPossible). Exercise the full cycle
+    /// on a live cache: disabled -> no delta, enable -> metric advances,
+    /// disable again -> no further delta. Guards against a regression where
+    /// applySettingsIfPossible stops propagating these flags to the atomics.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(R"(<clickhouse></clickhouse>)");
+    getMutableContext().context->setConfig(new Poco::Util::XMLConfiguration(document));
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("eviction_metrics_runtime_toggle_test");
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    auto sum_dim = [](const std::string & name)
+    {
+        double total = 0;
+        ::DimensionalMetrics::Factory::instance().forEachFamily([&](::DimensionalMetrics::MetricFamily & f)
+        {
+            if (f.getName() != name) return;
+            f.forEachMetric([&](const ::DimensionalMetrics::LabelValues &, const ::DimensionalMetrics::Metric & m) { total += m.get(); });
+        });
+        return total;
+    };
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 40;
+    settings[FileCacheSetting::max_elements] = 6;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+    settings[FileCacheSetting::expose_prometheus_eviction_metrics] = false;
+
+    auto cache = DB::FileCache("eviction_metrics_runtime_toggle", settings);
+    cache.initialize();
+
+    /// max_size=40, max_elements=6; 8 segments of size 5 force evictions.
+    /// A fresh key per round avoids hits/promotions, so each round evicts anew.
+    size_t round = 0;
+    auto force_evictions = [&]
+    {
+        auto key = FileCacheKey::fromPath("toggle_key_" + std::to_string(round++));
+        for (size_t i = 0; i < 8; ++i)
+        {
+            auto holder = cache.getOrSet(key, i * 10, 5, static_cast<size_t>(-1), {}, 0, FileCache::getCommonOrigin());
+            ASSERT_EQ(holder->size(), 1u);
+            download(*holder->begin());
+        }
+    };
+
+    /// Flip the flag through the reload path. `current` tracks applied state,
+    /// as applySettingsIfPossible updates its second (actual) argument in place.
+    DB::FileCacheSettings current = settings;
+    auto reload_expose = [&](bool value)
+    {
+        DB::FileCacheSettings new_settings = current;
+        new_settings[FileCacheSetting::expose_prometheus_eviction_metrics] = value;
+        ASSERT_NO_THROW(cache.applySettingsIfPossible(new_settings, current));
+    };
+
+    /// 1) Disabled: evictions happen, but the metric must not move.
+    const auto before_disabled = sum_dim("filesystem_cache_evictions_total");
+    force_evictions();
+    EXPECT_EQ(sum_dim("filesystem_cache_evictions_total"), before_disabled);
+
+    /// 2) Enable at runtime: the metric must now advance.
+    reload_expose(true);
+    const auto before_enabled = sum_dim("filesystem_cache_evictions_total");
+    force_evictions();
+    EXPECT_GT(sum_dim("filesystem_cache_evictions_total") - before_enabled, 0.0);
+
+    /// 3) Disable again at runtime: the metric must stop advancing.
+    reload_expose(false);
+    const auto before_redisabled = sum_dim("filesystem_cache_evictions_total");
+    force_evictions();
+    EXPECT_EQ(sum_dim("filesystem_cache_evictions_total"), before_redisabled);
+}
+
 namespace
 {
     /// Creators for SplitFileCachePriority inner queues used by the split-cache tests below.
