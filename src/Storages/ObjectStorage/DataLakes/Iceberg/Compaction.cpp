@@ -501,6 +501,9 @@ static bool writeConsolidatedManifestFile(
         /// manifest-only rewrite does not drop column sizes / null counts / bounds (which would
         /// weaken predicate pushdown and file pruning after compaction).
         std::vector<DataFileColumnStatistics> file_statistics;
+        /// Parallel to file_paths: the source file's sort_order_id, preserved so a manifest-only
+        /// rewrite keeps the table's sortedness (a missing sort_order_id is treated as unsorted).
+        std::vector<std::optional<Int32>> file_sort_order_ids;
 
         explicit PartitionData(Poco::JSON::Array::Ptr /*schema*/)
         {}
@@ -561,6 +564,7 @@ static bool writeConsolidatedManifestFile(
                 pd.file_paths.push_back(data_file->parsed_entry->file_path_key);
                 pd.file_metrics.emplace_back(data_file->parsed_entry->record_count, data_file->parsed_entry->file_size_in_bytes);
                 pd.file_formats.push_back(data_file->parsed_entry->file_format);
+                pd.file_sort_order_ids.push_back(data_file->parsed_entry->sort_order_id);
 
                 /// Carry the source file's per-column stats over verbatim. Bounds are kept as the
                 /// raw serialized bytes the source manifest stored (value_bounds holds them as
@@ -722,7 +726,8 @@ static bool writeConsolidatedManifestFile(
                 Iceberg::FileContentType::DATA,
                 /* user_defined_sequence_number */ std::nullopt,
                 /* data_file_formats */ pd.file_formats,
-                /* per_file_statistics */ pd.file_statistics);
+                /* per_file_statistics */ pd.file_statistics,
+                /* data_file_sort_order_ids */ pd.file_sort_order_ids);
 
             buffer_manifest->finalize();
             Int64 manifest_size = buffer_manifest->count();

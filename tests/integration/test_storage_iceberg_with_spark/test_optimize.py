@@ -423,6 +423,97 @@ def test_optimize_manifest_files_preserves_stats(started_cluster_iceberg_with_sp
     assert entries_checked > 0, "no data-file entries found in consolidated manifest(s)"
 
 
+def test_optimize_manifest_files_preserves_sort_order_id(started_cluster_iceberg_with_spark):
+    """
+    OPTIMIZE TABLE ... MANIFEST must preserve each data file's sort_order_id. A manifest-only
+    rewrite does not touch the data files, so a table sorted before compaction must stay sorted
+    afterwards; dropping sort_order_id would make ClickHouse treat the table as unsorted.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    storage_type = "local"
+    TABLE_NAME = "test_optimize_manifest_sortorder_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg "
+        f"TBLPROPERTIES ('format-version' = '2')"
+    )
+    # Establish a sort order, so data files written afterwards carry a non-default sort_order_id.
+    spark.sql(f"ALTER TABLE {TABLE_NAME} WRITE ORDERED BY id")
+    for lo in range(0, 50, 10):
+        spark.sql(
+            f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range({lo}, {lo + 10}) ORDER BY id"
+        )
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    metadata_dir = (
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata"
+    )
+
+    def list_data_manifests():
+        return set(
+            instance.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f"find '{metadata_dir}' -maxdepth 1 -name '*.avro' "
+                    f"-not -name 'snap-*.avro' -type f",
+                ]
+            )
+            .strip()
+            .splitlines()
+        )
+
+    def data_file_sort_order_ids(manifests):
+        ids = set()
+        for manifest in manifests:
+            result = instance.query(
+                f"""
+                SELECT
+                    tupleElement(data_file, 'content')        AS content,
+                    tupleElement(data_file, 'sort_order_id')  AS sort_order_id
+                FROM file('{manifest}', Avro)
+                FORMAT TSV
+                """
+            ).strip()
+            for line in result.splitlines():
+                if not line:
+                    continue
+                content, sort_order_id = line.split("\t")
+                if int(content) != 0:  # data files only
+                    continue
+                ids.add(sort_order_id)
+        return ids
+
+    manifests_before = list_data_manifests()
+    source_sort_order_ids = data_file_sort_order_ids(manifests_before)
+    # The source files must carry a concrete (non-null) sort_order_id for the test to be meaningful.
+    assert source_sort_order_ids and "\\N" not in source_sort_order_ids, (
+        f"expected source data files to have a sort_order_id, got: {source_sort_order_ids}"
+    )
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 2,
+        },
+    )
+
+    new_manifests = sorted(list_data_manifests() - manifests_before)
+    assert new_manifests, "OPTIMIZE TABLE ... MANIFEST did not produce a consolidated manifest"
+
+    # The consolidated manifest must report the same sort_order_id(s) as the source files.
+    assert data_file_sort_order_ids(new_manifests) == source_sort_order_ids
+
+
 @pytest.mark.parametrize("format_version", ["2", "3"])
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_optimize_manifest_files_with_deletes(started_cluster_iceberg_with_spark, storage_type, format_version):

@@ -83,7 +83,12 @@ void generateManifestFile(
     /// Optional per-file column statistics parallel to data_file_names. When non-empty, each
     /// entry's stats are written from the matching element (used by manifest-only compaction to
     /// preserve the source files' column stats). When empty, `data_file_statistics` is used.
-    const std::vector<DataFileColumnStatistics> & per_file_statistics = {});
+    const std::vector<DataFileColumnStatistics> & per_file_statistics = {},
+    /// Optional per-file `sort_order_id` parallel to data_file_names. When an element has a value,
+    /// it is written back so a manifest-only rewrite preserves the table's sortedness (otherwise a
+    /// missing sort_order_id makes ClickHouse treat the table as unsorted). Empty / nullopt leaves
+    /// the field unset (null), matching the append path which writes unsorted data.
+    const std::vector<std::optional<Int32>> & data_file_sort_order_ids = {});
 
 /// Per manifest-list entry counts for a manifest-only rewrite (a `replace` operation), where
 /// every data file referenced by the new manifest already existed in the table. When supplied to

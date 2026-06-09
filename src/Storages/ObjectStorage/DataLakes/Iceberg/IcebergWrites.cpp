@@ -265,7 +265,8 @@ void generateManifestFile(
     Iceberg::FileContentType content_type,
     std::optional<Int64> user_defined_sequence_number,
     const std::vector<String> & data_file_formats,
-    const std::vector<DataFileColumnStatistics> & per_file_statistics)
+    const std::vector<DataFileColumnStatistics> & per_file_statistics,
+    const std::vector<std::optional<Int32>> & data_file_sort_order_ids)
 {
     if (!data_file_formats.empty() && data_file_formats.size() != data_file_names.size())
         throw Exception(
@@ -277,6 +278,11 @@ void generateManifestFile(
             ErrorCodes::LOGICAL_ERROR,
             "per_file_statistics size ({}) does not match number of data files ({})",
             per_file_statistics.size(), data_file_names.size());
+    if (!data_file_sort_order_ids.empty() && data_file_sort_order_ids.size() != data_file_names.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "data_file_sort_order_ids size ({}) does not match number of data files ({})",
+            data_file_sort_order_ids.size(), data_file_names.size());
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
     if (version == 1)
@@ -413,6 +419,17 @@ void generateManifestFile(
         }
         data_file.field(Iceberg::f_record_count) = avro::GenericDatum(static_cast<Int64>(data_file_row_counts[file_idx]));
         data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(static_cast<Int64>(data_file_byte_counts[file_idx]));
+
+        /// Preserve the source file's sort_order_id (a manifest-only rewrite does not change the
+        /// data files, so their sortedness must be reported unchanged). The field is a ["null","int"]
+        /// union; leaving it on the null branch (when no value is supplied) matches the append path.
+        if (!data_file_sort_order_ids.empty() && data_file_sort_order_ids[file_idx].has_value())
+        {
+            auto & sort_order_field = data_file.field(Iceberg::f_sort_order_id);
+            sort_order_field.selectBranch(1);
+            sort_order_field.value<Int32>() = *data_file_sort_order_ids[file_idx];
+        }
+
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {
