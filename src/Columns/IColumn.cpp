@@ -403,7 +403,7 @@ void compareColumnImpl(
     for (size_t row = 0; row < num_rows; ++row)
     {
         int res = lhs.compareAt(row, rhs_row_num, rhs, nan_direction_hint);
-        chassert(res == 1 || res == -1 || res == 0);
+        assert(res == 1 || res == -1 || res == 0);
         compare_results[row] = static_cast<Int8>(res);
 
         if constexpr (reversed)
@@ -434,7 +434,7 @@ void compareWithIndexImpl(
     for (auto row : *row_indexes)
     {
         int res = lhs.compareAt(row, rhs_row_num, rhs, nan_direction_hint);
-        chassert(res == 1 || res == -1 || res == 0);
+        assert(res == 1 || res == -1 || res == 0);
         compare_results[row] = static_cast<Int8>(res);
 
         if constexpr (reversed)
@@ -619,7 +619,7 @@ void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, s
 
 /// Fills column values from list of blocks and row numbers
 /// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
-template <bool may_have_nulls, typename ColumnType>
+template <typename ColumnType>
 static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers)
 {
     const auto * columns = columns_with_row_numbers.columns.data();
@@ -630,35 +630,24 @@ static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePt
     col->reserve(col->size() + n);
     for (size_t j = 0; j < n; ++j)
     {
-        if constexpr (may_have_nulls)
+        if (columns[j])
         {
-            if (!columns[j])
-            {
-                type->insertDefaultInto(*col);
-                continue;
-            }
+            if (const auto * source_replicated = columns[j]->replicated_columns[source_column_index_in_block])
+                col->insertFrom(*source_replicated->getNestedColumn(), source_replicated->getIndexes().getIndexAt(row_numbers[j]));
+            else
+                col->insertFrom(*columns[j]->columns[source_column_index_in_block], row_numbers[j]);
         }
         else
         {
-            chassert(columns[j] != nullptr);
+            type->insertDefaultInto(*col);
         }
-
-        if (const auto * source_replicated = columns[j]->replicated_columns[source_column_index_in_block])
-            col->insertFrom(*source_replicated->getNestedColumn(), source_replicated->getIndexes().getIndexAt(row_numbers[j]));
-        else
-            col->insertFrom(*columns[j]->columns[source_column_index_in_block], row_numbers[j]);
     }
 }
 
 /// Fills column values from list of blocks and row numbers
 void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers)
 {
-    fillColumnFromBlocksAndRowNumbers<true>(this, type, source_column_index_in_block, columns_with_row_numbers);
-}
-
-void IColumn::fillFromBlocksAndRowNumbers(size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers)
-{
-    fillColumnFromBlocksAndRowNumbers<false>(this, /*type=*/ nullptr, source_column_index_in_block, columns_with_row_numbers);
+    fillColumnFromBlocksAndRowNumbers(this, type, source_column_index_in_block, columns_with_row_numbers);
 }
 
 /// Fills column values from list of blocks and row numbers
@@ -666,14 +655,7 @@ template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers)
 {
     auto & self = static_cast<Derived &>(*this);
-    fillColumnFromBlocksAndRowNumbers<true>(&self, type, source_column_index_in_block, columns_with_row_numbers);
-}
-
-template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers)
-{
-    auto & self = static_cast<Derived &>(*this);
-    fillColumnFromBlocksAndRowNumbers<false>(&self, /*type=*/ nullptr, source_column_index_in_block, columns_with_row_numbers);
+    fillColumnFromBlocksAndRowNumbers(&self, type, source_column_index_in_block, columns_with_row_numbers);
 }
 
 template <typename Derived, typename Parent>

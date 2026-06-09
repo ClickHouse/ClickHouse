@@ -431,7 +431,7 @@ struct HashMethodKeysFixed
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
             if constexpr (sizeof(Key) <= 16)
             {
-                chassert(!has_low_cardinality && !has_nullable_keys);
+                assert(!has_low_cardinality && !has_nullable_keys);
                 return packFixedShuffle<Key>(columns_data.get(), keys_size, key_sizes.data(), row, masks.get());
             }
 #endif

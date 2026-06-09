@@ -748,7 +748,7 @@ struct ComparisonParams
 };
 
 template <template <typename, typename> class Op, typename Name, bool is_null_safe_cmp_mode = false>
-class FunctionComparison final : public IFunction
+class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -1663,7 +1663,7 @@ public:
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr &) const override
     {
-        chassert(2 == arguments.size());
+        assert(2 == arguments.size());
 
         llvm::Value * result = nullptr;
         castBothTypes(arguments[0].type.get(), arguments[1].type.get(), [&](const auto & left, const auto & right)

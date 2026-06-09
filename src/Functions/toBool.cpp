@@ -11,7 +11,7 @@ namespace DB
 {
 namespace
 {
-    class FunctionToBool final : public IFunction
+    class FunctionToBool : public IFunction
     {
     private:
         static String getReturnTypeName(const DataTypePtr & argument)

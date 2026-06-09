@@ -11,6 +11,8 @@ namespace CurrentMetrics
 {
     extern const Metric FilesystemCacheSize;
     extern const Metric FilesystemCacheElements;
+    extern const Metric FilesystemCachePriorityQueueElements;
+    extern const Metric FilesystemCacheInvalidatedElements;
 }
 
 namespace ProfileEvents
@@ -69,11 +71,12 @@ void LRUFileCachePriority::State::sub(uint64_t size_, uint64_t elements_)
 }
 
 LRUFileCachePriority::LRUFileCachePriority(
+    QueueType queue_type_,
     size_t max_size_,
     size_t max_elements_,
     const std::string & description_,
     StatePtr state_)
-    : IFileCachePriority(max_size_, max_elements_)
+    : IFileCachePriority(queue_type_, max_size_, max_elements_)
     , description(description_)
     , log(getLogger("LRUFileCachePriority" + (description.empty() ? "" : "(" + description + ")")))
     , eviction_pos(queue.end())
@@ -135,6 +138,8 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
     }
 
     auto iterator = queue.insert(queue.end(), entry);
+    if (getQueueType() == QueueType::Main)
+        CurrentMetrics::add(CurrentMetrics::FilesystemCachePriorityQueueElements);
 
     if (entry->size)
         state->add(entry->size, /* elements */1, *state_lock);
@@ -154,6 +159,7 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
     if (entry.size)
         state->sub(entry.size, /* elements */1);
 
+    const bool was_invalidated = entry.getState() == Entry::State::Invalidated;
     entry.setRemoved(lock);
 
     LOG_TEST(
@@ -161,6 +167,14 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
         entry.key, entry.offset, entry.size.load());
 
     moveEvictionPosIfEqual(it, lock);
+
+    if (getQueueType() == QueueType::Main)
+    {
+        if (was_invalidated)
+            CurrentMetrics::sub(CurrentMetrics::FilesystemCacheInvalidatedElements);
+        CurrentMetrics::sub(CurrentMetrics::FilesystemCachePriorityQueueElements);
+    }
+
     return queue.erase(it);
 }
 
@@ -532,7 +546,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
     }
 #endif
 
-    moveEvictionPosIfEqual(it.iterator, lock);
+    other.moveEvictionPosIfEqual(it.iterator, lock);
     queue.splice(queue.end(), other.queue, it.iterator);
 
     state->add(entry.size, /* elements */1, state_lock);
@@ -629,18 +643,22 @@ void LRUFileCachePriority::LRUIterator::remove(const CachePriorityGuard::WriteLo
     iterator = LRUQueue::iterator{};
 }
 
-void LRUFileCachePriority::LRUIterator::invalidate()
+void LRUFileCachePriority::LRUIterator::invalidate() noexcept
 {
     auto entry_ptr = entry.lock();
     chassert(entry_ptr);
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
     LOG_TEST(cache_priority->log,
              "Invalidating entry in LRU queue {}: {}",
              entry_ptr->toString(), cache_priority->getApproxStateInfoForLog());
+#endif
 
     size_t entry_size = entry_ptr->size;
     entry_ptr->size = 0;
     entry_ptr->setInvalidatedFlag();
+    if (cache_priority->getQueueType() == QueueType::Main)
+        CurrentMetrics::add(CurrentMetrics::FilesystemCacheInvalidatedElements);
 
     if (entry_size)
         cache_priority->state->sub(entry_size, 1);
@@ -760,14 +778,8 @@ void LRUFileCachePriority::holdImpl(
 
 void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
 {
-    /// Once the atomic decrements below reach 0, `CacheUsagePerUser::snapshot`
-    /// may concurrently erase this priority and free `cache_usage_stat_guard`,
-    /// so pin it locally to keep the mutex alive until `~unique_lock`.
-    /// This lock is only needed for `OvercommitFileCachePriority::check`'s
-    /// debug consistency check; non-overcommit policies leave the guard unset.
-    auto stat_guard = cache_usage_stat_guard;
-    auto lock = stat_guard
-        ? std::optional<CacheUsageStatGuard::Lock>(stat_guard->lock())
+    auto lock = cache_usage_stat_guard
+        ? std::optional<CacheUsageStatGuard::Lock>(cache_usage_stat_guard->lock())
         : std::nullopt;
 
     state->sub(size, elements);

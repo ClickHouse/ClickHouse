@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <utility>
 #include <atomic>
-#include <base/defines.h>
+#include <cassert>
 #include <base/types.h>
 #include <base/strong_typedef.h>
 
@@ -91,7 +91,7 @@ namespace CurrentMetrics
             // which leads as to creation of Increment with metric == CurrentMetrics::end()
             // actually this is not a real metric, however it is presented in CurrentMetrics::values array
             // so we are able to increment it and we should not assert here when metric == CurrentMetrics::end()
-            chassert(metric <= CurrentMetrics::end());
+            assert(metric <= CurrentMetrics::end());
         }
 
         ~Increment()

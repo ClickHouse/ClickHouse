@@ -528,13 +528,12 @@ struct QueryGraphBuilder
 
     std::vector<JoinActionRef> join_edges;
 
-    /// Outer-joined relation (null-supplying) should be joined after all other relations involved in its join expressions.
+    /// Outer joined relation should be joined after all other relations involved in its join expressions.
     /// It is joined with specified join kind.
     /// The `join_kinds` maps (join relation index) -> (set of relations it depends on, join kind)
-
-    std::unordered_map<size_t, QueryGraph::OuterJoinRestriction> join_kinds;
+    std::unordered_map<size_t, std::pair<BitSet, JoinKind>> join_kinds;
     std::unordered_map<size_t, ActionsDAG::NodeRawConstPtrs> type_changes;
-    std::unordered_map<JoinActionRef, BitSet> pinned;
+    std::unordered_map<JoinActionRef, size_t> pinned;
 
     struct BuilderContext
     {
@@ -594,21 +593,17 @@ void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 
     lhs.join_edges.append_range(rhs_edges_raw | std::views::transform([&](auto p) { return JoinActionRef(p, lhs.expression_actions); }));
 
-    for (auto & [id, restriction] : rhs.join_kinds)
+    for (auto [id, restriction] : rhs.join_kinds)
     {
-        restriction.required_partners.shift(shift);
-        restriction.forbidden_partners.shift(shift);
-        lhs.join_kinds[id + shift] = std::move(restriction);
+        restriction.first.shift(shift);
+        lhs.join_kinds[id + shift] = restriction;
     }
 
     for (auto && [sources, nodes] : rhs.type_changes)
         lhs.type_changes[sources + shift] = std::move(nodes);
 
-    for (auto & [action, pin] : rhs_pinned_raw)
-    {
-        pin.shift(shift);
-        lhs.pinned[JoinActionRef(action, lhs.expression_actions)] = std::move(pin);
-    }
+    for (auto [action, pin] : rhs_pinned_raw)
+        lhs.pinned[JoinActionRef(action, lhs.expression_actions)] = pin + shift;
 }
 
 void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit);
@@ -734,7 +729,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
 
     size_t total_inputs = query_graph.inputs.size();
     if (join_kind == JoinKind::Cross || join_kind == JoinKind::Comma)
-        query_graph.join_kinds[0] = QueryGraph::OuterJoinRestriction{BitSet{}, BitSet{}, JoinKind::Cross};
+        query_graph.join_kinds[0] = std::make_pair(BitSet{}, JoinKind::Cross);
 
     chassert(lhs_count && rhs_count && lhs_count + rhs_count == total_inputs && query_graph.relation_stats.size() == total_inputs);
 
@@ -810,11 +805,11 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
 
         if (isRightOrFull(join_kind))
         {
-            query_graph.pinned[edge] = BitSet().set(0);
+            query_graph.pinned[edge] = 0;
         }
         else if (isLeftOrFull(join_kind))
         {
-            query_graph.pinned[edge] = BitSet().set(total_inputs - 1);
+            query_graph.pinned[edge] = total_inputs - 1;
         }
         else
         {
@@ -836,21 +831,10 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
             /// ON-clause conditions on the preserved side only affect matching,
             /// not filtering — rows from the preserved side are kept regardless.
             should_pin = should_pin || std::ranges::any_of(query_graph.join_kinds | std::views::values,
-                [&sources](const auto & restriction) { return isSubsetOf(sources, restriction.required_partners); });
+                [&sources](const auto & partner_info) { return isSubsetOf(sources, partner_info.first); });
 
             if (should_pin)
-                query_graph.pinned[edge] = BitSet().set(total_inputs - 1);
-
-            for (auto & [null_rel, restriction] : query_graph.join_kinds)
-            {
-                if (!sources.test(null_rel))
-                    continue;
-                for (auto rel : sources)
-                {
-                    if (rel != null_rel && !restriction.required_partners.test(rel))
-                        restriction.forbidden_partners.set(rel);
-                }
-            }
+                query_graph.pinned[edge] = total_inputs - 1;
         }
     }
 
@@ -859,33 +843,18 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         if (lhs_count != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical with RIGHT or FULL join must have exactly one left input, but has {}", lhs_count);
         join_expression_sources.set(0, false);
-        query_graph.join_kinds[0] = QueryGraph::OuterJoinRestriction{join_expression_sources, BitSet{}, join_kind};
+        query_graph.join_kinds[0] = std::make_pair(join_expression_sources, join_kind);
     }
     if (isLeftOrFull(join_kind))
     {
         if (rhs_count != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical with LEFT or FULL join must have exactly one right input, but has {}", rhs_count);
         join_expression_sources.set(total_inputs - 1, false);
-        query_graph.join_kinds[total_inputs - 1] = QueryGraph::OuterJoinRestriction{join_expression_sources, BitSet{}, join_kind};
+        query_graph.join_kinds[total_inputs - 1] = std::make_pair(join_expression_sources, join_kind);
     }
 
     if (!residual_filter.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Residual filter is not supported in join reorder");
-
-    for (auto & [null_rel, restriction] : query_graph.join_kinds)
-    {
-        for (auto tainted_rel : restriction.forbidden_partners)
-        {
-            for (auto & graph_edge : query_graph.join_edges)
-            {
-                if (!graph_edge)
-                    continue;
-                auto edge_sources = graph_edge.getSourceRelations();
-                if (edge_sources.test(tainted_rel) && !edge_sources.test(null_rel))
-                    query_graph.pinned[graph_edge].set(null_rel);
-            }
-        }
-    }
 }
 
 static std::vector<DPJoinEntry *> getJoinTreePostOrderSequence(DPJoinEntryPtr root)

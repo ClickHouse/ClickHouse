@@ -13,7 +13,6 @@
 #include <IO/ReadBufferFromFileBase.h>
 
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
