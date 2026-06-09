@@ -409,9 +409,16 @@ bool MergeTextIndexesTask::executeStep()
         is_initialized = true;
         initializeQueue();
         /// Write marks for compatibility with other skip indexes.
+        /// An empty part carries no marks at all, exactly like every other skip index on an
+        /// empty part. Writing one here would leave the marks file with a single mark while
+        /// `getMarksCountForSkipIndex` reports zero, so reading the marks back (e.g. when the
+        /// mark cache is prewarmed on attach) fails with `Too many marks in file`.
         chassert(new_data_part);
-        bool can_use_adaptive_granularity = new_data_part->index_granularity_info.mark_type.adaptive;
-        writeMarks(output_streams, can_use_adaptive_granularity);
+        if (new_data_part->index_granularity->getMarksCountWithoutFinal() != 0)
+        {
+            bool can_use_adaptive_granularity = new_data_part->index_granularity_info.mark_type.adaptive;
+            writeMarks(output_streams, can_use_adaptive_granularity);
+        }
     }
 
     if (!queue.isValid())
