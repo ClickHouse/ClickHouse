@@ -2220,6 +2220,16 @@ private:
 
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
         ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings());
+        /// Virtual persistent columns (e.g. _block_number, _block_offset) only exist in merged parts,
+        /// not in freshly inserted 0-level parts. Skip them if the source part does not have them
+        /// to avoid NOT_FOUND_COLUMN_IN_BLOCK when updating the minmax index.
+        {
+            const auto & src_columns = ctx->source_part->getColumnsDescription();
+            ctx->minmax_idx_columns.remove_if([&](const NameAndTypePair & col)
+            {
+                return !ctx->metadata_snapshot->getColumns().has(col.name) && !src_columns.has(col.name);
+            });
+        }
         ctx->all_gathered_data.statistics = ColumnsStatistics(ctx->metadata_snapshot->getColumns());
 
         MutationHelpers::processStatisticsChanges(
