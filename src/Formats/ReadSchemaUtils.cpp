@@ -75,7 +75,6 @@ static const std::vector<String> & getFormatsOrderForDetection()
         "Npy",
         "Native",
         "BSONEachRow",
-        "JSONCompact",
         "Values",
         "JSONObjectEachRow",
         "JSONColumns",

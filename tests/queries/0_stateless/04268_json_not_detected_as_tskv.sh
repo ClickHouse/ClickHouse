@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Test that JSON data with '=' in values is not misdetected as TSKV format.
 # https://github.com/ClickHouse/ClickHouse/issues/100797
 
-DATA_FILE=$CLICKHOUSE_TEST_UNIQUE_NAME.jsonl
+DATA_FILE=$CLICKHOUSE_TEST_UNIQUE_NAME.dat
 
 echo '{"login":"alexey-milovidov","id":18581488,"node_id":"MDQ6VXNlcjE4NTgxNDg4","avatar_url":"https://avatars.githubusercontent.com/u/18581488?v=4"}' > "$DATA_FILE"
 
