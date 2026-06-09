@@ -12,7 +12,9 @@ create view p3 as select CAST(dummy, {t:String});
 describe p3(t = 'Int');
 describe p3(t = 'String');
 
-describe (SELECT * FROM p3(t = 'Int64') union all SELECT * FROM p3(t = 'UInt64')) SETTINGS use_variant_as_common_type = 1;
+-- The common supertype `Variant(Int64, UInt64)` requires `use_variant_as_common_type`, which is honored only
+-- by the analyzer; the old interpreter throws `NO_COMMON_TYPE` here, so pin the analyzer for this query.
+describe (SELECT * FROM p3(t = 'Int64') union all SELECT * FROM p3(t = 'UInt64')) SETTINGS use_variant_as_common_type = 1, allow_experimental_analyzer = 1;
 
 SELECT * FROM p3(t = 'String');
 

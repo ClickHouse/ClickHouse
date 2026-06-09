@@ -34,7 +34,10 @@ ${CLICKHOUSE_CLIENT} --user "${user}" --query "DESCRIBE pv_invoker(n = 3)" 2>&1 
 
 echo "-- SELECT after granting SELECT on the view --"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.pv_definer TO ${user}"
-${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT * FROM pv_definer(n = 3) ORDER BY x FORMAT TSV"
+# Honoring `SQL SECURITY DEFINER` for a parameterized view (so a grant on the view alone suffices, without a
+# grant on the inner `base` table) works only in the analyzer; the old interpreter still demands access to the
+# inner table. Pin the analyzer here, while the access denial checks above are valid for both and stay unpinned.
+${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT * FROM pv_definer(n = 3) ORDER BY x FORMAT TSV SETTINGS allow_experimental_analyzer = 1"
 
 echo "-- DESCRIBE of a SQL SECURITY DEFINER view needs only SHOW COLUMNS, not grants on inner tables --"
 ${CLICKHOUSE_CLIENT} --query "REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.pv_definer FROM ${user}"
