@@ -220,6 +220,9 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
         settings={
             "allow_database_glue_catalog": 1,
             "write_full_path_in_iceberg_metadata": 1,
+            # The aws_role_arn (STS) cases authenticate via server-managed credentials, which are blocked
+            # for user queries by default. Allow it for these tests.
+            "s3_allow_server_credentials_in_user_queries": 1,
         },
     )
 
@@ -319,6 +322,9 @@ SETTINGS {",".join((k + "=" + repr(v) for k, v in db_settings.items()))}""",
         settings={
             "allow_database_glue_catalog": 1,
             "write_full_path_in_iceberg_metadata": 1,
+            # The aws_role_arn (STS) cases authenticate via server-managed credentials, which are blocked
+            # for user queries by default. Allow it for these tests.
+            "s3_allow_server_credentials_in_user_queries": 1,
         },
     )
 

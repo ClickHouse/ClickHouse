@@ -1690,7 +1690,7 @@ def test_session_token(started_cluster):
             f"""
     SELECT count() FROM deltaLake(
         'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}/',
-        SETTINGS allow_experimental_delta_kernel_rs=1)
+        SETTINGS allow_experimental_delta_kernel_rs=1, s3_allow_server_credentials_in_user_queries=1)
     """
         )
     )
