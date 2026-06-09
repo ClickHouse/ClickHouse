@@ -1,38 +1,31 @@
 -- { echo }
 
--- Unlike GROUP BY, LIMIT BY permits Dynamic and Variant keys, so an injective function over such an
--- argument is unwrapped to it (the rewrite is gated only by injectivity, not by the suspicious type).
+-- Injectivity is not guaranteed over Dynamic and Variant arguments: for a multi-type Variant, two
+-- distinct values can share a string (42::UInt64 and '42'::String both stringify to '42'), so
+-- toString is not injective there. The suspicious-type guard keeps such wrappers rather than
+-- unwrapping them, which would change the partitioning and the result.
 
 SET enable_analyzer = 1;
 SET optimize_limit_by_function_keys = 0;
 SET optimize_injective_functions_in_limit_by = 1;
+SET allow_experimental_variant_type = 1;
+SET allow_experimental_dynamic_type = 1;
 
 DROP TABLE IF EXISTS test;
-CREATE TABLE test (g UInt32, x UInt32) ENGINE = MergeTree ORDER BY (g, x);
-INSERT INTO test SELECT number % 3 AS g, number AS x FROM numbers(10);
+CREATE TABLE test (v Variant(UInt64, String), d Dynamic) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO test VALUES (42, 42), ('42', '42');
 
--- An injective function over a Variant argument is unwrapped to the Variant key.
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Variant(UInt32)'));
-SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Variant(UInt32)'));
+-- A toString around a Variant key is kept, not unwrapped to the raw Variant.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT v FROM test LIMIT 1 BY toString(v);
 
--- The same holds for a multi-type Variant.
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Variant(UInt32, String)'));
-SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Variant(UInt32, String)'));
+-- The two distinct Variant values share the string '42', so keeping toString(v) groups them into one
+-- partition. The result is the same with the optimization on and off.
+SELECT count() FROM (SELECT v FROM test LIMIT 1 BY toString(v));
+SELECT count() FROM (SELECT v FROM test LIMIT 1 BY toString(v)) SETTINGS optimize_injective_functions_in_limit_by = 0;
 
--- The same holds for a Dynamic argument.
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Dynamic'));
-SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Dynamic'));
-
--- Nested injective functions over a Variant are fully unwrapped.
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(toString(CAST(g, 'Variant(UInt32)')));
-SELECT g FROM test ORDER BY x LIMIT 2 BY toString(toString(CAST(g, 'Variant(UInt32)')));
-
--- A multi-argument injective function exposes a Variant argument as a key alongside the others.
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY tuple(CAST(g, 'Variant(UInt32)'), x);
-SELECT g FROM test ORDER BY x LIMIT 2 BY tuple(CAST(g, 'Variant(UInt32)'), x);
-
--- With the optimization disabled the wrapper is kept.
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Variant(UInt32)')) SETTINGS optimize_injective_functions_in_limit_by = 0;
-SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Variant(UInt32)')) SETTINGS optimize_injective_functions_in_limit_by = 0;
+-- The same guard applies to a Dynamic key.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT d FROM test LIMIT 1 BY toString(d);
+SELECT count() FROM (SELECT d FROM test LIMIT 1 BY toString(d));
+SELECT count() FROM (SELECT d FROM test LIMIT 1 BY toString(d)) SETTINGS optimize_injective_functions_in_limit_by = 0;
 
 DROP TABLE test;
