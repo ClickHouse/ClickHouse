@@ -219,6 +219,13 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
     if (!ast)
         return false;
 
+    /// SAMPLE picks a row subset; which rows end up in the subset is not
+    /// stable across the plan rewrites the oracles perform, so any sampled
+    /// table makes result comparison meaningless.
+    if (const auto * table_expr = ast->as<ASTTableExpression>())
+        if (table_expr->sample_size)
+            return true;
+
     if (const auto * func = ast->as<ASTFunction>())
     {
         const String stripped = stripAggregateCombinators(func->name);
@@ -353,6 +360,19 @@ bool hasWindowFunctionWithoutOrderByAnywhere(const ASTSelectQuery & select)
     return false;
 }
 
+/// True if the subtree contains at least one column identifier.
+bool containsIdentifier(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (ast->as<ASTIdentifier>())
+        return true;
+    for (const auto & child : ast->children)
+        if (containsIdentifier(child))
+            return true;
+    return false;
+}
+
 bool hasWindowFunctionWithoutOrderBy(const ASTPtr & ast)
 {
     if (!ast)
@@ -365,6 +385,15 @@ bool hasWindowFunctionWithoutOrderBy(const ASTPtr & ast)
             const auto * def = func->window_definition->as<ASTWindowDefinition>();
             if (!def || !def->order_by)
                 return true;
+            /// An ORDER BY whose every key is a constant (the fuzzer loves
+            /// `ORDER BY toLowCardinality('...')`) orders nothing: all rows
+            /// tie, so the order is as implementation-defined as having no
+            /// ORDER BY at all.
+            bool any_identifier = false;
+            for (const auto & key : def->order_by->children)
+                any_identifier = any_identifier || containsIdentifier(key);
+            if (!any_identifier)
+                return true;
         }
         /// Named window reference `OVER w` — we can't verify w's ORDER BY
         /// without resolving the SELECT's WINDOW clause; conservatively reject.
@@ -375,6 +404,33 @@ bool hasWindowFunctionWithoutOrderBy(const ASTPtr & ast)
     }
     for (const auto & child : ast->children)
         if (hasWindowFunctionWithoutOrderBy(child))
+            return true;
+    return false;
+}
+
+/// Collects every alias defined anywhere in the subtree (e.g. `1025 AS x`
+/// nested inside an array literal in the SELECT list).
+void collectAliases(const ASTPtr & ast, std::unordered_set<String> & out)
+{
+    if (!ast)
+        return;
+    const String & alias = ast->tryGetAlias();
+    if (!alias.empty())
+        out.insert(alias);
+    for (const auto & child : ast->children)
+        collectAliases(child, out);
+}
+
+/// True if the subtree references any of the given names as an identifier.
+bool referencesAnyAlias(const ASTPtr & ast, const std::unordered_set<String> & aliases)
+{
+    if (!ast)
+        return false;
+    if (const auto * ident = ast->as<ASTIdentifier>())
+        if (aliases.contains(ident->name()) || aliases.contains(ident->shortName()))
+            return true;
+    for (const auto & child : ast->children)
+        if (referencesAnyAlias(child, aliases))
             return true;
     return false;
 }
@@ -907,6 +963,18 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
 
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
+
+    /// The `countIf` rewrite drops the SELECT list. If the predicate
+    /// references an alias defined there (the fuzzer produces e.g.
+    /// `SELECT indexOf([1025 AS x, ...], ...) ... WHERE x = 1`), the
+    /// reference silently rebinds to the table column in the rewritten
+    /// query — different semantics, false mismatch.
+    {
+        std::unordered_set<String> select_aliases;
+        collectAliases(select.select(), select_aliases);
+        if (!select_aliases.empty() && referencesAnyAlias(select.where(), select_aliases))
+            return false;
+    }
 
     ASTPtr predicate = select.where()->clone();
 
