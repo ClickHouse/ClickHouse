@@ -341,8 +341,8 @@ Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and 
         "SELECT toTypeName(readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3, 1 1))'));",
         R"(
 ┌─toTypeName(readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3, 1 1))'))─┐
-│ MultiLineString                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+│ MultiLineString                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
