@@ -181,4 +181,44 @@ INNER JOIN volume_reducing_function_push_down AS r ON l.s = r.s
 ORDER BY r.id
 SETTINGS query_plan_push_down_volume_reducing_functions = 1;
 
+-- ----------------------------------------------------------------------------
+-- Name-collision regression: when the pushed scalar's output name equals a
+-- surviving passthrough column (here `length(s) AS id` aliased onto the table's
+-- own `id`, kept as the sort key), name-based resolution must not bind the
+-- parent input to the original column. ON vs OFF must stay identical.
+-- ----------------------------------------------------------------------------
+
+SELECT 'eq: alias collides with sort key';
+SELECT *
+FROM (
+    SELECT length(s) AS id
+    FROM volume_reducing_function_push_down AS t
+    ORDER BY t.id
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1
+)
+EXCEPT ALL
+SELECT *
+FROM (
+    SELECT length(s) AS id
+    FROM volume_reducing_function_push_down AS t
+    ORDER BY t.id
+    SETTINGS query_plan_push_down_volume_reducing_functions = 0
+);
+
+SELECT *
+FROM (
+    SELECT length(s) AS id
+    FROM volume_reducing_function_push_down AS t
+    ORDER BY t.id
+    SETTINGS query_plan_push_down_volume_reducing_functions = 0
+)
+EXCEPT ALL
+SELECT *
+FROM (
+    SELECT length(s) AS id
+    FROM volume_reducing_function_push_down AS t
+    ORDER BY t.id
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1
+);
+
 DROP TABLE volume_reducing_function_push_down;

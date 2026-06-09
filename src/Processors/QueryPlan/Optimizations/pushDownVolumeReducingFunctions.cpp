@@ -442,6 +442,16 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
         }
     }
 
+    /// Bail if a pushed scalar's name collides with a child passthrough column
+    /// that survives `columns_to_drop`. `buildPushedDag` would emit a header
+    /// with duplicate names, and the rewritten parent INPUT (resolved by name)
+    /// could bind to the original wide source column instead of the scalar we
+    /// computed (e.g. `length(s) AS id` colliding with a surviving sort key).
+    for (const auto & pushed_function : pushed_functions)
+        if (child_input_header.has(pushed_function.result_name)
+            && !columns_to_drop.contains(pushed_function.result_name))
+            return 0;
+
     /// Build the pushed DAG (passthrough minus dropped columns + new FUNCTION nodes).
     auto pushed = buildPushedDag(pushed_functions, child_input_header, columns_to_drop);
 

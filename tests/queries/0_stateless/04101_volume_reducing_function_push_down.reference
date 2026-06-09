@@ -24,3 +24,4 @@ eq: join
 0	1
 5	2
 12	3
+eq: alias collides with sort key
