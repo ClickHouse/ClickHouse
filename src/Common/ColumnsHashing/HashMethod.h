@@ -2,6 +2,7 @@
 
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/SipHash.h>
+#include <bit>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
@@ -294,7 +295,7 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
                 /// (`group_by_sundy_li`, `if_transform_strings_to_enum`). Keys of 8 bytes or more
                 /// already use the cheap CRC loop in `StringViewHash` and are left unchanged, so
                 /// medium/large keys (e.g. URLs) keep the same hash and bucketing as before.
-                data[i] = hashTinyKey(str.data(), size);
+                data[i] = hashTinyKey(str.data(), size); /// NOLINT(bugprone-suspicious-stringview-data-usage)
 #endif
             else if (size <= std::numeric_limits<UInt32>::max())
                 data[i] = static_cast<UInt32>(StringViewHash()(str));
@@ -312,9 +313,17 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
     static ALWAYS_INLINE UInt32 hashTinyKey(const char * data, size_t size)
     {
         const UInt8 shift = static_cast<UInt8>((-size & 7) * 8);
-        UInt64 word;
+        UInt64 word = 0;
         memcpy(&word, data, sizeof(word));
-        word &= (~UInt64(0) >> shift);
+        /// `memcpy` places the key in the low bytes of `word` on little-endian and in the high
+        /// bytes on big-endian, so the trailing-byte mask has to follow the same direction.
+        /// `CRC_INT` is also defined on big-endian s390x, so masking the wrong end there would
+        /// fold neighbouring padding bytes into the hash and split a single tiny key into
+        /// several groups (the hash is stored in `PackedStringRef::low` and gates `operator==`).
+        if constexpr (std::endian::native == std::endian::little)
+            word &= (~UInt64(0) >> shift);
+        else
+            word &= (~UInt64(0) << shift);
         size_t res = static_cast<size_t>(-1);
         res = CRC_INT(static_cast<UInt32>(res), word);
         return static_cast<UInt32>(res);
