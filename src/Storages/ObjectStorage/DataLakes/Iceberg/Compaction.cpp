@@ -493,6 +493,9 @@ static bool writeConsolidatedManifestFile(
         std::vector<IcebergPathFromMetadata> file_paths;
         /// Parallel to file_paths: {record_count, file_size_in_bytes} from the source manifest entry.
         std::vector<std::pair<Int64, Int64>> file_metrics;
+        /// Parallel to file_paths: the original file_format recorded for each data file, preserved
+        /// so a manifest-only rewrite never relabels e.g. an ORC/AVRO file as the table's write format.
+        std::vector<String> file_formats;
 
         explicit PartitionData(Poco::JSON::Array::Ptr /*schema*/)
         {}
@@ -539,6 +542,7 @@ static bool writeConsolidatedManifestFile(
             {
                 pd.file_paths.push_back(data_file->parsed_entry->file_path_key);
                 pd.file_metrics.emplace_back(data_file->parsed_entry->record_count, data_file->parsed_entry->file_size_in_bytes);
+                pd.file_formats.push_back(data_file->parsed_entry->file_format);
                 ++total_data_files;
             }
         }
@@ -582,6 +586,9 @@ static bool writeConsolidatedManifestFile(
 
     std::vector<IcebergPathFromMetadata> consolidated_manifest_paths;
     std::vector<Int64> manifest_entry_sizes;
+    /// Parallel to consolidated_manifest_paths. A manifest-only rewrite references data files that
+    /// already exist, so the manifest list must report them as existing (not added) files/rows.
+    std::vector<ManifestListEntryExistingCounts> existing_entry_counts;
 
     /// Defined before the write phase so it can be called on both commit conflict and exceptions.
     /// Each manifest path is tracked in consolidated_manifest_paths before the corresponding
@@ -636,11 +643,15 @@ static bool writeConsolidatedManifestFile(
             std::vector<UInt64> file_byte_counts;
             file_row_counts.reserve(pd.file_metrics.size());
             file_byte_counts.reserve(pd.file_metrics.size());
+            Int64 manifest_existing_rows = 0;
             for (const auto & [record_count, file_size_in_bytes] : pd.file_metrics)
             {
                 file_row_counts.push_back(static_cast<UInt64>(record_count));
                 file_byte_counts.push_back(static_cast<UInt64>(file_size_in_bytes));
+                manifest_existing_rows += record_count;
             }
+            existing_entry_counts.push_back(
+                {static_cast<Int64>(pd.file_paths.size()), manifest_existing_rows});
 
             generateManifestFile(
                 metadata_object,
@@ -657,7 +668,9 @@ static bool writeConsolidatedManifestFile(
                 partition_spec,
                 partition_spec_id,
                 *buffer_manifest,
-                Iceberg::FileContentType::DATA);
+                Iceberg::FileContentType::DATA,
+                /* user_defined_sequence_number */ std::nullopt,
+                /* data_file_formats */ pd.file_formats);
 
             buffer_manifest->finalize();
             Int64 manifest_size = buffer_manifest->count();
@@ -688,7 +701,8 @@ static bool writeConsolidatedManifestFile(
             manifest_entry_sizes,
             *buffer_manifest_list,
             Iceberg::FileContentType::DATA,
-            false);
+            false,
+            existing_entry_counts);
         buffer_manifest_list->finalize();
 
         // Commit: write metadata file with If-None-Match + update version hint with ETag-based CAS.
@@ -1000,7 +1014,9 @@ void compactIcebergManifests(
             context_,
             log.get(),
             persistent_table_components.table_uuid,
-            persistent_table_components.metadata_compression_method);
+            persistent_table_components.metadata_compression_method,
+            /* force_fetch_latest_metadata */ true,
+            /* ignore_explicit_metadata_file_path */ true);
 
         auto metadata_object = getMetadataJSONObject(
             metadata_file_path,

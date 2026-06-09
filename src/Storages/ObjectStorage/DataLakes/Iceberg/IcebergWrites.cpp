@@ -263,8 +263,14 @@ void generateManifestFile(
     Int64 partition_spec_id,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    std::optional<Int64> user_defined_sequence_number)
+    std::optional<Int64> user_defined_sequence_number,
+    const std::vector<String> & data_file_formats)
 {
+    if (!data_file_formats.empty() && data_file_formats.size() != data_file_names.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "data_file_formats size ({}) does not match number of data files ({})",
+            data_file_formats.size(), data_file_names.size());
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
     if (version == 1)
@@ -337,7 +343,8 @@ void generateManifestFile(
         if (version > 1)
             data_file.field(Iceberg::f_content) = avro::GenericDatum(static_cast<Int32>(content_type));
         data_file.field(Iceberg::f_file_path) = avro::GenericDatum(data_file_name.serialize());
-        data_file.field(Iceberg::f_file_format) = avro::GenericDatum(format);
+        data_file.field(Iceberg::f_file_format)
+            = avro::GenericDatum(data_file_formats.empty() ? format : data_file_formats[file_idx]);
 
         if (data_file_statistics)
         {
@@ -469,8 +476,18 @@ void generateManifestList(
     const std::vector<Int64> & manifest_entry_sizes,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    bool use_previous_snapshots)
+    bool use_previous_snapshots,
+    const std::vector<ManifestListEntryExistingCounts> & existing_entry_counts)
 {
+    /// When provided, existing_entry_counts must be parallel to manifest_entry_names: it marks
+    /// this as a manifest-only rewrite and supplies the existing-file/row counts per entry.
+    if (!existing_entry_counts.empty() && existing_entry_counts.size() != manifest_entry_names.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "existing_entry_counts size ({}) does not match number of manifest entries ({})",
+            existing_entry_counts.size(), manifest_entry_names.size());
+    const bool manifest_only_rewrite = !existing_entry_counts.empty();
+
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
     if (version == 1)
@@ -520,6 +537,21 @@ void generateManifestList(
         };
         entry.field(Iceberg::f_added_snapshot_id) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
         auto summary = new_snapshot->getObject(Iceberg::f_summary);
+        if (manifest_only_rewrite)
+        {
+            /// Manifest-only rewrite (`replace`): the consolidated manifest references data files
+            /// that already existed in the table, so they are reported as existing, not added.
+            const auto & counts = existing_entry_counts[entry_idx];
+            set_versioned_field(0, Iceberg::f_added_files_count);
+            set_versioned_field(counts.existing_files_count, Iceberg::f_existing_files_count);
+            set_versioned_field(0, Iceberg::f_deleted_files_count);
+            set_versioned_field(0, Iceberg::f_added_rows_count);
+            set_versioned_field(counts.existing_rows_count, Iceberg::f_existing_rows_count);
+            set_versioned_field(0, Iceberg::f_deleted_rows_count);
+
+            writer.write(entry_datum);
+            continue;
+        }
         if (version == 1)
         {
             set_versioned_field(1, Iceberg::f_added_files_count);

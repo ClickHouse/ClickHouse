@@ -340,6 +340,18 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
     new_snapshot->set(Iceberg::f_schema_id, metadata_object->getValue<Int32>(Iceberg::f_current_schema_id));
     new_snapshot->set(Iceberg::f_manifest_list, manifest_list_path.serialize());
 
+    if (format_version >= 3)
+    {
+        /// Mirror the v3 row-lineage fields that generateNextMetadata writes. A manifest-only
+        /// rewrite adds no rows, so first-row-id is the current next-row-id, added-rows is 0,
+        /// and next-row-id stays unchanged.
+        Int64 next_row_id = metadata_object->has(Iceberg::f_next_row_id) && !metadata_object->isNull(Iceberg::f_next_row_id)
+            ? metadata_object->getValue<Int64>(Iceberg::f_next_row_id)
+            : 0;
+        new_snapshot->set(Iceberg::f_first_row_id, next_row_id);
+        new_snapshot->set(Iceberg::f_added_rows, 0);
+    }
+
     metadata_object->getArray(Iceberg::f_snapshots)->add(new_snapshot);
     metadata_object->set(Iceberg::f_current_snapshot_id, snapshot_id);
 

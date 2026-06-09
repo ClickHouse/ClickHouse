@@ -60,7 +60,23 @@ void generateManifestFile(
     Int64 partition_spec_id,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    std::optional<Int64> user_defined_sequence_number = std::nullopt);
+    std::optional<Int64> user_defined_sequence_number = std::nullopt,
+    /// Optional per-file formats parallel to data_file_names. When non-empty, each entry's
+    /// original file_format is preserved (used by manifest-only compaction, which may rewrite
+    /// entries for files written by external writers in ORC/AVRO or a different format than the
+    /// table's own write format). When empty, every entry is written with `format`.
+    const std::vector<String> & data_file_formats = {});
+
+/// Per manifest-list entry counts for a manifest-only rewrite (a `replace` operation), where
+/// every data file referenced by the new manifest already existed in the table. When supplied to
+/// generateManifestList, the entry at the matching index is written with these existing-file and
+/// existing-row counts and zero added/deleted counts, instead of the append-style defaults that
+/// assume the manifest holds only newly added files.
+struct ManifestListEntryExistingCounts
+{
+    Int64 existing_files_count = 0;
+    Int64 existing_rows_count = 0;
+};
 
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
@@ -72,7 +88,8 @@ void generateManifestList(
     const std::vector<Int64> & manifest_entry_sizes,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    bool use_previous_snapshots = true);
+    bool use_previous_snapshots = true,
+    const std::vector<ManifestListEntryExistingCounts> & existing_entry_counts = {});
 
 class IcebergStorageSink final : public SinkToStorage
 {
