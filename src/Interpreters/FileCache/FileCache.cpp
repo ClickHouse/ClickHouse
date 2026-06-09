@@ -151,22 +151,22 @@ namespace
     DimensionalMetrics::MetricFamily & filesystem_cache_evictions_by_client_total = DimensionalMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evictions_by_client_total",
         "Number of file segments evicted from a filesystem cache, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
-        {"cache_name", "client_id"});
+        {"cache_name", "user_id"});
 
     DimensionalMetrics::MetricFamily & filesystem_cache_evicted_bytes_by_client_total = DimensionalMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_bytes_by_client_total",
         "Total bytes of file segments evicted, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
-        {"cache_name", "client_id"});
+        {"cache_name", "user_id"});
 
     HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_hits_by_client = HistogramMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_segment_hits_by_client",
         "Distribution of cache-hit counts on evicted file segments, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
-        hits_buckets, {"cache_name", "client_id"});
+        hits_buckets, {"cache_name", "user_id"});
 
     HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_size_bytes_by_client = HistogramMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_segment_size_bytes_by_client",
         "Distribution of byte sizes of evicted file segments, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
-        size_buckets, {"cache_name", "client_id"});
+        size_buckets, {"cache_name", "user_id"});
 }
 
 void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, State state)
