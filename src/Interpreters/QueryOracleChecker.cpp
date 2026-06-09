@@ -69,6 +69,16 @@ const std::unordered_set<String> non_deterministic_functions = {
     "runningDifference", "runningDifferenceStartingWithFirstValue",
     "currentDatabase", "queryID", "serverUUID",
     "getSetting", "fuzzBits", "throwIf",
+    /// `indexHint` filters at granule granularity: the rows that survive it
+    /// depend on index layout, not on the predicate value, so any rewrite
+    /// that moves or negates it (TLP partitions, NoREC `countIf`) changes
+    /// the result legitimately.
+    "indexHint",
+    /// `viewExplain` (the table function behind `SELECT ... FROM (EXPLAIN ...)`)
+    /// returns the query plan as rows. The plan text legitimately changes when
+    /// DQP toggles an optimizer setting, so comparing such results is comparing
+    /// plans, not data.
+    "viewExplain",
     "file", "url", "s3", "hdfs", "input",
     "numbers", "zeros", "generateRandom",
     "randomPrintableASCII", "randomString", "randomFixedString",
@@ -214,6 +224,17 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
         const String stripped = stripAggregateCombinators(func->name);
         if (non_deterministic_functions.contains(func->name)
             || non_deterministic_functions.contains(stripped))
+            return true;
+
+        /// Comparator-based array sorts are not stable on ties: with a
+        /// non-injective lambda key (e.g. `arrayReverseSort(x -> 0, arr)`) the
+        /// relative order of tied elements is implementation-defined and can
+        /// differ between plans, so the produced array *content* differs. The
+        /// single-argument forms sort by value and stay deterministic.
+        static const std::unordered_set<String> lambda_sort_functions = {
+            "arraySort", "arrayReverseSort", "arrayPartialSort", "arrayPartialReverseSort"};
+        if (lambda_sort_functions.contains(func->name)
+            && func->arguments && func->arguments->children.size() >= 2)
             return true;
 
         for (const auto & name : {std::cref(func->name), std::cref(stripped)})
@@ -1069,22 +1090,23 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
-    /// Every SELECT-list expression must be exactly a GROUP BY expression.
-    /// Otherwise a non-injective projection (e.g. `SELECT g % 2 ... GROUP BY g`)
-    /// can render two distinct groups to the same output row; the dedupe on
-    /// the partitioned side then hides a dropped group, masking a real
-    /// wrong-result regression. Hashing by `getTreeHash` (ignore_aliases) is
-    /// the same equality the AST oracle uses elsewhere.
+    /// A non-injective projection (e.g. `SELECT g % 2 ... GROUP BY g`) can
+    /// render two distinct groups to the same output row; the dedupe on the
+    /// partitioned side would then hide a dropped group, masking a real
+    /// wrong-result regression. Earlier this oracle simply rejected any query
+    /// whose SELECT list didn't equal the GROUP BY list by tree hash, but that
+    /// starves it almost completely (fuzzed SELECT lists nearly never match).
+    /// Instead, append the GROUP BY expressions themselves to the SELECT list
+    /// of every clone (reference and all three partitions identically): the
+    /// projection becomes injective per group, so dropped or duplicated groups
+    /// stay visible, while the original SELECT expressions — the server already
+    /// validated they are functions of the group keys — remain checked too.
+    const auto append_group_keys = [](const ASTPtr & query_ast)
     {
-        std::unordered_set<UInt64> group_by_hashes;
-        for (const auto & g : select.groupBy()->children)
-            group_by_hashes.insert(g->getTreeHash(/*ignore_aliases=*/true).low64);
-        for (const auto & expr : select.select()->children)
-        {
-            if (!group_by_hashes.contains(expr->getTreeHash(/*ignore_aliases=*/true).low64))
-                return false;
-        }
-    }
+        auto & sel = query_ast->as<ASTSelectQuery &>();
+        for (const auto & g : sel.groupBy()->children)
+            sel.select()->children.push_back(g->clone());
+    };
 
     ASTPtr predicate = select.where()->clone();
 
@@ -1093,6 +1115,7 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
     auto & ref_select = ref_ast->as<ASTSelectQuery &>();
     ref_select.setExpression(ASTSelectQuery::Expression::WHERE, {});
     stripOrderAndLimit(ref_select);
+    append_group_keys(ref_ast);
     String ref_sql = formatAST(ref_ast);
     if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH)
         return false;
@@ -1100,14 +1123,17 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
     /// Build 3 partitioned queries — each keeps GROUP BY.
     auto clone1_ast = select.clone();
     stripOrderAndLimit(clone1_ast->as<ASTSelectQuery &>());
+    append_group_keys(clone1_ast);
 
     auto clone2_ast = select.clone();
     clone2_ast->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("not", predicate->clone()));
     stripOrderAndLimit(clone2_ast->as<ASTSelectQuery &>());
+    append_group_keys(clone2_ast);
 
     auto clone3_ast = select.clone();
     clone3_ast->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("isNull", predicate->clone()));
     stripOrderAndLimit(clone3_ast->as<ASTSelectQuery &>());
+    append_group_keys(clone3_ast);
 
     auto list = make_intrusive<ASTExpressionList>();
     list->children.push_back(clone1_ast);
@@ -1247,8 +1273,10 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
 {
     /// DQP (Differential Query Plans): run the same query with different optimizer settings.
     /// If results differ, an optimization is producing wrong results.
-    /// Only run with ~10% probability to avoid excessive overhead.
-    if (thread_local_rng() % 10 != 0)
+    /// Probability-gated to limit overhead; DQP is the only oracle that catches
+    /// optimizer bugs directly (e.g. the `query_plan_remove_redundant_distinct`
+    /// over CUBE/ROLLUP wrong result), so it gets a generous share.
+    if (thread_local_rng() % 4 != 0)
         return false;
 
     if (!isSafeForOracle(select))
