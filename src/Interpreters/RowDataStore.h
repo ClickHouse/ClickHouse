@@ -63,7 +63,7 @@ public:
     const char * getRowAt(size_t index) const { return chars.data() + index * row_length; }
     size_t size() const { return row_length != 0 ? chars.size() / row_length : 0; }
     size_t byteSizeAt(size_t /*n*/) const { return row_length; }
-    size_t allocatedBytes() const { return chars.allocated_bytes(); }
+    size_t allocatedBytes() const { return chars.empty() ? 0 : chars.allocated_bytes(); }
 
 private:
     using Chars = PaddedPODArray<char>;
