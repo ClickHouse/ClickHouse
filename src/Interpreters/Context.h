@@ -1869,6 +1869,14 @@ public:
     const ServerSettings & getServerSettings() const;
 
 private:
+    /// Internal helper for the tentative-disk rollback path. Erases the bookkeeping entry
+    /// for `disk_name` if present, removes the disk from `DiskSelector`, drops the
+    /// auto-registered single-disk storage policy, removes any owned `FileCacheFactory`
+    /// alias, and shuts down the disk so storage-backed background pools stop before the
+    /// last `shared_ptr` is released. Caller must already hold `shared->storage_policies_mutex`.
+    /// Used by `removePendingCustomDiskIfOwned` and `releaseUnscopedDiskObservation`.
+    bool rollbackTentativeDiskUnderLock(const String & disk_name, std::lock_guard<std::mutex> & lock) const TSA_NO_THREAD_SAFETY_ANALYSIS;
+
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
 
     void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);

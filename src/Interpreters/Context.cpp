@@ -6572,59 +6572,25 @@ bool Context::commitUnscopedDiskObservation(const String & disk_name) const
     return true;
 }
 
-void Context::releaseUnscopedDiskObservation(const String & disk_name) const
+/// Internal helper that performs the global rollback for a tentative disk entry. Called
+/// when the last remaining owner has been removed and no one ever flipped `committed` to
+/// true. Erases the bookkeeping entry, removes the disk from `DiskSelector`, drops the
+/// auto-registered single-disk storage policy, removes any owned `FileCacheFactory` alias,
+/// and shuts down the disk so background pools stop before the last `shared_ptr` is
+/// released. Must be called under `shared->storage_policies_mutex`.
+///
+/// Returns true if a custom disk was removed from the selector. Returns false if there was
+/// no disk to remove or the disk was config-defined (defensive guard).
+bool Context::rollbackTentativeDiskUnderLock(
+    const String & disk_name,
+    std::lock_guard<std::mutex> & lock) const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    std::lock_guard lock(shared->storage_policies_mutex);
-
-    auto it = shared->tentative_disk_registrations.find(disk_name);
-    if (it == shared->tentative_disk_registrations.end())
-        return;
-
-    auto & entry = it->second;
-    const void * sentinel = static_cast<const void *>(&entry);
-
-    /// Drop the sentinel slot. If we were the only remaining owner AND the entry is not
-    /// committed, the entry is now empty-and-uncommitted; we still leave the rollback to a
-    /// scoped owner (or to a future call to `clearPendingCustomDiskRegistration`) because
-    /// this method is called only from the unscoped observer path that JOINED an existing
-    /// tentative entry, so a scope created that entry and is responsible for it.
-    auto & owners = entry.active_owners;
-    owners.erase(std::remove(owners.begin(), owners.end(), sentinel), owners.end());
-    if (owners.empty() && !entry.committed)
-        shared->tentative_disk_registrations.erase(it);
-}
-
-bool Context::removePendingCustomDiskIfOwned(const String & disk_name, const void * owner) const
-{
-    std::lock_guard lock(shared->storage_policies_mutex);
-
+    /// Caller has `shared->storage_policies_mutex` locked via `lock`. TSA cannot prove the
+    /// equivalence of the parameter and the guarded mutex, so disable analysis for this body.
     auto it = shared->tentative_disk_registrations.find(disk_name);
     if (it == shared->tentative_disk_registrations.end())
         return false;
-
     auto & entry = it->second;
-
-    /// Drop ourselves from the active set. Robust to repeated `track`s of the same name
-    /// (the scope's `track` is best-effort; double-tracking only adds duplicate slots).
-    auto & owners = entry.active_owners;
-    owners.erase(std::remove(owners.begin(), owners.end(), owner), owners.end());
-
-    /// If anyone in the chain has committed, the disk is permanently reachable. Drop our
-    /// slot, leak everything else (the existing settings-hash check protects future ALTERs
-    /// from redefining the name with different settings).
-    if (entry.committed)
-    {
-        if (owners.empty())
-            shared->tentative_disk_registrations.erase(it);
-        return false;
-    }
-
-    /// Other scopes are still in flight. They might commit; defer removal to whichever
-    /// scope is the last to leave.
-    if (!owners.empty())
-        return false;
-
-    /// We are the last scope to leave and no one committed. Roll back globally.
     const bool we_inserted_cache_entry = entry.we_inserted_cache_entry;
     shared->tentative_disk_registrations.erase(it);
 
@@ -6664,11 +6630,81 @@ bool Context::removePendingCustomDiskIfOwned(const String & disk_name, const voi
         }
         catch (...)
         {
-            tryLogCurrentException(getLogger("removePendingCustomDiskIfOwned"),
+            tryLogCurrentException(getLogger("rollbackTentativeDisk"),
                 fmt::format("Failed to shut down rolled-back disk {}", disk_name));
         }
     }
     return removed_disk != nullptr;
+}
+
+void Context::releaseUnscopedDiskObservation(const String & disk_name) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto it = shared->tentative_disk_registrations.find(disk_name);
+    if (it == shared->tentative_disk_registrations.end())
+        return;
+
+    auto & entry = it->second;
+    const void * sentinel = static_cast<const void *>(&entry);
+
+    /// Drop the sentinel slot.
+    auto & owners = entry.active_owners;
+    owners.erase(std::remove(owners.begin(), owners.end(), sentinel), owners.end());
+
+    /// If any other scoped owner is still in flight or someone has committed, leave the
+    /// rollback to whichever path runs next (`removePendingCustomDiskIfOwned` for the last
+    /// scoped owner, or `clearPendingCustomDiskRegistration` for an explicit commit).
+    if (!owners.empty() || entry.committed)
+    {
+        if (owners.empty() && entry.committed)
+            shared->tentative_disk_registrations.erase(it);
+        return;
+    }
+
+    /// We are the last owner to leave AND no one committed. This happens when a scoped
+    /// owner's destructor ran first (e.g. an outer alterTable / ZK commit failed) and then
+    /// the unscoped observer's validation failed too. The scoped owner saw a non-empty
+    /// `active_owners` (sentinel still present), deferred the rollback, and is gone now;
+    /// the unscoped observer must perform the rollback itself or the disk leaks until
+    /// server restart.
+    rollbackTentativeDiskUnderLock(disk_name, lock);
+}
+
+bool Context::removePendingCustomDiskIfOwned(const String & disk_name, const void * owner) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto it = shared->tentative_disk_registrations.find(disk_name);
+    if (it == shared->tentative_disk_registrations.end())
+        return false;
+
+    auto & entry = it->second;
+
+    /// Drop ourselves from the active set. Robust to repeated `track`s of the same name
+    /// (the scope's `track` is best-effort; double-tracking only adds duplicate slots).
+    auto & owners = entry.active_owners;
+    owners.erase(std::remove(owners.begin(), owners.end(), owner), owners.end());
+
+    /// If anyone in the chain has committed, the disk is permanently reachable. Drop our
+    /// slot, leak everything else (the existing settings-hash check protects future ALTERs
+    /// from redefining the name with different settings).
+    if (entry.committed)
+    {
+        if (owners.empty())
+            shared->tentative_disk_registrations.erase(it);
+        return false;
+    }
+
+    /// Other scopes are still in flight. They might commit; defer removal to whichever
+    /// scope is the last to leave.
+    if (!owners.empty())
+        return false;
+
+    /// We are the last scope to leave and no one committed. Roll back globally. The helper
+    /// re-locates the iterator from `disk_name`; we drop our reference (`entry`/`owners`)
+    /// before calling it so the helper's `erase` does not invalidate anything live here.
+    return rollbackTentativeDiskUnderLock(disk_name, lock);
 }
 
 void Context::clearPendingCustomDiskRegistration(const String & disk_name, const void * owner) const

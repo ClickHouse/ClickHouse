@@ -33,6 +33,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char disk_from_ast_pause_after_tentative_registration[];
+    extern const char disk_from_ast_unscoped_observer_pause_after_sentinel[];
 }
 
 static std::string getOrCreateCustomDisk(
@@ -146,6 +147,15 @@ static std::string getOrCreateCustomDisk(
     /// Test-only barrier: pause here so that 04152 can deterministically inject a
     /// concurrent CREATE TABLE while the tentative registration is in flight.
     FailPointInjection::pauseFailPoint(FailPoints::disk_from_ast_pause_after_tentative_registration);
+
+    /// Test-only barrier: fires only on the unscoped observer path, AFTER `Context::getOrCreateDisk`
+    /// has inserted the sentinel slot but BEFORE validation runs. Used by 04154 to drive the
+    /// reverse-order release-cleanup race: the unscoped observer pauses here while the
+    /// scoped owner runs and its destructor fires. The unscoped observer then resumes,
+    /// fails validation, and `releaseUnscopedDiskObservation` becomes the last-owner-leaves
+    /// path that must perform the rollback.
+    if (!scope)
+        FailPointInjection::pauseFailPoint(FailPoints::disk_from_ast_unscoped_observer_pause_after_sentinel);
 
     /// Validate the (possibly observed) disk against this caller's settings BEFORE flipping
     /// any tentative registration to committed. For unscoped callers (CREATE / ATTACH path
