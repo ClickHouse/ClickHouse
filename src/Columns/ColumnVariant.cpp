@@ -1754,6 +1754,16 @@ void ColumnVariant::applyNegatedNullMap(const ColumnVector<UInt8>::Container & n
     applyNullMapImpl<true>(null_map);
 }
 
+ColumnPtr ColumnVariant::createNullMap() const
+{
+    const auto & discriminators = getLocalDiscriminators();
+    auto null_map = ColumnUInt8::create(discriminators.size(), UInt8(0));
+    auto & null_map_data = null_map->getData();
+    for (size_t i = 0; i < discriminators.size(); ++i)
+        null_map_data[i] = (discriminators[i] == NULL_DISCRIMINATOR);
+    return null_map;
+}
+
 template <bool inverted>
 void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null_map)
 {
