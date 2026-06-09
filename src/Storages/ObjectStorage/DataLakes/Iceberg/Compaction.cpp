@@ -497,6 +497,10 @@ static bool writeConsolidatedManifestFile(
         /// Parallel to file_paths: the original file_format recorded for each data file, preserved
         /// so a manifest-only rewrite never relabels e.g. an ORC/AVRO file as the table's write format.
         std::vector<String> file_formats;
+        /// Parallel to file_paths: the source file's per-column statistics, preserved so a
+        /// manifest-only rewrite does not drop column sizes / null counts / bounds (which would
+        /// weaken predicate pushdown and file pruning after compaction).
+        std::vector<DataFileColumnStatistics> file_statistics;
 
         explicit PartitionData(Poco::JSON::Array::Ptr /*schema*/)
         {}
@@ -557,6 +561,37 @@ static bool writeConsolidatedManifestFile(
                 pd.file_paths.push_back(data_file->parsed_entry->file_path_key);
                 pd.file_metrics.emplace_back(data_file->parsed_entry->record_count, data_file->parsed_entry->file_size_in_bytes);
                 pd.file_formats.push_back(data_file->parsed_entry->file_format);
+
+                /// Carry the source file's per-column stats over verbatim. Bounds are kept as the
+                /// raw serialized bytes the source manifest stored (value_bounds holds them as
+                /// String fields), so they round-trip without any type-aware re-serialization.
+                DataFileColumnStatistics stats;
+                for (const auto & [field_id, col_info] : data_file->parsed_entry->columns_infos)
+                {
+                    if (col_info.bytes_size.has_value())
+                        stats.column_sizes.emplace_back(field_id, *col_info.bytes_size);
+                    if (col_info.rows_count.has_value())
+                        stats.value_counts.emplace_back(field_id, *col_info.rows_count);
+                    if (col_info.nulls_count.has_value())
+                        stats.null_value_counts.emplace_back(field_id, *col_info.nulls_count);
+                }
+                for (const auto & [field_id, bounds] : data_file->parsed_entry->value_bounds)
+                {
+                    if (!bounds.first.isNull())
+                        stats.lower_bounds.emplace_back(field_id, bounds.first.safeGet<String>());
+                    if (!bounds.second.isNull())
+                        stats.upper_bounds.emplace_back(field_id, bounds.second.safeGet<String>());
+                }
+                /// columns_infos / value_bounds are unordered maps; sort by field-id so the
+                /// rewritten manifest is deterministic regardless of map iteration order.
+                auto by_field_id = [](const auto & a, const auto & b) { return a.first < b.first; };
+                std::sort(stats.column_sizes.begin(), stats.column_sizes.end(), by_field_id);
+                std::sort(stats.value_counts.begin(), stats.value_counts.end(), by_field_id);
+                std::sort(stats.null_value_counts.begin(), stats.null_value_counts.end(), by_field_id);
+                std::sort(stats.lower_bounds.begin(), stats.lower_bounds.end(), by_field_id);
+                std::sort(stats.upper_bounds.begin(), stats.upper_bounds.end(), by_field_id);
+                pd.file_statistics.push_back(std::move(stats));
+
                 ++total_data_files;
             }
         }
@@ -686,7 +721,8 @@ static bool writeConsolidatedManifestFile(
                 *buffer_manifest,
                 Iceberg::FileContentType::DATA,
                 /* user_defined_sequence_number */ std::nullopt,
-                /* data_file_formats */ pd.file_formats);
+                /* data_file_formats */ pd.file_formats,
+                /* per_file_statistics */ pd.file_statistics);
 
             buffer_manifest->finalize();
             Int64 manifest_size = buffer_manifest->count();

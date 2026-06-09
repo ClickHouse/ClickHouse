@@ -45,6 +45,19 @@ namespace DB
 
 String removeEscapedSlashes(const String & json_str);
 
+/// Per-file column statistics carried over verbatim from a source manifest entry during a
+/// manifest-only rewrite. Each vector maps an Iceberg field-id to its value. Bounds hold the
+/// raw serialized bytes exactly as stored in the source manifest (no type-aware
+/// re-serialization), so they round-trip losslessly.
+struct DataFileColumnStatistics
+{
+    std::vector<std::pair<Int32, Int64>> column_sizes;
+    std::vector<std::pair<Int32, Int64>> value_counts;
+    std::vector<std::pair<Int32, Int64>> null_value_counts;
+    std::vector<std::pair<Int32, String>> lower_bounds;
+    std::vector<std::pair<Int32, String>> upper_bounds;
+};
+
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
@@ -66,7 +79,11 @@ void generateManifestFile(
     /// original file_format is preserved (used by manifest-only compaction, which may rewrite
     /// entries for files written by external writers in ORC/AVRO or a different format than the
     /// table's own write format). When empty, every entry is written with `format`.
-    const std::vector<String> & data_file_formats = {});
+    const std::vector<String> & data_file_formats = {},
+    /// Optional per-file column statistics parallel to data_file_names. When non-empty, each
+    /// entry's stats are written from the matching element (used by manifest-only compaction to
+    /// preserve the source files' column stats). When empty, `data_file_statistics` is used.
+    const std::vector<DataFileColumnStatistics> & per_file_statistics = {});
 
 /// Per manifest-list entry counts for a manifest-only rewrite (a `replace` operation), where
 /// every data file referenced by the new manifest already existed in the table. When supplied to

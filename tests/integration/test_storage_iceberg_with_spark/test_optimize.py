@@ -329,6 +329,100 @@ def test_optimize_manifest_files(started_cluster_iceberg_with_spark, storage_typ
     assert spark_ids == clickhouse_ids
 
 
+def test_optimize_manifest_files_preserves_stats(started_cluster_iceberg_with_spark):
+    """
+    OPTIMIZE TABLE ... MANIFEST must preserve the per-column statistics carried by the source
+    manifest entries (column_sizes, value_counts, null_value_counts, lower_bounds, upper_bounds).
+    Dropping them would weaken predicate pushdown / file pruning after compaction.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    storage_type = "local"
+    TABLE_NAME = "test_optimize_manifest_stats_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg "
+        f"TBLPROPERTIES ('format-version' = '2')"
+    )
+    # Several separate inserts so the current snapshot has several data manifests (> threshold).
+    for lo in range(0, 50, 10):
+        spark.sql(
+            f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range({lo}, {lo + 10})"
+        )
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    metadata_dir = (
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata"
+    )
+
+    def list_data_manifests():
+        return set(
+            instance.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f"find '{metadata_dir}' -maxdepth 1 -name '*.avro' "
+                    f"-not -name 'snap-*.avro' -type f",
+                ]
+            )
+            .strip()
+            .splitlines()
+        )
+
+    manifests_before = list_data_manifests()
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 2,
+        },
+    )
+
+    # The manifest-only rewrite does not delete old files, so the newly written consolidated
+    # manifest(s) are exactly the data manifests that appeared after the OPTIMIZE.
+    new_manifests = sorted(list_data_manifests() - manifests_before)
+    assert new_manifests, "OPTIMIZE TABLE ... MANIFEST did not produce a consolidated manifest"
+
+    entries_checked = 0
+    for manifest in new_manifests:
+        result = instance.query(
+            f"""
+            SELECT
+                tupleElement(data_file, 'content')                  AS content,
+                length(tupleElement(data_file, 'column_sizes'))     AS n_column_sizes,
+                length(tupleElement(data_file, 'value_counts'))     AS n_value_counts,
+                length(tupleElement(data_file, 'null_value_counts')) AS n_null_value_counts,
+                length(tupleElement(data_file, 'lower_bounds'))     AS n_lower_bounds,
+                length(tupleElement(data_file, 'upper_bounds'))     AS n_upper_bounds
+            FROM file('{manifest}', Avro)
+            FORMAT TSV
+            """
+        ).strip()
+        if not result:
+            continue
+        for line in result.splitlines():
+            content, n_col, n_val, n_null, n_lower, n_upper = map(int, line.split("\t"))
+            if content != 0:  # data files only
+                continue
+            # The table has two columns (id, data); both carry stats in the source manifests.
+            assert n_col == 2, f"column_sizes dropped: {n_col}"
+            assert n_val == 2, f"value_counts dropped: {n_val}"
+            assert n_null == 2, f"null_value_counts dropped: {n_null}"
+            assert n_lower == 2, f"lower_bounds dropped: {n_lower}"
+            assert n_upper == 2, f"upper_bounds dropped: {n_upper}"
+            entries_checked += 1
+
+    assert entries_checked > 0, "no data-file entries found in consolidated manifest(s)"
+
+
 @pytest.mark.parametrize("format_version", ["2", "3"])
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_optimize_manifest_files_with_deletes(started_cluster_iceberg_with_spark, storage_type, format_version):

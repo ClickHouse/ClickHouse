@@ -264,13 +264,19 @@ void generateManifestFile(
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     std::optional<Int64> user_defined_sequence_number,
-    const std::vector<String> & data_file_formats)
+    const std::vector<String> & data_file_formats,
+    const std::vector<DataFileColumnStatistics> & per_file_statistics)
 {
     if (!data_file_formats.empty() && data_file_formats.size() != data_file_names.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "data_file_formats size ({}) does not match number of data files ({})",
             data_file_formats.size(), data_file_names.size());
+    if (!per_file_statistics.empty() && per_file_statistics.size() != data_file_names.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "per_file_statistics size ({}) does not match number of data files ({})",
+            per_file_statistics.size(), data_file_names.size());
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
     if (version == 1)
@@ -346,25 +352,40 @@ void generateManifestFile(
         data_file.field(Iceberg::f_file_format)
             = avro::GenericDatum(data_file_formats.empty() ? format : data_file_formats[file_idx]);
 
-        if (data_file_statistics)
+        /// Writes a list of (field-id, value) pairs into the union-typed `field_name` array of the
+        /// data_file record. Generic over the key and value types so it serves both the computed
+        /// `DataFileStatistics` path and the verbatim per-file path below.
+        [[maybe_unused]] auto set_fields = [&]<typename K, typename T, typename U>(
+                              const std::vector<std::pair<K, T>> & statistics, const std::string & field_name, U && dump_function)
         {
-            auto set_fields = [&]<typename T, typename U>(
-                                  const std::vector<std::pair<size_t, T>> & statistics, const std::string & field_name, U && dump_function)
+            auto & data_file_record = data_file.field(field_name);
+            data_file_record.selectBranch(1);
+            auto & record_values = data_file_record.value<avro::GenericArray>();
+            auto schema_element = record_values.schema()->leafAt(0);
+            for (const auto & [field_id, value] : statistics)
             {
-                auto & data_file_record = data_file.field(field_name);
-                data_file_record.selectBranch(1);
-                auto & record_values = data_file_record.value<avro::GenericArray>();
-                auto schema_element = record_values.schema()->leafAt(0);
-                for (const auto & [field_id, value] : statistics)
-                {
-                    avro::GenericDatum record_datum(schema_element);
-                    auto & record = record_datum.value<avro::GenericRecord>();
-                    record.field(Iceberg::f_key) = static_cast<Int32>(field_id);
-                    record.field(Iceberg::f_value) = dump_function(field_id, value);
-                    record_values.value().push_back(record_datum);
-                }
-            };
+                avro::GenericDatum record_datum(schema_element);
+                auto & record = record_datum.value<avro::GenericRecord>();
+                record.field(Iceberg::f_key) = static_cast<Int32>(field_id);
+                record.field(Iceberg::f_value) = dump_function(field_id, value);
+                record_values.value().push_back(record_datum);
+            }
+        };
 
+        if (!per_file_statistics.empty())
+        {
+            /// Manifest-only rewrite: carry over the source file's column stats verbatim. Bounds
+            /// are already the raw serialized bytes from the source manifest, so they are written
+            /// back as-is (no type-aware re-serialization, no sample_block lookup needed).
+            const auto & stats = per_file_statistics[file_idx];
+            set_fields(stats.column_sizes, Iceberg::f_column_sizes, [](Int32, Int64 value) { return value; });
+            set_fields(stats.value_counts, Iceberg::f_value_counts, [](Int32, Int64 value) { return value; });
+            set_fields(stats.null_value_counts, Iceberg::f_null_value_counts, [](Int32, Int64 value) { return value; });
+            set_fields(stats.lower_bounds, Iceberg::f_lower_bounds, [](Int32, const String & value) { return value; });
+            set_fields(stats.upper_bounds, Iceberg::f_upper_bounds, [](Int32, const String & value) { return value; });
+        }
+        else if (data_file_statistics)
+        {
             auto statistics = data_file_statistics->getColumnSizes();
             set_fields(statistics, Iceberg::f_column_sizes, [](size_t, size_t value) { return static_cast<Int64>(value); });
 
