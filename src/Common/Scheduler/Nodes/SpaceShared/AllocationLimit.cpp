@@ -124,9 +124,21 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
         reapply_constraint = true;
     if (update.detached)
     {
-        // In case of a queue purge we may need to clear allocation_to_kill
-        if (allocation_to_kill && update.detached == static_cast<ISpaceSharedNode *>(&allocation_to_kill->queue))
-            allocation_to_kill = nullptr;
+        // The victim referenced by `allocation_to_kill` might be anywhere inside the detached
+        // subtree, and `purgeQueue` will fail its owner via `fail_reason` without driving a
+        // `removing_allocation=true` decrease back up to clear this pointer through
+        // `approveDecrease`. The pointer can therefore outlive the allocation it points at.
+        // Comparing against `&allocation_to_kill->queue` would dereference that dangling
+        // pointer (heap-use-after-free observed by ASan in
+        // `test_cancel_query_with_memory_reservation`).
+        //
+        // Clear unconditionally on any subtree detach: aggregate counters (`allocated`,
+        // `allocations`) are already kept consistent by `apply(Update)` decrementing by the
+        // detached subtree's totals, so the only state that can survive incorrectly is this
+        // per-victim pointer. If the increase that drove the original kill is still alive, the
+        // next `setIncrease(..., reapply_constraint=true)` below picks a fresh victim. The
+        // previously-issued `killAllocation` is harmless if its target has already cleaned up.
+        allocation_to_kill = nullptr;
         reapply_constraint = true;
     }
     if (update.increase || reapply_constraint)
