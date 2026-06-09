@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Storages/MergeTree/UniqueKey/UniqueKeyIndexCache.h>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 
 #include <atomic>
@@ -54,8 +55,9 @@ TEST(UniqueKeyIndexCache, InsertLookupAndHitMissCounters)
 {
     UniqueKeyIndexCache cache = makeCache(1 << 20);
 
-    const auto hits_before = ProfileEvents::global_counters[ProfileEvents::UniqueKeyIndexCacheHits].load();
-    const auto misses_before = ProfileEvents::global_counters[ProfileEvents::UniqueKeyIndexCacheMisses].load();
+    auto & counters = CurrentThread::getProfileEvents();
+    const auto hits_before = counters[ProfileEvents::UniqueKeyIndexCacheHits].load();
+    const auto misses_before = counters[ProfileEvents::UniqueKeyIndexCacheMisses].load();
 
     auto * obj = new FakeObject{nullptr, 42};
     rocksdb::Slice key("key-1");
@@ -74,15 +76,8 @@ TEST(UniqueKeyIndexCache, InsertLookupAndHitMissCounters)
                                rocksdb::Cache::Priority::LOW, nullptr);
     EXPECT_EQ(miss, nullptr);
 
-    /// Coverage build's ProfileEvents propagate into a thread-local subtree
-    /// that doesn't reach `global_counters`; deltas read 0 there only.
-#if !WITH_COVERAGE
-    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::UniqueKeyIndexCacheHits].load() - hits_before, 1u);
-    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::UniqueKeyIndexCacheMisses].load() - misses_before, 1u);
-#else
-    (void)hits_before;
-    (void)misses_before;
-#endif
+    EXPECT_EQ(counters[ProfileEvents::UniqueKeyIndexCacheHits].load() - hits_before, 1u);
+    EXPECT_EQ(counters[ProfileEvents::UniqueKeyIndexCacheMisses].load() - misses_before, 1u);
 
     cache.Release(lh, /*erase_if_last_ref=*/false);
     cache.Release(ih, /*erase_if_last_ref=*/false);

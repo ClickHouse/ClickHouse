@@ -285,9 +285,8 @@ public:
         size_t max_free_threads = 0;
         size_t queue_size = use_queue ? 0 : max_threads;
         auto thread_pool = std::make_unique<ThreadPool>(metric_threads, metric_active_threads, metric_scheduled_threads, max_threads, max_free_threads, queue_size);
-        auto * thread_pool_ptr = thread_pool.get();
-        thread_pools.emplace(thread_pool_id, std::move(thread_pool));
-        return *thread_pool_ptr;
+        it = thread_pools.emplace(thread_pool_id, std::move(thread_pool)).first;
+        return *it->second;
     }
 
     /// Waits for all threads to finish.

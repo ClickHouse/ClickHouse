@@ -35,6 +35,66 @@ This is the format that is used in `INSERT INTO t VALUES ...`, but you can also 
 
 ## Example usage {#example-usage}
 
+### Inserting data {#inserting-data}
+
+The `Values` format is what `INSERT` uses, so any `INSERT ... VALUES` statement
+is already using it. The `FORMAT Values` clause can be stated explicitly, and the
+rows can be supplied from a stream or a file. Each row is a bracketed,
+comma-separated tuple, with the tuples themselves separated by commas:
+
+```sql title="Query"
+CREATE TABLE t (id UInt32, name String, values Array(UInt32)) ENGINE = Memory;
+
+INSERT INTO t FORMAT Values (1, 'a', [10, 20]), (2, 'b', [30]);
+
+SELECT * FROM t ORDER BY id;
+```
+
+```response title="Response"
+┌─id─┬─name─┬─values──┐
+│  1 │ a    │ [10,20] │
+│  2 │ b    │ [30]    │
+└────┴──────┴─────────┘
+```
+
+### Using expressions on input {#using-expressions}
+
+Unlike most input formats, `Values` can evaluate SQL expressions in each field
+rather than only accepting literals. This is controlled by
+[`input_format_values_interpret_expressions`](#format-settings) (enabled by
+default): when a field cannot be read by the fast streaming parser, ClickHouse
+falls back to the SQL parser and interprets the field as an expression.
+
+```sql title="Query"
+CREATE TABLE prices (item String, total UInt32) ENGINE = Memory;
+
+INSERT INTO prices FORMAT Values ('apple', 3 * 4), ('pear', length('hello') + 10);
+
+SELECT * FROM prices ORDER BY total;
+```
+
+```response title="Response"
+┌─item──┬─total─┐
+│ apple │    12 │
+│ pear  │    15 │
+└───────┴───────┘
+```
+
+### Selecting data {#selecting-data}
+
+The `Values` format can also be used to format query results. Numbers are
+written without quotes, arrays in `[]`, and strings and dates in single quotes;
+single quotes and backslashes inside strings are escaped with a backslash, and
+[`NULL`](/sql-reference/syntax.md) is written as `NULL`:
+
+```sql title="Query"
+SELECT 1 AS a, 'O''Reilly' AS b, NULL::Nullable(String) AS c FORMAT Values;
+```
+
+```response title="Response"
+(1,'O\'Reilly',NULL)
+```
+
 ## Format settings {#format-settings}
 
 | Setting                                                                                                                                                     | Description                                                                                                                                                                                   | Default |

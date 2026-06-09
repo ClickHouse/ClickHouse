@@ -3,13 +3,31 @@ import requests
 from helpers import keeper_utils
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-import time
 
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
     main_configs=["configs/config.xml"],
+)
+
+cluster_node1 = cluster.add_instance(
+    "cluster_node1",
+    main_configs=["configs/cluster_keeper1.xml"],
+    stay_alive=True,
+    with_zookeeper=False,
+)
+cluster_node2 = cluster.add_instance(
+    "cluster_node2",
+    main_configs=["configs/cluster_keeper2.xml"],
+    stay_alive=True,
+    with_zookeeper=False,
+)
+cluster_node3 = cluster.add_instance(
+    "cluster_node3",
+    main_configs=["configs/cluster_keeper3.xml"],
+    stay_alive=True,
+    with_zookeeper=False,
 )
 
 
@@ -51,6 +69,27 @@ def test_skip_alias_columns(start_cluster):
     # it should be absent from the table schema.
     error = node.query_and_get_error("SELECT build_id FROM system.trace_log LIMIT 0")
     assert "UNKNOWN_IDENTIFIER" in error
+
+
+def test_keeper_cluster_invariants(start_cluster):
+    nodes = (cluster_node1, cluster_node2, cluster_node3)
+    for n in nodes:
+        keeper_utils.wait_until_connected(cluster, n)
+
+    invariants_query = (
+        """
+        SELECT
+            count(),
+            uniqExact(server_id),
+            countIf(is_self),
+            countIf(is_leader),
+            countIf(last_log_index IS NOT NULL),
+            countIf(last_log_index IS NOT NULL AND is_self)
+        FROM system.keeper_cluster
+        """
+    )
+    for keeper_node in nodes:
+        assert_eq_with_retry(keeper_node, invariants_query, "3\t3\t1\t1\t1\t1")
 
 
 def test_system_keeper_changelogs(start_cluster):

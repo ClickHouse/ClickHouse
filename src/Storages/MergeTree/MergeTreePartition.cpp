@@ -198,6 +198,45 @@ namespace
             hash.update(x);
         }
     };
+
+    /// During INSERT, partition values are extracted from columns via `column->get()`,
+    /// which produces UInt64 Fields for Bool columns (ColumnUInt8 → NearestFieldType → UInt64).
+    /// But the query path (ALTER TABLE DROP/DETACH/ATTACH PARTITION) uses `convertFieldToType`,
+    /// which faithfully produces Bool-typed Fields. Since `LegacyFieldVisitorHash` hashes
+    /// Bool (type tag 28) differently from UInt64 (type tag 1), partition IDs won't match.
+    /// We cannot change the INSERT path or the hash without breaking existing partition IDs on disk,
+    /// so normalize Bool → UInt64 recursively to cover Tuple/Array/Map containers.
+    void normalizeBoolFields(Field & field)
+    {
+        if (field.getType() == Field::Types::Bool)
+        {
+            field = field.safeGet<UInt64>();
+        }
+        else if (field.getType() == Field::Types::Tuple)
+        {
+            auto & tuple = field.safeGet<Tuple>();
+            for (auto & elem : tuple)
+                normalizeBoolFields(elem);
+        }
+        else if (field.getType() == Field::Types::Array)
+        {
+            auto & array = field.safeGet<Array>();
+            for (auto & elem : array)
+                normalizeBoolFields(elem);
+        }
+        else if (field.getType() == Field::Types::Map)
+        {
+            auto & map = field.safeGet<Map>();
+            for (auto & elem : map)
+                normalizeBoolFields(elem);
+        }
+    }
+}
+
+MergeTreePartition::MergeTreePartition(Row value_) : value(std::move(value_))
+{
+    for (auto & field : value)
+        normalizeBoolFields(field);
 }
 
 String MergeTreePartition::getID(const MergeTreeData & storage) const

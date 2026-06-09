@@ -98,9 +98,9 @@ void MergeTreeReaderStream::init()
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
 
-        data_buffer = buffer.get();
-        plain_file_buffer = buffer.get();
         read_buffer_holder = std::move(buffer);
+        data_buffer = read_buffer_holder.get();
+        plain_file_buffer = static_cast<ReadBufferFromFileBase *>(read_buffer_holder.get());
     }
     else if (uncompressed_cache)
     {
@@ -128,9 +128,9 @@ void MergeTreeReaderStream::init()
         if (!settings.checksum_on_read)
             buffer->disableChecksumming();
 
-        data_buffer = buffer.get();
-        compressed_data_buffer = buffer.get();
         read_buffer_holder = std::move(buffer);
+        data_buffer = read_buffer_holder.get();
+        compressed_data_buffer = static_cast<CachedCompressedReadBuffer *>(read_buffer_holder.get());
     }
     else
     {
@@ -143,9 +143,9 @@ void MergeTreeReaderStream::init()
         if (!settings.checksum_on_read)
             buffer->disableChecksumming();
 
-        data_buffer = buffer.get();
-        compressed_data_buffer = buffer.get();
         read_buffer_holder = std::move(buffer);
+        data_buffer = read_buffer_holder.get();
+        compressed_data_buffer = static_cast<CompressedReadBufferFromFile *>(read_buffer_holder.get());
     }
 
     initialized = true;

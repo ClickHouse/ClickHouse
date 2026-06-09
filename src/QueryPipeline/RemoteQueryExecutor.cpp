@@ -950,7 +950,7 @@ void RemoteQueryExecutor::sendExternalTables()
                 /// It is required to be able CTE materialization plan with parallel replicas (avoiding
                 /// circular dependency between CTE materialization and parallel replicas external tables.
                 auto materialized_cte = storage_memory->getMaterializedCTE();
-                if (materialized_cte != nullptr && !materialized_cte->is_built)
+                if (materialized_cte != nullptr && !materialized_cte->isBuilt())
                 {
                     LOG_DEBUG(log, "Skipping sending CTE '{}' because it has not been materialized yet", materialized_cte->cte_name);
                     continue;
