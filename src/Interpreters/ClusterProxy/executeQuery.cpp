@@ -1,5 +1,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Columns/ColumnConst.h>
+#include <Common/ProfileEvents.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -34,7 +36,6 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
-#include <Common/ProfileEvents.h>
 
 
 namespace ProfileEvents
