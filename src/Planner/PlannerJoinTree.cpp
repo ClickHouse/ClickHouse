@@ -464,7 +464,10 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     const PlannerContext & planner_context)
 {
     const auto & settings = query_context->getSettingsRef();
-    if (!settings[Setting::optimize_trivial_count_with_sparsity_filter])
+    /// Extension of `optimize_trivial_count_query`: respect the base kill switch so
+    /// disabling the parent setting also disables this variant.
+    if (!settings[Setting::optimize_trivial_count_query]
+        || !settings[Setting::optimize_trivial_count_with_sparsity_filter])
         return false;
 
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
