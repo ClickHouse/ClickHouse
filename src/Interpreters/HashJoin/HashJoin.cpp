@@ -185,9 +185,6 @@ HashJoin::HashJoin(
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
-    if (!enable_row_store_ || !isRowStoreSupported())
-        data->row_store_state = RowStoreState::Disabled;
-
     if (joined_block_split_single_row && max_joined_block_rows == 0)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -242,6 +239,9 @@ HashJoin::HashJoin(
     initRightBlockStructure(data->sample_block);
     data->sample_block = prepareRightBlock(data->sample_block);
     data->column_replicated_flags.resize(data->sample_block.columns(), false);
+
+    if (!enable_row_store_ || !isRowStoreSupported() || data->sample_block.columns() == 0)
+        data->row_store_state = RowStoreState::Disabled;
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
 
