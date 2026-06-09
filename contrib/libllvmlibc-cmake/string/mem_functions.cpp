@@ -33,6 +33,11 @@
 // to the same upstream helpers as the stock build, so v3 codegen is
 // byte-equivalent to upstream.
 #include "x86_64_mem_functions.cpp"
+#elif defined(__aarch64__)
+// aarch64: same idea as x86_64 — align dst (not src) for the large-copy loop,
+// add a 128-byte head-tail tier for 128–256 B copies, route memmove's
+// disjoint fast path through our memcpy.
+#include "aarch64_mem_functions.cpp"
 #else
 #include "src/string/memcpy.cpp"
 #include "src/string/memmove.cpp"
