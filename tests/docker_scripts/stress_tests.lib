@@ -313,15 +313,14 @@ function start_server()
             tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n100
             return 1
         fi
-        # Wait for ports before each retry, not just the first attempt.
-        # In debug+ThreadFuzzer builds, the previous `clickhouse start` may
-        # have spawned a server that is still binding ports or crashing.
-        if [ "$counter" -gt 0 ]; then
-            wait_server_ports_free
+        # Only wait for ports and restart if the previous daemon actually exited.
+        # If the process is still alive, the ports are bound by a healthy but
+        # slow-starting server — just retry the readiness check.
+        if [ "$counter" -eq 0 ] || ! pgrep -x clickhouse-serv > /dev/null 2>&1; then
+            [ "$counter" -gt 0 ] && wait_server_ports_free
+            clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
         fi
-        # use root to match with current uid
-        clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
-        sleep 20
+        sleep 10
         counter=$((counter + 1))
     done
 }
