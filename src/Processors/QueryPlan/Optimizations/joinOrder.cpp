@@ -166,11 +166,6 @@ bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & ri
     {
         auto member_rel = member.getSourceRelations().getSingleBit();
 
-        // TODO
-        LOG_TRACE(&Poco::Logger::get("JoinOrderOptimizer"),
-            "Equivalence class member: relation {} `{}`; checking connectivity between sets {} and {}",
-            *member_rel, member.getColumnName(), toString(left), toString(right));
-
         if (!member_rel || !left.test(*member_rel))
             continue;
 
@@ -503,10 +498,6 @@ static double computeJoinCost(
     const std::shared_ptr<DPJoinEntry> & right,
     double selectivity)
 {
-    // TODO: remove it
-    LOG_TRACE(&Poco::Logger::get("JoinOrderOptimizer"), "Computing join cost: left cost {}, right cost {}, selectivity {}, left rows {}, right rows {}",
-        left->cost, right->cost, selectivity, left->estimated_rows.value(), right->estimated_rows.value());
-
     return left->cost + right->cost + selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1));
 }
 
@@ -734,8 +725,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
     // This is a join node - create using the join constructor
     auto left = buildPhysicalPlan(dptable, entry.left);
     auto right = buildPhysicalPlan(dptable, entry.right);
-    auto new_best_plan = std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.estimated_rows, std::move(join_operator));
-    return new_best_plan;
+    return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.estimated_rows, std::move(join_operator));
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
@@ -816,9 +806,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                     std::vector<JoinActionRef *> edge;
                     for (auto & edge_it : applicable_edge)
                     {
-                        LOG_TEST(log, "Bitset Rep. left: {}, right: {}, edge: {}", toString(left->relations),
-                            toString(right->relations), toString(edge_it->getSourceRelations()));
-
                         if (connects(edge_it, left->relations, right->relations))
                         {
                             LOG_TEST(log, "Adding predicate connecting {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
@@ -858,11 +845,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                             join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,
                             std::ranges::to<std::vector>(edge | std::views::transform([](const auto * e) { return *e; })));
                         auto new_best_plan = std::make_shared<DPJoinEntry>(left, right, new_cost, cardinality, std::move(join_operator));
-
-                        // TODO
-                        for (auto* e : edge) {
-                            LOG_TEST(log, "Plan {} has edges: {}", toString(combined_relations), e->dump());
-                        }
 
                         LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
                             new_best_plan->dump(), new_best_plan->left->dump(), new_best_plan->right->dump(),

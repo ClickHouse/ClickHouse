@@ -10,6 +10,59 @@
 namespace DB
 {
 
+// generates S subset X, where S is not empty
+template <std::unsigned_integral Tuint>
+class NonEmptySubsetIterator
+{
+public:
+    using bitvector_t = Tuint;
+    
+    constexpr explicit NonEmptySubsetIterator(const bitvector_t x) noexcept : start(x) {}
+    
+    constexpr Tuint getFullSet() const noexcept { return start; }
+
+    class Iterator 
+    {
+    public:
+        using value_type = Tuint;
+        using difference_type = std::ptrdiff_t;
+
+        constexpr Iterator(Tuint start_, Tuint current_) noexcept
+            : start(start_), current(current_) {}
+
+        constexpr Tuint operator*() const noexcept { return current; }
+
+        constexpr Iterator& operator++() noexcept
+        {
+            current = (start & (current - start)); 
+            return *this;
+        }
+
+        constexpr Iterator operator++(int) noexcept
+        {
+            Iterator temp = *this;
+            ++(*this);
+            return temp;
+        }
+
+        constexpr bool operator==(const Iterator& other) const noexcept
+        {
+            return current == other.current;
+        }
+        
+    private:
+        Tuint start;
+        Tuint current;
+    };
+
+    // Range interface factory hooks
+    constexpr Iterator begin() const noexcept { return Iterator(start, start & (-start)); }
+    constexpr Iterator end() const noexcept   { return Iterator(start, start); } 
+
+private:
+    bitvector_t start;
+};
+
 template <class TConsumer, class TDptable, class TQueryGraph, std::unsigned_integral Tuint>
 class EnumCcpSub
 {
@@ -105,9 +158,10 @@ void EnumCcpSub<TConsumer, TDptable, TQueryGraph, Tuint>::enumerate(
         if (std::popcount(s) <= 1)
             continue;
 
-        for (NonEmptySubsetIterator<Tuint> s_iter(s); s_iter.isValid(); ++s_iter)
+        NonEmptySubsetIterator<Tuint> subsets(s);
+        for (auto s_iter : subsets)
         {
-            const Tuint lhs = s_iter.get();
+            const Tuint lhs = s_iter;
             const Tuint rhs = (s ^ lhs);
             LOG_TEST(log, "Enumerating subset S: {}, lhs: {}, rhs: {}", toBinaryString(s), toBinaryString(lhs), toBinaryString(rhs));
 
