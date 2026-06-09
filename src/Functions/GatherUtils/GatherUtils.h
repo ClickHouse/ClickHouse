@@ -4,7 +4,6 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <Functions/GatherUtils/IValueSource.h>
 #include <Functions/GatherUtils/IArraySource.h>
@@ -44,7 +43,7 @@ std::unique_ptr<IArraySource> createArraySource(const ColumnArray & col, bool is
 std::unique_ptr<IValueSource> createValueSource(const IColumn & col, bool is_const, size_t total_rows);
 std::unique_ptr<IArraySink> createArraySink(ColumnArray & col, size_t column_size);
 
-ColumnArray::MutablePtr concat(const VectorWithMemoryTracking<std::unique_ptr<IArraySource>> & sources);
+ColumnArray::MutablePtr concat(const std::vector<std::unique_ptr<IArraySource>> & sources);
 
 ColumnArray::MutablePtr sliceFromLeftConstantOffsetUnbounded(IArraySource & src, size_t offset);
 ColumnArray::MutablePtr sliceFromLeftConstantOffsetBounded(IArraySource & src, size_t offset, ssize_t length);

@@ -7,4 +7,6 @@ title: 'Set'
 doc_type: 'reference'
 ---
 
+# Set
+
 Used for the right half of an [IN](/sql-reference/operators/in) expression.

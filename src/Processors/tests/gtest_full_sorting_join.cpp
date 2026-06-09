@@ -7,7 +7,6 @@
 #include <Poco/AutoPtr.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeString.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/randomSeed.h>
 
