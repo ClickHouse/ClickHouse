@@ -144,9 +144,13 @@ def generate_dict_configs():
         logging.debug(f"Found dictionary {path}")
         dictionaries.append(path)
 
-    node = cluster.add_instance(
+    cluster.add_instance(
         "node", main_configs=main_configs, dictionaries=dictionaries, with_redis=True
     )
+    cluster.add_instance(
+        "node2", main_configs=main_configs, with_redis=True
+    )
+
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -215,7 +219,7 @@ def test_redis_dictionaries(started_cluster, id):
 
 
 def test_redis_storage_type_key_constraints(started_cluster):
-    node = started_cluster.instances["node"]
+    node = started_cluster.instances["node2"]
     host = started_cluster.redis_host
 
     DB_INDEX = sum(len(dicts) for dicts in DICTIONARIES) + 1  # Pick a DB index that is not used by any dictionary.
@@ -223,8 +227,8 @@ def test_redis_storage_type_key_constraints(started_cluster):
     redis_client = redis.Redis(
         host="localhost", port=started_cluster.redis_port, password="clickhouse", db=DB_INDEX
     )
-    redis_client.set("k1", "v1")
     redis_client.flushdb()
+    redis_client.set("k1", "v1")
 
     node.query("DROP DICTIONARY IF EXISTS test_redis_simple_single")
     node.query(
