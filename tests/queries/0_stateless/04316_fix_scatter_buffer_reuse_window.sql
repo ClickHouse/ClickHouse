@@ -1,6 +1,6 @@
 -- Test that ScatterByPartitionTransform correctly re-initializes its hash buffer
--- across multiple blocks, so a later block that is <= a prior block's size never
--- reuses stale hash values from the previous block.
+-- across multiple blocks. Bug: resize_fill only fills the grown tail, leaving
+-- stale values when a later block is <= prior block size.
 SELECT count() AS bad_rows
 FROM
 (

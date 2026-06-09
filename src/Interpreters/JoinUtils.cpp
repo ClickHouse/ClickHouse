@@ -20,6 +20,7 @@
 #include <Core/BlockNameMap.h>
 
 #include <base/FnTraits.h>
+#include <algorithm>
 #include <ranges>
 
 namespace DB
@@ -580,19 +581,8 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
 
 static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Block & block, size_t num_shards)
 {
-    chassert(isPowerOf2(num_shards));
-    /// Knuth multiplicative (Fibonacci) hash: multiply by floor(2^32/phi) = 0x9E3779B1
-    /// and take the top log2(num_shards) bits. All 32 CRC32C output bits contribute to
-    /// the bucket selection rather than just the low bits (which have poor avalanche).
-    const UInt32 K = static_cast<UInt32>(__builtin_ctz(static_cast<unsigned>(num_shards)));
-    return scatterBlockByHashImpl(
-        key_columns_names,
-        block,
-        num_shards,
-        [K](size_t hash) -> size_t
-        {
-            return K ? static_cast<UInt32>(hash) * 0x9E3779B1u >> (32u - K) : 0u;
-        });
+    size_t mask = num_shards - 1;
+    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [mask](size_t hash) { return hash & mask; });
 }
 
 static Blocks scatterBlockByHashGeneric(const Strings & key_columns_names, const Block & block, size_t num_shards)
