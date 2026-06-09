@@ -11,7 +11,6 @@ from helpers.external_sources import SourceRedis
 
 cluster = ClickHouseCluster(__file__)
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-dict_configs_path = os.path.join(SCRIPT_DIR, "configs/dictionaries")
 
 KEY_FIELDS = {
     "simple": [Field("KeyField", "UInt64", is_key=True, default_value_for_get=9999999)],
@@ -93,7 +92,7 @@ LAYOUTS = [
 DICTIONARIES = []
 
 
-def get_dict(source, layout, fields, suffix_name=""):
+def get_dict(source, layout, fields, suffix_name, dict_configs_path):
     structure = DictionaryStructure(layout, fields)
     dict_name = source.name + "_" + layout.name + "_" + suffix_name
     dict_path = os.path.join(dict_configs_path, dict_name + ".xml")
@@ -107,6 +106,10 @@ def get_dict(source, layout, fields, suffix_name=""):
 def generate_dict_configs():
     global DICTIONARIES
     global cluster
+    dict_configs_path = os.path.join(SCRIPT_DIR, "configs/dictionaries")
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
+    if worker_id:
+        dict_configs_path += f"_{worker_id}"
 
     if os.path.exists(dict_configs_path):
         shutil.rmtree(dict_configs_path)
@@ -134,7 +137,7 @@ def generate_dict_configs():
                 if not source.compatible_with_layout(layout):
                     continue
                 fields = KEY_FIELDS[get_key_kind(source, layout)] + [field]
-                DICTIONARIES[i].append(get_dict(source, layout, fields, field.name))
+                DICTIONARIES[i].append(get_dict(source, layout, fields, field.name, dict_configs_path))
                 db_index += 1
 
     main_configs = []
@@ -147,10 +150,6 @@ def generate_dict_configs():
     cluster.add_instance(
         "node", main_configs=main_configs, dictionaries=dictionaries, with_redis=True
     )
-    cluster.add_instance(
-        "node2", main_configs=main_configs, with_redis=True
-    )
-
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -219,7 +218,7 @@ def test_redis_dictionaries(started_cluster, id):
 
 
 def test_redis_storage_type_key_constraints(started_cluster):
-    node = started_cluster.instances["node2"]
+    node = started_cluster.instances["node"]
     host = started_cluster.redis_host
 
     DB_INDEX = sum(len(dicts) for dicts in DICTIONARIES) + 1  # Pick a DB index that is not used by any dictionary.
