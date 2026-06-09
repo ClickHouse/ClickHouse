@@ -152,10 +152,17 @@ class FuzzerLogParser:
                     substring = substring.strip().rstrip(".").strip("'\"")
                     format_message = substring
                 break
+        is_check_failed = bool(
+            error_lines and re.search(r"\w+Sanitizer: CHECK failed:", error_lines[0])
+        )
         # keep all lines before next log line
         for i, line in enumerate(error_lines):
             if "] {" in line and "} <" in line or line.startswith("    #"):
                 # it's a new log line or sanitizer frame - break
+                error_lines = error_lines[:i]
+                break
+            elif is_check_failed and not line.strip():
+                # CHECK failed reports end at the first blank line
                 error_lines = error_lines[:i]
                 break
         error_output = "\n".join(error_lines)
