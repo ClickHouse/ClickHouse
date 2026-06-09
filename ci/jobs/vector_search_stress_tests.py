@@ -201,7 +201,7 @@ test_params_hackernews_10m = {
     TRUTH_SET_FILES: [
         "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_10m_1k.tar"
     ],
-    QUANTIZATION: "rabitq",
+    QUANTIZATION: "turboquant",
     VECTOR_INDEX_TYPE: "fastknn",
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
@@ -223,7 +223,7 @@ test_params_cohere_wiki_20m = {
     TRUTH_SET_FILES: [
         "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m_25k.tar"
     ],
-    QUANTIZATION: "rabitq",
+    QUANTIZATION: "turboquant",
     VECTOR_INDEX_TYPE: "fastknn",
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
