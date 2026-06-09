@@ -41,7 +41,8 @@ run_warm () {  # $1=label  $2=prefetch
             ProfileEvents['ReaderExecutorBytesFromFilesystemCache'] > 0 AS served_from_cache,
             ProfileEvents['ReaderExecutorBufferSlotAcquired']
                 <= ProfileEvents['ReaderExecutorSourceRequests'] AS no_slot_churn
-        FROM system.query_log WHERE query_id = '$id' AND type = 'QueryFinish'
+        FROM system.query_log
+        WHERE query_id = '$id' AND type = 'QueryFinish' AND current_database = currentDatabase()
     "
 }
 
