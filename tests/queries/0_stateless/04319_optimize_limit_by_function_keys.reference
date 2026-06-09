@@ -187,4 +187,43 @@ SELECT g FROM test ORDER BY x LIMIT 2 BY g, g + 1 SETTINGS optimize_limit_by_fun
 0
 1
 2
+-- Aggregate functions are allowed in LIMIT BY (after GROUP BY); the aggregate key is kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY sum(x);
+SELECT
+    __table1.g AS g,
+    sum(__table1.x) AS `sum(x)`
+FROM default.test AS __table1
+GROUP BY __table1.g
+ORDER BY __table1.g ASC
+LIMIT _CAST(1, \'UInt64\') BY sum(__table1.x)
+SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY sum(x);
+0	18
+1	12
+2	15
+-- A function of an aggregate key is removed, while the aggregate key itself is kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY sum(x), sum(x) + 1;
+SELECT
+    __table1.g AS g,
+    sum(__table1.x) AS `sum(x)`
+FROM default.test AS __table1
+GROUP BY __table1.g
+ORDER BY __table1.g ASC
+LIMIT _CAST(1, \'UInt64\') BY sum(__table1.x)
+SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY sum(x), sum(x) + 1;
+0	18
+1	12
+2	15
+-- Window functions are likewise allowed and kept; a function of a window-function key is removed.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT x FROM test ORDER BY x LIMIT 2 BY sum(x) OVER (PARTITION BY g), (sum(x) OVER (PARTITION BY g)) + 1;
+SELECT __table1.x AS x
+FROM default.test AS __table1
+ORDER BY __table1.x ASC
+LIMIT _CAST(2, \'UInt64\') BY sum(__table1.x) OVER (PARTITION BY __table1.g)
+SELECT x FROM test ORDER BY x LIMIT 2 BY sum(x) OVER (PARTITION BY g), (sum(x) OVER (PARTITION BY g)) + 1;
+0
+1
+2
+3
+4
+5
 DROP TABLE test;

@@ -32,10 +32,6 @@ SELECT g FROM test ORDER BY x LIMIT 2 BY tuple(g, 1);
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(g), g;
 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(g), g;
 
--- A Variant argument is never exposed as a key, so the wrapper is kept.
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Variant(UInt32)'));
-SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Variant(UInt32)'));
-
 -- LIMIT BY inside a subquery is optimized.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM (SELECT g, x FROM test ORDER BY x LIMIT 2 BY toString(g));
 SELECT g FROM (SELECT g, x FROM test ORDER BY x LIMIT 2 BY toString(g));
@@ -53,5 +49,17 @@ SELECT g FROM test ORDER BY x LIMIT 2 BY toString(g) SETTINGS optimize_injective
 -- A key that would unwrap to only constants is kept, so the LIMIT BY is never emptied: the single
 -- constant partition still keeps three rows.
 SELECT count() FROM (SELECT x FROM test ORDER BY x LIMIT 3 BY toString(1));
+
+-- Aggregate functions are allowed in LIMIT BY (after GROUP BY); an aggregate key is kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY sum(x);
+SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY sum(x);
+
+-- An injective wrapper around an aggregate is unwrapped to the aggregate, which is then kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY toString(sum(x));
+SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY toString(sum(x));
+
+-- Window functions behave like aggregates: an injective wrapper is unwrapped to the window function, which is then kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT x FROM test ORDER BY x LIMIT 2 BY toString(sum(x) OVER (PARTITION BY g));
+SELECT x FROM test ORDER BY x LIMIT 2 BY toString(sum(x) OVER (PARTITION BY g));
 
 DROP TABLE test;

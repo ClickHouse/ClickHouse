@@ -24,4 +24,9 @@ SELECT g FROM test ORDER BY x LIMIT 2 BY g, toString(g), g + 1, (g + 1) * 2;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY g, toString(g) SETTINGS optimize_limit_by_function_keys = 0, optimize_injective_functions_in_limit_by = 0;
 SELECT g FROM test ORDER BY x LIMIT 2 BY g, toString(g) SETTINGS optimize_limit_by_function_keys = 0, optimize_injective_functions_in_limit_by = 0;
 
+-- Aggregate keys are allowed and kept, while reducible keys around them are still optimized:
+-- toString(g) and sum(x) + 1 are removed, g and sum(x) remain.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY g, toString(g), sum(x), sum(x) + 1;
+SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY g, toString(g), sum(x), sum(x) + 1;
+
 DROP TABLE test;

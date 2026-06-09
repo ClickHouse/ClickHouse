@@ -67,4 +67,20 @@ SELECT g FROM test ORDER BY x LIMIT 2 BY g, toString(g) SETTINGS optimize_limit_
 0
 1
 2
+-- Aggregate keys are allowed and kept, while reducible keys around them are still optimized:
+-- toString(g) and sum(x) + 1 are removed, g and sum(x) remain.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY g, toString(g), sum(x), sum(x) + 1;
+SELECT
+    __table1.g AS g,
+    sum(__table1.x) AS `sum(x)`
+FROM default.test AS __table1
+GROUP BY __table1.g
+ORDER BY __table1.g ASC
+LIMIT _CAST(1, \'UInt64\') BY
+    __table1.g,
+    sum(__table1.x)
+SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY g, toString(g), sum(x), sum(x) + 1;
+0	18
+1	12
+2	15
 DROP TABLE test;

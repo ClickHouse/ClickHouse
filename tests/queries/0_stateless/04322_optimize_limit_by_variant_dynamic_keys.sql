@@ -1,0 +1,38 @@
+-- { echo }
+
+-- Unlike GROUP BY, LIMIT BY permits Dynamic and Variant keys, so an injective function over such an
+-- argument is unwrapped to it (the rewrite is gated only by injectivity, not by the suspicious type).
+
+SET enable_analyzer = 1;
+SET optimize_limit_by_function_keys = 0;
+SET optimize_injective_functions_in_limit_by = 1;
+
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (g UInt32, x UInt32) ENGINE = MergeTree ORDER BY (g, x);
+INSERT INTO test SELECT number % 3 AS g, number AS x FROM numbers(10);
+
+-- An injective function over a Variant argument is unwrapped to the Variant key.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Variant(UInt32)'));
+SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Variant(UInt32)'));
+
+-- The same holds for a multi-type Variant.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Variant(UInt32, String)'));
+SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Variant(UInt32, String)'));
+
+-- The same holds for a Dynamic argument.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Dynamic'));
+SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Dynamic'));
+
+-- Nested injective functions over a Variant are fully unwrapped.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(toString(CAST(g, 'Variant(UInt32)')));
+SELECT g FROM test ORDER BY x LIMIT 2 BY toString(toString(CAST(g, 'Variant(UInt32)')));
+
+-- A multi-argument injective function exposes a Variant argument as a key alongside the others.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY tuple(CAST(g, 'Variant(UInt32)'), x);
+SELECT g FROM test ORDER BY x LIMIT 2 BY tuple(CAST(g, 'Variant(UInt32)'), x);
+
+-- With the optimization disabled the wrapper is kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Variant(UInt32)')) SETTINGS optimize_injective_functions_in_limit_by = 0;
+SELECT g FROM test ORDER BY x LIMIT 2 BY toString(CAST(g, 'Variant(UInt32)')) SETTINGS optimize_injective_functions_in_limit_by = 0;
+
+DROP TABLE test;

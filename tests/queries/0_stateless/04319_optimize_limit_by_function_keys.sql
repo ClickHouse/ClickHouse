@@ -54,4 +54,16 @@ SELECT g FROM test ORDER BY x LIMIT -2 BY g, g + 1;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY g, g + 1 SETTINGS optimize_limit_by_function_keys = 0;
 SELECT g FROM test ORDER BY x LIMIT 2 BY g, g + 1 SETTINGS optimize_limit_by_function_keys = 0;
 
+-- Aggregate functions are allowed in LIMIT BY (after GROUP BY); the aggregate key is kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY sum(x);
+SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY sum(x);
+
+-- A function of an aggregate key is removed, while the aggregate key itself is kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY sum(x), sum(x) + 1;
+SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY sum(x), sum(x) + 1;
+
+-- Window functions are likewise allowed and kept; a function of a window-function key is removed.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT x FROM test ORDER BY x LIMIT 2 BY sum(x) OVER (PARTITION BY g), (sum(x) OVER (PARTITION BY g)) + 1;
+SELECT x FROM test ORDER BY x LIMIT 2 BY sum(x) OVER (PARTITION BY g), (sum(x) OVER (PARTITION BY g)) + 1;
+
 DROP TABLE test;
