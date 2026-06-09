@@ -116,8 +116,11 @@
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Server/CloudPlacementInfo.h>
+#include <Server/DistributedQuery/ExchangeConnections.h>
+#include <Server/DistributedQuery/ExchangeServer.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
+#include <Server/StatelessWorker/StatelessWorkerEndpoint.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
@@ -289,6 +292,9 @@ namespace ServerSetting
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
     extern const ServerSettingsDouble mark_cache_size_ratio;
+    extern const ServerSettingsString unique_key_index_cache_policy;
+    extern const ServerSettingsUInt64 unique_key_index_cache_size_bytes;
+    extern const ServerSettingsDouble unique_key_index_cache_size_ratio;
     extern const ServerSettingsUInt64 max_fetch_partition_thread_pool_size;
     extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_backups_io_thread_pool_free_size;
@@ -2030,6 +2036,82 @@ try
     LOG_DEBUG(log, "Initializing interserver credentials.");
     global_context->updateInterserverCredentials(config());
 
+    std::shared_ptr<StatelessWorkerEndpoint> stateless_worker_endpoint_ptr{nullptr};
+    String stateless_worker_endpoint_name;
+    if (config().getBool("stateless_worker_server.enabled", false))
+    {
+        String stateless_worker_endpoint = config().getString("stateless_worker_server.endpoint", "localhost");
+        stateless_worker_endpoint_ptr = std::make_shared<StatelessWorkerEndpoint>();
+        stateless_worker_endpoint_name = stateless_worker_endpoint_ptr->getId(stateless_worker_endpoint);
+        global_context->getInterserverIOHandler().addEndpoint(stateless_worker_endpoint_name, stateless_worker_endpoint_ptr);
+        LOG_DEBUG(log, "Added stateless worker endpoint '{}'.", stateless_worker_endpoint_name);
+    }
+
+    SCOPE_EXIT({
+        if (stateless_worker_endpoint_ptr)
+        {
+            /// Remove the same endpoint that was registered (the configured name may differ from "localhost").
+            LOG_DEBUG(log, "Shutting down stateless worker endpoint '{}'.", stateless_worker_endpoint_name);
+            global_context->getInterserverIOHandler().removeEndpointIfExists(stateless_worker_endpoint_name);
+
+            stateless_worker_endpoint_ptr->blocker.cancelForever();
+            stateless_worker_endpoint_ptr->shutdown();
+            /// Acquire the lock to wait for all in-flight requests to finish.
+            std::lock_guard lock(stateless_worker_endpoint_ptr->rwlock);
+        }
+        stateless_worker_endpoint_ptr.reset();
+    });
+
+    #ifdef OS_LINUX
+    ExchangeConnectionsPtr exchange_connections_ptr = ExchangeConnections::instance();
+    std::vector<std::shared_ptr<ExchangeServer>> exchange_servers;
+    if (auto streaming_exchange_port = config().getUInt("distributed_query.streaming_exchange_port", 0))
+    {
+        if (streaming_exchange_port > 65535)
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "`distributed_query.streaming_exchange_port` must be in range 1..65535, got {}", streaming_exchange_port);
+
+        /// The exchange handshake is unauthenticated, so the listener is never bound to all interfaces
+        /// implicitly: the streaming exchange is enabled only when explicit listen host(s) are given.
+        Strings exchange_listen_hosts = DB::getMultipleValuesFromConfig(config(), "distributed_query", "streaming_exchange_listen_host");
+        if (exchange_listen_hosts.empty())
+        {
+            LOG_ERROR(log, "`distributed_query.streaming_exchange_port` is set but no "
+                "`distributed_query.streaming_exchange_listen_host` is configured; the streaming exchange "
+                "server is not started. Specify a listen host to enable it.");
+        }
+        else
+        {
+            for (const auto & listen_host : exchange_listen_hosts)
+            {
+                try
+                {
+                    exchange_servers.emplace_back(std::make_shared<ExchangeServer>(listen_host, streaming_exchange_port, exchange_connections_ptr));
+                    exchange_servers.back()->start();
+                }
+                catch (Poco::Exception & e)
+                {
+                    LOG_INFO(log, "Failed to start exchange server on {}:{}: {}",
+                        listen_host, streaming_exchange_port, e.displayText());
+                }
+            }
+            if (exchange_servers.empty())
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to start ExchangeServer on port {}", streaming_exchange_port);
+        }
+    }
+
+    SCOPE_EXIT({
+        for (auto & exchange_server_ptr : exchange_servers)
+        {
+            exchange_server_ptr->stop();
+            exchange_server_ptr.reset();
+        }
+    });
+    #else
+    if (config().getUInt("distributed_query.streaming_exchange_port", 0))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ExchangeServer is not supported on non-linux platform");
+    #endif
+
     /// Set up caches.
 
     JemallocCacheArena::setEnabled(server_settings[ServerSetting::use_separate_cache_arena]);
@@ -2055,6 +2137,16 @@ try
         LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
+
+    String unique_key_index_cache_policy_name = server_settings[ServerSetting::unique_key_index_cache_policy];
+    size_t unique_key_index_cache_size = server_settings[ServerSetting::unique_key_index_cache_size_bytes];
+    double unique_key_index_cache_size_ratio = server_settings[ServerSetting::unique_key_index_cache_size_ratio];
+    if (unique_key_index_cache_size > max_cache_size)
+    {
+        unique_key_index_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered UNIQUE KEY index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(unique_key_index_cache_size));
+    }
+    global_context->setUniqueKeyIndexCache(unique_key_index_cache_policy_name, unique_key_index_cache_size, unique_key_index_cache_size_ratio);
 
     String primary_index_cache_policy = server_settings[ServerSetting::primary_index_cache_policy];
     size_t primary_index_cache_size = server_settings[ServerSetting::primary_index_cache_size];
@@ -2558,6 +2650,7 @@ try
 
                 global_context->updateUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateMarkCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateUniqueKeyIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updatePrimaryIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexMarkCacheConfiguration(config(), max_cache_size_in_bytes);
@@ -3000,7 +3093,11 @@ try
         buildLoggers(config(), logger());
         initializeAzureSDKLogger(server_settings, logger().getLevel());
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
-        attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
+        bool has_keeper_server = false;
+#if USE_NURAFT
+        has_keeper_server = global_context->tryGetKeeperDispatcher() != nullptr;
+#endif
+        attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper, has_keeper_server);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
         /// Firstly remove partially dropped databases, to avoid race with Materialized...SyncThread,
