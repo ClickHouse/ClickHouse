@@ -133,7 +133,11 @@ void generateManifestList(
     /// verbatim from the parent into the new manifest list. Used by manifest-only compaction to
     /// carry delete-file manifests forward unchanged, since it rewrites only the data manifests.
     /// Copied in addition to manifest_entry_names and independent of use_previous_snapshots.
-    const std::unordered_set<String> & carry_forward_manifest_paths = {});
+    const std::unordered_set<String> & carry_forward_manifest_paths = {},
+    /// Optional per-entry partition_spec_id parallel to manifest_entry_names. When non-empty, each
+    /// manifest-list entry records the supplied spec id instead of the table's default spec id, so a
+    /// manifest-only rewrite of a partition-evolved table keeps each manifest under its own spec.
+    const std::vector<Int64> & entry_partition_spec_ids = {});
 
 class IcebergStorageSink final : public SinkToStorage
 {

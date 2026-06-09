@@ -553,8 +553,14 @@ void generateManifestList(
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots,
     const std::vector<ManifestListEntryExistingCounts> & existing_entry_counts,
-    const std::unordered_set<String> & carry_forward_manifest_paths)
+    const std::unordered_set<String> & carry_forward_manifest_paths,
+    const std::vector<Int64> & entry_partition_spec_ids)
 {
+    if (!entry_partition_spec_ids.empty() && entry_partition_spec_ids.size() != manifest_entry_names.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "entry_partition_spec_ids size ({}) does not match number of manifest entries ({})",
+            entry_partition_spec_ids.size(), manifest_entry_names.size());
     /// When provided, existing_entry_counts must be parallel to manifest_entry_names: it marks
     /// this as a manifest-only rewrite and supplies the existing-file/row counts per entry.
     if (!existing_entry_counts.empty() && existing_entry_counts.size() != manifest_entry_names.size())
@@ -583,7 +589,9 @@ void generateManifestList(
 
         entry.field(Iceberg::f_manifest_path) = manifest_entry_names[entry_idx].serialize();
         entry.field(Iceberg::f_manifest_length) = manifest_entry_sizes[entry_idx];
-        entry.field(Iceberg::f_partition_spec_id) = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
+        entry.field(Iceberg::f_partition_spec_id) = entry_partition_spec_ids.empty()
+            ? metadata->getValue<Int64>(Iceberg::f_default_spec_id)
+            : entry_partition_spec_ids[entry_idx];
         if (version > 1)
         {
             entry.field(Iceberg::f_content) = static_cast<Int32>(content_type);

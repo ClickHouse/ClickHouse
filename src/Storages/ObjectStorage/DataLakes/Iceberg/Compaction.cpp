@@ -459,37 +459,56 @@ static bool writeConsolidatedManifestFile(
             "Iceberg metadata does not contain a schema entry matching current-schema-id {}",
             current_schema_id);
 
-    auto partition_spec_id = metadata_object->getValue<Int64>(f_default_spec_id);
     auto partitions_specs = metadata_object->getArray(f_partition_specs);
-    Poco::JSON::Object::Ptr partition_spec;
 
-    for (size_t i = 0; i < partitions_specs->size(); ++i)
+    /// After partition evolution a snapshot can reference manifests written under different partition
+    /// specs. Each compacted manifest must be rewritten under the spec its source files actually used
+    /// (re-encoding old partition tuples under the default spec would corrupt partition metadata and
+    /// pruning). Resolve and cache the spec JSON, partition column names, and partition value types
+    /// per spec-id on demand instead of assuming the default spec.
+    struct ResolvedPartitionSpec
     {
-        auto current_partition_spec = partitions_specs->getObject(static_cast<UInt32>(i));
-        if (current_partition_spec->getValue<Int64>(Iceberg::f_spec_id) == partition_spec_id)
+        Poco::JSON::Object::Ptr spec;
+        std::vector<String> partition_columns;
+        std::vector<DataTypePtr> partition_types;
+    };
+    std::unordered_map<Int32, ResolvedPartitionSpec> resolved_specs;
+    auto resolve_partition_spec = [&](Int32 spec_id) -> const ResolvedPartitionSpec &
+    {
+        if (auto it = resolved_specs.find(spec_id); it != resolved_specs.end())
+            return it->second;
+
+        Poco::JSON::Object::Ptr spec;
+        for (UInt32 i = 0; i < partitions_specs->size(); ++i)
         {
-            partition_spec = current_partition_spec;
-            break;
+            auto candidate = partitions_specs->getObject(i);
+            if (candidate->getValue<Int64>(Iceberg::f_spec_id) == spec_id)
+            {
+                spec = candidate;
+                break;
+            }
         }
-    }
+        if (!spec)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg metadata does not contain a partition spec entry matching spec-id {}",
+                spec_id);
 
-    if (!partition_spec)
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Iceberg metadata does not contain a partition spec entry matching default-spec-id {}",
-            partition_spec_id);
+        ResolvedPartitionSpec resolved;
+        resolved.spec = spec;
+        auto spec_fields = spec->getArray(f_fields);
+        for (UInt32 i = 0; i < spec_fields->size(); ++i)
+            resolved.partition_columns.push_back(spec_fields->getObject(i)->getValue<String>(f_name));
+        resolved.partition_types
+            = ChunkPartitioner(spec_fields, current_schema->getArray(Iceberg::f_fields), context, sample_block_).getResultTypes();
+        return resolved_specs.emplace(spec_id, std::move(resolved)).first->second;
+    };
 
-    std::vector<String> partition_columns;
-    auto fields_from_partition_spec = partition_spec->getArray(f_fields);
-    for (UInt32 i = 0; i < fields_from_partition_spec->size(); ++i)
-    {
-        partition_columns.push_back(fields_from_partition_spec->getObject(i)->getValue<String>(f_name));
-    }
-
-    // Collect data files grouped by partition key
-    // Map: partition_key_string -> { partition_values (Row), file paths }
+    // Collect data files grouped by (partition spec-id, partition key)
     struct PartitionData
     {
+        /// The partition spec the source files were written with; the rewritten manifest reuses it.
+        Int32 partition_spec_id = 0;
         Row partition_values;
         std::vector<IcebergPathFromMetadata> file_paths;
         /// Parallel to file_paths: {record_count, file_size_in_bytes} from the source manifest entry.
@@ -542,16 +561,19 @@ static bool writeConsolidatedManifestFile(
             continue;
         }
         ++num_data_manifests;
+        const Int32 source_partition_spec_id = manifest_file.partition_spec_id;
 
         auto files_handle = getManifestFileEntriesHandle(
             object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
 
         for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {
-            // Build a string key that uniquely identifies this partition.
+            // Build a string key that uniquely identifies this partition. Group by the source
+            // partition spec-id as well: files written under different specs must not be merged into
+            // one manifest, since a manifest carries a single partition spec.
             // FieldVisitorDump preserves the type tag, so e.g. UInt64{42} and Int64{42}
             // do not collide as the same partition.
-            String partition_key;
+            String partition_key = std::to_string(source_partition_spec_id) + "|";
             FieldVisitorDump dump_visitor;
             for (const auto & val : data_file->parsed_entry->partition_key_value)
                 partition_key += applyVisitor(dump_visitor, val) + "|";
@@ -560,6 +582,7 @@ static bool writeConsolidatedManifestFile(
                 partitions_map.emplace(partition_key, PartitionData(schema_fields));
 
             auto & pd = partitions_map.at(partition_key);
+            pd.partition_spec_id = source_partition_spec_id;
             pd.partition_values = data_file->parsed_entry->partition_key_value;
             // A single manifest file within the current snapshot should not list the
             // same data file twice
@@ -651,14 +674,15 @@ static bool writeConsolidatedManifestFile(
         generated_metadata_info.path,
         current_snapshot_id);
 
-    // Write one manifest file per partition
-    auto partition_types = ChunkPartitioner(fields_from_partition_spec, current_schema->getArray(Iceberg::f_fields), context, sample_block_).getResultTypes();
-
+    // Write one manifest file per (partition spec, partition value) group.
     std::vector<IcebergPathFromMetadata> consolidated_manifest_paths;
     std::vector<Int64> manifest_entry_sizes;
     /// Parallel to consolidated_manifest_paths. A manifest-only rewrite references data files that
     /// already exist, so the manifest list must report them as existing (not added) files/rows.
     std::vector<ManifestListEntryExistingCounts> existing_entry_counts;
+    /// Parallel to consolidated_manifest_paths: each manifest's partition spec-id, so the manifest
+    /// list records the spec each (possibly partition-evolved) manifest was written under.
+    std::vector<Int64> entry_partition_spec_ids;
 
     /// Defined before the write phase so it can be called on both commit conflict and exceptions.
     /// Each manifest path is tracked in consolidated_manifest_paths before the corresponding
@@ -723,11 +747,15 @@ static bool writeConsolidatedManifestFile(
             existing_entry_counts.push_back(
                 {static_cast<Int64>(pd.file_paths.size()), manifest_existing_rows});
 
+            /// Rewrite this manifest under the partition spec its source files used, not the default.
+            const auto & resolved_spec = resolve_partition_spec(pd.partition_spec_id);
+            entry_partition_spec_ids.push_back(pd.partition_spec_id);
+
             generateManifestFile(
                 metadata_object,
-                partition_columns,
+                resolved_spec.partition_columns,
                 pd.partition_values,
-                partition_types,
+                resolved_spec.partition_types,
                 pd.file_paths,
                 file_row_counts,
                 file_byte_counts,
@@ -735,8 +763,8 @@ static bool writeConsolidatedManifestFile(
                 sample_block_,
                 new_snapshot.snapshot,
                 write_format,
-                partition_spec,
-                partition_spec_id,
+                resolved_spec.spec,
+                pd.partition_spec_id,
                 *buffer_manifest,
                 Iceberg::FileContentType::DATA,
                 /* user_defined_sequence_number */ std::nullopt,
@@ -776,7 +804,8 @@ static bool writeConsolidatedManifestFile(
             Iceberg::FileContentType::DATA,
             false,
             existing_entry_counts,
-            /* carry_forward_manifest_paths */ delete_manifest_paths);
+            /* carry_forward_manifest_paths */ delete_manifest_paths,
+            /* entry_partition_spec_ids */ entry_partition_spec_ids);
         buffer_manifest_list->finalize();
 
         // Commit: write metadata file with If-None-Match + update version hint with ETag-based CAS.

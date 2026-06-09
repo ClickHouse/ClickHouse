@@ -514,6 +514,72 @@ def test_optimize_manifest_files_preserves_sort_order_id(started_cluster_iceberg
     assert data_file_sort_order_ids(new_manifests) == source_sort_order_ids
 
 
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_optimize_manifest_files_partition_evolution(started_cluster_iceberg_with_spark, storage_type):
+    """
+    OPTIMIZE TABLE ... MANIFEST on a table whose partition spec evolved must rewrite each manifest
+    under the partition spec its source files were written with, not the default spec. Re-encoding
+    old partition tuples under the default spec would corrupt partition metadata, so the end-to-end
+    check is that the data is still correct and Spark (a reference reader) can read it back.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_manifest_partevo_" + storage_type + "_" + get_uuid_str()
+
+    # spec 0: partitioned by bucket(4, id).
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg
+        PARTITIONED BY (bucket(4, id))
+        TBLPROPERTIES ('format-version' = '2')
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range(0, 20)")
+    spark.sql(f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range(20, 40)")
+
+    # Evolve the partition spec → spec 1.
+    spark.sql(f"ALTER TABLE {TABLE_NAME} ADD PARTITION FIELD truncate(2, data)")
+    spark.sql(f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range(40, 60)")
+    spark.sql(f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range(60, 80)")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 2,
+        },
+    )
+
+    # Data is unchanged after the manifest-only rewrite of a partition-evolved table.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == instance.query(
+        "SELECT number FROM numbers(0, 80)"
+    )
+
+    # Spark must still read the table back correctly (partition metadata not corrupted).
+    default_download_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+    )
+    spark_rows = spark.read.format("iceberg").load(
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    ).collect()
+    assert len(spark_rows) == 80
+    assert sorted(row["id"] for row in spark_rows) == list(range(0, 80))
+
+
 def test_optimize_manifest_files_preserves_entry_lineage(started_cluster_iceberg_with_spark):
     """
     OPTIMIZE TABLE ... MANIFEST is metadata-only, so each rewritten manifest entry must stay an

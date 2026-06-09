@@ -59,6 +59,10 @@ struct ManifestFileCacheKey
     Int64 added_sequence_number;
     Int64 added_snapshot_id;
     Iceberg::ManifestFileContentType content_type;
+    /// Partition spec the manifest was written with. After partition evolution a snapshot can
+    /// reference manifests written under different specs, so this is needed to rewrite each
+    /// manifest under its own spec during compaction.
+    Int32 partition_spec_id;
 };
 
 using ManifestFileCacheKeys = std::vector<ManifestFileCacheKey>;
