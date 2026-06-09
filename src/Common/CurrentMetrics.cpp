@@ -324,6 +324,8 @@
     M(FilesystemCacheSize, "Filesystem cache size in bytes") \
     M(FilesystemCacheSizeLimit, "Filesystem cache size limit in bytes") \
     M(FilesystemCacheElements, "Filesystem cache elements (file segments)") \
+    M(FilesystemCachePriorityQueueElements, "Total number of entries in the filesystem cache priority queue, including invalidated entries pending removal") \
+    M(FilesystemCacheInvalidatedElements, "Number of invalidated (zero size, pending removal) entries in the filesystem cache priority queue") \
     M(FilesystemCacheDownloadQueueElements, "Filesystem cache elements in download queue") \
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
@@ -505,6 +507,9 @@
     M(StatelessWorkerThreads, "Number of threads in the stateless worker thread pool.") \
     M(StatelessWorkerThreadsActive, "Number of threads in the stateless worker thread pool running a task.") \
     M(StatelessWorkerThreadsScheduled, "Number of queued or active jobs in the stateless worker thread pool.") \
+    M(ExchangeServerThreads, "Number of threads in the distributed exchange server handshake thread pool.") \
+    M(ExchangeServerThreadsActive, "Number of threads in the distributed exchange server handshake thread pool running a task.") \
+    M(ExchangeServerThreadsScheduled, "Number of queued or active jobs in the distributed exchange server handshake thread pool.") \
     M(ReadonlyDisks, "Number of disks that were marked as readonly during disk check.") \
     M(BrokenDisks, "Number of disks disks that were marked as broken during disk check.") \
     M(TaskTrackerThreads, "Number of threads used by the distributed query remote task tracker.") \
