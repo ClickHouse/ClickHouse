@@ -240,4 +240,54 @@ TEST_F(AzureAbfssParsingTest, TableMetadataGetLocationWithEndpointVirtualHostedD
     EXPECT_EQ(location, "https://my.dotted.bucket.s3.mycompany.com/path/to/table/");
 }
 
+TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationS3NoEndpoint)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://bucket123/music/albums");
+
+    const std::string metadata_file =
+        "s3://bucket123/music/albums/metadata/00005-a4c1e01b-61ce-4131-9ea8-62591e3a9907.metadata.json";
+    EXPECT_EQ(
+        metadata.getMetadataLocation(metadata_file),
+        "metadata/00005-a4c1e01b-61ce-4131-9ea8-62591e3a9907.metadata.json");
+}
+
+/// A REST catalog (e.g. Apache Polaris) can vend an `s3.endpoint` that is a bare host such as
+/// `http://minio:9000`. The metadata file path must still be made relative to the table
+/// location and must not be polluted by the endpoint. Before the fix this returned the full
+/// `s3://bucket123/...` URI because the endpoint-rebuilt location no longer shared its prefix
+/// with the metadata file URI.
+TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationS3VendedEndpointBareHost)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://bucket123/music/albums");
+    metadata.setEndpoint("http://minio:9000");
+
+    const std::string metadata_file =
+        "s3://bucket123/music/albums/metadata/00005-a4c1e01b-61ce-4131-9ea8-62591e3a9907.metadata.json";
+    EXPECT_EQ(
+        metadata.getMetadataLocation(metadata_file),
+        "metadata/00005-a4c1e01b-61ce-4131-9ea8-62591e3a9907.metadata.json");
+}
+
+/// The vended `s3.endpoint` may also already include the bucket, e.g.
+/// `http://minio:9000/bucket123`. This is the shape the previous fix attempt could not handle:
+/// stripping the endpoint left `music/albums` while the metadata URI still carried the leading
+/// `bucket123/`, so the prefix comparison failed.
+TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationS3VendedEndpointIncludesBucket)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://bucket123/music/albums");
+    metadata.setEndpoint("http://minio:9000/bucket123");
+
+    const std::string metadata_file =
+        "s3://bucket123/music/albums/metadata/00005-a4c1e01b-61ce-4131-9ea8-62591e3a9907.metadata.json";
+    EXPECT_EQ(
+        metadata.getMetadataLocation(metadata_file),
+        "metadata/00005-a4c1e01b-61ce-4131-9ea8-62591e3a9907.metadata.json");
+}
+
 }
