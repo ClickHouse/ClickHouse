@@ -37,6 +37,16 @@ SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(globalNullIn(k
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(has([0, 3], k), 0)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(has([0, 3], k), 0) SETTINGS force_primary_key = 1;
 
+-- Boolean context propagates through `or`, so a wrapper in an OR branch is unwrapped too: same range
+-- and pruning as the bare `k = 4 OR k = 0`. 80000 rows have `k` in {0, 4}.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND (k = 4 OR ifNull(equals(k, 0), 0))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND (k = 4 OR ifNull(equals(k, 0), 0)) SETTINGS force_primary_key = 1;
+
+-- The rewrite fires at even `NOT` nesting (net non-inverted), not only at zero: under two `NOT`s the
+-- wrapper is still unwrapped and prunes exactly like the bare `team_id = 1 AND k = 0`.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE NOT (team_id != 1 OR NOT ifNull(equals(k, 0), 0))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM t_ifnull_keycond WHERE NOT (team_id != 1 OR NOT ifNull(equals(k, 0), 0)) SETTINGS force_primary_key = 1;
+
 DROP TABLE t_ifnull_keycond;
 
 -- Inversion guardrail on an indexed nullable key (granularity 1, so each row is its own granule).
