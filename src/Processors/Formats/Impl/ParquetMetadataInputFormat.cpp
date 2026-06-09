@@ -101,7 +101,7 @@ static NamesAndTypesList getHeaderForParquetMetadata()
     return names_and_types;
 }
 
-static void checkHeader(const Block & header)
+void checkHeader(const Block & header)
 {
     auto expected_names_and_types = getHeaderForParquetMetadata();
     std::unordered_map<String, DataTypePtr> name_to_type;
@@ -499,7 +499,6 @@ NamesAndTypesList ParquetMetadataSchemaReader::readSchema()
     return getHeaderForParquetMetadata();
 }
 
-void registerInputFormatParquetMetadata(FormatFactory & factory);
 void registerInputFormatParquetMetadata(FormatFactory & factory)
 {
     factory.registerRandomAccessInputFormat(
@@ -515,7 +514,6 @@ void registerInputFormatParquetMetadata(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("ParquetMetadata");
 }
 
-void registerParquetMetadataSchemaReader(FormatFactory & factory);
 void registerParquetMetadataSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
@@ -534,8 +532,6 @@ void registerParquetMetadataSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatParquetMetadata(FormatFactory &);
-void registerParquetMetadataSchemaReader(FormatFactory &);
 void registerInputFormatParquetMetadata(FormatFactory &)
 {
 }
