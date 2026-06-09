@@ -87,3 +87,22 @@ TEST(SplitMultipartQuery, MultipleQueriesWithTrailingComment)
     EXPECT_TRUE(all_parsed);
     EXPECT_EQ(queries, (std::vector<std::string>{"SELECT 1;", "SELECT 2; /* tail */"}));
 }
+
+TEST(SplitMultipartQuery, InsertWithInlineDataAndTrailingComment)
+{
+    /// An INSERT with inline data carries its own one-line data boundary. A trailing comment after
+    /// the final `;` must not be folded into the INSERT fragment: otherwise the bytes after the data
+    /// line (`; /* tail */`) would be passed to the format reader as extra input rows instead of being
+    /// dropped as a comment-only tail.
+    {
+        const auto [queries, all_parsed] = split("INSERT INTO t FORMAT TabSeparated\nx\n; /* tail */");
+        EXPECT_TRUE(all_parsed);
+        EXPECT_EQ(queries, (std::vector<std::string>{"INSERT INTO t FORMAT TabSeparated\nx"}));
+    }
+    {
+        /// The data boundary must also be preserved when another statement follows the INSERT.
+        const auto [queries, all_parsed] = split("INSERT INTO t FORMAT TabSeparated\nx\n; SELECT 2");
+        EXPECT_TRUE(all_parsed);
+        EXPECT_EQ(queries, (std::vector<std::string>{"INSERT INTO t FORMAT TabSeparated\nx", "SELECT 2"}));
+    }
+}
