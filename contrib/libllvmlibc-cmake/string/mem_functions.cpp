@@ -25,7 +25,17 @@
 // NOLINTBEGIN(bugprone-suspicious-include)
 #include "src/strings/bcmp.cpp" // bcmp lives under <strings.h> (POSIX), not <string.h>
 #include "src/string/memcmp.cpp"
+#if defined(__x86_64__)
+// On x86_64 we replace memcpy/memmove/memset together: the AVX-512 paths in
+// `x86_64_mem_functions.cpp` are interlocked (memmove's disjoint fast path
+// must reach our memcpy dispatcher, otherwise it would silently fall back to
+// upstream's AVX-only one). For non-AVX-512 builds the dispatchers delegate
+// to the same upstream helpers as the stock build, so v3 codegen is
+// byte-equivalent to upstream.
+#include "x86_64_mem_functions.cpp"
+#else
 #include "src/string/memcpy.cpp"
 #include "src/string/memmove.cpp"
 #include "src/string/memset.cpp"
+#endif
 // NOLINTEND(bugprone-suspicious-include)

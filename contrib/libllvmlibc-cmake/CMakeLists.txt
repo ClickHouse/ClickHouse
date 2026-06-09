@@ -81,8 +81,8 @@ if (ARCH_AMD64)
             LIBC_TARGET_CPU_HAS_FPU_FLOAT=1
             LIBC_TARGET_CPU_HAS_FPU_DOUBLE=1
         )
-    else()
-        # v3+: single library with AVX/AVX2/FMA
+    elseif (X86_ARCH_LEVEL VERSION_LESS 4)
+        # v3: single library with AVX/AVX2/FMA
         target_compile_definitions(libllvmlibc PRIVATE
             ${LLVMLIBC_DEFS_COMMON}
             LIBC_NAMESPACE=${LIBC_NAMESPACE}
@@ -98,6 +98,30 @@ if (ARCH_AMD64)
             LIBC_TARGET_CPU_HAS_AVX=1
             LIBC_TARGET_CPU_HAS_AVX2=1
         )
+    else()
+        # v4: AVX-512 (F/BW/DQ/CD/VL). The memcpy / memmove / memset dispatchers
+        # in inline_memcpy.h pick the ZMM-based variants when __AVX512F__ is set.
+        # `-mprefer-vector-width=512` forces clang to actually emit ZMM for
+        # `__builtin_memcpy_inline` of size 64/128/256 — otherwise it defaults to
+        # YMM to avoid downclocking on some Intel parts.
+        target_compile_definitions(libllvmlibc PRIVATE
+            ${LLVMLIBC_DEFS_COMMON}
+            LIBC_NAMESPACE=${LIBC_NAMESPACE}
+            LIBC_COPT_PUBLIC_PACKAGING=1
+            LIBC_TARGET_CPU_HAS_SSE2=1
+            LIBC_TARGET_CPU_HAS_SSE4_2=1
+            LIBC_TARGET_CPU_HAS_FPU_FLOAT=1
+            LIBC_TARGET_CPU_HAS_FPU_DOUBLE=1
+            LIBC_TARGET_CPU_HAS_FMA=1
+            LIBC_TARGET_CPU_HAS_FMA_FLOAT=1
+            LIBC_TARGET_CPU_HAS_FMA_DOUBLE=1
+            LIBC_TARGET_CPU_HAS_NEAREST_INT=1
+            LIBC_TARGET_CPU_HAS_AVX=1
+            LIBC_TARGET_CPU_HAS_AVX2=1
+            LIBC_TARGET_CPU_HAS_AVX512_F=1
+            LIBC_TARGET_CPU_HAS_AVX512_BW=1
+        )
+        target_compile_options(libllvmlibc PRIVATE -mprefer-vector-width=512)
     endif()
 
     target_include_directories(libllvmlibc SYSTEM BEFORE
