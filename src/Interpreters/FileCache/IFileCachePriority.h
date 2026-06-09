@@ -176,7 +176,7 @@ public:
 
         virtual void remove(const CachePriorityGuard::WriteLock &) = 0;
 
-        virtual void invalidate() = 0;
+        virtual void invalidate() noexcept = 0;
 
         virtual QueueEntryType getType() const = 0;
 

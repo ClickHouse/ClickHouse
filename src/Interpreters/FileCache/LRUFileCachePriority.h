@@ -218,7 +218,7 @@ private:
     LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
 
     /// Record an entry that invalidate() left in the queue for the background cleanup to drain.
-    void addInvalidatedRef(std::weak_ptr<Entry> entry, LRUQueue::iterator it);
+    void addInvalidatedRef(std::weak_ptr<Entry> entry, LRUQueue::iterator it) noexcept;
 
     void iterate(
         IterateFunc func,

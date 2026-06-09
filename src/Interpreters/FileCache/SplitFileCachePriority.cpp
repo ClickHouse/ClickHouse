@@ -355,7 +355,7 @@ void SplitFileCachePriority::SplitIterator::remove(const CachePriorityGuard::Wri
     iterator->remove(lock);
 }
 
-void SplitFileCachePriority::SplitIterator::invalidate()
+void SplitFileCachePriority::SplitIterator::invalidate() noexcept
 {
     iterator->invalidate();
 }

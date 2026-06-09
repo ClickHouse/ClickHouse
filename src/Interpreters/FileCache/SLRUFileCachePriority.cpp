@@ -937,7 +937,7 @@ void SLRUFileCachePriority::SLRUIterator::decrementSize(size_t size)
     lru_iterator.decrementSize(size);
 }
 
-void SLRUFileCachePriority::SLRUIterator::invalidate()
+void SLRUFileCachePriority::SLRUIterator::invalidate() noexcept
 {
     assertValid();
     lru_iterator.invalidate();

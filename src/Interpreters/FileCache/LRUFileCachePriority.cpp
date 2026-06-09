@@ -4,6 +4,7 @@
 #include <pcg-random/pcg_random.hpp>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 
@@ -179,8 +180,12 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
     return queue.erase(it);
 }
 
-void LRUFileCachePriority::addInvalidatedRef(std::weak_ptr<Entry> entry, LRUQueue::iterator it)
+void LRUFileCachePriority::addInvalidatedRef(std::weak_ptr<Entry> entry, LRUQueue::iterator it) noexcept
 {
+    /// The `push_back` below allocates and could throw `MEMORY_LIMIT_EXCEEDED`, which is not
+    /// allowed here. The lock suppresses the exception while still accounting the allocation.
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
     std::lock_guard lock(invalidated_mutex);
     invalidated_refs.push_back({std::move(entry), it});
 
@@ -267,6 +272,9 @@ size_t LRUFileCachePriority::removeInvalidatedEntries(size_t max_batch, CachePri
         }
         catch (...)
         {
+            /// Put the ref back so it is retried later. Must not throw and lose it:
+            /// suppress `MEMORY_LIMIT_EXCEEDED` from the `push_front` allocation.
+            LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
             std::lock_guard cleanup_lock(invalidated_mutex);
             invalidated_refs.push_front(std::move(ref));
             throw;
