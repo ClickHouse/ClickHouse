@@ -263,8 +263,8 @@ void registerStorageKafka(StorageFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS,
                 "To store committed offsets in Keeper both kafka_keeper_path and kafka_replica_name must be specified");
 
-        const auto is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        const auto is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        const auto is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
+        const auto is_replicated_database = args.getLocalContext()->isDDLOrOnClusterInternal()
             && DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
 
         // UUID macro is only allowed:
@@ -547,20 +547,19 @@ VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_m
 {
     VirtualColumnsDescription desc;
 
-    desc.addEphemeral("_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_key", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_partition", std::make_shared<DataTypeUInt64>(), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3)), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_key", std::make_shared<DataTypeString>(), "");
+    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "");
+    desc.addEphemeral("_partition", std::make_shared<DataTypeUInt64>(), "");
+    desc.addEphemeral("_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "");
+    desc.addEphemeral("_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3)), "");
+    desc.addEphemeral("_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
 
     if (handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
-        desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
-        desc.addEphemeral("_error", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+        desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "");
+        desc.addEphemeral("_error", std::make_shared<DataTypeString>(), "");
     }
 
     return desc;

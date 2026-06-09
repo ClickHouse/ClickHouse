@@ -390,13 +390,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-        case Type::SET_COVERAGE_TEST:
-        {
-            ASTPtr ast;
-            if (ParserStringLiteral{}.parse(pos, ast, expected))
-                res->coverage_test_name = ast->as<ASTLiteral &>().value.safeGet<String>();
-            break;
-        }
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
@@ -462,19 +455,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ false, /* allow_string_literal = */ false))
                 return false;
-            break;
-        }
-
-        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
-        {
-            if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
-                return false;
-            if (!ParserKeyword{Keyword::PATH}.ignore(pos, expected))
-                return false;
-            ASTPtr path_ast;
-            if (!ParserStringLiteral{}.parse(pos, path_ast, expected))
-                return false;
-            res->queue_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
             break;
         }
 
@@ -586,6 +566,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
         case Type::STOP_REPLICATED_VIEW:
+        case Type::PAUSE_VIEW:
         case Type::CANCEL_VIEW:
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
@@ -593,6 +574,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
+        case Type::PAUSE_VIEWS:
         case Type::FREE_MEMORY:
             break;
 

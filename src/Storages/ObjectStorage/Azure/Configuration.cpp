@@ -142,9 +142,6 @@ AzureBlobStorage::ConnectionParams getAzureConnectionParams(
 
         connection_params.endpoint.storage_account_url = connection_url;
         connection_params.endpoint.container_name = container_name;
-        connection_params.endpoint.account_name = account_name.value_or("");
-        connection_params.endpoint.account_key = account_key.value_or("");
-        connection_params.endpoint.add_account_name_to_url = false;
         connection_params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*account_name, *account_key);
     }
 
@@ -351,7 +348,7 @@ void AzureStorageParsedArguments::initializeForOneLake(ASTs & args, ContextPtr c
 
     fillBlobsFromURLCommon(connection_url, ".com", ".dfs.fabric.microsoft.com");
 
-    connection_params.endpoint.additional_params = "resource=REDACTED&directory=REDACTED&recursive=REDACTED";
+    connection_params.endpoint.container_already_exists = true;
 
     auto request_settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
     connection_params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *request_settings, /*for_disk=*/ false);

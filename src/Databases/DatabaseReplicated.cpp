@@ -126,7 +126,6 @@ namespace FailPoints
     extern const char database_replicated_startup_pause[];
     extern const char database_replicated_drop_before_removing_keeper_failed[];
     extern const char database_replicated_drop_after_removing_keeper_failed[];
-    extern const char database_replicated_force_metadata_digest_check[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -1223,10 +1222,8 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
 void DatabaseReplicated::assertDigestWithProbability(const ContextPtr & local_context) const
 {
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-    /// Reduce number of debug checks, unless a failpoint forces the check.
-    bool force_check = false;
-    fiu_do_on(FailPoints::database_replicated_force_metadata_digest_check, { force_check = true; });
-    if (!force_check && thread_local_rng() % 16)
+    /// Reduce number of debug checks
+    if (thread_local_rng() % 16)
         return;
 
     if (!checkDigestValid(local_context))
@@ -1336,7 +1333,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
     {
         if (ddl_query->getDatabase() != getDatabaseName())
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
-        ddl_query->reset(ddl_query->database);
+        ddl_query->database.reset();
 
         if (auto * create = query->as<ASTCreateQuery>())
         {
@@ -1395,7 +1392,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
         host_fqdn_id = ddl_worker->getCommonHostID();
     }
 
-    if (!flags.internal && (query_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY))
+    if (!flags.internal && query_context->isDDLOrOnClusterInternal())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
 
     checkQueryValid(query, query_context);
@@ -1549,7 +1546,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     {
         auto query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
-        query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        query_context->setDDLOrOnClusterInternal(true);
         query_context->setQueryKindReplicatedDatabaseInternal();
         query_context->setCurrentDatabase(getDatabaseName());
         query_context->setCurrentQueryId({});
@@ -2411,15 +2408,6 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
     }
 }
 
-void DatabaseReplicated::adjustDigestOnTableLostFromRestart(const String & table_name)
-{
-    std::lock_guard lock{metadata_mutex};
-    tables_metadata_digest -= getMetadataHash(table_name);
-    LOG_WARNING(log, "Table {} was lost from in-memory tables map due to failed SYSTEM RESTART REPLICA. "
-                     "Adjusted in-memory digest to {}. The table will be restored on server restart or recovery.",
-                table_name, tables_metadata_digest);
-}
-
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
 {
     auto db_disk = getDisk();
@@ -2630,7 +2618,7 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         info.expand_for_database = true;
         info.table_id.database_name = args.database_name;
 
-        const bool is_on_cluster = args.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        const bool is_on_cluster = args.context->isDDLOrOnClusterInternal();
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
         /// and if UUID was explicitly passed in CREATE DATABASE (like for ATTACH)
         bool allow_uuid_macro = is_on_cluster || args.create_query.attach || args.create_query.has_uuid;

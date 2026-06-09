@@ -245,8 +245,7 @@ public:
                 initial_ranges_in_data_parts[part_index].parent_part,
                 initial_ranges_in_data_parts[part_index].part_index_in_query,
                 initial_ranges_in_data_parts[part_index].part_starting_offset_in_query,
-                MarkRanges{mark_range},
-                initial_ranges_in_data_parts[part_index].read_hints);
+                MarkRanges{mark_range});
             part_index_to_initial_ranges_in_data_parts_index[it->second] = part_index;
             return;
         }

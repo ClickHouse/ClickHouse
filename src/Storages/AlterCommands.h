@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <Core/NamesAndTypes.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MutationCommands.h>
