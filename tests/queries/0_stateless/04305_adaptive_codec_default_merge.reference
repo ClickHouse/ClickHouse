@@ -1,0 +1,32 @@
+Adaptive ON
+a	1
+b	0
+c	0
+d	0
+e	1
+f	1
+Adaptive OFF
+a	0
+b	0
+c	0
+d	0
+e	0
+f	0
+Adaptive INSERT
+a	0
+b	0
+c	0
+d	0
+e	0
+f	0
+Adaptive MUTATION
+a	0
+b	0
+c	0
+d	0
+e	1
+f	0
+Adaptive COMPACT
+2000	1999000
+Compact
+1

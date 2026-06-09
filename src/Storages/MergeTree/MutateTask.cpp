@@ -2241,7 +2241,8 @@ private:
             /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings(),
-            static_cast<WrittenOffsetSubstreams *>(nullptr));
+            static_cast<WrittenOffsetSubstreams *>(nullptr),
+            WriteOrigin::MergeOrMutation);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
@@ -70,6 +71,14 @@ protected:
     SerializationPtr getSerialization(const String & column_name) const;
 
     ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
+
+    /// True if `column_name` relies on the default codec.
+    /// TODO: For now that is only columns with no CODEC clause. Include explicit `CODEC(Default)`.
+    bool columnUsesDefaultCodec(const String & column_name) const;
+
+    /// Codec for a default-coded substream: adaptive when enabled and the type has a non-default codec, else `resolved_codec`.
+    CompressionCodecPtr
+    maybeAdaptiveDefaultCodec(bool column_uses_default_codec, const DataTypePtr & substream_type, CompressionCodecPtr resolved_codec) const;
 
     IDataPartStorage & getDataPartStorage() { return *data_part_storage; }
 

@@ -944,7 +944,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /*reset_columns=*/true,
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings(),
-        &global_ctx->written_offset_substreams);
+        &global_ctx->written_offset_substreams,
+        WriteOrigin::MergeOrMutation);
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;

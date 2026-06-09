@@ -10952,7 +10952,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         /*reset_columns_=*/false,
         /*blocks_are_granules_size=*/false,
         /*write_settings=*/{},
-        /*written_offset_substreams=*/nullptr);
+        /*written_offset_substreams=*/nullptr,
+        /*write_origin=*/ WriteOrigin::Insert); /// Empty part, codec selection will not happen.
 
     bool sync_on_insert = (*settings)[MergeTreeSetting::fsync_after_insert];
 

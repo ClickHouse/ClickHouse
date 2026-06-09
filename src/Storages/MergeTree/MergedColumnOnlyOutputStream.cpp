@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+extern const MergeTreeSettingsBool allow_experimental_adaptive_codec_selection;
+}
+
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
     MergeTreeSettingsPtr data_settings,
@@ -42,6 +47,9 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         save_marks_in_cache,
         save_primary_index_in_memory,
         /*blocks_are_granules_size=*/ false);
+
+    /// This stream is used only by merge and mutation, never inserts
+    writer_settings.apply_adaptive_codec = (*storage_settings)[MergeTreeSetting::allow_experimental_adaptive_codec_selection];
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),

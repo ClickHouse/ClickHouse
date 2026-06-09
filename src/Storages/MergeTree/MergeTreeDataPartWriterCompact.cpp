@@ -77,6 +77,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc)
 {
+    const bool column_uses_default_codec = columnUsesDefaultCodec(name_and_type.getNameInStorage());
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -91,7 +92,10 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
 
         /// If we can use special codec than just get it
         if (ISerialization::isSpecialCompressionAllowed(substream_path))
+        {
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
+            compression_codec = maybeAdaptiveDefaultCodec(column_uses_default_codec, subtype, compression_codec);
+        }
         else /// otherwise return only generic codecs and don't use info about data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 

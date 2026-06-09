@@ -25,6 +25,11 @@ CompressionCodecPtr select(const Codecs & pool, const char * source, UInt32 sour
 /// The distinct types that can get a non-default codec.
 VectorWithMemoryTracking<TypeIndex> candidateTypeIndexes();
 
+/// Whether `type` has a candidate beyond the default, i.e. wrapping it in adaptive can actually pick something.
+/// Gate adaptive with it so a non-candidates are never wrapped (a 1-element pool measure-compresses the default and then compresses again).
+/// TODO: once we save compression result and then reuse it, this can be removed.
+bool isCandidateType(const IDataType & type);
+
 }
 
 /// Adaptive codec picks the smallest-output codec per block from a default codec + type-appropriate pool and delegates to it.

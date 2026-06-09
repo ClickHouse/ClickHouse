@@ -89,6 +89,15 @@ VectorWithMemoryTracking<TypeIndex> AdaptiveCodec::candidateTypeIndexes()
     return result;
 }
 
+bool AdaptiveCodec::isCandidateType(const IDataType & type)
+{
+    const TypeIndex type_id = type.getTypeId();
+    for (const auto & group : CANDIDATES)
+        if (std::ranges::find(group.types, type_id) != group.types.end())
+            return true;
+    return false;
+}
+
 CompressionCodecPtr AdaptiveCodec::select(const Codecs & pool, const char * source, UInt32 source_size)
 {
     chassert(!pool.empty());

@@ -1,4 +1,5 @@
 #include <Columns/ColumnSparse.h>
+#include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
@@ -168,6 +169,26 @@ ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_nam
         return virtual_desc->codec ? virtual_desc->codec : default_codec_desc;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
+}
+
+bool IMergeTreeDataPartWriter::columnUsesDefaultCodec(const String & column_name) const
+{
+    if (const auto * column_desc = metadata_snapshot->columns.tryGet(column_name))
+        return column_desc->codec == nullptr;
+
+    if (const auto * virtual_desc
+        = metadata_snapshot->virtuals.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+        return virtual_desc->codec == nullptr;
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
+}
+
+CompressionCodecPtr IMergeTreeDataPartWriter::maybeAdaptiveDefaultCodec(
+    bool column_uses_default_codec, const DataTypePtr & substream_type, CompressionCodecPtr resolved_codec) const
+{
+    if (settings.apply_adaptive_codec && column_uses_default_codec && substream_type && AdaptiveCodec::isCandidateType(*substream_type))
+        return std::make_shared<CompressionCodecAdaptive>(*substream_type, resolved_codec);
+    return resolved_codec;
 }
 
 
