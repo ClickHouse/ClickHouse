@@ -65,14 +65,25 @@ void setSnapshotTotals(
     Int64 added_equality_deletes)
 {
     /// Data totals (records, files size, data files) describe the whole table state.
-    /// If the parent omits one we must not invent a zero: that would publish a snapshot
-    /// falsely claiming the table is empty even though the data files are unchanged.
-    /// Preserve the absence instead (these totals are optional in the Iceberg spec).
     auto set_data_total = [&](const char * field_name, Int64 added)
     {
+        /// No parent snapshot: this is the base snapshot, so its total is exactly what
+        /// it adds. (Treating an absent parent as 0 is correct here, unlike below.)
+        if (!parent_snapshot)
+        {
+            summary->set(field_name, std::to_string(added));
+            return;
+        }
+        /// The parent exists but omits this data total. We cannot derive the new
+        /// table-wide total from it. Defaulting to 0 would publish a snapshot falsely
+        /// claiming the table is (nearly) empty even though the data files are unchanged,
+        /// so fail the rewrite instead of corrupting the snapshot summary.
         auto parent_value = readParentTotal(parent_snapshot, field_name);
         if (!parent_value.has_value())
-            return;
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot derive Iceberg snapshot total '{}': the parent snapshot's summary omits it",
+                field_name);
         summary->set(field_name, std::to_string(*parent_value + added));
     };
     /// Delete-family totals: a missing counter is defined to mean "none", so treating
