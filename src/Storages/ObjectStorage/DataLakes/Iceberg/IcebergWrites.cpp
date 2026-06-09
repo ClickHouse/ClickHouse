@@ -550,15 +550,17 @@ void generateManifestList(
                 entry.field(Iceberg::f_deleted_rows_count) = 0;
         }
 
-        if (summary->has(Iceberg::f_added_records))
+        if (entry_content == Iceberg::FileContentType::DATA)
         {
             set_versioned_field(
-                summary->getValue<Int64>(Iceberg::f_added_records),
+                summary->has(Iceberg::f_added_records) ? summary->getValue<Int64>(Iceberg::f_added_records) : 0,
                 Iceberg::f_added_rows_count);
         }
         else
         {
-            set_versioned_field(summary->getValue<Int64>(Iceberg::f_added_position_deletes), Iceberg::f_added_rows_count);
+            set_versioned_field(
+                summary->has(Iceberg::f_added_position_deletes) ? summary->getValue<Int64>(Iceberg::f_added_position_deletes) : 0,
+                Iceberg::f_added_rows_count);
         }
         set_versioned_field(
             0,
