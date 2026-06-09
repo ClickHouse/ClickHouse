@@ -10,7 +10,6 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
-#include <Common/scope_guard_safe.h>
 #include <base/scope_guard.h>
 #include <limits>
 #include <utility>
@@ -174,7 +173,7 @@ TEST(AllocationInterceptors, CurrentProcessorMemoryUsageDeltaTracksAllocFreeEven
     auto & thread = CurrentThread::get();
     Int64 delta = 0;
     Int64 * previous_delta = std::exchange(thread.current_processor_memory_usage_delta, &delta);
-    SCOPE_EXIT_SAFE({
+    SCOPE_EXIT({
         thread.current_processor_memory_usage_delta = previous_delta;
         CurrentThread::flushUntrackedMemory();
     });
