@@ -367,11 +367,7 @@ profiles:
             config_file.write(c1)
         return res
 
-    def create_log_export_config(self):
-        print("Create log export config")
-        config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"
-        config_file.parent.mkdir(parents=True, exist_ok=True)
-
+    def _fetch_log_export_credentials(self):
         self.log_export_host, self.log_export_password = (
             Secret.Config(
                 name="clickhouse_ci_logs_host",
@@ -388,6 +384,13 @@ profiles:
             .get_value()
         )
 
+    def create_log_export_config(self):
+        print("Create log export config")
+        config_file = Path(self.ch_config_dir) / "config.d" / "system_logs_export.yaml"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        self._fetch_log_export_credentials()
+
         config_content = LOG_EXPORT_CONFIG_TEMPLATE.format(
             CLICKHOUSE_CI_LOGS_CLUSTER=CLICKHOUSE_CI_LOGS_CLUSTER,
             CLICKHOUSE_CI_LOGS_HOST=self.log_export_host,
@@ -401,6 +404,8 @@ profiles:
 
     def start_log_exports(self, check_start_time):
         print("Start log export")
+        if not self.log_export_host:
+            self._fetch_log_export_credentials()
         if self.log_export_host:
             os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
             os.environ["CLICKHOUSE_CI_LOGS_HOST"] = self.log_export_host

@@ -66,7 +66,8 @@ function setup_logs_replication()
     if [[ -n "$CLICKHOUSE_CI_LOGS_HOST" ]]; then
         check_logs_credentials
     else
-        echo 'No CI logs creds found, tables check will be skipped'
+        echo 'No CI logs creds found, log replication setup will be skipped'
+        return
     fi
 
     echo "My hostname is ${HOSTNAME}"
