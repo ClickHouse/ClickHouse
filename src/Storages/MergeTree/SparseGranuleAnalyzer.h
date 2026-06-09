@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/SparseOffsetsShare.h>
 #include <Storages/MergeTree/SparsityFilter.h>
 #include <Common/Logger.h>
@@ -41,11 +42,9 @@ struct SparseGranuleAnalysis
 /// decompressed offsets it reads so the data scan can serve its own reads of the
 /// same column without going back to disk.
 ///
-/// `chunk_pool` (optional): when non-null, the per-chunk passes are dispatched onto
-/// this pool. The caller owns sizing and lifetime. Pass `nullptr` from callers that
-/// already run on a shared pool (e.g. the `data_read` entry inside a `MergeTreeSource`
-/// async read job): nesting a fanout onto the same pool can deadlock under load. With
-/// `chunk_pool == nullptr` chunks run sequentially in the caller's thread.
+/// Single-call form: chunks run sequentially in the caller's thread. Use the
+/// batched form below when many (part, column) pairs need to be analyzed and a
+/// thread pool is available.
 std::optional<SparseGranuleAnalysis>
 analyzeSparseColumnGranules(
     const DataPartPtr & part,
@@ -56,8 +55,24 @@ analyzeSparseColumnGranules(
     const ContextPtr & query_context,
     SparseOffsetsShare * offsets_share,
     LoggerPtr log,
-    ThreadPool * chunk_pool = nullptr,
     const std::atomic<bool> * is_cancelled = nullptr);
+
+/// Batched form: analyze every `(parts[p], columns[c])` combination in parallel on
+/// `pool`, using flat `(unit, chunk)` leaf tasks so pool workers never block on
+/// each other. Returns an `[part_idx][col_idx]` matrix; entries are `nullopt` when
+/// the column isn't sparse for that part. Per-unit chunk count adapts to the pool
+/// size so all workers stay busy regardless of how many `(part, column)` pairs are
+/// pending. `columns` is expected to be deduplicated by the caller.
+std::vector<std::vector<std::optional<SparseGranuleAnalysis>>>
+analyzeSparseColumnGranulesBatched(
+    const RangesInDataParts & parts,
+    const std::vector<String> & columns,
+    const MergeTreeData & storage,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & query_context,
+    SparseOffsetsShare * offsets_share,
+    LoggerPtr log,
+    ThreadPool & pool);
 
 
 /// `granules_selected[g] == false` means the scan can skip granule g. Adapted from

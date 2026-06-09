@@ -50,6 +50,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -975,17 +976,50 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
         return analysis.granule_has_only_non_defaults[mark];
     };
 
-    /// Local pool for the analyzer's per-chunk fanout, sized at `max_threads` so the
-    /// concurrent chunk count is bounded by the user's thread cap rather than by the
-    /// global IO pool size. Threads are borrowed from the global pool. We pass this
-    /// to each per-part `analyzeSparseColumnGranules` call so all parts share the
-    /// same worker set.
-    const size_t chunk_pool_size = std::max<size_t>(1, static_cast<UInt64>(settings[Setting::max_threads]));
-    ThreadPool chunk_pool(
-        CurrentMetrics::MergeTreeDataSelectExecutorThreads,
-        CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
-        CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
-        chunk_pool_size);
+    /// Flatten conjuncts to the set of distinct columns we need analyses for.
+    /// `(part, column)` is the natural unit of work: same-column conjuncts share
+    /// one analysis, and across parts they are independent.
+    std::vector<String> unique_columns;
+    {
+        std::unordered_set<String> seen;
+        for (const auto & pred : conjuncts)
+            if (seen.insert(pred.column_name).second)
+                unique_columns.push_back(pred.column_name);
+    }
+    std::unordered_map<String, size_t> column_to_idx;
+    column_to_idx.reserve(unique_columns.size());
+    for (size_t i = 0; i < unique_columns.size(); ++i)
+        column_to_idx.emplace(unique_columns[i], i);
+
+    /// Analyse every `(part, column)` pair. With `max_threads > 1` the batched call
+    /// runs the work flat across one pool: it dispatches `(unit, chunk)` leaves so all
+    /// workers stay busy, splitting big units into more chunks when there are few
+    /// units. With `max_threads <= 1` we skip the pool and run sequentially.
+    const size_t pool_size = std::max<size_t>(1, static_cast<UInt64>(settings[Setting::max_threads]));
+    std::vector<std::vector<std::optional<SparseGranuleAnalysis>>> analyses;
+    if (pool_size <= 1)
+    {
+        analyses.resize(parts.size());
+        for (auto & per_part : analyses)
+            per_part.assign(unique_columns.size(), std::nullopt);
+
+        for (size_t p = 0; p < parts.size(); ++p)
+            for (size_t c = 0; c < unique_columns.size(); ++c)
+                analyses[p][c] = analyzeSparseColumnGranules(
+                    parts[p].data_part, unique_columns[c], parts[p].ranges,
+                    data, storage_snapshot, context, offsets_share, log);
+    }
+    else
+    {
+        ThreadPool sparsity_pool(
+            CurrentMetrics::MergeTreeDataSelectExecutorThreads,
+            CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
+            CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
+            pool_size);
+
+        analyses = analyzeSparseColumnGranulesBatched(
+            parts, unique_columns, data, storage_snapshot, context, offsets_share, log, sparsity_pool);
+    }
 
     RangesInDataParts res_parts;
     res_parts.reserve(parts.size());
@@ -995,8 +1029,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
     size_t parts_changed = 0;
     Names used_columns;
 
-    for (const auto & part : parts)
+    for (size_t p = 0; p < parts.size(); ++p)
     {
+        const auto & part = parts[p];
         for (const auto & range : part.ranges)
             total_granules_before += range.end - range.begin;
 
@@ -1004,17 +1039,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
         std::vector<bool> dropped(total_marks, false);
         bool any_conjunct_used = false;
 
-        /// Analysis is a function of `(part, column)` only; cache per column so two
-        /// conjuncts on the same column (e.g. `x = 0 AND x != 0`) do not double-read
-        /// offsets and seed the `SparseOffsetsShare` twice.
-        std::unordered_map<String, std::optional<SparseGranuleAnalysis>> analyses;
         for (const auto & pred : conjuncts)
         {
-            auto [it, inserted] = analyses.try_emplace(pred.column_name, std::nullopt);
-            if (inserted)
-                it->second = analyzeSparseColumnGranules(
-                    part.data_part, pred.column_name, part.ranges, data, storage_snapshot, context, offsets_share, log, &chunk_pool);
-            const auto & analysis = it->second;
+            const auto & analysis = analyses[p][column_to_idx.at(pred.column_name)];
             if (!analysis)
                 continue;
 
