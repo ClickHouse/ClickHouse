@@ -6,8 +6,7 @@
 
 #include <base/hex.h>
 #include <Common/Exception.h>
-#include <arrow/io/interfaces.h>
-#include <arrow/result.h>
+#include <IO/SeekableReadBuffer.h>
 
 #include <sqlite3.h>
 
@@ -26,11 +25,11 @@ namespace
 
 #define ORIGVFS(p) (static_cast<sqlite3_vfs *>((p)->pAppData))
 
-/// An sqlite3_file backed by an arrow RandomAccessFile (ClickHouse ReadBuffer).
+/// An sqlite3_file backed by a ClickHouse SeekableReadBuffer.
 class RandomAccessSQLiteFile : public sqlite3_file
 {
 public:
-    arrow::io::RandomAccessFile * ptr;
+    const SQLiteReadSource * source;
 };
 
 extern sqlite3_io_methods mem_io_methods;
@@ -44,12 +43,18 @@ int memRead(sqlite3_file * file, void * buffer, int len, sqlite3_int64 offset)
 {
     auto * memfile = static_cast<RandomAccessSQLiteFile *>(file);
 
-    auto bytes_read = memfile->ptr->ReadAt(offset, len, buffer);
-    if (!bytes_read.ok())
+    try
+    {
+        SeekableReadBuffer & buf = *memfile->source->buf;
+        buf.seek(offset, SEEK_SET);
+        size_t bytes_read = buf.read(static_cast<char *>(buffer), static_cast<size_t>(len));
+        if (bytes_read != static_cast<size_t>(len))
+            return SQLITE_IOERR_SHORT_READ;
+    }
+    catch (...)
+    {
         return SQLITE_IOERR_READ;
-
-    if (*bytes_read != len)
-        return SQLITE_IOERR_SHORT_READ;
+    }
 
     return SQLITE_OK;
 }
@@ -73,11 +78,7 @@ int memFileSize(sqlite3_file * file, sqlite3_int64 * size)
 {
     auto * memfile = static_cast<RandomAccessSQLiteFile *>(file);
 
-    auto file_size = memfile->ptr->GetSize();
-    if (!file_size.ok())
-        return SQLITE_IOERR_FSTAT;
-
-    *size = *file_size;
+    *size = static_cast<sqlite3_int64>(memfile->source->size);
     return SQLITE_OK;
 }
 
@@ -147,8 +148,8 @@ int memUnfetch(sqlite3_file *, sqlite3_int64, void *)
 int memOpen(sqlite3_vfs *, const char * zName, sqlite3_file * pFile, int, int *)
 {
     auto * c = static_cast<RandomAccessSQLiteFile *>(pFile);
-    c->ptr = reinterpret_cast<arrow::io::RandomAccessFile *>(unhexUInt<uintptr_t>(zName));
-    if (c->ptr == nullptr)
+    c->source = reinterpret_cast<const SQLiteReadSource *>(unhexUInt<uintptr_t>(zName));
+    if (c->source == nullptr || c->source->buf == nullptr)
         return SQLITE_CANTOPEN;
     pFile->pMethods = &mem_io_methods;
     return SQLITE_OK;
@@ -285,9 +286,9 @@ void initSQLiteReadVFS()
     });
 }
 
-std::string encodeSQLiteVFSFileName(arrow::io::RandomAccessFile * file)
+std::string encodeSQLiteVFSFileName(const SQLiteReadSource * source)
 {
-    return getHexUIntLowercase(reinterpret_cast<uintptr_t>(file));
+    return getHexUIntLowercase(reinterpret_cast<uintptr_t>(source));
 }
 
 }

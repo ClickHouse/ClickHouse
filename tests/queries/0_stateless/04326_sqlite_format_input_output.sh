@@ -45,6 +45,24 @@ ${CLICKHOUSE_LOCAL} --query "
 
 rm -f "$DB_FILE"
 
+echo "--- a SQLite text value equal to the null marker is not mistaken for SQL NULL ---"
+sqlite3 "$DB_FILE" "CREATE TABLE t(value TEXT); INSERT INTO t VALUES ('NULL'), (NULL);"
+${CLICKHOUSE_LOCAL} --query "
+    SELECT value, value IS NULL FROM file('${DB_FILE}', SQLite, 'value Nullable(String)') ORDER BY value
+    SETTINGS input_format_sqlite_table_name = 't'"
+
+echo "--- SQL NULL in a non-nullable column with input_format_null_as_default = 0 is rejected ---"
+${CLICKHOUSE_LOCAL} --query "
+    SELECT value FROM file('${DB_FILE}', SQLite, 'value String')
+    SETTINGS input_format_sqlite_table_name = 't', input_format_null_as_default = 0" 2>&1 | grep -o "INCORRECT_DATA" | head -n 1
+
+echo "--- SQL NULL in a non-nullable column with input_format_null_as_default = 1 becomes the default ---"
+${CLICKHOUSE_LOCAL} --query "
+    SELECT value FROM file('${DB_FILE}', SQLite, 'value String') ORDER BY value
+    SETTINGS input_format_sqlite_table_name = 't', input_format_null_as_default = 1"
+
+rm -f "$DB_FILE"
+
 echo "--- writing to a non-file is not supported ---"
 ${CLICKHOUSE_LOCAL} --query "SELECT 1 AS x FORMAT SQLite" 2>&1 | grep -o "NOT_IMPLEMENTED" | head -n 1
 
