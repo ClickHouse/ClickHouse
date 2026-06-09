@@ -16,6 +16,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Common/FailPoint.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/logger_useful.h>
@@ -27,6 +28,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+namespace FailPoints
+{
+    extern const char disk_from_ast_pause_after_tentative_registration[];
 }
 
 static std::string getOrCreateCustomDisk(
@@ -136,6 +142,10 @@ static std::string getOrCreateCustomDisk(
     /// is a no-op at rollback because the pending-rollback table will not be ours.
     if (scope)
         scope->track(disk_name);
+
+    /// Test-only barrier: pause here so that 04152 can deterministically inject a
+    /// concurrent CREATE TABLE while the tentative registration is in flight.
+    FailPointInjection::pauseFailPoint(FailPoints::disk_from_ast_pause_after_tentative_registration);
 
     if (!disk->isCustomDisk())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,

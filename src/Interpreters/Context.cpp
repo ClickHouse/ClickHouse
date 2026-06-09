@@ -6369,8 +6369,35 @@ DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator, const
         /// and the rollback must leave the cache alone.
         const bool cache_pre_existed = FileCacheFactory::instance().tryGetByName(name) != nullptr;
 
+        /// Make `creator` plus `addToDiskMap` a single rollback unit. The creator may
+        /// register a `FileCacheFactory` entry by this name (`disk(type = cache, name = X,
+        /// ...)` does so before its own `dynamic_cast` check can throw), and `addToDiskMap`
+        /// itself can throw from `DiskSelector::recordDisk` (plain-disk overlap, duplicate
+        /// name). If either step throws after the cache entry was inserted, undo it here so
+        /// no tentative registration is created and no aliased cache leaks behind.
         disk = creator(getDisksMap(lock));
-        const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
+        try
+        {
+            const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
+        }
+        catch (...)
+        {
+            if (!cache_pre_existed && FileCacheFactory::instance().tryGetByName(name) != nullptr)
+                FileCacheFactory::instance().removeByName(name);
+            /// Best-effort shutdown of the disk we created but never published. The default
+            /// `IDisk::shutdown` is a no-op; storage-backed disks override it to release
+            /// background pools and outstanding writes.
+            try
+            {
+                disk->shutdown();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(getLogger("getOrCreateDisk"),
+                    fmt::format("Failed to shut down half-registered disk {}", name));
+            }
+            throw;
+        }
 
         if (pending_rollback_owner)
         {
@@ -6400,6 +6427,20 @@ DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator, const
         auto it = shared->tentative_disk_registrations.find(name);
         if (it != shared->tentative_disk_registrations.end())
             it->second.active_owners.push_back(pending_rollback_owner);
+    }
+    else
+    {
+        /// Unscoped observer (CREATE / ATTACH path that does not own a
+        /// `CustomDiskRegistrationScope`). If a tentative entry is in flight for this name,
+        /// eagerly mark it committed: the unscoped caller has no rollback path of its own
+        /// and is about to commit metadata against this disk. Allowing a still-in-flight
+        /// scope to roll the disk back later would orphan the metadata that this caller is
+        /// going to write. Leaking the registration on a subsequent unscoped-caller failure
+        /// is benign: the existing settings-hash check in `getOrCreateCustomDisk` prevents
+        /// a later DDL from rebinding the name to a disk with different settings.
+        auto it = shared->tentative_disk_registrations.find(name);
+        if (it != shared->tentative_disk_registrations.end())
+            it->second.committed = true;
     }
 
     return disk;
