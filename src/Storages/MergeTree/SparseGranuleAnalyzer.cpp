@@ -120,7 +120,9 @@ struct AnalysisPlan
     NamesAndTypesList cols;
     StorageSnapshotPtr storage_snapshot;
     MergeTreeSettingsPtr storage_settings;
-    MergeTreeReaderSettings reader_settings;
+    /// `MergeTreeReaderSettings` has a private default constructor; initialize through
+    /// its factory so `AnalysisPlan` remains default-constructible.
+    MergeTreeReaderSettings reader_settings = MergeTreeReaderSettings::createFromSettings();
     std::shared_ptr<MarkCache> mark_cache_keepalive;
     MarkCache * mark_cache_raw = nullptr;
     DataPartInfoForReaderPtr part_info;
