@@ -31,6 +31,7 @@
 #include <bit>
 #include <cmath>
 #include <cstring>
+#include <numbers>
 #include <ranges>
 #include <string_view>
 #include <vector>
@@ -811,7 +812,7 @@ RaBitQQuery buildRaBitQQuery(const float * q, size_t dimensions)
 
     for (size_t i = 0; i < dimensions; ++i)
     {
-        int q_tilde = static_cast<int>((q[i] - q_min) * inv_delta + 0.5f);
+        int q_tilde = static_cast<int>(std::lround((q[i] - q_min) * inv_delta));
         q_tilde = std::clamp(q_tilde, 0, levels);
         for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
             if ((q_tilde >> j) & 1)
@@ -845,12 +846,12 @@ inline float raBitQNumeratorScalar(const RaBitQQuery & q, const char * code)
     size_t b = 0;
     for (; b + 8 <= code_bytes; b += 8)
     {
-        UInt64 cw;
+        UInt64 cw = 0;
         std::memcpy(&cw, code + b, sizeof(cw));
         pc += static_cast<UInt64>(std::popcount(cw));
         for (int j = 0; j < RABITQ_QUERY_BITS; ++j)
         {
-            UInt64 pw;
+            UInt64 pw = 0;
             std::memcpy(&pw, planes + static_cast<size_t>(j) * code_bytes + b, sizeof(pw));
             plane_pc[j] += static_cast<UInt64>(std::popcount(cw & pw));
         }
@@ -923,7 +924,7 @@ inline float raBitQNumeratorFast(const RaBitQQuery & q, const char * code, bool 
 inline float raBitQDistanceFast(const RaBitQQuery & q, const char * code, bool use_icelake)
 {
     const float numerator = raBitQNumeratorFast(q, code, use_icelake);
-    float inv_factor;
+    float inv_factor = NAN;
     std::memcpy(&inv_factor, code + q.code_bytes, sizeof(float));
     return 1.0f - numerator * q.inv_qnorm * inv_factor;
 }
@@ -942,7 +943,7 @@ inline float raBitQDistanceFast(const RaBitQQuery & q, const char * code, bool u
 /// whose per-coordinate output variance is padded^2 * ||v||^2 rather than the unit-variance Gaussian the paper assumes.
 /// Each <., .> is a sum of a full-precision (bit-sliced) query against a +-1 sign code - the same popcount dot as RaBitQ.
 /// Layout per vector: d/8 MSE sign bits, d/8 QJL sign bits, then the 4-byte `gamma` (d/4 + sizeof(float) bytes total).
-constexpr double TURBOQUANT_PI = 3.14159265358979323846;
+constexpr double TURBOQUANT_PI = std::numbers::pi;
 
 template <typename T>
 void encodeTurboQuant(const std::vector<float> & p1, const std::vector<float> & p2,
@@ -1028,7 +1029,7 @@ inline float turboQuantDistanceFast(const TurboQuantQuery & q, const char * code
     const size_t code_bytes = q.mse.code_bytes; /// = dimensions / 8
     const float mse_dot = raBitQNumeratorFast(q.mse, code, use_icelake);
     const float qjl_dot = raBitQNumeratorFast(q.qjl, code + code_bytes, use_icelake);
-    float gamma;
+    float gamma = NAN;
     std::memcpy(&gamma, code + 2 * code_bytes, sizeof(float));
     const float cosine = q.c0 * mse_dot + q.k * gamma * qjl_dot;
     return 1.0f - cosine;
@@ -1376,7 +1377,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
             /// Check cancellation periodically (not per vector - that lookup would itself dominate the cheap Hamming).
             if ((i & 0xFFFFu) == 0)
                 throw_if_killed();
-            float dist;
+            float dist = NAN;
             if (turboquant)
                 dist = turboQuantDistanceFast(turboquant_query, base + i * bytes_per_vector, use_icelake_turboquant);
             else if (rabitq)
