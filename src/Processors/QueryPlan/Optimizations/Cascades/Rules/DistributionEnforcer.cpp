@@ -163,6 +163,7 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
     return result;
 }
 
+OptimizationRulePtr createDistributionEnforcer();
 OptimizationRulePtr createDistributionEnforcer() { return std::make_shared<DistributionEnforcer>(); }
 
 }

@@ -265,9 +265,13 @@ protected:
     }
 };
 
+OptimizationRulePtr createLocalReadImplementation();
 OptimizationRulePtr createLocalReadImplementation() { return std::make_shared<LocalReadImplementation>(); }
+OptimizationRulePtr createParallelReadImplementation();
 OptimizationRulePtr createParallelReadImplementation() { return std::make_shared<ParallelReadImplementation>(); }
+OptimizationRulePtr createReplicatedReadImplementation();
 OptimizationRulePtr createReplicatedReadImplementation() { return std::make_shared<ReplicatedReadImplementation>(); }
+OptimizationRulePtr createSortedReadImplementation();
 OptimizationRulePtr createSortedReadImplementation() { return std::make_shared<SortedReadImplementation>(); }
 
 }

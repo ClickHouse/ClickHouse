@@ -67,6 +67,7 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
     return {sort_expr};
 }
 
+OptimizationRulePtr createSortingEnforcer();
 OptimizationRulePtr createSortingEnforcer() { return std::make_shared<SortingEnforcer>(); }
 
 }

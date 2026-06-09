@@ -68,6 +68,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     /// Force make_distributed_plan off: the worker runs an already-split local fragment.
     query_context->applySettingsChanges(task_description.settings_changes);
     query_context->setSetting("make_distributed_plan", false);
+    query_context->setSetting("enable_cascades_optimizer", false);
 
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(unique_temp_file_path, query_context);
 

@@ -43,6 +43,8 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
+bool canExecuteRemotely(const QueryPlan::Node & node);
+
 /// True if all steps can be sent to a remote stateless worker.
 bool canExecuteRemotely(const QueryPlan::Node & node)
 {

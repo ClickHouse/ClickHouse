@@ -58,6 +58,7 @@ protected:
 };
 
 
+OptimizationRulePtr createDefaultImplementation();
 OptimizationRulePtr createDefaultImplementation() { return std::make_shared<DefaultImplementation>(); }
 
 }

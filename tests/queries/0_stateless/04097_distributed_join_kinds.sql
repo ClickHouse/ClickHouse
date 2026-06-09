@@ -13,6 +13,7 @@
 
 SET enable_analyzer = 1;
 SET make_distributed_plan = 1;
+SET enable_cascades_optimizer = 0;
 SET enable_parallel_replicas = 0;
 SET query_plan_use_new_logical_join_step = 1;
 SET distributed_plan_default_shuffle_join_bucket_count = 4;

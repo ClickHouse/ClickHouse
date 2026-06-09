@@ -151,7 +151,7 @@ QueryPlanStepPtr UnionStep::deserialize(Deserialization & ctx)
 
 QueryPlanStepPtr UnionStep::clone() const
 {
-    return std::make_unique<UnionStep>(input_headers, max_threads);
+    return std::make_unique<UnionStep>(input_headers, max_threads, is_sql_union);
 }
 
 void registerUnionStep(QueryPlanStepRegistry & registry);

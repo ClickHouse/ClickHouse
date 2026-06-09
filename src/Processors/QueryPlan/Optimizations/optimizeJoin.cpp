@@ -150,7 +150,9 @@ static NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG
 }
 
 /// If we have stats for column names for storage we need to find corresponding internal column names
-static void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
+void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
+
+void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
     std::unordered_map<String, ColumnStats> original = std::move(mapped);
     mapped = {};
@@ -1294,8 +1296,6 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
             new_node.step = std::move(join_step);
             new_node.children = {left_child_node, right_child_node};
-            if (entry->estimated_rows)
-                new_node.cost_estimation = CostEstimationInfo{.rows = Float64(*entry->estimated_rows)};
             nodeStack.push(&new_node);
         }
     }

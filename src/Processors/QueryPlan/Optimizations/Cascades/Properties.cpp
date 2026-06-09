@@ -67,7 +67,7 @@ bool ExpressionProperties::isSatisfiedBy(const ExpressionProperties & existing_p
 void  ExpressionProperties::dump(WriteBuffer & out) const
 {
     out << "{[";
-    dumpSortDescription(sorting, out);
+    out << dumpSortDescription(sorting);
     out << "], {";
     out << fmt::format("{} nodes, {}, {}", distribution.node_count, distribution.is_replicated ? "replicated" : "not replicated", fmt::join(distribution.columns, ","));
     out << "}}";

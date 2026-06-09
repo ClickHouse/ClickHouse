@@ -731,6 +731,8 @@ QueryPlanStepPtr SortingStep::clone() const
     cloned->use_buffering = use_buffering;
     cloned->apply_virtual_row_conversions = apply_virtual_row_conversions;
     cloned->threshold_tracker = threshold_tracker;
+    cloned->limit_by_columns = limit_by_columns;
+    cloned->limit_by_group_length = limit_by_group_length;
     return cloned;
 }
 

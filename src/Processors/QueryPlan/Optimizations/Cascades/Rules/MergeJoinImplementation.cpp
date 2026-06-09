@@ -141,6 +141,7 @@ std::vector<GroupExpressionPtr> MergeJoinImplementation::applyImpl(GroupExpressi
     return result;
 }
 
+OptimizationRulePtr createMergeJoinImplementation();
 OptimizationRulePtr createMergeJoinImplementation() { return std::make_shared<MergeJoinImplementation>(); }
 
 }

@@ -67,6 +67,7 @@ std::vector<GroupExpressionPtr> JoinCommutativity::applyImpl(GroupExpressionPtr 
     return {expression_with_swapped_inputs};
 }
 
+OptimizationRulePtr createJoinCommutativity();
 OptimizationRulePtr createJoinCommutativity() { return std::make_shared<JoinCommutativity>(); }
 
 }

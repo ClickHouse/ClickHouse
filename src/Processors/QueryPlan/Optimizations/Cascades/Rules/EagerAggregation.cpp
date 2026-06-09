@@ -394,7 +394,8 @@ static std::unique_ptr<AggregatingStep> makePartialAggStep(
         /*group_by_sort_description=*/SortDescription{},
         /*should_produce_results_in_order_of_bucket_number=*/false,
         /*memory_bound_merging=*/false,
-        /*explicit_sorting_required_for_aggregation_in_order=*/false);
+        /*explicit_sorting_required_for_aggregation_in_order=*/false,
+        /*enable_sharding_aggregator=*/false);
     step->setStepDescription(fmt::format("EagerPartial: {}", original.getStepDescription()), 200);
     return step;
 }
@@ -719,6 +720,7 @@ std::vector<GroupExpressionPtr> EagerAggregation::applyImpl(GroupExpressionPtr e
     return result;
 }
 
+OptimizationRulePtr createEagerAggregation();
 OptimizationRulePtr createEagerAggregation() { return std::make_shared<EagerAggregation>(); }
 
 }

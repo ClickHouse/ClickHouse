@@ -325,7 +325,7 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
     return aggregation_statistics;
 }
 
-void trimStatisticsByLimit(ExpressionStatistics & statistics, UInt64 limit)
+static void trimStatisticsByLimit(ExpressionStatistics & statistics, UInt64 limit)
 {
     statistics.estimated_row_count = std::min(statistics.estimated_row_count, Float64(limit));
     statistics.max_row_count = std::min(statistics.max_row_count, Float64(limit));

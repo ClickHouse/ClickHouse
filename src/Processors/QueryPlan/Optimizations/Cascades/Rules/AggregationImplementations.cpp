@@ -244,6 +244,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     return result;
 }
 
+OptimizationRulePtr createAggregationImplementation();
 OptimizationRulePtr createAggregationImplementation() { return std::make_shared<AggregationImplementation>(); }
 
 
@@ -313,6 +314,7 @@ std::vector<GroupExpressionPtr> TwoPhaseAggregationTransformation::applyImpl(Gro
     return {merge_expr};
 }
 
+OptimizationRulePtr createTwoPhaseAggregationTransformation();
 OptimizationRulePtr createTwoPhaseAggregationTransformation() { return std::make_shared<TwoPhaseAggregationTransformation>(); }
 
 }

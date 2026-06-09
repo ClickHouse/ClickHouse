@@ -164,11 +164,6 @@ OptimizerStatisticsPtr createEmptyStatistics()
 }
 
 
-namespace QueryPlanOptimizations
-{
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter);
-}
-
 /// Estimate bytes per row for a ReadFromMergeTree step using storage column sizes or output header.
 static Float64 estimateReadBytesPerRowFromStep(const ReadFromMergeTree & read_step)
 {
@@ -189,6 +184,13 @@ static Float64 estimateReadBytesPerRowFromStep(const ReadFromMergeTree & read_st
     return estimateRowWidthFromHeader(*read_step.getOutputHeader());
 }
 
+namespace QueryPlanOptimizations
+{
+
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
+
+}
+
 std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
 {
     std::optional<ExpressionStatistics> stats;
@@ -202,8 +204,8 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
         if (!read_step)
             read_step = typeid_cast<ReadFromMergeTree *>(node.children[0]->step.get());
 
-        /// For Filter -> ReadFromMergeTree estimateReadRowsCount will recursively call itself for the child ReadFromMergeTree with the filter's expression
-        auto relation_stats = QueryPlanOptimizations::estimateReadRowsCount(node, nullptr);
+        /// estimateReadRowsCount handles FilterStep and PREWHERE sampling internally.
+        auto relation_stats = QueryPlanOptimizations::estimateReadRowsCount(node);
         if (relation_stats.estimated_rows)
         {
             stats.emplace();

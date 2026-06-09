@@ -1,3 +1,4 @@
+#include <Common/ThreadStatus.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
@@ -112,7 +113,7 @@ void CascadesOptimizer::optimize()
 }
 
 /// Drop unused columns and reorder columns between steps if needed
-void addConvertingExpression(QueryPlan & plan, const SharedHeader & expected_header)
+static void addConvertingExpression(QueryPlan & plan, const SharedHeader & expected_header)
 {
     if (!blocksHaveEqualStructure(*plan.getCurrentHeader(), *expected_header))
     {
