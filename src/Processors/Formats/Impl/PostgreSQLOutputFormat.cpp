@@ -50,10 +50,14 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
 {
     LOG_TEST(getLogger("PostgreSQLOutputFormat"), "Consume a chunk");
 
+    /// Check for cancellation at the beginning of the loop, use throw instead of return.
+    if (isCancelled())
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
     for (size_t i = 0; i != chunk.getNumRows(); ++i)
     {
         /// Check for cancellation periodically, use throw instead of return.
-        if (i % 8192 == 0 && isCancelled())
+        if (isCancelled())
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
         const Columns & columns = chunk.getColumns();
