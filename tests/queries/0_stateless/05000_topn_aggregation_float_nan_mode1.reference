@@ -1,0 +1,20 @@
+-- ASC float key: Mode 1 (sorted input) is NOT used
+0
+-- ASC float key: correct top-K (optimization on)
+9	999
+8	998
+7	997
+-- ASC float key: matches reference (optimization off)
+9	999
+8	998
+7	997
+-- DESC float key: Mode 1 (sorted input) is NOT used
+0
+-- DESC float key: correct top-K (optimization on)
+9	999
+8	998
+7	997
+-- DESC float key: matches reference (optimization off)
+9	999
+8	998
+7	997

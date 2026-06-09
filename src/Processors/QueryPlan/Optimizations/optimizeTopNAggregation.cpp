@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -361,7 +362,13 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                         continue;
 
                     const auto & arg_col = mt_header.getByName(order_arg_name);
-                    if (!arg_col.type->isValueRepresentedByNumber() || arg_col.type->isNullable())
+                    /// Match the single-node Mode 2 gate below: reject
+                    /// `LowCardinality(Nullable(T))` as well as plain `Nullable(T)`.
+                    /// `DataTypeLowCardinality::isNullable` is always false, so a bare
+                    /// `isNullable` check would let `LowCardinality(Nullable(UInt64))`
+                    /// enable threshold pruning and drop all-null groups that SQL ordering
+                    /// places first for `ORDER BY max(val) DESC NULLS FIRST`.
+                    if (!arg_col.type->isValueRepresentedByNumber() || isNullableOrLowCardinalityNullable(arg_col.type))
                         continue;
 
                     /// In-transform threshold pruning only (no __topKFilter prewhere
@@ -420,8 +427,20 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         if (!sorting_key_columns.empty() && sorting_key_columns[0] == order_arg_name)
         {
             const auto & mt_header = *read_from_mt->getOutputHeader();
-            bool arg_is_nullable = mt_header.has(order_arg_name)
+            const bool arg_in_header = mt_header.has(order_arg_name);
+            const bool arg_is_nullable = arg_in_header
                 && isNullableOrLowCardinalityNullable(mt_header.getByName(order_arg_name).type);
+
+            /// Floating-point determining columns need the same `NaN` guard as the standard
+            /// read-in-order optimization: a `NaN` sorts at one physical end of the MergeTree
+            /// data, but `ORDER BY ... NULLS FIRST/LAST` (encoded as `nulls_direction`) may
+            /// expect it at the other end. A reverse read would then surface `NaN` groups
+            /// first, and early termination after `K` groups could return the wrong top-K.
+            /// `optimizeReadInOrder` treats floats like nullable keys when
+            /// `nulls_direction == -1`, so mirror that here.
+            const bool arg_is_float = arg_in_header
+                && isFloat(*removeLowCardinality(mt_header.getByName(order_arg_name).type));
+            const bool reverse_nulls = sort_desc[0].nulls_direction == -1;
 
             /// `required_direction` is the SQL direction relative to the column value, but
             /// `requestReadingInOrder` expects the direction relative to the MergeTree sorting
@@ -432,7 +451,8 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             const int reverse_indicator = (!reverse_flags.empty() && reverse_flags[0]) ? -1 : 1;
             const int read_direction = required_direction * reverse_indicator;
 
-            if (!arg_is_nullable && read_from_mt->requestReadingInOrder(1, read_direction, limit_value))
+            if (!arg_is_nullable && !(arg_is_float && reverse_nulls)
+                && read_from_mt->requestReadingInOrder(1, read_direction, limit_value))
             {
                 sorted_input = true;
                 /// TopNAggregatingStep consumes the pre-aggregation header where the
