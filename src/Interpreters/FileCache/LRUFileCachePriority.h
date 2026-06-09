@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/FileCache/Guards.h>
 
+class FileCacheTest_MoveEvictionPos_Test;
 
 namespace DB
 {
@@ -40,6 +41,7 @@ protected:
 
 public:
     LRUFileCachePriority(
+        QueueType queue_type_,
         size_t max_size_,
         size_t max_elements_,
         const std::string & description_ = "none",
@@ -124,7 +126,7 @@ public:
         const OriginInfo & origin_info,
         const CacheStateGuard::Lock & lock) override;
 
-    FileCachePriorityPtr copy() const { return std::make_unique<LRUFileCachePriority>(max_size, max_elements, description, state); }
+    FileCachePriorityPtr copy() const { return std::make_unique<LRUFileCachePriority>(getQueueType(), max_size, max_elements, description, state); }
 
     /// See a comment near eviction_pos.
     void resetEvictionPos() override
@@ -164,6 +166,7 @@ private:
     class LRUIterator;
     using LRUQueue = std::list<EntryPtr>;
     friend class SLRUFileCachePriority;
+    friend class ::FileCacheTest_MoveEvictionPos_Test;
 
     size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) override;
 
@@ -267,7 +270,7 @@ public:
 
     void remove(const CachePriorityGuard::WriteLock &) override;
 
-    void invalidate() override;
+    void invalidate() noexcept override;
 
     void incrementSize(size_t size, const CacheStateGuard::Lock &) override;
 
