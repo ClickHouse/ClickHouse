@@ -3,6 +3,7 @@
 SET parallel_replicas_local_plan = 1;
 SET optimize_rewrite_has_to_in = 1;
 SET enable_analyzer = 1;
+SET materialize_statistics_on_insert = 0;
 
 DROP TABLE IF EXISTS tab;
 

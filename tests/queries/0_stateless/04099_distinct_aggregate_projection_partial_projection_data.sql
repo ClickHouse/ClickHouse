@@ -5,6 +5,7 @@
 -- { echo }
 
 SET optimize_use_projections = 1;
+SET materialize_statistics_on_insert = 0;
 
 DROP TABLE IF EXISTS test_distinct_proj_partial_projection;
 
