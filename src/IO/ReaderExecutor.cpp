@@ -486,9 +486,9 @@ void ReaderExecutor::accountLiveConnectionDrop(ConnState & conn, bool at_eof, St
         ++out_stats.incomplete_connections;
 }
 
-void ReaderExecutor::maybeKeepLiveConnectionBefore(size_t next_physical, ConnState & conn, Stats & out_stats) const
+void ReaderExecutor::maybeKeepLiveConnectionBefore(size_t next_physical, ConnState & conn, bool eof_latch, Stats & out_stats) const
 {
-    if (!conn.live_connection || reached_eof)
+    if (!conn.live_connection || eof_latch)
         return;
 
     /// Keep the connection only if the next read continues it forward within its
@@ -577,9 +577,9 @@ void ReaderExecutor::maybeTriggerPrefetch()
     /// coordination overhead; skipping here also preserves the invariant that no
     /// prefetch is in flight at a resident cursor (the resident fast-path never races
     /// the worker over `live_connection`).
-    if (!read_plan.covers(ByteRange{position_phys, probe_size}))
+    if (!read_geometry || !read_geometry->covers(ByteRange{position_phys, probe_size}))
         planResidencyWindow(position_phys);
-    if (read_plan.residentAt(position_phys).handle)
+    if (read_geometry->residentAt(position_phys).resident())
     {
         LOG_TRACE(log, "Prefetch: cursor {} resident, next read serves it from cache", position);
         ++stats.prefetch_skipped_resident;
@@ -617,7 +617,7 @@ void ReaderExecutor::maybeTriggerPrefetch()
 
     /// Bound the read-ahead to the plan gap `[position, gapEnd)`, mirroring the
     /// synchronous gap read: one pure run per fetch, never straddling a resident run.
-    next_size = std::min(next_size, read_plan.gapEnd(position_phys) - position_phys);
+    next_size = std::min(next_size, read_geometry->gapEnd(position_phys) - position_phys);
     const ByteRange next_physical_window{position_phys, next_size};
     const size_t next_logical_offset = position;
 
@@ -660,12 +660,20 @@ void ReaderExecutor::maybeTriggerPrefetch()
     job->conn = std::move(foreground_conn);
     foreground_conn = {};
 
+    /// Co-own the current immutable geometry snapshot: the worker serves resident
+    /// bytes from `job->geometry` (its own ref), never the shared `read_geometry`,
+    /// so a foreground re-plan (which publishes a NEW snapshot) never races it.
+    job->geometry = read_geometry;
+
     auto handle = prefetch_pool->submit([this, next_physical_window, job]()
     {
         Stopwatch watch;
-        auto rope = readWindowLogical(next_physical_window, /*from_prefetch=*/true, job->conn, job->stats);
+        /// PURE job: reads/writes ONLY job state - its conn, its geometry snapshot,
+        /// its reached_eof latch, its stats, and its execution_watch. No shared `this->`.
+        auto rope = readWindowLogical(
+            next_physical_window, /*from_prefetch=*/true, job->conn, *job->geometry, job->reached_eof, job->stats);
         watch.stop();
-        prefetch_execution_watch = watch;
+        job->execution_watch = watch;
         return rope;
     });
 
@@ -754,6 +762,12 @@ void ReaderExecutor::discardPrefetch(FilesystemPrefetchState reason)
         if (prefetch_job && prefetch_job->conn.live_connection
             && !prefetch_job->conn.live_connection->isComplete(/*at_eof=*/false))
             ++stats.incomplete_connections;
+        /// Copy the worker's prefetch-log execution timing to the foreground member
+        /// before `mergePrefetchJobStats` drops the job, so `emitPrefetchLog` below
+        /// reports the discarded prefetch's timing. Do NOT reconcile `reached_eof`
+        /// here: a discarded prefetch's bytes (and its EOF) are wasted.
+        if (prefetch_job)
+            prefetch_execution_watch = prefetch_job->execution_watch;
         /// The worker ran (tryCancel lost), so its job-local stats hold this
         /// prefetch's I/O. Merge it in (attributing issued bytes to wasted) and drop
         /// the job. Safe here: `get()` returning or throwing both establish the
@@ -863,7 +877,12 @@ void ReaderExecutor::initDecryption()
     LOG_DEBUG(log, "initDecryption: reading {} headers ({} bytes)",
         decryption_layers.size(), data_start_offset);
 
-    Rope header_rope = readPhysicalWindow(ByteRange{0, data_start_offset}, /*from_prefetch=*/false, foreground_conn, stats);
+    /// No plan built yet at init time: pass an empty geometry so the header is read
+    /// purely via the source/gap path (fetchAndBackfillGaps serves any cached header
+    /// via its own lookup). Foreground call, so `foreground_conn` / `this->reached_eof`.
+    ReadPlanGeometry init_geometry;
+    Rope header_rope = readPhysicalWindow(ByteRange{0, data_start_offset}, /*from_prefetch=*/false,
+        foreground_conn, init_geometry, reached_eof, stats);
 
     /// Under size-unknown sources `readPhysicalWindow` latches `reached_eof`
     /// on short returns instead of throwing, so an empty rope means
@@ -928,9 +947,10 @@ void ReaderExecutor::initDecryption()
 #endif
 }
 
-Rope ReaderExecutor::readWindowLogical(ByteRange physical_window, bool from_prefetch, ConnState & conn, Stats & out_stats)
+Rope ReaderExecutor::readWindowLogical(ByteRange physical_window, bool from_prefetch, ConnState & conn,
+    const ReadPlanGeometry & geometry, bool & eof_latch, Stats & out_stats)
 {
-    Rope rope = readPhysicalWindow(physical_window, from_prefetch, conn, out_stats);
+    Rope rope = readPhysicalWindow(physical_window, from_prefetch, conn, geometry, eof_latch, out_stats);
     /// Physical offsets include the encryption header prefix; the consumer works
     /// in logical (post-header) offsets. Shift once here. No-op when not encrypted.
     if (data_start_offset)
@@ -1013,15 +1033,15 @@ Rope ReaderExecutor::readNextWindow()
     /// in-flight gap read-ahead (launched last call) or fetch synchronously. A
     /// prefetch is only ever scheduled for a gap cursor (see `maybeTriggerPrefetch`),
     /// so the resident path never runs while a worker owns `live_connection`.
-    ReadPlan::Resident at;
+    ReadPlanGeometry::Resident at;
     if (win_size > 0)
     {
-        if (!read_plan.covers(ByteRange{position_phys, win_size}))
+        if (!read_geometry || !read_geometry->covers(ByteRange{position_phys, win_size}))
             planResidencyWindow(position_phys);
-        at = read_plan.residentAt(position_phys);
+        at = read_geometry->residentAt(position_phys);
     }
 
-    if (at.handle)
+    if (at.resident())
     {
         /// Active cache stream: stream the contiguous resident run straight from
         /// the plan's held (pinning) cache readers - no per-window discovery, no
@@ -1041,11 +1061,15 @@ Rope ReaderExecutor::readNextWindow()
         StopwatchAccumulator get_scope(stats.cache_get_us);
         for (size_t pos = position_phys; pos < window_end;)
         {
-            auto run = read_plan.residentAt(pos);
-            if (!run.handle)
+            auto run = read_geometry->residentAt(pos);
+            /// Map the resident geometry entry to its foreground-private streaming
+            /// handle (1:1 positional). A resident entry always has a handle (set in
+            /// planResidencyWindow); guard defensively and stop the run if not.
+            if (!run.resident() || run.entry >= read_handles.entries.size()
+                || !read_handles.entries[run.entry].handle)
                 break;
             const size_t serve_end = std::min(run.run_end, window_end);
-            Rope chunk = run.handle->get(ByteRange{pos, serve_end - pos});
+            Rope chunk = read_handles.entries[run.entry].handle->get(ByteRange{pos, serve_end - pos});
             const size_t got = chunk.range().size;
             if (got == 0)
                 break;
@@ -1068,7 +1092,7 @@ Rope ReaderExecutor::readNextWindow()
         /// (keep it if the next read bridges, else drop it). Safe to touch
         /// `foreground_conn` here - no prefetch worker runs at a resident cursor
         /// (`chassert(!prefetch_handle)` above), so the cluster is on the foreground.
-        maybeKeepLiveConnectionBefore(position_phys + rope.range().size, foreground_conn, stats);
+        maybeKeepLiveConnectionBefore(position_phys + rope.range().size, foreground_conn, reached_eof, stats);
 
         if (data_start_offset)
             rope.shift(-static_cast<ssize_t>(data_start_offset));
@@ -1084,8 +1108,14 @@ Rope ReaderExecutor::readNextWindow()
         /// these calls (kept past the resident serve, skips the hole on the open GET).
         size_t gap_size = win_size;
         if (win_size > 0)
-            gap_size = std::min(win_size, read_plan.gapEnd(position_phys) - position_phys);
+            gap_size = std::min(win_size, read_geometry->gapEnd(position_phys) - position_phys);
         const ByteRange physical_window{position_phys, gap_size};
+
+        /// Ensure a (possibly empty) geometry snapshot exists to pass to the read
+        /// below: the resident block above only planned when `win_size > 0`, so a
+        /// `win_size == 0` (extent-reached) gap read could still see a null snapshot.
+        if (!read_geometry)
+            planResidencyWindow(position_phys);
 
         if (prefetch_handle)
         {
@@ -1119,7 +1149,8 @@ Rope ReaderExecutor::readNextWindow()
 
                 ensurePreAcquiredSlot(foreground_conn);
                 StopwatchAccumulator sync_scope(stats.sync_read_us);
-                rope = readWindowLogical(physical_window, /*from_prefetch=*/false, foreground_conn, stats);
+                rope = readWindowLogical(physical_window, /*from_prefetch=*/false, foreground_conn,
+                    *read_geometry, reached_eof, stats);
                 HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
                     static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
             }
@@ -1139,7 +1170,18 @@ Rope ReaderExecutor::readNextWindow()
                 /// empty here (moved into the job at submit).
                 chassert(!foreground_conn.live_connection && !foreground_conn.pre_acquired_slot);
                 if (prefetch_job)
+                {
                     foreground_conn = std::move(prefetch_job->conn);
+                    /// Reconcile the worker's one-way EOF latch into the executor member -
+                    /// ONLY on this consumed/used path (the worker's bytes are kept). The
+                    /// discard/cancel paths must NOT, or a wasted prefetch's EOF would
+                    /// strand the foreground at a false EOF.
+                    reached_eof |= prefetch_job->reached_eof;
+                    /// Copy the worker's prefetch-log execution timing to the foreground
+                    /// member before `mergePrefetchJobStats` drops the job below, so
+                    /// `emitPrefetchLog` (which reads the member) sees it.
+                    prefetch_execution_watch = prefetch_job->execution_watch;
+                }
                 mergePrefetchJobStats(/*wasted=*/false);
                 HistogramMetrics::ReaderExecutorPrefetchWaitLatency.observe(
                     static_cast<HistogramMetrics::Value>(wait_scope.elapsedMicroseconds()));
@@ -1160,7 +1202,8 @@ Rope ReaderExecutor::readNextWindow()
             LOG_TRACE(log, "readNextWindow: synchronous gap read physical [{}, {})",
                 physical_window.offset, physical_window.end());
             StopwatchAccumulator sync_scope(stats.sync_read_us);
-            rope = readWindowLogical(physical_window, /*from_prefetch=*/false, foreground_conn, stats);
+            rope = readWindowLogical(physical_window, /*from_prefetch=*/false, foreground_conn,
+                *read_geometry, reached_eof, stats);
             HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
         }
@@ -1557,21 +1600,21 @@ Rope ReaderExecutor::readFromSource(
     return rope;
 }
 
-Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_prefetch, ConnState & conn, Stats & out_stats)
+Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_prefetch, ConnState & conn,
+    const ReadPlanGeometry & geometry, bool & eof_latch, Stats & out_stats)
 {
     LOG_TRACE(log, "readPhysicalWindow [{}, {}) from_prefetch={}",
         physical_window.offset, physical_window.end(), from_prefetch);
 
-    /// Concurrency invariant: a foreground (non-prefetch) physical read must never
-    /// run while a prefetch is in flight. The worker operates on its OWN connection
-    /// cluster (`prefetch_job->conn`, passed as `conn`) and `prefetch_job->stats`;
-    /// the foreground operates on `foreground_conn` / `this->stats`. The connection
-    /// cluster is therefore never shared (the use-after-free is compile-time
-    /// impossible), but `read_plan` / `reached_eof` / the prefetch-log timing are
-    /// still shared and rely on the handoff: a foreground physical read must only run
-    /// after the in-flight prefetch was consumed/cancelled (`prefetch_handle` moved
-    /// out) - this `chassert` keeps guarding that until those move into the job (Step 3).
-    chassert(from_prefetch || !prefetch_handle);
+    /// No handoff `chassert` here any more: a prefetch worker is now a PURE job - it
+    /// reads/writes only job state (`conn` = `prefetch_job->conn`, `out_stats` =
+    /// `prefetch_job->stats`, `geometry` = its co-owned immutable snapshot, `eof_latch`
+    /// = `prefetch_job->reached_eof`) and never touches a shared `this->` member. The
+    /// foreground binds the same parameters to `foreground_conn` / `this->stats` /
+    /// `*read_geometry` / `this->reached_eof`. So a foreground physical read and a
+    /// worker no longer share any mutable state - the safety is type-enforced, not a
+    /// runtime invariant. The foreground-private `read_handles` is passed to
+    /// `serveResidentFromPlan` only on the foreground path (null for a worker).
 
     Rope result;
     /// Logical bytes already materialised in `result`. Keeps `result` disjoint:
@@ -1582,18 +1625,19 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
     /// `~DiskCacheHandle`), and so the in-flight segment can be pinned from them below.
     WritePlan write_plan;
 
-    serveResidentFromPlan(physical_window, from_prefetch, result, covered, out_stats);
+    serveResidentFromPlan(physical_window, from_prefetch, result, covered,
+        geometry, from_prefetch ? nullptr : &read_handles, out_stats);
     const bool fetched_from_source = fetchAndBackfillGaps(
-        physical_window, from_prefetch, result, covered, write_plan, conn, out_stats);
+        physical_window, from_prefetch, result, covered, write_plan, conn, eof_latch, out_stats);
 
     /// A cache-only window (no source read) leaves the live connection idle; keep
     /// it only if the next window bridges, else drop it (see the helper).
     if (!fetched_from_source)
-        maybeKeepLiveConnectionBefore(physical_window.end(), conn, out_stats);
+        maybeKeepLiveConnectionBefore(physical_window.end(), conn, eof_latch, out_stats);
 
     /// Strategy A pin: re-point to the partial segment under the new frontier
     /// (dropping any previous pin); clear it when there's nothing partial.
-    if (conn.live_connection && !reached_eof)
+    if (conn.live_connection && !eof_latch)
     {
         conn.inflight_segment_pin = write_plan.pinFrontier(physical_window.end());
 
@@ -1631,20 +1675,22 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
 }
 
 void ReaderExecutor::serveResidentFromPlan(
-    ByteRange physical_window, bool from_prefetch, Rope & result, IntervalSet & covered, Stats & out_stats)
+    ByteRange physical_window, bool from_prefetch, Rope & result, IntervalSet & covered,
+    const ReadPlanGeometry & geometry, ReadPlanHandles * handles, Stats & out_stats)
 {
-    if (!read_plan.covers(physical_window))
-        planResidencyWindow(physical_window.offset);
+    /// Does NOT re-plan: the foreground re-plans before calling (in readNextWindow),
+    /// and a worker must never mutate the shared plan. An uncovered window simply
+    /// yields no resident bytes here - `fetchAndBackfillGaps` is the residency-truth
+    /// path that serves any cache hit it finds via its own lookup.
 
-    /// Test hook: pause after residency is planned - the plan's handles are held,
-    /// so the resident segments are pinned - but before they are read, so a test
-    /// can drop/evict the cache and verify the pinned segments survive and `get`
-    /// still honors them. Gated on there being resident bytes to serve: `planned`
-    /// can now also hold miss-only (write-target) records, which pin nothing. No-op
-    /// in production.
+    /// Test hook: pause after residency is planned - the foreground-private handles
+    /// pin the resident segments - but before they are read, so a test can drop/evict
+    /// the cache and verify the pinned segments survive and `get` still honors them.
+    /// Gated on there being resident geometry (entries can also be miss-only write
+    /// targets, which pin nothing). No-op in production.
     bool any_resident = false;
-    for (const auto & ph : read_plan.planned)
-        if (!ph.resident.empty())
+    for (const auto & entry : geometry.entries)
+        if (!entry.resident.empty())
         {
             any_resident = true;
             break;
@@ -1652,15 +1698,17 @@ void ReaderExecutor::serveResidentFromPlan(
     if (any_resident)
         FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_cache_status);
 
-    /// The plan is in cache-tier priority order, so the `covered` guard serves
-    /// each byte from the fastest tier that holds it.
-    for (const auto & ph : read_plan.planned)
+    /// Geometry is in cache-tier priority order, so the `covered` guard serves each
+    /// byte from the fastest tier that holds it. Each entry's streaming handle lives
+    /// in the 1:1-positional foreground-private `handles`.
+    for (size_t i = 0; i < geometry.entries.size(); ++i)
     {
-        size_t & tier_bytes = ph.tier == CacheTier::PageCache
+        const auto & entry = geometry.entries[i];
+        size_t & tier_bytes = entry.tier == CacheTier::PageCache
             ? out_stats.bytes_from_page_cache
             : out_stats.bytes_from_filesystem_cache;
 
-        for (const auto & res : ph.resident)
+        for (const auto & res : entry.resident)
         {
             const size_t lo = std::max(res.offset, physical_window.offset);
             const size_t hi = std::min(res.end(), physical_window.end());
@@ -1671,9 +1719,18 @@ void ReaderExecutor::serveResidentFromPlan(
             auto useful = covered.subtract(clamped);
             if (useful.empty())
                 continue;
+
+            /// Reaching a useful resident range means the window was NOT a pure gap -
+            /// which only happens on the foreground (a worker's window is clamped to a
+            /// gap), so `handles` is non-null. If not (or the entry has no handle),
+            /// fail safe: leave the bytes for fetchAndBackfillGaps to serve via lookup.
+            chassert(handles);
+            if (!handles || i >= handles->entries.size() || !handles->entries[i].handle)
+                continue;
+
             ++out_stats.cache_get_requests;
             StopwatchAccumulator get_scope(out_stats.cache_get_us);
-            Rope resident_rope = ph.handle->get(clamped);
+            Rope resident_rope = handles->entries[i].handle->get(clamped);
             HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
             for (const auto & sub : useful)
@@ -1703,6 +1760,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
     IntervalSet & covered,
     WritePlan & write_plan,
     ConnState & conn,
+    bool & eof_latch,
     Stats & out_stats)
 {
     /// Whatever the plan left uncovered is a remote gap. Walk the tiers to create
@@ -1838,7 +1896,9 @@ bool ReaderExecutor::fetchAndBackfillGaps(
                     throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                         "ReaderExecutor: short read from {} at offset {}: requested {} bytes, got {}",
                         pr.object.remote_path, pr.object_offset, pr.size, actual);
-                reached_eof = true;
+                /// Latch into the active path's eof flag (the foreground member, or the
+                /// worker's job latch), not the shared member directly.
+                eof_latch = true;
             }
 
             /// Use `actual` so the recorded range tracks what the source delivered
@@ -1913,7 +1973,7 @@ void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Ro
         if (!cache->populatesOnMiss())
             continue;
 
-        for (auto & ph : read_plan.planned)
+        for (auto & ph : read_handles.entries)
         {
             /// This provider's plan records, and only ones the prepare stage
             /// recorded a gap for. The empty-`missing` skip is the warm-neutral
@@ -1962,11 +2022,21 @@ void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Ro
 
 void ReaderExecutor::planResidencyWindow(size_t physical_start)
 {
-    read_plan.planned.clear();
-    read_plan.plan_start = physical_start;
-    read_plan.plan_end = physical_start;  /// stays invalid (empty) unless we set a span below
+    /// Release the PREVIOUS plan's handles FIRST: their `~ICacheHandle` runs the
+    /// deferred LRU-bump / segment-pin release here, at the same program point the
+    /// old in-place `planned.clear()` did - foreground-timed (planResidencyWindow runs
+    /// only after the in-flight prefetch is joined), so never concurrent with a worker.
+    read_handles = {};
+
+    /// Always publish a geometry (empty on the early-out paths below) so the query
+    /// methods' callers never dereference a null snapshot: an empty geometry has
+    /// `plan_end == plan_start`, so `covers` returns false and the caller re-plans.
+    auto geom = std::make_shared<ReadPlanGeometry>();
+    geom->plan_start = physical_start;
+    geom->plan_end = physical_start;
 
     size_t want = plan_look_ahead_window;
+    bool valid = true;
 
     /// Clamp to the physical file end when the size is known. An unknown-size
     /// source plans the full look-ahead and discovers EOF via short reads, the
@@ -1975,25 +2045,31 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
     {
         const size_t physical_end = offset_map.totalSize();
         if (physical_start >= physical_end)
-            return;
-        want = std::min(want, physical_end - physical_start);
+            valid = false;
+        else
+            want = std::min(want, physical_end - physical_start);
     }
 
     /// Clamp to the advertised read extent so the plan never pins segments past
     /// the region the reader will actually consume.
-    if (read_extent_end)
+    if (valid && read_extent_end)
     {
         const size_t physical_extent_end = *read_extent_end + data_start_offset;
         if (physical_start >= physical_extent_end)
-            return;
-        want = std::min(want, physical_extent_end - physical_start);
+            valid = false;
+        else
+            want = std::min(want, physical_extent_end - physical_start);
     }
 
-    if (want == 0)
+    if (!valid || want == 0)
+    {
+        read_geometry = std::move(geom);  /// empty plan; covers()==false
         return;
+    }
 
     const ByteRange plan_range{physical_start, want};
-    read_plan.plan_end = plan_range.end();
+    geom->plan_end = plan_range.end();
+    ReadPlanHandles handles;
 
     /// One read-only residency probe per cache tier per object-piece. Both tiers
     /// are probed independently over the full span; the streaming `covered` guard
@@ -2012,11 +2088,16 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
             auto handle = cache->planResidency(pr.object, object_file_offset, piece_range);
             auto status = handle->status();
 
-            PlannedHandle ph;
-            ph.tier = cache->tier();
-            ph.provider = cache.get();
-            ph.object = pr.object;
-            ph.object_file_offset = object_file_offset;
+            /// `geom_entry` (immutable geometry) and `handle_entry` (foreground-private
+            /// mutable handle) are filled in lockstep and pushed BOTH-or-NEITHER below,
+            /// so `read_geometry->entries` and `read_handles.entries` stay 1:1 positional
+            /// (`residentAt`'s entry index maps into `read_handles`).
+            GeometryEntry geom_entry;
+            geom_entry.tier = cache->tier();
+            HandleEntry handle_entry;
+            handle_entry.provider = cache.get();
+            handle_entry.object = pr.object;
+            handle_entry.object_file_offset = object_file_offset;
 
             for (const auto & hit : status.hit_ranges)
             {
@@ -2025,7 +2106,7 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
                 const size_t lo = std::max(hit.offset, plan_range.offset);
                 const size_t hi = std::min(hit.end(), plan_range.end());
                 if (lo < hi)
-                    ph.resident.push_back(ByteRange{lo, hi - lo});
+                    geom_entry.resident.push_back(ByteRange{lo, hi - lo});
             }
 
             /// Record the gaps this tier lacks for the write side (promotion), but
@@ -2038,25 +2119,37 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
                     const size_t lo = std::max(miss.offset, plan_range.offset);
                     const size_t hi = std::min(miss.end(), plan_range.end());
                     if (lo < hi)
-                        ph.missing.push_back(ByteRange{lo, hi - lo});
+                        handle_entry.missing.push_back(ByteRange{lo, hi - lo});
                 }
 
             /// Keep the read-only handle only when it pins resident bytes; a
             /// miss-only record streams nothing (its `write_handle` is acquired
             /// lazily on the first promotion write). Drop records that are neither
             /// resident nor a populatable gap — nothing to read or write.
-            if (!ph.resident.empty())
-                ph.handle = std::move(handle);
+            if (!geom_entry.resident.empty())
+                handle_entry.handle = std::move(handle);
 
-            if (!ph.resident.empty() || !ph.missing.empty())
-                read_plan.planned.push_back(std::move(ph));
+            if (!geom_entry.resident.empty() || !handle_entry.missing.empty())
+            {
+                geom->entries.push_back(std::move(geom_entry));
+                handles.entries.push_back(std::move(handle_entry));
+            }
 
             piece_file_start += pr.size;
         }
     }
 
-    LOG_TRACE(log, "planResidencyWindow: planned [{}, {}), {} resident handles",
-        read_plan.plan_start, read_plan.plan_end, read_plan.planned.size());
+    chassert(geom->entries.size() == handles.entries.size());
+
+    /// Publish: handles first, then the immutable geometry (only the foreground
+    /// indexes `read_handles`, so a reader that just took the new geometry never sees
+    /// a stale handles vector). A worker that still co-owns the previous geometry keeps
+    /// it alive harmlessly (it is const and holds only ByteRanges, no cache handle).
+    read_handles = std::move(handles);
+    read_geometry = std::move(geom);
+
+    LOG_TRACE(log, "planResidencyWindow: planned [{}, {}), {} entries",
+        read_geometry->plan_start, read_geometry->plan_end, read_geometry->entries.size());
 }
 
 std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t start_position, size_t read_size) const

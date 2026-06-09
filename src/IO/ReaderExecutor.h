@@ -220,6 +220,12 @@ private:
     /// conn-touching method signatures can take a `ConnState &`.
     struct ConnState;
 
+    /// The immutable look-ahead residency snapshot (co-owned with a prefetch worker)
+    /// and its foreground-private mutable handles (both defined below). Forward-declared
+    /// so the read-path signatures can take a `const ReadPlanGeometry &` / `ReadPlanHandles *`.
+    struct ReadPlanGeometry;
+    struct ReadPlanHandles;
+
     /// Assemble the bytes for `physical_window` from the residency plan, then the
     /// source. Two phases, no per-window cache discovery:
     ///   1. `serveResidentFromPlan` — copy every byte the held plan reports
@@ -233,15 +239,24 @@ private:
     /// - the foreground passes `this->stats`, a worker passes its job-local `Stats`.
     /// Returns one contiguous run from the window start (a hole would shift the
     /// caller's offset interpretation).
-    Rope readPhysicalWindow(ByteRange physical_window, bool from_prefetch, ConnState & conn, Stats & out_stats);
+    /// `geometry` is the immutable residency snapshot the read serves resident bytes
+    /// from (the foreground passes `*read_geometry`, a worker passes its co-owned
+    /// `job->geometry`); `reached_eof` is the size-unknown EOF latch the read sets
+    /// (the foreground passes `this->reached_eof`, a worker passes `job->reached_eof`).
+    Rope readPhysicalWindow(ByteRange physical_window, bool from_prefetch, ConnState & conn,
+        const ReadPlanGeometry & geometry, bool & eof_latch, Stats & out_stats);
 
-    /// Phase 1 of `readPhysicalWindow`: ensure `read_plan` covers
-    /// `physical_window` (re-planning if the cursor left the planned span), then
-    /// append every resident byte to `result` (recording it in `covered`),
-    /// reading it from the plan's held, pinning cache handles. Fastest-tier-first
-    /// is preserved by the `covered` guard (the plan is in tier order).
+    /// Phase 1 of `readPhysicalWindow`: append every byte the `geometry` snapshot
+    /// reports resident in `physical_window` to `result` (recording it in `covered`),
+    /// reading it from the matching foreground-private `handles` entry's pinning cache
+    /// handle. `handles` is null on the worker path (which serves no resident bytes -
+    /// its window is a pure gap), so the worker never touches the foreground handles;
+    /// the foreground passes `&read_handles`. Fastest-tier-first is preserved by the
+    /// `covered` guard (geometry is in tier order). Does NOT re-plan: an uncovered
+    /// remainder is left for `fetchAndBackfillGaps` (the residency-truth path).
     void serveResidentFromPlan(
-        ByteRange physical_window, bool from_prefetch, Rope & result, IntervalSet & covered, Stats & out_stats);
+        ByteRange physical_window, bool from_prefetch, Rope & result, IntervalSet & covered,
+        const ReadPlanGeometry & geometry, ReadPlanHandles * handles, Stats & out_stats);
 
     /// Phase 2 of `readPhysicalWindow`: whatever `covered` does not already hold
     /// in `physical_window` is a remote gap. Discover the per-tier backfill
@@ -259,6 +274,7 @@ private:
         IntervalSet & covered,
         WritePlan & write_plan,
         ConnState & conn,
+        bool & eof_latch,
         Stats & out_stats);
 
     /// Write every fetched miss range collected in `write_plan` into its tier
@@ -393,13 +409,16 @@ private:
     /// slot isn't held idle. No-op without a live connection or at EOF. Called
     /// after every cache-only serve (resident run, or a cache-only gap window).
     /// Drain/drop accounting lands in `out_stats` (see `maybeDrainLiveTail`).
-    /// Operates on `conn` (const: touches no `this` state beyond read-only members).
-    void maybeKeepLiveConnectionBefore(size_t next_physical, ConnState & conn, Stats & out_stats) const;
+    /// Operates on `conn` (const: touches no `this` state beyond read-only members);
+    /// `reached_eof` is passed (foreground member or the worker's job latch) since this
+    /// runs on both paths and the worker must not read the shared executor member.
+    void maybeKeepLiveConnectionBefore(size_t next_physical, ConnState & conn, bool eof_latch, Stats & out_stats) const;
 
     /// readPhysicalWindow + remap the window's offsets to logical (subtract the
     /// encryption header). Payload decryption is deferred to the consumer
     /// (PipelineReadBuffer), so unconsumed read-ahead is never decrypted.
-    Rope readWindowLogical(ByteRange physical_window, bool from_prefetch, ConnState & conn, Stats & out_stats);
+    Rope readWindowLogical(ByteRange physical_window, bool from_prefetch, ConnState & conn,
+        const ReadPlanGeometry & geometry, bool & eof_latch, Stats & out_stats);
 
     std::shared_ptr<ISourceReader> source;
     StoredObjects stored_objects;  /// retained for makeTransientForReadAt
@@ -420,65 +439,55 @@ private:
     size_t plan_look_ahead_window;
     size_t position = 0;
 
-    /// One cache tier's plan over the look-ahead window, for ONE object-piece.
-    /// Read side: the `resident` (file-level, physical-coordinate) ranges this
-    /// tier holds, streamable via `handle->get`; the read-only `planResidency`
-    /// handle pins those segments/cells for the plan's lifetime (`handle` is null
-    /// when the tier holds nothing resident in this piece). Write side: the
-    /// `missing` ranges this (populatable) tier lacks, recorded for free from the
-    /// same residency probe; `write_handle` is the writable `getOrSet` handle a
-    /// promotion `put` targets, acquired lazily on the first write into this
-    /// tier-piece and reused for the plan's lifetime — so promotion needs no
-    /// per-serve `lookup`. `provider`/`object`/`object_file_offset` let that lazy
-    /// acquisition re-issue the `getOrSet`. `missing` is left empty for bypass
-    /// (non-populating) tiers, which are never written.
-    struct PlannedHandle
+    /// One cache tier's RESIDENT geometry over the look-ahead window, for ONE
+    /// object-piece: the file-level (physical-coordinate) ranges this tier holds.
+    /// Holds NO cache handle - that lives in the parallel `HandleEntry` - so the
+    /// geometry is immutable and safe to publish as `shared_ptr<const
+    /// ReadPlanGeometry>` and co-own with a prefetch worker.
+    struct GeometryEntry
     {
         CacheTier tier{};
-        ICacheProvider * provider = nullptr;
-        StoredObject object;
-        size_t object_file_offset = 0;
-
-        std::unique_ptr<ICacheHandle> handle;
         VectorWithMemoryTracking<ByteRange> resident;
-
-        VectorWithMemoryTracking<ByteRange> missing;
-        std::unique_ptr<ICacheHandle> write_handle;
     };
 
-    /// The plan for one look-ahead window. Queried positionally by
-    /// `readNextWindow`: at the cursor it tells you whether the bytes are
-    /// RESIDENT (stream them from the held, pinning cache handle) or a GAP (read
-    /// them from the source / dispatch a download job). `planned` is in cache-tier
-    /// priority order (same order as `caches`), so `residentAt` returns the
-    /// fastest tier holding a byte. Empty / `plan_end == plan_start` means no
-    /// valid plan (the next read builds one).
-    struct ReadPlan
+    /// The IMMUTABLE geometry of one look-ahead plan: the resident layout + span,
+    /// queried positionally by `readNextWindow` / `maybeTriggerPrefetch` (RESIDENT
+    /// run vs GAP) and by a prefetch worker that co-owns its own snapshot. Built
+    /// once by `planResidencyWindow` and never mutated after publish. `entries` is
+    /// in cache-tier priority order (same order as `caches`), 1:1 POSITIONAL with
+    /// `ReadPlanHandles::entries`, so `residentAt` returns the index of the
+    /// fastest-tier entry holding a byte and the caller maps it to that entry's
+    /// streaming handle. Empty / `plan_end == plan_start` means no valid plan.
+    struct ReadPlanGeometry
     {
+        static constexpr size_t npos = static_cast<size_t>(-1);
+
         size_t plan_start = 0;  /// physical (header-inclusive) coords
         size_t plan_end = 0;    /// [plan_start, plan_end)
-        VectorWithMemoryTracking<PlannedHandle> planned;
+        VectorWithMemoryTracking<GeometryEntry> entries;
 
         bool covers(ByteRange w) const
         {
             return plan_end > plan_start && w.offset >= plan_start && w.end() <= plan_end;
         }
 
-        /// What the plan holds at file-level `offset`: the cache handle that can
-        /// stream it (the fastest tier that has it) and the end of that handle's
-        /// contiguous resident range. A null `handle` means `offset` is a gap.
+        /// What the plan holds at file-level `offset`: the index of the entry whose
+        /// resident range covers it (`npos` = gap), its tier, and the end of that
+        /// contiguous resident run. The caller maps `entry` to the streaming handle
+        /// in `ReadPlanHandles::entries[entry]`.
         struct Resident
         {
-            ICacheHandle * handle = nullptr;
+            size_t entry = npos;
             CacheTier tier{};
             size_t run_end = 0;
+            bool resident() const { return entry != npos; }
         };
         Resident residentAt(size_t offset) const
         {
-            for (const auto & ph : planned)
-                for (const auto & r : ph.resident)
+            for (size_t i = 0; i < entries.size(); ++i)
+                for (const auto & r : entries[i].resident)
                     if (offset >= r.offset && offset < r.end())
-                        return {ph.handle.get(), ph.tier, r.end()};
+                        return {i, entries[i].tier, r.end()};
             return {};
         }
 
@@ -490,7 +499,7 @@ private:
             while (pos < plan_end)
             {
                 auto r = residentAt(pos);
-                if (!r.handle)
+                if (!r.resident())
                     return pos;
                 pos = r.run_end;
             }
@@ -502,14 +511,44 @@ private:
         size_t gapEnd(size_t gap_start) const
         {
             size_t end = plan_end;
-            for (const auto & ph : planned)
-                for (const auto & r : ph.resident)
+            for (const auto & entry : entries)
+                for (const auto & r : entry.resident)
                     if (r.offset > gap_start && r.offset < end)
                         end = r.offset;
             return end;
         }
     };
-    ReadPlan read_plan;
+
+    /// The MUTABLE, FOREGROUND-PRIVATE half of a look-ahead plan: per (object-piece,
+    /// tier), the pinning `planResidency` streaming read `handle` (null when the tier
+    /// holds nothing resident in this piece), the `missing` ranges this populatable
+    /// tier lacks (recorded for free from the same probe), and the lazily-acquired
+    /// `write_handle` a promotion `put` targets (`provider`/`object`/`object_file_offset`
+    /// let that acquisition re-issue the `getOrSet`). 1:1 POSITIONAL with
+    /// `ReadPlanGeometry::entries`. A prefetch worker NEVER indexes this (over its
+    /// pure-gap window it reads only geometry), so the handles are never shared across
+    /// threads - which is what lets the `readPhysicalWindow` handoff `chassert` retire.
+    struct HandleEntry
+    {
+        ICacheProvider * provider = nullptr;
+        StoredObject object;
+        size_t object_file_offset = 0;
+        std::unique_ptr<ICacheHandle> handle;
+        VectorWithMemoryTracking<ByteRange> missing;
+        std::unique_ptr<ICacheHandle> write_handle;
+    };
+    struct ReadPlanHandles
+    {
+        VectorWithMemoryTracking<HandleEntry> entries;
+    };
+
+    /// The current look-ahead plan, split into an immutable co-ownable geometry
+    /// snapshot (`read_geometry`, a prefetch worker captures its own ref at submit)
+    /// and the foreground-private mutable handles (`read_handles`, 1:1 positional with
+    /// `read_geometry->entries`). `read_geometry` is null until the first plan is
+    /// built; the query methods' callers guard for that.
+    std::shared_ptr<const ReadPlanGeometry> read_geometry;
+    ReadPlanHandles read_handles;
 
     /// The write side of one physical window: the cache populate-handles produced
     /// while discovering gaps (`fetchAndBackfillGaps`), then pinned and `put` into
@@ -818,13 +857,21 @@ private:
     mutable Stats stats;
 
     /// The in-flight prefetch's co-owned job (see the `prefetch_job` member). Bundles
-    /// the worker's job-local `Stats` and the source-connection cluster it owns for
-    /// the job's duration, so a prefetch worker touches ONLY job state — never a
-    /// shared `this->` member. Defined here, after `Stats` and `ConnState`.
+    /// EVERYTHING a prefetch worker touches, so the worker reads/writes ONLY job state
+    /// — never a shared `this->` member (which is what lets the `readPhysicalWindow`
+    /// handoff `chassert` retire): the job-local `Stats`, the source-connection cluster
+    /// it owns for the job's duration, its own immutable look-ahead `geometry` snapshot,
+    /// the `reached_eof` latch it sets on a size-unknown short read (OR-ed into the
+    /// executor's member at consume), and the prefetch-log `execution_watch` it stamps
+    /// (read on the foreground after the `get()` edge). Defined here, after `Stats`,
+    /// `ConnState` and `ReadPlanGeometry`.
     struct PrefetchJob
     {
         Stats stats;
         ConnState conn;
+        std::shared_ptr<const ReadPlanGeometry> geometry;
+        bool reached_eof = false;
+        std::optional<Stopwatch> execution_watch;
     };
 
     LoggerPtr log = getLogger("ReaderExecutor");
