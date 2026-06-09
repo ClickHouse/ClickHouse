@@ -4,6 +4,12 @@
 
 **Goal:** Parallelize primary-key and skip-index analysis at mark-range *chunk* granularity within each part, removing the current `num_parts` ceiling on `filterPartsByPrimaryKeyAndSkipIndexes` and fixing the few-large-parts imbalance.
 
+> **Deviations during implementation (kept for the record):**
+> 1. **PK pruning is boundary-conservative under chunking.** `markRangesFromPKRange`'s binary search rounds outward at the boundary of each input range, so splitting a part selects a bounded number (`O(chunk count)`) of extra boundary granules. Query results are always identical (extra granules filtered while reading); selected marks are not bit-for-bit identical. Verified: 2345 (whole) vs 2347 (~12 chunks) vs 2364 (~490 chunks) granules, same `count`.
+> 2. **Precision guard added** to `is_whole_part_only`: `find_exact_ranges` forces whole-part analysis (fail-close — never approximate when an exact answer is requested). Commit `edda88af8d3`.
+> 3. **Task 4 test** asserts strict result-equality + a two-sided bounded marks delta (`base ≤ chunked ≤ base+64`), not `SelectedMarks` equality (which does not hold for PK chunking). Verified end-to-end against a real server (7/7) and race-free under TSan (81 heavy-chunking queries, 0 races).
+> 4. **Task 5** replaced the flawed "force chunking on all existing tests" sweep (which produces false diffs on `EXPLAIN indexes` tests and is moot since the setting defaults to off) with result-equivalence across more index types: bloom_filter, tokenbf_v1, ngrambf_v1, LowCardinality set, nullable minmax, `IS NULL`, multi-index, `ORDER BY…LIMIT` — all identical off vs on.
+
 **Architecture:** A new pure helper `splitMarkRanges` partitions a part's existing `MarkRanges` into contiguous sub-ranges sized by a global mark budget with a floor. Each `(part, sub-range)` becomes a work item scheduled into one shared `ThreadPool`; its shared queue load-balances. Each chunked item runs `markRangesFromPKRange` then the ordinary skip-index filtering loop on its sub-range, writing a per-chunk result slot and updating only granule-level stat atomics. A sequential post-pass concatenates a part's chunk slots and computes part-level stats. Parts using non-chunkable features (disjunction bitset, top-K min-max, FINAL exact mode, or a vector-similarity index) fall back to a single work item run through the **unchanged** legacy `process_part` body.
 
 **Tech Stack:** C++ (ClickHouse), `boost::container::devector`-based `MarkRanges`, ClickHouse `ThreadPool`, gtest (`unit_tests_dbms`), `0_stateless` SQL tests.
