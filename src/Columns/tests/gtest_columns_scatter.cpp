@@ -10,6 +10,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsScatter.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -17,6 +18,7 @@
 #include <Common/randomSeed.h>
 #include <Common/thread_local_rng.h>
 
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -778,6 +780,125 @@ TEST(ColumnsScatter, FallbackMapMixedNestedRepresentation)
     ASSERT_EQ(got.size(), NUM_SHARDS);
     for (size_t s = 0; s < NUM_SHARDS; ++s)
         assertColumnsEqual(*got[s], *ref[s]);
+}
+
+TEST(ColumnsScatter, FallbackVariantMixedNestedRepresentation)
+{
+    // Variant goes through scatterFallback (no fast-path entry). ColumnVariant::scatter preserves
+    // each alternative's physical representation, and ColumnVariant::insertRangeFrom appends via the
+    // nested alternative's insertRangeFrom. A batch where one chunk's UInt64 alternative is a full
+    // ColumnUInt64 and another's is a ColumnSparse(UInt64) must not fail: the generic
+    // deepNormalizeForFallback recursion normalizes each alternative before the cross-source append.
+    constexpr size_t NUM_SHARDS = 3;
+    const size_t N = 8;
+
+    // Single-alternative Variant(UInt64), all rows non-null (discriminator 0).
+    auto make_discriminators = [](size_t n) -> MutableColumnPtr
+    {
+        auto discr = ColumnVariant::ColumnDiscriminators::create();
+        for (size_t i = 0; i < n; ++i)
+            discr->insertValue(0);
+        return discr;
+    };
+    auto make_offsets = [](size_t n) -> MutableColumnPtr
+    {
+        auto offs = ColumnVariant::ColumnOffsets::create();
+        for (size_t i = 0; i < n; ++i)
+            offs->insertValue(i);
+        return offs;
+    };
+
+    // Chunk 0: full nested alternative [0, 1, ..., N-1].
+    auto make_full_variant = [&](size_t n) -> ColumnPtr
+    {
+        auto nested = ColumnUInt64::create();
+        for (size_t i = 0; i < n; ++i)
+            nested->insertValue(static_cast<UInt64>(i));
+        Columns variants;
+        variants.push_back(std::move(nested));
+        return ColumnVariant::create(make_discriminators(n), make_offsets(n), variants);
+    };
+
+    // Chunk 1: sparse nested alternative with identical logical values.
+    auto make_sparse_variant = [&](size_t n) -> ColumnPtr
+    {
+        auto vals = ColumnUInt64::create();
+        vals->insertValue(0); // default value at index 0
+        auto sparse_offs = ColumnUInt64::create();
+        for (size_t i = 0; i < n; ++i)
+        {
+            vals->insertValue(static_cast<UInt64>(i));
+            sparse_offs->insertValue(static_cast<UInt64>(i));
+        }
+        auto sparse_nested = ColumnSparse::create(std::move(vals), std::move(sparse_offs), n);
+        Columns variants;
+        variants.push_back(std::move(sparse_nested));
+        return ColumnVariant::create(make_discriminators(n), make_offsets(n), variants);
+    };
+
+    auto full_col = make_full_variant(N);
+    auto sparse_col = make_sparse_variant(N);
+
+    std::vector<std::vector<UInt32>> pids = {randomPids(N, NUM_SHARDS), randomPids(N, NUM_SHARDS)};
+
+    std::vector<const IColumn *> col_ptrs = {full_col.get(), sparse_col.get()};
+    std::vector<std::span<const UInt32>> pid_spans = {pids[0], pids[1]};
+    // Must not throw or produce garbage despite mismatched nested representations.
+    auto got = ColumnsScatter::scatter(col_ptrs, pid_spans, NUM_SHARDS);
+
+    // Oracle: scatter two full-nested variants with the same values and same pids.
+    auto ref_col0 = make_full_variant(N);
+    auto ref_col1 = make_full_variant(N);
+    std::vector<const IColumn *> ref_ptrs = {ref_col0.get(), ref_col1.get()};
+    auto ref = referenceScatter(ref_ptrs, pids, NUM_SHARDS);
+
+    ASSERT_EQ(got.size(), NUM_SHARDS);
+    for (size_t s = 0; s < NUM_SHARDS; ++s)
+        assertColumnsEqual(*got[s], *ref[s]);
+}
+
+TEST(ColumnsScatter, ConstBitExactNotOrderingEqual)
+{
+    // The all-const compact path must use byte-exact equality, not compareAt (ordering equality).
+    // compareAt treats +0.0 and -0.0 as equal, but scatter physically splits the column and must
+    // preserve exact bytes. Two const chunks carrying +0.0 and -0.0 must not collapse to one
+    // payload: rows from the -0.0 chunk must keep their sign bit.
+    constexpr size_t NUM_SHARDS = 3;
+    const size_t N0 = 10;
+    const size_t N1 = 7;
+
+    auto make_const = [](double value, size_t n) -> ColumnPtr
+    {
+        auto one = ColumnFloat64::create();
+        one->insertValue(value);
+        return ColumnConst::create(std::move(one), n);
+    };
+
+    auto pos_zero = make_const(0.0, N0);
+    auto neg_zero = make_const(-0.0, N1);
+
+    std::vector<std::vector<UInt32>> pids = {randomPids(N0, NUM_SHARDS), randomPids(N1, NUM_SHARDS)};
+    std::vector<const IColumn *> col_ptrs = {pos_zero.get(), neg_zero.get()};
+    std::vector<std::span<const UInt32>> pid_spans = {pids[0], pids[1]};
+
+    auto got = ColumnsScatter::scatter(col_ptrs, pid_spans, NUM_SHARDS);
+
+    ASSERT_EQ(got.size(), NUM_SHARDS);
+    size_t neg_zeros = 0;
+    size_t total = 0;
+    for (size_t s = 0; s < NUM_SHARDS; ++s)
+    {
+        auto full = got[s]->convertToFullColumnIfConst();
+        const auto & data = assert_cast<const ColumnFloat64 &>(*full).getData();
+        for (const double v : data)
+            if (std::signbit(v))
+                ++neg_zeros;
+        total += data.size();
+    }
+    EXPECT_EQ(total, N0 + N1);
+    // Every row from the -0.0 chunk must keep its sign bit; with the buggy compareAt shortcut they
+    // would all be rewritten to +0.0 and neg_zeros would be 0.
+    EXPECT_EQ(neg_zeros, N1) << "negative-zero rows were rewritten to +0.0 (ordering-equality shortcut)";
 }
 
 TEST(ColumnsScatter, ConstColumnStaysCompact)

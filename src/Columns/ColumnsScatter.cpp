@@ -1,16 +1,15 @@
 #include <Columns/ColumnsScatter.h>
 
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <base/types.h>
+#include <Common/Arena.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
 #include <Common/memcpySmall.h>
@@ -301,59 +300,48 @@ template <typename DecimalT>
 // Correct but allocating; used only for column types without a fast path.
 // Does not use rows_per_shard (IColumn::scatter computes counts internally).
 
-/// Deep-normalize a column for the fallback scatter path: strip Const, Sparse, and
-/// Replicated at every nesting level (including inside ColumnArray data, ColumnTuple
-/// elements, and the ColumnMap nested array), preserving LowCardinality. This is required
-/// before calling IColumn::scatter + insertRangeFrom across source chunks: IColumn::scatter
-/// preserves the nested representation of each source, and insertRangeFrom uses assert_cast
-/// on the concrete nested type, so mismatched nested representations across chunks (e.g. full
-/// ColumnUInt64 nested inside one Array chunk vs ColumnSparse(UInt64) inside another)
-/// cause assert_cast failures in release builds or UB in sanitized builds.
+/// Deep-normalize a column for the fallback scatter path: strip Const, Sparse, and Replicated at
+/// every nesting level (Array data, Tuple/Map elements, Variant alternatives, Dynamic's variant,
+/// Object's typed/dynamic/shared subcolumns, ...), while preserving LowCardinality. This is required
+/// before calling IColumn::scatter + insertRangeFrom across source chunks: IColumn::scatter preserves
+/// the nested representation of each source, and insertRangeFrom uses assert_cast on the concrete
+/// nested type, so mismatched nested representations across chunks (e.g. full ColumnUInt64 nested
+/// inside one Array chunk vs ColumnSparse(UInt64) inside another) cause assert_cast failures in
+/// release builds or UB in sanitized builds.
+///
+/// Recursion is generic via `forEachSubcolumn`/`forEachMutableSubcolumn` (the same mechanism as
+/// `IColumn::convertToFullIfNeeded`), so every current and future composite is covered. Unlike
+/// `convertToFullIfNeeded`, this deliberately does NOT strip `LowCardinality`: a fallback-scattered
+/// `LowCardinality` column must keep its type to match the transform's port/header contract, and
+/// `ColumnLowCardinality::insertRangeFrom` already reconciles differing dictionaries across sources.
+/// `LowCardinality` is therefore treated as a leaf (its inner dictionary is left untouched).
 ColumnPtr deepNormalizeForFallback(ColumnPtr col)
 {
-    col = col->convertToFullColumnIfConst();
-    col = col->convertToFullColumnIfReplicated();
-    col = col->convertToFullColumnIfSparse();
+    col = col->convertToFullColumnIfConst()
+              ->convertToFullColumnIfReplicated()
+              ->convertToFullColumnIfSparse();
 
-    if (col->getDataType() == TypeIndex::Array)
-    {
-        const auto & arr = assert_cast<const ColumnArray &>(*col);
-        auto new_data = deepNormalizeForFallback(arr.getDataPtr());
-        if (new_data.get() == arr.getDataPtr().get())
-            return col;
-        return ColumnArray::create(std::move(new_data), arr.getOffsetsPtr());
-    }
+    /// Preserve LowCardinality verbatim (see above); do not descend into it.
+    if (col->getDataType() == TypeIndex::LowCardinality)
+        return col;
 
-    if (col->getDataType() == TypeIndex::Tuple)
-    {
-        const auto & tup = assert_cast<const ColumnTuple &>(*col);
-        const auto & src_cols = tup.getColumns();
-        Columns normalized(src_cols.size());
-        bool changed = false;
-        for (size_t i = 0; i < src_cols.size(); ++i)
+    Columns new_subcolumns;
+    bool any_changed = false;
+    col->forEachSubcolumn(
+        [&](const IColumn::WrappedPtr & subcolumn)
         {
-            normalized[i] = deepNormalizeForFallback(src_cols[i]);
-            if (normalized[i].get() != src_cols[i].get())
-                changed = true;
-        }
-        if (!changed)
-            return col;
-        return ColumnTuple::create(std::move(normalized));
-    }
+            auto new_sub = deepNormalizeForFallback(subcolumn->getPtr());
+            any_changed |= (new_sub.get() != subcolumn.get());
+            new_subcolumns.push_back(std::move(new_sub));
+        });
 
-    /// ColumnMap wraps a ColumnArray(Tuple(key, value)); ColumnMap::scatter preserves that
-    /// nested representation, so without normalizing the nested array a mixed-nested Map batch
-    /// would reach the same invalid insertRangeFrom/assert_cast path the Array branch fixes.
-    if (col->getDataType() == TypeIndex::Map)
-    {
-        const auto & map = assert_cast<const ColumnMap &>(*col);
-        auto new_nested = deepNormalizeForFallback(map.getNestedColumnPtr());
-        if (new_nested.get() == map.getNestedColumnPtr().get())
-            return col;
-        return ColumnMap::create(new_nested);
-    }
+    if (!any_changed)
+        return col;
 
-    return col;
+    auto mutable_col = IColumn::mutate(std::move(col));
+    size_t i = 0;
+    mutable_col->forEachMutableSubcolumn([&](IColumn::WrappedPtr & subcolumn) { subcolumn = std::move(new_subcolumns[i++]); });
+    return std::move(mutable_col);
 }
 
 [[nodiscard]] MutableColumns scatterFallback(
@@ -562,12 +550,22 @@ MutableColumns scatter(
         source_columns.begin(), source_columns.end(), [](const IColumn * c) { return c->isConst(); });
     if (all_const)
     {
-        const auto & probe_data = assert_cast<const ColumnConst &>(*source_columns[0]).getDataColumn();
+        /// Byte-exact equality, not `compareAt`: scatter is a physical split of *every* column (not
+        /// just keys), so this compact path must preserve the exact source bytes. `compareAt` is
+        /// ordering-equality — it treats `+0.0`/`-0.0` and all `NaN` payloads as equal — so cloning
+        /// `source_columns[0]` for a shard that received rows from a bit-different (but SQL-equal)
+        /// const chunk would silently rewrite their payload. Compare the serialized single value of
+        /// each const; any bit difference falls through to the materializing dispatch below.
+        Arena arena;
+        const char * probe_begin = nullptr;
+        const std::string_view probe_bytes
+            = assert_cast<const ColumnConst &>(*source_columns[0]).getDataColumn().serializeValueIntoArena(0, arena, probe_begin, nullptr);
         const bool all_same_value = std::all_of(
             source_columns.begin() + 1, source_columns.end(),
-            [&probe_data](const IColumn * c)
+            [&](const IColumn * c)
             {
-                return probe_data.compareAt(0, 0, assert_cast<const ColumnConst &>(*c).getDataColumn(), 1) == 0;
+                const char * begin = nullptr;
+                return assert_cast<const ColumnConst &>(*c).getDataColumn().serializeValueIntoArena(0, arena, begin, nullptr) == probe_bytes;
             });
         if (all_same_value)
         {
