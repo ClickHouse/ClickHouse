@@ -179,6 +179,11 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
             LimitReadBuffer::Settings{
                 .read_no_more = settings[Setting::http_max_multipart_form_data_size],
                 .expect_eof = true,
+                /// Reject over-limit input rather than truncating it silently at the cap. This
+                /// matters in particular for the native-compressed (`_decompress`) path: a stream
+                /// whose compressed bytes end exactly on the limit boundary with more compressed
+                /// blocks appended must fail instead of loading a truncated external table.
+                .throw_if_exceeded = true,
                 .excetion_hint = "the maximum size of multipart/form-data. This limit can be tuned by 'http_max_multipart_form_data_size' setting",
             });
     else
