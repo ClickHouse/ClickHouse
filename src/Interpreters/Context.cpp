@@ -6369,15 +6369,18 @@ DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator, const
         /// and the rollback must leave the cache alone.
         const bool cache_pre_existed = FileCacheFactory::instance().tryGetByName(name) != nullptr;
 
-        /// Make `creator` plus `addToDiskMap` a single rollback unit. The creator may
-        /// register a `FileCacheFactory` entry by this name (`disk(type = cache, name = X,
-        /// ...)` does so before its own `dynamic_cast` check can throw), and `addToDiskMap`
-        /// itself can throw from `DiskSelector::recordDisk` (plain-disk overlap, duplicate
-        /// name). If either step throws after the cache entry was inserted, undo it here so
-        /// no tentative registration is created and no aliased cache leaks behind.
-        disk = creator(getDisksMap(lock));
+        /// Make `creator` plus `addToDiskMap` a single rollback unit. Either step can register
+        /// resources before throwing: `creator` may insert a `FileCacheFactory` alias for
+        /// `disk(type = cache, name = X, ...)` before reaching `RegisterDiskCache`'s
+        /// `dynamic_cast` check (handled by `DiskFromAST` in-tree, but mirrored here as
+        /// defense in depth so future custom-disk creators do not silently leak); and
+        /// `DiskSelector::addToDiskMap` can throw from `recordDisk` (plain-disk overlap,
+        /// duplicate name) AFTER the disk was constructed and any side aliases registered.
+        /// If anything throws between here and a successful `addToDiskMap`, undo the cache
+        /// alias we did not own, shut down the constructed disk, and rethrow.
         try
         {
+            disk = creator(getDisksMap(lock));
             const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
         }
         catch (...)
@@ -6386,15 +6389,19 @@ DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator, const
                 FileCacheFactory::instance().removeByName(name);
             /// Best-effort shutdown of the disk we created but never published. The default
             /// `IDisk::shutdown` is a no-op; storage-backed disks override it to release
-            /// background pools and outstanding writes.
-            try
+            /// background pools and outstanding writes. Skip when `creator` itself threw
+            /// (no disk was returned).
+            if (disk)
             {
-                disk->shutdown();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(getLogger("getOrCreateDisk"),
-                    fmt::format("Failed to shut down half-registered disk {}", name));
+                try
+                {
+                    disk->shutdown();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(getLogger("getOrCreateDisk"),
+                        fmt::format("Failed to shut down half-registered disk {}", name));
+                }
             }
             throw;
         }
@@ -6432,18 +6439,71 @@ DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator, const
     {
         /// Unscoped observer (CREATE / ATTACH path that does not own a
         /// `CustomDiskRegistrationScope`). If a tentative entry is in flight for this name,
-        /// eagerly mark it committed: the unscoped caller has no rollback path of its own
-        /// and is about to commit metadata against this disk. Allowing a still-in-flight
-        /// scope to roll the disk back later would orphan the metadata that this caller is
-        /// going to write. Leaking the registration on a subsequent unscoped-caller failure
-        /// is benign: the existing settings-hash check in `getOrCreateCustomDisk` prevents
-        /// a later DDL from rebinding the name to a disk with different settings.
+        /// pin it with a sentinel slot in `active_owners` so a concurrent scope's destructor
+        /// cannot roll the disk back while this caller is still validating it (e.g. the
+        /// settings-hash check in `getOrCreateCustomDisk`). The caller MUST drop the sentinel
+        /// after validation by calling either `commitUnscopedDiskObservation` (success path,
+        /// flips `committed`) or `releaseUnscopedDiskObservation` (failure path, removes the
+        /// sentinel and lets a still-active scope roll back normally). The sentinel pointer
+        /// returned via `out_unscoped_observation_token` is opaque to callers; treat it as a
+        /// handle to be returned to one of those two methods.
         auto it = shared->tentative_disk_registrations.find(name);
         if (it != shared->tentative_disk_registrations.end())
-            it->second.committed = true;
+        {
+            /// Use the entry pointer itself as the sentinel: it is unique per disk name and
+            /// distinguishable from any real `CustomDiskRegistrationScope *` (scopes live on
+            /// the validation thread's stack, the entry lives in `tentative_disk_registrations`).
+            const void * sentinel = static_cast<const void *>(&it->second);
+            it->second.active_owners.push_back(sentinel);
+        }
     }
 
     return disk;
+}
+
+bool Context::commitUnscopedDiskObservation(const String & disk_name) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto it = shared->tentative_disk_registrations.find(disk_name);
+    if (it == shared->tentative_disk_registrations.end())
+        return false;
+
+    auto & entry = it->second;
+    const void * sentinel = static_cast<const void *>(&entry);
+
+    /// Drop the sentinel slot if present (paired with the `else` branch in `getOrCreateDisk`)
+    /// and flip the registration to committed. Tolerates being called on an entry where the
+    /// sentinel is already gone (e.g. `getOrCreateDisk` did not insert one because no
+    /// tentative was in flight at observation time, but a subsequent ALTER created one
+    /// before this commit ran): the caller's metadata is still about to land, so committing
+    /// is the correct outcome.
+    auto & owners = entry.active_owners;
+    owners.erase(std::remove(owners.begin(), owners.end(), sentinel), owners.end());
+    entry.committed = true;
+    return true;
+}
+
+void Context::releaseUnscopedDiskObservation(const String & disk_name) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto it = shared->tentative_disk_registrations.find(disk_name);
+    if (it == shared->tentative_disk_registrations.end())
+        return;
+
+    auto & entry = it->second;
+    const void * sentinel = static_cast<const void *>(&entry);
+
+    /// Drop the sentinel slot. If we were the only remaining owner AND the entry is not
+    /// committed, the entry is now empty-and-uncommitted; we still leave the rollback to a
+    /// scoped owner (or to a future call to `clearPendingCustomDiskRegistration`) because
+    /// this method is called only from the unscoped observer path that JOINED an existing
+    /// tentative entry, so a scope created that entry and is responsible for it.
+    auto & owners = entry.active_owners;
+    owners.erase(std::remove(owners.begin(), owners.end(), sentinel), owners.end());
+    if (owners.empty() && !entry.committed)
+        shared->tentative_disk_registrations.erase(it);
 }
 
 bool Context::removePendingCustomDiskIfOwned(const String & disk_name, const void * owner) const
@@ -6502,6 +6562,24 @@ bool Context::removePendingCustomDiskIfOwned(const String & disk_name, const voi
         FileCacheFactory::instance().removeByName(disk_name);
 
     auto removed_disk = const_cast<DiskSelector *>(disk_selector.get())->removeFromDiskMap(disk_name);
+    /// Shut down the rolled-back disk so storage-backed background pools (`DiskObjectStorage`
+    /// blob threads, metadata storage, underlying object storages) are stopped before the
+    /// last `shared_ptr` is released. `IDisk` destruction does not call `shutdown` itself,
+    /// so without this call object-storage rollbacks would leave background work running
+    /// against a disk no metadata still references. Mirrors the half-registered-disk
+    /// shutdown path in `getOrCreateDisk`'s catch block.
+    if (removed_disk)
+    {
+        try
+        {
+            removed_disk->shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger("removePendingCustomDiskIfOwned"),
+                fmt::format("Failed to shut down rolled-back disk {}", disk_name));
+        }
+    }
     return removed_disk != nullptr;
 }
 

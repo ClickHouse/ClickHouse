@@ -147,35 +147,59 @@ static std::string getOrCreateCustomDisk(
     /// concurrent CREATE TABLE while the tentative registration is in flight.
     FailPointInjection::pauseFailPoint(FailPoints::disk_from_ast_pause_after_tentative_registration);
 
-    if (!disk->isCustomDisk())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Disk `{}` already exists and is described by the config."
-            " It is impossible to redefine it.",
-            disk_name);
-
-    if (disk->getCustomDiskSettings() != disk_settings_hash && !attach)
-        throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
+    /// Validate the (possibly observed) disk against this caller's settings BEFORE flipping
+    /// any tentative registration to committed. For unscoped callers (CREATE / ATTACH path
+    /// with `scope == nullptr`), `Context::getOrCreateDisk` has inserted a sentinel slot in
+    /// the tentative entry's active-owners list to keep the disk pinned across this
+    /// validation; we must drop that sentinel exactly once via either commit or release.
+    /// Wrapping the validation in try/catch handles every throw path (`isCustomDisk`,
+    /// settings-hash mismatch, custom-local-disks-base-dir, or future additions).
+    try
+    {
+        if (!disk->isCustomDisk())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Disk `{}` already exists and is described by the config."
+                " It is impossible to redefine it.",
                 disk_name);
 
-    if (!attach && !disk->isRemote() && disk->getName() != "backup")
-    {
-        static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
-        auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
-
-        if (disk_path_expected_prefix.empty())
+        if (disk->getCustomDiskSettings() != disk_settings_hash && !attach)
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Base path for custom local disks must be defined in config file by `{}`",
-                custom_local_disks_base_dir_in_config);
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
+                    disk_name);
 
-        if (!pathStartsWith(disk->getPath(), disk_path_expected_prefix))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Path of the custom local disk must be inside `{}` directory",
-                disk_path_expected_prefix);
+        if (!attach && !disk->isRemote() && disk->getName() != "backup")
+        {
+            static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
+            auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
+
+            if (disk_path_expected_prefix.empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Base path for custom local disks must be defined in config file by `{}`",
+                    custom_local_disks_base_dir_in_config);
+
+            if (!pathStartsWith(disk->getPath(), disk_path_expected_prefix))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Path of the custom local disk must be inside `{}` directory",
+                    disk_path_expected_prefix);
+        }
     }
+    catch (...)
+    {
+        if (!scope)
+            context->releaseUnscopedDiskObservation(disk_name);
+        throw;
+    }
+
+    /// All validations passed. Flip the tentative entry (if any) to committed for the
+    /// unscoped path so a still-in-flight scope's destructor cannot roll the disk back
+    /// after this caller's metadata commits. Scoped callers keep the existing flow:
+    /// `CustomDiskRegistrationScope::commit` flips `committed` after the outer apply path
+    /// finishes its own metadata transition.
+    if (!scope)
+        context->commitUnscopedDiskObservation(disk_name);
 
     return disk_name;
 }

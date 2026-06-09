@@ -1647,6 +1647,23 @@ public:
     /// `CustomDiskRegistrationScope::commit` after the apply path commits its metadata.
     void clearPendingCustomDiskRegistration(const String & disk_name, const void * owner) const;
 
+    /// Two-phase commit for unscoped CREATE / ATTACH observers (callers that pass
+    /// `pending_rollback_owner == nullptr` to `getOrCreateDisk`). When such a caller observes
+    /// a disk whose name is currently in flight as a tentative scoped registration,
+    /// `getOrCreateDisk` inserts a sentinel slot into the entry's active-owners list to keep
+    /// the disk pinned during the unscoped caller's own validation (e.g. the settings-hash
+    /// check in `getOrCreateCustomDisk`). The caller then drops the sentinel by calling
+    /// either of:
+    /// - `commitUnscopedDiskObservation` after the validation has succeeded and the caller
+    ///   is about to commit metadata against the disk; this also flips `committed = true`
+    ///   so no still-in-flight scope's destructor rolls the disk back later. Returns true if
+    ///   the entry was found, false if it had already been cleared.
+    /// - `releaseUnscopedDiskObservation` if the validation failed; this removes the
+    ///   sentinel without committing, allowing the original scoped owner's destructor to
+    ///   roll the disk back normally if it later fails too.
+    bool commitUnscopedDiskObservation(const String & disk_name) const;
+    void releaseUnscopedDiskObservation(const String & disk_name) const;
+
     StoragePoliciesMap getPoliciesMap() const;
     DisksMap getDisksMap() const;
     void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);
