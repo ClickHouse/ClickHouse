@@ -198,6 +198,38 @@ String stripAggregateCombinators(String name)
     return name;
 }
 
+/// True if `name`, after removing zero or more combinator suffixes, names an
+/// entry of `non_deterministic_functions`. Membership must be tested at EVERY
+/// stripping stage, not only at the fixpoint: real aggregate names can
+/// themselves end in a combinator-looking word, e.g. `groupUniqArrayOrNull`
+/// strips to `groupUniqArray` (a set member), but one more iteration eats the
+/// literal `Array` and produces `groupUniq`, which the set does not contain.
+bool isOracleUnsafeFunctionName(String name)
+{
+    static const std::vector<String> suffixes = {
+        "If", "Array", "Map", "ForEach", "Distinct", "OrDefault", "OrFill",
+        "OrNull", "Resample", "ArgMin", "ArgMax", "MergeState", "State",
+        "Merge", "SimpleState", "Tuple", "RespectNulls", "IgnoreNulls", "Null",
+    };
+    while (true)
+    {
+        if (non_deterministic_functions.contains(name))
+            return true;
+        bool stripped = false;
+        for (const auto & suffix : suffixes)
+        {
+            if (name.size() > suffix.size() && name.ends_with(suffix))
+            {
+                name.resize(name.size() - suffix.size());
+                stripped = true;
+                break;
+            }
+        }
+        if (!stripped)
+            return false;
+    }
+}
+
 /// Walk an AST tree and check whether any `ASTFunction` references something
 /// non-deterministic. The primary source of truth is `FunctionFactory` —
 /// every regular function exposes `isDeterministic`, so newly-added
@@ -229,8 +261,7 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
     if (const auto * func = ast->as<ASTFunction>())
     {
         const String stripped = stripAggregateCombinators(func->name);
-        if (non_deterministic_functions.contains(func->name)
-            || non_deterministic_functions.contains(stripped))
+        if (isOracleUnsafeFunctionName(func->name))
             return true;
 
         /// Comparator-based array sorts are not stable on ties: with a
@@ -1905,6 +1936,15 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
 
 bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr & context)
 {
+    /// The oracle runs after the fuzzed query finished, so the context's
+    /// process-list entry is already gone. `getProcessListElement` treats a
+    /// set-but-expired pointer as a logical error, and some functions read it
+    /// at create-time (e.g. `h3PolygonToCellsWithContainment`), which the
+    /// gates reach through `FunctionFactory::tryGet` and the oracle queries
+    /// through query analysis. Detach the dead pointer up front; oracle
+    /// sub-queries are internal and are not registered in the process list.
+    context->setProcessListElement({});
+
     const ASTSelectQuery * select = extractSimpleSelect(query_ast);
     if (!select)
     {
