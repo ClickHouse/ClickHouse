@@ -2351,23 +2351,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             ast_rename->exchange = true;
         }
 
-        /// Best-effort upfront pre-flight: fail fast if the target is already over the
-        /// drop limit before we spend time on the (potentially expensive) `INSERT-SELECT`
-        /// fill. Authoritative gating happens later via `pre_swap_check` under the rename's
-        /// `DDLGuard`s — this check has no `TOCTOU` guarantees because guards are not held
-        /// here and a concurrent `CREATE OR REPLACE` can swap the target out before rename.
-        if (auto existing = DatabaseCatalog::instance().tryGetTable(
-                StorageID{create.getDatabase(), table_to_replace_name}, current_context))
-            existing->checkTableSizeBelowDropLimit(current_context);
-
         FailPointInjection::pauseFailPoint(FailPoints::create_or_replace_after_size_check_before_rename);
 
-        /// Authoritative size gate. The callback runs while `InterpreterRenameQuery`
-        /// holds the per-table `DDLGuard`s — atomic with the swap. If it throws, no
-        /// `EXCHANGE` happens; the catch block below cleans up the temp via
-        /// `make_drop_context(bypass_size_guard=true)` (the temp name is unique to this
-        /// call). This closes the `TOCTOU` window where a concurrent `CREATE OR REPLACE`
-        /// could replace the target between the upfront check and the rename.
+        /// Run the size check once, inside the rename's `DDLGuard`s. If it throws,
+        /// no rename happens and the catch block below drops the temp.
         InterpreterRenameQuery interpreter_rename{ast_rename, current_context};
         interpreter_rename.setPreSwapCheck(
             [&current_context](const StorageID & to_drop_id)
@@ -2380,10 +2367,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         if (!interpreter_rename.renamedInsteadOfExchange())
         {
-            /// The rename's `pre_swap_check` already approved this storage under the
-            /// guards. Bypass `max_table_size_to_drop` for the implicit drop — the
-            /// authoritative check has run, and re-running it here would re-consume
-            /// `force_drop_table` if the storage is exactly at the limit.
+            /// `pre_swap_check` already gated this; bypass to avoid double-consuming
+            /// the `force_drop_table` flag inside `Context::checkCanBeDropped`.
             auto drop_context = make_drop_context(/*bypass_size_guard=*/true);
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
