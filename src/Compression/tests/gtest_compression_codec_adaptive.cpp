@@ -9,6 +9,7 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
+#include <base/defines.h>
 #include <base/unaligned.h>
 #include <Common/PODArray.h>
 
@@ -242,9 +243,13 @@ TEST(CompressionCodecAdaptive, HashHasOwnNamespace)
 
 TEST(CompressionCodecAdaptive, DirectInvocationThrows)
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
+#else
     CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
     /// Adaptive never appears on disk, so the public method byte accessor must reject direct use.
     EXPECT_ANY_THROW(adaptive.getMethodByte());
+#endif
 }
 
 TEST(CompressionCodecAdaptive, ConcurrentCompressIsThreadSafe)
