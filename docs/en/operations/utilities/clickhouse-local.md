@@ -224,7 +224,10 @@ Arguments:
 - `-f`, `--format`, `--output-format` — output format, `TSV` by default.
 - `-d`, `--database` — default database, `_local` by default.
 - `--stacktrace` — whether to dump debug output in case of exception.
-- `--echo` — print query before execution.
+- `--echo [ <bool> ]` — print each query before execution. Takes an optional boolean value. Enabled by default in interactive mode and disabled in batch mode. Note: because `--echo` now takes an optional value, a positional query placed immediately after a bare `--echo` is consumed as its value; use `--echo --query "..."`, `--echo -q "..."`, `--echo=false`, or piped `stdin` instead.
+- `--echo-formatted [ <bool> ]` — format the echoed queries. Takes an optional boolean value. Enabled by default in interactive mode and disabled in batch mode.
+- `--echo-query-id [ <bool> ]` — print the `query_id` before execution. Takes an optional boolean value. Enabled by default in interactive mode and disabled in batch mode.
+- `--highlight`, `--hilite` `<bool>` — toggle syntax highlighting of the command prompt and the echoed queries. Enabled by default. Highlighting is applied only when writing to a terminal.
 - `--verbose` — more details on query execution.
 - `--logger.console` — Log to console.
 - `--logger.log` — Log file name.

@@ -8,6 +8,7 @@
 #include <Functions/formatString.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <memory>
 #include <vector>
@@ -35,8 +36,8 @@ private:
     struct Instruction
     {
         std::string_view format;
-        size_t rows;
-        bool is_literal; /// format is literal string without any argument
+        size_t rows{};
+        bool is_literal{}; /// format is literal string without any argument
         ColumnWithTypeAndName input; /// Only used when is_literal is false
 
         ColumnWithTypeAndName execute() const
@@ -401,10 +402,10 @@ private:
         return result_col;
     }
 
-    std::vector<Instruction>
+    VectorWithMemoryTracking<Instruction>
     buildInstructions(std::string_view format, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
-        std::vector<Instruction> instructions;
+        VectorWithMemoryTracking<Instruction> instructions;
         instructions.reserve(arguments.size());
 
         auto append_instruction = [&](const char * begin, const char * end, const ColumnWithTypeAndName & arg)
