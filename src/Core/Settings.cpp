@@ -4522,6 +4522,12 @@ table setting `compute_exact_num_defaults_for_sparse_columns` on the target tabl
 inserts and merges. Parts written without it are silently opted out of the rewrite, so
 enabling `optimize_trivial_count_with_sparsity_filter` alone is not enough.
 
+For the `IS NULL` / `IS NOT NULL` patterns on `Nullable` columns, the column must also
+have a `num_defaults` entry in `serialization.json`, which only happens when the MergeTree
+table setting `nullable_serialization_version` is set to `allow_sparse` at insert /
+merge time. With the default value `basic` `Nullable` columns get no per-column entry, so
+the optimization silently does not apply.
+
 Possible values:
 
    - 0 — Optimization disabled.
@@ -4568,7 +4574,10 @@ Parts are silently skipped when they don't carry the `exact_num_defaults` flag (
 mode never produces wrong answers). The flag is written when the MergeTree table setting
 `compute_exact_num_defaults_for_sparse_columns` is enabled at insert / merge time;
 parts written by older servers or by the current server with that table setting off
-will not be pruned.
+will not be pruned. The `IS NULL` / `IS NOT NULL` patterns on `Nullable` columns also
+require `nullable_serialization_version = 'allow_sparse'` at insert / merge time; the
+default value `basic` produces no per-column entry for `Nullable` columns, so they fall
+back to the regular scan path.
 
 See also:
 
