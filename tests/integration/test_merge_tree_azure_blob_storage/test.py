@@ -667,6 +667,37 @@ def test_endpoint_new_container(cluster):
     assert 10 == int(node.query("SELECT count() FROM test"))
 
 
+def test_reject_zero_min_upload_part_size_in_disk_config(cluster):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/81282:
+    # an Azure disk with min_upload_part_size = 0 used to reach BufferAllocationPolicy
+    # and trigger the internal `second_size > 0` assertion on write.
+    node = cluster.instances[NODE_NAME]
+    account_name = "devstoreaccount1"
+    container_name = "cont3"
+    data_prefix = "data_prefix"
+    port = cluster.azurite_port
+
+    query = f"""
+    DROP TABLE IF EXISTS test_reject_zero_min_upload SYNC;
+
+    CREATE TABLE test_reject_zero_min_upload (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(
+    type = azure_blob_storage,
+    endpoint = 'http://azurite1:{port}/{account_name}/{container_name}/{data_prefix}',
+    endpoint_contains_account_name = 'true',
+    account_name = 'devstoreaccount1',
+    account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==',
+    container_already_exists = 1,
+    min_upload_part_size = 0,
+    skip_access_check = 0);
+    """
+
+    error = azure_query(node, query, expect_error=True)
+    assert "INVALID_SETTING_VALUE" in error, error
+    assert "azure_min_upload_part_size" in error, error
+
+
 def test_endpoint_without_prefix(cluster):
     node = cluster.instances[NODE_NAME]
     account_name = "devstoreaccount1"

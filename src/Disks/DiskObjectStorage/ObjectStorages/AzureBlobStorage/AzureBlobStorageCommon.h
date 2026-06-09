@@ -49,6 +49,10 @@ struct RequestSettings
     bool read_only = false;
     size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
     size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
+
+    /// Reject upload size settings that would otherwise produce an internal error
+    /// (e.g. a failed assertion in `BufferAllocationPolicy`) deep inside the write path.
+    void validateUploadSettings() const;
 };
 
 struct Endpoint

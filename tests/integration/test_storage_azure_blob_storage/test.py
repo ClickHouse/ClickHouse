@@ -1909,3 +1909,24 @@ def test_reject_zero_max_blocks_in_multipart_upload(cluster):
     )
     assert "BAD_ARGUMENTS" in error, error
     assert "A setting's value has to be greater than 0" in error, error
+
+
+def test_reject_zero_min_upload_part_size(cluster):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/81282:
+    # azure_min_upload_part_size = 0 used to reach BufferAllocationPolicy and trigger
+    # the internal `second_size > 0` assertion on write.
+    node = cluster.instances["node"]
+    azure_query(
+        node,
+        f"CREATE TABLE test_reject_zero_min_upload (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" 'cont', 'test_reject_zero_min_upload.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
+    )
+
+    error = node.query_and_get_error(
+        "INSERT INTO test_reject_zero_min_upload VALUES (1, 'a')",
+        settings={"azure_min_upload_part_size": 0},
+    )
+    assert "INVALID_SETTING_VALUE" in error, error
+    assert "azure_min_upload_part_size" in error, error
+
+    azure_query(node, "DROP TABLE test_reject_zero_min_upload")

@@ -14,6 +14,8 @@
 #include <IO/AzureBlobStorage/PocoHTTPClient.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/formatReadable.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/re2.h>
 #include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -90,6 +92,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 namespace AzureBlobStorage
@@ -602,6 +605,49 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     return {storage_url, account_name, account_key, container_name, prefix, /* sas_auth */"", /* additional_params */"", container_already_exists, endpoint_contains_account_name};
 }
 
+void RequestSettings::validateUploadSettings() const
+{
+    if (max_blocks_in_multipart_upload == 0)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting azure_max_blocks_in_multipart_upload cannot be zero");
+
+    /// When strict_upload_part_size is set, a fixed-size allocation policy is used and the
+    /// exponential-growth settings below are irrelevant.
+    if (strict_upload_part_size == 0)
+    {
+        if (min_upload_part_size == 0)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting azure_min_upload_part_size ({}) cannot be zero",
+                ReadableSize(min_upload_part_size));
+
+        if (max_upload_part_size < min_upload_part_size)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting azure_max_upload_part_size ({}) can't be less than setting azure_min_upload_part_size ({})",
+                ReadableSize(max_upload_part_size), ReadableSize(min_upload_part_size));
+
+        if (upload_part_size_multiply_factor == 0)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting azure_upload_part_size_multiply_factor cannot be zero");
+
+        if (upload_part_size_multiply_parts_count_threshold == 0)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting azure_upload_part_size_multiply_parts_count_threshold cannot be zero");
+
+        size_t maybe_overflow = 0;
+        if (common::mulOverflow(max_upload_part_size, upload_part_size_multiply_factor, maybe_overflow))
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting azure_upload_part_size_multiply_factor is too big ({}). "
+                "Multiplication to azure_max_upload_part_size ({}) will cause integer overflow",
+                upload_part_size_multiply_factor, ReadableSize(max_upload_part_size));
+    }
+}
+
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings)
 {
     auto settings = std::make_unique<RequestSettings>();
@@ -623,6 +669,8 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_setti
     settings->sdk_retry_initial_backoff_ms = query_settings[Setting::azure_sdk_retry_initial_backoff_ms];
     settings->sdk_retry_max_backoff_ms = query_settings[Setting::azure_sdk_retry_max_backoff_ms];
     settings->check_objects_after_upload = query_settings[Setting::azure_check_objects_after_upload];
+
+    settings->validateUploadSettings();
 
     return settings;
 }
@@ -668,6 +716,8 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
     settings->sdk_retry_max_backoff_ms = config.getUInt64(config_prefix + ".retry_max_backoff_ms", settings_ref[Setting::azure_sdk_retry_max_backoff_ms]);
 
     settings->check_objects_after_upload = config.getBool(config_prefix + ".check_objects_after_upload", settings_ref[Setting::azure_check_objects_after_upload]);
+
+    settings->validateUploadSettings();
 
     return settings;
 }
