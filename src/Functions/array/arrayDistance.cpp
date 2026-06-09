@@ -1,17 +1,31 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnDenseVector.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 #include <Common/TargetSpecific.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeVector.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/castColumn.h>
 
 #include <cmath>
 
 #if USE_MULTITARGET_CODE
 #include <immintrin.h>
+#endif
+
+/// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
+#if USE_SIMSIMD
+#    if defined(__x86_64__) || defined(__i386__)
+#        include <immintrin.h>
+#    endif
+#    include <simsimd/simsimd.h>
 #endif
 
 
@@ -387,14 +401,31 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes types;
+        const DataTypeVector * vector_types[2] = {nullptr, nullptr};
         for (size_t i = 0; i < 2; ++i)
         {
-            const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].type.get());
-            if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} of function {} must be array.", i, getName());
-
-            types.push_back(array_type->getNestedType());
+            if (const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].type.get()))
+            {
+                types.push_back(array_type->getNestedType());
+            }
+            else if (const auto * vector_type = checkAndGetDataType<DataTypeVector>(arguments[i].type.get()))
+            {
+                vector_types[i] = vector_type;
+                types.push_back(vector_type->getElementType());
+            }
+            else
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} of function {} must be array or vector.", i, getName());
         }
+
+        /// When both arguments are vectors their dimension is known at analysis time, so enforce it early.
+        if (vector_types[0] && vector_types[1] && vector_types[0]->getDimension() != vector_types[1]->getDimension())
+            throw Exception(
+                ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                "Vector arguments for function {} must have equal dimension, got {} and {}",
+                getName(),
+                vector_types[0]->getDimension(),
+                vector_types[1]->getDimension());
         const DataTypePtr & common_type = getLeastSupertype(types);
         switch (common_type->getTypeId())
         {
@@ -429,6 +460,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// The Vector(T, N) FLAT path: contiguous, offset-free storage computed through SimSIMD (see executeVector).
+        if (isVector(arguments[0].type) || isVector(arguments[1].type))
+            return executeVector(arguments, result_type, input_rows_count);
+
         switch (result_type->getTypeId())
         {
             case TypeIndex::Float32:
@@ -656,6 +691,150 @@ private:
         }
 
         return result;
+    }
+
+    /// Vector(T, N) path. One argument is a Vector column; the other is the reference (an Array, usually a
+    /// constant query vector). Data is contiguous with a fixed stride N, so the distance is computed directly
+    /// over raw pointers via SimSIMD (with a generic scalar fallback), without building offsets.
+    ColumnPtr executeVector(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    {
+        const auto * vector_type = checkAndGetDataType<DataTypeVector>(arguments[0].type.get());
+        if (!vector_type)
+            vector_type = checkAndGetDataType<DataTypeVector>(arguments[1].type.get());
+
+        const size_t dimension = vector_type->getDimension();
+        const DataTypePtr & element_type = vector_type->getElementType();
+
+        switch (result_type->getTypeId())
+        {
+            case TypeIndex::Float32:
+                return executeVectorWithElementType<Float32>(arguments, element_type, dimension, input_rows_count);
+            case TypeIndex::Float64:
+                return executeVectorWithElementType<Float64>(arguments, element_type, dimension, input_rows_count);
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type {}", result_type->getName());
+        }
+    }
+
+    template <typename ResultType>
+    ColumnPtr executeVectorWithElementType(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & element_type, size_t dimension, size_t input_rows_count) const
+    {
+        switch (element_type->getTypeId())
+        {
+            case TypeIndex::BFloat16:
+                return executeVectorImpl<ResultType, BFloat16>(arguments, element_type, dimension, input_rows_count);
+            case TypeIndex::Float32:
+                return executeVectorImpl<ResultType, Float32>(arguments, element_type, dimension, input_rows_count);
+            case TypeIndex::Float64:
+                return executeVectorImpl<ResultType, Float64>(arguments, element_type, dimension, input_rows_count);
+            default:
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Vector element type {} is not supported", element_type->getName());
+        }
+    }
+
+    template <typename ResultType, typename T>
+    ColumnPtr executeVectorImpl(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & element_type, size_t dimension, size_t input_rows_count) const
+    {
+        /// Holders keep the (possibly casted) source columns alive while we read their raw data.
+        std::vector<ColumnPtr> holders;
+        const auto [data_x, stride_x] = getVectorData<T>(arguments[0], element_type, dimension, holders);
+        const auto [data_y, stride_y] = getVectorData<T>(arguments[1], element_type, dimension, holders);
+
+        const typename Kernel::ConstParams kernel_params = initConstParams(arguments);
+
+        auto col_res = ColumnVector<ResultType>::create(input_rows_count);
+        auto & result_data = col_res->getData();
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+            result_data[row] = computeVectorDistance<ResultType, T>(
+                data_x + row * stride_x, data_y + row * stride_y, dimension, kernel_params);
+
+        return col_res;
+    }
+
+    /// Returns a base pointer to the element data of type T and a per-row stride (0 for a constant argument that
+    /// is reused for every row, `dimension` for a regular per-row column).
+    template <typename T>
+    std::pair<const T *, size_t> getVectorData(
+        const ColumnWithTypeAndName & argument, const DataTypePtr & element_type, size_t dimension, std::vector<ColumnPtr> & holders) const
+    {
+        const ColumnPtr & col = argument.column;
+        const bool is_const = isColumnConst(*col);
+        const IColumn * data_col = is_const ? &assert_cast<const ColumnConst &>(*col).getDataColumn() : col.get();
+
+        if (const auto * vec = typeid_cast<const ColumnDenseVector *>(data_col))
+        {
+            if (vec->getDimension() != dimension)
+                throw Exception(
+                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Vector arguments for function {} must have equal dimension", getName());
+            holders.push_back(col);
+            const T * base = reinterpret_cast<const T *>(vec->getFixedStringData().getChars().data());
+            return {base, is_const ? 0 : dimension};
+        }
+
+        /// The reference vector is an Array. Cast it to Array(element_type) so its data is a ColumnVector<T>.
+        ColumnPtr casted = castColumn(argument, std::make_shared<DataTypeArray>(element_type));
+        holders.push_back(casted);
+
+        const bool casted_const = isColumnConst(*casted);
+        const IColumn * casted_data = casted_const ? &assert_cast<const ColumnConst &>(*casted).getDataColumn() : casted.get();
+        const auto & array = assert_cast<const ColumnArray &>(*casted_data);
+        const auto & offsets = array.getOffsets();
+
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            const size_t length = offsets[i] - (i == 0 ? 0 : offsets[i - 1]);
+            if (length != dimension)
+                throw Exception(
+                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                    "Array argument for function {} must have size {}, got {}",
+                    getName(),
+                    dimension,
+                    length);
+        }
+
+        const T * base = typeid_cast<const ColumnVector<T> &>(array.getData()).getData().data();
+        return {base, casted_const ? 0 : dimension};
+    }
+
+    template <typename ResultType, typename T>
+    static ResultType computeVectorDistance(const T * x, const T * y, size_t n, const typename Kernel::ConstParams & kernel_params)
+    {
+#if USE_SIMSIMD
+        /// SimSIMD provides Faiss-class kernels for the two most common metrics (the same library the vector
+        /// similarity index and QBit distances use). Other metrics fall through to the generic scalar path below.
+        if constexpr (std::is_same_v<Kernel, L2Distance>)
+        {
+            simsimd_distance_t result = 0;
+            if constexpr (std::is_same_v<T, Float32>)
+                simsimd_l2_f32(x, y, n, &result);
+            else if constexpr (std::is_same_v<T, Float64>)
+                simsimd_l2_f64(x, y, n, &result);
+            else
+                simsimd_l2_bf16(reinterpret_cast<const simsimd_bf16_t *>(x), reinterpret_cast<const simsimd_bf16_t *>(y), n, &result);
+            return static_cast<ResultType>(result);
+        }
+        else if constexpr (std::is_same_v<Kernel, CosineDistance>)
+        {
+            simsimd_distance_t result = 0;
+            if constexpr (std::is_same_v<T, Float32>)
+                simsimd_cos_f32(x, y, n, &result);
+            else if constexpr (std::is_same_v<T, Float64>)
+                simsimd_cos_f64(x, y, n, &result);
+            else
+                simsimd_cos_bf16(reinterpret_cast<const simsimd_bf16_t *>(x), reinterpret_cast<const simsimd_bf16_t *>(y), n, &result);
+            return static_cast<ResultType>(result);
+        }
+#endif
+        /// Generic scalar path: reuses the kernel's accumulate/finalize over the contiguous data. Also the
+        /// fallback when SimSIMD is unavailable, and the implementation for L1/L2Squared/Lp/Linf on vectors.
+        typename Kernel::template State<ResultType> state;
+        for (size_t i = 0; i < n; ++i)
+            Kernel::template accumulate<ResultType>(state, static_cast<ResultType>(x[i]), static_cast<ResultType>(y[i]), kernel_params);
+        return Kernel::finalize(state, kernel_params);
     }
 
     typename Kernel::ConstParams initConstParams(const ColumnsWithTypeAndName &) const { return {}; }

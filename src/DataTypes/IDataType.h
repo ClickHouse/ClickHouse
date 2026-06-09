@@ -438,6 +438,7 @@ struct WhichDataType
     constexpr bool isArray() const { return idx == TypeIndex::Array; }
     constexpr bool isTuple() const { return idx == TypeIndex::Tuple; }
     constexpr bool isQBit() const { return idx == TypeIndex::QBit; }
+    constexpr bool isVector() const { return idx == TypeIndex::Vector; }
     constexpr bool isMap() const {return idx == TypeIndex::Map; }
     constexpr bool isSet() const { return idx == TypeIndex::Set; }
     constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
@@ -521,6 +522,7 @@ bool isIPv6(TYPE data_type); \
 bool isArray(TYPE data_type); \
 bool isTuple(TYPE data_type); \
 bool isQBit(TYPE data_type); \
+bool isVector(TYPE data_type); \
 bool isMap(TYPE data_type); \
 bool isInterval(TYPE data_type); \
 bool isVariant(TYPE data_type); \

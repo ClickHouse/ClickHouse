@@ -348,6 +348,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeArray(*this);
     registerDataTypeTuple(*this);
     registerDataTypeQBit(*this);
+    registerDataTypeVector(*this);
     registerDataTypeNullable(*this);
     registerDataTypeNothing(*this);
     registerDataTypeUUID(*this);

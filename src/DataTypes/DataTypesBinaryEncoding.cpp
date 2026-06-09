@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeVector.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -175,6 +176,8 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
         }
         case TypeIndex::QBit:
             return BinaryTypeIndex::QBit;
+        case TypeIndex::Vector:
+            return BinaryTypeIndex::Vector;
         case TypeIndex::Set:
             return BinaryTypeIndex::Set;
         case TypeIndex::Interval:
@@ -416,6 +419,13 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
             encodeDataTypeImpl<encode_for_hash_calculation>(qbit_type.getElementType(), buf);
             writeVarUInt(qbit_type.getDimension(), buf);
+            break;
+        }
+        case BinaryTypeIndex::Vector:
+        {
+            const auto & vector_type = assert_cast<const DataTypeVector &>(*type);
+            encodeDataTypeImpl<encode_for_hash_calculation>(vector_type.getElementType(), buf);
+            writeVarUInt(vector_type.getDimension(), buf);
             break;
         }
         case BinaryTypeIndex::Interval:
@@ -687,6 +697,13 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             size_t dimension;
             readVarUInt(dimension, buf);
             return std::make_shared<DataTypeQBit>(element_type, dimension);
+        }
+        case BinaryTypeIndex::Vector:
+        {
+            auto element_type = decodeDataType(buf, complexity);
+            size_t dimension;
+            readVarUInt(dimension, buf);
+            return std::make_shared<DataTypeVector>(element_type, dimension);
         }
         case BinaryTypeIndex::Set:
             return std::make_shared<DataTypeSet>();

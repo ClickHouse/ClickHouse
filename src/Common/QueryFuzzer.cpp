@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeVector.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -2158,6 +2159,12 @@ DataTypePtr QueryFuzzer::getRandomType()
                 = {std::make_shared<DataTypeBFloat16>(), std::make_shared<DataTypeFloat32>(), std::make_shared<DataTypeFloat64>()};
             const size_t dimension = fuzz_rand() % 128 + 1;
             return std::make_shared<DataTypeQBit>(qbit_element_types[fuzz_rand() % std::size(qbit_element_types)], dimension);
+        }
+        case TypeIndex::Vector: {
+            static const DataTypePtr vector_element_types[]
+                = {std::make_shared<DataTypeBFloat16>(), std::make_shared<DataTypeFloat32>(), std::make_shared<DataTypeFloat64>()};
+            const size_t dimension = fuzz_rand() % 128 + 1;
+            return std::make_shared<DataTypeVector>(vector_element_types[fuzz_rand() % std::size(vector_element_types)], dimension);
         }
         case TypeIndex::AggregateFunction: {
             const size_t nargs = fuzz_rand() % 3;

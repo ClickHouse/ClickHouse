@@ -226,6 +226,8 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
         }
         case TypeIndex::QBit:
             return to_which_type.isQBit();
+        case TypeIndex::Vector:
+            return to_which_type.isVector();
         case TypeIndex::Object:
         case TypeIndex::Variant:
         case TypeIndex::Dynamic:

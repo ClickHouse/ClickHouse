@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <Columns/ColumnDenseVector.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -1078,6 +1079,153 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(const DataTypeA
         /// Pass nullable_source so that convertArrayToQBit can use the null map
         /// to skip NULL rows (whose nested arrays may have default/empty values).
         return convertArrayToQBit<T>(converted_arguments, result_type, nullable_source, dimension, element_size);
+    };
+}
+
+FunctionCast::WrapperType FunctionCast::createVectorWrapper(const DataTypePtr & from_type_untyped, const DataTypeVector & to_type) const
+{
+    /// Conversion from String through parsing the `[...]` text representation.
+    if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
+    {
+        return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count) -> ColumnPtr
+        {
+            return ConvertImplGenericFromString<true>::execute(arguments, result_type, column_nullable, input_rows_count, settings);
+        };
+    }
+
+    const auto * from_vector_type = checkAndGetDataType<DataTypeVector>(from_type_untyped.get());
+    const auto * from_array_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
+
+    /// From another Vector
+    if (from_vector_type)
+    {
+        if (from_vector_type->getDimension() != to_type.getDimension())
+            throw Exception(
+                ErrorCodes::TYPE_MISMATCH,
+                "CAST AS between two Vectors can only be performed if they have the same number of elements. From: {}, To: {}",
+                from_vector_type->getName(),
+                to_type.getName());
+        if (!from_vector_type->getElementType()->equals(*to_type.getElementType()))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "CAST AS between two Vectors containing different types isn't implemented. From: {}, To: {}",
+                from_vector_type->getName(),
+                to_type.getName());
+        /// For identical types we create createIdentityWrapper in prepareImpl, so this is unreachable.
+        UNREACHABLE();
+    }
+
+    /// From Array to Vector
+    if (from_array_type)
+    {
+        switch (to_type.getElementSizeInBytes())
+        {
+            case 2:
+                return createArrayToVectorWrapper<BFloat16>(*from_array_type, to_type);
+            case 4:
+                return createArrayToVectorWrapper<Float32>(*from_array_type, to_type);
+            case 8:
+                return createArrayToVectorWrapper<Float64>(*from_array_type, to_type);
+            default:
+                UNREACHABLE();
+        }
+    }
+
+    if (cast_type == CastType::accurateOrNull)
+        return createToNullableColumnWrapper();
+
+    throw Exception(
+        ErrorCodes::TYPE_MISMATCH,
+        "CAST AS Vector can only be performed from String, Array or another Vector. Left type: {}, right type: {}",
+        from_type_untyped->getName(),
+        to_type.getName());
+}
+
+template <typename T>
+ColumnPtr FunctionCast::convertArrayToVector(
+    ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t dimension)
+{
+    ColumnPtr src_col = arguments.front().column;
+    const auto * col_array = checkAndGetColumn<ColumnArray>(src_col.get());
+
+    if (!col_array)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Unexpected column type {} for Array source when converting to Vector", src_col->getName());
+
+    const auto & offsets = col_array->getOffsets();
+    const auto & data = typeid_cast<const ColumnVector<T> &>(col_array->getData()).getData();
+    const size_t arrays_count = offsets.size();
+    const size_t value_size = dimension * sizeof(T);
+
+    /// Use the null map to skip NULL rows — their nested arrays may have default (empty) values that don't
+    /// match the expected dimension, but the result will be masked by NULL anyway.
+    const NullMap * null_map = nullable_source ? &nullable_source->getNullMapData() : nullptr;
+
+    /// Verify array size matches the expected dimension (skip NULL rows).
+    size_t prev_offset = 0;
+    for (size_t row = 0; row < arrays_count; ++row)
+    {
+        const size_t array_size = offsets[row] - prev_offset;
+        if (!(null_map && (*null_map)[row]) && array_size != dimension)
+            throw Exception(
+                ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                "Array arguments must have size {} for Vector conversion, got {}",
+                dimension,
+                array_size);
+        prev_offset = offsets[row];
+    }
+
+    auto fixed_string = ColumnFixedString::create(value_size);
+    auto & chars = fixed_string->getChars();
+    chars.reserve(arrays_count * value_size);
+
+    /// The N elements of each row are contiguous in the converted data, so they map directly onto the fixed-size
+    /// block of the underlying ColumnFixedString (no transposition, unlike QBit).
+    prev_offset = 0;
+    for (size_t row = 0; row < arrays_count; ++row)
+    {
+        const size_t old_size = chars.size();
+        chars.resize(old_size + value_size);
+        if (null_map && (*null_map)[row])
+            std::memset(&chars[old_size], 0, value_size);
+        else
+            std::memcpy(&chars[old_size], &data[prev_offset], value_size);
+        prev_offset = offsets[row];
+    }
+
+    ColumnPtr fixed_string_column = std::move(fixed_string);
+    return ColumnDenseVector::create(fixed_string_column, sizeof(T), dimension);
+}
+
+template <typename T>
+FunctionCast::WrapperType FunctionCast::createArrayToVectorWrapper(const DataTypeArray & from_array_type, const DataTypeVector & to_vector_type) const
+{
+    const DataTypePtr & from_nested_type = from_array_type.getNestedType();
+    const DataTypePtr & to_nested_type = to_vector_type.getElementType();
+    const size_t dimension = to_vector_type.getDimension();
+
+    return [nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type),
+            from_nested_type,
+            to_nested_type,
+            dimension](
+               ColumnsWithTypeAndName & arguments,
+               const DataTypePtr & result_type,
+               const ColumnNullable * nullable_source,
+               size_t /* input_rows_count */) -> ColumnPtr
+    {
+        const auto & col_array = assert_cast<const ColumnArray &>(*arguments.front().column);
+
+        /// Don't propagate nullable_source into array elements — the inner data column has a different size
+        /// (total elements vs. number of rows), and the original nullable_source may have a different type.
+        ColumnsWithTypeAndName nested_columns{{col_array.getDataPtr(), from_nested_type, ""}};
+        auto converted_nested = nested_function(nested_columns, to_nested_type, nullptr, nested_columns.front().column->size());
+        /// When cast_type is accurateOrNull the inner conversion may wrap the result in ColumnNullable; strip it
+        /// because we need raw ColumnVector data. Outer-level nullable semantics are handled by prepareRemoveNullable.
+        converted_nested = removeNullable(converted_nested);
+        auto converted_array = ColumnArray::create(converted_nested, col_array.getOffsetsPtr());
+        ColumnsWithTypeAndName converted_arguments{{std::move(converted_array), std::make_shared<DataTypeArray>(to_nested_type), ""}};
+
+        return convertArrayToVector<T>(converted_arguments, result_type, nullable_source, dimension);
     };
 }
 
@@ -2523,6 +2671,8 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
             return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
         case TypeIndex::QBit:
             return createQBitWrapper(from_type, static_cast<const DataTypeQBit &>(*to_type));
+        case TypeIndex::Vector:
+            return createVectorWrapper(from_type, static_cast<const DataTypeVector &>(*to_type));
         case TypeIndex::Map:
             return createMapWrapper(from_type, checkAndGetDataType<DataTypeMap>(to_type.get()));
         case TypeIndex::Object:
