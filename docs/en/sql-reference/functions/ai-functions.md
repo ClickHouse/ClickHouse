@@ -62,6 +62,34 @@ Any OpenAI-compatible API (e.g. vLLM, Ollama, LiteLLM) can be used by setting `p
 
 Which named collection to use is controlled by the [`ai_credentials`](/operations/settings/settings#ai_credentials) setting. Other AI-related settings are listed in [Settings](/operations/settings/settings) under the `ai_function_` prefix.
 
+### Use in `DEFAULT` and `MATERIALIZED` columns {#default-and-materialized-columns}
+
+The `ai_credentials` setting is read when the default expression is evaluated, not when the column is defined. The collection name is not stored in the column definition:
+
+```sql
+CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc)) ...;
+-- The stored default is `aiEmbed(doc)`; no collection is captured.
+```
+
+A `DEFAULT` column is evaluated at `INSERT`, so `ai_credentials` must be set in the inserting session or query:
+
+```sql
+SET ai_credentials = 'my_ai_credentials';
+INSERT INTO t (id, doc) VALUES (1, 'hello');
+```
+
+To make such tables insertable without setting `ai_credentials` per session, set it in a [settings profile](/operations/settings/settings-profiles):
+
+```xml
+<profiles>
+    <default>
+        <ai_credentials>my_ai_credentials</ai_credentials>
+    </default>
+</profiles>
+```
+
+A `MATERIALIZED` column is computed at `INSERT` like a `DEFAULT` column, and is also recomputed by mutations such as `ALTER TABLE ... MATERIALIZE COLUMN`. Mutations run outside a user session and do not inherit a query's `SETTINGS` clause, but they do inherit settings from a settings profile. Set `ai_credentials` in a settings profile for mutation-driven recomputation to succeed; otherwise it raises an exception.
+
 ### Restricting endpoint hosts {#restricting-endpoint-hosts}
 
 The `endpoint` URL in an AI named collection is an outbound destination the server connects to under its own identity, potentially carrying (if specified) the named collection's `api_key` in the request headers. By default, ClickHouse permits any host. To restrict functions to a specific set of providers, configure [`remote_url_allow_hosts`](/operations/server-configuration-parameters/settings#remote_url_allow_hosts) in the server config, e.g.:
