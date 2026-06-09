@@ -285,17 +285,22 @@ def memory_reservation_approved() -> int:
     )
 
 
-def wait_for_memory_reservation_approved(limit_bytes: int) -> None:
+def wait_for_memory_reservation_approved(min_bytes: int, max_bytes: int) -> None:
     """
-    Wait indefinitely until MemoryReservationApproved reaches limit_bytes,
-    asserting along the way that it never exceeds limit_bytes. Relies on
+    Wait indefinitely until MemoryReservationApproved reaches at least `min_bytes`,
+    asserting along the way that it never exceeds `max_bytes`. Relies on
     pytest-timeout to bound the wait if the condition is never met.
+
+    `max_bytes` is the workload's `max_memory` limit; the scheduler is free to let
+    admitted allocations grow above their `reserve_memory` up to that limit (e.g. via
+    `syncWithMemoryTracker`), so we cannot assert exactly `min_bytes` — only that the
+    workload limit is respected.
     """
     while True:
         approved = memory_reservation_approved()
-        assert approved <= limit_bytes, \
-            f"MemoryReservationApproved={approved} exceeded limit={limit_bytes}"
-        if approved == limit_bytes:
+        assert approved <= max_bytes, \
+            f"MemoryReservationApproved={approved} exceeded workload max={max_bytes}"
+        if approved >= min_bytes:
             return
 
 
@@ -332,9 +337,13 @@ def test_memory_reservation_concurrency():
     for t in threads:
         t.start()
 
-    # With 100Mi limit and 40Mi per query, at most 2 can run (80Mi < 100Mi, but 120Mi > 100Mi).
-    expected_bytes = 2 * 40 * 1024 * 1024  # 80Mi
-    wait_for_memory_reservation_approved(expected_bytes)
+    # With 100Mi workload limit and 40Mi per query, at most 2 can run (80Mi < 100Mi, but
+    # 120Mi > 100Mi). Once both are admitted approved is ≥ 80Mi; under TSan / MemoryTracker
+    # accounting an admitted reservation can grow slightly above its `reserve_memory` via
+    # `syncWithMemoryTracker`, so we only check that it never exceeds the workload max.
+    min_expected_bytes = 2 * 40 * 1024 * 1024  # 80Mi — both reservations admitted
+    workload_max_bytes = 100 * 1024 * 1024     # 100Mi — `max_memory` of `all`
+    wait_for_memory_reservation_approved(min_expected_bytes, workload_max_bytes)
 
     # Release reservations by killing all running queries.
     for qid in query_ids:

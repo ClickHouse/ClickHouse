@@ -19,7 +19,7 @@ To enable CPU scheduling, you have to create CPU resource for MASTER or WORKER t
 CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
 ```
 
-To enable memory reservation for workloads, you have to create MEMORY resource (see [Memory reservations](#memory_reservations) for details):
+To enable memory reservation for workloads, you have to create MEMORY resource (see [Memory reservations](#memory-reservations) for details):
 
 ```sql
 CREATE RESOURCE memory (MEMORY RESERVATION)
@@ -102,7 +102,7 @@ graph LR
   oth --> all
 ```
 
-The name of a leaf workload without children can be used in query settings `SETTINGS workload = 'name'`. See [Workload markup](#workload_markup) for details.
+The name of a leaf workload without children can be used in query settings `SETTINGS workload = 'name'`. See [Workload markup](#workload-markup) for details.
 
 To customize workload the following settings could be used:
 * `priority` - (time-shared only) sibling workloads are served according to static values (lower value means higher priority). Drives preemption.
@@ -133,7 +133,7 @@ Also note that workload or resource could not be dropped if it is referenced fro
 Workload settings are translated into a proper set of scheduling nodes. For lower-level details, see the description of the scheduling node [types and options](#hierarchy).
 :::
 
-## Workload markup {#workload_markup}
+## Workload markup {#workload-markup}
 
 Queries can be marked with setting `workload` to distinguish different workloads. If `workload` is not set, then the value "default" is used. Note that you are able to specify the other value using settings profiles. Setting constraints can be used to make `workload` constant if you want all queries from the user to be marked with fixed value of `workload` setting.
 
@@ -239,7 +239,7 @@ Here we limit the total number of threads for all queries to be x2 of the availa
 If you want to maximize CPU utilization on your ClickHouse server, avoid using `max_cpus` and `max_cpu_share` for the root workload `all`. Instead, set a higher value for `max_concurrent_threads`. For example, on a system with 8 CPUs, set `max_concurrent_threads = 16`. This allows 8 threads to run CPU tasks while 8 other threads can handle I/O operations. Additional threads will create CPU pressure, ensuring scheduling rules are enforced. In contrast, setting `max_cpus = 8` will never create CPU pressure because the server cannot exceed the 8 available CPUs.
 :::
 
-## Memory reservations {#memory_reservations}
+## Memory reservations {#memory-reservations}
 
 To enable memory reservations for workloads create MEMORY RESERVATION resource and set at least one limit for the total memory reserved using workload settings:
 
@@ -426,7 +426,7 @@ graph TD
 * `precedence_allocation` - enforces eviction according to static precedence (lower value means higher precedence); pending allocation of higher precedence evicts lower precedence allocations; children nodes should specify `precedence` (default is 0).
 * `queue` - leaf of the hierarchy capable of holding running and pending allocations.
 
-## Deprecated XML configuration {#deprecated_configuration}
+## Deprecated XML configuration {#deprecated-configuration}
 
 An alternative way to express which disks are used by a resource is server's `storage_configuration`:
 
@@ -505,7 +505,7 @@ The following example shows how to define IO scheduling hierarchies shown in the
 
 To be able to use the full capacity of the underlying resource, you should use `inflight_limit`. Note that a low number of `max_requests` or `max_cost` could lead to not full resource utilization, while too high numbers could lead to empty queues inside the scheduler, which in turn will result in policies being ignored (unfairness or ignoring of priorities) in the subtree. On the other hand, if you want to protect resources from too high utilization, you should use `bandwidth_limit`. It throttles when the amount of resource consumed in `duration` seconds exceeds `max_burst + max_speed * duration` bytes. Two `bandwidth_limit` nodes on the same resource could be used to limit peak bandwidth during short intervals and average bandwidth for longer ones.
 
-### Deprecated workload classifiers {#workload_classifiers}
+### Deprecated workload classifiers {#workload-classifiers}
 
 Workload classifiers are used to define mapping from `workload` specified by a query into leaf-queues that should be used for specific resources. At the moment, workload classification is simple: only static mapping is available.
 
