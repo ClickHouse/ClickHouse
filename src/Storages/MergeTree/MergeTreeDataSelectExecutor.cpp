@@ -7,6 +7,7 @@
 
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MarkRangeChunking.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
@@ -903,12 +904,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering && !top_k_filter_info->where_clause;
     const bool top_k_handle_ties = perform_top_k_optimization && (top_k_filter_info->num_sort_columns > 1 || skip_indexes.skip_index_for_top_k_filtering->index.granularity > 1);
 
-    size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
-    if (settings[Setting::max_threads_for_indexes])
-    {
-        num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
-    }
-
     /// NOTE: we must check the size of key_condition_rpn_template (not key_condition),
     /// because key_condition_rpn_template is the RPN used in mergePartialResultsForDisjunctions
     /// and in the callback that writes to the partial_disjunction_result bitset.
@@ -927,6 +922,95 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         return use_skip_indexes_on_data_read_;
     };
+
+    /// A part must be analysed as a single unit (no sub-part chunking) when it uses a feature
+    /// whose state spans the whole part and cannot be reconstructed by concatenating per-chunk
+    /// results: the disjunction bitset, the top-K min-max optimization, FINAL exact mode, or a
+    /// vector-similarity index (whose filtering early-returns unless the input covers the whole part).
+    const size_t min_marks_per_task = settings[Setting::min_marks_per_index_analysis_task];
+
+    auto part_uses_vector_similarity_index = [&](size_t part_index) -> bool
+    {
+        for (const auto & index_and_condition : skip_indexes.useful_indices)
+            if (index_and_condition.index->isVectorSimilarityIndex())
+                return true;
+        (void)part_index;
+        return false;
+    };
+
+    auto is_whole_part_only = [&](size_t part_index) -> bool
+    {
+        return min_marks_per_task == 0
+            || use_skip_indexes_for_disjunctions
+            || perform_top_k_optimization
+            || (is_final_query && use_skip_indexes_if_final_exact_mode_)
+            || part_uses_vector_similarity_index(part_index);
+    };
+
+    struct ChunkResult
+    {
+        MarkRanges ranges;
+        MarkRanges exact_ranges;
+        RangesInDataPartReadHints read_hints;
+        bool used_skip_index = false;
+        bool pk_non_empty = false;   /// PK-survivor ranges for this chunk were non-empty (before skip indexes)
+    };
+
+    struct WorkItem
+    {
+        size_t part_index;
+        size_t chunk_index;   /// index into chunk_results[part_index]
+        MarkRanges sub_ranges;
+        bool whole_part;
+    };
+
+    /// Per-part chunk result slots (only used by the chunked path).
+    std::vector<std::vector<ChunkResult>> chunk_results(parts_with_ranges.size());
+
+    std::atomic<bool> abort_analysis{false};
+
+    std::vector<WorkItem> work_items;
+    {
+        /// Global mark budget: aim for roughly provisional_threads * OVERSUBSCRIBE work items across all
+        /// parts combined, but never smaller than min_marks_per_task.
+        constexpr size_t OVERSUBSCRIBE = 3;
+        const size_t provisional_threads = settings[Setting::max_threads_for_indexes]
+            ? std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes])
+            : num_streams;
+
+        size_t total_marks = 0;
+        for (const auto & part : parts_with_ranges)
+            total_marks += part.getMarksCount();
+
+        size_t chunk_marks = 0;
+        if (min_marks_per_task != 0)
+        {
+            const size_t divisor = std::max<size_t>(1, provisional_threads * OVERSUBSCRIBE);
+            chunk_marks = std::max<size_t>(min_marks_per_task, (total_marks + divisor - 1) / divisor);
+        }
+
+        for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
+        {
+            if (is_whole_part_only(part_index)
+                || parts_with_ranges[part_index].getMarksCount() <= min_marks_per_task
+                || chunk_marks == 0)
+            {
+                work_items.push_back(WorkItem{part_index, 0, MarkRanges{}, /*whole_part=*/true});
+                continue;
+            }
+
+            auto sub_range_chunks = splitMarkRanges(parts_with_ranges[part_index].ranges, chunk_marks);
+            chunk_results[part_index].resize(sub_range_chunks.size());
+            for (size_t chunk_index = 0; chunk_index < sub_range_chunks.size(); ++chunk_index)
+                work_items.push_back(
+                    WorkItem{part_index, chunk_index, std::move(sub_range_chunks[chunk_index]), /*whole_part=*/false});
+        }
+    }
+
+    size_t num_threads = num_streams;
+    if (settings[Setting::max_threads_for_indexes])
+        num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
+    num_threads = std::min<size_t>(num_threads, std::max<size_t>(1, work_items.size()));
 
     /// Let's find what range to read from each part.
     {
@@ -1123,43 +1207,202 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
         };
 
+        /// Chunked path: analyse a contiguous sub-range of one part. Writes a ChunkResult slot and
+        /// updates only granule-level stat atomics; part-level counters are handled by the post-pass.
+        auto process_chunk = [&](const WorkItem & item)
+        {
+            if (abort_analysis.load(std::memory_order_relaxed))
+                return;
+
+            if (query_status)
+                query_status->checkTimeLimit();
+
+            const size_t part_index = item.part_index;
+            auto & orig = parts_with_ranges[part_index];
+            ChunkResult & out = chunk_results[part_index][item.chunk_index];
+
+            MarkRanges pk_ranges = item.sub_ranges;
+            if (metadata_snapshot->hasPrimaryKey() || part_offset_condition || total_offset_condition)
+            {
+                CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
+                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithPrimaryKeyMicroseconds);
+
+                const size_t total_marks_count = item.sub_ranges.getNumberOfMarks();
+                ProfileEvents::increment(ProfileEvents::FilteringMarksWithPrimaryKeyProcessedMarks, total_marks_count);
+                pk_stat.total_granules.fetch_add(total_marks_count, std::memory_order_relaxed);
+
+                RangesInDataPart sub_part(orig.data_part, orig.parent_part, orig.part_index_in_query,
+                                          orig.part_starting_offset_in_query, item.sub_ranges, {});
+                pk_ranges = markRangesFromPKRange(
+                    sub_part, metadata_snapshot, key_condition, part_offset_condition, total_offset_condition,
+                    find_exact_ranges ? &out.exact_ranges : nullptr, settings, log);
+
+                pk_stat.search_algorithm.store(pk_ranges.search_algorithm, std::memory_order_relaxed);
+                pk_stat.granules_dropped.fetch_add(total_marks_count - pk_ranges.getNumberOfMarks(), std::memory_order_relaxed);
+                pk_stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
+            }
+
+            sum_marks_pk.fetch_add(pk_ranges.getNumberOfMarks(), std::memory_order_relaxed);
+
+            out.ranges = pk_ranges;
+            out.pk_non_empty = !pk_ranges.empty();
+            out.read_hints = orig.read_hints; /// inherit any pre-existing whole-part hints
+
+            if (!skip_indexes.empty() && !out.ranges.empty())
+            {
+                CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
+                auto alter_conversions = MergeTreeData::getAlterConversionsForPart(orig.data_part, mutations_snapshot, context);
+                const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
+
+                /// Chunked path never uses the disjunction bitset (is_whole_part_only excludes it).
+                PartialDisjunctionResult unused_partial;
+
+                const auto num_indexes = skip_indexes.useful_indices.size();
+                for (size_t idx = 0; idx < num_indexes; ++idx)
+                {
+                    if (out.ranges.empty())
+                        break;
+
+                    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
+
+                    const auto index_idx = skip_indexes.per_part_index_orders[part_index][idx];
+                    const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
+
+                    auto index_stat_idx = idx;
+                    if (settings[Setting::per_part_index_stats])
+                        index_stat_idx += num_indexes * part_index;
+                    auto & stat = useful_indices_stat[index_stat_idx];
+
+                    size_t total_granules = out.ranges.getNumberOfMarks();
+                    stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
+
+                    if (auto check_result = canUseIndex(index_and_condition.index, metadata_snapshot, all_updated_columns); !check_result)
+                    {
+                        LOG_TRACE(log, "Index {} is not used for part {}. Reason: {}",
+                                  index_and_condition.index->index.name, orig.data_part->name, check_result.error().text);
+                        continue;
+                    }
+
+                    if (!is_index_supported_on_data_read(index_and_condition.index))
+                    {
+                        std::tie(out.ranges, out.read_hints) = filterMarksUsingIndex(
+                            index_and_condition.index, index_and_condition.condition, key_condition_rpn_template,
+                            orig.data_part, out.ranges, out.read_hints, reader_settings,
+                            mark_cache.get(), uncompressed_cache.get(), vector_similarity_index_cache.get(),
+                            /*use_skip_indexes_for_disjunctions=*/false, unused_partial, log);
+                    }
+
+                    stat.granules_dropped.fetch_add(total_granules - out.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+                    stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
+                    out.used_skip_index = true;
+                }
+            }
+
+            if (!out.ranges.empty())
+            {
+                if (limits.max_rows || leaf_limits.max_rows)
+                {
+                    RangesInDataPart counter(orig.data_part, orig.parent_part, orig.part_index_in_query,
+                                             orig.part_starting_offset_in_query, out.ranges, {});
+                    auto current_rows_estimate = counter.getRowsCount();
+                    size_t total_rows_estimate = current_rows_estimate + total_rows.fetch_add(current_rows_estimate, std::memory_order_relaxed);
+                    if (query_info.trivial_limit > 0 && total_rows_estimate > query_info.trivial_limit)
+                        total_rows_estimate = query_info.trivial_limit;
+
+                    bool exceeds = (limits.max_rows && total_rows_estimate > limits.max_rows)
+                                || (leaf_limits.max_rows && total_rows_estimate > leaf_limits.max_rows);
+                    if (exceeds && has_projections)
+                    {
+                        result.exceeded_row_limits = true;
+                        abort_analysis.store(true, std::memory_order_relaxed);
+                        return;
+                    }
+                    limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
+                    leaf_limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
+                }
+            }
+        };
+
         LOG_TRACE(log, "Filtering marks by primary and secondary keys");
+
+        auto dispatch = [&](const WorkItem & item)
+        {
+            if (item.whole_part)
+                process_part(item.part_index);
+            else
+                process_chunk(item);
+        };
 
         if (num_threads <= 1)
         {
-            for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
-                process_part(part_index);
+            for (const auto & item : work_items)
+                dispatch(item);
         }
         else
         {
-            /// Parallel loading and filtering of data parts.
             ThreadPool pool(
                 CurrentMetrics::MergeTreeDataSelectExecutorThreads,
                 CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
                 CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
                 num_threads);
 
-
-            /// Instances of ThreadPool "borrow" threads from the global thread pool.
-            /// We intentionally use scheduleOrThrow here to avoid a deadlock.
-            /// For example, queries can already be running with threads from the
-            /// global pool, and if we saturate max_thread_pool_size whilst requesting
-            /// more in this loop, queries will block infinitely.
-            /// So we wait until lock_acquire_timeout, and then raise an exception.
-            for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
+            for (const auto & item : work_items)
             {
                 pool.scheduleOrThrow(
-                    [&, part_index, thread_group = CurrentThread::getGroup()]
+                    [&, &item_ref = item, thread_group = CurrentThread::getGroup()]
                     {
                         ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
-
-                        process_part(part_index);
+                        dispatch(item_ref);
                     },
                     Priority{},
                     context->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
             }
-
             pool.wait();
+        }
+
+        /// Post-pass: assemble chunked parts and compute part-level stats.
+        for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
+        {
+            if (chunk_results[part_index].empty())
+                continue; /// whole_part item already wrote parts_with_ranges[part_index] in place
+
+            auto & dst = parts_with_ranges[part_index];
+            MarkRanges merged;
+            MarkRanges merged_exact;
+            RangesInDataPartReadHints merged_hints;
+            bool used_skip_index = false;
+            bool pk_non_empty = false;
+
+            for (auto & chunk : chunk_results[part_index])
+            {
+                for (const auto & r : chunk.ranges)
+                    merged.push_back(r);
+                for (const auto & r : chunk.exact_ranges)
+                    merged_exact.push_back(r);
+                /// Text-index granules are whole-part and identical across chunks: insert/overwrite by name.
+                for (auto & [name, granule] : chunk.read_hints.index_granules)
+                    merged_hints.index_granules[name] = granule;
+                used_skip_index = used_skip_index || chunk.used_skip_index;
+                pk_non_empty = pk_non_empty || chunk.pk_non_empty;
+            }
+            merged.search_algorithm = pk_stat.search_algorithm.load(std::memory_order_relaxed);
+
+            dst.ranges = std::move(merged);
+            dst.exact_ranges = std::move(merged_exact);
+            dst.read_hints = std::move(merged_hints);
+
+            /// Part-level stats (deferred from the chunked path).
+            pk_stat.total_parts.fetch_add(1, std::memory_order_relaxed);
+            if (dst.ranges.empty())
+                pk_stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
+            /// Legacy process_part increments sum_parts_pk on the PK result (before skip indexes).
+            if (pk_non_empty)
+                sum_parts_pk.fetch_add(1, std::memory_order_relaxed);
+
+            /// Per-index part counters (total_parts/parts_dropped) are ill-defined per chunk and are
+            /// intentionally approximated under chunking; we only record that a skip index was applied.
+            if (used_skip_index)
+                skip_index_used_in_part[part_index] = 1;
         }
 
     }
