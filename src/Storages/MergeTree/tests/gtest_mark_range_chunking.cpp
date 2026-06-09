@@ -51,7 +51,7 @@ TEST(MarkRangeChunking, SplitsSingleRangeIntoEvenChunks)
 {
     MarkRanges in{{0, 100}};
     auto chunks = splitMarkRanges(in, 25);
-    EXPECT_EQ(chunks.size(), 4u);
+    ASSERT_EQ(chunks.size(), 4u);
     EXPECT_EQ(totalMarks(chunks), 100u);
 }
 
@@ -78,5 +78,15 @@ TEST(MarkRangeChunking, RemainderGoesIntoFinalChunk)
     MarkRanges in{{0, 10}};
     auto chunks = splitMarkRanges(in, 3);
     EXPECT_EQ(totalMarks(chunks), 10u);
-    EXPECT_GE(chunks.size(), 4u); /// 3+3+3+1
+    EXPECT_EQ(chunks.size(), 4u); /// 3+3+3+1
+}
+
+TEST(MarkRangeChunking, TargetOneMakesSingletonChunks)
+{
+    MarkRanges in{{5, 9}};
+    auto chunks = splitMarkRanges(in, 1);
+    ASSERT_EQ(chunks.size(), 4u);
+    EXPECT_EQ(totalMarks(chunks), 4u);
+    for (const auto & c : chunks)
+        EXPECT_EQ(c.getNumberOfMarks(), 1u);
 }

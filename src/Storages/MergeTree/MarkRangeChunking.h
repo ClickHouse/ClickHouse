@@ -6,8 +6,8 @@
 namespace DB
 {
 
-/// Partition `ranges` into contiguous sub-ranges, each containing about
-/// `target_marks_per_chunk` marks (the last chunk may hold the remainder).
+/// Partition `ranges` into contiguous sub-ranges, each containing exactly
+/// `target_marks_per_chunk` marks (the last chunk may contain fewer).
 /// A single MarkRange is split across a chunk boundary when needed.
 /// `target_marks_per_chunk == 0` means "do not split": returns one chunk equal to `ranges`
 /// (or no chunks if `ranges` is empty). The concatenation of the returned chunks, in order,
