@@ -582,7 +582,7 @@ bool explainQueryTree(
             need_newline = true;
         }
 
-        query_tree_pass_manager.run(query_tree, pass_index);
+        query_tree_pass_manager.runUntil(query_tree, pass_index);
     }
 
     if (settings.dump_tree)

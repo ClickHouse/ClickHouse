@@ -1,6 +1,7 @@
 #include <Analyzer/QueryTreePassManager.h>
 
 #include <memory>
+#include <optional>
 
 #include <Common/Exception.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -195,9 +196,9 @@ void QueryTreePassManager::addPass(QueryTreePassPtr pass)
     passes.push_back(std::move(pass));
 }
 
-void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node)
+void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node, bool is_top_level)
 {
-    run(query_tree_node, passes.size());
+    runUntil(query_tree_node, passes.size(), is_top_level);
 }
 
 void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr & query_tree_node)
@@ -207,10 +208,10 @@ void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr & query_tree_node)
     // 2. GroupingFunctionsResolvePass
     // 3. AutoFinalOnQueryPass
     // 4. RemoveUnusedProjectionColumnsPass
-    run(query_tree_node, 4);
+    runUntil(query_tree_node, 4);
 }
 
-void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node, size_t up_to_pass_index)
+void QueryTreePassManager::runUntil(QueryTreeNodePtr & query_tree_node, size_t up_to_pass_index, bool is_top_level)
 {
     size_t passes_size = passes.size();
     if (up_to_pass_index > passes_size)
@@ -221,7 +222,11 @@ void QueryTreePassManager::run(QueryTreeNodePtr & query_tree_node, size_t up_to_
 
     /// Measures the whole pass loop: analysis plus all query-tree-level optimizations.
     /// QueryAnalysisMicroseconds is measured separately inside QueryAnalysisPass.
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryTreeOptimizeMicroseconds);
+    /// For nested (re-entrant) analysis is_top_level is false, so the time is folded
+    /// into the still-live outer timer instead of being counted again.
+    std::optional<ProfileEventTimeIncrement<Microseconds>> watch;
+    if (is_top_level)
+        watch.emplace(ProfileEvents::QueryTreeOptimizeMicroseconds);
 
     auto current_context = getContext();
     for (size_t i = 0; i < up_to_pass_index; ++i)
@@ -264,9 +269,9 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
     }
 }
 
-void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
+void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze, bool is_top_level)
 {
-    manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
+    manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze, is_top_level));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
     /// This pass should be run for the secondary queries

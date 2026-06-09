@@ -156,8 +156,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         options.forceMaterializeCTE();
 
         QueryTreePassManager query_tree_pass_manager(subquery_context);
-        addQueryTreePasses(query_tree_pass_manager, options.only_analyze);
-        query_tree_pass_manager.run(query_tree);
+        addQueryTreePasses(query_tree_pass_manager, options.only_analyze, /*is_top_level=*/false);
+        query_tree_pass_manager.run(query_tree, /*is_top_level=*/false);
 
         if (auto storage = subquery_context->getViewSource())
             replaceStorageInQueryTree(query_tree, subquery_context, storage);
