@@ -216,7 +216,12 @@ void listFilesWithRegexpMatchingImpl(
 
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
 
-    if (!fs::exists(prefix_without_globs))
+    /// Use the `std::error_code` overload: a path that fails to resolve (`ELOOP`,
+    /// dangling symlink, permission denied) is silently skipped instead of surfacing
+    /// the raw `filesystem_error` exception. This matches the existing skip semantics
+    /// of `it.increment(ec)` below for individual entries.
+    std::error_code prefix_exists_ec;
+    if (!fs::exists(prefix_without_globs, prefix_exists_ec) || prefix_exists_ec)
         return;
 
     /// Activate the recursion-stack cycle guard ONLY for unbounded (`**`) patterns.
@@ -260,8 +265,19 @@ void listFilesWithRegexpMatchingImpl(
         const size_t last_slash = full_path.rfind('/');
         const String file_name = full_path.substr(last_slash);
 
+        /// Use the `std::error_code` overload of `is_directory`: a directory entry that
+        /// fails to resolve (`ELOOP` on a mutual symlink cycle `a -> b, b -> a`, dangling
+        /// symlink, permission denied) is silently skipped instead of surfacing the raw
+        /// `filesystem_error` exception. The throwing overload would otherwise abort the
+        /// entire glob expansion before the canonical-stack guard above could prune
+        /// the entry.
+        std::error_code is_dir_ec;
+        const bool is_directory = it->is_directory(is_dir_ec);
+        if (is_dir_ec)
+            continue;
+
         /// Condition is_directory means what kind of path is it in current iteration of ls
-        if (!it->is_directory() && !looking_for_directory)
+        if (!is_directory && !looking_for_directory)
         {
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
@@ -275,7 +291,7 @@ void listFilesWithRegexpMatchingImpl(
                 result.push_back(it->path().string());
             }
         }
-        else if (it->is_directory())
+        else if (is_directory)
         {
             if (recursive)
             {

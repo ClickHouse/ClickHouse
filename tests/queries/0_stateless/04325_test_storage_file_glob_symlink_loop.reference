@@ -9,4 +9,6 @@ descendant-to-root
 1
 finite-glob-through-ancestor-link
 1
+mutual-symlink-cycle
+1
 alive

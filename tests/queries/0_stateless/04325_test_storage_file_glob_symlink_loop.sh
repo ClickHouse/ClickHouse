@@ -48,6 +48,18 @@ mkdir -p "$TEST_DIR_ABS/finite/a"
 printf "row1\n" > "$TEST_DIR_ABS/finite/file.txt"
 ln -s .. "$TEST_DIR_ABS/finite/a/back"
 
+# Mutual symlink cycle: `mutual/sub/a -> b`, `mutual/sub/b -> a`, plus a real file
+# `mutual/sub/real.txt`. Resolving either symlink target hits `ELOOP` immediately
+# (the kernel detects the cycle while resolving the entry itself). The throwing
+# `directory_entry::is_directory` overload would surface this as a raw
+# `filesystem_error` and abort the entire glob expansion before the canonical-stack
+# guard could prune the entry. Using the `std::error_code` overload lets us skip
+# the unresolvable entries silently and still return the real file.
+mkdir -p "$TEST_DIR_ABS/mutual/sub"
+printf "row1\n" > "$TEST_DIR_ABS/mutual/sub/real.txt"
+ln -s b "$TEST_DIR_ABS/mutual/sub/a"
+ln -s a "$TEST_DIR_ABS/mutual/sub/b"
+
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
 # Ancestor-loop symlink: `loop/dir1/dir2/loop_to_root` points back at `loop/dir1`,
@@ -87,6 +99,13 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/descroot/**
 # is allowed to reach the file via the symlink path.
 echo "finite-glob-through-ancestor-link"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/finite/*/*/*.txt', 'TSV', 'val String')"
+
+# Mutual symlink cycle: must return 1 (the real file). Without the `std::error_code`
+# overload of `is_directory` the throwing overload aborts the directory walk with
+# `Too many levels of symbolic links` and the query fails. With the fix the two
+# unresolvable entries are skipped and the real file is returned.
+echo "mutual-symlink-cycle"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/mutual/**/*.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"
