@@ -97,6 +97,7 @@ private:
     bool read_stat_failed_any = false;
     bool read_peak_rss_failed_any = false;
     bool subtree_truncated_any = false;
+    bool cpu_baseline_valid = true;
 
     std::atomic<UInt64> input_bytes{0};
     std::atomic<UInt64> output_bytes{0};

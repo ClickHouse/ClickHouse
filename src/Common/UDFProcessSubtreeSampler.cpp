@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <fstream>
 #include <limits>
+#include <memory>
 #include <string>
 
 
@@ -63,13 +64,13 @@ std::vector<pid_t> walkSubtree(pid_t root_pid, bool & truncated)
         const pid_t pid = result[i];
         const std::string task_dir = "/proc/" + std::to_string(pid) + "/task";
 
-        DIR * dir = ::opendir(task_dir.c_str());
+        std::unique_ptr<DIR, decltype(&::closedir)> dir(::opendir(task_dir.c_str()), &::closedir);
         if (!dir)
             continue;
 
         struct dirent * entry = nullptr;
         /// NOLINTNEXTLINE(concurrency-mt-unsafe) -- `dir` is a local `DIR *` not shared across threads.
-        while ((entry = ::readdir(dir)) != nullptr)
+        while ((entry = ::readdir(dir.get())) != nullptr)
         {
             const char * name = entry->d_name;
             if (name[0] == '.')
@@ -101,8 +102,6 @@ std::vector<pid_t> walkSubtree(pid_t root_pid, bool & truncated)
             if (result.size() >= MAX_PIDS)
                 break;
         }
-
-        ::closedir(dir);
     }
 #endif
 
@@ -273,7 +272,12 @@ void UDFProcessSubtreeSampler::recordPidAcquired(pid_t root_pid_)
         if (UDFProcfs::readStat(pid, utime_us, stime_us))
             pre_snapshot[pid] = PreSnapshot{utime_us, stime_us};
         else
+        {
             read_stat_failed_any = true;
+            /// Fail closed: a missing pre-baseline can misattribute a reaped
+            /// helper's pre-borrow CPU to this borrow, so drop CPU entirely.
+            cpu_baseline_valid = false;
+        }
     }
 
     /// Mark the borrow acquired only after the pre-snapshot is fully built.
@@ -384,9 +388,9 @@ void UDFProcessSubtreeSampler::recordReleased()
             read_peak_rss_failed_any = true;
     }
 
-    if (post_utime_sum >= pre_utime_sum)
+    if (cpu_baseline_valid && post_utime_sum >= pre_utime_sum)
         user_time_us = post_utime_sum - pre_utime_sum;
-    if (post_stime_sum >= pre_stime_sum)
+    if (cpu_baseline_valid && post_stime_sum >= pre_stime_sum)
         system_time_us = post_stime_sum - pre_stime_sum;
 
     /// Why byte-seconds rather than peak bytes? PeakBytes is not additive
