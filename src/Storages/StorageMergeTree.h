@@ -256,8 +256,9 @@ private:
 
     /// For current mutations queue, returns next version of mutation for a part,
     /// with respect of mutations which would not change it.
+    /// Mutations that do not affect the given partition are skipped.
     /// Returns 0 if there is no such mutation in active status.
-    UInt64 getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
+    UInt64 getNextMutationVersion(const String & partition_id, UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
     /// Returns the maximum level of all outdated parts in a range (left; right), or 0 in case if empty range.
     /// Merges have to be aware of the outdated part's levels inside designated merge range.

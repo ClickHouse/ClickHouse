@@ -96,7 +96,7 @@ PartsRange MergeTreeMergePredicate::getPatchesToApplyOnMerge(const PartsRange & 
     if (it == patches_by_partition.end() || it->second.empty())
         return {};
 
-    Int64 next_version = storage.getNextMutationVersion(first_part.getDataVersion(), merge_mutate_lock);
+    Int64 next_version = storage.getNextMutationVersion(partition_id, first_part.getDataVersion(), merge_mutate_lock);
     return DB::getPatchesToApplyOnMerge(it->second, range, next_version);
 }
 

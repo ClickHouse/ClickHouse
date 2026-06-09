@@ -989,12 +989,20 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
             const auto & earlier_mutation = it->second;
             if (earlier_mutation.tid == mutation_entry.tid)
             {
-                /// Look for an intermediate mutation that actually overlaps the current
-                /// mutation's partitions - only such a mutation can block its progress.
+                /// Look for an intermediate mutation that can actually create the dependency cycle.
+                /// The cycle is: the current mutation waits for the intermediate one, which in turn
+                /// waits for the earlier mutation (and thus the transaction) to commit. With
+                /// partition-scoped (`IN PARTITION`) mutations both waits are partition-local:
+                /// the current mutation waits for the intermediate one only in their common
+                /// partitions, and the intermediate one waits for the earlier mutation only in
+                /// their common partitions. So an intermediate mutation can block progress only
+                /// when it overlaps both the current and the earlier mutation; otherwise there is
+                /// no cycle and reporting a deadlock would be a false positive.
                 const MergeTreeMutationEntry * blocking_mutation = nullptr;
                 for (auto intermediate_it = std::next(it); intermediate_it != current_mutation_it; ++intermediate_it)
                 {
-                    if (partitionIdsOverlap(intermediate_it->second.partition_ids, mutation_entry.partition_ids))
+                    if (partitionIdsOverlap(intermediate_it->second.partition_ids, mutation_entry.partition_ids)
+                        && partitionIdsOverlap(intermediate_it->second.partition_ids, earlier_mutation.partition_ids))
                     {
                         blocking_mutation = &intermediate_it->second;
                         break;
@@ -1930,12 +1938,18 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     return false;
 }
 
-UInt64 StorageMergeTree::getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
+UInt64 StorageMergeTree::getNextMutationVersion(const String & partition_id, UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
 {
-    auto it = current_mutations_by_version.upper_bound(data_version);
-    if (it == current_mutations_by_version.end())
-        return 0;
-    return it->first;
+    /// Skip mutations that do not affect this partition (e.g. finished `IN PARTITION`
+    /// mutations still retained in `current_mutations_by_version`). Returning a version of
+    /// an unrelated mutation here would, for example, make `getPatchesToApplyOnMerge` fold
+    /// fewer patches than it should. This mirrors the partition-aware replicated path.
+    for (auto it = current_mutations_by_version.upper_bound(data_version); it != current_mutations_by_version.end(); ++it)
+    {
+        if (it->second.affectsPartition(partition_id))
+            return it->first;
+    }
+    return 0;
 }
 
 size_t StorageMergeTree::clearOldMutations(bool truncate)
