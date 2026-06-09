@@ -97,7 +97,7 @@ private:
 
     /// Push with 100us polling.
     template <typename QueueT>
-    void pushBlocking(QueueT & queue, QueueItem && item);
+    void pushBlocking(QueueT & queue, QueueItem & item);
 
     std::string config_path;
     DB::ConfigurationPtr config_ptr;
@@ -131,6 +131,7 @@ private:
 
     std::atomic<bool> shutdown{false};
     std::atomic<bool> generators_done{false};
+    std::atomic<bool> preprocess_done{false};
     std::atomic<size_t> requests_started{0};
 
     std::atomic<int64_t> next_zxid{1};

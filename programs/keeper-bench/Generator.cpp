@@ -730,7 +730,10 @@ ZooKeeperRequestWithCallbacks MultiRequestGenerator::generateImpl(const Coordina
         }
     }
 
-    auto callback = [inner_callbacks_ = std::move(inner_callbacks)](const Coordination::Response * response)
+    auto request = std::make_shared<ZooKeeperMultiRequest>(ops, acls);
+    bool is_read = request->isReadRequest();
+
+    auto callback = [inner_callbacks_ = std::move(inner_callbacks), is_read](const Coordination::Response * response)
     {
         const Coordination::MultiResponse * multi = nullptr;
         if (response)
@@ -738,16 +741,40 @@ ZooKeeperRequestWithCallbacks MultiRequestGenerator::generateImpl(const Coordina
             multi = dynamic_cast<const Coordination::MultiResponse *>(response);
             chassert(multi);
         }
-        for (size_t i = 0; i < inner_callbacks_.size(); ++i)
+        if (is_read)
         {
-            const Coordination::Response * inner_response = multi ? multi->responses.at(i).get() : nullptr;
-            if (inner_callbacks_[i])
-                inner_callbacks_[i](inner_response);
+            for (size_t i = 0; i < inner_callbacks_.size(); ++i)
+            {
+                const Coordination::Response * inner_response = multi ? multi->responses.at(i).get() : nullptr;
+                if (inner_callbacks_[i])
+                    inner_callbacks_[i](inner_response);
+            }
+        }
+        else
+        {
+            bool success = false;
+            if (multi)
+            {
+                success = true;
+                for (const auto & resp : multi->responses)
+                    if (resp->error != Coordination::Error::ZOK)
+                        success = false;
+            }
+
+            for (size_t i = 0; i < inner_callbacks_.size(); ++i)
+            {
+                const Coordination::Response * inner_response = nullptr;
+                /// If any subrequest failed report all subrequests as failed (nullptr).
+                if (success)
+                    inner_response = multi->responses.at(i).get();
+                if (inner_callbacks_[i])
+                    inner_callbacks_[i](inner_response);
+            }
         }
     };
 
     return {
-        .request = std::make_shared<ZooKeeperMultiRequest>(ops, acls),
+        .request = std::move(request),
         .callback = std::move(callback),
     };
 }

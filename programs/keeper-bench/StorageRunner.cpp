@@ -280,11 +280,11 @@ void StorageRunner::startGenerators()
 }
 
 template <typename QueueT>
-void StorageRunner::pushBlocking(QueueT & queue, QueueItem && item)
+void StorageRunner::pushBlocking(QueueT & queue, QueueItem & item)
 {
     while (!shutdown.load(std::memory_order_relaxed))
     {
-        if (queue.tryPush(std::move(item))) // NOLINT(bugprone-use-after-move)
+        if (queue.tryPush(item))
             return;
         std::this_thread::sleep_for(POLL_SLEEP);
     }
@@ -332,9 +332,9 @@ void StorageRunner::generatorThread(size_t idx)
         item.callback = std::move(request_with_callbacks.callback);
 
         if (item.is_write)
-            pushBlocking(*preprocess_queue, std::move(item));
+            pushBlocking(*preprocess_queue, item);
         else
-            pushBlocking(*read_queue, std::move(item));
+            pushBlocking(*read_queue, item);
     }
 }
 
@@ -346,7 +346,7 @@ void StorageRunner::preprocessThread()
     {
         if (!preprocess_queue->tryPop(item))
         {
-            if (generators_done.load(std::memory_order_relaxed) && preprocess_queue->size() == 0)
+            if (generators_done.load() && preprocess_queue->size() == 0)
                 break;
             std::this_thread::sleep_for(POLL_SLEEP);
             continue;
@@ -365,12 +365,13 @@ void StorageRunner::preprocessThread()
             std::cerr << "preprocessRequest exception: " << DB::getCurrentExceptionMessage(false) << std::endl;
             if (!continue_on_error)
                 shutdown = true;
+            continue;
         }
         uint64_t elapsed = watch.elapsedNanoseconds();
         period_stats.preprocess_busy_ns.fetch_add(elapsed, std::memory_order_relaxed);
         period_stats.per_op[opIndex(item.op_num)].preprocess_ns.fetch_add(elapsed, std::memory_order_relaxed);
 
-        pushBlocking(*commit_queue, std::move(item));
+        pushBlocking(*commit_queue, item);
     }
 }
 
@@ -438,14 +439,17 @@ void StorageRunner::commitThread()
     {
         if (!commit_queue->tryPop(write_item))
         {
-            if (generators_done.load(std::memory_order_relaxed)
-                && preprocess_queue->size() == 0 && commit_queue->size() == 0)
+            if (preprocess_done.load() && commit_queue->size() == 0)
             {
                 drain_reads();
                 if (read_queue->size() == 0)
                     break;
                 continue;
             }
+
+            if (read_trigger_dist(rng) == 0)
+                drain_reads();
+
             std::this_thread::sleep_for(POLL_SLEEP);
             continue;
         }
@@ -462,6 +466,7 @@ void StorageRunner::commitThread()
             std::cerr << "processRequest exception: " << DB::getCurrentExceptionMessage(false) << std::endl;
             if (!continue_on_error)
                 shutdown = true;
+            continue;
         }
         uint64_t elapsed = watch.elapsedNanoseconds();
         period_stats.commit_write_busy_ns.fetch_add(elapsed, std::memory_order_relaxed);
@@ -530,7 +535,7 @@ void StorageRunner::report(double period_seconds, bool snapshot_mode_during_peri
     }
 #endif
 
-    uint64_t znode_count;
+    uint64_t znode_count = 0;
     {
         std::lock_guard lock(state_machine_storage_mutex);
         znode_count = storage ? storage->getNodesCount() : 0;
@@ -598,13 +603,13 @@ void StorageRunner::runBenchmark()
     bool period_had_snapshot = false;
     while (!shutdown.load(std::memory_order_relaxed))
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(std::max<int64_t>(10, static_cast<int64_t>(report_delay * 100))));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
         if (max_time > 0 && total_watch.elapsedSeconds() >= max_time)
             shutdown = true;
 
         double elapsed_period = period_watch.elapsedSeconds();
-        if (elapsed_period >= report_delay || shutdown.load())
+        if ((report_delay > 0 && elapsed_period >= report_delay) || shutdown.load())
         {
             period_idx++;
 
@@ -640,6 +645,7 @@ void StorageRunner::runBenchmark()
     generators_done = true;
     if (preprocess_thread_handle->joinable())
         preprocess_thread_handle->join();
+    preprocess_done = true;
     if (commit_thread_handle->joinable())
         commit_thread_handle->join();
 
