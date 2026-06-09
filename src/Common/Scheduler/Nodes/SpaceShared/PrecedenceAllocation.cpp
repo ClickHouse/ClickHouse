@@ -63,20 +63,37 @@ ISchedulerNode * PrecedenceAllocation::getChild(const String & child_name)
 
 ResourceAllocation * PrecedenceAllocation::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
 {
+    // The victim is always the least-precedence running child (the tail of `running_children`).
     // Cases to consider:
-    // 1. Killer is not part of this node:
-    //    - decision to kill was already taken by the parent.
-    //    - propagate down to the least precedence child (victim).
-    // 2. Killer is part of this node but from a different child than the victim child.
-    //    - this node is the least common ancestor of killer and victim.
-    //    - enforce precedence rules: running allocation kills victims of equal and lower precedence.
-    // 3. Killer is part of the victim child (thus, they have equal precedence).
-    //    - we are above the least common ancestor of killer and victim.
-    //    - propagate down, decision will be taken lower in the tree.
-    // NOTE: All cases are automagically handled by picking the least precedence running child as victim.
+    // 1. Killer is not part of this node (`&killer != increase`):
+    //    - the decision to kill inside this subtree was already taken by a parent.
+    //    - just propagate down to the least precedence child (victim).
+    // 2. Killer is part of this node but from a different child than the victim child:
+    //    - this node is the least common ancestor of killer and victim, so precedence must be
+    //      enforced here. A running allocation may reclaim from equal-or-lower precedence
+    //      children, while a pending allocation may reclaim only from strictly lower precedence
+    //      ones (it is not running yet, so it must not displace an already-admitted peer).
+    //      In either case it must never evict a strictly higher-precedence child.
+    // 3. Killer is part of the victim child:
+    //    - we are above the least common ancestor; propagate down, the decision is taken lower.
     if (running_children.empty())
         return nullptr;
     ISpaceSharedNode & victim_child = *running_children.rbegin();
+
+    // Case 2: `&killer == increase` means the killer increase propagated through this node, so
+    // `increase_child` is the killer's branch (the scheduler processes only the top of the
+    // increasing set, hence the killer always equals our current `increase`). When the victim
+    // branch differs, this node is the least common ancestor and precedence must be respected.
+    // NOTE: a lower `info.precedence` value means higher precedence.
+    if (&killer == increase && increase_child && increase_child != &victim_child)
+    {
+        const bool victim_higher = victim_child.info.precedence < increase_child->info.precedence;
+        const bool victim_equal = victim_child.info.precedence == increase_child->info.precedence;
+        const bool killer_pending = killer.kind == IncreaseRequest::Kind::Pending;
+        if (victim_higher || (victim_equal && killer_pending))
+            return nullptr;
+    }
+
     return victim_child.selectAllocationToKill(killer, limit, details);
 }
 

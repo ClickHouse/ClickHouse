@@ -2935,6 +2935,43 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingDoesNotKillRunnin
     }
 }
 
+TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingDoesNotKillHigherPrecedence)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD prd IN all SETTINGS precedence = 1"); // higher precedence (lower value)
+    t.query("CREATE WORKLOAD dev IN all SETTINGS precedence = 2"); // lower precedence
+
+    ClassifierPtr c_prd = t.manager->acquire("prd");
+    ClassifierPtr c_dev = t.manager->acquire("dev");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink l_prd = c_prd->get("memory");
+        ResourceLink l_dev = c_dev->get("memory");
+
+        // Higher-precedence `prd` is running and holds 80.
+        TestAllocation prd(l_prd, "PRD-running", 80);
+        prd.waitSync();
+
+        // Lower-precedence `dev` wants to start with 30. Admitting it would push the workload over
+        // `max_memory` (80 + 30 > 100), but a pending allocation must never evict a higher-precedence
+        // running allocation — `dev` must stay pending instead of killing `prd`.
+        TestAllocation dev(l_dev, "DEV-pending", 30);
+
+        // Drive an unrelated round-trip through the single-threaded scheduler. Because events are
+        // processed in order, by the time this `prd` increase is approved the scheduler has already
+        // made its kill-or-not decision for `dev`'s pending increase enqueued above.
+        prd.setSize(81);
+        prd.waitSync();
+
+        dev.assertIncreaseEnqueued();         // `dev` is still waiting for memory
+        EXPECT_NO_THROW(prd.throwReason());   // `prd` was not evicted by the lower-precedence `dev`
+    }
+}
+
 TEST(SchedulerWorkloadResourceManager, MemoryReservationChangeWorkloadWeight)
 {
     ResourceTest t;
