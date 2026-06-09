@@ -105,6 +105,7 @@ enum RuleType
 };
 
 const String & ruleTypeStr(RuleType rule_type);
+std::string buildTaggedRegex(std::string regexp_str);
 
 struct Retention
 {
@@ -143,7 +144,7 @@ struct Params
     String time_column_name;
     String value_column_name;
     String version_column_name;
-    bool patterns_typed;
+    bool patterns_typed{};
     Graphite::Patterns patterns;
     Graphite::Patterns patterns_plain;
     Graphite::Patterns patterns_tagged;
