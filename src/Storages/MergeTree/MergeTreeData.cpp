@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
@@ -245,6 +246,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_suspicious_indices;
     extern const MergeTreeSettingsBool allow_summing_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool allow_coalescing_columns_in_partition_or_order_key;
+    extern const MergeTreeSettingsBool allow_tuple_element_aggregation;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsBool async_insert;
     extern const MergeTreeSettingsBool check_sample_column_is_correct;
@@ -321,7 +323,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
-    extern const MergeTreeSettingsBool allow_tuple_element_aggregation;
 }
 
 namespace ServerSetting
@@ -1490,6 +1491,34 @@ void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_poli
 }
 
 
+/// Returns true if `type` has, at any depth, a `Nullable` wrapping a Tuple that tuple
+/// flattening would expand. Only non-empty Tuples without a custom type name are expanded;
+/// empty tuples (`Tuple()`) and custom-named tuples (such as `Point`) are kept as opaque
+/// leaves.
+///
+/// Such columns are rejected when `allow_tuple_element_aggregation` is enabled.
+static bool containsNullableFlattenableTuple(const DataTypePtr & type)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        const auto & nested = nullable_type->getNestedType();
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(nested.get());
+        if (tuple_type && !tuple_type->getElements().empty() && !nested->hasCustomName())
+            return true;
+        return containsNullableFlattenableTuple(nested);
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        if (!tuple_type->getElements().empty() && !type->hasCustomName())
+            for (const auto & element : tuple_type->getElements())
+                if (containsNullableFlattenableTuple(element))
+                    return true;
+    }
+
+    return false;
+}
+
 void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const
 {
     const auto columns = metadata.getColumns().getAllPhysical();
@@ -1681,6 +1710,20 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
 
     if (allow_tuple_element_aggregation)
     {
+        /// Reject Nullable Tuple columns: tuple elements are flattened and aggregated
+        /// independently.
+        for (const auto & column : columns)
+        {
+            if (containsNullableFlattenableTuple(column.type))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Column '{}' has type '{}' which contains a Nullable Tuple. When setting "
+                    "'allow_tuple_element_aggregation' is enabled, Nullable Tuple columns are not "
+                    "supported because tuple elements are flattened and aggregated independently.",
+                    column.name,
+                    column.type->getName());
+        }
+
         /// Reject plain Tuple columns in sorting key: flattening changes column names used for ordering.
         const auto & sorting_key = metadata.getSortingKey();
         for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
