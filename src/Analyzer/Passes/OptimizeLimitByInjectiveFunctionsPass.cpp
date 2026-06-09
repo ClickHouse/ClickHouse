@@ -35,7 +35,7 @@ public:
 
         auto & limit_by = query->getLimitBy().getNodes();
 
-        auto new_limit_by = unwrapInjectiveFunctionsInKeys(limit_by, /*allow_suspicious_types=*/true);
+        auto new_limit_by = unwrapInjectiveFunctionsInKeys(limit_by, false);
 
         /// Atleast one key is needed for LIMIT BY.
         if (!new_limit_by.empty())
