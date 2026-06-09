@@ -28,9 +28,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#if CLICKHOUSE_CLOUD
-#include <Storages/StorageSharedMergeTree.h>
-#endif
 
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
@@ -48,11 +45,6 @@ namespace HistogramMetrics
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int TABLE_IS_READ_ONLY;
-}
 
 namespace
 {
@@ -253,20 +245,20 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 auto unreserved = disk->getUnreservedSpace();
 
                 new_values[fmt::format("DiskTotal_{}", name)] = { *total,
-                    "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information and can show a large value like 16 EiB." };
+                    "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
 
                 if (available)
                 {
                     new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
-                        "Used bytes on the disk (virtual filesystem). Remote filesystems do not always provide this information." };
+                        "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
 
                     new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
-                        "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information and can show a large value like 16 EiB." };
+                        "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
                 }
 
                 if (unreserved)
                     new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
-                        "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information and can show a large value like 16 EiB." };
+                        "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
             }
 
 #if USE_AWS_S3
@@ -329,11 +321,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         size_t total_index_granularity_bytes_in_memory = 0;
         size_t total_index_granularity_bytes_in_memory_allocated = 0;
 
-        size_t total_projection_primary_key_bytes_memory = 0;
-        size_t total_projection_primary_key_bytes_memory_allocated = 0;
-        size_t total_projection_index_granularity_bytes_in_memory = 0;
-        size_t total_projection_index_granularity_bytes_in_memory_allocated = 0;
-
         for (const auto & db : databases)
         {
             /// Check if database can contain MergeTree tables
@@ -381,14 +368,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                         total_primary_key_bytes_memory_allocated += part->getIndexSizeInAllocatedBytes();
                         total_index_granularity_bytes_in_memory += part->getIndexGranularityBytes();
                         total_index_granularity_bytes_in_memory_allocated += part->getIndexGranularityAllocatedBytes();
-
-                        for (const auto & [_, proj_part] : part->getProjectionParts())
-                        {
-                            total_projection_primary_key_bytes_memory += proj_part->getIndexSizeInBytes();
-                            total_projection_primary_key_bytes_memory_allocated += proj_part->getIndexSizeInAllocatedBytes();
-                            total_projection_index_granularity_bytes_in_memory += proj_part->getIndexGranularityBytes();
-                            total_projection_index_granularity_bytes_in_memory_allocated += proj_part->getIndexGranularityAllocatedBytes();
-                        }
                     }
                 }
 
@@ -414,17 +393,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                         }
                         catch (...)
                         {
-                            /// The table can transition to readonly between the `status.is_readonly`
-                            /// check above and the call to `getReplicaDelays` (which calls
-                            /// `assertNotReadonly` internally). This is a benign race for a
-                            /// background metrics thread, so do not pollute the error log /
-                            /// stderr with `TABLE_IS_READ_ONLY` exceptions caused by it.
-                            auto level = getCurrentExceptionCode() == ErrorCodes::TABLE_IS_READ_ONLY
-                                ? LogsLevel::debug
-                                : LogsLevel::error;
                             tryLogCurrentException(__PRETTY_FUNCTION__,
-                                "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()),
-                                level);
+                                "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
                         }
                     }
                 }
@@ -461,13 +431,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
         new_values["TotalPrimaryKeyBytesInMemory"] = { total_primary_key_bytes_memory, "The total amount of memory (in bytes) used by primary key values (only takes active parts into account)." };
         new_values["TotalPrimaryKeyBytesInMemoryAllocated"] = { total_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for primary key values (only takes active parts into account)." };
-        new_values["TotalIndexGranularityBytesInMemory"] = { total_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by index granules (only takes active parts into account)." };
-        new_values["TotalIndexGranularityBytesInMemoryAllocated"] = { total_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for index granules (only takes active parts into account)." };
-
-        new_values["TotalProjectionPrimaryKeyBytesInMemory"] = { total_projection_primary_key_bytes_memory, "The total amount of memory (in bytes) used by projection primary key values (only takes active parts into account)." };
-        new_values["TotalProjectionPrimaryKeyBytesInMemoryAllocated"] = { total_projection_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for projection primary key values (only takes active parts into account)." };
-        new_values["TotalProjectionIndexGranularityBytesInMemory"] = { total_projection_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by projection index granularity (only takes active parts into account)." };
-        new_values["TotalProjectionIndexGranularityBytesInMemoryAllocated"] = { total_projection_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for projection index granularity (only takes active parts into account)." };
+        new_values["TotalIndexGranularityBytesInMemory"] = { total_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by index granulas (only takes active parts into account)." };
+        new_values["TotalIndexGranularityBytesInMemoryAllocated"] = { total_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for index granulas (only takes active parts into account)." };
     }
 
     {
@@ -479,16 +444,11 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             queries_memory_usage += info.memory_usage;
             queries_peak_memory_usage += info.peak_memory_usage;
         }
-        new_values["QueriesMemoryUsage"] = { queries_memory_usage,
-            "Total memory currently used by all running queries on the server, in bytes."
-            " Useful for attributing memory pressure to the concurrent query load." };
-        new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage,
-            "Sum of per-user query memory peaks across all users tracked in `ProcessList`, in bytes."
-            " Each user's peak is the high-water mark of that user's memory tracker, which is reset when the user has no running queries."
-            " This is therefore an aggregate of currently-tracked per-user peaks, not a single server-wide peak of all queries since startup." };
+        new_values["QueriesMemoryUsage"] = { queries_memory_usage, "Memory used by queries, in bytes." };
+        new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage, "Peak memory usage for queries, in bytes." };
     }
 
-    new_values["ZooKeeperClientLastZXIDSeen"] = { getContext()->getZooKeeperLastZXIDSeen(), "The last ZXID seen by the current ZooKeeper client session. This value increases monotonically as the client observes transactions from ZooKeeper."};
+    new_values["ZooKeeperClientLastZXIDSeen"] = { getContext()->getZooKeeperLastZXIDSeen(), "The last ZXID the ZooKeeper client has seen."};
 
     {
         Float64 max_merge_elapsed = 0;
@@ -632,7 +592,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
         }
         new_values["DictionaryMaxUpdateDelay"] = {
             std::chrono::duration_cast<std::chrono::seconds>(max_update_delay).count(), "The maximum delay (in seconds) of dictionary update"};
-        new_values["DictionaryTotalFailedUpdates"] = {failed_counter, "Number of errors since last successful loading in all dictionaries."};
+        new_values["DictionaryTotalFailedUpdates"] = {failed_counter, "Sum of sequantially failed updates in all dictionaries"};
     }
 
     new_values["AsynchronousHeavyMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous heavy (tables related) metrics (this is the overhead of asynchronous metrics)." };

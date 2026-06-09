@@ -11,7 +11,7 @@
 #include <IO/WriteBufferFromString.h>
 
 
-int mainEntryExampleSnappyReadBuffer(int, char **)
+int main()
 {
     using namespace DB;
     String str = "this is a snappy example.\n";
@@ -30,6 +30,6 @@ int mainEntryExampleSnappyReadBuffer(int, char **)
     copyData(in2, out);
 
     output.resize(out.count());
-    chassert(input == output);
+    assert(input == output);
     return 0;
 }

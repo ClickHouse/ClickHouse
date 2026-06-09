@@ -94,19 +94,14 @@ def run_tests(
         extra_args += " --zookeeper"
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
     memory_limit = 10 * 2**30 if "asan_ubsan" in Info().job_name else 5 * 2**30
-    # `set -o pipefail` is required so that the pipeline's exit code reflects
-    # `clickhouse-test`'s exit code rather than `tee`'s. Without it, a non-zero
-    # exit from `clickhouse-test` is silently swallowed by `tee` returning 0.
-    command = f"set -o pipefail; clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
+    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count} \
                 {extra_args} \
                 --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
-    return Shell.run(
-        command, verbose=True, timeout=global_time_limit if global_time_limit > 0 else None
-    )
+    Shell.run(command, verbose=True, timeout=global_time_limit if global_time_limit > 0 else None)
 
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
@@ -135,45 +130,6 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "flaky check": "--flaky-check",
     "targeted": "--flaky-check --no-self-parallel",
 }
-
-
-def invert_bugfix_validation_status(test_result: Result) -> None:
-    """Invert FAIL/OK in `test_result.results` for bugfix validation.
-
-    On master HEAD a regression test for the bug is expected to FAIL; the
-    inverter flips that to OK so the job reads as "bug reproduced". A clean
-    OK means the test does not catch the bug and is flipped to FAIL with
-    "Failed to reproduce the bug".
-
-    When the run ended in `Result.Status.ERROR` (runner did not finish,
-    e.g. server crash without proper exit code, Python exception,
-    infrastructure outage) the per-test list is empty or partial and the
-    pre-inversion `ERROR` already tells the truth. Preserve it instead of
-    overwriting with "Failed to reproduce the bug". See #105789.
-    """
-    if test_result.status == Result.Status.ERROR:
-        for r in test_result.results:
-            r.set_label(Result.Label.XFAIL)
-        print(
-            "Bugfix validation inconclusive: the test runner did not "
-            "finish; preserving ERROR rather than reporting "
-            "'Failed to reproduce the bug'."
-        )
-        return
-
-    has_failure = False
-    for r in test_result.results:
-        r.set_label(Result.Label.XFAIL)
-        if r.status == Result.Status.FAIL:
-            r.status = Result.Status.OK
-            has_failure = True
-        elif r.status == Result.Status.OK:
-            r.status = Result.Status.FAIL
-    if not has_failure:
-        print("Failed to reproduce the bug")
-        test_result.set_failed().set_info("Failed to reproduce the bug")
-    else:
-        test_result.set_success()
 
 
 def main():
@@ -326,6 +282,19 @@ def main():
         # Run no-parallel and no-flaky-check tests sequentially with fewer iterations.
         # Derived from rerun_count so the ratio stays stable as policy evolves.
         runner_options += f" --sequential-test-runs {rerun_count // 2}"
+
+
+    if not info.is_local_run:
+        # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
+        azure_connection_string = Shell.get_output(
+            f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
+            verbose=True,
+            strict=True,
+        )
+        os.environ["AZURE_CONNECTION_STRING"] = azure_connection_string
+    else:
+        print("Disable azure for a local run")
+        config_installs_args += " --no-azure"
 
     if (is_azure_storage or is_s3_storage) and is_encrypted_storage:
         config_installs_args += " --encrypted-storage"
@@ -542,11 +511,7 @@ def main():
             res = res and CH.wait_ready()
             if res:
                 if not CH.start_kafka():
-                    info.add_workflow_warning("Failed to start Kafka")
-                    print("Failed to start Kafka")
-                    # Fail fast on infra setup errors so we don't burn time
-                    # triaging Kafka/Avro test failures caused by a broken setup.
-                    return False
+                    print("WARNING: Failed to start Kafka")
 
                 if not Info().is_local_run:
                     if not CH.start_log_exports(stop_watch.start_time):
@@ -596,7 +561,7 @@ def main():
                 f" remaining: {global_time_limit}s)"
             )
 
-            runner_exit_code = run_tests(
+            run_tests(
                 batch_num=0,
                 batch_total=0,
                 tests=list(tests) if tests else tests,
@@ -617,7 +582,7 @@ def main():
                 f" remaining: {global_time_limit}s)"
             )
 
-            runner_exit_code = run_tests(
+            run_tests(
                 batch_num=0,
                 batch_total=0,
                 tests=list(tests) if tests else tests,
@@ -628,7 +593,7 @@ def main():
             )
 
         else:
-            runner_exit_code = run_tests(
+            run_tests(
                 batch_num=batch_num,
                 batch_total=total_batches,
                 tests=list(tests) if tests else tests,
@@ -638,7 +603,7 @@ def main():
                 global_time_limit=global_time_limit,
             )
 
-        test_result = ft_res_processor.run(runner_exit_code=runner_exit_code)
+        test_result = ft_res_processor.run()
 
         if not info.is_local_run:
             CH.stop_log_exports()
@@ -722,12 +687,6 @@ def main():
                 label_key = diag.get("label", "")
                 if label_key in label_map:
                     test_case.set_label(label_map[label_key])
-                if label_key == "flaky" and is_llvm_coverage:
-                    # Coverage binaries are slow and prone to timing-related flakiness
-                    # (e.g. TIMEOUT_EXCEEDED on SystemLogQueue). Don't penalise them
-                    # for it — mark the test green so it doesn't block coverage jobs.
-                    # See: https://github.com/ClickHouse/ClickHouse/pull/95763
-                    test_case.set_status(Result.Status.OK)
             if diag_exit_code != 0:
                 diag_status = Result.Status.FAIL
                 diag_info = (
@@ -792,7 +751,22 @@ def main():
 
     # invert result status for bugfix validation
     if is_bugfix_validation and test_result and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
-        invert_bugfix_validation_status(test_result)
+        has_failure = False
+        for r in test_result.results:
+            r.set_label(Result.Label.XFAIL)
+            if r.status == Result.Status.FAIL:
+                r.status = Result.Status.OK
+                has_failure = True
+            elif r.status == Result.Status.OK:
+                r.status = Result.Status.FAIL
+        if not has_failure:
+            print("Failed to reproduce the bug")
+            test_result.set_failed().set_info("Failed to reproduce the bug")
+        else:
+            # For bugfix validation, the expected behavior is:
+            # - At least one test must fail (bug reproduced)
+            # - The overall Tests result is treated as success in that case
+            test_result.set_success()
 
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")

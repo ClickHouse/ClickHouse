@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name>
-struct FunctionBitTestMany final : public IFunction
+struct FunctionBitTestMany : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

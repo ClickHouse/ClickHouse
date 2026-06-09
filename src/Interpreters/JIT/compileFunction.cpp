@@ -221,7 +221,7 @@ CompiledFunction compileFunction(CHJIT & jit, const IFunctionBase & function)
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
     auto compiled_function_ptr = reinterpret_cast<JITCompiledFunction>(compiled_module.function_name_to_symbol[function.getName()]);
-    chassert(compiled_function_ptr);
+    assert(compiled_function_ptr);
 
     CompiledFunction result_compiled_function
     {
@@ -566,11 +566,11 @@ CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vec
     auto merge_aggregate_states_function = reinterpret_cast<JITMergeAggregateStatesFunction>(compiled_module.function_name_to_symbol[merge_aggregate_states_functions_name]);
     auto insert_aggregate_states_function = reinterpret_cast<JITInsertAggregateStatesIntoColumnsFunction>(compiled_module.function_name_to_symbol[insert_aggregate_states_functions_name]);
 
-    chassert(create_aggregate_states_function);
-    chassert(add_into_aggregate_states_function);
-    chassert(add_into_aggregate_states_function_single_place);
-    chassert(merge_aggregate_states_function);
-    chassert(insert_aggregate_states_function);
+    assert(create_aggregate_states_function);
+    assert(add_into_aggregate_states_function);
+    assert(add_into_aggregate_states_function_single_place);
+    assert(merge_aggregate_states_function);
+    assert(insert_aggregate_states_function);
 
     ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
     ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, compiled_module.size);
@@ -772,7 +772,7 @@ CompiledSortDescriptionFunction compileSortDescription(
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
     auto comparator_function = reinterpret_cast<JITSortDescriptionFunc>(compiled_module.function_name_to_symbol[sort_description_dump]);
-    chassert(comparator_function);
+    assert(comparator_function);
 
     CompiledSortDescriptionFunction compiled_sort_descriptor_function
     {

@@ -1,9 +1,7 @@
 #pragma once
 
 #include <atomic>
-#include <mutex>
 #include <Core/NamesAndTypes.h>
-#include <Core/UUID.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/WriteSettings.h>
 #include <Storages/ColumnSize.h>
@@ -376,10 +374,11 @@ public:
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
         [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
-        [[nodiscard]] WrittenFiles store(const NamesAndTypesList & columns, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
+        [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
 
-        void update(const Block & block, const NamesAndTypesList & columns);
+        void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
+        static void appendFiles(const MergeTreeData & data, Strings & files, const IDataPartStorage & data_part_storage);
         /// For Store
         static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
         /// For Load
@@ -388,16 +387,7 @@ public:
 
     using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
 
-private:
-    mutable std::mutex minmax_idx_mutex;
-    mutable MinMaxIndexPtr minmax_idx TSA_GUARDED_BY(minmax_idx_mutex);
-
-public:
-    /// Returns the per-part MinMaxIndex. Lazy-creates an empty one for temporary parts and lazy-loads from disk for committed parts.
-    MinMaxIndexPtr getMinMaxIndex() const;
-
-    /// Replace the in-memory MinMaxIndex pointer; pass nullptr to drop and force reload on next access.
-    void setMinMaxIndex(MinMaxIndexPtr minmax_index) const;
+    MinMaxIndexPtr minmax_idx;
 
     Checksums checksums;
 

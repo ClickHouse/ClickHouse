@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-class FunctionGetMaxTableNameLengthForDatabase final : public IFunction
+class FunctionGetMaxTableNameLengthForDatabase : public IFunction
 {
 public:
     static constexpr auto name = "getMaxTableNameLengthForDatabase";

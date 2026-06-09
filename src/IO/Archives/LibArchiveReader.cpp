@@ -160,7 +160,7 @@ public:
         return valid;
     }
 
-    Strings getAllFiles(NameFilter filter)
+    std::vector<std::string> getAllFiles(NameFilter filter)
     {
         std::unique_ptr<LibArchiveReader::StreamInfo> rs
             = archive_read_function ? std::make_unique<StreamInfo>(archive_read_function(), archive_size) : nullptr;
@@ -170,7 +170,7 @@ public:
 
         Entry entry = nullptr;
 
-        Strings files;
+        std::vector<std::string> files;
         int error = readNextHeader(archive, &entry, rs.get());
         while (error == ARCHIVE_OK || error == ARCHIVE_RETRY)
         {
@@ -252,8 +252,6 @@ private:
     Archive openWithReader(StreamInfo * read_stream_)
     {
         auto * archive = archive_read_new();
-        if (!archive)
-            throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't create archive reader");
         try
         {
             // Support for bzip2, gzip, lzip, xz, zstd and lz4
@@ -291,8 +289,6 @@ private:
     Archive openWithPath(const String & path_to_archive_)
     {
         auto * archive = archive_read_new();
-        if (!archive)
-            throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't create archive reader");
         try
         {
             // Support for bzip2, gzip, lzip, xz, zstd and lz4
@@ -538,12 +534,12 @@ std::unique_ptr<LibArchiveReader::FileEnumerator> LibArchiveReader::currentFile(
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
 
-Strings LibArchiveReader::getAllFiles()
+std::vector<std::string> LibArchiveReader::getAllFiles()
 {
     return getAllFiles({});
 }
 
-Strings LibArchiveReader::getAllFiles(NameFilter filter)
+std::vector<std::string> LibArchiveReader::getAllFiles(NameFilter filter)
 {
     Handle handle = acquireHandle();
     return handle.getAllFiles(filter);

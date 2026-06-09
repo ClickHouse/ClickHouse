@@ -7,7 +7,6 @@
 #include <Analyzer/SortNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>

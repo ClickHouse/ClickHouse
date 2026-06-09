@@ -724,7 +724,7 @@ void resolveNaturalJoin(ASTTableJoin & table_join, const TablesWithColumns & tab
 void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
                           const TablesWithColumns & tables, const Aliases & aliases, ContextPtr context)
 {
-    chassert(tables.size() >= 2);
+    assert(tables.size() >= 2);
 
     if (table_join.using_expression_list)
     {
@@ -750,13 +750,13 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
                 analyzed_join.addDisjunct();
                 CollectJoinOnKeysVisitor(data).visit(disjunct);
             }
-            chassert(analyzed_join.getClauses().size() == or_func->arguments->children.size());
+            assert(analyzed_join.getClauses().size() == or_func->arguments->children.size());
         }
         else
         {
             analyzed_join.addDisjunct();
             CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
-            chassert(analyzed_join.oneDisjunct());
+            assert(analyzed_join.oneDisjunct());
         }
 
         auto check_keys_empty = [] (auto e) { return e.key_names_left.empty(); };
