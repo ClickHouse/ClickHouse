@@ -23,7 +23,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3GetUnidirectionalEdge final : public IFunction
+class FunctionH3GetUnidirectionalEdge : public IFunction
 {
 public:
     static constexpr auto name = "h3GetUnidirectionalEdge";
@@ -115,9 +115,8 @@ public:
     /// 'NEW_DIGIT_III' defined in '../contrib/h3/src/h3lib/lib/algos.c:121:24
     __attribute__((no_sanitize_address)) static UInt64 getUnidirectionalEdge(const UInt64 origin, const UInt64 dest)
     {
-        H3Index edge = 0;
-        cellsToDirectedEdge(origin, dest, &edge);
-        return edge;
+        const UInt64 res = cellsToDirectedEdge(origin, dest);
+        return res;
     }
 };
 
