@@ -210,29 +210,47 @@ oversized chunk outlives all others.
 
 ## Benchmark results (metal box, 192-vCPU Xeon 6975P-C, EBS) and default decision
 
-A fully-merged single part of 937,501 marks with four skip indexes (`minmax`,
-two `bloom_filter`, `set`) was queried with a fully-selective predicate so that
-index analysis dominates and almost no data is read. Sweep of
-`min_marks_per_index_analysis_task ∈ {0, 256, 1024, 4096, 16384}`:
+Benchmarked on a single fully-merged part (300k–940k marks) with 3–5 skip indexes
+(`minmax`, `bloom_filter`, `set`, `tokenbf_v1`, `ngrambf_v1`), sweeping
+`min_marks_per_index_analysis_task ∈ {0, 256, 1024, 4096, 16384}`. The investigation
+went through two important corrections:
 
-- **Warm** (page cache hot): analysis CPU is ~1 ms for ~3.7M bloom checks; total
-  query ~7–10 ms regardless of the setting. Nothing to parallelize.
-- **Truly cold** (server restart + `drop_caches` before each run): ~2.0 s for
-  *every* setting (0 → 2.04 s, 4096 → 2.07 s, 16384 → 1.93 s). **Chunking gives no
-  cold speedup**: the cold cost is reading the index-granule files and is
-  **I/O-bandwidth-bound**, which spreading across threads cannot accelerate.
+**1. A real bug the benchmark exposed — the thread budget was capped at
+`num_streams`.** The chunked path computed `num_threads = min(num_streams, …)`, but
+`num_streams` is small exactly in the few-large-parts case (a single-part query gave
+`num_streams ≈ 1–2`). So the chunked path ran almost serially — sampling showed only
+2–3 active cores on a 192-core box, and `query_log` showed analysis CPU ≈ wall for
+every `min_marks`. The feature was effectively a no-op. Fixed by decoupling the
+analysis thread budget from `num_streams` when chunking is active (use the query's
+`max_threads`, or `max_threads_for_indexes` when set); with chunking off the original
+`num_streams`-bounded behavior is preserved exactly.
+
+**2. The headline "expensive analysis" numbers were confounded.** Early runs showed
+7–18 s of "analysis", but controlled isolation (prune-to-zero queries → no data read;
+`use_skip_indexes_for_disjunctions=0` → no bitset) revealed:
+
+- **Warm skip-index analysis is trivially cheap: ~4 ms for ~312k granules**,
+  single-threaded, independent of index count/type and of `min_marks`. Bloom / token
+  / ngram per-granule checks are ~ns. There is **nothing to parallelize warm** — the
+  initial hypothesis that "several heavy skip indexes make warm analysis expensive"
+  does not hold for these index types. The large early numbers were (a) **cold I/O**
+  reading index-granule files and (b) for all-matching predicates, the **60 M-row
+  data scan** — neither is the chunkable analysis CPU.
+- **Truly cold** (server restart + `drop_caches` per run): ~2.0 s for *every*
+  setting. The cold cost is **I/O-bandwidth-bound** reading the granule files, which
+  thread-level parallelism cannot accelerate on local block storage.
 - **Many-tiny-parts**: no regression (parts below the floor are never chunked).
 
-**Conclusion / default = `0` (opt-in).** On local/EBS storage there is no
-measurable wall-clock benefit (warm analysis is ~1 ms; cold is bandwidth-bound) and
-no regression. The benefit is expected to materialize only on **high-latency remote
-/ object storage** (the DiskWeb / IO-amplification case), where issuing granule
-reads in parallel overlaps per-request *latency* rather than competing for local
-disk bandwidth — a scenario not reproducible on this EBS box. Shipping a non-zero
-global default is therefore not justified by the evidence; the setting stays `0`
-and is documented as an opt-in for remote-storage / latency-bound deployments. A
-follow-up benchmark on object storage (e.g. an S3 disk) is the way to justify any
-future non-zero default. `K` (oversubscribe) remains an internal constant (3).
+**Conclusion / default = `0` (opt-in).** On local/EBS storage there is no measurable
+benefit — warm analysis is ~ms, and cold analysis is bandwidth-bound — and no
+regression. The benefit is expected only on **high-latency remote / object storage**
+(the DiskWeb / IO-amplification case), where issuing granule reads in parallel
+overlaps per-request *latency* rather than competing for local disk bandwidth — a
+scenario not reproducible on EBS. The thread-budget fix is nonetheless **kept**: it
+is required for the feature to parallelize at all when parts are few, so the opt-in
+actually works where it helps. A follow-up benchmark on an S3-backed disk is the way
+to justify any future non-zero default. `K` (oversubscribe) is an internal
+constant (3).
 
 ## Resolved items
 
