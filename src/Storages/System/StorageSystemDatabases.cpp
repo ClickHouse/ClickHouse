@@ -22,7 +22,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
 }
 
-
 ColumnsDescription StorageSystemDatabases::getColumnsDescription()
 {
     auto description = ColumnsDescription

@@ -40,7 +40,6 @@ BlockIO InterpreterDropIndexQuery::execute()
     return InterpreterAlterQuery(alter_query, context).execute();
 }
 
-void registerInterpreterDropIndexQuery(InterpreterFactory & factory);
 void registerInterpreterDropIndexQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

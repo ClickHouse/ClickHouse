@@ -230,7 +230,7 @@ void StorageSystemReplicas::readImpl(
     query_plan.addStep(std::move(reading));
 }
 
-class SystemReplicasSource final : public ISource
+class SystemReplicasSource : public ISource
 {
 public:
     SystemReplicasSource(
@@ -388,7 +388,7 @@ Chunk SystemReplicasSource::generate()
             }
         }
 
-        const TStatus * status = nullptr;
+        const TStatus * status;
         try
         {
             status = &futures[i].get();
