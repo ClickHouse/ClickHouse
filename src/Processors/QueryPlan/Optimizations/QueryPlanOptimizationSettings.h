@@ -98,7 +98,8 @@ struct QueryPlanOptimizationSettings
     bool query_plan_join_shard_by_pk_ranges;
 
     bool make_distributed_plan = false;
-    bool distributed_plan_singe_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
+    bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
+    bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
     UInt64 distributed_plan_default_shuffle_join_bucket_count = 8;
     UInt64 distributed_plan_default_reader_bucket_count = 8; /// Default bucket count for read steps in distributed query plan
     bool distributed_plan_optimize_exchanges = true; /// Removes unnecessary exchanges in distributed query plan
@@ -178,9 +179,6 @@ struct QueryPlanOptimizationSettings
     Float64 join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7;
 
     std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
-
-    size_t min_columns_for_join_lazy_indexing = 0;
-    size_t max_limit_for_join_lazy_indexing = 0;
 
     /// Please, avoid using this
     ///

@@ -102,8 +102,6 @@ public:
 
     void onBuildPhaseFinish() override;
 
-    void setEnableLazyColumnsIndexing(bool value) override;
-
 private:
     enum class State
     {
