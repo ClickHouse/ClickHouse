@@ -574,6 +574,9 @@ struct RemoveNodeDelta
 {
     int32_t version{-1};
     NodeStats stat;
+    /// RemoveRecursive can remove node with nonzero num_children (after also removing all its
+    /// children, just not updating the parent's num_children).
+    int32_t num_children{0};
     Coordination::ACLs acls;
     String data;
 };
@@ -991,6 +994,7 @@ void KeeperStorage<Container>::UncommittedState::rollbackDelta(const Delta & del
                 chassert(!node);
                 node = std::make_shared<Node>();
                 node->stats = operation.stat;
+                node->num_children = operation.num_children;
                 node->setData(operation.data);
                 acls = operation.acls;
             }
@@ -2234,7 +2238,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     new_deltas.emplace_back(
         zk_request.path,
         zxid,
-        RemoveNodeDelta{zk_request.version, node->stats, storage.uncommitted_state.getACLs(zk_request.path), std::string{node->getData()}});
+        RemoveNodeDelta{zk_request.version, node->stats, /*num_children*/ 0, storage.uncommitted_state.getACLs(zk_request.path), std::string{node->getData()}});
 
     if (node->stats.isEphemeral())
     {
@@ -2329,7 +2333,7 @@ public:
                 uncommitted_children[node_path] = &uncommitted_node;
         }
 
-        addDelta(root_path, root_node.stats, storage.uncommitted_state.getACLs(root_path), std::string{root_node.getData()});
+        addDelta(root_path, root_node.stats, root_node.num_children, storage.uncommitted_state.getACLs(root_path), std::string{root_node.getData()});
 
         for (auto current_delta_it = deltas.rbegin(); current_delta_it != deltas.rend(); ++current_delta_it)
         {
@@ -2384,7 +2388,7 @@ private:
             if (checkLimits(child_node))
                 return CollectStatus::LimitExceeded;
 
-            addDelta(child_path, child_node.stats, storage.acl_map.convertNumber(child_node.acl_id), std::string{child_node.getData()});
+            addDelta(child_path, child_node.stats, child_node.num_children, storage.acl_map.convertNumber(child_node.acl_id), std::string{child_node.getData()});
         }
 
         return CollectStatus::Ok;
@@ -2414,7 +2418,7 @@ private:
             if (checkLimits(child_node))
                 return CollectStatus::LimitExceeded;
 
-            addDelta(child_path, child_node.stats, storage.acl_map.convertNumber(child_node.acl_id), std::string{child_node.getData()});
+            addDelta(child_path, child_node.stats, child_node.num_children, storage.acl_map.convertNumber(child_node.acl_id), std::string{child_node.getData()});
         }
 
         return CollectStatus::Ok;
@@ -2439,15 +2443,15 @@ private:
                 return CollectStatus::LimitExceeded;
 
             uncommitted_node->materializeACL(storage.acl_map);
-            addDelta(std::string{node_path}, node_ptr->stats, *uncommitted_node->acls, std::string{node_ptr->getData()});
+            addDelta(std::string{node_path}, node_ptr->stats, node_ptr->num_children, *uncommitted_node->acls, std::string{node_ptr->getData()});
         }
 
         return CollectStatus::Ok;
     }
 
-    void addDelta(std::string_view path, const NodeStats & stats, Coordination::ACLs acls, std::string data)
+    void addDelta(std::string_view path, const NodeStats & stats, int32_t num_children, Coordination::ACLs acls, std::string data)
     {
-        deltas.emplace_front(std::string{path}, zxid, RemoveNodeDelta{/*version=*/-1, stats, std::move(acls), std::move(data)});
+        deltas.emplace_front(std::string{path}, zxid, RemoveNodeDelta{/*version=*/-1, stats, num_children, std::move(acls), std::move(data)});
     }
 
     bool checkLimits(const Storage::Node & node)
