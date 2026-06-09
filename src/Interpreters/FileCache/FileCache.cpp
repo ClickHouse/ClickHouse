@@ -57,6 +57,8 @@ namespace ProfileEvents
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
     extern const Event FilesystemCacheBackgroundEvictedFileSegments;
     extern const Event FilesystemCacheBackgroundEvictedBytes;
+    extern const Event FilesystemCacheEvictedFileSegments;
+    extern const Event FilesystemCacheEvictedBytes;
     extern const Event FilesystemCacheCheckCorrectness;
     extern const Event FilesystemCacheCheckCorrectnessMicroseconds;
 }
@@ -235,9 +237,10 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     {
         case FileCachePolicy::LRU:
         {
-            creator_function = [](size_t max_size, size_t max_elements, size_t /*size_ratio*/, size_t /*overcommit_eviction_evict_step*/, String description) -> IFileCachePriorityPtr
+            creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, size_t /*size_ratio*/, size_t /*overcommit_eviction_evict_step*/, String description) -> IFileCachePriorityPtr
             {
                 return std::make_unique<LRUFileCachePriority>(
+                    queue_type,
                     max_size,
                     max_elements,
                     description);
@@ -246,9 +249,10 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         }
         case FileCachePolicy::SLRU:
         {
-            creator_function = [](size_t max_size, size_t max_elements, double size_ratio, size_t /*overcommit_eviction_evict_step*/, String description) -> IFileCachePriorityPtr
+            creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, double size_ratio, size_t /*overcommit_eviction_evict_step*/, String description) -> IFileCachePriorityPtr
             {
                 return std::make_unique<SLRUFileCachePriority>(
+                    queue_type,
                     max_size,
                     max_elements,
                     size_ratio,
@@ -259,9 +263,10 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 #if ENABLE_DISTRIBUTED_CACHE
         case FileCachePolicy::LRU_OVERCOMMIT:
         {
-            creator_function = [](size_t max_size, size_t max_elements, double /*size_ratio*/, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
+            creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, double /*size_ratio*/, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
             {
                 return std::make_unique<OvercommitFileCachePriority<LRUFileCachePriority>>(
+                    queue_type,
                     overcommit_eviction_evict_step,
                     max_size,
                     max_elements,
@@ -271,9 +276,10 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         }
         case FileCachePolicy::SLRU_OVERCOMMIT:
         {
-            creator_function = [](size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
+            creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
             {
                 return std::make_unique<OvercommitFileCachePriority<SLRUFileCachePriority>>(
+                    queue_type,
                     overcommit_eviction_evict_step,
                     max_size,
                     max_elements,
@@ -291,6 +297,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     if (use_split_cache)
     {
         main_priority = std::make_unique<SplitFileCachePriority>(
+            IFileCachePriority::QueueType::Main,
             creator_function,
             settings[FileCacheSetting::max_size],
             settings[FileCacheSetting::max_elements],
@@ -302,6 +309,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     else
     {
         main_priority = creator_function(
+            IFileCachePriority::QueueType::Main,
             settings[FileCacheSetting::max_size],
             settings[FileCacheSetting::max_elements],
             settings[FileCacheSetting::slru_size_ratio],
@@ -1209,7 +1217,7 @@ bool FileCache::doTryReserve(
         }
     }
 
-    EvictionCandidates eviction_candidates;
+    EvictionCandidates eviction_candidates(&FileCache::onSegmentEvicted);
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
 
     FailPointInjection::pauseFailPoint(FailPoints::file_cache_pause_before_do_eviction);
@@ -1487,7 +1495,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadRun);
 
     FileCacheReserveStat stat;
-    EvictionCandidates eviction_candidates;
+    EvictionCandidates eviction_candidates(&FileCache::onSegmentEvicted);
 
     IFileCachePriority::CollectStatus desired_size_status =  IFileCachePriority::CollectStatus::CANNOT_EVICT;
     /// Collect at most `keep_up_free_space_remove_batch` elements to evict,
@@ -2273,6 +2281,12 @@ FileCache::~FileCache()
     assertCacheCorrectness();
 }
 
+void FileCache::onSegmentEvicted(const FileSegment & segment)
+{
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment.getReservedSize());
+}
+
 void FileCache::deactivateBackgroundOperations()
 {
     shutdown.store(true);
@@ -2612,7 +2626,7 @@ bool FileCache::doDynamicResizeImpl(
 
     chassert(!eviction_info->hasHoldSpace());
 
-    EvictionCandidates eviction_candidates;
+    EvictionCandidates eviction_candidates(&FileCache::onSegmentEvicted);
     if (!eviction_info->requiresEviction())
     {
         /// Nothing needs to be evicted,

@@ -265,6 +265,8 @@ public:
     FileCacheRocksDBIndexPtr getRocksDBIndex() const { return rocksdb_index; }
 #endif
 
+    static void onSegmentEvicted(const FileSegment & segment);
+
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
