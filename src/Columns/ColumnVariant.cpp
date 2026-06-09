@@ -938,7 +938,7 @@ void ColumnVariant::updateHashWithValueRange(size_t begin, size_t end, SipHash &
     }
 }
 
-void ColumnVariant::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
+void ColumnVariant::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
     const auto & local_discriminators_data = getLocalDiscriminators();
     const auto & offsets_data = getOffsets();
@@ -965,8 +965,8 @@ void ColumnVariant::computeHashInto(size_t row_begin, size_t row_end, uint32_t *
     for (size_t i = row_begin; i < row_end; ++i)
     {
         const Discriminator discr = local_discriminators_data[i];
-        const uint32_t value = discr == NULL_DISCRIMINATOR ? 0 : nested_hashes[discr][offsets_data[i]];
-        uint32_t & out = hash_out[i - row_begin];
+        const UInt32 value = discr == NULL_DISCRIMINATOR ? 0 : nested_hashes[discr][offsets_data[i]];
+        UInt32 & out = hash_out[i - row_begin];
         out = initial ? value : combineWeakHash32(value, out);
     }
 }

@@ -166,7 +166,7 @@ void ColumnLazy::updateHashWithValue(size_t, SipHash &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateHashWithValue is not supported for {}", getName());
 }
 
-void ColumnLazy::computeHashInto(size_t, size_t, uint32_t *, bool) const
+void ColumnLazy::computeHashInto(size_t, size_t, UInt32 *, bool) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method computeHashInto is not supported for {}", getName());
 }

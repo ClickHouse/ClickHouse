@@ -181,7 +181,7 @@ void ColumnMap::updateHashWithValueRange(size_t begin, size_t end, SipHash & has
     nested->updateHashWithValueRange(begin, end, hash);
 }
 
-void ColumnMap::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
+void ColumnMap::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
     nested->computeHashInto(row_begin, row_end, hash_out, initial);
 }

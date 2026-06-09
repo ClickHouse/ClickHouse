@@ -317,13 +317,13 @@ void ColumnFunction::updateHashWithValue(size_t n, SipHash & hash) const
         column.column->updateHashWithValue(n, hash);
 }
 
-void ColumnFunction::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
+void ColumnFunction::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
     const size_t n = row_end - row_begin;
 
     if (captured_columns.empty())
     {
-        /// No captures: matches the former `getWeakHash32` (all bits set).
+        /// No captures: a single fixed per-row hash (all bits set).
         if (initial)
             for (size_t i = 0; i < n; ++i)
                 hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
@@ -335,8 +335,7 @@ void ColumnFunction::computeHashInto(size_t row_begin, size_t row_end, uint32_t 
 
     if (initial)
     {
-        /// Seed with `WEAK_HASH32_INITIAL_VALUE` and combine every capture, matching the
-        /// former `WeakHash32` + `getWeakHash32` chain for `ColumnFunction`.
+        /// Seed with `WEAK_HASH32_INITIAL_VALUE` and chain every capture.
         for (size_t i = 0; i < n; ++i)
             hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
         for (const auto & column : captured_columns)
@@ -345,10 +344,8 @@ void ColumnFunction::computeHashInto(size_t row_begin, size_t row_end, uint32_t 
     }
 
     /// Non-initial: build the finalized function row hash in a scratch buffer, then combine that
-    /// single value into the prior key columns' hash. Combining the finalized hash (rather than
-    /// streaming captures straight into `hash_out`) keeps composition representation-independent:
-    /// a materialized `ColumnFunction` and a `ColumnConst(ColumnFunction)` of the same value
-    /// compose identically. See IColumn::computeHashInto and ColumnTuple::computeHashInto.
+    /// single value into the prior key columns' hash (rather than streaming captures straight into
+    /// `hash_out`) so composition stays representation-independent. See IColumn::computeHashInto.
     PaddedPODArray<UInt32> function_hash(n, WEAK_HASH32_INITIAL_VALUE);
     for (const auto & column : captured_columns)
         column.column->computeHashInto(row_begin, row_end, function_hash.data(), false);

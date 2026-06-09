@@ -415,13 +415,13 @@ void ColumnTuple::updateHashWithValueRange(size_t begin, size_t end, SipHash & h
         column->updateHashWithValueRange(begin, end, hash);
 }
 
-void ColumnTuple::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
+void ColumnTuple::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
     const size_t n = row_end - row_begin;
 
     if (columns.empty())
     {
-        /// Empty tuple: matches the former `getWeakHash32` (all bits set).
+        /// Empty tuple: a single fixed per-row hash (all bits set).
         if (initial)
             for (size_t i = 0; i < n; ++i)
                 hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
@@ -433,8 +433,7 @@ void ColumnTuple::computeHashInto(size_t row_begin, size_t row_end, uint32_t * h
 
     if (initial)
     {
-        /// Seed with `WEAK_HASH32_INITIAL_VALUE` and combine every child, matching the
-        /// former `WeakHash32` + `getWeakHash32` chain for tuples.
+        /// Seed with `WEAK_HASH32_INITIAL_VALUE` and chain every child.
         for (size_t i = 0; i < n; ++i)
             hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
         for (const auto & column : columns)
@@ -442,12 +441,9 @@ void ColumnTuple::computeHashInto(size_t row_begin, size_t row_end, uint32_t * h
         return;
     }
 
-    /// Non-initial: build the finalized composite row hash in a scratch buffer, then
-    /// combine that single value into the prior key columns' hash. Combining the
-    /// finalized tuple hash (rather than streaming elements straight into `hash_out`)
-    /// keeps composition representation-independent: a materialized `Tuple` and a
-    /// `ColumnConst(Tuple)` of the same value compose identically. See
-    /// IColumn::computeHashInto.
+    /// Non-initial: build the finalized composite row hash in a scratch buffer, then combine that
+    /// single value into the prior key columns' hash (rather than streaming elements straight into
+    /// `hash_out`) so composition stays representation-independent. See IColumn::computeHashInto.
     PaddedPODArray<UInt32> tuple_hash(n, WEAK_HASH32_INITIAL_VALUE);
     for (const auto & column : columns)
         column->computeHashInto(row_begin, row_end, tuple_hash.data(), false);

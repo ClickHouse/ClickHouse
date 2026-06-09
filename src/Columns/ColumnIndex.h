@@ -51,7 +51,7 @@ public:
     /// `dict_hash` by index and writes (or combines, when initial == false) into `hash_out`.
     /// `hash_out[i]` corresponds to row `row_begin + i`.
     void computeHashInto(
-        const PaddedPODArray<UInt32> & dict_hash, size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const;
+        const PaddedPODArray<UInt32> & dict_hash, size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const;
 
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const PaddedPODArray<UInt64> & dict_sizes) const;
 

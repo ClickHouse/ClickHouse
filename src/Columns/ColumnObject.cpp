@@ -1161,17 +1161,17 @@ void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
     shared_data->updateHashWithValueRange(begin, end, hash);
 }
 
-void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
+void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    /// Like the former `getWeakHash32` (and `updateHashWithValueRange`), this hashes the physical
-    /// path layout: it does NOT guarantee equal hashes for a logically equal object whose paths are
-    /// split differently between dynamic columns and `shared_data` across blocks. The in-memory
-    /// scatter consumers only need a fast per-query partitioning, not a layout-stable hash.
+    /// Like `updateHashWithValueRange`, this hashes the physical path layout: it does NOT guarantee
+    /// equal hashes for a logically equal object whose paths are split differently between dynamic
+    /// columns and `shared_data` across blocks; the in-memory scatter consumers only need fast
+    /// per-query partitioning.
     ///
     /// Build the finalized per-row object hash by chaining the sub-objects in the existing
     /// typed paths → dynamic paths → shared data order. `shared_data` always exists, so the
     /// buffer is always seeded (no empty-object special case needed).
-    auto computeFinalizedInto = [&](uint32_t * out)
+    auto computeFinalizedInto = [&](UInt32 * out)
     {
         bool first = true;
         for (const auto & [_, column] : typed_paths)
@@ -1193,11 +1193,9 @@ void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, uint32_t * 
         return;
     }
 
-    /// Non-initial: build the finalized object hash in a scratch buffer, then combine that
-    /// single value into the prior key columns' hash. Combining the finalized object hash
-    /// (rather than streaming sub-objects straight into `hash_out`) keeps composition
-    /// representation-independent: a materialized `Object` and a `ColumnConst(Object)` of the
-    /// same value compose identically. See IColumn::computeHashInto and ColumnTuple::computeHashInto.
+    /// Non-initial: build the finalized object hash in a scratch buffer, then combine that single
+    /// value into the prior key columns' hash (rather than streaming sub-objects straight into
+    /// `hash_out`) so composition stays representation-independent. See IColumn::computeHashInto.
     const size_t n = row_end - row_begin;
     PaddedPODArray<UInt32> object_hash(n);
     computeFinalizedInto(object_hash.data());

@@ -1,5 +1,3 @@
--- Tags: no-random-settings
---
 -- grace_hash routes rows to buckets via IColumn::computeHashInto (JoinUtils::scatterBlockByHash).
 -- If a key column's computeHashInto mis-routes equal keys, grace_hash silently drops join
 -- matches while the default hash join does not. This test asserts grace_hash == hash for the

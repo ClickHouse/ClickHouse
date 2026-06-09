@@ -774,7 +774,7 @@ void ColumnSparse::updateHashWithValue(size_t n, SipHash & hash) const
     values->updateHashWithValue(getValueIndex(n), hash);
 }
 
-void ColumnSparse::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
+void ColumnSparse::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
     const size_t values_size = values->size();
 
@@ -785,8 +785,8 @@ void ColumnSparse::computeHashInto(size_t row_begin, size_t row_end, uint32_t * 
     auto offset_it = getIterator(row_begin);
     for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
     {
-        const uint32_t value = values_hash[offset_it.getValueIndex()];
-        uint32_t & out = hash_out[i - row_begin];
+        const UInt32 value = values_hash[offset_it.getValueIndex()];
+        UInt32 & out = hash_out[i - row_begin];
         out = initial ? value : combineWeakHash32(value, out);
     }
 }

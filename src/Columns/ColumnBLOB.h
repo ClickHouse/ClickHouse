@@ -164,7 +164,7 @@ public:
     void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override { throwInapplicable(); }
     void skipSerializedInArena(ReadBuffer &) const override { throwInapplicable(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwInapplicable(); }
-    void computeHashInto(size_t, size_t, uint32_t *, bool) const override { throwInapplicable(); }
+    void computeHashInto(size_t, size_t, UInt32 *, bool) const override { throwInapplicable(); }
     void updateHashFast(SipHash &) const override { throwInapplicable(); }
 
     ColumnPtr filter(const Filter &, ssize_t) const override { throwInapplicable(); }

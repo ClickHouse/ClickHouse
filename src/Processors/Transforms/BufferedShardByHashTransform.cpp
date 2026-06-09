@@ -4,8 +4,6 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/MapToRange.h>
 
-#include <algorithm>
-
 namespace DB
 {
 
@@ -137,15 +135,10 @@ void BufferedShardByHashTransform::generateOutputChunks()
 
     /// Compute a composite 32-bit hash over all key columns into a reusable buffer.
     /// No allocations: each `computeHashInto` call writes directly into hash_buffer.
-    /// Every column type hashes via hardware CRC32C (see IColumn::computeHashInto).
-    hash_buffer.resize(num_rows);
-    std::fill(hash_buffer.begin(), hash_buffer.end(), WEAK_HASH32_INITIAL_VALUE);
+    hash_buffer.assign(num_rows, WEAK_HASH32_INITIAL_VALUE);
     for (auto column_number : key_columns)
         columns[column_number]->computeHashInto(0, num_rows, hash_buffer.data(), false);
 
-    /// Partition rows by shard using Lemire fastrange.
-    /// The CRC32C-based per-row hash is well-distributed across all 32 bits, so the high
-    /// bits fed into the shift are uniform — no extra finalizer is needed.
     selector.resize(num_rows);
     mapToRange(hash_buffer.data(), num_rows, static_cast<UInt32>(num_shards), selector.data());
 

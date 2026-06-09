@@ -1,12 +1,12 @@
 #include <Columns/ColumnString.h>
 
 #include <Columns/Collator.h>
-#include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
-#include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 
@@ -21,25 +21,23 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int PARAMETER_OUT_OF_BOUND;
-extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-extern const int LOGICAL_ERROR;
+    extern const int PARAMETER_OUT_OF_BOUND;
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 
 ColumnString::ColumnString(const ColumnString & src)
-    : COWHelper<IColumnHelper<ColumnString>, ColumnString>(src)
-    , offsets(src.offsets.begin(), src.offsets.end())
-    , chars(src.chars.begin(), src.chars.end())
+    : COWHelper<IColumnHelper<ColumnString>, ColumnString>(src),
+    offsets(src.offsets.begin(), src.offsets.end()),
+    chars(src.chars.begin(), src.chars.end())
 {
     Offset last_offset = offsets.empty() ? 0 : offsets.back();
     /// This will also prevent possible overflow in offset.
     if (last_offset != chars.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
             "String offsets has data inconsistent with chars array. Last offset: {}, array length: {}",
-            last_offset,
-            chars.size());
+            last_offset, chars.size());
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -107,33 +105,25 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
     return res;
 }
 
-/// Hash variable-length string rows using hardware CRC32C (via updateWeakHash32), seeding
-/// every row with the canonical WEAK_HASH32_INITIAL_VALUE and combining the finalized per-row
-/// hash via combineWeakHash32 on the non-initial path (instead of CRC-chaining the prior into
-/// the seed) so a materialized column and a transparent wrapper (Const/LowCardinality/Sparse)
-/// of the same value compose identically across chunks. See IColumn::computeHashInto.
-static void NO_INLINE computeHashIntoStringImpl(
-    const UInt8 * chars, const ColumnString::Offset * offsets, size_t row_begin, size_t row_end, UInt32 * hash_data, bool initial)
+void ColumnString::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    const UInt8 * pos = chars + (row_begin == 0 ? 0 : offsets[row_begin - 1]);
-    ColumnString::Offset prev_offset = row_begin == 0 ? 0 : offsets[row_begin - 1];
+    /// Each row seeds with `WEAK_HASH32_INITIAL_VALUE` and combines its finalized hash via
+    /// `combineWeakHash32`. CRC32C is a hardware dependency chain with no packed form, so a
+    /// plain scalar loop is used. See IColumn::computeHashInto.
+    Offset prev_offset = row_begin == 0 ? 0 : offsets[row_begin - 1];
+    const UInt8 * pos = chars.data() + prev_offset;
 
     for (size_t i = row_begin; i < row_end; ++i)
     {
         const auto offset = offsets[i];
         const auto str_size = offset - prev_offset;
-        const uint32_t h = ::updateWeakHash32(pos, str_size, WEAK_HASH32_INITIAL_VALUE);
-        *hash_data = initial ? h : combineWeakHash32(h, *hash_data);
+        const UInt32 h = ::updateWeakHash32(pos, str_size, WEAK_HASH32_INITIAL_VALUE);
+        UInt32 & out = hash_out[i - row_begin];
+        out = initial ? h : combineWeakHash32(h, out);
 
         pos += str_size;
         prev_offset = offset;
-        ++hash_data;
     }
-}
-
-void ColumnString::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
-{
-    computeHashIntoStringImpl(chars.data(), offsets.data(), row_begin, row_end, hash_out, initial);
 }
 
 
@@ -168,7 +158,7 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
     else
     {
         size_t old_size = offsets.size();
-        size_t prev_max_offset = offsets.back(); /// -1th index is Ok, see PaddedPODArray
+        size_t prev_max_offset = offsets.back();    /// -1th index is Ok, see PaddedPODArray
         offsets.resize(old_size + length);
 
         for (size_t i = 0; i < length; ++i)
@@ -253,8 +243,7 @@ void ColumnString::rollback(const ColumnCheckpoint & checkpoint)
     chars.resize_assume_reserved(assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested->size);
 }
 
-void ColumnString::collectSerializedValueSizes(
-    PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
+void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     if (empty())
         return;
@@ -290,8 +279,7 @@ std::optional<size_t> ColumnString::getSerializedValueSize(size_t n, const IColu
     return byteSizeAt(n) + serialize_string_with_zero_byte;
 }
 
-std::string_view
-ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
+std::string_view ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
 
@@ -321,8 +309,7 @@ ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * mem
     return memory + string_size;
 }
 
-void ColumnString::batchSerializeValueIntoMemory(
-    VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
+void ColumnString::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
 {
     chassert(memories.size() == size());
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
@@ -415,7 +402,8 @@ struct ColumnString::ComparatorBase
     ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(
-            parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs), parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs));
+            parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs),
+            parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs));
 
         return res;
     }
@@ -427,29 +415,22 @@ struct ColumnString::ComparatorCollationBase
     const Collator * collator;
 
     explicit ComparatorCollationBase(const ColumnString & parent_, const Collator * collator_)
-        : parent(parent_)
-        , collator(collator_)
+        : parent(parent_), collator(collator_)
     {
     }
 
     ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = collator->compare(
-            reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]),
-            parent.sizeAt(lhs),
-            reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]),
-            parent.sizeAt(rhs));
+            reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]), parent.sizeAt(lhs),
+            reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]), parent.sizeAt(rhs));
 
         return res;
     }
 };
 
-void ColumnString::getPermutation(
-    PermutationSortDirection direction,
-    PermutationSortStability stability,
-    size_t limit,
-    int /*nan_direction_hint*/,
-    Permutation & res) const
+void ColumnString::getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
+                                size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
         getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this), DefaultSort(), DefaultPartialSort());
@@ -461,37 +442,23 @@ void ColumnString::getPermutation(
         getPermutationImpl(limit, res, ComparatorDescendingStable(*this), DefaultSort(), DefaultPartialSort());
 }
 
-void ColumnString::updatePermutation(
-    PermutationSortDirection direction,
-    PermutationSortStability stability,
-    size_t limit,
-    int /*nan_direction_hint*/,
-    Permutation & res,
-    EqualRanges & equal_ranges) const
+void ColumnString::updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
+                                size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
 {
     auto comparator_equal = ComparatorEqual(*this);
 
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-        updatePermutationImpl(
-            limit, res, equal_ranges, ComparatorAscendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-        updatePermutationImpl(
-            limit, res, equal_ranges, ComparatorAscendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-        updatePermutationImpl(
-            limit, res, equal_ranges, ComparatorDescendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
-        updatePermutationImpl(
-            limit, res, equal_ranges, ComparatorDescendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
 }
 
-void ColumnString::getPermutationWithCollation(
-    const Collator & collator,
-    PermutationSortDirection direction,
-    PermutationSortStability stability,
-    size_t limit,
-    int /*nan_direction_hint*/,
-    Permutation & res) const
+void ColumnString::getPermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
+                                size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
         getPermutationImpl(limit, res, ComparatorCollationAscendingUnstable(*this, &collator), DefaultSort(), DefaultPartialSort());
@@ -503,14 +470,8 @@ void ColumnString::getPermutationWithCollation(
         getPermutationImpl(limit, res, ComparatorCollationDescendingStable(*this, &collator), DefaultSort(), DefaultPartialSort());
 }
 
-void ColumnString::updatePermutationWithCollation(
-    const Collator & collator,
-    PermutationSortDirection direction,
-    PermutationSortStability stability,
-    size_t limit,
-    int /*nan_direction_hint*/,
-    Permutation & res,
-    EqualRanges & equal_ranges) const
+void ColumnString::updatePermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
+                                size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
 {
     auto comparator_equal = ComparatorCollationEqual(*this, &collator);
 
@@ -603,11 +564,12 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
     for (size_t i = 0; i < col_size; ++i)
     {
         const size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
-        const size_t string_size = offsets[i] - offsets[i - 1];
+        const size_t string_size = offsets[i] - offsets[i-1];
         const UInt8 * src = &chars[offsets[i - 1]];
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
-            memcpySmallAllowReadWriteOverflow15(&res_chars[curr_offset], src, string_size);
+            memcpySmallAllowReadWriteOverflow15(
+                &res_chars[curr_offset], src, string_size);
 
             curr_offset += string_size;
             res_offsets[curr_row] = curr_offset;
@@ -746,8 +708,7 @@ bool ColumnString::isComparatorCompilable() const
     return true;
 }
 
-llvm::Value *
-ColumnString::compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const
+llvm::Value * ColumnString::compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const
 {
     llvm::Value * lhs_chars_ptr = b.CreateExtractValue(lhs, {0});
     llvm::Value * lhs_offset_ptr = b.CreateExtractValue(lhs, {1});
@@ -783,10 +744,14 @@ ColumnString::compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm
     // Call memcmpSmallAllowOverflow15, same as in ColumnString::compareAt
     llvm::Module * module = b.GetInsertBlock()->getModule();
     llvm::FunctionType * memcmp_func_type = llvm::FunctionType::get(
-        b.getInt32Ty(), {b.getInt8Ty()->getPointerTo(), b.getInt64Ty(), b.getInt8Ty()->getPointerTo(), b.getInt64Ty()}, false);
+        b.getInt32Ty(),
+        {b.getInt8Ty()->getPointerTo(), b.getInt64Ty(), b.getInt8Ty()->getPointerTo(), b.getInt64Ty()},
+        false
+    );
 
-    llvm::Function * memcmp_func
-        = llvm::dyn_cast<llvm::Function>(module->getOrInsertFunction("memcmpSmallCharsAllowOverflow15", memcmp_func_type).getCallee());
+    llvm::Function * memcmp_func = llvm::dyn_cast<llvm::Function>(
+        module->getOrInsertFunction("memcmpSmallCharsAllowOverflow15", memcmp_func_type).getCallee()
+    );
 
     auto * compare_result = b.CreateCall(memcmp_func, {lhs_current_ptr, lhs_current_size, rhs_current_ptr, rhs_current_size});
 
@@ -800,10 +765,8 @@ int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs
     const ColumnString & rhs = assert_cast<const ColumnString &>(rhs_);
 
     return collator.compare(
-        reinterpret_cast<const char *>(&chars[offsetAt(n)]),
-        sizeAt(n),
-        reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]),
-        rhs.sizeAt(m));
+        reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n),
+        reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]), rhs.sizeAt(m));
 }
 
 void ColumnString::protect()
@@ -816,11 +779,9 @@ void ColumnString::validate() const
 {
     Offset last_offset = offsets.empty() ? 0 : offsets.back();
     if (last_offset != chars.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "ColumnString validation failed: size mismatch (internal logical error) {} != {}",
-            last_offset,
-            chars.size());
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "ColumnString validation failed: size mismatch (internal logical error) {} != {}",
+                        last_offset, chars.size());
 }
 
 void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const

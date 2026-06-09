@@ -494,9 +494,9 @@ bool ColumnIndex::containsDefault() const
 }
 
 void ColumnIndex::computeHashInto(
-    const PaddedPODArray<UInt32> & dict_hash, size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
+    const PaddedPODArray<UInt32> & dict_hash, size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    const uint32_t * dict_hash_data = dict_hash.data();
+    const UInt32 * dict_hash_data = dict_hash.data();
 
     auto gather = [&](auto x)
     {
@@ -505,8 +505,8 @@ void ColumnIndex::computeHashInto(
 
         for (size_t i = row_begin; i < row_end; ++i)
         {
-            const uint32_t value = dict_hash_data[data[i]];
-            uint32_t & out = hash_out[i - row_begin];
+            const UInt32 value = dict_hash_data[data[i]];
+            UInt32 & out = hash_out[i - row_begin];
             out = initial ? value : combineWeakHash32(value, out);
         }
     };

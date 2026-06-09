@@ -11,12 +11,9 @@
 ///   ./benchmark_compute_hash_into --benchmark_filter=.
 ///   ./benchmark_compute_hash_into --benchmark_filter=UInt32 --benchmark_format=json
 
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Interpreters/JoinUtils.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/MapToRange.h>
 #include <Common/PODArray.h>
@@ -142,7 +139,7 @@ void BM_HashAndFastrange_New(benchmark::State & state, const std::vector<ColumnP
     const size_t n = cols[0]->size();
     const size_t ncols = cols.size();
     PaddedPODArray<UInt32> hash_buf(n);
-    PaddedPODArray<UInt32> pids(n);  // mapToRange now writes UInt32
+    PaddedPODArray<UInt64> pids(n); // mapToRange writes a UInt64 selector
     const UInt32 p32 = static_cast<UInt32>(num_shards);
     for (auto _ : state)
     {

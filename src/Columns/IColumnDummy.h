@@ -64,13 +64,12 @@ public:
     {
     }
 
-    void computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const override
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
     {
-        /// A dummy column has a single fixed per-row hash (`WEAK_HASH32_INITIAL_VALUE`),
-        /// matching the former `getWeakHash32`. On the non-initial path it must still combine
-        /// that finalized value into the prior accumulator (like an empty ColumnTuple), otherwise
-        /// a materialized dummy column and a ColumnConst wrapper of it would compose
-        /// differently and split equal multi-column keys. See IColumn::computeHashInto.
+        /// A dummy column has a single fixed per-row hash (`WEAK_HASH32_INITIAL_VALUE`). The
+        /// non-initial path still combines that finalized value (like an empty ColumnTuple) so a
+        /// materialized dummy and a ColumnConst wrapper of it compose identically.
+        /// See IColumn::computeHashInto.
         const size_t n = row_end - row_begin;
         if (initial)
             for (size_t i = 0; i < n; ++i)

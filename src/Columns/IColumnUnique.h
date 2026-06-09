@@ -1,6 +1,7 @@
 #pragma once
 #include <optional>
 #include <Columns/IColumn.h>
+
 namespace DB
 {
 
@@ -171,7 +172,7 @@ public:
         throwNotImplementedForColumnUnique("scatter");
     }
 
-    void computeHashInto(size_t /*row_begin*/, size_t /*row_end*/, uint32_t * /*hash_out*/, bool /*initial*/) const override
+    void computeHashInto(size_t /*row_begin*/, size_t /*row_end*/, UInt32 * /*hash_out*/, bool /*initial*/) const override
     {
         throwNotImplementedForColumnUnique("computeHashInto");
     }

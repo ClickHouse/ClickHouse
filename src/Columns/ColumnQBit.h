@@ -127,7 +127,7 @@ public:
     void skipSerializedInArena(ReadBuffer & in) const override { tuple->skipSerializedInArena(in); }
     void updateHashWithValue(size_t n, SipHash & hash) const override { tuple->updateHashWithValue(n, hash); }
     void updateHashFast(SipHash & hash) const override { tuple->updateHashFast(hash); }
-    void computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const override
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
     {
         tuple->computeHashInto(row_begin, row_end, hash_out, initial);
     }

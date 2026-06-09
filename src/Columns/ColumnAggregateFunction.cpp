@@ -452,7 +452,7 @@ void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) cons
     hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
-void ColumnAggregateFunction::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
+void ColumnAggregateFunction::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
     VectorWithMemoryTracking<UInt8> v;
     for (size_t i = row_begin; i < row_end; ++i)
@@ -461,8 +461,8 @@ void ColumnAggregateFunction::computeHashInto(size_t row_begin, size_t row_end, 
             WriteBufferFromVector<VectorWithMemoryTracking<UInt8>> wbuf(v);
             func->serialize(data[i], wbuf, version);
         }
-        const uint32_t value = ::updateWeakHash32(v.data(), v.size(), WEAK_HASH32_INITIAL_VALUE);
-        uint32_t & out = hash_out[i - row_begin];
+        const UInt32 value = ::updateWeakHash32(v.data(), v.size(), WEAK_HASH32_INITIAL_VALUE);
+        UInt32 & out = hash_out[i - row_begin];
         out = initial ? value : combineWeakHash32(value, out);
     }
 }

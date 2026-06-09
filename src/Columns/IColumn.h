@@ -383,47 +383,34 @@ public:
     /// Default implementation calls updateHashWithValue for each element.
     virtual void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const;
 
-    /// Per-row weak hash kernel.  Writes a 32-bit hash for each row in
-    /// [row_begin, row_end) into the caller-provided buffer `hash_out` (must hold
-    /// at least row_end - row_begin entries).  It's a fast weak hash function,
-    /// mainly needed to scatter data between threads (sharded aggregation,
-    /// `grace_hash` joins, parallel-window partitioning, hash-join scatter).
+    /// Per-row weak hash kernel. Writes a 32-bit CRC32C-based hash for each row in
+    /// [row_begin, row_end) into the caller-provided buffer `hash_out` (which must hold at
+    /// least row_end - row_begin entries). It's a fast weak hash, mainly needed to scatter
+    /// data between threads (sharded aggregation, `grace_hash` joins, parallel-window
+    /// partitioning, hash-join scatter).
     ///
-    /// When `initial == true` the buffer is overwritten with the column's standalone
-    /// per-row hash (the value formerly returned by `getWeakHash32`):
-    ///     hash_out[i] = h(row_begin + i)
+    /// `h(row)` denotes the finalized per-row hash. With `initial == true` the buffer is
+    /// overwritten with it; with `initial == false` the buffer is combined with it via
+    /// `combineWeakHash32`, composing hashes across multiple key columns without an
+    /// intermediate per-column array:
+    ///     initial:  hash_out[i] = h(row_begin + i)
+    ///     combine:  hash_out[i] = combineWeakHash32(h(row_begin + i), hash_out[i])
+    /// Scatter consumers seed `hash_out` with `WEAK_HASH32_INITIAL_VALUE` and chain
+    /// `computeHashInto(..., initial=false)` over every key column.
     ///
-    /// When `initial == false` the buffer is combined with the per-row hash via
-    /// `combineWeakHash32` (the former `WeakHash32::update`), composing hashes across
-    /// multiple key columns without intermediate allocations:
-    ///     hash_out[i] = combineWeakHash32(h(row_begin + i), hash_out[i])
-    ///
-    /// Scatter consumers (`BufferedShardByHashTransform`, `ScatterByPartitionTransform`,
-    /// `scatterBlockByHash`) seed `hash_out` with `WEAK_HASH32_INITIAL_VALUE` and call
-    /// `computeHashInto(..., initial=false)` for every key column, reproducing the former
-    /// `WeakHash32` + repeated `update(getWeakHash32())` chain bit-for-bit.
-    ///
-    /// `h(row)` is the finalized per-row hash — exactly the value the column writes
-    /// on the `initial == true` path — a 32-bit hash based on hardware CRC32C
-    /// (`_mm_crc32_u64` / `__crc32cd` / `updateWeakHash32`, seeded with
-    /// `WEAK_HASH32_INITIAL_VALUE` where applicable).
-    ///
-    /// REPRESENTATION-INDEPENDENCE CONTRACT: the non-initial path must combine this
-    /// same finalized `h(row)` with `combineWeakHash32`, not a column-private intermediate
-    /// (e.g. the raw value before hashing, or a CRC seed chained through the prior).  This
-    /// is required so that two physically different but logically equal columns — a
+    /// REPRESENTATION-INDEPENDENCE CONTRACT: the non-initial path must combine the same
+    /// finalized `h(row)`, not a column-private intermediate (e.g. the raw value before
+    /// hashing). This makes two physically different but logically equal columns — a
     /// materialized column and a transparent wrapper of the same values (`ColumnConst`,
     /// `ColumnLowCardinality`, `ColumnSparse`, `ColumnReplicated`) — produce identical
-    /// composed hashes.  Wrappers can only obtain the nested column's finalized `h` (via
+    /// composed hashes. A wrapper can only obtain the nested column's finalized `h` (via
     /// `computeHashInto(initial=true)`), so every column must combine `h`, never its
-    /// pre-finalized form.  Equivalently:
-    ///     computeHashInto(initial=false) == combineWeakHash32(<initial value of the row>, prior)
-    /// Violating this routes equal multi-column keys to different aggregation shards or
-    /// `grace_hash` join partitions.
+    /// pre-finalized form. Violating this routes equal multi-column keys to different
+    /// aggregation shards or `grace_hash` join partitions.
     ///
-    /// Implementations of primitive columns must not allocate; composite columns
-    /// may use a transient scratch buffer for their nested columns.
-    virtual void computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const = 0;
+    /// Primitive columns must not allocate; composite columns may use a transient scratch
+    /// buffer for their nested columns.
+    virtual void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const = 0;
 
     /// Update state of hash with all column.
     virtual void updateHashFast(SipHash & hash) const = 0;

@@ -310,7 +310,7 @@ void ColumnArray::updateHashWithValueRange(size_t begin, size_t end, SipHash & h
     hash.update(reinterpret_cast<const char *>(&getOffsets()[begin]), (end - begin) * sizeof(getOffsets()[0]));
 }
 
-void ColumnArray::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
+void ColumnArray::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
     const auto & offsets_data = getOffsets();
 
@@ -327,19 +327,14 @@ void ColumnArray::computeHashInto(size_t row_begin, size_t row_end, uint32_t * h
     for (size_t i = row_begin; i < row_end; ++i)
     {
         /// Fold all element hashes of this row through a CRC32C chain seeded with
-        /// `WEAK_HASH32_INITIAL_VALUE`, self-mixed once (matching the former
-        /// `getWeakHash32`). Each element extends the chain, so the array length is
-        /// implicitly mixed in and arrays like [], [0], [0, 0], ... do not collide. The
-        /// resulting `acc` is the finalized per-row hash (the same value the initial path
-        /// writes), combined with the prior accumulator via the uniform combineWeakHash32 so a
-        /// materialized Array and a ColumnConst(Array) of the same value compose identically.
+        /// `WEAK_HASH32_INITIAL_VALUE`, self-mixed once. Each element extends the chain, so the
+        /// array length is implicitly mixed in and arrays like [], [0], [0, 0], ... do not collide.
         /// See IColumn::computeHashInto.
-        uint32_t acc = WEAK_HASH32_INITIAL_VALUE;
-        acc = static_cast<UInt32>(intHashCRC32(acc));
+        UInt32 acc = static_cast<UInt32>(intHashCRC32(WEAK_HASH32_INITIAL_VALUE));
         for (Offset row = prev_offset; row < offsets_data[i]; ++row)
             acc = combineWeakHash32(elem_hash[row - elem_begin], acc);
 
-        uint32_t & out = hash_out[i - row_begin];
+        UInt32 & out = hash_out[i - row_begin];
         out = initial ? acc : combineWeakHash32(acc, out);
 
         prev_offset = offsets_data[i];

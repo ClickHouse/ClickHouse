@@ -197,11 +197,10 @@ public:
     /// variant vs the shared variant).
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    /// Weak hash of the raw variant storage, matching the former `getWeakHash32`. Like
-    /// `updateHashWithValueRange`, this is NOT guaranteed to be equal for logically equal values
-    /// stored with different variant layouts (typed variant vs the shared variant). The in-memory
-    /// scatter consumers only need a fast per-query partitioning, not a layout-stable hash.
-    void computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const override
+    /// Weak hash of the raw variant storage. Like `updateHashWithValueRange`, this is NOT guaranteed
+    /// to be equal for logically equal values stored with different variant layouts (typed variant
+    /// vs the shared variant); the in-memory scatter consumers only need fast per-query partitioning.
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
     {
         variant_column_ptr->computeHashInto(row_begin, row_end, hash_out, initial);
     }

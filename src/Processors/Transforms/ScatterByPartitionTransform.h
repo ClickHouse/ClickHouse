@@ -1,4 +1,5 @@
 #pragma once
+#include <Columns/IColumn.h>
 #include <Core/ColumnNumbers.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
@@ -29,6 +30,7 @@ private:
     Chunk chunk;
 
     PaddedPODArray<UInt32> hash;
+    IColumn::Selector selector;
     Chunks output_chunks;
 };
 

@@ -1,9 +1,9 @@
-#include <algorithm>
 #include <Columns/IColumn.h>
 #include <Core/ColumnNumbers.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/MapToRange.h>
 #include <Common/PODArray.h>
 
 namespace DB
@@ -137,16 +137,13 @@ void ScatterByPartitionTransform::generateOutputChunks()
 
     chassert(!columns.empty());
 
-    hash.resize(num_rows);
-    std::fill(hash.begin(), hash.end(), WEAK_HASH32_INITIAL_VALUE);
+    hash.assign(num_rows, WEAK_HASH32_INITIAL_VALUE);
 
     for (const auto & column_number : key_columns)
         columns[column_number]->computeHashInto(0, num_rows, hash.data(), false);
 
-    IColumn::Selector selector(num_rows);
-
-    for (size_t row = 0; row < num_rows; ++row)
-        selector[row] = (static_cast<UInt64>(hash[row]) * output_size) >> 32; /// The "fastrange" method from Daniel Lemire
+    selector.resize(num_rows);
+    mapToRange(hash.data(), num_rows, static_cast<UInt32>(output_size), selector.data());
 
     for (const auto & column : columns)
     {

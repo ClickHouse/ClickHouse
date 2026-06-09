@@ -522,7 +522,7 @@ void ColumnReplicated::updateHashWithValue(size_t n, SipHash & hash) const
     nested_column->updateHashWithValue(indexes.getIndexAt(n), hash);
 }
 
-void ColumnReplicated::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
+void ColumnReplicated::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
     const size_t nested_size = nested_column->size();
 
