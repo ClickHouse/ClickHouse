@@ -1,11 +1,14 @@
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
 
+#include <Core/Joins.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -164,6 +167,18 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
     {
         // TODO(nickitat): support multiple read steps with parallel replicas
         const auto * lazy_joining = typeid_cast<const JoinLazyColumnsStep *>(reading_step->step.get());
+
+        // For a physical `JoinStep` (a plain `SELECT ... FROM a JOIN b` leaves it at/near the top of
+        // the replicas plan), follow the parallelized side: child 0, or child 1 for `RIGHT`. This
+        // mirrors the physical-slot selector used by `calculateHashTableCacheKeys` and
+        // `ParallelReplicasLocalPlan`, so both resolve the same table as the parallelized input.
+        if (const auto * join_step = typeid_cast<const JoinStep *>(reading_step->step.get());
+            join_step && reading_step->children.size() == 2)
+        {
+            const auto kind = join_step->getJoin()->getTableJoin().kind();
+            reading_step = reading_step->children[isRight(kind) ? 1 : 0];
+            continue;
+        }
 
         if (!lazy_joining && reading_step->children.size() > 1)
             return nullptr;
