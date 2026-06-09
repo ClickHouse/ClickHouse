@@ -81,8 +81,10 @@ StorageRunner::~StorageRunner()
     for (auto & t : generator_threads)
         if (t.joinable())
             t.join();
+    generators_done = true;
     if (preprocess_thread_handle && preprocess_thread_handle->joinable())
         preprocess_thread_handle->join();
+    preprocess_done = true;
     if (commit_thread_handle && commit_thread_handle->joinable())
         commit_thread_handle->join();
 }
