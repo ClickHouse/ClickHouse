@@ -289,9 +289,11 @@ void SerializationDynamic::enumerateStreams(
             auto narrowed_type = detectNarrowedTypeFromStatistics(*stats_ptr, column_dynamic->getVariantInfo().variant_names, variant_type);
             if (narrowed_type)
             {
-                /// Match the prefix writer's choice: always store as `Nullable(T)` so that NULL rows
-                /// (which are not counted in `variants_statistics`) can be represented on disk.
-                enumerate_narrowed(narrowed_type, /*stored_as_nullable=*/true, static_cast<const DeserializeBinaryBulkStateDynamic *>(nullptr));
+                /// Wrap in `Nullable` unless statistics prove there are no NULL rows in the part.
+                /// `null_count == nullopt` means "unknown" — conservative choice is to wrap.
+                /// Must match the choice made by `serializeBinaryBulkStatePrefix`.
+                const bool stored_as_nullable = !stats_ptr->null_count || *stats_ptr->null_count > 0;
+                enumerate_narrowed(narrowed_type, stored_as_nullable, static_cast<const DeserializeBinaryBulkStateDynamic *>(nullptr));
                 return;
             }
         }
@@ -393,14 +395,11 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
             if (narrowed_type)
             {
                 structure_version = SerializationVersion(SerializationVersion::NARROWED);
-                /// Whether the on-disk data needs a null map: the narrowed variant's count must equal
-                /// the total row count for the part. We don't have total row count at prefix time,
-                /// but we know the variant type cannot represent NULL natively (because variant types
-                /// already get unwrapped from Nullable when added to a Dynamic column). The cheapest
-                /// safe default is to always wrap in Nullable: a NULL row would otherwise have no place
-                /// in the on-disk stream. Stats may be aggregated from sources where the narrowed
-                /// variant covers fewer rows than the column size (rest were NULL in source columns).
-                narrowed_stored_as_nullable = true;
+                /// Skip the `.null` substream only when statistics prove there are no NULL rows in
+                /// the part. `null_count == nullopt` ("unknown") falls back to wrapping in Nullable
+                /// — that is the conservative choice because foreign-variant rows after the prefix
+                /// decision would otherwise crash `buildNarrowedColumn` (non-nullable branch).
+                narrowed_stored_as_nullable = !maybe_stats->null_count || *maybe_stats->null_count > 0;
             }
         }
     }
@@ -743,6 +742,34 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 /// Trailer for NARROWED: <encoded narrowed_type> <bool stored_as_nullable>.
                 structure_state->narrowed_type = decodeDataType(*structure_stream);
                 readBinary(structure_state->narrowed_stored_as_nullable, *structure_stream);
+
+                /// Recover an approximate `null_count` for downstream consumers (e.g., later
+                /// narrowing decisions during merge). We don't know the exact count from disk,
+                /// but `narrowed_stored_as_nullable == true` proves NULLs may exist (writer wraps
+                /// in Nullable only when null_count > 0 or unknown). Mark as nullopt to force
+                /// downstream merges to wrap in Nullable instead of assuming "no NULLs".
+                if (structure_state->statistics && structure_state->narrowed_stored_as_nullable)
+                {
+                    auto stats_copy = std::make_shared<ColumnDynamic::Statistics>(*structure_state->statistics);
+                    stats_copy->null_count.reset();
+                    structure_state->statistics = std::move(stats_copy);
+                }
+                else if (structure_state->statistics)
+                {
+                    /// `stored_as_nullable == false` guarantees the part has no NULLs.
+                    auto stats_copy = std::make_shared<ColumnDynamic::Statistics>(*structure_state->statistics);
+                    stats_copy->null_count = 0;
+                    structure_state->statistics = std::move(stats_copy);
+                }
+            }
+            else if (structure_state->statistics)
+            {
+                /// V1/V2/V3 parts don't track `null_count` on disk; readers cannot infer it.
+                /// Mark as `nullopt` so downstream merges treat it as "unknown" and conservatively
+                /// wrap any v4 narrowing result in `Nullable`.
+                auto stats_copy = std::make_shared<ColumnDynamic::Statistics>(*structure_state->statistics);
+                stats_copy->null_count.reset();
+                structure_state->statistics = std::move(stats_copy);
             }
 
             structure_state->variant_type = std::move(variant_type);
@@ -882,27 +909,34 @@ void SerializationDynamic::serializeBinaryBulkWithMultipleStreamsAndCountTotalSi
         dynamic_state->narrowed_serialization->serializeBinaryBulkWithMultipleStreams(*storage_column, 0, 0, settings, dynamic_state->narrowed_state);
         settings.path.pop_back();
 
-        /// Update statistics so the suffix can emit accurate variant counts. Only the narrowed
-        /// variant matters; everything else is provably zero under the narrowing precondition.
+        /// Count the narrowed-variant rows in the slice. Used both to update suffix-time statistics
+        /// and to report a non-zero size to the caller — `SerializationObject` uses this number as
+        /// the path's `dynamic_paths_statistics`, which drives later `chooseDynamicStructureForMerge`
+        /// decisions. Reporting 0 would silently demote narrowed dynamic paths to shared data after
+        /// the next merge.
+        const auto narrowed_global_discr = variant_info.variant_name_to_discriminator.at(dynamic_state->narrowed_type->getName());
+        const auto narrowed_local_discr = variant_column->localDiscriminatorByGlobal(narrowed_global_discr);
+        const auto & local_discriminators = variant_column->getLocalDiscriminators();
+        const size_t end = (limit == 0 || offset + limit > local_discriminators.size()) ? local_discriminators.size() : offset + limit;
+        size_t narrowed_rows_in_slice = 0;
+        for (size_t i = offset; i != end; ++i)
+            if (local_discriminators[i] == narrowed_local_discr)
+                ++narrowed_rows_in_slice;
+        total_size_of_variants += narrowed_rows_in_slice;
+
         if (dynamic_state->recalculate_statistics)
         {
-            const auto narrowed_global_discr = variant_info.variant_name_to_discriminator.at(dynamic_state->narrowed_type->getName());
-            const auto narrowed_local_discr = variant_column->localDiscriminatorByGlobal(narrowed_global_discr);
-            const auto & local_discriminators = variant_column->getLocalDiscriminators();
-            size_t end = (limit == 0 || offset + limit > local_discriminators.size()) ? local_discriminators.size() : offset + limit;
-            size_t added = 0;
-            for (size_t i = offset; i != end; ++i)
-                if (local_discriminators[i] == narrowed_local_discr)
-                    ++added;
-            dynamic_state->statistics.variants_statistics[dynamic_state->narrowed_type->getName()] += added;
+            dynamic_state->statistics.variants_statistics[dynamic_state->narrowed_type->getName()] += narrowed_rows_in_slice;
             /// Make sure every variant has an entry, even if zero, so the writer can serialize them.
             for (const auto & vname : variant_info.variant_names)
                 dynamic_state->statistics.variants_statistics.try_emplace(vname, 0);
+            /// Track NULL rows we materialized through `buildNarrowedColumn` so that downstream
+            /// consumers of these suffix-time stats see an accurate `null_count`.
+            const size_t null_rows_in_slice = (end - offset) - narrowed_rows_in_slice;
+            if (!dynamic_state->statistics.null_count)
+                dynamic_state->statistics.null_count = 0;
+            dynamic_state->statistics.null_count = *dynamic_state->statistics.null_count + null_rows_in_slice;
         }
-
-        /// We are not tracking per-variant storage bytes for the narrowed layout; report 0 so callers
-        /// that use this for size accounting fall back to other heuristics.
-        total_size_of_variants += 0;
         return;
     }
 

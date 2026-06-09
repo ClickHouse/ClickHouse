@@ -1438,8 +1438,18 @@ ColumnDynamic::StatisticsPtr ColumnDynamic::getOrCalculateStatistics() const
     auto calculated_statistics = std::make_shared<Statistics>();
     /// Statistics calculated directly from the column data are always accurate.
     calculated_statistics->reliable = true;
+    size_t typed_rows = 0;
     for (const auto & [variant_name, discr] : variant_info.variant_name_to_discriminator)
-        calculated_statistics->variants_statistics[variant_name] = variant_column_ptr->getVariantByGlobalDiscriminator(discr).size();
+    {
+        size_t variant_size = variant_column_ptr->getVariantByGlobalDiscriminator(discr).size();
+        calculated_statistics->variants_statistics[variant_name] = variant_size;
+        typed_rows += variant_size;
+    }
+    /// NULL_DISCRIMINATOR rows are not counted in any variant's size; derive their count from
+    /// total - typed. `variant_column_ptr->size()` is the total number of rows in the Dynamic
+    /// column (including NULLs).
+    const size_t total_rows = variant_column_ptr->size();
+    calculated_statistics->null_count = total_rows >= typed_rows ? total_rows - typed_rows : 0;
 
     const auto & shared_variant = getSharedVariant();
     for (size_t i = 0; i != shared_variant.size(); ++i)
@@ -1463,6 +1473,9 @@ void ColumnDynamic::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking
     Statistics new_statistics;
     /// Merged statistics are reliable only if every input source is reliable. Any unreliable source poisons the result.
     new_statistics.reliable = true;
+    /// Start with 0 NULLs and accumulate. If any source has `null_count = nullopt` (unknown),
+    /// the merged result becomes `nullopt` too — we cannot prove "no NULLs" without full knowledge.
+    new_statistics.null_count = 0;
     /// Collect total sizes for variants that are not in our structure (candidates for shared variant statistics).
     UnorderedMapWithMemoryTracking<String, size_t> shared_variant_candidates;
     for (const auto & source_column : source_columns)
@@ -1471,6 +1484,10 @@ void ColumnDynamic::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking
         const auto & source_statistics = source_dynamic.getOrCalculateStatistics();
         if (!source_statistics->reliable)
             new_statistics.reliable = false;
+        if (new_statistics.null_count && source_statistics->null_count)
+            new_statistics.null_count = *new_statistics.null_count + *source_statistics->null_count;
+        else
+            new_statistics.null_count.reset();
 
         /// For variant statistics: if the variant is in our dynamic structure, add directly;
         /// otherwise accumulate in shared variant candidates.

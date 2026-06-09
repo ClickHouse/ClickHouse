@@ -2400,6 +2400,18 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         }
     }
 
+    /// `dynamic_serialization_version` is a tier-0 setting (`v1`-`v3` are PRODUCTION), but the `v4`
+    /// value introduces a new on-disk layout that older readers reject. Treat the `v4` value itself
+    /// as EXPERIMENTAL.
+    if (!allow_experimental
+        && (*this)[MergeTreeSetting::dynamic_serialization_version].changed
+        && (*this)[MergeTreeSetting::dynamic_serialization_version] == MergeTreeDynamicSerializationVersion::V4)
+    {
+        throw Exception(
+            ErrorCodes::READONLY,
+            "Cannot set 'dynamic_serialization_version = v4'. The `v4` layout is EXPERIMENTAL and "
+            "is disabled in the server config ('allow_feature_tier')");
+    }
 
     /// Skip these checks when the background pool was auto-lowered by the low-memory heuristic
     /// AND the corresponding table-level threshold is at its default. On small systems the pool

@@ -159,6 +159,7 @@ public:
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
     SerializationPtr createSerializationForType(const DataTypePtr & type) const;
+    const SerializationInfoSettings & getSerializationInfoSettings() const { return serialization_info_settings; }
 
 private:
     friend SerializationDynamicElement;

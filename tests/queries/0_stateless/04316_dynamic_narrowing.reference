@@ -78,3 +78,43 @@ String	100
 -- 14. mutation preserving type
 50	50
 1000
+-- 15a. no-null part substreams
+value
+value.dynamic_structure
+-- 15b. with-null part substreams
+value
+value.dynamic_structure
+value.null
+-- 16a. Tuple nested subcolumn .a
+0
+1
+2
+-- 16b. Tuple nested subcolumn .b
+s0
+s1
+s2
+-- 16c. Array .size0 subcolumn
+0
+1
+2
+3
+4
+-- 17. JSON merge: narrowed path "a" is still a dynamic path after merge
+1	10
+2	20
+3	30
+4	40
+5	50
+-- 17b. Merged part exists
+1
+-- 18. NARROWED-with-NULLs merge
+200	59
+-- 19. Nullable narrowed Tuple nested .a
+0
+1
+2
+0
+4
+5
+-- 20. V3 sources merged into v4 narrowed part
+200	59
