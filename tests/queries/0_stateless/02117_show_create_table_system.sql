@@ -25,7 +25,6 @@ show create table collations format TSVRaw;
 show create table columns format TSVRaw;
 show create table contributors format TSVRaw;
 show create table current_roles format TSVRaw;
-show create table data_skipping_index_types format TSVRaw;
 show create table data_skipping_indices format TSVRaw;
 show create table data_type_families format TSVRaw;
 show create table databases format TSVRaw;

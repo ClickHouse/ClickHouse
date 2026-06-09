@@ -24,7 +24,6 @@
 #include <libnuraft/ptr.hxx>
 #include <libnuraft/peer.hxx>
 #include <libnuraft/raft_server.hxx>
-#include <libnuraft/snapshot_sync_ctx.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Common/Exception.h>
@@ -34,7 +33,6 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStatus.h>
 
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
@@ -88,7 +86,6 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 stale_log_gap;
     extern const CoordinationSettingsMilliseconds startup_timeout;
     extern const CoordinationSettingsBool nuraft_test_mode;
-    extern const CoordinationSettingsBool nuraft_use_bg_thread_for_snapshot_io;
     extern const CoordinationSettingsBool nuraft_streaming_mode;
     extern const CoordinationSettingsUInt64 nuraft_max_log_gap_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
@@ -231,17 +228,6 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
     const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
     asio_opts.ssl_context_provider_server_ = getSslContextProvider(config, "server");
     asio_opts.ssl_context_provider_client_ = getSslContextProvider(config, "client");
-
-    const String client_verification_mode_property = "openSSL.client.verificationMode";
-    if (config.has(client_verification_mode_property))
-    {
-        /// `NuRaft` overrides the client `SSL_CTX` verify mode per connection.
-        /// Only an explicitly configured `none` disables peer verification;
-        /// an absent key keeps the historical secure-by-default behavior.
-        asio_opts.skip_verification_
-            = Poco::Net::Utility::convertVerificationMode(config.getString(client_verification_mode_property))
-                == Poco::Net::Context::VERIFY_NONE;
-    }
 }
 #endif
 
@@ -592,7 +578,6 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::max_requests_append_size], "max_requests_append_size", log);
     params.max_append_size_bytes_ = coordination_settings[CoordinationSetting::max_requests_append_bytes_size];
 
-    params.use_bg_thread_for_snapshot_io_ = coordination_settings[CoordinationSetting::nuraft_use_bg_thread_for_snapshot_io];
     params.max_log_gap_in_stream_
         = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::nuraft_max_log_gap_in_stream], "nuraft_max_log_gap_in_stream", log);
     params.max_bytes_in_flight_in_stream_
@@ -630,10 +615,6 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     {
 #if USE_SSL
         setSSLParams(asio_opts);
-        if (asio_opts.skip_verification_)
-            LOG_WARNING(
-                log,
-                "Keeper Raft peer certificate verification is disabled because `openSSL.client.verificationMode` is set to `none`");
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.");
 #endif
@@ -790,7 +771,6 @@ void KeeperServer::shutdownRaftServer()
 void KeeperServer::shutdown()
 {
     shutdownRaftServer();
-    nuraft::snapshot_io_mgr::shutdown_instance();
     state_manager->flushAndShutDownLogStore();
     state_machine->shutdownStorage();
 }
@@ -1054,12 +1034,12 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 // and not a RW lock
                 auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
 
-                chassert(entry->get_val_type() == nuraft::app_log);
+                assert(entry->get_val_type() == nuraft::app_log);
                 auto next_zxid = state_machine->getNextZxid();
 
                 auto entry_buf = entry->get_buf_ptr();
 
-                IKeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version = {};
+                IKeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version;
                 size_t request_end_position = 0;
                 auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version, &request_end_position);
                 request_for_session->zxid = next_zxid;
@@ -1120,7 +1100,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 // and not a RW lock
                 auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
 
-                chassert(entry->get_val_type() == nuraft::app_log);
+                assert(entry->get_val_type() == nuraft::app_log);
 
                 auto & entry_buf = entry->get_buf();
                 auto request_for_session = state_machine->parseRequest(entry_buf, true);
@@ -1418,7 +1398,7 @@ bool KeeperServer::waitForConfigUpdateWithReconfigDisabled(const ClusterUpdateAc
 
 Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 {
-    Keeper4LWInfo result{};
+    Keeper4LWInfo result;
     result.is_leader = raft_instance->is_leader();
 
     auto srv_config = state_manager->get_srv_config();
@@ -1477,14 +1457,6 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
     }
 
     return log_info;
-}
-
-std::vector<KeeperChangelogStatus> KeeperServer::getChangelogsStatus() const
-{
-    auto log_store = state_manager->load_log_store();
-    if (log_store)
-        return static_cast<const KeeperLogStore &>(*log_store).getChangelogsStatus();
-    return {};
 }
 
 bool KeeperServer::requestLeader()

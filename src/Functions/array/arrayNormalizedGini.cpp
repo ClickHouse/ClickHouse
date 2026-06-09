@@ -186,7 +186,7 @@ private:
 /**
  * Calculate the normalized Gini coefficient. See https://arxiv.org/pdf/1912.07753
  */
-class FunctionArrayNormalizedGini final : public IFunction
+class FunctionArrayNormalizedGini : public IFunction
 {
 public:
     static constexpr auto name = "arrayNormalizedGini";
