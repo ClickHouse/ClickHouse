@@ -304,6 +304,12 @@ Possible values:
     DECLARE(UInt64, max_threads_for_indexes, 0, R"(
 The maximum number of threads process indices.
 )", 0) \
+    DECLARE(UInt64, min_marks_per_index_analysis_task, 0, R"(
+The minimum number of marks per task when analysing the primary key and skip indexes of a single
+data part in parallel. When set to a positive value, the analysis of a part larger than this many
+marks is split into several tasks distributed across threads, in addition to the existing per-part
+parallelism. `0` disables this sub-part parallelism (analysis is parallelized only across parts).
+)", 0) \
     DECLARE(MaxThreads, max_threads, 0, R"(
 The maximum number of query processing threads, excluding threads for retrieving data from remote servers (see the ['max_distributed_connections'](/operations/settings/settings#max_distributed_connections) parameter).
 

@@ -86,6 +86,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_threads_for_indexes;
+    extern const SettingsUInt64 min_marks_per_index_analysis_task;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
