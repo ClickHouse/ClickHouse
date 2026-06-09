@@ -1782,7 +1782,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                  ncol.set_column(rg.nextIdentifier("c", t.col_counter++, fc.allow_nasty_identifiers));
              }},
             /// Clear column
-            {2 * static_cast<uint32_t>(can_merge),
+            {2 * static_cast<uint32_t>(no_oracle && can_merge),
              [&]
              {
                  ColInPartition * ccol = ati->mutable_clear_column();

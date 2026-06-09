@@ -15,7 +15,7 @@ namespace BuzzHouse
 {
 
 const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
-    = {{OutFormat::OUT_Arrow}, {OutFormat::OUT_Parquet}, {OutFormat::OUT_ORC},{OutFormat::OUT_CSV}, {OutFormat::OUT_TabSeparated}, {OutFormat::OUT_Values}};
+    = {{OutFormat::OUT_CSV}, {OutFormat::OUT_TabSeparated}, {OutFormat::OUT_Values}};
 
 static void finishSettings(SettingValues * svs)
 {
@@ -903,11 +903,11 @@ void QueryOracle::dumpTableContent(
         case DumpOracleStrategy::TRUNCATE_COUNT: {
             /// After truncation or deletion, count should be 0
             ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
-            CastExpr * casexpr = eca->mutable_expr()->mutable_comp_expr()->mutable_cast_expr();
+            BinaryExpr * bexpr = eca->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
 
-            casexpr->set_simple(true);
-            casexpr->mutable_expr()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(0);
-            casexpr->mutable_type_name()->mutable_type()->mutable_non_nullable()->set_integers(Integers::UInt64);
+            bexpr->set_op(BinaryOperator::BINOP_STAR);
+            bexpr->mutable_lhs()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
+            bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(0);
             eca->mutable_col_alias()->set_column("s0");
         }
         break;

@@ -3839,7 +3839,10 @@ CONV_FN(DescribeStatement, ds)
             ExplainQueryToString(ret, ds.sel());
             ret += ds.paren() ? ")" : "";
             break;
-        case DescType::kStf: SQLTableFuncCallToString(ret, ds.stf()); break;
+        case DescType::kStf:
+            SQLTableFuncCallToString(ret, ds.stf());
+            ret += ")";
+            break;
         default: ret += "t0";
     }
     if (ds.has_setting_values())
