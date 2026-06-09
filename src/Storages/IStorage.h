@@ -650,6 +650,13 @@ public:
     /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
     virtual void checkTableCanBeDetached() const {}
 
+    /// Pure size-limit precheck used by `CREATE OR REPLACE` to enforce the
+    /// `max_table_size_to_drop` guard before EXCHANGE. Unlike `checkTableCanBeDropped`,
+    /// this is required to be side-effect-free (no broker-cleanup flag latching, no
+    /// dictionary/view-dependency throws), so it can run on any storage engine.
+    /// Default: no-op (engine has no on-disk data the size guard would care about).
+    virtual void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const {}
+
     /// Returns true if Storage may store some data on disk.
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }

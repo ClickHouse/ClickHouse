@@ -2264,8 +2264,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         /// Pre-flight: enforce the DROP size guard on the existing target before EXCHANGE,
         /// so a violation aborts cleanly instead of stranding data under `_tmp_replace_*`.
+        /// Use the dedicated size-only API so we do not trigger side effects from
+        /// `checkTableCanBeDropped` overrides (e.g. `StorageDictionary` rejecting
+        /// `DROP TABLE`, or `StorageNATS`/`StorageRabbitMQ` latching their broker-cleanup flag).
         if (auto existing = database->tryGetTable(table_to_replace_name, current_context))
-            existing->checkTableCanBeDropped(current_context);
+            existing->checkTableSizeBelowDropLimit(current_context);
     }
 
     {

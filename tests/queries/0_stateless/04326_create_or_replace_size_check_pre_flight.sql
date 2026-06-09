@@ -39,3 +39,30 @@ SELECT count() FROM t04326;
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '%tmp_replace%';
 
 DROP TABLE t04326;
+
+-- The pre-flight must use a side-effect-free size-only API so that engines whose
+-- `checkTableCanBeDropped` override has unrelated semantics (rejecting DROP TABLE
+-- on dictionaries; latching a broker-cleanup flag on NATS/RabbitMQ) are not
+-- disturbed. Exercise the dictionary path: REPLACE DICTIONARY must still succeed
+-- against an existing `StorageDictionary` whose `checkTableCanBeDropped` would
+-- otherwise throw `CANNOT_DETACH_DICTIONARY_AS_TABLE`.
+CREATE TABLE t04326_src (id UInt64, value String) ENGINE = TinyLog;
+INSERT INTO t04326_src VALUES (0, 'v0');
+
+CREATE OR REPLACE DICTIONARY t04326_dict (id UInt64, value String)
+PRIMARY KEY id
+LAYOUT(DIRECT())
+SOURCE(CLICKHOUSE(DB currentDatabase() TABLE 't04326_src'));
+
+SELECT * FROM t04326_dict;
+
+CREATE OR REPLACE DICTIONARY t04326_dict (id UInt64, value String)
+PRIMARY KEY id
+LAYOUT(HASHED())
+SOURCE(CLICKHOUSE(DB currentDatabase() TABLE 't04326_src'))
+LIFETIME(0);
+
+SELECT * FROM t04326_dict;
+
+DROP DICTIONARY t04326_dict;
+DROP TABLE t04326_src;
