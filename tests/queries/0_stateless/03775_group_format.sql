@@ -44,6 +44,16 @@ select groupFormatOrDefault('JSONEachRow')(if(number = 0, NULL, number)) from nu
 select groupFormatOrNull('JSONEachRow')(number) from numbers(0);
 select groupFormatOrDefault('JSONEachRow')(number) from numbers(0);
 
+-- `State` + `If` combinator stack must also preserve nullable payload: finalizing
+-- `groupFormatStateIf` must match the direct `groupFormatIf` instead of dropping the
+-- `NULL`-payload row through the `AggregateFunctionIfNull*` fallback.
+select finalizeAggregation(groupFormatStateIf('JSONEachRow')(if(number = 0, NULL, number), toUInt8(1))) from numbers(3);
+select
+    groupFormatIf('JSONEachRow')(if(number = 0, NULL, number), toUInt8(1)) as direct,
+    finalizeAggregation(groupFormatStateIf('JSONEachRow')(if(number = 0, NULL, number), toUInt8(1))) as via_state,
+    direct = via_state as equal
+from numbers(3);
+
 -- State round-trip: serialize then deserialize via finalizeAggregation.
 select finalizeAggregation(groupFormatState('JSONEachRow')(number, toString(number))) from numbers(3);
 
