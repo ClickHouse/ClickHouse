@@ -50,8 +50,53 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
         output_nodes_names.insert(node.result_name);
     }
 
+    /// When a DAG has both an INPUT and a COLUMN node with the same name
+    /// (created by `duplicate_const_columns` in the `ActionsDAG` constructor),
+    /// replace the COLUMN output with the INPUT so that `removeUnusedActions`
+    /// preserves the INPUT and the column requirement propagates upstream.
+    /// We must only do this when the INPUT and COLUMN carry the same constant
+    /// value, which is the case for `duplicate_const_columns` pairs. When a
+    /// subquery redefines a column (e.g. `'redefined' AS my_field`), the
+    /// COLUMN holds the new value while the INPUT holds the old upstream
+    /// value, so replacing would lose the redefinition.
+    {
+        std::unordered_map<std::string_view, const ActionsDAG::Node *> input_nodes_by_name;
+        for (const auto * input_node : actions->dag.getInputs())
+            input_nodes_by_name.emplace(input_node->result_name, input_node);
+
+        for (auto & output_node : actions->dag.getOutputs())
+        {
+            if (output_node->type == ActionsDAG::ActionType::COLUMN
+                && child_required_output_columns_names.contains(output_node->result_name))
+            {
+                auto it = input_nodes_by_name.find(output_node->result_name);
+                if (it != input_nodes_by_name.end())
+                {
+                    const auto * input_node = it->second;
+
+                    /// Only replace if both nodes carry the same constant value
+                    /// AND have the same result type. This ensures we only affect
+                    /// `duplicate_const_columns` pairs and not column redefinitions
+                    /// where the value or type changed (e.g. `toUInt8(1) AS x` vs
+                    /// `toUInt16(1) AS x`, where values compare equal but types differ).
+                    bool same_const_value = input_node->column
+                        && output_node->column
+                        && isColumnConst(*input_node->column)
+                        && isColumnConst(*output_node->column)
+                        && input_node->result_type
+                        && output_node->result_type
+                        && input_node->result_type->equals(*output_node->result_type)
+                        && assert_cast<const ColumnConst &>(*input_node->column).getField()
+                            == assert_cast<const ColumnConst &>(*output_node->column).getField();
+
+                    if (same_const_value)
+                        output_node = input_node;
+                }
+            }
+        }
+    }
+
     actions->dag.removeUnusedActions();
-    /// TODO: Analyzer fix ActionsDAG input and constant nodes with same name
     actions->project_input = true;
     initialize();
 }

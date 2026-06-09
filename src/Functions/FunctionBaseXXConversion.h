@@ -2,20 +2,32 @@
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <fmt/format.h>
 #include <Common/Base58.h>
+
+#include <functional>
 
 
 namespace DB
 {
 
+namespace Setting
+{
+extern const SettingsUInt64 function_base58_max_input_size;
+}
+
 namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
 extern const int INCORRECT_DATA;
+extern const int TOO_LARGE_STRING_SIZE;
+extern const int TIMEOUT_EXCEEDED;
 }
 
 template <typename Traits, typename Name>
@@ -23,18 +35,40 @@ struct BaseXXEncode
 {
     static constexpr auto name = Name::name;
     static constexpr bool has_size_optimization = false;
+    /// Compile-time default input-size limit (0 means "no limit"). Only base58 sets a non-zero value;
+    /// the actual limit is configurable at runtime, see FunctionBaseXXConversion.
+    static constexpr size_t default_max_input_size = Traits::max_input_size;
 
     template <bool /* with_size_optimization */>
-    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t)
+    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t, size_t max_input_size, const std::function<void()> & check_cancellation)
     {
+        const ColumnString::Offsets & src_offsets = src_column.getOffsets();
+
+        /// Validate the input sizes before allocating the result buffer. getBufferSize() reserves roughly
+        /// twice the whole input, so an oversized block must be rejected with TOO_LARGE_STRING_SIZE before
+        /// the large allocation, otherwise a limit violation could surface as MEMORY_LIMIT_EXCEEDED instead.
+        if constexpr (Traits::max_input_size != 0)
+            if (max_input_size != 0)
+            {
+                size_t prev_src_offset = 0;
+                for (size_t row = 0; row < input_rows_count; ++row)
+                {
+                    size_t src_length = src_offsets[row] - prev_src_offset;
+                    if (src_length > max_input_size)
+                        throw Exception(
+                            ErrorCodes::TOO_LARGE_STRING_SIZE,
+                            "Too large input for function {}: {} bytes, maximum is {} bytes",
+                            name, src_length, max_input_size);
+                    prev_src_offset = src_offsets[row];
+                }
+            }
+
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
         size_t const max_result_size = Traits::getBufferSize(src_column);
 
         dst_data.resize(max_result_size);
         dst_offsets.resize(input_rows_count);
-
-        const ColumnString::Offsets & src_offsets = src_column.getOffsets();
 
         const auto * src = reinterpret_cast<const char *>(src_column.getChars().data());
         auto * dst = dst_data.data();
@@ -46,7 +80,7 @@ struct BaseXXEncode
         {
             size_t current_src_offset = src_offsets[row];
             size_t src_length = current_src_offset - prev_src_offset;
-            size_t encoded_size = Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset]);
+            size_t encoded_size = Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset], check_cancellation);
             prev_src_offset = current_src_offset;
             current_dst_offset += encoded_size;
             dst_offsets[row] = current_dst_offset;
@@ -56,8 +90,18 @@ struct BaseXXEncode
     }
 
     template <bool /* with_size_optimization */>
-    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t)
+    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t, size_t max_input_size, const std::function<void()> & check_cancellation)
     {
+        size_t const N = src_column.getN();
+
+        /// Validate the input size before allocating the result buffer (see processString above).
+        if constexpr (Traits::max_input_size != 0)
+            if (max_input_size != 0 && N > max_input_size)
+                throw Exception(
+                    ErrorCodes::TOO_LARGE_STRING_SIZE,
+                    "Too large input for function {}: {} bytes, maximum is {} bytes",
+                    name, N, max_input_size);
+
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
         size_t const max_result_size = Traits::getBufferSize(src_column);
@@ -68,12 +112,11 @@ struct BaseXXEncode
         const auto * src = reinterpret_cast<const char *>(src_column.getChars().data());
         auto * dst = dst_data.data();
 
-        size_t const N = src_column.getN();
         size_t current_dst_offset = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            size_t encoded_size = Traits::perform({&src[row * N], N}, &dst[current_dst_offset]);
+            size_t encoded_size = Traits::perform({&src[row * N], N}, &dst[current_dst_offset], check_cancellation);
             current_dst_offset += encoded_size;
             dst_offsets[row] = current_dst_offset;
         }
@@ -93,18 +136,55 @@ struct BaseXXDecode
 {
     static constexpr auto name = Name::name;
     static constexpr bool has_size_optimization = Traits::has_size_optimization;
+    /// Compile-time default input-size limit (0 means "no limit"). Only base58 sets a non-zero value;
+    /// the actual limit is configurable at runtime, see FunctionBaseXXConversion.
+    static constexpr size_t default_max_input_size = Traits::max_input_size;
 
     template <bool with_size_optimization>
-    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size)
+    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size, size_t max_input_size, const std::function<void()> & check_cancellation)
     {
+        const ColumnString::Offsets & src_offsets = src_column.getOffsets();
+
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
-        size_t max_result_size = Traits::getBufferSize(src_column);
+
+        /// Size the result buffer before allocating it. getBufferSize() reserves roughly the whole input, so
+        /// when a size limit is in effect we must not allocate for oversized rows: that could turn a limit
+        /// violation into MEMORY_LIMIT_EXCEEDED. The throwing decoder rejects an oversized row outright; the
+        /// empty-string decoder skips it. base58 output never exceeds the input length, so the buffer can be
+        /// sized from the in-limit rows alone (which, when none are oversized, equals getBufferSize()).
+        size_t max_result_size = 0;
+        if constexpr (Traits::max_input_size != 0)
+        {
+            if (max_input_size != 0)
+            {
+                size_t in_limit_input_size = 0;
+                size_t prev_src_offset = 0;
+                for (size_t row = 0; row < input_rows_count; ++row)
+                {
+                    size_t src_length = src_offsets[row] - prev_src_offset;
+                    if (src_length > max_input_size)
+                    {
+                        if constexpr (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException)
+                            throw Exception(
+                                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                                "Too large input for function {}: {} bytes, maximum is {} bytes",
+                                name, src_length, max_input_size);
+                    }
+                    else
+                        in_limit_input_size += src_length;
+                    prev_src_offset = src_offsets[row];
+                }
+                max_result_size = in_limit_input_size;
+            }
+            else
+                max_result_size = Traits::getBufferSize(src_column);
+        }
+        else
+            max_result_size = Traits::getBufferSize(src_column);
 
         dst_data.resize(max_result_size);
         dst_offsets.resize(input_rows_count);
-
-        const ColumnString::Offsets & src_offsets = src_column.getOffsets();
 
         const auto * src = reinterpret_cast<const char *>(src_column.getChars().data());
         auto * dst = dst_data.data();
@@ -116,10 +196,21 @@ struct BaseXXDecode
         {
             size_t current_src_offset = src_offsets[row];
             size_t src_length = current_src_offset - prev_src_offset;
+            if constexpr (Traits::max_input_size != 0)
+            {
+                /// Oversized rows were already rejected above for the throwing decoder; only the
+                /// empty-string decoder reaches here, emitting an empty result for them.
+                if (max_input_size != 0 && src_length > max_input_size)
+                {
+                    prev_src_offset = current_src_offset;
+                    dst_offsets[row] = current_dst_offset;
+                    continue;
+                }
+            }
             std::optional<size_t> decoded_size = [&]{
                 if constexpr (with_size_optimization)
-                    return Traits::performWithSizeHint({&src[prev_src_offset], src_length}, &dst[current_dst_offset], expected_size);
-                return Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset]);
+                    return Traits::performWithSizeHint({&src[prev_src_offset], src_length}, &dst[current_dst_offset], expected_size, check_cancellation);
+                return Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset], check_cancellation);
             }();
             if (!decoded_size)
             {
@@ -142,10 +233,32 @@ struct BaseXXDecode
     }
 
     template <bool with_size_optimization>
-    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size)
+    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size, size_t max_input_size, const std::function<void()> & check_cancellation)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
+
+        size_t N = src_column.getN();
+
+        /// Validate the input size before allocating the result buffer (see processString above).
+        if constexpr (Traits::max_input_size != 0)
+        {
+            if (max_input_size != 0 && N > max_input_size)
+            {
+                if constexpr (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException)
+                    throw Exception(
+                        ErrorCodes::TOO_LARGE_STRING_SIZE,
+                        "Too large input for function {}: {} bytes, maximum is {} bytes",
+                        name, N, max_input_size);
+                /// ReturnEmptyString: every row decodes to an empty result.
+                dst_offsets.resize(input_rows_count);
+                for (size_t row = 0; row < input_rows_count; ++row)
+                    dst_offsets[row] = 0;
+                dst_data.resize(0);
+                return;
+            }
+        }
+
         size_t max_result_size = Traits::getBufferSize(src_column);
 
         dst_data.resize(max_result_size);
@@ -154,15 +267,14 @@ struct BaseXXDecode
         const auto * src = reinterpret_cast<const char *>(src_column.getChars().data());
         auto * dst = dst_data.data();
 
-        size_t N = src_column.getN();
         size_t current_dst_offset = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             std::optional<size_t> decoded_size = [&]{
                 if constexpr (with_size_optimization)
-                    return Traits::performWithSizeHint({&src[row * N], N}, &dst[current_dst_offset], expected_size);
-                return Traits::perform({&src[row * N], N}, &dst[current_dst_offset]);
+                    return Traits::performWithSizeHint({&src[row * N], N}, &dst[current_dst_offset], expected_size, check_cancellation);
+                return Traits::perform({&src[row * N], N}, &dst[current_dst_offset], check_cancellation);
             }();
             if (!decoded_size)
             {
@@ -188,7 +300,18 @@ class FunctionBaseXXConversion final : public IFunction
 public:
     static constexpr auto name = Func::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBaseXXConversion>(); }
+    FunctionBaseXXConversion(QueryStatusPtr query_status_, size_t max_input_size_)
+        : query_status(std::move(query_status_)), max_input_size(max_input_size_) {}
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        /// The input-size limit is only meaningful for the quadratic base58 conversion (the only function whose
+        /// compile-time default is non-zero); for the linear base32/base64 it stays disabled regardless of the setting.
+        size_t max_input_size = Func::default_max_input_size;
+        if (max_input_size != 0)
+            max_input_size = context->getSettingsRef()[Setting::function_base58_max_input_size];
+        return std::make_shared<FunctionBaseXXConversion>(context->getProcessListElementSafe(), max_input_size);
+    }
     String getName() const override { return Func::name; }
     bool isVariadic() const override { return has_size_optimization; }
     size_t getNumberOfArguments() const override { return has_size_optimization ? 0 : 1; }
@@ -225,6 +348,20 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        /// The generic (variable-length) Base58 conversion is quadratic in the input length and can run
+        /// for a long time on a single large value, ignoring the query's time limit (which is only checked
+        /// between pipeline blocks). Pass a callback so the conversion can periodically check for cancellation.
+        /// `checkTimeLimit` throws for `KILL QUERY` and for the `throw` overflow mode; for the `break` overflow
+        /// mode it returns `false` instead. There is no meaningful partial result for a single scalar value, so
+        /// a `break` request is turned into a hard stop here as well.
+        std::function<void()> check_cancellation;
+        if (query_status)
+            check_cancellation = [this]
+            {
+                if (!query_status->checkTimeLimit())
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
+            };
+
         size_t expected_size = 0;
         if constexpr (has_size_optimization)
         {
@@ -244,13 +381,13 @@ public:
             if constexpr (has_size_optimization)
             {
                 if (expected_size > 0)
-                    Func::template processString<true>(*col_string, col_res, input_rows_count, expected_size);
+                    Func::template processString<true>(*col_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation);
                 else
-                    Func::template processString<false>(*col_string, col_res, input_rows_count, expected_size);
+                    Func::template processString<false>(*col_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation);
             }
             else
             {
-                Func::template processString<false>(*col_string, col_res, input_rows_count, expected_size);
+                Func::template processString<false>(*col_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation);
             }
             return col_res;
         }
@@ -260,13 +397,13 @@ public:
             if constexpr (has_size_optimization)
             {
                 if (expected_size > 0)
-                    Func::template processFixedString<true>(*col_fixed_string, col_res, input_rows_count, expected_size);
+                    Func::template processFixedString<true>(*col_fixed_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation);
                 else
-                    Func::template processFixedString<false>(*col_fixed_string, col_res, input_rows_count, expected_size);
+                    Func::template processFixedString<false>(*col_fixed_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation);
             }
             else
             {
-                Func::template processFixedString<false>(*col_fixed_string, col_res, input_rows_count, expected_size);
+                Func::template processFixedString<false>(*col_fixed_string, col_res, input_rows_count, expected_size, max_input_size, check_cancellation);
             }
             return col_res;
         }
@@ -277,6 +414,10 @@ public:
             arguments[0].column->getName(),
             getName());
     }
+
+private:
+    QueryStatusPtr query_status;
+    size_t max_input_size;
 };
 
 }
