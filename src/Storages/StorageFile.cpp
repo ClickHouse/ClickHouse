@@ -7,6 +7,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
@@ -53,6 +54,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/checkStackSize.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
@@ -139,12 +141,16 @@ namespace ErrorCodes
     extern const int CANNOT_DETECT_FORMAT;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 using String = std::string;
 
 namespace
 {
+/// Bound on the recursion depth of `listFilesWithRegexpMatchingImpl`.
+constexpr size_t MAX_LIST_FILES_RECURSION_DEPTH = 1000;
+
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
@@ -154,8 +160,19 @@ void listFilesWithRegexpMatchingImpl(
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
     bool recursive,
+    size_t depth,
     std::unordered_set<std::string> * matched_paths)
 {
+    if (depth > MAX_LIST_FILES_RECURSION_DEPTH)
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+            "Maximum recursion depth ({}) exceeded while listing files for pattern '{}'.",
+            MAX_LIST_FILES_RECURSION_DEPTH, for_match);
+
+    /// On systems with small stacks (e.g., Musl) the depth cap above is not enough on its own,
+    /// because each recursion frame can be large. Probe the remaining stack periodically.
+    if (depth % 16 == 0)
+        checkStackSize();
+
     const size_t first_glob_pos = for_match.find_first_of("*?{");
 
     if (first_glob_pos == std::string::npos)
@@ -215,6 +232,7 @@ void listFilesWithRegexpMatchingImpl(
             total_bytes_to_read,
             result,
             recursive,
+            depth + 1,
             matched_paths);
     }
 
@@ -261,6 +279,7 @@ void listFilesWithRegexpMatchingImpl(
                     total_bytes_to_read,
                     result,
                     recursive,
+                    depth + 1,
                     matched_paths);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
@@ -271,6 +290,7 @@ void listFilesWithRegexpMatchingImpl(
                     total_bytes_to_read,
                     result,
                     false,
+                    depth + 1,
                     matched_paths);
         }
     }
@@ -287,7 +307,7 @@ std::vector<std::string> listFilesWithRegexpMatching(
     Strings for_match_paths_expanded = expandSelectionGlob(for_match);
 
     for (const auto & for_match_expanded : for_match_paths_expanded)
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, &matched_paths);
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, 0, &matched_paths);
 
     return result;
 }
@@ -1891,6 +1911,12 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
+
+    if (boost::iequals(storage->format_name, "Parquet") || boost::iequals(storage->format_name, "ORC"))
+        prepareEagerKeyConditionSets(
+            filter_actions_dag,
+            storage_snapshot, info.source_header,
+            query_info.prewhere_info, query_info.row_level_filter, getContext());
 
     createIterator(predicate);
 }
