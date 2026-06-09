@@ -25,7 +25,7 @@ Information about [Refreshable Materialized Views](../../sql-reference/statement
 - `last_success_duration_ms` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — How long the latest refresh took.
 - `last_refresh_time` ([Nullable(DateTime)](/sql-reference/data-types/nullable)) — Time when the latest refresh attempt finished (if known) or started (if unknown or still running). NULL if no refresh attempts happened since server startup or table creation.
 - `last_refresh_replica` ([String](/sql-reference/data-types/string)) — If coordination is enabled, name of the replica that made the current (if running) or previous (if not running) refresh attempt.
-- `next_refresh_time` ([Nullable(DateTime)](/sql-reference/data-types/nullable)) — Time at which the next refresh is scheduled to start, if status = Scheduled.
+- `next_refresh_time` ([Nullable(DateTime)](/sql-reference/data-types/nullable)) — Time at which the next refresh is scheduled to start. NULL if the next refresh time is not currently known, e.g. when waiting for dependencies (status `WaitingForDependencies` or `MissingDependencies`).
 - `exception` ([String](/sql-reference/data-types/string)) — Error message from previous attempt if it failed.
 - `retry` ([UInt64](/sql-reference/data-types/int-uint)) — How many failed attempts there were so far, for the current refresh. Not available if status is `RunningOnAnotherReplica`.
 - `progress` ([Nullable(Float64)](/sql-reference/data-types/nullable)) — Progress of the current running or most recently completed refresh at the given replica, between 0 and 1. NULL if status is `RunningOnAnotherReplica` or the refresh is not running.
@@ -43,12 +43,11 @@ SELECT
     database,
     view,
     status,
-    last_refresh_result,
     last_refresh_time,
     next_refresh_time
 FROM system.view_refreshes
 
-┌─database─┬─view───────────────────────┬─status────┬─last_refresh_result─┬───last_refresh_time─┬───next_refresh_time─┐
-│ default  │ hello_documentation_reader │ Scheduled │ Finished            │ 2023-12-01 01:24:00 │ 2023-12-01 01:25:00 │
-└──────────┴────────────────────────────┴───────────┴─────────────────────┴─────────────────────┴─────────────────────┘
+┌─database─┬─view───────────────────────┬─status────┬───last_refresh_time─┬───next_refresh_time─┐
+│ default  │ hello_documentation_reader │ Scheduled │ 2023-12-01 01:24:00 │ 2023-12-01 01:25:00 │
+└──────────┴────────────────────────────┴───────────┴─────────────────────┴─────────────────────┘
 ```

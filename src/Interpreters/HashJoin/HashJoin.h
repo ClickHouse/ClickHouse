@@ -389,7 +389,7 @@ public:
 
     struct NullMapHolder
     {
-        const ScatteredColumns * columns;
+        const ScatteredColumns * columns{};
         ColumnPtr column;
         size_t selector_rows = 0;
 

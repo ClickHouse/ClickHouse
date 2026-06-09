@@ -8,8 +8,8 @@
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 
-#define CONV_FN(TYPE, VAR_NAME) void TYPE##ToString(String & ret, const TYPE &(VAR_NAME))
-#define CONV_FN_QUOTE(TYPE, VAR_NAME) void TYPE##ToString(String & ret, const uint32_t quote, const TYPE &(VAR_NAME))
+#define CONV_FN(TYPE, VAR_NAME) static void TYPE##ToString(String & ret, const TYPE &(VAR_NAME))
+#define CONV_FN_QUOTE(TYPE, VAR_NAME) static void TYPE##ToString(String & ret, const uint32_t quote, const TYPE &(VAR_NAME))
 
 namespace BuzzHouse
 {
@@ -86,7 +86,15 @@ CONV_FN(SQLIdentifier, ident)
     ret += "`";
 }
 
-void ClusterToString(String & ret, const bool clause, const Cluster & cl)
+void AggregateParamToString(String & ret, const AggregateParam & p)
+{
+    if (p.has_float_param())
+        ret += std::to_string(p.float_param());
+    else
+        ret += std::to_string(p.int_param());
+}
+
+static void ClusterToString(String & ret, const bool clause, const Cluster & cl)
 {
     if (cl.has_cluster())
     {
@@ -703,6 +711,82 @@ CONV_FN(SpecialVal, val)
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_STAR:
             ret += "*";
             break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_OVERLONG:
+            ret += R"('\xC0\xAF')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_CONTINUATION:
+            ret += R"('\x80\xBF\xC3\x28')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_TRUNCATED:
+            ret += R"('\xE2\x82')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_SURROGATE:
+            ret += R"('\xED\xA0\x80')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_BEYOND_RANGE:
+            ret += R"('\xF4\x90\x80\x80')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_INVALID_FE_FF:
+            ret += R"('\xFE\xFF')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_UTF8_BOM:
+            ret += R"('\xEF\xBB\xBF')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_MIXED:
+            ret += R"('hello\xC0\xAFworld\xED\xA0\x80\xF4\x90\x80\x80')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_CONTROL_CHARS:
+            ret += R"('\x01\x02\x03\x04\x05\x06\x07\x08\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1C\x1D\x1E\x1F')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ANSI_ESCAPE:
+            ret += R"('\x1B[31mRED\x1B[0m')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO_WIDTH_SPACE:
+            ret += R"('a\xE2\x80\x8Bb')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO_WIDTH_JOINER:
+            // Split so \x8D and b are in separate literals (style check)
+            ret += R"('a\xE2\x80\x8D)"
+                   "b'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BIDI_OVERRIDE:
+            ret += R"('\xE2\x80\xAEabc\xE2\x80\xAC')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_MAX_CODEPOINT:
+            ret += R"('\xF4\x8F\xBF\xBF')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ARRAY_NULL:
+            ret += "[NULL]";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TUPLE_NULL:
+            ret += "(NULL)";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NESTED_EMPTY_ARRAY:
+            ret += "[[]]";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ARRAY_EMPTY_MAP:
+            ret += "[map()]";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_LEAP_DAY:
+            ret += "'2024-02-29'";
+            if (val.paren())
+            {
+                ret += "::Date32";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NON_LEAP_DAY:
+            ret += "'2023-02-29'";
+            if (val.paren())
+            {
+                ret += "::Date32";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BEYOND_INT256:
+            ret += "115792089237316195423570985008687907853269984665640564039457584007913129639936";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_FLOAT64_MAX_SCIENTIFIC:
+            ret += "1e308";
+            break;
     }
     ret += val.paren() ? ")" : "";
 }
@@ -1001,7 +1085,18 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
 
             ret += af.simple() ? "Simple" : "";
             ret += "AggregateFunction(";
-            ret += SQLFunc_Name(af.aggr()).substr(4);
+            ret += af.aggr();
+            if (af.params_size() > 0)
+            {
+                ret += "(";
+                for (int i = 0; i < af.params_size(); i++)
+                {
+                    if (i != 0)
+                        ret += ", ";
+                    AggregateParamToString(ret, af.params(i));
+                }
+                ret += ")";
+            }
             for (int i = 0; i < af.types_size(); i++)
             {
                 ret += ", ";
@@ -1272,12 +1367,26 @@ CONV_FN(CondExpr, econd)
     ret += econd.paren() ? ")" : "";
 }
 
-CONV_FN(ExprNullTests, ent)
+CONV_FN(ExprTruthTests, ent)
 {
     ExprToString(ret, ent.expr());
     ret += " IS";
     ret += ent.not_() ? " NOT" : "";
-    ret += " NULL";
+    switch (ent.truth_value())
+    {
+        case ExprTruthTests::IS_TRUE:
+            ret += " TRUE";
+            break;
+        case ExprTruthTests::IS_FALSE:
+            ret += " FALSE";
+            break;
+        case ExprTruthTests::IS_UNKNOWN:
+            ret += " UNKNOWN";
+            break;
+        default:
+            ret += " NULL";
+            break;
+    }
 }
 
 CONV_FN(ExprBetween, ebetween)
@@ -1415,7 +1524,7 @@ CONV_FN(SQLFuncName, sfn)
 {
     if (sfn.has_catalog_func())
     {
-        ret += SQLFunc_Name(sfn.catalog_func()).substr(4);
+        ret += sfn.catalog_func();
     }
     else if (sfn.has_function())
     {
@@ -1463,6 +1572,10 @@ CONV_FN(SQLFuncCall, sfc)
         if (sfa.has_lambda())
         {
             LambdaExprToString(ret, sfa.lambda());
+        }
+        else if (sfa.has_func_name())
+        {
+            ret += sfa.func_name();
         }
         else if (sfa.has_expr())
         {
@@ -1758,8 +1871,8 @@ CONV_FN(ComplicatedExpr, expr)
         case ExprType::kExprAny:
             ExprAnyToString(ret, expr.expr_any());
             break;
-        case ExprType::kExprNullTests:
-            ExprNullTestsToString(ret, expr.expr_null_tests());
+        case ExprType::kExprTruthTests:
+            ExprTruthTestsToString(ret, expr.expr_truth_tests());
             break;
         case ExprType::kExprCase:
             ExprCaseToString(ret, expr.expr_case());
@@ -2460,6 +2573,10 @@ CONV_FN(SQLTableFuncCall, sfc)
         {
             LambdaExprToString(ret, sfa.lambda());
         }
+        else if (sfa.has_func_name())
+        {
+            ret += sfa.func_name();
+        }
         else if (sfa.has_expr())
         {
             ExprToString(ret, sfa.expr());
@@ -2924,7 +3041,7 @@ CONV_FN(FetchStatement, fet)
     ret += RowsKeyword_Name(fet.rows()).substr(4);
 }
 
-void LimitStatementToString(String & ret, const bool has_offset, const LimitStatement & lim)
+static void LimitStatementToString(String & ret, const bool has_offset, const LimitStatement & lim)
 {
     ret += "LIMIT ";
     ExprToString(ret, lim.limit());
@@ -2934,7 +3051,7 @@ void LimitStatementToString(String & ret, const bool has_offset, const LimitStat
     }
 }
 
-void OffsetStatementToString(String & ret, const bool has_limit, const OffsetStatement & off)
+static void OffsetStatementToString(String & ret, const bool has_limit, const OffsetStatement & off)
 {
     ret += (has_limit && off.comma()) ? "," : "OFFSET";
     ret += " ";
@@ -3196,7 +3313,7 @@ CONV_FN(BackupParam, bp)
     }
 }
 
-CONV_FN(BackupOut, bout)
+void BackupOutToString(String & ret, const BackupOut & bout)
 {
     const BackupOut_BackupOutput & output = bout.out();
 
@@ -3258,7 +3375,7 @@ CONV_FN(DatabaseEngine, deng)
     }
 }
 
-CONV_FN(CreateDatabase, create_database)
+void CreateDatabaseToString(String & ret, const CreateDatabase & create_database)
 {
     ret += "CREATE DATABASE ";
     if (create_database.if_not_exists())
@@ -3742,7 +3859,7 @@ CONV_FN(CreateTableSelect, create_table)
     ret += create_table.paren() ? ")" : "";
 }
 
-CONV_FN(CreateTable, create_table)
+void CreateTableToString(String & ret, const CreateTable & create_table)
 {
     CreateOrReplaceToString(ret, create_table.create_opt());
     ret += " ";
@@ -4302,7 +4419,6 @@ CONV_FN(RefreshableView, rv)
 
 CONV_FN(CreateView, create_view)
 {
-    const bool replace = create_view.create_opt() != CreateReplaceOption::Create;
     const bool materialized = create_view.materialized();
     const bool refreshable = create_view.has_refresh();
 
@@ -4312,19 +4428,11 @@ CONV_FN(CreateView, create_view)
     {
         ret += "TEMPORARY ";
     }
-    if (replace)
+    if (materialized)
     {
-        ret += "TABLE";
+        ret += "MATERIALIZED ";
     }
-    else
-    {
-        if (materialized)
-        {
-            ret += "MATERIALIZED ";
-        }
-        ret += "VIEW";
-    }
-    ret += " ";
+    ret += "VIEW ";
     if (create_view.if_not_exists())
     {
         ret += "IF NOT EXISTS ";
@@ -4342,12 +4450,12 @@ CONV_FN(CreateView, create_view)
     }
     if (materialized)
     {
-        if (!replace && refreshable)
+        if (refreshable)
         {
             ret += " ";
             RefreshableViewToString(ret, create_view.refresh());
         }
-        if (!replace && create_view.has_to())
+        if (create_view.has_to())
         {
             const CreateMatViewTo & cmvt = create_view.to();
 
@@ -4375,7 +4483,7 @@ CONV_FN(CreateView, create_view)
         {
             ret += " POPULATE";
         }
-        if (!replace && refreshable && create_view.empty())
+        if (refreshable && create_view.empty())
         {
             ret += " EMPTY";
         }
@@ -6332,7 +6440,7 @@ CONV_FN(SingleSQLQuery, query)
     }
 }
 
-CONV_FN(SQLQuery, query)
+void SQLQueryToString(String & ret, const SQLQuery & query)
 {
     SingleSQLQueryToString(ret, query.single_query());
     for (int i = 0; i < query.parallel_queries_size(); i++)

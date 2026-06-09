@@ -519,7 +519,7 @@ struct ScalarMD5Ops
     }
     static inline Vec loadu(const void * p)
     {
-        Vec r;
+        Vec r{};
         std::memcpy(r.v, p, sizeof(r.v));
         return r;
     }
