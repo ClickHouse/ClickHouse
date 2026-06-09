@@ -562,8 +562,37 @@ void ReaderExecutor::maybeTriggerPrefetch()
 
     drainAbandonedPrefetches();
 
-    size_t logical_size = totalSize();
+    const size_t logical_size = totalSize();
+    const size_t position_phys = position + data_start_offset;
 
+    /// Gap-keyed read-ahead: prefetch only when the cursor sits on a GAP. A resident
+    /// cursor is served straight from cache by the next `readNextWindow` (fast, no
+    /// worker handoff), so prefetching it is pure coordination overhead.
+    ///
+    /// This resident check runs BEFORE `ensurePreAcquiredSlot`: a warm window must
+    /// not acquire (and immediately discard) a slot on the server-shared
+    /// `SourceBufferLimit` mutex. `residentAt` is a point query, so a plain
+    /// `window_size` probe is enough to refresh the plan - no pressure-scaled sizing
+    /// (and its `currentLevel` sampling) is needed on this path. Skipping here also
+    /// preserves the invariant that no prefetch is in flight at a resident cursor, so
+    /// the resident fast-path never races the worker over `live_buffer`.
+    size_t probe_size = offset_map.hasUnknownSize()
+        ? window_size
+        : std::min(window_size, logical_size - position);
+    probe_size = clampToExtent(probe_size);
+    if (probe_size > 0)
+    {
+        if (!read_plan.covers(ByteRange{position_phys, probe_size}))
+            planResidencyWindow(position_phys);
+        if (read_plan.residentAt(position_phys).handle)
+        {
+            LOG_TRACE(log, "Prefetch: cursor {} resident, next read serves it from cache", position);
+            ++stats.prefetch_skipped_resident;
+            return;
+        }
+    }
+
+    /// The cursor is a gap: reserve a slot for the read-ahead's source read and size it.
     ensurePreAcquiredSlot();
 
     const size_t prefetch_window = effectivePrefetchWindowSize();
@@ -586,24 +615,6 @@ void ReaderExecutor::maybeTriggerPrefetch()
     next_size = clampToExtent(next_size);
     if (next_size == 0)
     {
-        pre_acquired_slot.reset();
-        return;
-    }
-
-    const size_t position_phys = position + data_start_offset;
-
-    /// Gap-keyed read-ahead: prefetch only when the cursor sits on a GAP. A
-    /// resident cursor is served straight from cache by the next `readNextWindow`
-    /// (fast, no worker handoff), so prefetching it is pure coordination overhead -
-    /// skip and release the reserved slot. This also keeps the invariant that no
-    /// prefetch is in flight at a resident cursor, so the resident fast-path never
-    /// races the worker over `live_buffer`.
-    if (!read_plan.covers(ByteRange{position_phys, next_size}))
-        planResidencyWindow(position_phys);
-    if (read_plan.residentAt(position_phys).handle)
-    {
-        LOG_TRACE(log, "Prefetch: cursor {} resident, next read serves it from cache", position);
-        ++stats.prefetch_skipped_resident;
         pre_acquired_slot.reset();
         return;
     }
