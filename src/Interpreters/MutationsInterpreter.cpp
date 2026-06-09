@@ -667,10 +667,6 @@ void MutationsInterpreter::prepare(bool dry_run)
     NameSet available_columns_set(available_columns.begin(), available_columns.end());
 
     NameSet updated_columns;
-    /// Columns whose on-disk values are recomputed by `MATERIALIZE COLUMN`. Unlike `updated_columns`
-    /// (populated from UPDATE/DELETE assignments) these are not validated as updatable, but their
-    /// data does change, so dependent skip indices, projections and statistics must be rebuilt.
-    NameSet materialized_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
     bool has_lightweight_delete_materialization = false;
     bool has_rewrite_parts = false;
@@ -1054,9 +1050,52 @@ void MutationsInterpreter::prepare(bool dry_run)
             stages.back().column_to_updated.emplace(column.name, materialized_column);
 
             /// The base column data is recomputed, so any skip index, projection or statistics
-            /// that depends on it must be rebuilt too — otherwise the unchanged derived files are
-            /// hardlinked and keep stale values.
-            materialized_columns.insert(column.name);
+            /// that reads it must be rebuilt too — otherwise the unchanged derived files would be
+            /// hardlinked and keep stale values. Rebuilding needs the object's input columns in the
+            /// mutation output, so we register them as dependencies here, before the dependency
+            /// expansion below splits columns into changed/unchanged stages. This mirrors how
+            /// `MATERIALIZE INDEX` and `MATERIALIZE PROJECTION` feed their inputs into the stream;
+            /// just marking the object for rebuild (without its inputs) would leave the rebuild
+            /// reading a block that lacks the other required columns.
+            for (const auto & index : indices_desc)
+            {
+                if (!source.hasSecondaryIndex(index.name, metadata_snapshot))
+                    continue;
+
+                const auto & index_cols = index.expression->getRequiredColumns();
+                if (materialized_column_required_by(index_cols))
+                {
+                    for (const auto & col : index_cols)
+                        dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
+                    materialized_indices.insert(index.name);
+                }
+            }
+
+            for (const auto & projection : projections_desc)
+            {
+                if (!source.hasProjection(projection.name))
+                    continue;
+
+                const auto & projection_cols = projection.required_columns;
+                if (materialized_column_required_by(projection_cols))
+                {
+                    for (const auto & col : projection_cols)
+                        dependencies.emplace(col, ColumnDependency::PROJECTION);
+                    materialized_projections.insert(projection.name);
+                }
+            }
+
+            for (const auto & column_desc : columns_desc)
+            {
+                if (column_desc.statistics.empty())
+                    continue;
+
+                if (materialized_column_required_by(Names{column_desc.name}))
+                {
+                    dependencies.emplace(column_desc.name, ColumnDependency::STATISTICS);
+                    materialized_statistics.insert(column_desc.name);
+                }
+            }
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
@@ -1493,8 +1532,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         bool changed = std::any_of(
             index_cols.begin(),
             index_cols.end(),
-            [&](const auto & col)
-            { return updated_columns.contains(col) || changed_columns.contains(col) || materialized_columns.contains(col); });
+            [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
 
         if (changed)
         {
@@ -1528,8 +1566,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         bool changed = std::any_of(
             projection_cols.begin(),
             projection_cols.end(),
-            [&](const auto & col)
-            { return updated_columns.contains(col) || changed_columns.contains(col) || materialized_columns.contains(col); });
+            [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
 
         if (changed)
             materialized_projections.insert(projection.name);
@@ -1540,8 +1577,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (column.statistics.empty())
             continue;
 
-        if (updated_columns.contains(column.name) || changed_columns.contains(column.name)
-            || materialized_columns.contains(column.name))
+        if (updated_columns.contains(column.name) || changed_columns.contains(column.name))
             materialized_statistics.insert(column.name);
     }
 

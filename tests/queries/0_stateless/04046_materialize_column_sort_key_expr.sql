@@ -87,3 +87,22 @@ ALTER TABLE t_mat_proj_rebuild MODIFY COLUMN c2 Int MATERIALIZED a * 100;
 ALTER TABLE t_mat_proj_rebuild MATERIALIZE COLUMN c2 SETTINGS mutations_sync = 2;
 SELECT a, c2 FROM t_mat_proj_rebuild ORDER BY a SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 DROP TABLE t_mat_proj_rebuild;
+
+-- Case 10: Skip index over a multi-column expression (a + c2). Materializing c2 must feed the
+-- sibling column `a` into the mutation stream so the index can be rebuilt; otherwise the rebuild
+-- would read a block that is missing `a`. We change the expression first so the recomputed values
+-- differ, then query for a value that only exists after materialization: with a stale (hardlinked)
+-- index it would be wrongly pruned.
+DROP TABLE IF EXISTS t_mat_index_multicol;
+CREATE TABLE t_mat_index_multicol
+(
+    a Int,
+    c2 Int MATERIALIZED a * 10,
+    INDEX idx_sum (a + c2) TYPE minmax GRANULARITY 1
+) ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 1;
+INSERT INTO t_mat_index_multicol (a) SELECT number FROM numbers(10);
+ALTER TABLE t_mat_index_multicol MODIFY COLUMN c2 Int MATERIALIZED a * 100;
+ALTER TABLE t_mat_index_multicol MATERIALIZE COLUMN c2 SETTINGS mutations_sync = 2;
+SELECT count() FROM t_mat_index_multicol WHERE (a + c2) = 505 SETTINGS force_data_skipping_indices = 'idx_sum';
+SELECT count() FROM t_mat_index_multicol WHERE (a + c2) = 55 SETTINGS force_data_skipping_indices = 'idx_sum';
+DROP TABLE t_mat_index_multicol;
