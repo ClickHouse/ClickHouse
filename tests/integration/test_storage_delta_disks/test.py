@@ -51,8 +51,8 @@ def get_spark(log_dir=None):
             "spark.sql.catalog.spark_catalog.warehouse",
             "/var/lib/clickhouse/user_files",
         )
-        .config("spark.driver.memory", "8g")
-        .config("spark.executor.memory", "8g")
+        .config("spark.driver.memory", "2g")
+        .config("spark.executor.memory", "2g")
         .master("local")
     )
 
@@ -286,10 +286,9 @@ def get_uuid_str():
 
 def get_disk_name(storage_type, use_delta_kernel, disk_suffix, with_cache=False):
     if storage_type == "s3":
-        base = f"disk_s3_{use_delta_kernel}{disk_suffix}"
         if with_cache:
             return f"disk_s3_{use_delta_kernel}_with_cache"
-        return base
+        return f"disk_s3_{use_delta_kernel}{disk_suffix}"
     elif storage_type == "azure":
         if with_cache:
             return "disk_azure_with_cache"
