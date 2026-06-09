@@ -34,6 +34,11 @@ public:
 private:
     void throwIfNeeded();
 
+    // Unlinks this allocation from the scheduler and waits until removal completes.
+    // Used both by the destructor and by the constructor when admission fails, so a throwing
+    // constructor never leaves a dangling pointer in the scheduler.
+    void detachFromQueue();
+
     // Interaction with the scheduler thread
     void killAllocation(const std::exception_ptr & reason) override;
     void increaseApproved(const IncreaseRequest & increase) override;

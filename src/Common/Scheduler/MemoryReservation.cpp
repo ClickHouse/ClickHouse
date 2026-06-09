@@ -53,17 +53,37 @@ MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, Reso
 
     if (reserved_size > 0)
     {
-        std::unique_lock lock(mutex);
-        auto admit_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::MemoryReservationAdmitMicroseconds);
-        cv.wait(lock, [this] { return kill_reason || fail_reason || actual_size <= allocated_size; });
-        // Flush deferred profile-event counters before potentially throwing,
-        // so failure metrics (e.g. MemoryReservationFailed) are not lost.
-        metrics.apply();
-        throwIfNeeded();
+        bool admitted = false;
+        {
+            std::unique_lock lock(mutex);
+            auto admit_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::MemoryReservationAdmitMicroseconds);
+            cv.wait(lock, [this] { return kill_reason || fail_reason || actual_size <= allocated_size; });
+            // Flush deferred profile-event counters before potentially throwing,
+            // so failure metrics (e.g. MemoryReservationFailed) are not lost.
+            metrics.apply();
+            admitted = !kill_reason && !fail_reason;
+        }
+
+        if (!admitted)
+        {
+            // `insertAllocation` above linked this object into the scheduler. Throwing straight
+            // from the constructor would skip `~MemoryReservation`, so `removeAllocation` would
+            // never run and the scheduler would keep a dangling pointer to a destroyed object
+            // (the base `~ResourceAllocation` only has debug-only checks). Unlink first, then
+            // report the failure.
+            detachFromQueue();
+            std::unique_lock lock(mutex);
+            throwIfNeeded();
+        }
     }
 }
 
 MemoryReservation::~MemoryReservation()
+{
+    detachFromQueue();
+}
+
+void MemoryReservation::detachFromQueue()
 {
     {
         std::unique_lock lock(mutex);
