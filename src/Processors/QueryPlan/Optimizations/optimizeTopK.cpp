@@ -11,7 +11,11 @@
 #include <Common/logger_useful.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <Functions/FunctionTopKFilter.h>
+
+namespace DB
+{
+FunctionOverloadResolverPtr createInternalFunctionTopKFilterResolver(TopKThresholdTrackerPtr threshold_tracker_);
+}
 
 namespace DB::QueryPlanOptimizations
 {
