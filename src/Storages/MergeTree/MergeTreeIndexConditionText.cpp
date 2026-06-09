@@ -1028,7 +1028,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     {
         /// Compile the pattern as `match` execution does, so an invalid regexp raises exception instead of being silently pruned.
         const auto & pattern = value_field.safeGet<String>();
-        Regexps::createRegexp</*like=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(pattern);
+        Regexps::createRegexp</*like=*/ false, /*similar_to=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(pattern);
 
         out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
         auto tokens_for_queries = regexpToTokensForQueries(pattern);
