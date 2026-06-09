@@ -1,14 +1,13 @@
--- Regression test for `Bad cast from type DB::ColumnLowCardinality to
--- DB::ColumnVector<char8_t>` in `StatisticsPartPruner::checkPartCanMatch`.
--- The CI report swallowed the exception in `MergeTreeDataSelectExecutor::filterPartsByStatistics`,
--- so plain result assertions cannot detect a regression: a still-buggy pruner
--- throws, the exception is caught, the part is kept, and `count()` returns the
--- same number. The check below uses `EXPLAIN indexes = 1` to assert the
--- statistics pruner actually ran and pruned the expected number of parts.
 SET allow_suspicious_low_cardinality_types = 1;
 SET allow_experimental_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 SET use_statistics_for_part_pruning = 1;
+-- Pin EXPLAIN-shape settings; `filterPartsByStatistics` swallows pruner exceptions in release builds,
+-- so the result assertions cannot prove the pruner ran. Match `03788_statistics_part_pruning.sql`.
+SET enable_analyzer = 1;
+SET parallel_replicas_local_plan = 1;
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS stid_1499_6033;
 
@@ -28,25 +27,14 @@ SETTINGS index_granularity = 8, allow_nullable_key = 1;
 INSERT INTO stid_1499_6033 SELECT number,     true,  number + 1   FROM numbers(8);
 INSERT INTO stid_1499_6033 SELECT number+100, false, number + 100 FROM numbers(8);
 
--- Original AST fuzzer crash shape: LowCardinality(Bool) key column compared
--- against a LowCardinality(Nullable(UInt8)) constant. With the bug, the runtime
--- type forwarded to `applyMonotonicFunctionsChainToRange` is the original
--- LowCardinality type while the cast wrapper was prepared against the
--- LC-stripped type, and `createUInt8ToBoolWrapper` throws `Bad cast`. The fix
--- strips LowCardinality to match the convention the chain was built with.
--- The Statistics index entry must appear and prune Part 2 (only Part 1 has
--- `b = true`, so 1/2 parts remain).
+-- LowCardinality(Bool) key column vs LowCardinality(Nullable(UInt8)) constant (original AST fuzzer crash shape).
 SELECT '-- LowCardinality(Bool) statistics pruning';
 WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE b = toLowCardinality(toNullable(true))) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
 SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE b = toLowCardinality(toNullable(true)))
     WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
 SELECT count() FROM stid_1499_6033 WHERE b = toLowCardinality(toNullable(true));
 
--- Sibling shape: LowCardinality(UInt8) key column compared against a
--- LowCardinality(Nullable(UInt8)) constant. Without the fix, the pruner would
--- throw `LowCardinality(UInt8) cannot be inside Nullable column. (ILLEGAL_COLUMN)`
--- via the same chain-vs-runtime-type mismatch path; with the fix, the chain
--- runs and prunes Part 2.
+-- Sibling shape: LowCardinality(UInt8) key column vs LowCardinality(Nullable(UInt8)) constant (ILLEGAL_COLUMN path).
 SELECT '-- LowCardinality(UInt8) statistics pruning';
 WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE v < toLowCardinality(toNullable(50))) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
 SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE v < toLowCardinality(toNullable(50)))
