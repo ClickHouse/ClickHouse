@@ -89,7 +89,8 @@ def test_disk_cache_survives_restart(start_cluster):
 
 def test_disk_cache_user_isolation_after_restart(start_cluster):
     setup_table()
-    node.query("GRANT SELECT ON default.t TO other")
+    # `other` is granted `SELECT ON default.t` via `configs/users.xml` (it lives in the readonly
+    # `users.xml` storage and therefore cannot be granted via SQL).
 
     # `default` writes a per-user (non-shared) entry to the disk cache.
     node.query(

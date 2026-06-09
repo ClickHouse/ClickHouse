@@ -25,6 +25,11 @@
             </networks>
             <profile>default</profile>
             <quota>default</quota>
+            <!-- `other` is defined in the readonly `users.xml` storage, so it cannot be granted via SQL.
+                 Grant the privilege needed to run the test query here instead. -->
+            <grants>
+                <query>GRANT SELECT ON default.t</query>
+            </grants>
         </other>
     </users>
 
