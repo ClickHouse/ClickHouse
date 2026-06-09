@@ -79,8 +79,9 @@ struct ZeroTransform
 ///
 /// `Transform::execute` clamps an out-of-range result to a representable Date. For example,
 /// rounding a pre-epoch Date32/DateTime64 down with toMonday/toStartOfMonth/toStartOfYear gives a
-/// day number before 1970-01-01, which is clamped to 1970-01-01 (day 0). That clamp is correct for
-/// the value the function returns, but it is wrong for monotonicity: it collapses every pre-epoch
+/// day number before 1970-01-01, which is clamped to 1970-01-01 (day 0); a day number after
+/// 2149-06-06 is clamped to 2149-06-06 (day 0xFFFF). That clamp is correct for the value the
+/// function returns, but it is wrong for monotonicity: it collapses every out-of-range
 /// week/month/year to the same factor, so a function that actually wraps within those periods
 /// (toDayOfWeek, toMonth, toDayOfMonth, ...) would be reported as monotonic and corrupt
 /// index/partition pruning.
@@ -237,7 +238,7 @@ struct ToMondayImpl
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toFirstDayNumOfWeek(t);
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -246,7 +247,7 @@ struct ToMondayImpl
     static UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d));
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -270,7 +271,7 @@ struct ToStartOfMonthImpl
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toFirstDayNumOfMonth(time_zone.toDayNum(t));
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -279,7 +280,7 @@ struct ToStartOfMonthImpl
     static UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toFirstDayNumOfMonth(ExtendedDayNum(d));
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -304,7 +305,7 @@ struct ToLastDayOfMonthImpl
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toLastDayNumOfMonth(time_zone.toDayNum(t));
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -313,7 +314,7 @@ struct ToLastDayOfMonthImpl
     static UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toLastDayNumOfMonth(ExtendedDayNum(d));
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -337,7 +338,7 @@ struct ToStartOfQuarterImpl
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toFirstDayNumOfQuarter(time_zone.toDayNum(t));
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -346,7 +347,7 @@ struct ToStartOfQuarterImpl
     static UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(d));
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -370,7 +371,7 @@ struct ToStartOfYearImpl
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toFirstDayNumOfYear(time_zone.toDayNum(t));
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -379,7 +380,7 @@ struct ToStartOfYearImpl
     static UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toFirstDayNumOfYear(ExtendedDayNum(d));
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -437,17 +438,17 @@ struct ToStartOfWeekImpl
     static UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
@@ -474,7 +475,7 @@ struct ToLastDayOfWeekImpl
     static UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
@@ -483,7 +484,7 @@ struct ToLastDayOfWeekImpl
     static UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
