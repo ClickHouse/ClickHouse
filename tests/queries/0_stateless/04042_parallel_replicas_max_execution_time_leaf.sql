@@ -1,5 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-old-analyzer
 -- Tag no-fasttest: parallel replicas require a cluster that is not configured in the fast test.
+-- Tag no-old-analyzer: parallel reading from replicas is only built on the analyzer code path, so
+-- 'max_execution_time_leaf' does not apply with the old analyzer (the query runs as a plain local read).
 
 DROP TABLE IF EXISTS test_max_execution_time_leaf SYNC;
 CREATE TABLE test_max_execution_time_leaf
@@ -15,13 +17,13 @@ INSERT INTO test_max_execution_time_leaf SELECT number FROM numbers(1000);
 
 SET allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
 SET use_query_cache = false;
--- Disable the local plan so that all reading happens on the (remote) leaf replicas, which is where
--- 'max_execution_time_leaf' applies. With a local plan the initiator reads under the query's own context and
--- is not bounded by the leaf timeout, which would make the leaf timeout non-deterministic for this test.
-SET parallel_replicas_local_plan = 0;
 -- Disable the automatic parallel replicas path so the explicit settings above are honoured (it would otherwise
--- override the cluster and force a local plan).
+-- override the cluster).
 SET automatic_parallel_replicas_mode = 0;
+
+-- Note: 'parallel_replicas_local_plan' is intentionally left at its default (1). When 'max_execution_time_leaf'
+-- is set, the local plan is disabled automatically (the local replica shares the initiator's query status and
+-- cannot be bounded by the leaf timeout separately), so the leaf timeout is effective for the default path too.
 
 -- 'sleepEachRow' with 'max_block_size = 1' makes every replica spend a deterministic amount of wall-clock time while
 -- reading, so the timeout fires reliably regardless of how fast the hardware is. The work is spread across replicas,
