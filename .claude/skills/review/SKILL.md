@@ -138,6 +138,8 @@ Use these as supporting checks for ClickHouse-specific invariants. They are not 
   All data deletion events (files, parts, metadata, ZooKeeper/Keeper entries, etc.) must be logged at an appropriate level.
 - **Serialization versioning**
   Any format (columns, aggregates, protocol, settings serialization, replication metadata) must be versioned. Check upgrade/downgrade resilience and the impact on existing clusters.
+- **Native format spec sync**
+  If the PR changes the `Native` format — its wire/serialization format, type encodings (e.g. `LowCardinality`, `Array`, `Map`, `Variant`, `Dynamic`, `JSON`), the block/column structure, the compression frame, `NativeReader`/`NativeWriter`, or the user-facing doc `docs/en/interfaces/formats/Native.md` — verify that the official specification `docs/en/interfaces/specs/NativeFormat.md` is updated to match in the same PR. The spec is the single source of truth for downstream client implementers; an unupdated spec that no longer matches the implementation is a finding.
 - **Core-area scrutiny**
   For changes in query execution, storage engines, replication, Keeper/coordination, system tables, and MergeTree internals: read the full modified file (not just the diff context); verify invariants hold under concurrent background operations (merges, mutations, replication); check all error paths including those not touched by the diff; and confirm the change is consistent with symmetric subsystems — e.g. if fixing `ReplicatedMergeTree`, check `SharedMergeTree` and partition-level variants for the same issue.
 - **Test coverage**
