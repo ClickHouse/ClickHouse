@@ -103,11 +103,6 @@ public:
 
     void onBuildPhaseFinish() override;
 
-    void setEnableLazyColumnsIndexing(bool value) override
-    {
-        std::ranges::for_each(hash_joins, [value](auto & hash_join) { hash_join->data->setEnableLazyColumnsIndexing(value); });
-    }
-
     struct InternalHashJoin
     {
         std::mutex mutex;
