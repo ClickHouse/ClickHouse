@@ -170,10 +170,4 @@ void KeeperLogStore::getKeeperLogInfo(KeeperLogInfo & log_info) const
     changelog.getKeeperLogInfo(log_info);
 }
 
-std::vector<KeeperChangelogStatus> KeeperLogStore::getChangelogsStatus() const
-{
-    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
-    return changelog.getChangelogsStatus();
-}
-
 }

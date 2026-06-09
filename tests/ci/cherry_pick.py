@@ -15,10 +15,8 @@ A plan:
             stage, if mergable) and create backport-PRs
             - If successful, set pr-backported label on the PR
 
-        - for version-specific labels (e.g. v25.12-must-backport):
-            - the label marks the OLDEST release the PR must reach. Backport to
-            that release AND to every newer active release branch, then the same
-            check, cherry-pick, backport, pr-backported
+        - for version-specific labels:
+            - the same, check, cherry-pick, backport, pr-backported
 
 Cherry-pick stage:
     - From time to time the cherry-pick fails, if it was done manually. In the
@@ -39,7 +37,6 @@ from typing import Iterable, List, Optional
 from github.GithubException import GithubException
 
 from cache_utils import GitHubCache
-from cherry_pick_branches import select_backport_branches
 from ci_buddy import CIBuddy
 from ci_utils import Shell
 from env_helper import (
@@ -788,43 +785,82 @@ class BackportPRs:
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
 
-        # Decide the target release branches (pure logic, unit-tested in
-        # `test_cherry_pick_branches.py`). A version-specific label
-        # (`vX.Y-must-backport`) marks the OLDEST release the PR must reach, so
-        # the PR is backported to that release and every newer active release
-        # branch; the lowest such label wins. `skipped` are rolling-out branches
-        # excluded for a general backport that no version-specific label covers.
-        rolling_out = set(self._rolling_out_branches())
-        branch_names, skipped = select_backport_branches(
-            pr_labels,
-            self.release_branches,
-            rolling_out,
-            general_backport_labels={Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_FORCE}
-            | Labels.AUTO_BACKPORT,
-            force_backport_label=Labels.MUST_BACKPORT_FORCE,
+        is_force_backport = Labels.MUST_BACKPORT_FORCE in pr_labels
+        is_general_backport = (
+            is_force_backport
+            or Labels.MUST_BACKPORT in pr_labels
+            or bool(Labels.AUTO_BACKPORT & set(pr_labels))
         )
-
-        if skipped:
-            logging.info(
-                "PR #%s: skipping rolling-out release branches for general "
-                "backport: %s",
-                pr.number,
-                ", ".join(skipped),
-            )
-            for br in skipped:
-                self._close_prs_for_rolling_out_branch(pr, br)
-
-        if not branch_names:
-            logging.info(
-                "PR #%s: all candidate release branches are rolling-out, "
-                "skipping backport",
-                pr.number,
-            )
-            return
-
-        branches = [
-            ReleaseBranch(br, pr, self.repo) for br in branch_names
-        ]  # type: List[ReleaseBranch]
+        if is_general_backport:
+            if is_force_backport:
+                # pr-must-backport-force: backport to all release branches,
+                # ignoring the rolling-out restriction entirely.
+                logging.info(
+                    "PR #%s: label %r present, ignoring rolling-out branches",
+                    pr.number,
+                    Labels.MUST_BACKPORT_FORCE,
+                )
+                branches = [
+                    ReleaseBranch(br, pr, self.repo) for br in self.release_branches
+                ]  # type: List[ReleaseBranch]
+            else:
+                # For general backports (pr-must-backport / critical bugfix), skip
+                # release branches that are currently rolling out, unless the PR
+                # carries an explicit version-specific label for that branch.
+                rolling_out = set(self._rolling_out_branches())
+                # Build a per-branch version-specific label so we can honour explicit
+                # overrides (e.g. the PR has both pr-must-backport AND
+                # v25.10-must-backport: the 25.10 branch must be included even if it
+                # is marked rolling-out).
+                branch_specific_label = {
+                    branch: f"v{branch.replace('release/', '')}-must-backport"
+                    for branch in self.release_branches
+                }
+                skipped = [
+                    br
+                    for br in self.release_branches
+                    if br in rolling_out and branch_specific_label[br] not in pr_labels
+                ]
+                if skipped:
+                    logging.info(
+                        "PR #%s: skipping rolling-out release branches for general "
+                        "backport: %s",
+                        pr.number,
+                        ", ".join(skipped),
+                    )
+                    for br in skipped:
+                        self._close_prs_for_rolling_out_branch(pr, br)
+                branches = [
+                    ReleaseBranch(br, pr, self.repo)
+                    for br in self.release_branches
+                    if br not in rolling_out or branch_specific_label[br] in pr_labels
+                ]
+                if not branches:
+                    logging.info(
+                        "PR #%s: all release branches are rolling-out, skipping backport",
+                        pr.number,
+                    )
+                    return
+        else:
+            branches = [
+                ReleaseBranch(
+                    (
+                        br
+                        if self._repo_name == "ClickHouse/ClickHouse"
+                        else f"release/{br}"
+                    ),
+                    pr,
+                    self.repo,
+                )
+                for br in [
+                    label.split("-", 1)[0][1:]  # v21.8-must-backport
+                    for label in pr_labels
+                    if label in self.labels_to_backport
+                ]
+            ]
+        assert (
+            branches
+        ), f"Unable to determine branches for PR {pr.html_url}, check its labels"
 
         logging.info(
             "  PR #%s is supposed to be backported to %s",

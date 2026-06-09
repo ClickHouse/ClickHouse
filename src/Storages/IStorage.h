@@ -126,9 +126,6 @@ public:
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
 
-    /// Returns true if the storage supports `SELECT ... FROM t STREAM` continuous reads.
-    virtual bool supportsStreaming() const { return false; }
-
     /// Returns true if the storage supports insert queries with the PARTITION BY section.
     virtual bool supportsPartitionBy() const { return false; }
 
