@@ -69,7 +69,7 @@ template <typename T>
 std::string bin(const T & value, size_t bits = sizeof(T)*8)
 {
     static const uint8_t MAX_BITS = sizeof(T)*8;
-    assert(bits <= MAX_BITS);
+    chassert(bits <= MAX_BITS);
 
     return std::bitset<sizeof(T) * 8>(static_cast<uint64_t>(value))
             .to_string().substr(MAX_BITS - bits, bits);
@@ -116,7 +116,7 @@ DataTypePtr makeDataType()
 
 #undef MAKE_DATA_TYPE
 
-    assert(false && "unknown datatype");
+    chassert(false && "unknown datatype");
     return nullptr;
 }
 
@@ -263,7 +263,7 @@ template <typename ContainerLeft, typename ContainerRight>
             return EqualByteContainersAs<UInt64>(left, right);
             break;
         default:
-            assert(false && "Invalid element_size");
+            chassert(false && "Invalid element_size");
             return ::testing::AssertionFailure() << "Invalid element_size: " << element_size;
     }
 }
@@ -294,7 +294,7 @@ struct CodecTestSequence
 
     CodecTestSequence & append(const CodecTestSequence & other)
     {
-        assert(data_type->equals(*other.data_type));
+        chassert(data_type->equals(*other.data_type));
 
         serialized_data.insert(serialized_data.end(), other.serialized_data.begin(), other.serialized_data.end());
         if (!name.empty())
@@ -467,7 +467,7 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
 
     timer.start();
 
-    assert(source_data.data() != nullptr); // Codec assumes that source buffer is not null.
+    chassert(source_data.data() != nullptr); // Codec assumes that source buffer is not null.
     const UInt32 encoded_size = codec.compress(
         source_data.data(), static_cast<UInt32>(source_data.size()), encoded.data());
     timer.report("encoding");
@@ -752,7 +752,7 @@ auto RandomishGenerator = [](auto i)
 {
     using T = decltype(i);
     double sin_value = sin(static_cast<double>(i * i)) * static_cast<double>(i);
-    if (sin_value < std::numeric_limits<T>::lowest() || sin_value > static_cast<double>(std::numeric_limits<T>::max()))
+    if (sin_value < static_cast<double>(std::numeric_limits<T>::lowest()) || sin_value > static_cast<double>(std::numeric_limits<T>::max()))
         return T{};
     return T(sin_value);
 };

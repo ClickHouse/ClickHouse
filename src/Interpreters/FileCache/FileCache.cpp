@@ -46,6 +46,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheLoadMetadataMicroseconds;
     extern const Event FilesystemCacheReserveMicroseconds;
     extern const Event FilesystemCacheReserveAttempts;
+    extern const Event FilesystemCacheFailedReserveAttempts;
     extern const Event FilesystemCacheGetOrSetMicroseconds;
     extern const Event FilesystemCacheGetMicroseconds;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadRun;
@@ -53,6 +54,8 @@ namespace ProfileEvents
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
     extern const Event FilesystemCacheBackgroundEvictedFileSegments;
     extern const Event FilesystemCacheBackgroundEvictedBytes;
+    extern const Event FilesystemCacheEvictedFileSegments;
+    extern const Event FilesystemCacheEvictedBytes;
     extern const Event FilesystemCacheCheckCorrectness;
     extern const Event FilesystemCacheCheckCorrectnessMicroseconds;
 }
@@ -77,6 +80,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char file_cache_stall_free_space_ratio_keeping_thread[];
+    extern const char file_cache_pause_before_do_eviction[];
 }
 
 namespace FileCacheSetting
@@ -218,11 +222,13 @@ std::string FileCacheReserveStat::Stat::toString() const
     wb << "non-releasable count: " << non_releasable_count << ", ";
     wb << "evicting count: " << evicting_count << ", ";
     wb << "moving count: " << moving_count << ", ";
-    wb << "invalidated count: " << invalidated_count;
+    wb << "invalidated count: " << invalidated_count << ", ";
+    wb << "candidates iteration steps: " << candidates_iteration_steps << ", ";
+    wb << "clients iterated: " << clients_iterated;
     return wb.str();
 }
 
-double normalizeProbability(double probability)
+static double normalizeProbability(double probability)
 {
     if (probability < 0.0)
         probability = .0;
@@ -274,9 +280,10 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     {
         case FileCachePolicy::LRU:
         {
-            creator_function = [](size_t max_size, size_t max_elements, size_t /*size_ratio*/, size_t /*overcommit_eviction_evict_step*/, String description) -> IFileCachePriorityPtr
+            creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, size_t /*size_ratio*/, size_t /*overcommit_eviction_evict_step*/, String description) -> IFileCachePriorityPtr
             {
                 return std::make_unique<LRUFileCachePriority>(
+                    queue_type,
                     max_size,
                     max_elements,
                     description);
@@ -285,9 +292,10 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         }
         case FileCachePolicy::SLRU:
         {
-            creator_function = [](size_t max_size, size_t max_elements, double size_ratio, size_t /*overcommit_eviction_evict_step*/, String description) -> IFileCachePriorityPtr
+            creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, double size_ratio, size_t /*overcommit_eviction_evict_step*/, String description) -> IFileCachePriorityPtr
             {
                 return std::make_unique<SLRUFileCachePriority>(
+                    queue_type,
                     max_size,
                     max_elements,
                     size_ratio,
@@ -298,9 +306,10 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 #if ENABLE_DISTRIBUTED_CACHE
         case FileCachePolicy::LRU_OVERCOMMIT:
         {
-            creator_function = [](size_t max_size, size_t max_elements, double /*size_ratio*/, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
+            creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, double /*size_ratio*/, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
             {
                 return std::make_unique<OvercommitFileCachePriority<LRUFileCachePriority>>(
+                    queue_type,
                     overcommit_eviction_evict_step,
                     max_size,
                     max_elements,
@@ -310,9 +319,10 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         }
         case FileCachePolicy::SLRU_OVERCOMMIT:
         {
-            creator_function = [](size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
+            creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
             {
                 return std::make_unique<OvercommitFileCachePriority<SLRUFileCachePriority>>(
+                    queue_type,
                     overcommit_eviction_evict_step,
                     max_size,
                     max_elements,
@@ -330,6 +340,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     if (use_split_cache)
     {
         main_priority = std::make_unique<SplitFileCachePriority>(
+            IFileCachePriority::QueueType::Main,
             creator_function,
             settings[FileCacheSetting::max_size],
             settings[FileCacheSetting::max_elements],
@@ -341,6 +352,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     else
     {
         main_priority = creator_function(
+            IFileCachePriority::QueueType::Main,
             settings[FileCacheSetting::max_size],
             settings[FileCacheSetting::max_elements],
             settings[FileCacheSetting::slru_size_ratio],
@@ -696,13 +708,13 @@ void FileCache::fillHolesWithEmptyFileSegments(
     ///
     /// For each such hole create a file_segment_metadata with file segment state EMPTY.
 
-    assert(!file_segments.empty());
+    chassert(!file_segments.empty());
 
     auto it = file_segments.begin();
     size_t processed_count = 0;
     auto segment_range = (*it)->range();
 
-    size_t current_pos;
+    size_t current_pos = 0;
     if (segment_range.left < range.left)
     {
         ///    [_______     -- requested range
@@ -734,7 +746,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
             continue;
         }
 
-        assert(current_pos < segment_range.left);
+        chassert(current_pos < segment_range.left);
 
         auto hole_size = segment_range.left - current_pos;
 
@@ -1152,9 +1164,12 @@ bool FileCache::tryReserve(
 
     LOG_TEST(log, "Trying to reserve space ({} bytes) for {}:{}", size, file_segment.key(), file_segment.offset());
 
-    return doTryReserve(
+    const bool success = doTryReserve(
         file_segment, size, reserve_stat, origin_info, lock_wait_timeout_milliseconds,
         failure_reason);
+    if (!success)
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailedReserveAttempts);
+    return success;
 }
 
 bool FileCache::doTryReserve(
@@ -1248,6 +1263,8 @@ bool FileCache::doTryReserve(
     EvictionCandidates eviction_candidates(main_priority->getOnEvictCallback());
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
 
+    FailPointInjection::pauseFailPoint(FailPoints::file_cache_pause_before_do_eviction);
+
     /// Collect candidates for eviction and
     /// evict them from in-memory state and from filesystem.
     if (!doEviction(
@@ -1322,9 +1339,9 @@ bool FileCache::doTryReserve(
     file_segment.reserved_size += size;
     chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
 
-    if (!file_segment.getKeyMetadata()->createBaseDirectory())
+    if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
     {
-        failure_reason = "not enough space on device";
+        failure_reason = "Failed to create base directory for key, error: " + ec.message();
         return false;
     }
 
@@ -1970,7 +1987,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
     for (fs::directory_iterator offset_it{key_directory}; offset_it != fs::directory_iterator(); ++offset_it)
     {
         auto offset_with_suffix = offset_it->path().filename().string();
-        bool parsed;
+        bool parsed = false;
         UInt64 offset = 0;
 
         auto delim_pos = offset_with_suffix.find('_');
@@ -2113,6 +2130,10 @@ FileCache::~FileCache()
 
 void FileCache::onSegmentEvicted(const FileSegment & segment, const String & user_id) const
 {
+    /// Always-on eviction accounting (ProfileEvents).
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment.getReservedSize());
+
     if (!expose_eviction_metrics.load(std::memory_order_relaxed))
         return;
 
@@ -2645,13 +2666,13 @@ bool FileCache::doDynamicResizeImpl(
 }
 
 FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
-    const String & query_id, const ReadSettings & read_settings)
+    const String & query_id, const FilesystemCacheSettings & cache_settings)
 {
-    if (!query_limit || read_settings.filesystem_cache_max_download_size == 0)
+    if (!query_limit || cache_settings.max_download_size_per_query == 0)
         return {};
 
     auto lock = cache_guard.writeLock();
-    auto context = query_limit->getOrSetQueryContext(query_id, read_settings, lock);
+    auto context = query_limit->getOrSetQueryContext(query_id, cache_settings, lock);
     return std::make_unique<QueryContextHolder>(query_id, this, query_limit.get(), std::move(context));
 }
 

@@ -180,7 +180,7 @@
             position: sticky;
             top: 0;
             z-index: 1;
-            height: 100vh;
+            height: calc(100vh - var(--terminal-height, 0px));
             align-self: start;
             background: var(--table-header-color);
             border-right: 1px solid var(--border-color);
@@ -191,6 +191,20 @@
             min-height: 0;
             overflow-x: visible;
             overflow-y: clip;
+        }
+
+        /* When the databases list is expanded, lay out the bottom icons (Web
+           Terminal, GitHub) side by side instead of stacked, so the list of
+           databases/tables gets more vertical space. */
+        #menu.databases-opened
+        {
+            grid-template-columns: auto 1fr;
+            grid-template-areas: "databases-icon databases-icon" "contents contents" "terminal-icon github-icon";
+        }
+
+        #menu.databases-opened #github-icon
+        {
+            justify-self: start;
         }
 
         #main
@@ -2695,11 +2709,13 @@ function toggleDatabases() {
             if (ok !== false) {
                 databases_toggle.dataset['opened'] = 1;
                 menu_elem.style.cursor = 'w-resize';
+                menu_elem.classList.add('databases-opened');
             }
         });
     } else {
         delete databases_toggle.dataset['opened'];
         menu_elem.style.cursor = 'e-resize';
+        menu_elem.classList.remove('databases-opened');
         let databases_elem = document.getElementById('databases');
         while (databases_elem.firstChild) databases_elem.removeChild(databases_elem.firstChild);
     }
@@ -3642,6 +3658,23 @@ function appendTextareaResizer() {
     queryDiv.appendChild(resizer);
 }
 
+function resizeQueryAreaIfSlightlyOverflowing()
+{
+    const textarea = document.getElementById('query');
+    const current_height = textarea.offsetHeight;
+    if (!current_height) { return; }
+
+    const style = window.getComputedStyle(textarea);
+    const vertical_border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+    const required_height = textarea.scrollHeight + vertical_border;
+    const max_auto_resize_height = current_height * 1.3;
+
+    if (required_height > current_height && required_height <= max_auto_resize_height)
+    {
+        textarea.style.height = `${required_height}px`;
+    }
+}
+
 let lexer_module;
 async function loadLexer() {
     // base64 -w0 build/src/Parsers/Lexer.wasm
@@ -3708,6 +3741,9 @@ async function tokenize(query) {
     return result;
 }
 
+/// Regression coverage for this function lives in
+/// `src/Parsers/tests/gtest_play_get_query_under_cursor.cpp` (a port of the token-walking
+/// algorithm on top of the same `DB::Lexer`). Keep the two in sync when changing the logic.
 async function getQueryUnderCursor() {
     const all_queries = query_area.value;
 
@@ -3720,22 +3756,50 @@ async function getQueryUnderCursor() {
     const cursor_position = query_area.selectionStart;
     let current_query_start = 0;
     let current_offset = 0;
+    /// Track the most recently completed non-empty query so that if the cursor
+    /// is past the last `;` (with only whitespace/comments after it, or only
+    /// further delimiter-only segments like `;;`), we run that query instead
+    /// of returning an empty string or a bare delimiter.
+    let last_query_start = -1;
+    let last_query_end = -1;
 
     for (const elem of tokens) {
         if (current_query_start == current_offset && !elem.significant) {
             current_query_start += elem.token.length;
         }
+        const offset_before_token = current_offset;
         current_offset += elem.token.length;
         if (elem.token == ';') {
-            if (current_offset >= cursor_position) {
+            /// If `current_query_start == offset_before_token`, the segment up
+            /// to this `;` has no significant content (only whitespace/comments
+            /// that the leading-skip above has consumed, or nothing at all).
+            /// Treat such a delimiter-only segment as empty: do not run it and
+            /// do not record it as the last completed query.
+            const has_content = current_query_start < offset_before_token;
+            if (has_content && current_offset >= cursor_position) {
                 query_area.setSelectionRange(current_query_start, current_offset);
                 query_area.focus();
                 return all_queries.substring(current_query_start, current_offset);
-            } else {
-                current_query_start = current_offset;
             }
+            if (has_content) {
+                last_query_start = current_query_start;
+                last_query_end = current_offset;
+            }
+            current_query_start = current_offset;
         }
 
+    }
+
+    /// The cursor is past the last `;`. If the tail has no significant content
+    /// (only whitespace/comments, which the leading-skip loop above will have
+    /// advanced `current_query_start` past until it equals `current_offset`),
+    /// fall back to the query that ended at the last `;` rather than returning
+    /// an empty string. This is what handles the "single query ending in `;`
+    /// with the cursor placed after it" case.
+    if (current_query_start === current_offset && current_offset === all_queries.length && last_query_end >= 0) {
+        query_area.setSelectionRange(last_query_start, last_query_end);
+        query_area.focus();
+        return all_queries.substring(last_query_start, last_query_end);
     }
 
     /// Cursor is in the last query (no trailing semicolon).
@@ -4254,6 +4318,8 @@ async function updateQueryParams()
 
 query_area.addEventListener('input', () =>
 {
+    resizeQueryAreaIfSlightlyOverflowing();
+
     /// Run the update synchronously instead of with a setTimeout: the heavy work
     /// (WASM tokenize, building backdrop HTML) is fast, and the await chain inside
     /// `updateQueryParams` runs in microtasks — i.e. it finishes before the browser
@@ -4299,6 +4365,7 @@ if (theme) {
 /// If run_immediately is set, run the query after params are ready.
 if (query_area.value)
 {
+    resizeQueryAreaIfSlightlyOverflowing();
     updateQueryParams().then(() =>
     {
         const urlParamValues = {};
@@ -4482,30 +4549,58 @@ document.getElementById('download-button').addEventListener('click', async funct
     let terminalIframe = null;
     let terminalActive = false;
     let terminalHiddenByResize = false;
+    /// Origin the iframe was loaded from, used as the target origin for `postMessage`.
+    /// Captured once when the iframe is created so it stays in sync with `iframe.src`
+    /// even if the user later edits the server URL field.
+    let terminalOrigin = null;
     const MIN_TERMINAL_HEIGHT = 20;
 
-    /// Hide the terminal icon if /webterminal is not available (gated by allow_experimental_webterminal)
-    terminalIcon.style.display = 'none';
-    fetch('/webterminal', {method: 'HEAD'}).then(function(resp) {
-        if (resp.ok) terminalIcon.style.display = '';
-    }).catch(function() {});
-
+    /// The `/webterminal` endpoint lives on the ClickHouse server addressed by `url_elem.value`,
+    /// which may differ from the page's own origin when the page is opened locally with `?url=...`.
+    /// Resolve both the availability probe and the iframe `src` against the same configured server URL.
+    /// Returns `null` if the configured URL cannot be parsed, so the caller can treat the terminal
+    /// as unavailable instead of letting the exception abort `play.html` initialization.
     function getTerminalURL() {
-        return '/webterminal';
+        try {
+            return new URL('/webterminal', url_elem.value).href;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /// Hide the terminal icon if /webterminal is not available (gated by allow_experimental_webterminal).
+    terminalIcon.style.display = 'none';
+    const terminalProbeURL = getTerminalURL();
+    if (terminalProbeURL) {
+        fetch(terminalProbeURL, {method: 'HEAD'}).then(function(resp) {
+            if (resp.ok) terminalIcon.style.display = '';
+        }).catch(function() {});
     }
 
     function sendCredentialsToTerminal() {
-        if (terminalIframe && terminalIframe.contentWindow) {
+        if (terminalIframe && terminalIframe.contentWindow && terminalOrigin) {
             terminalIframe.contentWindow.postMessage({
                 type: 'webterminal-credentials',
                 user: user_elem.value,
                 password: password_elem.value || ''
-            }, window.location.origin);
+            }, terminalOrigin);
         }
+    }
+
+    /// Keep the `--terminal-height` CSS variable in sync so the side menu can
+    /// size itself as `100vh - terminal_height` and its bottom icons stay visible.
+    function updateTerminalHeightVar() {
+        const h = terminalActive ? terminalPanel.offsetHeight : 0;
+        document.documentElement.style.setProperty('--terminal-height', h + 'px');
     }
 
     function activateTerminal() {
         if (terminalActive) return;
+        /// Bail out before mutating any state if the configured server URL is currently invalid.
+        /// The icon is only shown when the initial probe succeeded, so this can happen only if the
+        /// user edited `url_elem.value` to something unparsable between page load and this click.
+        const terminalSrc = terminalIframe ? null : getTerminalURL();
+        if (!terminalIframe && !terminalSrc) return;
         terminalActive = true;
         terminalIcon.classList.add('active');
         terminalPanel.classList.add('active');
@@ -4514,17 +4609,19 @@ document.getElementById('download-button').addEventListener('click', async funct
             terminalPanel.style.height = Math.round(window.innerHeight * 0.4) + 'px';
             terminalIframe = document.createElement('iframe');
             terminalIframe.id = 'terminal-iframe';
-            terminalIframe.src = getTerminalURL();
+            terminalOrigin = new URL(terminalSrc).origin;
+            terminalIframe.src = terminalSrc;
             terminalIframe.addEventListener('load', sendCredentialsToTerminal);
             terminalPanel.insertBefore(terminalIframe, terminalResizer);
         } else if (terminalHiddenByResize) {
             terminalPanel.style.height = Math.round(window.innerHeight * 0.4) + 'px';
         }
         terminalHiddenByResize = false;
+        updateTerminalHeightVar();
 
         // Tell the iframe to refit the terminal after becoming visible again, and focus it
-        if (terminalIframe && terminalIframe.contentWindow) {
-            terminalIframe.contentWindow.postMessage({type: 'webterminal-refit'}, window.location.origin);
+        if (terminalIframe && terminalIframe.contentWindow && terminalOrigin) {
+            terminalIframe.contentWindow.postMessage({type: 'webterminal-refit'}, terminalOrigin);
             terminalIframe.focus();
         }
     }
@@ -4535,6 +4632,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         terminalActive = false;
         terminalIcon.classList.remove('active');
         terminalPanel.classList.remove('active');
+        updateTerminalHeightVar();
     }
 
     /// Destroy the terminal: remove the iframe and hide the panel.
@@ -4543,6 +4641,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         if (terminalIframe) {
             terminalIframe.remove();
             terminalIframe = null;
+            terminalOrigin = null;
         }
     }
 
@@ -4606,6 +4705,7 @@ document.getElementById('download-button').addEventListener('click', async funct
             return;
         }
         terminalPanel.style.height = newHeight + 'px';
+        updateTerminalHeightVar();
     }
 
     function termStop() {

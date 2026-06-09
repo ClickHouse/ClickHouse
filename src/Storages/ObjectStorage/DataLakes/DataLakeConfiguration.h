@@ -91,6 +91,9 @@ public:
     StorageObjectStorageConfiguration::Path getRawPath() const override
     {
         auto result = BaseStorageConfiguration::getRawPath().path;
+        if (result.empty())
+            return StorageObjectStorageConfiguration::Path("");
+
         return StorageObjectStorageConfiguration::Path(result.ends_with('/') ? result : result + "/");
     }
 
@@ -146,13 +149,14 @@ public:
 
     void mutate(const MutationCommands & commands,
         ContextPtr context,
+        StoragePtr storage_ptr,
         const StorageID & storage_id,
         StorageMetadataPtr metadata_snapshot,
         std::shared_ptr<DataLake::ICatalog> catalog,
         const std::optional<FormatSettings> & format_settings) override
     {
         assertInitialized();
-        current_metadata->mutate(commands, shared_from_this(), context, storage_id, metadata_snapshot, catalog, format_settings);
+        current_metadata->mutate(commands, storage_ptr, context, storage_id, metadata_snapshot, catalog, format_settings);
     }
 
     void checkMutationIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const MutationCommands & commands) override
@@ -167,11 +171,15 @@ public:
         current_metadata->checkAlterIsPossible(commands);
     }
 
-    void alter(ObjectStoragePtr object_storage, const AlterCommands & params, ContextPtr context) override
+    void alter(
+        ObjectStoragePtr object_storage,
+        const AlterCommands & params,
+        ContextPtr context,
+        const StorageID & storage_id,
+        std::shared_ptr<DataLake::ICatalog> catalog) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        current_metadata->alter(params, context);
-
+        current_metadata->alter(params, context, storage_id, catalog);
     }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, StorageObjectStorageConfiguration::CredentialsConfigurationCallback refresh_credentials_callback) override

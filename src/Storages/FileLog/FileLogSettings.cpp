@@ -42,10 +42,7 @@ FileLogSettings::FileLogSettings(const FileLogSettings & settings) : impl(std::m
 {
 }
 
-FileLogSettings::FileLogSettings(FileLogSettings && settings) noexcept
-    : impl(std::make_unique<FileLogSettingsImpl>(std::move(*settings.impl)))
-{
-}
+FileLogSettings::FileLogSettings(FileLogSettings && settings) noexcept = default;
 
 FileLogSettings::~FileLogSettings() = default;
 
