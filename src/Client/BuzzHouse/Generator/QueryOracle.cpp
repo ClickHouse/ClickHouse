@@ -1192,20 +1192,20 @@ void QueryOracle::dumpOracleIntermediateSteps(
             if (t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname))
             {
                 SQLQuery next2;
-                const String partition_id = fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname);
+                const String part_name = fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname);
 
-                /// ALTER TABLE t DETACH PARTITION partition_id
+                /// ALTER TABLE t DETACH PART part_name
                 Alter * alt1 = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
                 alt1->set_sobject(SQLObject::TABLE);
                 t.setName(alt1->mutable_object()->mutable_est(), false);
-                alt1->mutable_alter()->mutable_detach_partition()->mutable_partition()->set_partition_id(partition_id);
+                alt1->mutable_alter()->mutable_detach_partition()->mutable_partition()->set_part(part_name);
                 maybeSetClusterAndSettings(alt1);
 
-                /// ALTER TABLE t ATTACH PARTITION partition_id
+                /// ALTER TABLE t ATTACH PART part_name
                 Alter * alt2 = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
                 alt2->set_sobject(SQLObject::TABLE);
                 t.setName(alt2->mutable_object()->mutable_est(), false);
-                alt2->mutable_alter()->mutable_attach_partition()->mutable_partition()->set_partition_id(partition_id);
+                alt2->mutable_alter()->mutable_attach_partition()->mutable_partition()->set_part(part_name);
                 maybeSetClusterAndSettings(alt2);
 
                 intermediate_queries.emplace_back(next);
@@ -1281,6 +1281,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 /// DELETE FROM t WHERE true
                 LightDelete * del = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_del();
                 gen.generateNextUpdateOrDeleteOnTable<LightDelete>(rg, t, del);
+                del->mutable_del()->clear_single_partition();
                 del->mutable_del()->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
                     SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
                 maybeSetClusterAndSettings(del);
@@ -1292,6 +1293,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
                 Delete * del = at->mutable_alter()->mutable_del();
                 gen.generateNextDelete(rg, t, del);
+                del->clear_single_partition();
                 del->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
                     SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
                 maybeSetClusterAndSettings(at);

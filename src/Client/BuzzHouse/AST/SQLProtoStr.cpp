@@ -5428,7 +5428,12 @@ CONV_FN(SystemCommand, cmd)
             }
             break;
         case CmdType::kRestartDisk:
-            ret += "RESTART DISK ";
+            ret += "RESTART DISK";
+            if (cmd.has_cluster())
+            {
+                ClusterToString(ret, true, cmd.cluster());
+            }
+            ret += " ";
             appendSQLStringLiteral(ret, cmd.restart_disk());
             break;
         default: ret += "FLUSH LOGS";

@@ -1048,7 +1048,6 @@ message MySQLFunc {
     optional string address = 4;
     optional string user = 5;
     optional string password = 6;
-    optional SettingValues setting_values = 7;
 }
 
 message PostgreSQLFunc {
@@ -1059,7 +1058,6 @@ message PostgreSQLFunc {
     optional string address = 5;
     optional string user = 6;
     optional string password = 7;
-    optional SettingValues setting_values = 8;
 }
 
 message SQLiteFunc {
