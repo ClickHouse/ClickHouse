@@ -165,11 +165,13 @@ ASTPtr getSubqueryArgument(const ASTPtr & argument)
 
 String evaluateSubqueryQueryText(const ASTPtr & query, ContextPtr context)
 {
+    auto query_for_sample_block = query->clone();
+
     SharedHeader sample_block;
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, context);
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_for_sample_block, context);
     else
-        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, context);
+        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query_for_sample_block, context);
 
     if (sample_block->columns() != 1)
         throw Exception(
