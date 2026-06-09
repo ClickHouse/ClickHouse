@@ -27,7 +27,7 @@ struct MergeTreePartition
 
     MergeTreePartition() = default;
 
-    explicit MergeTreePartition(Row value_) : value(std::move(value_)) {}
+    explicit MergeTreePartition(Row value_);
 
     /// For month-based partitioning.
     explicit MergeTreePartition(UInt32 yyyymm) : value(1, yyyymm) {}
