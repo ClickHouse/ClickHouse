@@ -1043,6 +1043,18 @@ Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) a
     DECLARE(Bool, use_variant_default_implementation_for_comparisons, true, R"(
 Enables or disables default implementation for Variant type in comparison functions.
 )", 0) \
+    DECLARE(Bool, variant_throw_on_type_mismatch, true, R"(
+When applying a function to a [Variant](../../sql-reference/data-types/variant.md) column using the default implementation,
+controls what happens for rows whose actual type is incompatible with the function:
+- `true` (default) — throw an exception.
+- `false` — return `NULL` for those rows instead.
+)", 0) \
+    DECLARE(Bool, dynamic_throw_on_type_mismatch, true, R"(
+When applying a function to a [Dynamic](../../sql-reference/data-types/dynamic.md) column using the default implementation,
+controls what happens for rows whose actual type is incompatible with the function:
+- `true` (default) — throw an exception.
+- `false` — return `NULL` for those rows instead.
+)", 0) \
     DECLARE(Bool, compile_expressions, true, R"(
 Compile some scalar functions and operators to native code.
 )", 0) \
