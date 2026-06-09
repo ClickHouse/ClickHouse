@@ -50,7 +50,7 @@ namespace Setting
 namespace
 {
 
-bool isHttpPathFeatureSettingName(const String & name)
+bool isHTTPPathFeatureSettingName(const String & name)
 {
     return name == "http_allow_database_as_path"
         || name == "http_allow_table_as_file"
@@ -75,10 +75,10 @@ bool isSettingValueTruthy(const Field & value)
     }
 }
 
-bool elementsEnableHttpPathFeature(const SettingsProfileElements & elements)
+bool elementsEnableHTTPPathFeature(const SettingsProfileElements & elements)
 {
     for (const auto & element : elements)
-        if (isHttpPathFeatureSettingName(element.setting_name) && element.value && isSettingValueTruthy(*element.value))
+        if (isHTTPPathFeatureSettingName(element.setting_name) && element.value && isSettingValueTruthy(*element.value))
             return true;
     return false;
 }
@@ -91,16 +91,16 @@ bool elementsEnableHttpPathFeature(const SettingsProfileElements & elements)
 /// do NOT claim the request, so unknown paths keep returning a plain pre-auth 404 (`NotFoundHandler`)
 /// instead of the dynamic handler becoming a catch-all. The cheap default-profile check in the
 /// caller short-circuits this scan for the common case where the feature is enabled server-wide.
-bool anyAccessEntityEnablesHttpPathFeature(const AccessControl & access_control)
+bool anyAccessEntityEnablesHTTPPathFeature(const AccessControl & access_control)
 {
     for (const auto & id : access_control.findAll<SettingsProfile>())
-        if (auto profile = access_control.tryRead<SettingsProfile>(id); profile && elementsEnableHttpPathFeature(profile->elements))
+        if (auto profile = access_control.tryRead<SettingsProfile>(id); profile && elementsEnableHTTPPathFeature(profile->elements))
             return true;
     for (const auto & id : access_control.findAll<User>())
-        if (auto user = access_control.tryRead<User>(id); user && elementsEnableHttpPathFeature(user->settings))
+        if (auto user = access_control.tryRead<User>(id); user && elementsEnableHTTPPathFeature(user->settings))
             return true;
     for (const auto & id : access_control.findAll<Role>())
-        if (auto role = access_control.tryRead<Role>(id); role && elementsEnableHttpPathFeature(role->settings))
+        if (auto role = access_control.tryRead<Role>(id); role && elementsEnableHTTPPathFeature(role->settings))
             return true;
     return false;
 }
@@ -580,7 +580,7 @@ void addDefaultHandlersFactory(
                 || default_settings[Setting::http_allow_table_as_file]
                 || default_settings[Setting::http_allow_filters_as_path];
             if (!path_features_enabled)
-                path_features_enabled = anyAccessEntityEnablesHttpPathFeature(server.context()->getAccessControl());
+                path_features_enabled = anyAccessEntityEnablesHTTPPathFeature(server.context()->getAccessControl());
             if (!path_features_enabled)
                 return false;
 

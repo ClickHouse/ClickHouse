@@ -39,7 +39,7 @@ namespace
 /// extension, or a user profile. (The query-construction settings `select`/`filter`/`order`/`sort`/
 /// `page` are applied by the engine on the parsed AST, so they *do* work via an in-query SETTINGS
 /// clause and are not rejected here.)
-void rejectHttpOnlyConstructionSettings(const SettingsChanges & changes)
+void rejectHTTPOnlyConstructionSettings(const SettingsChanges & changes)
 {
     for (const auto & change : changes)
     {
@@ -71,7 +71,7 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     if (!ignore_setting_constraints)
     {
         getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
-        rejectHttpOnlyConstructionSettings(ast.changes);
+        rejectHTTPOnlyConstructionSettings(ast.changes);
     }
     getContext()->applySettingsChanges(ast.changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
