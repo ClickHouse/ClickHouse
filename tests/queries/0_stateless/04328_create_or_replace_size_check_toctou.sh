@@ -6,25 +6,11 @@
 # no-ordinary-database: `CREATE OR REPLACE TABLE` requires an `Atomic` database.
 # no-shared-merge-tree: Cloud-only engine; the size check path differs.
 #
-# Regression coverage for the TOCTOU race between the pre-flight `checkTableSizeBelowDropLimit`
-# and the rename's `DDLGuard`s in `doCreateOrReplaceTable`.
-#
-# Bug: the size check ran on whatever `tryGetTable` returned for `(database, t)` BEFORE
-# `InterpreterRenameQuery::execute` acquired the per-table `DDLGuard`s. A concurrent
-# `CREATE OR REPLACE TABLE t (...)` could replace `t` between our check and the rename.
-# Our query then exchanged with the replaced storage, and the implicit drop ran with
-# `max_table_size_to_drop = 0`, silently deleting an object the user's setting would have
-# rejected.
-#
-# Fix: remember the UUID of the storage we approved, then verify after the rename that
-# the storage we are about to drop has that UUID. If not, fall back to a normal drop
-# context where the user's `max_table_size_to_drop` setting is enforced.
-#
-# The failpoint `create_or_replace_after_size_check_before_rename` pauses the running
-# `doCreateOrReplaceTable` between the pre-flight check and the rename, giving a
-# concurrent query time to swap the target. The test exercises that interleaving and
-# verifies the server stays consistent (no `LOGICAL_ERROR`, no orphaned data, no
-# server-side crash).
+# Regression coverage for the `TOCTOU` race between the pre-flight `checkTableSizeBelowDropLimit`
+# and the rename's `DDLGuard`s in `doCreateOrReplaceTable`. The fix gates the swap on a
+# size check invoked from inside `InterpreterRenameQuery` while the per-table guards are
+# held, so an exchange against an over-limit storage that was swapped in by a concurrent
+# `CREATE OR REPLACE` is refused atomically (no rename happens, no stranded `_tmp_replace_*`).
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -48,18 +34,20 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT create_or_replace_after_size_ch
 
 # Q1: a `CREATE OR REPLACE` with a tight `max_table_size_to_drop`. The pre-flight
 # check sees the original 1-row table and passes, then Q1 pauses BEFORE acquiring
-# the rename's DDLGuards.
+# the rename's `DDLGuard`s. We capture stderr to assert Q1 fails with the expected
+# size-limit error after Q2 swaps in over-limit storage.
+Q1_LOG=$(mktemp)
 ${CLICKHOUSE_CLIENT} \
     --max_table_size_to_drop=10000 \
     -q "CREATE OR REPLACE TABLE t04328 (b UInt64) ENGINE = MergeTree() ORDER BY b
-        AS SELECT number FROM numbers(2)" >/dev/null 2>&1 &
+        AS SELECT number FROM numbers(2)" >/dev/null 2>"$Q1_LOG" &
 Q1_PID=$!
 
 # Wait until Q1 has finished the pre-flight size check and is paused.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT create_or_replace_after_size_check_before_rename PAUSE"
 
-# Disable the failpoint so Q2 does not also pause itself.
-${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT create_or_replace_after_size_check_before_rename"
+# `PAUSEABLE_ONCE` self-disables after the first hit, so Q2 below will not pause
+# at the same failpoint — leave it enabled so Q1 stays parked.
 
 # Q2: swap in a much larger storage with a different UUID. Q2's own size check
 # passes against the original 1-row table; Q2 commits cleanly while Q1 is parked.
@@ -68,27 +56,33 @@ ${CLICKHOUSE_CLIENT} \
     -q "CREATE OR REPLACE TABLE t04328 (c UInt64) ENGINE = MergeTree() ORDER BY c
         AS SELECT number FROM numbers(100000)"
 
-# Resume Q1.
-#
-# Without the fix: Q1's implicit drop runs with `max_table_size_to_drop = 0` against
-# whichever storage now lives at the temp name after EXCHANGE. That storage came from
-# Q2, not from Q1's pre-flight check, so the user's `max_table_size_to_drop = 10000`
-# is silently bypassed and Q2's 100000-row storage is deleted.
-#
-# With the fix: Q1 recorded the UUID of the original 1-row storage at check time.
-# After the rename, it looks up the storage now at the temp name and finds Q2's UUID
-# instead. It falls back to the normal drop path, which honors Q1's setting and
-# the implicit drop is rejected. No silent data loss.
-${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT create_or_replace_after_size_check_before_rename" 2>/dev/null ||:
+# Resume Q1. The in-rename `pre_swap_check` runs `checkTableSizeBelowDropLimit` on
+# whatever now lives at `t04328` while holding the rename's `DDLGuard`s. It sees
+# Q2's 100000-row storage, well above Q1's `max_table_size_to_drop=10000`, and
+# throws. The exception propagates back to `doCreateOrReplaceTable` with
+# `renamed=false`, so the catch block drops Q1's filled temporary table. No
+# `EXCHANGE` happens; `t04328` keeps Q2's storage; no `_tmp_replace_*` leaks.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM NOTIFY FAILPOINT create_or_replace_after_size_check_before_rename"
 
 wait $Q1_PID 2>/dev/null
 
-# We assert the server completed the race without any crash, `LOGICAL_ERROR`, or
-# stranded `_tmp_replace_*` table. The exact final state of `t04328` depends on
-# which `CREATE OR REPLACE` won the rename's `DDLGuard` last; both outcomes are
-# acceptable here, what matters is that the server stayed consistent.
+# Q1 must fail with `TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT` (error code 359), not a
+# `LOGICAL_ERROR` or any other shape. Echo a normalized marker; we strip the cgroup-
+# specific path that some message variants embed.
+echo "q1_failed_as_expected:"
+if grep -q "TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT\|Table or Partition .* was not dropped" "$Q1_LOG"; then
+    echo "1"
+else
+    echo "0"
+    echo "--- Q1 stderr was: ---"
+    cat "$Q1_LOG"
+fi
+rm -f "$Q1_LOG"
+
+# Final state: `t04328` exists (Q2's storage), no orphaned `_tmp_replace_*`.
 echo "tmp_replace_left:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '%tmp_replace%'"
 echo "t04328_exists:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't04328'"
+echo "t04328_row_count:"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t04328"

@@ -2351,36 +2351,40 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             ast_rename->exchange = true;
         }
 
-        /// Size guard, after fill, before EXCHANGE. Capture the storage UUID so the
-        /// post-rename drop can detect a concurrent swap of the target.
-        UUID checked_uuid = UUIDHelpers::Nil;
+        /// Best-effort upfront pre-flight: fail fast if the target is already over the
+        /// drop limit before we spend time on the (potentially expensive) `INSERT-SELECT`
+        /// fill. Authoritative gating happens later via `pre_swap_check` under the rename's
+        /// `DDLGuard`s — this check has no `TOCTOU` guarantees because guards are not held
+        /// here and a concurrent `CREATE OR REPLACE` can swap the target out before rename.
         if (auto existing = DatabaseCatalog::instance().tryGetTable(
                 StorageID{create.getDatabase(), table_to_replace_name}, current_context))
-        {
             existing->checkTableSizeBelowDropLimit(current_context);
-            checked_uuid = existing->getStorageID().uuid;
-        }
 
         FailPointInjection::pauseFailPoint(FailPoints::create_or_replace_after_size_check_before_rename);
 
+        /// Authoritative size gate. The callback runs while `InterpreterRenameQuery`
+        /// holds the per-table `DDLGuard`s — atomic with the swap. If it throws, no
+        /// `EXCHANGE` happens; the catch block below cleans up the temp via
+        /// `make_drop_context(bypass_size_guard=true)` (the temp name is unique to this
+        /// call). This closes the `TOCTOU` window where a concurrent `CREATE OR REPLACE`
+        /// could replace the target between the upfront check and the rename.
         InterpreterRenameQuery interpreter_rename{ast_rename, current_context};
+        interpreter_rename.setPreSwapCheck(
+            [&current_context](const StorageID & to_drop_id)
+            {
+                if (auto to_drop = DatabaseCatalog::instance().tryGetTable(to_drop_id, current_context))
+                    to_drop->checkTableSizeBelowDropLimit(current_context);
+            });
         interpreter_rename.execute();
         renamed = true;
 
         if (!interpreter_rename.renamedInsteadOfExchange())
         {
-            /// Target table was replaced with new one, drop old table.
-            /// Bypass the size guard only if the storage now under the temp name (where `ast_drop`
-            /// points after EXCHANGE) is the one we size-checked above; otherwise the normal
-            /// `max_table_size_to_drop` from the user's settings applies.
-            bool bypass_size_guard = false;
-            if (checked_uuid != UUIDHelpers::Nil)
-            {
-                if (auto to_drop = DatabaseCatalog::instance().tryGetTable(
-                        StorageID{create.getDatabase(), create.getTable()}, current_context))
-                    bypass_size_guard = to_drop->getStorageID().uuid == checked_uuid;
-            }
-            auto drop_context = make_drop_context(bypass_size_guard);
+            /// The rename's `pre_swap_check` already approved this storage under the
+            /// guards. Bypass `max_table_size_to_drop` for the implicit drop — the
+            /// authoritative check has run, and re-running it here would re-consume
+            /// `force_drop_table` if the storage is exactly at the limit.
+            auto drop_context = make_drop_context(/*bypass_size_guard=*/true);
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
 
