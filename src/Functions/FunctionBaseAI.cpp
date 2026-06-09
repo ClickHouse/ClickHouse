@@ -31,6 +31,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_ai_functions;
+    extern const SettingsString ai_credentials;
     extern const SettingsUInt64 ai_function_request_timeout_sec;
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
@@ -75,14 +76,15 @@ FunctionBaseAI::FunctionBaseAI(ContextPtr context_) : context(context_)
             "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
 }
 
-FunctionBaseAI::AINamedCollectionConfig FunctionBaseAI::resolveAINamedCollection(const ContextPtr & context, const ColumnPtr & first_arg)
+FunctionBaseAI::AINamedCollectionConfig FunctionBaseAI::resolveAINamedCollection(const ContextPtr & context)
 {
-    const auto * col_const = typeid_cast<const ColumnConst *>(first_arg.get());
-    if (!col_const)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument to AI function must be a named collection (constant String)");
-
     AINamedCollectionConfig config;
-    config.collection_name = col_const->getValue<String>();
+    config.collection_name = context->getSettingsRef()[Setting::ai_credentials];
+
+    if (config.collection_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "AI functions require credentials: set the `ai_credentials` setting to the name of a named collection "
+            "containing the provider configuration (`provider`, `endpoint`, `model`, ...)");
 
     context->checkAccess(AccessType::NAMED_COLLECTION, config.collection_name);
 
@@ -115,9 +117,9 @@ UInt64 FunctionBaseAI::computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 att
     return delay_ms;
 }
 
-FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTypeAndName & arguments) const
+FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig() const
 {
-    auto base = resolveAINamedCollection(getContext(), arguments[0].column);
+    auto base = resolveAINamedCollection(getContext());
 
     ResolvedConfig config;
     config.provider = std::move(base.provider);
@@ -153,7 +155,7 @@ float FunctionBaseAI::resolveTemperature(const ColumnsWithTypeAndName & argument
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    auto config = resolveConfig(arguments);
+    auto config = resolveConfig();
 
     /// Row-independent validation must run before the zero-row fast path so malformed constant
     /// arguments fail consistently regardless of source size.

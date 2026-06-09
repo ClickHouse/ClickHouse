@@ -19,16 +19,29 @@ All functions are sharing a common infrastructure that provides:
 
 ## Configuration {#configuration}
 
-AI functions reference a **named collection** that stores provider credentials and configuration. The first argument to each function is the name of this collection.
+AI functions resolve provider credentials and configuration from a **named collection**. To set a named collection to use for credentials, use the [`ai_credentials`](/operations/settings/settings#ai_credentials) setting.
 
 Example statement to create a named collection with provider credentials:
 ```sql
-CREATE NAMED COLLECTION ai_credentials AS
+CREATE NAMED COLLECTION my_ai_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/chat/completions',
     model = 'gpt-4o-mini',
     api_key = 'sk-...';
 ```
+
+Select the collection with the `ai_credentials` setting, for the session or for a single query:
+```sql
+-- For the session:
+SET ai_credentials = 'my_ai_credentials';
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']);
+
+-- Or for a single query:
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
+SETTINGS ai_credentials = 'my_ai_credentials';
+```
+
+When `ai_credentials` is empty (the default), an exception is raised.
 
 ### Named collection parameters {#named-collection-parameters}
 
@@ -47,7 +60,7 @@ Any OpenAI-compatible API (e.g. vLLM, Ollama, LiteLLM) can be used by setting `p
 
 ### Query-level settings {#query-level-settings}
 
-All AI-related settings are listed in [Settings](/operations/settings/settings) under the `ai_function_` prefix.
+Which named collection to use is controlled by the [`ai_credentials`](/operations/settings/settings#ai_credentials) setting. Other AI-related settings are listed in [Settings](/operations/settings/settings) under the `ai_function_` prefix.
 
 ### Restricting endpoint hosts {#restricting-endpoint-hosts}
 
