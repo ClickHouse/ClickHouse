@@ -2093,14 +2093,10 @@ struct ConvertImpl
         else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
             && std::is_same_v<ToDataType, DataTypeTime>)
         {
-            /// Conversion of Time64 to Time: drop the sub-second part.
-            /// `TransformTime64` extracts the whole-second part flooring towards negative infinity
-            /// (so `-00:00:00.5` becomes `-00:00:01`, not `00:00:00`), and `ToTimeTransform64Signed`
-            /// applies the `Time` range handling (`[-MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP]`) honoring
-            /// `date_time_overflow_behavior`. Unlike `DateTime64 -> Time`, no timezone offset is applied:
-            /// both `Time64` and `Time` are timezone-unaware seconds-of-day, so the cast is a pure scale
-            /// conversion. Applying the session timezone offset here would silently shift values (see
-            /// issue #104038 for the Arrow analogue of this class of bug).
+            /// Time64 -> Time: drop the sub-second part. Both are timezone-unaware seconds-of-day, so
+            /// no timezone offset is applied (that would silently shift values, cf. issue #104038).
+            /// `TransformTime64` floors towards negative infinity (`-00:00:00.5` -> `-00:00:01`);
+            /// `ToTimeTransform64Signed` clamps to the `Time` range honoring `date_time_overflow_behavior`.
             using TimeTransform = TransformTime64<ToTimeTransform64Signed<Int64, Int32, date_time_overflow_behavior>>;
             const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arguments[0].type).getScale();
             return DateTimeTransformImpl<FromDataType, ToDataType, TimeTransform, false>::template execute<Additions>(
@@ -2109,16 +2105,10 @@ struct ConvertImpl
         else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
             && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
-            /// Conversion of Time64 to DateTime: `Time64` stores sub-seconds since midnight; the
-            /// whole-second part is reinterpreted as seconds-since-epoch, producing a 1970-01-01
-            /// wall-clock timestamp. This preserves the value produced by the legacy
-            /// Parquet `TIME` -> `DateTime` path used in `00900_parquet_time_to_ch_date_time.sh`
-            /// (which previously routed through `DateTime64 -> DateTime`).
-            /// `TransformTime64` extracts the whole-second part flooring towards negative infinity, and
-            /// `ToDateTimeImpl` applies the `DateTime` range handling (`[0, MAX_DATETIME_TIMESTAMP)`)
-            /// honoring `date_time_overflow_behavior`, instead of the previous unchecked wrap through
-            /// `UInt32`. No timezone offset is applied; the result is the same regardless of
-            /// `session_timezone`.
+            /// Time64 -> DateTime: reinterpret the whole-second part as seconds-since-epoch (1970-01-01),
+            /// timezone-independent, matching the established Parquet `TIME` -> `DateTime` convention.
+            /// `TransformTime64` floors towards negative infinity; `ToDateTimeImpl` applies the
+            /// `DateTime` range handling honoring `date_time_overflow_behavior`.
             using DateTimeTransform = TransformTime64<ToDateTimeImpl<date_time_overflow_behavior>>;
             const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arguments[0].type).getScale();
             return DateTimeTransformImpl<FromDataType, ToDataType, DateTimeTransform, false>::template execute<Additions>(
