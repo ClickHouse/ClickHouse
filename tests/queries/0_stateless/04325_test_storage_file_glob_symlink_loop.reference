@@ -1,0 +1,12 @@
+ancestor-loop
+3
+brace-expansion
+a.txt
+b.csv
+independent-aliases
+2
+descendant-to-root
+1
+finite-glob-through-ancestor-link
+1
+alive

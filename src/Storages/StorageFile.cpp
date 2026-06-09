@@ -65,6 +65,7 @@
 #include <Common/ErrnoException.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
@@ -77,6 +78,7 @@
 #include <filesystem>
 #include <shared_mutex>
 #include <algorithm>
+#include <unordered_set>
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/String.h>
@@ -151,16 +153,16 @@ namespace
 /// Bound on the recursion depth of `listFilesWithRegexpMatchingImpl`.
 constexpr size_t MAX_LIST_FILES_RECURSION_DEPTH = 1000;
 
-/* Recursive directory listing with matched paths as a result.
- * Have the same method in StorageHDFS.
- */
+/// Recursive directory listing with matched paths as a result.
+/// Have the same method in StorageHDFS.
 void listFilesWithRegexpMatchingImpl(
     const std::string & path_for_ls,
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
     bool recursive,
-    size_t depth)
+    size_t depth,
+    std::unordered_set<std::string> & active_dirs_on_stack)
 {
     if (depth > MAX_LIST_FILES_RECURSION_DEPTH)
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
@@ -217,6 +219,32 @@ void listFilesWithRegexpMatchingImpl(
     if (!fs::exists(prefix_without_globs))
         return;
 
+    /// Activate the recursion-stack cycle guard ONLY for unbounded (`**`) patterns.
+    /// Finite globs cannot recurse without bound, and adding the guard for them would
+    /// silently drop legitimate matches that traverse ancestor symlinks (the bot's
+    /// `file('root/*/*/*.txt')` with `root/a/back -> ..` case). When recursive,
+    /// insert the canonical path of the directory about to be listed on entry, so a
+    /// descendant symlink whose target is an ancestor (including the initial glob
+    /// root) is recognized as a cycle on the next entry.
+    std::optional<std::string> active_dir_to_erase;
+    if (recursive)
+    {
+        std::error_code prefix_canon_ec;
+        const auto prefix_canonical = fs::canonical(prefix_without_globs, prefix_canon_ec);
+        if (prefix_canon_ec)
+            return; /// Dangling/inaccessible: mirror the pre-existing `it.increment(ec)` skip semantics.
+        auto prefix_canonical_str = prefix_canonical.string();
+        if (!active_dirs_on_stack.insert(prefix_canonical_str).second)
+            return; /// This canonical path is already being descended: real cycle.
+        active_dir_to_erase = std::move(prefix_canonical_str);
+    }
+    /// Erase by key (not iterator): nested inserts during recursion may rehash and
+    /// invalidate iterators, but `unordered_set::erase(const Key&)` is unaffected.
+    SCOPE_EXIT({
+        if (active_dir_to_erase)
+            active_dirs_on_stack.erase(*active_dir_to_erase);
+    });
+
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
 
     const fs::directory_iterator end;
@@ -253,11 +281,11 @@ void listFilesWithRegexpMatchingImpl(
             {
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
                                                 looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
-                                                total_bytes_to_read, result, recursive, depth + 1);
+                                                total_bytes_to_read, result, recursive, depth + 1, active_dirs_on_stack);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result, false, depth + 1);
+                                                total_bytes_to_read, result, false, depth + 1, active_dirs_on_stack);
         }
     }
 }
@@ -270,8 +298,11 @@ std::vector<std::string> listFilesWithRegexpMatching(
 
     Strings for_match_paths_expanded = expandSelectionGlob(for_match);
 
+    /// Tracks canonical paths currently on the recursion descent stack so symlink cycles are broken
+    /// without affecting sibling brace-expansion alternatives.
+    std::unordered_set<std::string> active_dirs_on_stack;
     for (const auto & for_match_expanded : for_match_paths_expanded)
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, 0);
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, 0, active_dirs_on_stack);
 
     return result;
 }
