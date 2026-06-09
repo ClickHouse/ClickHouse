@@ -364,7 +364,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 
     main_priority->setOnEvictCallback([this](const FileSegment & segment, const String & user_id)
     {
-        this->onSegmentEvicted(segment, user_id);
+        onSegmentEvicted(segment, user_id);
     });
 
     if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
@@ -2130,14 +2130,13 @@ FileCache::~FileCache()
 
 void FileCache::onSegmentEvicted(const FileSegment & segment, const String & user_id) const
 {
-    /// Always-on eviction accounting (ProfileEvents).
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment.getReservedSize());
 
     if (!expose_eviction_metrics.load(std::memory_order_relaxed))
         return;
 
-    const size_t bytes = segment.range().size();
+    const size_t bytes = segment.getReservedSize();
     const size_t hits = segment.getHitsCount();
     filesystem_cache_evictions_total.withLabels({name}).increment();
     filesystem_cache_evicted_bytes_total.withLabels({name}).increment(static_cast<DimensionalMetrics::Value>(bytes));
