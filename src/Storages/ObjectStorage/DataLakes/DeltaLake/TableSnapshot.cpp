@@ -46,6 +46,7 @@ namespace DB::ErrorCodes
 namespace DB::FailPoints
 {
     extern const char delta_kernel_throw_expired_token[];
+    extern const char delta_kernel_throw_expired_token_on_scan[];
 }
 
 namespace DB::Setting
@@ -205,65 +206,140 @@ public:
             "scan_metadata_iter_init");
     }
 
+    /// One-shot retry for stale-credentials errors surfaced from `scan_metadata_next`.
+    /// Returns true if the caller should re-enter the scan loop; false otherwise.
+    /// Safe only when no data files have been enqueued yet — once consumers may have
+    /// observed paths via `next()`, restarting the listing would emit duplicates.
+    bool tryRefreshAndRetryScanState(const DB::Exception & e)
+    {
+        if (e.code() != DB::ErrorCodes::DELTA_KERNEL_ERROR)
+            return false;
+        const auto & msg = e.message();
+        const bool credentials_error =
+            msg.find("ExpiredToken") != std::string::npos
+            || msg.find("InvalidToken") != std::string::npos
+            || msg.find("TokenRefreshRequired") != std::string::npos;
+        if (!credentials_error)
+            return false;
+
+        {
+            std::lock_guard lock(next_mutex);
+            if (total_data_files > 0)
+            {
+                LOG_INFO(
+                    log,
+                    "Cannot safely retry DeltaLake scan iteration after stale-credentials error: "
+                    "{} data file(s) already enqueued for the consumer. Propagating exception.",
+                    total_data_files);
+                return false;
+            }
+        }
+
+        LOG_INFO(
+            log,
+            "DeltaLake kernel iteration failed with a stale-credentials error; "
+            "rebuilding kernel engine + snapshot + scan iterator with fresh credentials. "
+            "Original error: {}",
+            msg);
+
+        helper->refreshCredentials();
+        kernel_snapshot_state = std::make_shared<KernelSnapshotState>(
+            *helper,
+            std::optional<size_t>(kernel_snapshot_state->snapshot_version));
+        /// Drop the old kernel scan + iterator handles; `initScanState()` rebuilds them
+        /// against the freshly-credentialed engine on the next loop entry.
+        scan = KernelScan();
+        scan_data_iterator = KernelScanDataIterator();
+        return true;
+    }
+
     void scanDataFunc()
     {
+        bool retried = false;
         try
         {
-            initScanState();
-
-            LOG_TEST(log, "Starting iterator loop (predicate exception: {})", bool(engine_predicate_exception));
-
-            while (!shutdown.load())
+            while (true)
             {
-                bool have_scan_data_res = KernelUtils::unwrapResult(
-                    ffi::scan_metadata_next(scan_data_iterator.get(), this, visitData),
-                    "scan_metadata_next");
-
-                if (have_scan_data_res)
+                try
                 {
-                    std::unique_lock lock(next_mutex);
-                    LOG_TEST(
-                        log, "List batch size is {}/{}, shutdown: {}",
-                        data_files.size(),
-                        list_batch_size ? DB::toString(list_batch_size) : "Unlimitted",
-                        shutdown.load());
+                    initScanState();
 
-                    if (!shutdown.load() && list_batch_size && data_files.size() >= list_batch_size)
-                    {
-                        schedule_next_batch_cv.wait(
-                            lock,
-                            [&]() { return (data_files.size() < list_batch_size) || shutdown.load(); });
-                    }
-                }
-                else
-                {
-                    {
-                        std::lock_guard lock(next_mutex);
-                        iterator_finished = true;
-                        LOG_TEST(log, "Set finished");
-                    }
-                    data_files_cv.notify_all();
+                    LOG_TEST(log, "Starting iterator loop (predicate exception: {})", bool(engine_predicate_exception));
 
-                    LOG_TRACE(
-                        log, "All data files at version {} were listed "
-                        "(scan exception: {}, total data files: {}, total rows: {}, total bytes: {})",
-                        kernel_snapshot_state->snapshot_version,
-                        bool(scan_exception),
-                        total_data_files,
-                        total_rows ? DB::toString(*total_rows) : "Unknown",
-                        total_bytes);
-
-                    if (update_stats_func
-                        && !scan_exception
-                        && (!filter.has_value() || !enable_engine_predicate))
+                    while (!shutdown.load())
                     {
-                        update_stats_func(SnapshotStats{
-                            .total_bytes = total_bytes,
-                            /// total_rows is an optional statistic, but total_bytes is obligatory.
-                            .total_rows = total_rows
+                        /// Mirrors the same error shape `delta-kernel-rs` surfaces when its embedded
+                        /// session token is rejected by S3 mid-iteration. Wired here, just before the
+                        /// `ffi::scan_metadata_next` call, so the failpoint reaches the post-snapshot
+                        /// path that the snapshot-init failpoint can't.
+                        fiu_do_on(DB::FailPoints::delta_kernel_throw_expired_token_on_scan,
+                        {
+                            throw DB::Exception(
+                                DB::ErrorCodes::DELTA_KERNEL_ERROR,
+                                "Received DeltaLake kernel error ObjectStoreError: Error interacting with object store: "
+                                "Generic S3 error: Server returned non-2xx status code: 400 Bad Request: "
+                                "<Code>ExpiredToken</Code><Message>The provided token has expired.</Message> "
+                                "(in scan_metadata_next): While executing ReadFromObjectStorage");
                         });
+
+                        bool have_scan_data_res = KernelUtils::unwrapResult(
+                            ffi::scan_metadata_next(scan_data_iterator.get(), this, visitData),
+                            "scan_metadata_next");
+
+                        if (have_scan_data_res)
+                        {
+                            std::unique_lock lock(next_mutex);
+                            LOG_TEST(
+                                log, "List batch size is {}/{}, shutdown: {}",
+                                data_files.size(),
+                                list_batch_size ? DB::toString(list_batch_size) : "Unlimitted",
+                                shutdown.load());
+
+                            if (!shutdown.load() && list_batch_size && data_files.size() >= list_batch_size)
+                            {
+                                schedule_next_batch_cv.wait(
+                                    lock,
+                                    [&]() { return (data_files.size() < list_batch_size) || shutdown.load(); });
+                            }
+                        }
+                        else
+                        {
+                            {
+                                std::lock_guard lock(next_mutex);
+                                iterator_finished = true;
+                                LOG_TEST(log, "Set finished");
+                            }
+                            data_files_cv.notify_all();
+
+                            LOG_TRACE(
+                                log, "All data files at version {} were listed "
+                                "(scan exception: {}, total data files: {}, total rows: {}, total bytes: {})",
+                                kernel_snapshot_state->snapshot_version,
+                                bool(scan_exception),
+                                total_data_files,
+                                total_rows ? DB::toString(*total_rows) : "Unknown",
+                                total_bytes);
+
+                            if (update_stats_func
+                                && !scan_exception
+                                && (!filter.has_value() || !enable_engine_predicate))
+                            {
+                                update_stats_func(SnapshotStats{
+                                    .total_bytes = total_bytes,
+                                    /// total_rows is an optional statistic, but total_bytes is obligatory.
+                                    .total_rows = total_rows
+                                });
+                            }
+                            return;
+                        }
                     }
                     return;
+                }
+                catch (const DB::Exception & e)
+                {
+                    if (retried || !tryRefreshAndRetryScanState(e))
+                        throw;
+                    retried = true;
                 }
             }
         }

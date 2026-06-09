@@ -5469,3 +5469,66 @@ def test_delta_kernel_expired_token_on_snapshot_init(started_cluster):
 
     # Sanity check: subsequent queries work without the failpoint as well.
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+
+def test_delta_kernel_expired_token_on_scan(started_cluster):
+    """Verify scanDataFunc recovers from ExpiredToken thrown by `scan_metadata_next`.
+
+    The customer's production stack traces a credentials failure to the iteration loop,
+    not to snapshot init (`Iterator::scanDataFunc` -> `scan_metadata_next` reading later
+    `_delta_log/*.json` segments). The `ONCE(delta_kernel_throw_expired_token_on_scan)`
+    failpoint fires there once; the retry rebuilds engine + snapshot + scan iterator
+    with fresh credentials and resumes listing. Safe only when no data files have been
+    exposed to the consumer yet — which is the common case at the start of iteration.
+
+    Uses `SELECT sum(a)` rather than `SELECT count()` because `count()` is served by
+    `DeltaLakeMetadataDeltaKernel::totalRows` -> `TableSnapshot::getSnapshotStatsImpl`,
+    which calls `ffi::scan_metadata_next` in a separate code path that bypasses the
+    `Iterator::scanDataFunc` failpoint entirely.
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_delta_kernel_expired_token_on_scan")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    expected_sum = sum(range(0, 100))  # 4950
+
+    # Baseline: query succeeds before the failpoint is armed.
+    assert int(instance.query(f"SELECT sum(a) FROM {TABLE_NAME}")) == expected_sum
+
+    armed_query_id = f"{TABLE_NAME}_armed"
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_throw_expired_token_on_scan")
+    try:
+        # First `scan_metadata_next` call inside `Iterator::scanDataFunc` throws (ONCE
+        # failpoint). The retry rebuilds engine + snapshot + scan iterator with fresh
+        # creds and resumes; the second attempt succeeds because the ONCE failpoint is
+        # now disarmed.
+        assert int(instance.query(
+            f"SELECT sum(a) FROM {TABLE_NAME}",
+            query_id=armed_query_id,
+        )) == expected_sum
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_throw_expired_token_on_scan")
+
+    # Positive evidence the retry path actually fired (not just that the failpoint
+    # silently failed to arm and the baseline path passed through).
+    instance.query("SYSTEM FLUSH LOGS")
+    retry_log_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{armed_query_id}' "
+        "  AND message ILIKE '%rebuilding kernel engine%scan iterator%fresh credentials%'"
+    ).strip())
+    assert retry_log_hits >= 1, (
+        f"Expected the scan-iteration retry log line to fire for query {armed_query_id}, "
+        f"found {retry_log_hits} hits."
+    )
+
+    # Sanity check: subsequent queries work without the failpoint as well.
+    assert int(instance.query(f"SELECT sum(a) FROM {TABLE_NAME}")) == expected_sum
