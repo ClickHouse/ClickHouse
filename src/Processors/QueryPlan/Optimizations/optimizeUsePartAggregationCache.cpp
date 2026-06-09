@@ -234,6 +234,21 @@ void optimizeUsePartAggregationCache(
 
         if (!all_readable)
             return;
+
+        /// When the populator would read no column at all — a keyless global aggregation over
+        /// zero-argument aggregates with no intermediate actions, e.g. `SELECT count() FROM t` —
+        /// `createMergeTreeSequentialSource` reads an empty column set, so every block reports
+        /// `rows() == 0` and the part's real row count is lost. Skip the optimization in that case
+        /// (fail-closed) rather than relying on the populator silently producing nothing, so such
+        /// queries keep going through the normal aggregation path.
+        bool has_column_to_read = !params.keys.empty();
+        for (const auto & agg : params.aggregates)
+            has_column_to_read |= !agg.argument_names.empty();
+        for (const auto & action : intermediate_actions)
+            has_column_to_read |= !action.actions->getRequiredColumnsWithTypes().empty();
+
+        if (!has_column_to_read)
+            return;
     }
 
     /// The aggregator's input header carries the actual key and aggregate-argument column types.
