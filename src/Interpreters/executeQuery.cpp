@@ -1205,7 +1205,18 @@ static void applyQueryConstructionSettings(
     String order_expr = settings[Setting::order];
     const String & sort_expr = settings[Setting::sort];
 
-    if (select_expr.empty() && filter_expr.empty() && order_expr.empty() && sort_expr.empty())
+    /// `limit` / `offset` are `Double` settings (they may be negative for tail selection or
+    /// fractional for a share of the result). They are applied like every other query-modification
+    /// setting: by wrapping the base query as a derived table and putting a `LIMIT`/`OFFSET` on the
+    /// outer query. This way the cap applies to the *final* result (correct for `UNION`), the
+    /// SQL `LIMIT` grammar handles the negative/fractional values natively, and combining with an
+    /// explicit `LIMIT` in the base query is left to the optimizer's limit push-down — instead of
+    /// the brittle arithmetic combining that used to fold the setting into the base query's clause.
+    const Float64 limit_setting = settings[Setting::limit];
+    const Float64 offset_setting = settings[Setting::offset];
+
+    if (select_expr.empty() && filter_expr.empty() && order_expr.empty() && sort_expr.empty()
+        && limit_setting == 0 && offset_setting == 0)
         return;
 
     if (!sort_expr.empty() && !order_expr.empty())
@@ -1231,6 +1242,39 @@ static void applyQueryConstructionSettings(
     ASTPtr base_settings = base_select->settings_ast;
     base_select->reset(base_select->format_ast);
     base_select->reset(base_select->settings_ast);
+
+    /// `limit` / `offset` / `page` are consumed here (materialized as the outer query's `LIMIT`/
+    /// `OFFSET` below). Strip them from every `SETTINGS` clause carried by the base query so the
+    /// base query's interpreter — in particular the analyzer, which reads these settings from the
+    /// query's own `SETTINGS` clause — does not apply them a second time on top of the outer
+    /// `LIMIT`/`OFFSET`. A single `SELECT … SETTINGS limit = …` keeps the clause on the inner
+    /// `ASTSelectQuery` (`settings()`), while a `UNION … SETTINGS …` keeps it on the union node
+    /// (`settings_ast`), so both locations have to be handled.
+    auto strip_limit_offset_from_settings = [](ASTPtr & settings_ptr)
+    {
+        auto * set_query = settings_ptr ? settings_ptr->as<ASTSetQuery>() : nullptr;
+        if (!set_query)
+            return;
+        set_query->changes.removeSetting("limit");
+        set_query->changes.removeSetting("offset");
+        set_query->changes.removeSetting("page");
+        if (set_query->changes.empty())
+            settings_ptr.reset();
+    };
+
+    strip_limit_offset_from_settings(base_settings);
+    for (auto & select_child : base_select->list_of_selects->children)
+    {
+        if (auto * inner_select = select_child->as<ASTSelectQuery>())
+        {
+            if (ASTPtr inner_settings = inner_select->settings())
+            {
+                strip_limit_offset_from_settings(inner_settings);
+                if (!inner_settings)
+                    inner_select->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
+            }
+        }
+    }
 
     auto outer_select = make_intrusive<ASTSelectQuery>();
 
@@ -1269,6 +1313,13 @@ static void applyQueryConstructionSettings(
         outer_select->setExpression(ASTSelectQuery::Expression::ORDER_BY, parse_component(order_parser, order_expr, "`order` / `sort` setting"));
     }
 
+    /// Apply `limit` / `offset` on the outer query. The literal keeps the `Float64` value, so SQL
+    /// `LIMIT`/`OFFSET` handles negative (tail) and fractional (share) values natively.
+    if (limit_setting != 0)
+        outer_select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(Field(limit_setting)));
+    if (offset_setting != 0)
+        outer_select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, make_intrusive<ASTLiteral>(Field(offset_setting)));
+
     auto outer_union = make_intrusive<ASTSelectWithUnionQuery>();
     outer_union->list_of_selects = make_intrusive<ASTExpressionList>();
     outer_union->list_of_selects->children.push_back(std::move(outer_select));
@@ -1279,6 +1330,15 @@ static void applyQueryConstructionSettings(
         outer_union->set(outer_union->settings_ast, base_settings);
 
     ast = std::move(outer_union);
+
+    /// The `limit` / `offset` settings are now materialized as the outer query's `LIMIT`/`OFFSET`.
+    /// Clear them so the downstream interpreter / analyzer does not apply them a second time (which
+    /// would otherwise double-cap the result and re-introduce the combining behavior we just removed).
+    if (limit_setting != 0 || offset_setting != 0)
+    {
+        context->setSetting("limit", Field(static_cast<Float64>(0)));
+        context->setSetting("offset", Field(static_cast<Float64>(0)));
+    }
 }
 
 
