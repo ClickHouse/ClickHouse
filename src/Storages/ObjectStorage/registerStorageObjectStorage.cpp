@@ -80,11 +80,25 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     ContextMutablePtr context_copy = Context::createCopy(args.getContext());
     Settings settings_copy = args.getLocalContext()->getSettingsCopy();
     context_copy->setSettings(settings_copy);
+
+    /// When loading an already-created table from existing metadata (server startup or RESTORE), the S3
+    /// credentials were validated at CREATE time, so do not re-apply the user-query credential restriction
+    /// here. Otherwise a table that legitimately used server-managed credentials would fail to load after a
+    /// restart. This mirrors the dynamic-disk `isLoadingFromExistingMetadata` skip. A user-issued `ATTACH`
+    /// uses `LoadingStrictnessLevel::ATTACH` and is still re-validated.
+    ContextPtr object_storage_context = context;
+    if (isLoadingFromExistingMetadata(args.mode))
+    {
+        auto unrestricted_context = Context::createCopy(context);
+        unrestricted_context->setSetting("s3_allow_server_credentials_in_user_queries", true);
+        object_storage_context = unrestricted_context;
+    }
+
     return std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
-        configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
+        configuration->createObjectStorage(object_storage_context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
         context_copy, /// Use global context.
         args.table_id,
         args.columns,
