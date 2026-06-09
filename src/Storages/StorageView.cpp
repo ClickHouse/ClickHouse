@@ -489,12 +489,6 @@ public:
 
             where_actions_ = ExpressionAnalyzer(where_clone, syntax, context).getActions(false, true);
             where_column_name_ = where_clone->getColumnName();
-
-            /// The `WHERE` predicate may contain set-dependent functions such as `a IN (SELECT ...)`.
-            /// Without building those sets first, `FunctionIn` sees a not-ready set and throws a
-            /// logical error instead of enforcing the constraint. Build them once here, mirroring
-            /// `CheckConstraintsTransform`.
-            VirtualColumnUtils::buildSetsForDAG(where_actions_->getActionsDAG(), context);
         }
 
         addInterpreterContext(std::move(insert_context));
@@ -523,16 +517,44 @@ public:
         /// Check the `WHERE` constraint: every inserted row must satisfy the view's condition.
         if (where_actions_)
         {
-            Block check_block(block);
-
-            for (const auto & [view_name, target_name] : column_mapping_)
+            /// The `WHERE` predicate may contain set-dependent functions such as `a IN (SELECT ...)`.
+            /// Without building those sets first, `FunctionIn` sees a not-ready set and throws a
+            /// logical error instead of enforcing the constraint. Build them once, lazily, on the
+            /// first chunk — mirroring `CheckConstraintsTransform::onConsume`. The set is built by
+            /// running the subquery's own pipeline, which must happen while this sink is executing,
+            /// not while it is being constructed (the inner `INSERT` executor is already started by
+            /// then), so building it here rather than in the constructor avoids a nested-pipeline
+            /// execution during outer-pipeline construction.
+            if (!where_sets_built_)
             {
-                if (check_block.has(view_name) && !check_block.has(target_name))
-                {
-                    auto target_column = check_block.getByName(view_name);
-                    target_column.name = target_name;
-                    check_block.insert(std::move(target_column));
-                }
+                VirtualColumnUtils::buildSetsForDAG(where_actions_->getActionsDAG(), context_);
+                where_sets_built_ = true;
+            }
+
+            /// Build the predicate input block by position. The view's `WHERE` references the
+            /// underlying table's (target) column names, so map each projected view column to its
+            /// target name positionally. Doing this by position rather than by name lookup is
+            /// required for an alias swap such as `SELECT a AS b, b AS a FROM t WHERE a > 0`: a
+            /// name-based copy guarded by `has(target_name)` would see the target name already
+            /// present (as a colliding view-column name) and skip it, leaving the predicate bound
+            /// to the wrong view column and letting a constraint-violating row pass.
+            Block check_block;
+            for (const auto & col : block)
+            {
+                auto it = column_mapping_.find(col.name);
+                const String target_name = (it != column_mapping_.end()) ? it->second : col.name;
+                ColumnWithTypeAndName target_col = col;
+                target_col.name = target_name;
+                check_block.insert(std::move(target_col));
+            }
+
+            /// Also expose the original view-column names for predicates that reference a view
+            /// alias, but only when the name does not collide with a target name already inserted
+            /// above — the target-name binding wins, matching the table-level predicate semantics.
+            for (const auto & col : block)
+            {
+                if (!check_block.has(col.name))
+                    check_block.insert(col);
             }
 
             where_actions_->execute(check_block);
@@ -678,6 +700,7 @@ private:
 
     ExpressionActionsPtr where_actions_;
     String where_column_name_;
+    bool where_sets_built_ = false;
 };
 
 
