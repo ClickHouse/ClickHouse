@@ -249,6 +249,7 @@ namespace FailPoints
     extern const char replicated_queue_fail_next_entry[];
     extern const char replicated_queue_unfail_entries[];
     extern const char finish_set_quorum_failed_parts[];
+    extern const char replicated_merge_tree_pause_before_mark_quorum_failed_try_multi[];
     extern const char zero_copy_lock_zk_fail_before_op[];
     extern const char zero_copy_lock_zk_fail_after_op[];
     extern const char zero_copy_unlock_zk_fail_before_op[];
@@ -2575,10 +2576,11 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
     /// Perhaps we don't need this part, because during write with quorum, the quorum has failed
     /// (see below about `/quorum/failed_parts`).
-    if (entry.quorum && getZooKeeper()->exists(fs::path(zookeeper_path) / "quorum" / "failed_parts" / entry.new_part_name))
+    if (entry.quorum && isQuorumFailedForPart(entry.new_part_name, getZooKeeper()))
     {
         LOG_DEBUG(log, "Skipping action for part {} because quorum for that part was failed.", entry.new_part_name);
-        return true;    /// NOTE Deletion from `virtual_parts` is not done, but it is only necessary for merge.
+        queue.removeFailedQuorumPart(MergeTreePartInfo::fromPartName(entry.new_part_name, format_version));
+        return true;
     }
 
     switch (entry.type)
@@ -2708,6 +2710,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                         }
 
                         Coordination::Responses responses;
+                        FailPointInjection::pauseFailPoint(FailPoints::replicated_merge_tree_pause_before_mark_quorum_failed_try_multi);
                         auto code = zookeeper->tryMulti(ops, responses);
 
                         if (code == Coordination::Error::ZOK)
@@ -2725,6 +2728,15 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                                 "State was changed or isn't expected when trying to mark quorum for part {} as failed. Code: {}",
                                 entry.new_part_name,
                                 code);
+
+                            if ((code == Coordination::Error::ZNODEEXISTS || code == Coordination::Error::ZNONODE)
+                                && isQuorumFailedForPart(entry.new_part_name, zookeeper))
+                            {
+                                LOG_DEBUG(log, "Quorum for part {} was marked as failed by another replica.", entry.new_part_name);
+                                FailPointInjection::disableFailPoint(FailPoints::finish_set_quorum_failed_parts);
+                                queue.removeFailedQuorumPart(part_info);
+                                return true;
+                            }
                         }
                         else
                             throw Coordination::Exception(code);
@@ -11157,6 +11169,33 @@ bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & p
                 return true;
         }
     }
+    return false;
+}
+
+
+bool StorageReplicatedMergeTree::isQuorumFailedForPart(const String & part_name, const zkutil::ZooKeeperPtr & zookeeper) const
+{
+    return zookeeper->exists(fs::path(zookeeper_path) / "quorum" / "failed_parts" / part_name);
+}
+
+bool StorageReplicatedMergeTree::isQuorumWritePendingForPart(const String & part_name, const zkutil::ZooKeeperPtr & zookeeper) const
+{
+    String quorum_str;
+    const String quorum_unparallel_path = fs::path(zookeeper_path) / "quorum" / "status";
+    const String quorum_parallel_path = fs::path(zookeeper_path) / "quorum" / "parallel" / part_name;
+
+    if (zookeeper->tryGet(quorum_unparallel_path, quorum_str))
+    {
+        ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
+        return quorum_entry.part_name == part_name;
+    }
+
+    if (zookeeper->tryGet(quorum_parallel_path, quorum_str))
+    {
+        ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
+        return quorum_entry.part_name == part_name;
+    }
+
     return false;
 }
 

@@ -99,6 +99,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
     ONCE(replicated_merge_tree_restore_attach_retry) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
+    PAUSEABLE_ONCE(replicated_merge_tree_pause_before_mark_quorum_failed_try_multi) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
     PAUSEABLE_ONCE(smt_wait_next_mutation) \
     PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \

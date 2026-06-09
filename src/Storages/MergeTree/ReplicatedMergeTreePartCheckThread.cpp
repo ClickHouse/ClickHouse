@@ -544,6 +544,25 @@ bool ReplicatedMergeTreePartCheckThread::onPartIsLostForever(const String & part
         }
     }
 
+    if (lost_part_info.level == 0 && lost_part_info.mutation == 0)
+    {
+        auto zookeeper = storage.getZooKeeper();
+
+        if (storage.isQuorumFailedForPart(part_name, zookeeper))
+        {
+            LOG_INFO(log, "Part {} has failed quorum, will not create empty part.", part_name);
+            storage.queue.removeFailedQuorumPart(lost_part_info);
+            return true;
+        }
+
+        if (storage.isQuorumWritePendingForPart(part_name, zookeeper))
+        {
+            LOG_INFO(log, "Quorum write for part {} is still pending, will recheck later.", part_name);
+            enqueuePart(part_name, 30);
+            return true;
+        }
+    }
+
     ThreadFuzzer::maybeInjectSleep();
 
     if (storage.createEmptyPartInsteadOfLost(storage.getZooKeeper(), part_name))

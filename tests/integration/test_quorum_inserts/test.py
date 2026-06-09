@@ -475,3 +475,127 @@ def test_insert_quorum_with_keeper_loss_connection(started_cluster):
             assert zero.contains_in_log(
                 "fails to commit and will not retry or clean garbage"
             )
+
+
+def test_failed_quorum_cleans_replication_queue(started_cluster):
+    table_name = "test_failed_quorum_cleans_queue_" + uuid.uuid4().hex
+    zk_table_path = f"/clickhouse/tables/{table_name}"
+    pause_failpoint = "replicated_merge_tree_pause_before_mark_quorum_failed_try_multi"
+    create_query = (
+        f"CREATE TABLE {table_name} "
+        "(a Int8, d Date) "
+        "Engine = ReplicatedMergeTree('/clickhouse/tables/{table}', '{replica}') "
+        "ORDER BY a "
+    )
+
+    zero.query(create_query)
+    first.query(create_query)
+    second.query(create_query)
+
+    first.query(f"SYSTEM STOP FETCHES {table_name}")
+    second.query(f"SYSTEM STOP FETCHES {table_name}")
+
+    zero.query("SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op")
+    zero.query("SYSTEM ENABLE FAILPOINT replicated_merge_tree_insert_retry_pause")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        insert_future = executor.submit(
+            lambda: zero.query(
+                f"INSERT INTO {table_name}(a,d) VALUES(1, '2011-01-01')",
+                settings={"insert_quorum_timeout": 150000},
+            )
+        )
+
+        zk = cluster.get_kazoo_client("zoo1")
+
+        retries = 0
+        while True:
+            if zk.exists(f"{zk_table_path}/replicas/zero/parts/all_0_0_0"):
+                break
+            time.sleep(1)
+            retries += 1
+            if retries == 120:
+                raise Exception("Can not wait for all_0_0_0 part")
+
+        with PartitionManager() as pm:
+            pm.drop_instance_zk_connections(zero)
+
+            retries = 0
+            while True:
+                if zk.exists(f"{zk_table_path}/replicas/zero/is_active") is None:
+                    break
+                time.sleep(1)
+                retries += 1
+                if retries == 120:
+                    raise Exception("Can not wait cluster replica inactive")
+
+            # Part is not visible in ZooKeeper anymore, but quorum is still pending.
+            zk.delete(f"{zk_table_path}/replicas/zero/parts/all_0_0_0", recursive=True)
+
+            # Pause the second replica right before tryMulti, then let the first replica
+            # win the race and verify that the second replica handles ZNODEEXISTS.
+            second.query(f"SYSTEM ENABLE FAILPOINT {pause_failpoint}")
+            second_pause_future = executor.submit(
+                lambda: second.query(
+                    f"SYSTEM WAIT FAILPOINT {pause_failpoint} PAUSE",
+                    timeout=300,
+                )
+            )
+            second_start_fetch_future = executor.submit(
+                lambda: second.query(f"SYSTEM START FETCHES {table_name}")
+            )
+
+            concurrent.futures.wait([second_pause_future])
+            assert second_pause_future.exception() is None
+
+            first.query(f"SYSTEM START FETCHES {table_name}")
+            second.query(f"SYSTEM NOTIFY FAILPOINT {pause_failpoint}")
+            concurrent.futures.wait([second_start_fetch_future])
+            assert second_start_fetch_future.exception() is None
+
+            # Without the fix, the losing replica keeps GET_PART in the queue after ZNODEEXISTS.
+            for node in (first, second):
+                for _ in range(60):
+                    if TSV("0") == TSV(
+                        node.query(
+                            f"SELECT count() FROM system.replication_queue WHERE database = currentDatabase() AND table = '{table_name}'"
+                        )
+                    ):
+                        break
+                    time.sleep(0.5)
+                else:
+                    raise Exception(f"replication queue is not empty on {node.name}")
+
+            assert first.contains_in_log(
+                "Quorum for part all_0_0_0 was marked as failed by another replica"
+            ) or second.contains_in_log(
+                "Quorum for part all_0_0_0 was marked as failed by another replica"
+            )
+
+            zero.query("SYSTEM ENABLE FAILPOINT finish_clean_quorum_failed_parts")
+            clean_quorum_fail_parts_future = executor.submit(
+                lambda: zero.query(
+                    "SYSTEM WAIT FAILPOINT finish_clean_quorum_failed_parts",
+                    timeout=300,
+                )
+            )
+            pm.restore_instance_zk_connections(zero)
+            concurrent.futures.wait([clean_quorum_fail_parts_future])
+            assert clean_quorum_fail_parts_future.exception() is None
+
+            zero.query(
+                "SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
+            )
+            concurrent.futures.wait([insert_future])
+            assert insert_future.exception() is not None
+
+            for node in (zero, first, second):
+                node.query(f"SYSTEM SYNC REPLICA {table_name}", timeout=120)
+                assert TSV("0") == TSV(
+                    node.query(
+                        f"SELECT count() FROM system.replication_queue WHERE database = currentDatabase() AND table = '{table_name}'"
+                    )
+                )
+
+            second.query(f"SYSTEM START FETCHES {table_name}")
+    zero.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER cluster")
