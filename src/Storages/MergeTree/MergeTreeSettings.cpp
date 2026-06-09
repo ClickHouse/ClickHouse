@@ -791,6 +791,16 @@ namespace ErrorCodes
     **See Also**
     - [Workload Scheduling](/operations/workload-scheduling.md)
     )", 0) \
+    DECLARE(String, move_workload, "", R"(
+    Used to regulate how resources are utilized and shared between part moves
+    between disks/volumes and other workloads. Specified value is used as
+    `workload` setting value for background part moves of this table. If not
+    specified (empty string), then server setting `move_workload` is used
+    instead.
+
+    **See Also**
+    - [Workload Scheduling](/operations/workload-scheduling.md)
+    )", 0) \
     DECLARE(Milliseconds, background_task_preferred_step_execution_time_ms, 50, R"(
     Target time to execution of one step of merge or mutation. Can be exceeded if
     one step takes longer time

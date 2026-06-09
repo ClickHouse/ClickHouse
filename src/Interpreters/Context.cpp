@@ -346,6 +346,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsString merge_workload;
     extern const MergeTreeSettingsString mutation_workload;
+    extern const MergeTreeSettingsString move_workload;
 }
 
 namespace ServerSetting
@@ -525,6 +526,7 @@ struct ContextSharedPart : boost::noncopyable
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
+    String move_workload TSA_GUARDED_BY(mutex);                 /// Workload setting value that is used by all part moves
     String license_file TSA_GUARDED_BY(mutex);                  /// BYOC license text
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
@@ -2268,6 +2270,18 @@ void Context::setMutationWorkload(const String & value)
     shared->mutation_workload = value;
 }
 
+String Context::getMoveWorkload() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->move_workload;
+}
+
+void Context::setMoveWorkload(const String & value)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->move_workload = value;
+}
+
 bool Context::getThrowOnUnknownWorkload() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -3429,6 +3443,14 @@ void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_set
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
     (*settings)[Setting::workload]
         = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
+}
+
+void Context::makeQueryContextForMove(const MergeTreeSettings & merge_tree_settings)
+{
+    makeQueryContext();
+    classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
+    (*settings)[Setting::workload]
+        = merge_tree_settings[MergeTreeSetting::move_workload].value.empty() ? getMoveWorkload() : merge_tree_settings[MergeTreeSetting::move_workload];
 }
 
 void Context::makeSessionContext()

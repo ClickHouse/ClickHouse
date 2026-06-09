@@ -1680,6 +1680,7 @@
     <!--
     <merge_workload>merges_and_mutations</merge_workload>
     <mutation_workload>merges_and_mutations</mutation_workload>
+    <move_workload>moves</move_workload>
     -->
 
     <!-- Workload scheduling: throw or provide unlimited access to resource given unknown `workload` query setting -->

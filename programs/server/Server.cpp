@@ -329,6 +329,7 @@ namespace ServerSetting
     extern const ServerSettingsString merge_workload;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsString mutation_workload;
+    extern const ServerSettingsString move_workload;
     extern const ServerSettingsString query_condition_cache_policy;
     extern const ServerSettingsUInt64 query_condition_cache_size;
     extern const ServerSettingsDouble query_condition_cache_size_ratio;
@@ -2414,6 +2415,7 @@ try
 
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
+            global_context->setMoveWorkload(new_server_settings[ServerSetting::move_workload]);
             global_context->setThrowOnUnknownWorkload(new_server_settings[ServerSetting::throw_on_unknown_workload]);
             global_context->setCPUSlotPreemption(
                 new_server_settings[ServerSetting::cpu_slot_preemption],

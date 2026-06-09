@@ -1063,6 +1063,12 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     **See Also**
     - [Workload Scheduling](/operations/workload-scheduling.md)
     )", 0) \
+    DECLARE(String, move_workload, "default", R"(
+    Used to regulate how resources are utilized and shared between part moves between disks/volumes and other workloads. Specified value is used as `workload` setting value for all background moves. Can be overridden by a merge tree setting.
+
+    **See Also**
+    - [Workload Scheduling](/operations/workload-scheduling.md)
+    )", 0) \
     DECLARE(Bool, throw_on_unknown_workload, false, R"(
     Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
 
@@ -1763,6 +1769,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
 
             {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
             {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},
+            {"move_workload", {context->getMoveWorkload(), ChangeableWithoutRestart::Yes}},
             {"license_file", {context->getLicenseFile(), ChangeableWithoutRestart::Yes}},
             {"throw_on_unknown_workload", {std::to_string(context->getThrowOnUnknownWorkload()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_preemption", {std::to_string(context->getCPUSlotPreemption()), ChangeableWithoutRestart::Yes}},
