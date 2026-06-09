@@ -4298,6 +4298,8 @@ To keep it disabled for untrusted users, pin it in their profile by both setting
 ```
 
 This setting has no effect in `clickhouse-local`, where the user is the operator.
+
+Note: Glue and BigLake (`DataLakeCatalog`) catalogs always evaluate this with the global server context, because the catalog object is created once and shared across users. The per-session/profile value therefore cannot enable their server-managed credentials; such catalogs must be given explicit credentials (for example `aws_access_key_id`/`aws_secret_access_key`, or a complete Google ADC triple).
 )", 0) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
