@@ -280,16 +280,6 @@ void optimizeTreeSecondPass(
             });
     }
 
-    /// Run after runtime filter push-down so that chains of joins are detected correctly.
-    if (optimization_settings.min_columns_for_join_lazy_indexing > 0)
-    {
-        traverseQueryPlan(stack, root,
-            [&](auto & frame_node)
-            {
-                optimizeJoinLazyIndexing(frame_node, nodes, optimization_settings);
-            });
-    }
-
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
     if (optimization_settings.optimize_prewhere)
     {
@@ -412,21 +402,43 @@ void optimizeTreeSecondPass(
         {
             read_from_local_parallel_replica_plan = true;
 
+            /// The local plan is the initiator's share of a parallel-replicas read. The only thing it must
+            /// agree on with the remote replicas is the coordination mode (Default / WithOrder / ReverseOrder)
+            /// announced to the shared coordinator — everything else stays local (each replica announces its
+            /// own ranges and the coordinator reconciles them). That mode is a pure function of
+            /// `query_info.input_order_info`, which is set only by `ReadFromMergeTree::requestReadingInOrder`.
+            /// So keep the outer `optimization_settings` (it carries the contracts this local plan must be
+            /// optimized under — deferred set building, reused index/PK analysis, etc.) and override, with the
+            /// subquery's values, exactly the settings that gate an optimization which can call
+            /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`),
+            /// `optimizeAggregationInOrder` (`aggregation_in_order`), `optimizeDistinctInOrder`
+            /// (`distinct_in_order`) and `tryReuseStorageOrderingForWindowFunctions`
+            /// (`reuse_storage_ordering_for_window_functions`). If a new such optimization is added, its gate
+            /// must be added here too.
+            auto local_optimization_settings = optimization_settings;
+            if (auto local_context = read_from_local->getContext())
+            {
+                const QueryPlanOptimizationSettings subquery_optimization_settings(local_context);
+                local_optimization_settings.read_in_order = subquery_optimization_settings.read_in_order;
+                local_optimization_settings.read_in_order_through_join = subquery_optimization_settings.read_in_order_through_join;
+                local_optimization_settings.aggregation_in_order = subquery_optimization_settings.aggregation_in_order;
+                local_optimization_settings.distinct_in_order = subquery_optimization_settings.distinct_in_order;
+                local_optimization_settings.reuse_storage_ordering_for_window_functions
+                    = subquery_optimization_settings.reuse_storage_ordering_for_window_functions;
+            }
+
             auto local_plan = read_from_local->extractQueryPlan();
-            local_plan->optimize(optimization_settings);
+            local_plan->optimize(local_optimization_settings);
 
             auto * local_plan_node = frame.node;
             query_plan.replaceNodeWithPlan(local_plan_node, std::move(*local_plan));
 
-            // after applying optimize() we still can have several expression in a row,
-            // so merge them to make plan more concise
-            if (optimization_settings.merge_expressions)
+            if (local_optimization_settings.merge_expressions)
                 tryMergeExpressions(local_plan_node, nodes, {});
         }
 
         stack.pop_back();
     }
-    // local plan can contain redundant sorting
     if (read_from_local_parallel_replica_plan && optimization_settings.remove_redundant_sorting)
         tryRemoveRedundantSorting(&root);
     /// Optimize exchanges
