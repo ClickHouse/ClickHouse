@@ -388,6 +388,21 @@ ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr conte
     return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
 }
 
+VectorWithMemoryTracking<size_t> TableFunctionRemote::getTableExpressionArgumentIndexes(
+    const ASTPtr & ast_function,
+    ContextPtr) const
+{
+    const auto * function = ast_function->as<ASTFunction>();
+    if (!function || !function->arguments || function->arguments->children.size() <= 1)
+        return {};
+
+    const auto * table_function_argument = function->arguments->children[1]->as<ASTFunction>();
+    if (table_function_argument && TableFunctionFactory::instance().isTableFunctionName(table_function_argument->name))
+        return {1};
+
+    return {};
+}
+
 TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_)
     : name{name_}, secure{secure_}
 {

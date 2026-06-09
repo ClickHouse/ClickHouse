@@ -32,6 +32,9 @@ private:
     const char * getStorageEngineName() const override { return "Distributed"; }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    VectorWithMemoryTracking<size_t> getTableExpressionArgumentIndexes(
+        const ASTPtr & ast_function,
+        ContextPtr context) const override;
 
     std::string name;
     bool is_cluster_function;

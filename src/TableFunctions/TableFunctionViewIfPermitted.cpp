@@ -50,6 +50,9 @@ private:
     const char * getStorageEngineName() const override { return "View"; }
 
     VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    VectorWithMemoryTracking<size_t> getTableExpressionArgumentIndexes(
+        const ASTPtr & ast_function,
+        ContextPtr context) const override;
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -66,6 +69,17 @@ private:
 VectorWithMemoryTracking<size_t> TableFunctionViewIfPermitted::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
 {
     return {0};
+}
+
+VectorWithMemoryTracking<size_t> TableFunctionViewIfPermitted::getTableExpressionArgumentIndexes(
+    const ASTPtr & ast_function,
+    ContextPtr) const
+{
+    const auto * function = ast_function->as<ASTFunction>();
+    if (!function || !function->arguments || function->arguments->children.size() != 2)
+        return {};
+
+    return {1};
 }
 
 void TableFunctionViewIfPermitted::parseArguments(const ASTPtr & ast_function, ContextPtr context)

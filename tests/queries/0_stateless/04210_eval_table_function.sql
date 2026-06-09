@@ -47,3 +47,5 @@ SELECT * FROM eval('SHOW TABLES'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM eval('SELECT 1; SELECT 2'); -- { serverError SYNTAX_ERROR }
 SELECT * FROM eval('SELECT * FROM eval(''SELECT 1'')'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM eval('SELECT * FROM remote(''remote'', eval(''SELECT 1''))'); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM eval('SELECT * FROM loop(eval(''SELECT 1'')) LIMIT 1'); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM eval('SELECT * FROM viewIfPermitted(SELECT 1 AS x ELSE eval(''SELECT 1 AS x''))'); -- { serverError BAD_ARGUMENTS }

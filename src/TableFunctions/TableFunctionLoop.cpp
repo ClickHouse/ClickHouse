@@ -32,6 +32,9 @@ namespace DB
             const char * getStorageEngineName() const override { return "Loop"; }
             ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
             void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+            VectorWithMemoryTracking<size_t> getTableExpressionArgumentIndexes(
+                const ASTPtr & ast_function,
+                ContextPtr context) const override;
 
             // save the inner table function AST
             ASTPtr inner_table_function_ast;
@@ -94,6 +97,20 @@ namespace DB
         {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function 'loop' must have 1 or 2 arguments.");
         }
+    }
+
+    VectorWithMemoryTracking<size_t> TableFunctionLoop::getTableExpressionArgumentIndexes(
+        const ASTPtr & ast_function,
+        ContextPtr) const
+    {
+        const auto * function = ast_function->as<ASTFunction>();
+        if (!function || !function->arguments || function->arguments->children.size() != 1)
+            return {};
+
+        if (function->arguments->children[0]->as<ASTFunction>())
+            return {0};
+
+        return {};
     }
 
     ColumnsDescription TableFunctionLoop::getActualTableStructure(ContextPtr context, bool is_insert_query) const

@@ -59,6 +59,14 @@ public:
       */
     virtual VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
 
+    /// Return indexes of arguments that are interpreted as table expressions.
+    virtual VectorWithMemoryTracking<size_t> getTableExpressionArgumentIndexes(
+        const ASTPtr & /*ast_function*/,
+        ContextPtr /*context*/) const
+    {
+        return {};
+    }
+
     /// Return a query represented by a table function when it can be used directly in distributed rewrites.
     virtual const ASTSelectWithUnionQuery * getSelectQueryForDistributedRewrite() const { return nullptr; }
 

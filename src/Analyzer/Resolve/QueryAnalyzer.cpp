@@ -4238,6 +4238,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     QueryTreeNodes result_table_function_arguments;
 
     auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(table_function_node, scope_context);
+    auto table_expression_argument_indexes = table_function_ptr->getTableExpressionArgumentIndexes(
+        table_function_node_typed.toAST(),
+        scope_context);
 
     auto & table_function_arguments = table_function_node_typed.getArguments().getNodes();
     size_t table_function_arguments_size = table_function_arguments.size();
@@ -4279,7 +4282,12 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         if (auto * table_function_argument_function = table_function_argument->as<FunctionNode>())
         {
             const auto & table_function_argument_function_name = table_function_argument_function->getFunctionName();
-            if (TableFunctionFactory::instance().isTableFunctionName(table_function_argument_function_name))
+            auto table_expression_argument_index_it = std::find(
+                table_expression_argument_indexes.begin(),
+                table_expression_argument_indexes.end(),
+                table_function_argument_index);
+            if (table_expression_argument_index_it != table_expression_argument_indexes.end()
+                && TableFunctionFactory::instance().isTableFunctionName(table_function_argument_function_name))
             {
                 auto table_function_node_to_resolve_typed = std::make_shared<TableFunctionNode>(table_function_argument_function_name);
                 table_function_node_to_resolve_typed->getArgumentsNode() = table_function_argument_function->getArgumentsNode();

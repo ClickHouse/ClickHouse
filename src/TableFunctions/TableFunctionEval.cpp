@@ -221,29 +221,32 @@ String evaluateSubqueryQueryText(const ASTPtr & query, ContextPtr context)
     return extractQueryTextFromField((*block.getByPosition(0).column)[0], block.getByPosition(0).type, "input subquery");
 }
 
-bool isRemoteTableFunctionWithSourceArgument(const ASTFunction & function, size_t argument_index)
+bool containsArgumentIndex(const VectorWithMemoryTracking<size_t> & argument_indexes, size_t argument_index)
 {
-    if (argument_index != 1)
-        return false;
+    for (const auto index : argument_indexes)
+    {
+        if (index == argument_index)
+            return true;
+    }
 
-    return function.name == "remote" || function.name == "remoteSecure" || function.name == "cluster" || function.name == "clusterAllReplicas";
+    return false;
 }
 
-void checkNoNestedEvalTableFunction(const ASTPtr & table_function_ast);
+void checkNoNestedEvalTableFunction(const ASTPtr & table_function_ast, ContextPtr context);
 
-void checkNoNestedEval(const ASTPtr & ast)
+void checkNoNestedEval(const ASTPtr & ast, ContextPtr context)
 {
     if (const auto * table_expression = ast->as<ASTTableExpression>(); table_expression && table_expression->table_function)
     {
-        checkNoNestedEvalTableFunction(table_expression->table_function);
+        checkNoNestedEvalTableFunction(table_expression->table_function, context);
         return;
     }
 
     for (const auto & child : ast->children)
-        checkNoNestedEval(child);
+        checkNoNestedEval(child, context);
 }
 
-void checkNoNestedEvalTableFunction(const ASTPtr & table_function_ast)
+void checkNoNestedEvalTableFunction(const ASTPtr & table_function_ast, ContextPtr context)
 {
     const auto * function = table_function_ast->as<ASTFunction>();
     if (!function)
@@ -255,13 +258,18 @@ void checkNoNestedEvalTableFunction(const ASTPtr & table_function_ast)
     if (!function->arguments)
         return;
 
+    const auto table_function = TableFunctionFactory::instance().tryGet(function->name, context);
+    auto table_expression_argument_indexes = table_function
+        ? table_function->getTableExpressionArgumentIndexes(table_function_ast, context)
+        : VectorWithMemoryTracking<size_t>{};
+
     for (size_t argument_index = 0; argument_index != function->arguments->children.size(); ++argument_index)
     {
         const auto & argument = function->arguments->children[argument_index];
-        if (isRemoteTableFunctionWithSourceArgument(*function, argument_index))
-            checkNoNestedEvalTableFunction(argument);
+        if (containsArgumentIndex(table_expression_argument_indexes, argument_index))
+            checkNoNestedEvalTableFunction(argument, context);
         else
-            checkNoNestedEval(argument);
+            checkNoNestedEval(argument, context);
     }
 }
 
@@ -295,7 +303,7 @@ ASTPtr parseGeneratedQuery(const String & query_text, ContextPtr context)
         NormalizeSelectWithUnionQueryVisitor{data}.visit(query);
     }
 
-    checkNoNestedEval(query);
+    checkNoNestedEval(query, context);
     return query;
 }
 
