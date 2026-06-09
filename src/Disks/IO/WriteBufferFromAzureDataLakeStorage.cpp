@@ -259,10 +259,11 @@ void WriteBufferFromAzureDataLakeStorage::preFinalize()
 {
     if (is_prefinalized)
         return;
-    is_prefinalized = true;
 
     LOG_DEBUG(log, "Entering preFinalize for ADLS Gen2 file `{}`", blob_path);
-    appendBufferedData();
+    next();
+
+    is_prefinalized = true;
     WriteBuffer::set(fake_buffer_when_prefinalized, sizeof(fake_buffer_when_prefinalized));
     ensureCreated();
     runWithRetries(
