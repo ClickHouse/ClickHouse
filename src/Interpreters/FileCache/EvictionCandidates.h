@@ -104,7 +104,7 @@ public:
     using AfterEvictWriteFunc = std::function<void(const CachePriorityGuard::WriteLock & lk)>;
     using AfterEvictStateFunc = std::function<void(const CacheStateGuard::Lock & lk)>;
 
-    EvictionCandidates();
+    explicit EvictionCandidates(IFileCachePriority::OnEvictCallback on_evict_callback_);
     ~EvictionCandidates();
 
     /// Total number of eviction candidates.
@@ -163,10 +163,10 @@ public:
 
     /// Get the original queue type of a candidate saved during removeQueueEntries.
     /// Returns None if not found (e.g., if removeQueueEntries was not called).
-    FileCacheQueueEntryType getOriginalQueueType(const FileSegmentMetadata * candidate) const
+    IFileCachePriority::QueueEntryType getOriginalQueueType(const FileSegmentMetadata * candidate) const
     {
         auto it = original_queue_types.find(candidate);
-        return it != original_queue_types.end() ? it->second : FileCacheQueueEntryType::None;
+        return it != original_queue_types.end() ? it->second : IFileCachePriority::QueueEntryType::None;
     }
 
 private:
@@ -176,7 +176,7 @@ private:
     FailedCandidates failed_candidates;
 
     /// Saved original queue type per candidate, populated in removeQueueEntries.
-    std::unordered_map<const FileSegmentMetadata *, FileCacheQueueEntryType> original_queue_types;
+    std::unordered_map<const FileSegmentMetadata *, IFileCachePriority::QueueEntryType> original_queue_types;
 
     AfterEvictWriteFunc after_evict_write_func;
     AfterEvictStateFunc after_evict_state_func;
@@ -185,6 +185,8 @@ private:
     bool removed_queue_entries = false;
 
     IFileCachePriority::HoldSpacePtr hold_space;
+
+    IFileCachePriority::OnEvictCallback on_evict_callback;
 
     LoggerPtr log;
 };
