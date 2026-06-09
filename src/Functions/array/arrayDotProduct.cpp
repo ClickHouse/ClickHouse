@@ -20,45 +20,6 @@ extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 
-/// Auto-vectorized dot product kernel.
-/// Uses manual unrolling with independent accumulators to break FP dependency chains,
-/// enabling the compiler to generate FMA instructions across all SIMD targets.
-/// Generates x86_64_v4 (AVX-512) and default (SSE2/NEON/AVX2) variants.
-MULTITARGET_FUNCTION_X86_V4(
-    MULTITARGET_FUNCTION_HEADER(template <typename ResultType, typename ArgumentType> static ResultType NO_SANITIZE_UNDEFINED NO_INLINE),
-    dotProductImpl,
-    MULTITARGET_FUNCTION_BODY((const ArgumentType * __restrict data_x, const ArgumentType * __restrict data_y, size_t count) {
-        /// Manual unrolling with independent accumulators to break FP dependency chains.
-        /// With FMA latency ~4 cycles and throughput 1/cycle, we need >= 4 independent
-        /// chains to saturate the pipeline. 16 accumulators is enough to do that while
-        /// keeping the per-row reduction and scalar remainder small: a wider unroll
-        /// (e.g. 128/sizeof = 32 for Float32) only pays off for very long arrays and
-        /// noticeably regresses the short (~150-element) arrays typical of vector search.
-        constexpr size_t unroll_count = 16;
-        ResultType partial_sums[unroll_count]{};
-
-        size_t i = 0;
-        const size_t unrolled_end = count / unroll_count * unroll_count;
-
-        /// Main unrolled loop — compiler auto-vectorizes with FMA. `ArgumentType` is widened to
-        /// `ResultType` on the fly, so `BFloat16` inputs (-> `Float32`) take the same vectorized path as
-        /// `Float32`; the widening is the identity when `ArgumentType` == `ResultType`.
-        for (; i < unrolled_end; i += unroll_count)
-            for (size_t s = 0; s < unroll_count; ++s)
-                partial_sums[s] += static_cast<ResultType>(data_x[i + s]) * static_cast<ResultType>(data_y[i + s]);
-
-        /// Reduce partial sums
-        ResultType sum = 0;
-        for (auto & partial_sum : partial_sums)
-            sum += partial_sum;
-
-        /// Tail: process remaining elements that don't fill a full unroll block
-        for (; i < count; ++i)
-            sum += static_cast<ResultType>(data_x[i]) * static_cast<ResultType>(data_y[i]);
-
-        return sum;
-    }))
-
 /// Batched dot-product kernels: each processes every row in a single call so the load stream over the
 /// input column(s) stays continuous. A per-row NO_INLINE call boundary stalls the hardware prefetcher
 /// (which regressed Float64 array distances on Zen5); one call over the whole column keeps it streaming.
@@ -194,7 +155,7 @@ struct DotProduct
 
 
 /// The implementation is modeled after the implementation of distance functions arrayL1Distance, arrayL2Distance, etc.
-/// The main difference is that arrayDotProduct() interferes the result type differently.
+/// The main difference is that arrayDotProduct() infers the result type differently.
 template <typename Kernel>
 class FunctionArrayScalarProduct final : public IFunction
 {

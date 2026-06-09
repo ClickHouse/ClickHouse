@@ -17,7 +17,7 @@
         ) ENGINE=Memory;
     </create_query>
 
-    <!-- Gererate arrays with random data -->
+    <!-- Generate arrays with random data -->
     <!-- Dimension = 150 is realistic for vector search use cases -->
 
     <fill_query>
