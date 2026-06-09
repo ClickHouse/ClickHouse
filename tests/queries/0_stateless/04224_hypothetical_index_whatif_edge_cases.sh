@@ -13,7 +13,7 @@ $CLICKHOUSE_CLIENT -n -q "
     ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
     INSERT INTO t_hypo_proj SELECT number, number FROM numbers(1000);
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_proj (b) TYPE minmax GRANULARITY 1;
-    EXPLAIN WHATIF SELECT a FROM t_hypo_proj WHERE b = 5 SETTINGS force_optimize_projection = 1;
+    EXPLAIN WHATIF SELECT a FROM t_hypo_proj WHERE b = 5 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 " 2>&1 | grep -m1 -o 'served from a projection'
 
 
