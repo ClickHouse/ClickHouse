@@ -1493,10 +1493,13 @@ TEST(ChimpTest, DecompressMalformedInputBitLengthOverflow32)
     /// For a 4-byte stream the quantized leading-zero bucket 7 decodes to 24 and a zero-length
     /// `data_bits` code decodes to 32, so `32 - 24 - 32` underflows the `UInt8 trailing_zero_bits`
     /// and the subsequent shift has an invalid count. A clean `CANNOT_DECOMPRESS` is expected instead.
+    /// The 9-byte common header is stripped by `decompress`, so the Chimp payload starts at `bytes_size`.
     constexpr unsigned char block[] = {
         0x9D,                   /// Chimp method byte
-        0x13, 0x00, 0x00, 0x00, /// compressed_size = 19
+        0x15, 0x00, 0x00, 0x00, /// compressed_size = 21
         0x08, 0x00, 0x00, 0x00, /// decompressed_size = 8 (2 items * 4 bytes)
+        0x04,                   /// bytes_size = 4
+        0x00,                   /// bytes_to_skip (unused)
         0x02, 0x00, 0x00, 0x00, /// items_count = 2
         0x00, 0x00, 0x00, 0x00, /// first value = 0
         0x40, 0xE0,             /// 0b01 flag, match_index=0, leading bucket 7 (=24), data_bits code 0 (=32)
@@ -1518,8 +1521,10 @@ TEST(ChimpTest, DecompressMalformedInputBitLengthOverflow64)
     /// and a zero-length `data_bits` code decodes to 64, so `64 - 24 - 64` underflows.
     constexpr unsigned char block[] = {
         0x9D,                   /// Chimp method byte
-        0x18, 0x00, 0x00, 0x00, /// compressed_size = 24
+        0x1A, 0x00, 0x00, 0x00, /// compressed_size = 26
         0x10, 0x00, 0x00, 0x00, /// decompressed_size = 16 (2 items * 8 bytes)
+        0x08,                   /// bytes_size = 8
+        0x00,                   /// bytes_to_skip (unused)
         0x02, 0x00, 0x00, 0x00, /// items_count = 2
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /// first value = 0
         0x40, 0x70, 0x00,       /// 0b01 flag, match_index=0, leading bucket 7 (=24), data_bits code 0 (=64)
@@ -1532,6 +1537,59 @@ TEST(ChimpTest, DecompressMalformedInputBitLengthOverflow64)
     dest.resize(16);
 
     auto codec = makeCodec("Chimp", std::make_shared<DataTypeFloat64>());
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
+TEST(ChimpTest, DecompressMalformedInputUnsupportedWidthAllInSkip)
+{
+    /// `Chimp` only supports 4- and 8-byte streams. A malformed header with `bytes_size = 255`,
+    /// `decompressed_size = 1`, and all data in the skip section used to take the skip-only fast path
+    /// (`bytes_to_skip == decompressed_size`) and return success without ever validating the width.
+    /// The width is now validated up front, so this must be rejected with `CANNOT_DECOMPRESS`.
+    constexpr unsigned char block[] = {
+        0x9D,                   /// Chimp method byte
+        0x0C, 0x00, 0x00, 0x00, /// compressed_size = 12
+        0x01, 0x00, 0x00, 0x00, /// decompressed_size = 1
+        0xFF,                   /// bytes_size = 255 (unsupported)
+        0x00,                   /// bytes_to_skip (unused)
+        0xAA,                   /// the single skipped byte
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(1);
+
+    auto codec = makeCodec("Chimp", std::make_shared<DataTypeFloat32>());
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
+TEST(ChimpTest, DecompressMalformedInputTruncatedStream)
+{
+    /// `BitReader::readBits` zero-pads instead of throwing once the source is exhausted, so a truncated
+    /// stream used to decode the full `items_count` values from padding bits. Here a `Chimp(4)` payload
+    /// claims `items_count = 2` but provides only a single bitstream byte `0xC0` (flag `0b11`, leading
+    /// bucket 0, requiring 32 more data bits that are not present). It must be rejected with
+    /// `CANNOT_DECOMPRESS` rather than producing a fabricated second value.
+    constexpr unsigned char block[] = {
+        0x9D,                   /// Chimp method byte
+        0x14, 0x00, 0x00, 0x00, /// compressed_size = 20
+        0x08, 0x00, 0x00, 0x00, /// decompressed_size = 8 (2 items * 4 bytes)
+        0x04,                   /// bytes_size = 4
+        0x00,                   /// bytes_to_skip (unused)
+        0x02, 0x00, 0x00, 0x00, /// items_count = 2
+        0x00, 0x00, 0x00, 0x00, /// first value = 0
+        0xC0,                   /// 0b11 flag, then only 6 bits left while 32 data bits are required
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(8);
+
+    auto codec = makeCodec("Chimp", std::make_shared<DataTypeFloat32>());
     ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
 }
 

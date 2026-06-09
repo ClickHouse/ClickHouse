@@ -332,6 +332,17 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
 
     static const auto DATA_BIT_LENGTH = getBitLengthOfLength(sizeof(T));
 
+    /// `BitReader::readBits` does not throw on underflow: once the source is exhausted it silently
+    /// returns zero-padded bits. A truncated stream would therefore decode the full `items_count`
+    /// values instead of failing. Guard every fixed- and variable-width read with the number of bits
+    /// that actually remain and reject the stream otherwise. For well-formed input the trailing byte
+    /// is zero-padded, so the bits we require are always present.
+    auto require_bits = [&](UInt64 bits_needed)
+    {
+        if (reader.remaining() < bits_needed)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Chimp-encoded data: corrupted input data.");
+    };
+
     // since data is tightly packed, up to 1 bit per value, and last byte is padded with zeroes,
     // we have to keep track of items to avoid reading more than there is.
     for (UInt32 items_read = 1; items_read < items_count && !reader.eof(); ++items_read)
@@ -340,13 +351,16 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
         BinaryValueInfo curr_xored_info = prev_xored_info;
         T xored_data = 0;
         UInt64 match_index = 0;
+        require_bits(2);
         UInt8 flag = static_cast<UInt8>(reader.readBits(2));
         switch (flag)
         {
             // 0b11 prefix
             case 3:
+                require_bits(LeadingZero::BIT_LENGTH);
                 curr_xored_info.leading_zero_bits = static_cast<UInt8>(LeadingZero::reverseBinaryRepresentation[reader.readBits(LeadingZero::BIT_LENGTH)]);
                 curr_xored_info.data_bits = sizeof(T) * 8 - curr_xored_info.leading_zero_bits;
+                require_bits(curr_xored_info.data_bits);
                 xored_data = static_cast<T>(reader.readBits(curr_xored_info.data_bits));
                 curr_value = prev_value ^ xored_data;
                 break;
@@ -354,11 +368,13 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
             case 2:
                 curr_xored_info.leading_zero_bits = prev_xored_info.leading_zero_bits;
                 curr_xored_info.data_bits = sizeof(T) * 8 - curr_xored_info.leading_zero_bits;
+                require_bits(curr_xored_info.data_bits);
                 xored_data = static_cast<T>(reader.readBits(curr_xored_info.data_bits));
                 curr_value = prev_value ^ xored_data;
                 break;
             // 0b01 prefix
             case 1:
+                require_bits(static_cast<UInt64>(LOG_NO_PREVIOUS_VALUES) + LeadingZero::BIT_LENGTH + DATA_BIT_LENGTH);
                 match_index = reader.readBits(LOG_NO_PREVIOUS_VALUES);
                 prev_value = stored_values[match_index];
                 curr_xored_info.leading_zero_bits = static_cast<UInt8>(LeadingZero::reverseBinaryRepresentation[reader.readBits(LeadingZero::BIT_LENGTH)]);
@@ -372,12 +388,14 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
                 if (static_cast<UInt32>(curr_xored_info.leading_zero_bits) + curr_xored_info.data_bits > sizeof(T) * 8)
                     throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Chimp-encoded data: corrupted input data.");
                 curr_xored_info.trailing_zero_bits = sizeof(T) * 8 - curr_xored_info.leading_zero_bits - curr_xored_info.data_bits;
+                require_bits(curr_xored_info.data_bits);
                 xored_data = static_cast<T>(reader.readBits(curr_xored_info.data_bits));
                 xored_data <<= curr_xored_info.trailing_zero_bits;
                 curr_value = prev_value ^ xored_data;
                 break;
             // 0b00 prefix
             case 0:
+                require_bits(LOG_NO_PREVIOUS_VALUES);
                 match_index = reader.readBits(LOG_NO_PREVIOUS_VALUES);
                 prev_value = stored_values[match_index];
                 curr_value = prev_value;
@@ -471,7 +489,11 @@ UInt32 CompressionCodecChimp::doDecompressData(const char * source, UInt32 sourc
 
     UInt8 bytes_size = source[0];
 
-    if (bytes_size == 0)
+    /// `Chimp` only ever writes 4- or 8-byte streams. Validate the width immediately, before the
+    /// skip-only fast path below returns, so that a malformed header (e.g. `bytes_size = 255`) with
+    /// all of the data in the skip section cannot bypass the width check that otherwise happens at
+    /// the `switch` and report success for an unsupported stream.
+    if (bytes_size != 4 && bytes_size != 8)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Chimp-encoded data. File has wrong header");
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
