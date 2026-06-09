@@ -4270,6 +4270,41 @@ Disabled by default.
 Allow using `from_zk` substitutions in the dynamic disk configuration (i.e. in the `disk()` function arguments).
 Disabled by default.
 )", 0) \
+    DECLARE(Bool, s3_allow_server_credentials_in_user_queries, false, R"(
+Allow S3 access that originates from user SQL to use server-managed credentials.
+
+When disabled (the default), the `s3`/`s3Cluster` table functions, the `S3`/`S3Queue` engines, S3 named collections, dynamic `disk(type=s3, ...)` definitions, `BACKUP`/`RESTORE TO S3`, DataLake table-data reads, and `DataLakeCatalog` databases (Glue, BigLake) may not resolve credentials from the environment, instance metadata (IMDS), IRSA, ECS, instance profile, SSO, AWS config/credentials files, `role_arn`-based STS assume-role, or the GCP OAuth metadata service. A request without explicit credentials or `NOSIGN` is rejected with `ACCESS_DENIED`.
+
+This prevents an authenticated user from making the server access S3 with its own (ambient) credentials. Credentials supplied explicitly are not affected: keys passed in the query, static keys in a named collection (created via SQL or defined in config), and keys in the server `<s3>` config all keep working.
+
+The recommended way to give user queries S3 access is a named collection with explicit credentials (or `NOSIGN` for public buckets): the keys stay out of the query text, and use of each collection is controlled with RBAC (`GRANT NAMED COLLECTION ON <name> TO <user>`), so you grant specific users specific buckets instead of exposing the server's own identity.
+
+Scope (out of scope on purpose): this setting blocks only the server's ambient credential sources listed above. It does not block operator-provisioned static credentials, even when a user query inherits them: static `access_key_id`/`secret_access_key` from the server `<s3>` config or from a config-defined named collection, and config request material such as `access_header` or server-side-encryption keys, are treated as explicit credentials and keep working.
+
+A trusted administrative client may need server-managed credentials for legitimate operations (for example, attaching system tables on an `s3_plain_rewritable` disk via SQL). Enable this setting in that client's session or settings profile to permit it.
+
+To keep it disabled for untrusted users, pin it in their profile by both setting the value explicitly to `0` and marking it `readonly`:
+
+```xml
+<profiles>
+    <untrusted>
+        <!-- The explicit value is required: a `readonly` constraint alone only blocks direct changes,
+             but `compatibility` with a version before this setting was introduced would otherwise
+             restore the old (allowing) default. Setting the value explicitly defeats `compatibility`. -->
+        <s3_allow_server_credentials_in_user_queries>0</s3_allow_server_credentials_in_user_queries>
+        <constraints>
+            <s3_allow_server_credentials_in_user_queries>
+                <readonly/>
+            </s3_allow_server_credentials_in_user_queries>
+        </constraints>
+    </untrusted>
+</profiles>
+```
+
+This setting has no effect in `clickhouse-local`, where the user is the operator.
+
+`DataLakeCatalog` databases (Glue, BigLake) are also covered, with one difference. A catalog object is created once with the global server context and shared by all users, so the value that applies to it is the one in the server's global configuration, not a per-user session or profile. The safe default still applies to catalogs: they cannot use the server's ambient credentials unless an operator enables this setting in the server configuration. Every user of the catalog then shares those credentials. A catalog given explicit credentials (Glue: `aws_access_key_id` and `aws_secret_access_key`; BigLake: a complete Google ADC triple) works regardless.
+)", 0) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
     DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(

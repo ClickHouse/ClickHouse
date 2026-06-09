@@ -266,7 +266,9 @@ def started_cluster():
                 "configs/query_log.xml",
                 "configs/text_log.xml",
             ],
-            user_configs=[],
+            user_configs=[
+                "configs/allow_server_credentials.xml",
+            ],
             stay_alive=True,
             with_glue_catalog=True,
             with_zookeeper=True

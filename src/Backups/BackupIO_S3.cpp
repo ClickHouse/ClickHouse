@@ -182,6 +182,21 @@ private:
             .is_s3express_bucket = S3::isS3ExpressEndpoint(s3_uri.endpoint),
         };
 
+        S3::CredentialsConfiguration credentials_configuration
+        {
+            settings.auth_settings[S3AuthSetting::use_environment_credentials],
+            settings.auth_settings[S3AuthSetting::use_insecure_imds_request],
+            settings.auth_settings[S3AuthSetting::expiration_window_seconds],
+            settings.auth_settings[S3AuthSetting::no_sign_request],
+            std::move(role_arn),
+            std::move(role_session_name),
+            /*sts_endpoint_override=*/""
+        };
+
+        /// BACKUP/RESTORE TO S3 is driven by user SQL, so it must not be able to reuse the server's own
+        /// S3 credentials.
+        credentials_configuration.forbid_implicit_credentials = context->shouldRestrictUserQueryS3Credentials();
+
         return S3::ClientFactory::instance().create(
             client_configuration,
             client_settings,
@@ -190,16 +205,7 @@ private:
             settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
             settings.auth_settings.server_side_encryption_kms_config,
             std::move(headers),
-            S3::CredentialsConfiguration
-            {
-                settings.auth_settings[S3AuthSetting::use_environment_credentials],
-                settings.auth_settings[S3AuthSetting::use_insecure_imds_request],
-                settings.auth_settings[S3AuthSetting::expiration_window_seconds],
-                settings.auth_settings[S3AuthSetting::no_sign_request],
-                std::move(role_arn),
-                std::move(role_session_name),
-                /*sts_endpoint_override=*/""
-            });
+            std::move(credentials_configuration));
     }
 
     Aws::Vector<Aws::S3::Model::Object> listObjects(S3::Client & client, const S3::URI & s3_uri, const String & file_name)
@@ -247,6 +253,7 @@ BackupReaderS3::BackupReaderS3(
     const String & secret_access_key_,
     const String & role_arn,
     const String & role_session_name,
+    bool no_sign_request,
     bool allow_s3_native_copy,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
@@ -263,6 +270,11 @@ BackupReaderS3::BackupReaderS3(
     {
         s3_settings.updateIfChanged(*endpoint_settings);
     }
+
+    /// Carry NOSIGN from the query / named collection so an unsigned restore is honored (and not rejected
+    /// by the server-managed-credentials check, which permits unsigned access).
+    if (no_sign_request)
+        s3_settings.auth_settings[S3AuthSetting::no_sign_request] = true;
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
@@ -345,6 +357,7 @@ BackupWriterS3::BackupWriterS3(
     const String & secret_access_key_,
     const String & role_arn,
     const String & role_session_name,
+    bool no_sign_request,
     bool allow_s3_native_copy,
     const String & storage_class_name,
     const ReadSettings & read_settings_,
@@ -364,6 +377,10 @@ BackupWriterS3::BackupWriterS3(
     {
         s3_settings.updateIfChanged(*endpoint_settings);
     }
+
+    /// Carry NOSIGN from the query / named collection so unsigned access is honored.
+    if (no_sign_request)
+        s3_settings.auth_settings[S3AuthSetting::no_sign_request] = true;
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;

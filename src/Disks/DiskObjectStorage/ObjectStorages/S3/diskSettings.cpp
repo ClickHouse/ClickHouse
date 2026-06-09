@@ -205,6 +205,12 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         /*sts_endpoint_override=*/""
     };
 
+    /// S3 access that is not for a server disk (s3/s3Cluster table functions, the S3/S3Queue engines,
+    /// DataLake table reads) is driven by user SQL, so it must not use the server's own credentials.
+    /// Server disks use the server's own credentials. User-created dynamic S3 disks are handled earlier,
+    /// in getDiskConfigurationFromAST.
+    credentials_configuration.forbid_implicit_credentials = !for_disk_s3 && context->shouldRestrictUserQueryS3Credentials();
+
     String access_key_id = auth_settings[S3AuthSetting::access_key_id];
     String secret_access_key = auth_settings[S3AuthSetting::secret_access_key];
     String session_token = auth_settings[S3AuthSetting::session_token];

@@ -9,6 +9,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/EnumReflection.h>
 #include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 #include <Server/CloudPlacementInfo.h>
 
 namespace DB
@@ -94,6 +95,7 @@ namespace ErrorCodes
 {
     extern const int AWS_ERROR;
     extern const int GCP_ERROR;
+    extern const int ACCESS_DENIED;
 }
 
 namespace S3
@@ -985,7 +987,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     auto logger = getLogger("S3CredentialsProviderChain");
 
     /// we don't provide any credentials to avoid signing
-    if (credentials_configuration.no_sign_request || configuration.http_client == "gcp_oauth")
+    if (credentials_configuration.no_sign_request || boost::iequals(configuration.http_client, "gcp_oauth"))
         return;
 
     /// add explicit credentials to the front of the chain
@@ -995,6 +997,12 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
         return;
     }
+
+    /// Under the restriction there are no explicit credentials, and every remaining provider in this chain
+    /// (environment, IMDS/IRSA, ECS, instance profile, SSO, and the AWS config/credentials file) resolves the
+    /// server's own credentials. Add none of them.
+    if (credentials_configuration.forbid_implicit_credentials)
+        return;
 
     if (credentials_configuration.use_environment_credentials)
     {
@@ -1306,10 +1314,63 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
 std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
     const DB::S3::PocoHTTPClientConfiguration & configuration,
     const Aws::Auth::AWSCredentials & credentials,
-    const CredentialsConfiguration & credentials_configuration)
+    const CredentialsConfiguration & credentials_configuration_)
 {
+    CredentialsConfiguration credentials_configuration = credentials_configuration_;
+
+    /// For S3 access that originates from user SQL in clickhouse-server, refuse every server-managed
+    /// credential source so a user cannot make the server authenticate to S3 with its own identity.
+    /// A user may still supply explicit credentials, use no_sign_request, or supply explicit credentials
+    /// together with role_arn (then the STS assume-role uses the user's own credentials, which is safe).
+    if (credentials_configuration.forbid_implicit_credentials)
+    {
+        /// A partial key pair (e.g. an access_key_id with an empty secret) is not enough to authorize a
+        /// request on its own; treat only a complete pair as explicit user credentials. Without one, every
+        /// remaining credential source is server-managed (environment, IMDS/IRSA, instance profile, AWS
+        /// config/credentials file, role_arn-based STS, or the GCP OAuth metadata service used by the
+        /// `gcp_oauth` http client), so the request must be rejected unless it is unsigned (NOSIGN).
+        const bool has_explicit_credentials
+            = !credentials.GetAWSAccessKeyId().empty() && !credentials.GetAWSSecretKey().empty();
+
+        /// `gcp_oauth` mints an OAuth bearer token: from an explicit Application Default Credentials triple
+        /// if one is given, otherwise from the server's GCP metadata service (server-managed). The token is
+        /// fetched and sent regardless of no_sign_request and regardless of any S3 keys, and the http client
+        /// name is matched case-insensitively in PocoHTTPClientFactory, so match it the same way here.
+        const bool uses_gcp_oauth = boost::iequals(configuration.http_client, "gcp_oauth");
+        const bool has_explicit_gcp_adc = !configuration.google_adc_client_id.empty()
+            && !configuration.google_adc_client_secret.empty()
+            && !configuration.google_adc_refresh_token.empty();
+
+        if (uses_gcp_oauth)
+        {
+            if (!has_explicit_gcp_adc)
+                throw DB::Exception(
+                    DB::ErrorCodes::ACCESS_DENIED,
+                    "S3 access from user queries is not allowed to use `http_client = gcp_oauth` without an "
+                    "explicit Google Application Default Credentials triple (google_adc_client_id, "
+                    "google_adc_client_secret, google_adc_refresh_token), because it would otherwise mint a "
+                    "token from the server's GCP metadata service. Enable the setting "
+                    "`s3_allow_server_credentials_in_user_queries` to allow it.");
+        }
+        else if (!credentials_configuration.no_sign_request && !has_explicit_credentials)
+            throw DB::Exception(
+                DB::ErrorCodes::ACCESS_DENIED,
+                "S3 access from user queries is not allowed to use server-managed credentials "
+                "(environment variables, instance metadata, IRSA, instance profile, AWS config files, "
+                "or role_arn-based STS assume-role). "
+                "Provide explicit credentials, use NOSIGN, or enable the setting "
+                "`s3_allow_server_credentials_in_user_queries`.");
+
+        /// Belt and suspenders: even when explicit credentials are present, never let the provider chain
+        /// fall back to the server's environment credentials.
+        credentials_configuration.use_environment_credentials = false;
+    }
+
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
-    if (credentials_configuration.no_sign_request || configuration.http_client == "gcp_oauth")
+    /// Match `gcp_oauth` case-insensitively, the same way PocoHTTPClientFactory selects the GCP OAuth HTTP
+    /// client. Otherwise a differently-cased value (e.g. `GCP_OAUTH`) would build the AWS provider chain
+    /// here while the HTTP layer still sends a GCP OAuth bearer token.
+    if (credentials_configuration.no_sign_request || boost::iequals(configuration.http_client, "gcp_oauth"))
     {
         credentials_provider = std::make_shared<Aws::Auth::AnonymousAWSCredentialsProvider>();
     }

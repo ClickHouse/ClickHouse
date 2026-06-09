@@ -155,6 +155,9 @@ def started_cluster():
                 "configs/config.d/use_environment_credentials.xml",
                 "configs/config.d/metadata_log.xml",
             ],
+            user_configs=[
+                "configs/allow_server_credentials.xml",
+            ],
             env_variables={
                 "AWS_ACCESS_KEY_ID": minio_access_key,
                 "AWS_SECRET_ACCESS_KEY": minio_secret_key,

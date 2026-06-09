@@ -79,6 +79,7 @@ def started_cluster():
                 "configs/users.xml",
                 "configs/s3_retry.xml",
                 "configs/sync_insert.xml",
+                "configs/allow_server_credentials.xml",
             ],
         )
         cluster.add_instance(
@@ -107,6 +108,7 @@ def started_cluster():
         cluster.add_instance(
             "s3_non_default",
             with_minio=True,
+            user_configs=["configs/allow_server_credentials.xml"],
         )
         cluster.add_instance(
             "s3_with_environment_credentials",
@@ -116,7 +118,7 @@ def started_cluster():
                 "AWS_SECRET_ACCESS_KEY": "ClickHouse_Minio_P@ssw0rd",
             },
             main_configs=["configs/use_environment_credentials.xml"],
-            user_configs=["configs/sync_insert.xml"],
+            user_configs=["configs/sync_insert.xml", "configs/allow_server_credentials.xml"],
         )
         cluster.add_instance(
             "dummy2",

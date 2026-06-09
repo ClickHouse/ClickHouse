@@ -69,6 +69,7 @@ void registerBackupEngineS3(BackupFactory & factory)
         String secret_access_key;
         String role_arn;
         String role_session_name;
+        bool no_sign_request = false;
 
         if (auto collection = params.backup_info.getNamedCollection(params.context))
         {
@@ -77,6 +78,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             secret_access_key = collection->getOrDefault<String>("secret_access_key", "");
             role_arn = collection->getOrDefault<String>("role_arn", "");
             role_session_name = collection->getOrDefault<String>("role_session_name", "");
+            no_sign_request = collection->getOrDefault<bool>("no_sign_request", false);
 
             if (collection->has("filename"))
                 s3_uri = std::filesystem::path(s3_uri) / collection->get<String>("filename");
@@ -138,6 +140,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 role_arn,
                 role_session_name,
+                no_sign_request,
                 params.allow_s3_native_copy,
                 params.read_settings,
                 params.write_settings,
@@ -157,6 +160,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 role_arn,
                 role_session_name,
+                no_sign_request,
                 params.allow_s3_native_copy,
                 params.read_settings,
                 params.write_settings,
@@ -176,6 +180,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                     secret_access_key,
                     role_arn,
                     role_session_name,
+                    no_sign_request,
                     params.allow_s3_native_copy,
                     params.read_settings,
                     params.write_settings,
@@ -193,6 +198,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 secret_access_key,
                 std::move(role_arn),
                 std::move(role_session_name),
+                no_sign_request,
                 params.allow_s3_native_copy,
                 params.s3_storage_class,
                 params.read_settings,

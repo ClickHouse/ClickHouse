@@ -110,6 +110,10 @@ GlueCatalog::GlueCatalog(
     creds_config.role_arn = settings.aws_role_arn;
     creds_config.role_session_name = settings.aws_role_session_name;
 
+    /// A Glue catalog is created by user SQL (`CREATE DATABASE ... ENGINE = DataLakeCatalog`), so it must
+    /// not be able to reuse the server's own credentials.
+    creds_config.forbid_implicit_credentials = getContext()->shouldRestrictUserQueryS3Credentials();
+
     const auto & server_settings = getContext()->getGlobalContext()->getServerSettings();
     const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
 

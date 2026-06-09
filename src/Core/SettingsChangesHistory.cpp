@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.6",
         {
             {"ai_function_embedding_max_batch_size", 100, 100, "New setting"},
+            {"s3_allow_server_credentials_in_user_queries", true, false, "New setting to block S3 access from user SQL from resolving the server's own ambient credentials (environment/IMDS/IRSA/instance-profile/AWS-config-file/role_arn-STS/GCP-OAuth-metadata). The previous behavior (allowed) is restored with compatibility settings."},
             {"enable_sharding_aggregator", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."},
             {"allow_experimental_text_index_lazy_apply", false, false, "New setting to gate experimental lazy posting list apply mode"},
             {"text_index_posting_list_apply_mode", "materialize", "materialize", "New setting for lazy posting list apply mode"},
