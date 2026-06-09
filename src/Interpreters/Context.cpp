@@ -342,6 +342,7 @@ namespace Setting
     extern const SettingsBool throw_on_error_from_cache_on_write_operations;
     extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
     extern const SettingsBool s3_allow_parallel_part_upload;
+    extern const SettingsBool s3_allow_server_credentials_in_user_queries;
     extern const SettingsBool use_page_cache_for_disks_without_file_cache;
     extern const SettingsBool use_page_cache_for_local_disks;
     extern const SettingsBool use_page_cache_for_object_storage;
@@ -6890,6 +6891,18 @@ void Context::setApplicationType(ApplicationType type)
     if (type == ApplicationType::LOCAL || type == ApplicationType::SERVER || type == ApplicationType::DISKS)
         shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
 
+}
+
+bool Context::shouldRestrictUserQueryS3Credentials() const
+{
+    /// Only the server runs untrusted user SQL against shared infrastructure. In clickhouse-local the
+    /// user is the operator, so server-managed credentials (e.g. an instance profile) are theirs to use.
+    if (getApplicationType() != ApplicationType::SERVER)
+        return false;
+
+    /// A session setting, so a trusted administrative client can enable it for its own operations while a
+    /// settings constraint keeps it disabled for untrusted users.
+    return !getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
 }
 
 void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)

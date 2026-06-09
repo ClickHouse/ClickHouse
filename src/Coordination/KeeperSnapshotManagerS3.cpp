@@ -154,7 +154,10 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
                 auth_settings[S3AuthSetting::no_sign_request],
                 auth_settings[S3AuthSetting::role_arn],
                 auth_settings[S3AuthSetting::role_session_name],
-                /*sts_endpoint_override=*/""
+                /*sts_endpoint_override=*/"",
+                /*kms_role_arn=*/"",
+                /// Keeper snapshot upload is a server-internal operation; it uses the server's own credentials.
+                /*forbid_implicit_credentials=*/false
             },
             credentials.GetSessionToken());
 

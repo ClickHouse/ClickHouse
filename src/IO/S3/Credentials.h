@@ -226,6 +226,16 @@ struct CredentialsConfiguration
     std::string role_session_name{};
     std::string sts_endpoint_override{};
     std::string kms_role_arn{};
+
+    /// When true, server-managed credentials must not be resolved: environment/IMDS/IRSA/ECS/
+    /// instance-profile/SSO/AWS-config providers are disabled and role_arn-based STS assume-role is
+    /// refused unless explicit base credentials are supplied. Only credentials passed explicitly are honored.
+    ///
+    /// Defaults to true (fail closed): any caller that resolves S3 credentials must explicitly opt in to
+    /// server-managed credentials by setting this to false. This way a newly added S3 entry point that
+    /// forgets about it cannot accidentally expose the server's credentials to user SQL. Server-internal
+    /// callers that legitimately use the server's own credentials set this to false explicitly.
+    bool forbid_implicit_credentials = true;
 };
 
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain

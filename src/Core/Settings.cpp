@@ -4270,6 +4270,35 @@ Disabled by default.
 Allow using `from_zk` substitutions in the dynamic disk configuration (i.e. in the `disk()` function arguments).
 Disabled by default.
 )", 0) \
+    DECLARE(Bool, s3_allow_server_credentials_in_user_queries, false, R"(
+Allow S3 access that originates from user SQL to use server-managed credentials.
+
+When disabled (the default), the `s3`/`s3Cluster` table functions, the `S3`/`S3Queue` engines, S3 named collections, dynamic `disk(type=s3, ...)` definitions, `BACKUP`/`RESTORE TO S3`, and Glue/DataLake catalogs may not resolve credentials from the environment, instance metadata (IMDS), IRSA, ECS, instance profile, SSO, AWS config/credentials files, `role_arn`-based STS assume-role, or the GCP OAuth metadata service. A request without explicit credentials or `NOSIGN` is rejected with `ACCESS_DENIED`.
+
+This prevents an authenticated user from making the server access S3 with its own (ambient) credentials (server-side credential hijacking). Credentials supplied explicitly — in the query, or as static keys in a named collection (whether created via SQL or defined in config) or in the server `<s3>` config — are not affected by this setting.
+
+A trusted administrative client may need server-managed credentials for legitimate operations (for example, attaching system tables on an `s3_plain_rewritable` disk via SQL). Enable this setting in that client's session or settings profile to permit it.
+
+To keep it disabled for untrusted users, pin it in their profile by both setting the value explicitly to `0` and marking it `readonly`:
+
+```xml
+<profiles>
+    <untrusted>
+        <!-- The explicit value is required: a `readonly` constraint alone only blocks direct changes,
+             but `compatibility` with a version before this setting was introduced would otherwise
+             restore the old (allowing) default. Setting the value explicitly defeats `compatibility`. -->
+        <s3_allow_server_credentials_in_user_queries>0</s3_allow_server_credentials_in_user_queries>
+        <constraints>
+            <s3_allow_server_credentials_in_user_queries>
+                <readonly/>
+            </s3_allow_server_credentials_in_user_queries>
+        </constraints>
+    </untrusted>
+</profiles>
+```
+
+This setting has no effect in `clickhouse-local`, where the user is the operator.
+)", 0) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
     DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(

@@ -16,6 +16,7 @@
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
 #include <Common/StringUtils.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
 
@@ -54,6 +55,37 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
 
     const auto & settings = context->getSettingsRef();
 
+    /// Track credential-related keys so a user-created S3 disk cannot resolve the server's own
+    /// credentials. A restricted dynamic S3 disk must carry a complete explicit key pair or NOSIGN (and, for
+    /// `gcp_oauth`, a complete explicit ADC triple); anything else would fall back to the server's
+    /// environment / IMDS / instance-profile / AWS-config-file / GCP-metadata credentials.
+    /// See Context::shouldRestrictUserQueryS3Credentials.
+    bool is_s3_disk = false;
+    bool type_is_indirect = false;
+    bool has_include = false;
+    bool has_indirect_auth_field = false;
+    bool has_access_key_id = false;
+    bool has_secret_access_key = false;
+    bool has_no_sign_request = false;
+    bool wants_gcp_oauth = false;
+    bool has_google_adc_client_id = false;
+    bool has_google_adc_client_secret = false;
+    bool has_google_adc_refresh_token = false;
+
+    /// `from_env`/`from_zk` substitute the value from a server-side source (an environment variable or a
+    /// ZooKeeper node), so for credential/auth/type fields the literal placeholder must not be treated as a
+    /// user-supplied value.
+    auto is_indirect_value = [](const std::string & v) { return startsWith(v, "from_env") || startsWith(v, "from_zk"); };
+    auto is_s3_credential_or_auth_field = [](const std::string & k)
+    {
+        return k == "access_key_id" || k == "secret_access_key" || k == "session_token" || k == "role_arn"
+            || k == "role_session_name" || k == "use_environment_credentials" || k == "http_client"
+            || k == "service_account" || k == "metadata_service" || k == "request_token_path"
+            || k == "google_adc_client_id" || k == "google_adc_client_secret" || k == "google_adc_refresh_token"
+            || k == "server_side_encryption_customer_key_base64" || k == "server_side_encryption_kms_key_id"
+            || k == "server_side_encryption_kms_encryption_context" || startsWith(k, "header") || startsWith(k, "access_header");
+    };
+
     for (const auto & arg : disk_args)
     {
         const auto * setting_function = arg->as<const ASTFunction>();
@@ -81,6 +113,33 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
 
         auto value = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
         auto value_str = convertFieldToString(value->as<ASTLiteral>()->value);
+
+        const bool indirect = is_indirect_value(value_str);
+        if (indirect && is_s3_credential_or_auth_field(key))
+            has_indirect_auth_field = true;
+
+        if (key == "include")
+            has_include = true;
+        else if (key == "type" || key == "object_storage_type")
+        {
+            is_s3_disk |= (value_str == "s3" || value_str.starts_with("s3_"));
+            type_is_indirect |= indirect;
+        }
+        else if (key == "access_key_id")
+            has_access_key_id = !value_str.empty() && !indirect;
+        else if (key == "secret_access_key")
+            has_secret_access_key = !value_str.empty() && !indirect;
+        else if (key == "no_sign_request")
+            has_no_sign_request = !indirect && value_str != "0" && !boost::iequals(value_str, "false");
+        else if (key == "http_client")
+            wants_gcp_oauth = !indirect && boost::iequals(value_str, "gcp_oauth");
+        else if (key == "google_adc_client_id")
+            has_google_adc_client_id = !value_str.empty() && !indirect;
+        else if (key == "google_adc_client_secret")
+            has_google_adc_client_secret = !value_str.empty() && !indirect;
+        else if (key == "google_adc_refresh_token")
+            has_google_adc_refresh_token = !value_str.empty() && !indirect;
+
         if (key == "include")
         {
             if (!is_loading_from_existing_metadata && !settings[Setting::dynamic_disk_allow_include])
@@ -114,6 +173,38 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             Poco::AutoPtr<Poco::XML::Text> value_element(xml_document->createTextNode(value_str));
             key_element->appendChild(value_element);
         }
+    }
+
+    /// A user-created S3 disk must not resolve the server's own credentials (environment/IMDS/IRSA,
+    /// role_arn-based STS, AWS config files, or the GCP metadata service). Skip the check when loading from
+    /// existing metadata, so a disk that was created while it was allowed keeps loading after a restart. The
+    /// check is bypassed for trusted clients via the `s3_allow_server_credentials_in_user_queries` setting
+    /// (see shouldRestrictUserQueryS3Credentials).
+    ///
+    /// `include` could pull S3 fields from server config, and a `from_env`/`from_zk` substitution on the
+    /// disk type or on a credential/auth field could hide an S3 disk or resolve a server-side value, so any
+    /// of those is treated as potentially-S3 and rejected.
+    const bool maybe_s3_disk = is_s3_disk || type_is_indirect || has_include;
+    if (!is_loading_from_existing_metadata && maybe_s3_disk && context->shouldRestrictUserQueryS3Credentials())
+    {
+        const bool has_explicit_credentials = has_access_key_id && has_secret_access_key;
+        const bool has_explicit_gcp_adc
+            = has_google_adc_client_id && has_google_adc_client_secret && has_google_adc_refresh_token;
+
+        /// `gcp_oauth` authenticates with a bearer token rather than S3 keys: it needs a complete explicit
+        /// ADC triple, otherwise the token comes from the server's GCP metadata service. Any other S3 disk
+        /// needs a complete explicit key pair or NOSIGN. Substitutions on the type or credential/auth fields
+        /// and `include` are rejected outright, since the resolved value could be a server-managed credential.
+        const bool denied = type_is_indirect || has_include || has_indirect_auth_field
+            || (wants_gcp_oauth ? !has_explicit_gcp_adc : (!has_explicit_credentials && !has_no_sign_request));
+        if (denied)
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "A dynamic S3 disk created from user SQL must provide a complete explicit "
+                "`access_key_id`/`secret_access_key` pair or `no_sign_request` (or, for "
+                "`http_client = gcp_oauth`, a complete explicit Google ADC triple), with literal values and "
+                "no `include`. It may not fall back to the server's own credentials. Enable the setting "
+                "`s3_allow_server_credentials_in_user_queries` to allow it.");
     }
 
     return xml_document;
