@@ -3440,6 +3440,10 @@ Possible values:
 
  When using the `partial_merge` algorithm, ClickHouse sorts the data and dumps it to the disk. The `partial_merge` algorithm in ClickHouse differs slightly from the classic realization. First, ClickHouse sorts the right table by joining keys in blocks and creates a min-max index for sorted blocks. Then it sorts parts of the left table by the `join key` and joins them over the right table. The min-max index is also used to skip unneeded right table blocks.
 
+ :::note Float keys
+ Float `JOIN ON` keys are compared bitwise by `partial_merge`, so two `NaN` rows with identical bit patterns spuriously match. The other algorithms (`hash`, `parallel_hash`, `grace_hash`, `full_sorting_merge`, `direct`) treat `NaN` as never equal, matching IEEE 754 semantics. Use one of those algorithms when `NaN`-safety matters.
+ :::
+
 - direct
 
  The `direct` (also known as nested loop) algorithm performs a lookup in the right table using rows from the left table as keys.

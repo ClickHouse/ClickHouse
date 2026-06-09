@@ -12,9 +12,7 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
@@ -567,39 +565,6 @@ bool joinKeyContainsFloatPayload(const IColumn & column)
 bool markFloatNaNRowsAsNull(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_map)
 {
     return markFloatNaNRowsAsNullImpl(column, mutable_null_map, /* is_null = */ nullptr);
-}
-
-bool joinKeyTypeContainsFloatPayload(const IDataType & type)
-{
-    WhichDataType which(type);
-    if (which.isFloat())
-        return true;
-
-    if (which.isNullable())
-    {
-        const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type);
-        return nullable_type && joinKeyTypeContainsFloatPayload(*nullable_type->getNestedType());
-    }
-
-    if (which.isLowCardinality())
-    {
-        const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(&type);
-        return lc_type && joinKeyTypeContainsFloatPayload(*lc_type->getDictionaryType());
-    }
-
-    if (which.isTuple())
-    {
-        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type);
-        if (!tuple_type)
-            return false;
-        for (const auto & element_type : tuple_type->getElements())
-            if (joinKeyTypeContainsFloatPayload(*element_type))
-                return true;
-        return false;
-    }
-
-    /// Integers, strings, dates, decimals, ... cannot carry a float `NaN`.
-    return false;
 }
 
 void extendJoinKeyNullMapWithFloatNaNs(

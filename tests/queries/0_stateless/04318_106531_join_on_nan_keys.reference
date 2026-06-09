@@ -116,9 +116,6 @@ unmatched
 nan	2
 --- DISTINCT nan ---
 nan
---- partial_merge Float64 INNER (rejected) ---
---- partial_merge Nullable(Float64) INNER (rejected) ---
---- partial_merge LowCardinality(Nullable(Float64)) INNER (rejected) ---
---- partial_merge Tuple(Float64, Float64) INNER (rejected) ---
---- partial_merge Int32 INNER (allowed) ---
+--- partial_merge Float64 INNER (legacy NaN matches NaN) ---
 m	100
+nan-l	999

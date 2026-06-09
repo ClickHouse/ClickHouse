@@ -1183,7 +1183,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     if (algorithm == JoinAlgorithm::PARTIAL_MERGE ||
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE)
     {
-        if (MergeJoin::isSupported(table_join, *right_table_expression_header))
+        if (MergeJoin::isSupported(table_join))
             return std::make_shared<MergeJoin>(table_join, right_table_expression_header);
     }
 
@@ -1302,7 +1302,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 params.grace_hash_join_max_buckets);
         }
 
-        if (MergeJoin::isSupported(table_join, *right_table_expression_header))
+        if (MergeJoin::isSupported(table_join))
             return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
         return std::make_shared<HashJoin>(table_join, right_table_expression_header);
     }

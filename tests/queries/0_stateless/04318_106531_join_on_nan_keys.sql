@@ -413,9 +413,10 @@ SELECT k, count() FROM (SELECT nan AS k UNION ALL SELECT nan AS k UNION ALL SELE
 SELECT '--- DISTINCT nan ---';
 SELECT k FROM (SELECT DISTINCT k FROM (SELECT nan AS k UNION ALL SELECT nan AS k)) ORDER BY k;
 
--- `partial_merge` cannot express `NaN != NaN` through its sort-then-merge comparator,
--- so the constructor rejects float JOIN keys with `NOT_IMPLEMENTED`. Cover the rejection
--- on the four float key shapes (Float64, Nullable, LowCardinality(Nullable), Tuple).
+-- `partial_merge` is documented to keep its legacy bitwise compare on float keys
+-- (NaN matches NaN). The other algorithms in this PR canonicalize NaN to NULL for
+-- JOIN ON, but `partial_merge` retains the historical behaviour for backward compat
+-- (see docs/en/operations/settings/settings.md `join_algorithm`).
 DROP TABLE IF EXISTS lpm;
 DROP TABLE IF EXISTS rpm;
 CREATE TABLE lpm (k Float64, v String) ENGINE = Memory();
@@ -425,32 +426,10 @@ INSERT INTO rpm VALUES (nan, 999), (1.5, 100);
 
 SET join_algorithm = 'partial_merge';
 
-SELECT '--- partial_merge Float64 INNER (rejected) ---';
-SELECT v, w FROM lpm INNER JOIN rpm ON lpm.k = rpm.k ORDER BY v; -- { serverError NOT_IMPLEMENTED }
-
-SELECT '--- partial_merge Nullable(Float64) INNER (rejected) ---';
-SELECT v, w FROM lpm INNER JOIN rpm ON CAST(lpm.k AS Nullable(Float64)) = CAST(rpm.k AS Nullable(Float64)) ORDER BY v; -- { serverError NOT_IMPLEMENTED }
-
-SELECT '--- partial_merge LowCardinality(Nullable(Float64)) INNER (rejected) ---';
-SELECT v, w FROM lpm INNER JOIN rpm ON CAST(lpm.k AS LowCardinality(Nullable(Float64))) = CAST(rpm.k AS LowCardinality(Nullable(Float64))) ORDER BY v
-SETTINGS allow_suspicious_low_cardinality_types = 1; -- { serverError NOT_IMPLEMENTED }
-
-SELECT '--- partial_merge Tuple(Float64, Float64) INNER (rejected) ---';
-SELECT v, w FROM lpm INNER JOIN rpm ON tuple(lpm.k, lpm.k) = tuple(rpm.k, rpm.k) ORDER BY v; -- { serverError NOT_IMPLEMENTED }
-
--- Non-float keys must keep working under `partial_merge` (the rejection is float-only).
-SELECT '--- partial_merge Int32 INNER (allowed) ---';
-DROP TABLE IF EXISTS lpm_int;
-DROP TABLE IF EXISTS rpm_int;
-CREATE TABLE lpm_int (k Int32, v String) ENGINE = Memory();
-CREATE TABLE rpm_int (k Int32, w UInt32) ENGINE = Memory();
-INSERT INTO lpm_int VALUES (1, 'm');
-INSERT INTO rpm_int VALUES (1, 100);
-SELECT v, w FROM lpm_int INNER JOIN rpm_int ON lpm_int.k = rpm_int.k ORDER BY v;
+SELECT '--- partial_merge Float64 INNER (legacy NaN matches NaN) ---';
+SELECT v, w FROM lpm INNER JOIN rpm ON lpm.k = rpm.k ORDER BY v;
 
 SET join_algorithm = 'default';
 
 DROP TABLE IF EXISTS lpm;
 DROP TABLE IF EXISTS rpm;
-DROP TABLE IF EXISTS lpm_int;
-DROP TABLE IF EXISTS rpm_int;
