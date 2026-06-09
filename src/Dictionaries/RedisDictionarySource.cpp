@@ -7,6 +7,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -180,8 +181,12 @@ namespace DB
         const auto serialize_key = [&](RedisArray & out, size_t column, size_t row)
         {
             const auto & type = dict_struct.key->at(column).type;
-            if (isInteger(type))
-                out << DB::toString(key_columns[column]->get64(row));
+            if (isNativeInt(type))
+                out << DB::toString(key_columns[column]->getInt(row));
+            else if (isNativeUInt(type))
+                out << DB::toString(key_columns[column]->getUInt(row));
+            else if (isInteger(type))
+                out << applyVisitor(FieldVisitorToString(), (*key_columns[column])[row]);
             else if (isString(type))
                 out << (*key_columns[column])[row].safeGet<String>();
             else

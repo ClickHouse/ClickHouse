@@ -242,6 +242,26 @@ def test_redis_storage_type_key_constraints(started_cluster):
     assert node.query("SELECT dictGet('test_redis_simple_single', 'value', tuple('k1'))") == "v1\n"
     node.query("DROP DICTIONARY IF EXISTS test_redis_simple_single")
 
+    redis_client2 = redis.Redis(
+        host="localhost", port=started_cluster.redis_port, password="clickhouse", db=DB_INDEX+1
+    )
+    redis_client2.flushdb()
+    redis_client2.set("-1", "v1")
+    redis_client2.set("-2", "v1")
+
+    node.query("DROP DICTIONARY IF EXISTS test_redis_negative_key")
+    node.query(
+        f"""
+        CREATE DICTIONARY test_redis_negative_key (key Int64, value String)
+        PRIMARY KEY key
+        SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX+1} STORAGE_TYPE 'simple'))
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1000))
+        LIFETIME(MIN 1 MAX 1)
+        """
+    )
+    assert node.query("SELECT dictGet('test_redis_negative_key', 'value', tuple(toInt64(-1)))") == "v1\n"
+    node.query("DROP DICTIONARY IF EXISTS test_redis_negative_key")
+
     node.query("DROP DICTIONARY IF EXISTS test_redis_simple_composite")
     node.query(
         f"""
