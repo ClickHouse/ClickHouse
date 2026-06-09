@@ -1,0 +1,11 @@
+After INSERT via named table:
+1
+version-hint.text: 2
+After INSERT via table function, version-hint.text: 3
+SELECT via named table (uses version-hint):
+1
+2
+SELECT via table function:
+1
+2
+OK

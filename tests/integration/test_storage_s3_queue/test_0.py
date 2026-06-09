@@ -812,6 +812,63 @@ def test_streaming_to_view(started_cluster, mode):
 
 
 @pytest.mark.parametrize("mode", AVAILABLE_MODES)
+def test_streaming_query_id_propagation(started_cluster, mode):
+    node = started_cluster.instances["instance"]
+    table_name = f"streaming_query_id_{mode}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+
+    total_values = generate_random_files(started_cluster, files_path, 5)
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        mode,
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    expected_values = set([tuple(i) for i in total_values])
+    for _ in range(20):
+        selected_values = {
+            tuple(map(int, l.split()))
+            for l in node.query(
+                f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY all"
+            ).splitlines()
+        }
+        if selected_values == expected_values:
+            break
+        time.sleep(1)
+    assert selected_values == expected_values
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    # The streaming task runs in the BackgroundSchedulePool, which assigns a
+    # query_id of the form `BgSchPool::<uuid>` to the task thread. This id is
+    # propagated to the insert into dependent tables, so the parts written for
+    # the destination table must carry it in system.part_log. Before the
+    # propagation the query_id of these parts was empty.
+    query_ids = (
+        node.query(
+            f"""
+            SELECT DISTINCT query_id FROM system.part_log
+            WHERE database = 'default' AND table = '{dst_table_name}'
+                AND event_type = 'NewPart'
+            """
+        )
+        .strip()
+        .splitlines()
+    )
+
+    assert len(query_ids) > 0
+    for query_id in query_ids:
+        assert query_id.startswith("BgSchPool::"), query_id
+
+
+@pytest.mark.parametrize("mode", AVAILABLE_MODES)
 def test_streaming_to_many_views(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"streaming_to_many_views_{mode}"

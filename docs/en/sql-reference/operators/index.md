@@ -198,6 +198,9 @@ Extract parts from a given date. For example, you can retrieve a month from a gi
 
 The `part` parameter specifies which part of the date to retrieve. The following values are available:
 
+- `NANOSECOND` — The nanosecond. Possible values: 0–999999999.
+- `MICROSECOND` — The microsecond. Possible values: 0–999999.
+- `MILLISECOND` — The millisecond. Possible values: 0–999.
 - `SECOND` — The second. Possible values: 0–59.
 - `MINUTE` — The minute. Possible values: 0–59.
 - `HOUR` — The hour. Possible values: 0–23.
@@ -214,10 +217,12 @@ The `part` parameter specifies which part of the date to retrieve. The following
 - `CENTURY` — The century. For example, the year 2024 is in the 21st century.
 - `DECADE` — The decade (year divided by 10). For example, the year 2024 has decade 202.
 - `MILLENNIUM` — The millennium. For example, the year 2024 is in the 3rd millennium.
+- `TIMEZONE_HOUR` — The signed hour part of the UTC offset of the operand's timezone. For example, `+5:30` returns `5`, `-3:30` returns `-3`.
+- `TIMEZONE_MINUTE` — The signed minute part of the UTC offset of the operand's timezone. For example, `+5:30` returns `30`, `-3:30` returns `-30`.
 
 The `part` parameter is case-insensitive.
 
-The `date` parameter specifies the date or the time to process. The [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), and [DateTime64](../../sql-reference/data-types/datetime64.md) types are supported.
+The `date` parameter specifies the value to process. The [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), and [Interval](../../sql-reference/data-types/special-data-types/interval.md) types are supported. When `date` is an `Interval`, the requested `part` must match the interval's stored kind (e.g. `EXTRACT(DAY FROM INTERVAL 5 DAY)` is allowed; `EXTRACT(HOUR FROM INTERVAL 5 DAY)` is rejected, because ClickHouse intervals are single-kind). The result for an `Interval` operand is `Int64`.
 
 Examples:
 
@@ -228,6 +233,10 @@ SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
 SELECT EXTRACT(EPOCH FROM toDateTime('2024-01-15 12:30:45', 'UTC'));
 SELECT EXTRACT(DOW FROM toDate('2024-01-15'));
 SELECT EXTRACT(CENTURY FROM toDate('2024-01-01'));
+SELECT EXTRACT(TIMEZONE_HOUR   FROM toDateTime('2024-01-15 12:00:00', 'Asia/Kolkata'));    -- 5
+SELECT EXTRACT(TIMEZONE_MINUTE FROM toDateTime('2024-01-15 12:00:00', 'Asia/Kolkata'));    -- 30
+SELECT EXTRACT(DAY   FROM INTERVAL 40 DAY);                                                -- 40
+SELECT EXTRACT(MONTH FROM INTERVAL 7 MONTH);                                               -- 7
 ```
 
 In the following example we create a table and insert into it a value with the `DateTime` type.

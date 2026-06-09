@@ -37,6 +37,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /// A class which allows to test private methods of NamedCollectionFactory.
@@ -72,6 +73,11 @@ public:
     const AzureBlobStorage::ConnectionParams & getConnectionParams()
     {
         return connection_params;
+    }
+
+    void addStructureAndFormatToArgsIfNeeded(ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) override
+    {
+        StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(args, structure_, format_, context, with_structure);
     }
 };
 
@@ -253,6 +259,41 @@ TEST(StorageAzureConfiguration, FromASTWithPartialExtraCredentials)
     StorageAzureConfigurationFriend conf;
 
     ASSERT_THROW_ERROR_CODE(conf.fromAST(engine_args, Context::getGlobalContextInstance(), false), Exception, ErrorCodes::BAD_ARGUMENTS, "'client_id' is missing");
+}
+
+/// Regression coverage for STID 4283-5f31. The arg-count guard inside
+/// `addStructureAndFormatToArgsIfNeededAzure` previously threw `LOGICAL_ERROR`, which aborts in
+/// debug builds. These tests call the changed helper directly so that reverting it back to
+/// `LOGICAL_ERROR` would fail here. The CREATE TABLE / table-function paths in the stateless test
+/// are rejected earlier by `fromAST`, so they do not guard this helper.
+TEST(StorageAzureConfiguration, AddStructureAndFormatTooFewArgs)
+{
+    /// Single argument is the `DeltaLakeAzure(<arg>)` "lightweight loading" shape that reaches the
+    /// helper (it is not a named collection, so the arg-count branch runs).
+    std::string query = "DESCRIBE TABLE azureBlobStorage('https://azurite1:10000/devstoreaccount1')";
+
+    ASTs engine_args = getEngineArgs(query);
+    StorageAzureConfigurationFriend conf;
+
+    ASSERT_THROW_ERROR_CODE(
+        conf.addStructureAndFormatToArgsIfNeeded(engine_args, "", "Parquet", Context::getGlobalContextInstance(), /*with_structure=*/false),
+        Exception,
+        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+        "Expected 3 to");
+}
+
+TEST(StorageAzureConfiguration, AddStructureAndFormatTooManyArgs)
+{
+    std::string query = "DESCRIBE TABLE azureBlobStorage('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k')";
+
+    ASTs engine_args = getEngineArgs(query);
+    StorageAzureConfigurationFriend conf;
+
+    ASSERT_THROW_ERROR_CODE(
+        conf.addStructureAndFormatToArgsIfNeeded(engine_args, "", "Parquet", Context::getGlobalContextInstance(), /*with_structure=*/false),
+        Exception,
+        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+        "Expected 3 to");
 }
 
 }

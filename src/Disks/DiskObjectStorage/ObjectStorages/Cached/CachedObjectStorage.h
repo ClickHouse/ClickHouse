@@ -38,6 +38,12 @@ public:
         bool use_external_buffer = false,
         bool restrict_seek = false) const override;
 
+    SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        size_t max_size_bytes,
+        std::optional<size_t> read_hint = {}) const override;
+
     void prepareRead(
         ObjectStoragePtr storage,
         const StoredObjects & objects,

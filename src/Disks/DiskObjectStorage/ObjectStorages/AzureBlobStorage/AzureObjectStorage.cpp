@@ -518,6 +518,7 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, b
 
     ObjectMetadata result;
     result.size_bytes = properties.BlobSize;
+    result.etag = properties.ETag.ToString();
     if (!properties.Metadata.empty())
     {
         result.attributes.emplace();

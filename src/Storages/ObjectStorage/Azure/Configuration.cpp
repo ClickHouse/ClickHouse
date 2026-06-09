@@ -693,7 +693,7 @@ static void addStructureAndFormatToArgsIfNeededAzure(
     {
         if (args.size() < 3 || args.size() > AzureStorageParsedArguments::getMaxNumberOfArguments())
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Expected 3 to {} arguments in table function azureBlobStorage, got {}",
                 AzureStorageParsedArguments::getMaxNumberOfArguments(),
                 args.size());
