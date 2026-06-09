@@ -43,8 +43,9 @@ struct MergeTreeReaderSettings
     bool is_low_cardinality_dictionary = false;
     /// True if we read stream that contains some metadata and will be read as a whole at once.
     bool is_metadata_file = false;
-    /// True if data may be compressed by different codecs in one stream.
-    bool allow_different_codecs = false;
+    /// True if data may be compressed by different codecs in one stream (adaptive codec selection picks one per block).
+    /// TODO: every MergeTree part read now allows different codecs. Remove it.
+    bool allow_different_codecs = true;
     /// Deleted mask is applied to all reads except internal select from mutate some part columns.
     bool apply_deleted_mask = true;
     /// Put reading task in a common I/O pool, return Async state on prepare()
