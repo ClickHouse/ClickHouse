@@ -389,6 +389,61 @@ TEST(SchedulerSpaceShared, KillDuringPendingIncrease)
 }
 
 
+/// Regression test for a deadlock where a never-admitted allocation that self-kills leaves
+/// `AllocationLimit::allocation_to_kill` dangling, so the next over-limit allocation blocks forever
+/// instead of being killed (observed as a 600s timeout in
+/// `test_scheduler_memory::test_max_memory_limit`).
+///
+/// A reservation created with `reserved_size == 0` is never admitted: its first increase (driven by
+/// the memory tracker) is the one that hits the limit, so it selects itself as the victim. It is then
+/// removed via the local path in `AllocationQueue::processActivation`, which does NOT drive a
+/// `removing_allocation` decrease up to `AllocationLimit::approveDecrease` — the only place (besides
+/// subtree detach) that used to clear `allocation_to_kill`. The fix clears the pointer in
+/// `setIncrease` once there is no increase request left to satisfy.
+TEST(SchedulerSpaceShared, SelfKillDoesNotBlockNextAllocation)
+{
+    SpaceSharedTest t;
+
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000); // 10KB limit
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ResourceLink link;
+    link.allocation_queue = queue;
+
+    // Drives a never-admitted reservation over the limit; it must kill itself and throw.
+    auto run_over_limit = [&](const String & id)
+    {
+        MemoryTracker tracker;
+        tracker.adjustWithUntrackedMemory(20000); // 20KB > 10KB limit
+        MemoryReservation res(link, id, 0); // reserved_size == 0 -> never admitted
+        res.syncWithMemoryTracker(&tracker);
+        tracker.adjustWithUntrackedMemory(-20000);
+    };
+
+    // First over-limit allocation self-kills. Before the fix this left `allocation_to_kill` dangling.
+    EXPECT_THROW(run_over_limit("first"), DB::Exception);
+
+    // The second over-limit allocation must also be killed, not block forever. Run it on a separate
+    // thread guarded by a generous deadline so a regression surfaces as a clear failure instead of
+    // hanging the whole test binary. The deadline is a deadlock detector only: with the fix the work
+    // completes in microseconds, so even heavily-sanitized/slow builds never approach it.
+    std::promise<void> done;
+    auto done_future = done.get_future();
+    std::thread second([&]
+    {
+        EXPECT_THROW(run_over_limit("second"), DB::Exception);
+        done.set_value();
+    });
+
+    ASSERT_EQ(done_future.wait_for(std::chrono::seconds(60)), std::future_status::ready)
+        << "Second over-limit allocation blocked forever: `allocation_to_kill` was not cleared "
+           "after the first allocation self-killed.";
+    second.join();
+}
+
+
 /// Test that multiple syncs with memory tracker work correctly
 TEST(SchedulerSpaceShared, MultipleMemoryTrackerSyncs)
 {
