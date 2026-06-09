@@ -8,7 +8,24 @@
              columns, optimized into one part so the per-granule evaluation cost isn't split
              across small parts.
          Both use GRANULARITY 1 so there is one minmax entry per `index_granularity` rows,
-         putting as many granules as possible in front of the evaluator. -->
+         putting as many granules as possible in front of the evaluator.
+
+         Each query is run twice via the `bulk` substitution: with
+         `use_minmax_index_bulk_filtering = 0` (the legacy per-granule scalar evaluator) and
+         with `= 1` (the new vectorized, columnar path this PR adds). This both validates the
+         PR's performance contract and tracks regressions in the new path. On a server that
+         predates the setting, the `= 1` variants are reported as partial and measured only on
+         the side that supports them. -->
+
+    <substitutions>
+        <substitution>
+            <name>bulk</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
 
     <create_query>
         CREATE TABLE minmax_bench_partitioned
@@ -56,6 +73,7 @@
     <query><![CDATA[
         SELECT count() FROM minmax_bench_partitioned
         WHERE t BETWEEN toDateTime('2024-02-01 00:00:00') AND toDateTime('2024-09-30 23:59:59')
+        SETTINGS use_minmax_index_bulk_filtering = {bulk}
     ]]></query>
 
     <!-- Predicate on a non-partition-key minmax-indexed column spanning the whole table:
@@ -63,18 +81,21 @@
     <query><![CDATA[
         SELECT count() FROM minmax_bench_partitioned
         WHERE c BETWEEN 1000000000 AND 3000000000
+        SETTINGS use_minmax_index_bulk_filtering = {bulk}
     ]]></query>
 
     <!-- Single wide part, predicate that passes every granule: isolates evaluator cost
          from pruning effects. -->
     <query><![CDATA[
         SELECT count() FROM minmax_bench_wide WHERE c >= 0
+        SETTINGS use_minmax_index_bulk_filtering = {bulk}
     ]]></query>
 
     <!-- Single wide part, conjunction across two minmax indices. -->
     <query><![CDATA[
         SELECT count() FROM minmax_bench_wide
         WHERE c BETWEEN 1000000000 AND 3000000000 AND v < 9000000000000000000
+        SETTINGS use_minmax_index_bulk_filtering = {bulk}
     ]]></query>
 
     <drop_query>DROP TABLE IF EXISTS minmax_bench_partitioned</drop_query>
