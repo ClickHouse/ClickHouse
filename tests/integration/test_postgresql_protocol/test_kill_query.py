@@ -6,16 +6,16 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-POSTGRESQL_PORT = 5433
+server_port = 5433
 
 SELECT_FROM_NUMBERS = """SELECT toString(number), repeat('x', 100) FROM numbers(20000000)
 SETTINGS max_block_size = 20000000"""
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance(
-    "node1",
+node = cluster.add_instance(
+    "node",
     main_configs=["configs/postgresql.xml"],
-    user_configs=["configs/users.xml"],
+    user_configs=["configs/default_passwd.xml"],
 )
 
 
@@ -23,7 +23,7 @@ node1 = cluster.add_instance(
 def started_cluster():
     try:
         cluster.start()
-        node1.wait_for_log_line("PostgreSQL compatibility protocol")
+        node.wait_for_log_line("PostgreSQL compatibility protocol")
         yield cluster
     finally:
         cluster.shutdown()
@@ -32,8 +32,8 @@ def started_cluster():
 def test_kill_query_during_output(started_cluster):
     def execute_query():
         conn = psycopg2.connect(
-            host=started_cluster.get_instance_ip("node1"),
-            port=POSTGRESQL_PORT,
+            host=started_cluster.get_instance_ip("node"),
+            port=server_port,
             user="default",
             password="123",
             dbname="default",
@@ -51,10 +51,10 @@ def test_kill_query_during_output(started_cluster):
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
 
-    node1.wait_for_log_line("Consume a chunk")
+    node.wait_for_log_line("Consume a chunk")
     time.sleep(1)
 
-    node1.query(
+    node.query(
         "KILL QUERY WHERE user='default' AND query LIKE 'SELECT toString(number)%' SYNC",
         user="default",
         password="123",
@@ -62,11 +62,11 @@ def test_kill_query_during_output(started_cluster):
 
     query_thread.join()
 
-    result = node1.query(
+    result = node.query(
         "SELECT count(*) FROM system.processes WHERE user='default' AND query LIKE 'SELECT toString(number)%'",
         user="default",
         password="123",
     )
     assert int(result.strip()) == 0
 
-    assert node1.contains_in_log("QUERY_WAS_CANCELLED")
+    assert node.contains_in_log("QUERY_WAS_CANCELLED")
