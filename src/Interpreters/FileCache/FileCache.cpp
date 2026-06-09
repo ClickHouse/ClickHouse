@@ -451,6 +451,9 @@ void FileCache::initializeImpl(bool load_metadata)
 
     try
     {
+        /// Start the priority background operations before loading metadata.
+        main_priority->startup(Context::getGlobalContextInstance()->getSchedulePool(), cache_guard);
+
         if (load_metadata)
             loadMetadata();
 
@@ -468,8 +471,6 @@ void FileCache::initializeImpl(bool load_metadata)
         keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(StorageID::createEmpty(), log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
         keep_up_free_space_ratio_task->schedule();
     }
-
-    main_priority->startup(Context::getGlobalContextInstance()->getSchedulePool(), cache_guard);
 
     is_initialized = true;
     LOG_TEST(log, "Initialized cache from {}", metadata.getBaseDirectory());

@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/StorageID.h>
 
 namespace ProfileEvents
@@ -101,6 +102,12 @@ void IFileCachePriority::removeEntries(
 
 void IFileCachePriority::startup(BackgroundSchedulePool & pool, CachePriorityGuard & cache_guard)
 {
+    /// startup() can run again if a previous initialization attempt failed and is retried.
+    /// Deactivate any task scheduled by the previous attempt before replacing it, otherwise
+    /// the old task keeps rescheduling and captures `this` past FileCache destruction.
+    if (cleanup_task)
+        cleanup_task->deactivate();
+
     cleanup_guard = &cache_guard;
     cleanup_task = pool.createTask(StorageID::createEmpty(), "FileCacheInvalidatedEntriesCleanup", [this] { cleanupTaskFunc(); });
     /// Propagate the wake hook (and threshold) to all sub-queues so any of them can
@@ -129,11 +136,19 @@ void IFileCachePriority::cleanupTaskFunc()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
+    auto elapsed_ms = watch.elapsedMilliseconds();
     ProfileEvents::increment(
-        ProfileEvents::FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds, watch.elapsedMilliseconds());
+        ProfileEvents::FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds, elapsed_ms);
 
     /// A full batch likely means there is more to clean: come back immediately.
-    if (removed == cleanup_batch)
+    bool reschedule_now = removed == cleanup_batch;
+    size_t next_ms = reschedule_now ? 0 : cleanup_interval_ms;
+
+    LOG_TRACE(
+        getLogger("FileCachePriority"),
+        "Removed {} invalidated entries in {} ms, next cleanup in {} ms", removed, elapsed_ms, next_ms);
+
+    if (reschedule_now)
         cleanup_task->schedule();
     else
         cleanup_task->scheduleAfter(cleanup_interval_ms);

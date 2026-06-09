@@ -450,8 +450,8 @@ protected:
         invalidate_notifier = on_invalidate;
     }
 
-    /// Remove up to `max_batch` pending invalidated entries, draining each from the
-    /// queue under the write lock. Returns the number of pending entries removed.
+    /// Remove up to `max_batch` pending invalidated entries from the queue under the write
+    /// lock. Returns the number of pending entries removed.
     virtual size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) = 0;
 
     const QueueType queue_type;

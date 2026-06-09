@@ -181,10 +181,6 @@ private:
     /// skipping elements which are likely in non-evictable state.
     LRUQueue::iterator eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
     mutable std::mutex eviction_pos_mutex;
-    /// FIFO of entries invalidate() left for removal, so the background cleanup drains
-    /// them directly instead of scanning the queue. Held by weak_ptr so that a ref whose
-    /// entry was meanwhile removed by another path (eviction, resize) is dropped without
-    /// dereferencing its stale iterator. Own mutex: invalidate() holds no priority guard.
     struct InvalidatedRef
     {
         std::weak_ptr<Entry> entry;
@@ -193,7 +189,7 @@ private:
     std::deque<InvalidatedRef> invalidated_refs TSA_GUARDED_BY(invalidated_mutex);
     mutable std::mutex invalidated_mutex;
     /// Size of `invalidated_refs`, kept as an atomic so the background cleanup can skip
-    /// this queue without taking `invalidated_mutex` when there is nothing to drain.
+    /// this queue without taking `invalidated_mutex` when there is nothing to clean up.
     std::atomic<size_t> invalidated_count = 0;
     /// Id of the current priority queue.
     /// Used to find its eviction info in collected eviction info map
@@ -217,7 +213,7 @@ private:
 
     LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
 
-    /// Record an entry that invalidate() left in the queue for the background cleanup to drain.
+    /// Record an entry that invalidate() left in the queue for the background cleanup to remove.
     void addInvalidatedRef(std::weak_ptr<Entry> entry, LRUQueue::iterator it) noexcept;
 
     void iterate(

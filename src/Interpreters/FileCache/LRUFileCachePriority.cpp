@@ -182,15 +182,18 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
 
 void LRUFileCachePriority::addInvalidatedRef(std::weak_ptr<Entry> entry, LRUQueue::iterator it) noexcept
 {
-    /// The `push_back` below allocates and could throw `MEMORY_LIMIT_EXCEEDED`, which is not
-    /// allowed here. The lock suppresses the exception while still accounting the allocation.
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
-    std::lock_guard lock(invalidated_mutex);
-    invalidated_refs.push_back({std::move(entry), it});
+    size_t prev = 0;
+    {
+        std::lock_guard lock(invalidated_mutex);
+        invalidated_refs.push_back({std::move(entry), it});
+        prev = invalidated_count.fetch_add(1, std::memory_order_relaxed);
+    }
 
+    /// `invalidate_notifier` is set once on startup and never changed, so it needs no lock.
+    /// Notify outside `invalidated_mutex` to avoid calling into the schedule pool under it.
     const size_t threshold = invalidated_threshold.load(std::memory_order_relaxed);
-    const size_t prev = invalidated_count.fetch_add(1, std::memory_order_relaxed);
     if (invalidate_notifier && threshold && prev + 1 == threshold)
         invalidate_notifier();
 }
@@ -243,13 +246,9 @@ size_t LRUFileCachePriority::removeInvalidatedEntries(size_t max_batch, CachePri
 
     auto lock = cache_guard.writeLock();
 
-    /// We hold the priority write lock for the whole drain, so no other path can remove
-    /// queue entries meanwhile: an invalidated ref stays drainable until we process it.
-    /// Pop each ref up front (only invalidate() pushes, and that needs no priority lock),
-    /// then erase its queue node. If the erase throws, push the ref back to the front so a
-    /// later pass retries it instead of losing it. A ref whose entry was meanwhile removed
-    /// elsewhere has an expired weak_ptr (or a non-Invalidated state) and is dropped without
-    /// touching its stale iterator.
+    /// Hold the priority write lock for the whole cleanup, so no other path removes queue
+    /// entries meanwhile. A ref whose entry was already removed elsewhere has an expired
+    /// weak_ptr (or a non-Invalidated state) and is skipped without touching its stale iterator.
     size_t removed = 0;
     while (removed < max_batch)
     {
