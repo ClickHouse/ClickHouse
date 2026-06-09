@@ -2708,6 +2708,16 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
                 ++token_iterator;
             this_query_begin = token_iterator->end;
 
+            /// Mirror the per-query reset at the top of `processParsedSingleQuery` so the skip
+            /// matches the state a successful query would leave behind. Otherwise stale
+            /// exceptions from a prior statement (executed under `ignore_error`) survive and
+            /// `Client::main` returns their code as the process exit, even though the loop
+            /// elected to skip past the failing query and continue.
+            have_error = false;
+            error_code = 0;
+            client_exception.reset();
+            server_exception.reset();
+
             return MultiQueryProcessingStage::CONTINUE_PARSING;
         }
 
