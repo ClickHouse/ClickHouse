@@ -900,8 +900,6 @@ struct ASIMDMD5Ops
 class FunctionMD5ImplASIMD : public FunctionMD5Base
 {
 public:
-    static String getImplementationTag() { return "ASIMD"; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return executeMD5Batch<ASIMDMD5Ops>(arguments, input_rows_count);
@@ -915,7 +913,28 @@ public:
 
 #ifndef MD5_GTEST_UNIT_TEST
 
-/// Runtime dispatch via ImplementationSelector.
+#if USE_MD5_AARCH64_ASIMD
+
+/// ASIMD/NEON is baseline on AArch64, so there is a single implementation.
+/// Dispatch directly through normal virtual calls instead of ImplementationSelector.
+class FunctionMD5 : public TargetSpecific::Default::FunctionMD5ImplASIMD
+{
+public:
+    explicit FunctionMD5([[maybe_unused]] ContextPtr context)
+    {
+#if USE_SSL
+        if (OpenSSLInitializer::instance().isFIPSEnabled())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} is not available in FIPS mode", name);
+#endif
+    }
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionMD5>(context); }
+};
+
+#else
+
+/// Runtime dispatch via ImplementationSelector: scalar baseline plus optional x86 AVX2/AVX-512 paths,
+/// chosen at runtime based on detected CPU features.
 class FunctionMD5 : public TargetSpecific::Default::FunctionMD5Impl
 {
 public:
@@ -928,10 +947,6 @@ public:
 #endif
 
         selector.registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionMD5Impl>();
-
-#if USE_MD5_AARCH64_ASIMD
-        selector.registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionMD5ImplASIMD>();
-#endif
 
 #if USE_MULTITARGET_CODE
         selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::FunctionMD5Impl>();
@@ -949,6 +964,8 @@ public:
 private:
     ImplementationSelector<IFunction> selector;
 };
+
+#endif
 
 
 REGISTER_FUNCTION(MD5)
