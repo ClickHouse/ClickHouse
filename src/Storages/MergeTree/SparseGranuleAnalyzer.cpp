@@ -167,11 +167,13 @@ analyzeSparseColumnGranules(
     auto alter_conversions = std::make_shared<AlterConversions>();
     auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, alter_conversions);
 
-    /// Split the input ranges into exactly `max_threads` chunks (one per worker the
-    /// caller-supplied pool will run concurrently). Floor the chunk size at
-    /// `MIN_ANALYZER_CHUNK_MARKS` so tiny parts don't dispatch microscopic chunks where
-    /// per-chunk reader setup would dominate. No upper clamp: chunk count is bounded
-    /// by `max_threads`, so total concurrent chunks stays under the user's thread cap.
+    /// Without a pool there is no benefit in chunking: each chunk pays its own reader
+    /// setup, and we would just process them serially in the caller's thread. Treat
+    /// every input range as a single chunk so we open one reader per range instead
+    /// of one per `MIN_ANALYZER_CHUNK_MARKS` slice. With a pool, split each range
+    /// into exactly `max_threads` chunks (one per worker the pool will run
+    /// concurrently), floored at `MIN_ANALYZER_CHUNK_MARKS` so tiny parts don't
+    /// dispatch microscopic chunks.
     constexpr size_t MIN_ANALYZER_CHUNK_MARKS = 256;
 
     size_t total_marks_in_ranges = 0;
@@ -179,11 +181,20 @@ analyzeSparseColumnGranules(
         if (range.begin < range.end)
             total_marks_in_ranges += range.end - range.begin;
 
-    const size_t target_chunks
-        = std::max<size_t>(1, static_cast<UInt64>(query_context->getSettingsRef()[Setting::max_threads]));
-    const size_t chunk_marks = total_marks_in_ranges == 0
-        ? 0
-        : std::max<size_t>(MIN_ANALYZER_CHUNK_MARKS, (total_marks_in_ranges + target_chunks - 1) / target_chunks);
+    size_t chunk_marks = 0;
+    if (total_marks_in_ranges != 0)
+    {
+        if (chunk_pool == nullptr)
+        {
+            chunk_marks = total_marks_in_ranges;
+        }
+        else
+        {
+            const size_t target_chunks
+                = std::max<size_t>(1, static_cast<UInt64>(query_context->getSettingsRef()[Setting::max_threads]));
+            chunk_marks = std::max<size_t>(MIN_ANALYZER_CHUNK_MARKS, (total_marks_in_ranges + target_chunks - 1) / target_chunks);
+        }
+    }
 
     std::vector<MarkRange> chunks;
     for (const auto & range : ranges)
