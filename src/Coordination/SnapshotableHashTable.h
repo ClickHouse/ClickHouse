@@ -133,6 +133,10 @@ private:
     size_t bucket_count_at_last_optimize{0};
     size_t node_count_at_last_optimize{0};
 
+    /// Outstanding `reserve` target (e.g. for bulk snapshot loading). While the reserved capacity is
+    /// still being filled, automatic optimization must not shrink the table back (see `optimizeIfNeeded`).
+    size_t reserved_node_count{0};
+
     enum OperationType
     {
         INSERT_OR_REPLACE = 0,
@@ -261,7 +265,11 @@ public:
         return std::make_pair(it, true);
     }
 
-    void reserve(size_t node_num) { map.reserve(node_num); }
+    void reserve(size_t node_num)
+    {
+        map.reserve(node_num);
+        reserved_node_count = std::max(reserved_node_count, node_num);
+    }
 
     void insertOrReplace(const std::string & key, V value)
     {
@@ -419,7 +427,19 @@ public:
 
     bool optimizeIfNeeded()
     {
+        /// An outstanding `reserve` (e.g. bulk snapshot loading via `KeeperStorageSnapshot::deserialize`)
+        /// preallocates buckets for the expected node count. Once that target is reached the reservation
+        /// is fulfilled and we resume normal auto-optimization.
+        if (reserved_node_count != 0 && map.size() >= reserved_node_count)
+            reserved_node_count = 0;
+
         if (min_load_factor <= 0 || map.size() <= min_node_count_for_auto_optimize || map.load_factor() >= min_load_factor)
+            return false;
+
+        /// While the reserved capacity is still being filled, shrinking the table would defeat the
+        /// preallocation and force repeated rehashing during snapshot load - exactly the restart /
+        /// follower catch-up path where predictable performance matters. Skip until the target is met.
+        if (reserved_node_count != 0)
             return false;
 
         /// `optimize` only helps when `rehash(0)` can actually shrink the table. If we already rehashed
@@ -465,6 +485,12 @@ public:
     size_t size() const
     {
         return map.size();
+    }
+
+    /// Number of buckets currently allocated by the index map. Exposed for tests.
+    size_t getBucketCount() const
+    {
+        return map.bucket_count();
     }
 
     std::pair<size_t, size_t> snapshotSizeWithVersion() const

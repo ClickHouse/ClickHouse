@@ -440,6 +440,40 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapAutoOptimize)
     EXPECT_EQ(map.size(), 110);
 }
 
+TYPED_TEST(CoordinationTest, SnapshotableHashMapReserveSurvivesAutoOptimize)
+{
+    /// `KeeperStorageSnapshot::deserialize` calls `reserve(snapshot_container_size)` and then bulk-loads
+    /// the nodes. With automatic optimization enabled (`hash_map_min_load_factor > 0`) the early inserts
+    /// see a very low load factor, so without special handling `optimizeIfNeeded` would `rehash(0)` and
+    /// shrink the table back, undoing the preallocation and forcing repeated rehashing during the load.
+    /// The reserved capacity must survive until the load completes.
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::hash_map_min_load_factor] = 0.5f;
+    (*settings)[DB::CoordinationSetting::min_node_count_for_auto_optimize] = 0;
+    auto context = std::make_shared<DB::KeeperContext>(true, settings);
+
+    DB::SnapshotableHashTable<IntNode> map;
+    map.initialize(context);
+
+    static constexpr int node_count = 2000;
+    map.reserve(node_count);
+    const size_t reserved_buckets = map.getBucketCount();
+    /// The reservation must be large enough to hold all nodes without growing.
+    EXPECT_GE(reserved_buckets, node_count);
+
+    for (int i = 0; i < node_count; ++i)
+    {
+        auto [it, inserted] = map.insert("/node" + std::to_string(i), i);
+        EXPECT_TRUE(inserted);
+        EXPECT_EQ(it->second->value, i);
+        /// The bucket count must never shrink below the reserved capacity while the load is in progress.
+        EXPECT_GE(map.getBucketCount(), reserved_buckets);
+    }
+    EXPECT_EQ(map.size(), node_count);
+    for (int i = 0; i < node_count; ++i)
+        EXPECT_EQ(map.getValue("/node" + std::to_string(i)), i);
+}
+
 TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
 {
     ChangelogDirTest test("./snapshots");
