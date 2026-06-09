@@ -225,7 +225,7 @@ REGISTER_FUNCTION(AiExtract)
         .description = R"(
 Extracts structured information from unstructured text using an LLM provider.
 
-The third argument may be either a free-form natural-language instruction (e.g. `'the main complaint'`) or a
+The second argument may be either a free-form natural-language instruction (e.g. `'the main complaint'`) or a
 JSON-encoded schema of the form `'{"field_a": "description of field a", "field_b": "description of field b"}'`.
 
 In instruction mode, the function returns the extracted value as a plain string, or an empty string if nothing was found.
