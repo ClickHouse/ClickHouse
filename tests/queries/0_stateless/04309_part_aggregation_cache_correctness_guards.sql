@@ -4,7 +4,11 @@
 -- reuse stale per-part states across metadata `ALTER`, lightweight deletes, overflow-mode limits,
 -- and must not run (read parts / mutate the cache) during `EXPLAIN`.
 
-SET allow_experimental_analyzer = 0, allow_experimental_part_aggregation_cache = 1, optimize_aggregation_in_order = 0, enable_memory_bound_merging_of_aggregation_results = 0;
+-- Pin `max_rows_to_group_by = 0` at the session level: the functional-test config
+-- (`tests/config/users.d/limits.yaml`) sets it to `10G`, and a non-zero value makes every query fail
+-- closed out of the optimization, so the positive guards below would never populate the cache. The
+-- overflow-mode guard further down overrides it per query to exercise the skip path explicitly.
+SET allow_experimental_analyzer = 0, allow_experimental_part_aggregation_cache = 1, optimize_aggregation_in_order = 0, enable_memory_bound_merging_of_aggregation_results = 0, max_rows_to_group_by = 0;
 
 SYSTEM DROP PART AGGREGATION CACHE;
 

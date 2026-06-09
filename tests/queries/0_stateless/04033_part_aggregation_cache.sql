@@ -1,6 +1,10 @@
 -- Tags: no-parallel
 
-SET allow_experimental_analyzer = 0, allow_experimental_part_aggregation_cache = 1, optimize_aggregation_in_order = 0, enable_memory_bound_merging_of_aggregation_results = 0;
+-- `max_rows_to_group_by` is a per-aggregation-invocation limit, so the populator (which aggregates each
+-- part independently) cannot reproduce single-pass semantics and the optimization fails closed when it is
+-- set. The functional-test config (`tests/config/users.d/limits.yaml`) sets `max_rows_to_group_by = 10G`,
+-- which would disable the cache for every query, so pin it to 0 to actually exercise the cache here.
+SET allow_experimental_analyzer = 0, allow_experimental_part_aggregation_cache = 1, optimize_aggregation_in_order = 0, enable_memory_bound_merging_of_aggregation_results = 0, max_rows_to_group_by = 0;
 
 SYSTEM DROP PART AGGREGATION CACHE;
 
