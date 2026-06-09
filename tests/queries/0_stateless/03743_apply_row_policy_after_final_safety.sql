@@ -5,6 +5,9 @@
 --      itself SK-only — otherwise `throwIf` leak hidden rows
 
 SET enable_analyzer = 1;
+-- Lazy final restructures the plan so deferred filters become regular FilterSteps
+-- above LazyReadReplacingFinalStep — semantically correct but changes EXPLAIN output.
+SET query_plan_optimize_lazy_final = 0;
 
 SELECT '= non-deterministic row policy that structurally only uses SK columns must remain deferred =';
 

@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS rmt1;
 
 SET use_skip_indexes=1;
 SET use_skip_indexes_if_final=1;
+SET query_plan_optimize_lazy_final=0;
 SET use_skip_indexes_if_final_exact_mode=1;
 
 
