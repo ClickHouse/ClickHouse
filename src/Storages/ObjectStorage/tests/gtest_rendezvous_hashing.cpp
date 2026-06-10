@@ -291,6 +291,12 @@ TEST(RelativePathWithMetadata, FileNameKeepsObjectKeyByDefault)
     ASSERT_EQ(web_path.getFileName(), "part.tsv.gz");
 }
 
+TEST(ObjectInfo, IdentifierWithoutFileBucketInfoKeepsReadSourceIndex)
+{
+    ObjectInfo object_info(RelativePathWithMetadata("dir/file.parquet", 7));
+    ASSERT_EQ(object_info.getIdentifier(/*include_file_bucket_info=*/ false), "7:dir/file.parquet");
+}
+
 TEST(ClusterFunctionReadTaskResponse, PreservesReadSourceIndex)
 {
     ClusterFunctionReadTaskResponse response;
