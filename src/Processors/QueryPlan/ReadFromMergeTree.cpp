@@ -3763,7 +3763,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// alter, or patch mutations.
     MergeTreeSparsityReaderPtr sparsity_reader;
     {
-        const auto & settings = context->getSettingsRef();
+        const auto & query_settings = context->getSettingsRef();
         const bool has_join = [&]
         {
             if (!query_info.query_tree)
@@ -3774,10 +3774,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                     || join_tree->getNodeType() == QueryTreeNodeType::CROSS_JOIN);
         }();
         const bool read_overflow_throws =
-            (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
-            || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
+            (query_settings[Setting::read_overflow_mode] == OverflowMode::THROW && query_settings[Setting::max_rows_to_read])
+            || (query_settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && query_settings[Setting::max_rows_to_read_leaf]);
 
-        if (settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::DataRead
+        if (query_settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::DataRead
             && !query_info.isFinal()
             && !context->getCurrentTransaction()
             && !has_join
