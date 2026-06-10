@@ -286,7 +286,7 @@ void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, c
 {
     if (limit_by_columns.empty() || pipeline.getNumStreams() <= 1)
         return;
-    if (!stream_sort_desc.hasPrefix(limit_by_columns))
+    if (!stream_sort_desc.hasPrefixWithoutCollation(limit_by_columns))
         return;
 
     pipeline.addSimpleTransform(
@@ -294,7 +294,7 @@ void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, c
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
-            return std::make_shared<LimitByTransform>(header, limit_by_group_length, 0, true, limit_by_columns);
+            return std::make_shared<LimitBySortedStreamTransform>(header, limit_by_group_length, 0, limit_by_columns);
         });
 }
 
