@@ -31,6 +31,9 @@ private:
     void readRowStart(MutableColumns & columns) override;
     void skipRowStart() override;
     bool checkEndOfData(bool is_first_row) override;
+    /// Rows are framed as "name": {...} inside an outer object, not standalone objects,
+    /// so the JSONEachRow per-row segmentation cap does not apply here.
+    bool applyRowSizeLimit() const override { return false; }
 
     std::optional<size_t> field_index_for_object_name;
 };

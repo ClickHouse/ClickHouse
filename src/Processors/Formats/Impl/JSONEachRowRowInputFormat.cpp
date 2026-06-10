@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <IO/JSONEachRowRowSizeLimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
@@ -13,6 +14,7 @@
 #include <Formats/SchemaInferenceUtils.h>
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 #include <Common/Exception.h>
+#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
@@ -229,7 +231,24 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
     nested_prefix_length = 0;
     readRowStart(columns);
-    readJSONObject(columns);
+
+    /// Bound how many bytes a single object may consume so a huge JSON value cannot OOM.
+    /// The check fires while bytes are pulled from the buffer, before any column is filled,
+    /// mirroring the cap the parallel-parsing segmentation engine enforces. We wrap only the
+    /// object body and swap the buffer pointer back right after, so the rest of the parser
+    /// (row separators, suffix) keeps reading from the original buffer.
+    if (applyRowSizeLimit() && format_settings.json.max_row_size_for_json_each_row != 0)
+    {
+        ReadBuffer * saved_in = in;
+        JSONEachRowRowSizeLimitReadBuffer limited_buf(*in, 10 * format_settings.json.max_row_size_for_json_each_row);
+        in = &limited_buf;
+        SCOPE_EXIT_SAFE({ in = saved_in; });
+        readJSONObject(columns);
+    }
+    else
+    {
+        readJSONObject(columns);
+    }
 
     const auto & header = getPort().getHeader();
     /// Fill non-visited columns with the default values.

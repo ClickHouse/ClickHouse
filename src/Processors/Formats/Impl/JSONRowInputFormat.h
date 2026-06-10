@@ -33,6 +33,10 @@ private:
 
     void readPrefix() override;
     void readSuffix() override;
+    /// Reads through a PeekableReadBuffer with metadata/array framing; the JSONEachRow
+    /// per-row segmentation cap is not applied (matches the parallel-parsing coverage,
+    /// which is not enabled for the JSON-with-metadata format either).
+    bool applyRowSizeLimit() const override { return false; }
 
     const bool validate_types_from_metadata;
     bool parse_as_json_each_row = false;
