@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <numeric>
 #include <random>
+#include <string>
 #include <vector>
 
 /** `::sort` (and `::trySort`) is the general-purpose comparison sort behind `ORDER BY`. It is
@@ -89,11 +90,51 @@ std::vector<int64_t> makeInput(size_t size, Pattern pattern, std::mt19937_64 & r
     return data;
 }
 
+std::string makeString(uint64_t value)
+{
+    std::string digits = std::to_string(value);
+    /// Left-pad to a fixed width so lexicographic order matches numeric order and the strings share
+    /// long common prefixes, stressing the comparator that `block_qsort` calls for complex types.
+    return "key_" + std::string(20 - std::min<size_t>(digits.size(), 20), '0') + digits;
+}
+
+std::vector<std::string> makeStringInput(size_t size, Pattern pattern, std::mt19937_64 & rng)
+{
+    std::vector<std::string> data(size);
+    switch (pattern)
+    {
+        case Pattern::Random:
+            for (auto & x : data)
+                x = makeString(rng());
+            break;
+        case Pattern::Sorted:
+            for (size_t i = 0; i < size; ++i)
+                data[i] = makeString(i);
+            break;
+        case Pattern::Reverse:
+            for (size_t i = 0; i < size; ++i)
+                data[i] = makeString(size - i);
+            break;
+        case Pattern::OrganPipe:
+            for (size_t i = 0; i < size; ++i)
+                data[i] = makeString(std::min(i, size - i));
+            break;
+        case Pattern::FewUnique:
+            for (auto & x : data)
+                x = makeString(rng() % 7);
+            break;
+        case Pattern::AllEqual:
+            std::fill(data.begin(), data.end(), makeString(42));
+            break;
+    }
+    return data;
+}
+
 }
 
 TEST(Sort, MatchesStdSortDirectComparator)
 {
-    std::mt19937_64 rng(0xC0FFEE);
+    std::mt19937_64 rng(0xC0FFEE); // NOLINT(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     for (Pattern pattern :
          {Pattern::Random, Pattern::Sorted, Pattern::Reverse, Pattern::OrganPipe, Pattern::FewUnique, Pattern::AllEqual})
     {
@@ -124,12 +165,32 @@ TEST(Sort, MatchesStdSortWideType)
     }
 }
 
+/// `std::string` is not trivially-copyable, so `::sort` takes the BlockQuicksort (`block_qsort`)
+/// path inside `blqsort` rather than the branchless path — this is the path behind the PR's
+/// user-visible claim of faster string `ORDER BY`. Cover the same boundary sizes and patterns
+/// (high-cardinality, sorted, reverse, organ-pipe, duplicate-heavy, all-equal) as the trivially-
+/// copyable cases, with both ascending and descending comparators.
+TEST(Sort, MatchesStdSortStrings)
+{
+    std::mt19937_64 rng(0xBEEF); // NOLINT(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
+    for (Pattern pattern :
+         {Pattern::Random, Pattern::Sorted, Pattern::Reverse, Pattern::OrganPipe, Pattern::FewUnique, Pattern::AllEqual})
+    {
+        for (size_t size : interestingSizes())
+        {
+            auto data = makeStringInput(size, pattern, rng);
+            checkMatchesStdSort(data, std::less<>{});
+            checkMatchesStdSort(data, std::greater<>{});
+        }
+    }
+}
+
 /// Indirect comparator over a permutation, the hot `IColumn::getPermutation` path. A reverse-sorted
 /// permutation (ascending values sorted by a descending comparator) is the exact pattern that
 /// reaches `::sort` directly for `ColumnDecimal<Decimal128>` and regressed before the pre-pass.
 TEST(Sort, MatchesStdSortIndirectPermutation)
 {
-    std::mt19937_64 rng(0x1234);
+    std::mt19937_64 rng(0x1234); // NOLINT(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     for (Pattern pattern : {Pattern::Random, Pattern::Sorted, Pattern::Reverse, Pattern::FewUnique})
     {
         for (size_t size : interestingSizes())
@@ -163,7 +224,7 @@ TEST(Sort, MatchesStdSortIndirectPermutation)
 
 TEST(Sort, TrySortMatchesStdSort)
 {
-    std::mt19937_64 rng(0x99);
+    std::mt19937_64 rng(0x99); // NOLINT(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     for (Pattern pattern : {Pattern::Random, Pattern::Sorted, Pattern::Reverse, Pattern::OrganPipe, Pattern::FewUnique})
     {
         for (size_t size : interestingSizes())
