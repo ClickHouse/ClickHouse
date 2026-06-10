@@ -360,7 +360,8 @@ std::vector<PlainRewritableRemoteObject> MetadataStorageFromPlainRewritableObjec
 
     for (const auto & [local_path, remote_info] : fs_tree->getSubtreeRemoteInfo(""))
     {
-        /// Virtual directories have no blobs behind them.
+        /// Virtual directories are intermediate path placeholders never written to object storage
+        /// (no backing directory, no `prefix.path`, no files), so they have no blobs to report.
         if (!remote_info.has_value())
             continue;
 

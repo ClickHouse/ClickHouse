@@ -15,6 +15,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
+#include <base/getFQDNOrHostName.h>
 
 namespace DB
 {
@@ -25,6 +26,7 @@ StorageSystemPlainRewritableDataPaths::StorageSystemPlainRewritableDataPaths(con
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
     {
+        {"hostname", std::make_shared<DataTypeString>(), "Hostname of the server reporting the in-memory metadata state."},
         {"disk_name", std::make_shared<DataTypeString>(), "Name of the plain_rewritable disk."},
         {"common_prefix_for_blobs", std::make_shared<DataTypeString>(), "Object storage key prefix common to all blobs of this disk."},
         {"local_path", std::make_shared<DataTypeString>(), "Logical directory path the file belongs to."},
@@ -61,6 +63,9 @@ Pipe StorageSystemPlainRewritableDataPaths::read(
     /// of all tables on the disk, without per-table access filtering, so it is gated.
     context->checkAccess(AccessType::SHOW_TABLES);
 
+    const auto & hostname = getFQDNOrHostName();
+
+    MutableColumnPtr col_hostname = ColumnString::create();
     MutableColumnPtr col_disk_name = ColumnString::create();
     MutableColumnPtr col_common_prefix = ColumnString::create();
     MutableColumnPtr col_local_path = ColumnString::create();
@@ -84,6 +89,7 @@ Pipe StorageSystemPlainRewritableDataPaths::read(
         const auto common_prefix = plain_rewritable->getCommonKeyPrefix();
         for (const auto & object : plain_rewritable->getAllRemoteObjects())
         {
+            col_hostname->insert(hostname);
             col_disk_name->insert(disk_name);
             col_common_prefix->insert(common_prefix);
             col_local_path->insert(object.local_path);
@@ -96,6 +102,7 @@ Pipe StorageSystemPlainRewritableDataPaths::read(
     }
 
     Columns res_columns;
+    res_columns.emplace_back(std::move(col_hostname));
     res_columns.emplace_back(std::move(col_disk_name));
     res_columns.emplace_back(std::move(col_common_prefix));
     res_columns.emplace_back(std::move(col_local_path));

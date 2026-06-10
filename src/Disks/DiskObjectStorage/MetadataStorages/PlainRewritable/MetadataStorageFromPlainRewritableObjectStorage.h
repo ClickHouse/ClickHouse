@@ -57,12 +57,6 @@ class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataSt
 public:
     MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, std::string storage_path_prefix_);
 
-    /// Object storage key prefix common to all blobs of this disk.
-    std::string getCommonKeyPrefix() const;
-
-    /// Enumerates every (logical path -> blob) mapping currently known to the in-memory metadata tree.
-    std::vector<PlainRewritableRemoteObject> getAllRemoteObjects() const;
-
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
     const std::string & getPath() const override { return storage_path_full; }
     uint32_t getHardlinkCount(const std::string & /* path */) const override { return 0; }
@@ -94,6 +88,12 @@ public:
 
     Poco::Timestamp getLastModified(const std::string & path) const override;
     std::optional<Poco::Timestamp> getLastModifiedIfExists(const std::string & path) const override;
+
+    /// Object storage key prefix common to all blobs of this disk.
+    std::string getCommonKeyPrefix() const;
+
+    /// Enumerates every (logical path -> blob) mapping currently known to the in-memory metadata tree.
+    std::vector<PlainRewritableRemoteObject> getAllRemoteObjects() const;
 
 private:
     const std::shared_ptr<IObjectStorage> object_storage;
