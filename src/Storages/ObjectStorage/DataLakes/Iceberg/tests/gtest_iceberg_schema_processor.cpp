@@ -133,20 +133,20 @@ TEST(IcebergAvroType, TimePartitionFieldType)
 {
     EXPECT_EQ(
         avroTypeToJson(std::make_shared<DB::DataTypeTime>()),
-        R"({"type":"long","logicalType":"time-micros"})");
+        R"({"logicalType":"time-micros","type":"long"})");
     EXPECT_EQ(
         avroTypeToJson(std::make_shared<DB::DataTypeTime64>(6)),
-        R"({"type":"long","logicalType":"time-micros"})");
+        R"({"logicalType":"time-micros","type":"long"})");
 }
 
 TEST(IcebergAvroType, NullableTimePartitionFieldType)
 {
     EXPECT_EQ(
         avroTypeToJson(std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeTime>())),
-        R"(["null",{"type":"long","logicalType":"time-micros"}])");
+        R"(["null",{"logicalType":"time-micros","type":"long"}])");
     EXPECT_EQ(
         avroTypeToJson(std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeTime64>(3))),
-        R"(["null",{"type":"long","logicalType":"time-micros"}])");
+        R"(["null",{"logicalType":"time-micros","type":"long"}])");
 }
 
 TEST(IcebergTimeValidation, ValidateIcebergTimeOfDayMicroseconds)
