@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-random-settings
+# Tags: no-fasttest, no-random-settings
 #
 # Verify the error path of executable UDF drivers:
 #   - A non-zero exit code is surfaced to the user

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-random-settings
+# Tags: no-fasttest, no-random-settings
 # - no-fasttest: needs `cc` to compile a tiny C program
-# - no-parallel: writes to dirs that are not unique per test
 # - no-random-settings: the executable UDF path is server-set
 #
 # This test exercises the executable UDF "driver" feature end-to-end via clickhouse-local:
