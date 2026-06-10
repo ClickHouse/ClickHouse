@@ -46,6 +46,16 @@ public:
     TemporaryTableHolderPtr holder;
     StoragePtr storage;
     NamesAndTypes columns;
+
+    /// USING KEY support (keyed recursive CTE). The recursion accumulates one row per key:
+    /// a row produced with an existing key replaces the accumulated row, and only changed
+    /// rows form the next step's working table. The accumulated state (one row per key) is
+    /// additionally exposed to recursive members as the `<cte_name>_settled` table, so that
+    /// queries can refute non-improving rows (e.g. shortest-path relaxation joins it and
+    /// keeps only strictly better candidates).
+    Names key_columns;
+    TemporaryTableHolderPtr settled_holder;
+    StoragePtr settled_storage;
 };
 
 }

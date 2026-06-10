@@ -13,6 +13,8 @@ ASTPtr ASTWithElement::clone() const
     res->subquery = subquery->clone();
     if (aliases)
         res->aliases = aliases->clone();
+    if (key_columns)
+        res->key_columns = key_columns->clone();
     res->children.emplace_back(res->subquery);
     return res;
 }
@@ -29,6 +31,17 @@ void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         ostr << "(";
         aliases->format(ostr, settings, state, frame);
+        ostr << ")";
+
+        frame.expression_list_prepend_whitespace = prep_whitespace;
+    }
+    if (key_columns)
+    {
+        const bool prep_whitespace = frame.expression_list_prepend_whitespace;
+        frame.expression_list_prepend_whitespace = false;
+
+        ostr << " USING KEY (";
+        key_columns->format(ostr, settings, state, frame);
         ostr << ")";
 
         frame.expression_list_prepend_whitespace = prep_whitespace;

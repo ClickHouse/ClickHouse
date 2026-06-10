@@ -7,6 +7,7 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -20,6 +21,15 @@
 #include <Analyzer/TableNode.h>
 
 #include <Core/Settings.h>
+#include <Core/Defines.h>
+
+#include <Columns/IColumn.h>
+
+#include <Common/SipHash.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/PODArray.h>
+
+#include <unordered_map>
 
 namespace DB
 {
@@ -124,10 +134,44 @@ public:
             nullptr /*query*/,
             true /*create_for_global_subquery*/);
         intermediate_temporary_table_storage = intermediate_temporary_table_holder->getTable();
+
+        /// USING KEY: keyed evaluation. The recursion accumulates one row per key, only
+        /// changed rows form the next step's working table, and the result is the
+        /// accumulated keyed table at convergence (not the concatenation of all steps).
+        if (!recursive_cte_table->key_columns.empty())
+        {
+            keyed = true;
+            settled_temporary_table_holder = recursive_cte_table->settled_holder;
+            settled_temporary_table_storage = recursive_cte_table->settled_storage;
+
+            const auto & table_columns = recursive_cte_table->columns;
+            for (const auto & key_column_name : recursive_cte_table->key_columns)
+            {
+                for (size_t i = 0; i < table_columns.size(); ++i)
+                {
+                    if (table_columns[i].name == key_column_name)
+                    {
+                        key_column_indices.push_back(i);
+                        break;
+                    }
+                }
+            }
+
+            if (key_column_indices.size() != recursive_cte_table->key_columns.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Recursive CTE {} USING KEY columns were not resolved to projection columns",
+                    recursive_cte_union_node->formatASTForErrorMessage());
+
+            settled_table_nodes = collectTableNodesWithTemporaryTableName(cte_name + "_settled", recursive_cte_union_node.get());
+            accumulated_columns = header->cloneEmptyColumns();
+        }
     }
 
     Chunk generate()
     {
+        if (keyed)
+            return generateKeyed();
+
         Chunk current_chunk;
 
         while (!finished)
@@ -188,6 +232,8 @@ private:
 
         const auto & recursive_table_name = recursive_cte_union_node->as<UnionNode &>().getCTEName();
         recursive_query_context->addOrUpdateExternalTable(recursive_table_name, working_temporary_table_holder);
+        if (keyed && settled_temporary_table_holder)
+            recursive_query_context->addOrUpdateExternalTable(recursive_table_name + "_settled", settled_temporary_table_holder);
 
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, recursive_query_context, select_query_options);
         auto pipeline_builder = interpreter->buildQueryPipeline();
@@ -208,31 +254,217 @@ private:
             return std::make_shared<ExpressionTransform>(input_header, convert_to_temporary_tables_header_actions);
         });
 
-        /// Squash small chunks before writing them into the intermediate table. Each recursive
-        /// step appends one StorageMemory block per produced chunk, and the next step reads the
-        /// working table block by block, so without squashing deep recursions accumulate a lot
-        /// of tiny blocks and the per-step reads degrade.
-        pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
+        /// Keyed evaluation consumes the step output directly (the working table is rebuilt
+        /// from the changed rows after the step), so no intermediate table sink is needed.
+        if (!keyed)
         {
-            return std::make_shared<SimpleSquashingChunksTransform>(
-                in_header,
-                recursive_subquery_settings[Setting::min_insert_block_size_rows],
-                recursive_subquery_settings[Setting::min_insert_block_size_bytes]);
-        });
+            /// Squash small chunks before writing them into the intermediate table. Each recursive
+            /// step appends one StorageMemory block per produced chunk, and the next step reads the
+            /// working table block by block, so without squashing deep recursions accumulate a lot
+            /// of tiny blocks and the per-step reads degrade.
+            pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
+            {
+                return std::make_shared<SimpleSquashingChunksTransform>(
+                    in_header,
+                    recursive_subquery_settings[Setting::min_insert_block_size_rows],
+                    recursive_subquery_settings[Setting::min_insert_block_size_bytes]);
+            });
 
-        auto intermediate_temporary_table_storage_sink = intermediate_temporary_table_storage->write(
-            {},
-            intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false),
-            recursive_query_context,
-            false /*async_insert*/);
+            auto intermediate_temporary_table_storage_sink = intermediate_temporary_table_storage->write(
+                {},
+                intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false),
+                recursive_query_context,
+                false /*async_insert*/);
 
-        pipeline_builder.addChain(Chain(std::move(intermediate_temporary_table_storage_sink)));
+            pipeline_builder.addChain(Chain(std::move(intermediate_temporary_table_storage_sink)));
+        }
 
         pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
         pipeline.setProgressCallback(recursive_query_context->getProgressCallback());
         pipeline.setProcessListElement(recursive_query_context->getProcessListElement());
 
         executor.emplace(pipeline);
+    }
+
+    Chunk generateKeyed()
+    {
+        if (!keyed_evaluated)
+        {
+            runKeyedEvaluation();
+            keyed_evaluated = true;
+        }
+
+        if (keyed_result_columns.empty() || keyed_result_offset >= keyed_result_columns[0]->size())
+            return {};
+
+        size_t total_rows = keyed_result_columns[0]->size();
+        size_t chunk_rows = std::min<size_t>(DEFAULT_BLOCK_SIZE, total_rows - keyed_result_offset);
+
+        Columns chunk_columns;
+        chunk_columns.reserve(keyed_result_columns.size());
+        for (const auto & result_column : keyed_result_columns)
+            chunk_columns.push_back(result_column->cut(keyed_result_offset, chunk_rows));
+
+        keyed_result_offset += chunk_rows;
+        return Chunk(std::move(chunk_columns), chunk_rows);
+    }
+
+    void runKeyedEvaluation()
+    {
+        while (true)
+        {
+            buildStepExecutor();
+
+            MutableColumns delta_columns = header->cloneEmptyColumns();
+
+            Chunk chunk;
+            while (executor->pull(chunk))
+            {
+                if (chunk.getNumRows() > 0)
+                    upsertChunkIntoAccumulated(chunk, delta_columns);
+                chunk.clear();
+            }
+
+            executor.reset();
+
+            size_t delta_rows = delta_columns.empty() ? 0 : delta_columns[0]->size();
+            if (delta_rows == 0)
+                break;
+
+            /// The next step's working table (the frontier) is only the changed rows.
+            truncateTemporaryTable(working_temporary_table_storage);
+            pushBlockIntoStorage(working_temporary_table_storage, header->cloneWithColumns(std::move(delta_columns)));
+            for (auto & recursive_table_node : recursive_table_nodes)
+                recursive_table_node->updateStorage(working_temporary_table_storage, recursive_query_context);
+
+            /// Refresh the settled table (one row per key, the current accumulated state),
+            /// if any recursive member references it.
+            if (!settled_table_nodes.empty())
+            {
+                truncateTemporaryTable(settled_temporary_table_storage);
+                pushBlockIntoStorage(settled_temporary_table_storage, buildAccumulatedBlock());
+                for (auto & settled_table_node : settled_table_nodes)
+                    settled_table_node->updateStorage(settled_temporary_table_storage, recursive_query_context);
+            }
+        }
+
+        /// The result of a keyed recursive CTE is the accumulated keyed table at convergence.
+        keyed_result_columns = buildAccumulatedBlock().getColumns();
+    }
+
+    void upsertChunkIntoAccumulated(const Chunk & chunk, MutableColumns & delta_columns)
+    {
+        const auto & chunk_columns = chunk.getColumns();
+        size_t rows = chunk.getNumRows();
+        size_t columns_size = accumulated_columns.size();
+
+        for (size_t row = 0; row < rows; ++row)
+        {
+            SipHash key_hash;
+            for (auto key_column_index : key_column_indices)
+                chunk_columns[key_column_index]->updateHashWithValue(row, key_hash);
+            UInt128 key = key_hash.get128();
+
+            auto it = accumulated_index.find(key);
+            if (it != accumulated_index.end())
+            {
+                size_t existing_row = it->second;
+
+                bool row_changed = false;
+                for (size_t i = 0; i < columns_size; ++i)
+                {
+                    if (accumulated_columns[i]->compareAt(existing_row, row, *chunk_columns[i], /*nan_direction_hint*/ 1) != 0)
+                    {
+                        row_changed = true;
+                        break;
+                    }
+                }
+
+                /// A row identical to the accumulated one does not change the state and is
+                /// not propagated to the next step's working table. This is what terminates
+                /// cycles and refutes re-derived rows without an explicit cycle guard.
+                if (!row_changed)
+                    continue;
+
+                if (accumulated_live[existing_row])
+                {
+                    accumulated_live[existing_row] = static_cast<UInt8>(0);
+                    ++accumulated_dead;
+                }
+            }
+
+            size_t new_row_index = accumulated_columns[0]->size();
+            for (size_t i = 0; i < columns_size; ++i)
+            {
+                accumulated_columns[i]->insertFrom(*chunk_columns[i], row);
+                delta_columns[i]->insertFrom(*chunk_columns[i], row);
+            }
+            accumulated_row_hashes.push_back(key);
+            accumulated_live.push_back(static_cast<UInt8>(1));
+            accumulated_index[key] = new_row_index;
+        }
+
+        compactAccumulatedIfNeeded();
+    }
+
+    void compactAccumulatedIfNeeded()
+    {
+        size_t accumulated_size = accumulated_live.size();
+        if (accumulated_size < 8192 || accumulated_dead * 2 < accumulated_size)
+            return;
+
+        MutableColumns compacted_columns = header->cloneEmptyColumns();
+        PaddedPODArray<UInt128> compacted_row_hashes;
+        compacted_row_hashes.reserve(accumulated_size - accumulated_dead);
+
+        accumulated_index.clear();
+
+        for (size_t row = 0; row < accumulated_size; ++row)
+        {
+            if (!accumulated_live[row])
+                continue;
+
+            size_t new_row_index = compacted_columns[0]->size();
+            for (size_t i = 0; i < compacted_columns.size(); ++i)
+                compacted_columns[i]->insertFrom(*accumulated_columns[i], row);
+            compacted_row_hashes.push_back(accumulated_row_hashes[row]);
+            accumulated_index[accumulated_row_hashes[row]] = new_row_index;
+        }
+
+        accumulated_columns = std::move(compacted_columns);
+        accumulated_row_hashes = std::move(compacted_row_hashes);
+        accumulated_live.assign(accumulated_row_hashes.size(), static_cast<UInt8>(1));
+        accumulated_dead = 0;
+    }
+
+    Block buildAccumulatedBlock()
+    {
+        /// Deep-copies the live accumulated rows: the returned block must not share column
+        /// data with accumulated_columns, which continue to be mutated by later steps.
+        Columns result_columns;
+        result_columns.reserve(accumulated_columns.size());
+        ssize_t result_size_hint = static_cast<ssize_t>(accumulated_live.size() - accumulated_dead);
+        for (const auto & accumulated_column : accumulated_columns)
+            result_columns.push_back(accumulated_column->filter(accumulated_live, result_size_hint));
+        return header->cloneWithColumns(std::move(result_columns));
+    }
+
+    void pushBlockIntoStorage(StoragePtr & storage, Block block)
+    {
+        if (!block.rows())
+            return;
+
+        auto sink = storage->write(
+            {},
+            storage->getInMemoryMetadataPtr(recursive_query_context, false),
+            recursive_query_context,
+            false /*async_insert*/);
+
+        QueryPipeline push_pipeline(std::move(sink));
+        PushingPipelineExecutor push_executor(push_pipeline);
+        push_executor.start();
+        push_executor.push(Chunk(block.getColumns(), block.rows()));
+        push_executor.finish();
     }
 
     void truncateTemporaryTable(StoragePtr & temporary_table)
@@ -265,6 +497,25 @@ private:
     size_t recursive_step = 0;
     size_t read_rows_during_recursive_step = 0;
     bool finished = false;
+
+    /// USING KEY (keyed recursive CTE) state.
+    bool keyed = false;
+    std::vector<size_t> key_column_indices;
+    std::vector<TableNode *> settled_table_nodes;
+    TemporaryTableHolderPtr settled_temporary_table_holder;
+    StoragePtr settled_temporary_table_storage;
+
+    /// Accumulated keyed state: one live row per key. Updated rows are appended and the
+    /// previous row is marked dead; compaction reclaims dead rows when they dominate.
+    MutableColumns accumulated_columns;
+    PaddedPODArray<UInt128> accumulated_row_hashes;
+    IColumn::Filter accumulated_live;
+    size_t accumulated_dead = 0;
+    std::unordered_map<UInt128, size_t, UInt128Hash> accumulated_index;
+
+    bool keyed_evaluated = false;
+    Columns keyed_result_columns;
+    size_t keyed_result_offset = 0;
 };
 
 RecursiveCTESource::RecursiveCTESource(SharedHeader header, QueryTreeNodePtr recursive_cte_union_node_)

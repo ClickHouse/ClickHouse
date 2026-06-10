@@ -202,6 +202,13 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (recursive_cte_table)
         buffer << ", recursive_cte_table: " << recursive_cte_table->storage->getStorageID().getNameForLogs();
 
+    if (!recursive_cte_key_columns.empty())
+    {
+        buffer << ", recursive_cte_key_columns: ";
+        for (size_t i = 0; i < recursive_cte_key_columns.size(); ++i)
+            buffer << (i != 0 ? ", " : "") << recursive_cte_key_columns[i];
+    }
+
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
 
@@ -231,6 +238,7 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         && is_cte == rhs_typed.is_cte
         && is_materialized == rhs_typed.is_materialized
         && is_recursive_cte == rhs_typed.is_recursive_cte
+        && recursive_cte_key_columns == rhs_typed.recursive_cte_key_columns
         && cte_name == rhs_typed.cte_name
         && union_mode == rhs_typed.union_mode;
 }
@@ -249,6 +257,13 @@ void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
         state.update(full_name);
     }
 
+    state.update(recursive_cte_key_columns.size());
+    for (const auto & key_column_name : recursive_cte_key_columns)
+    {
+        state.update(key_column_name.size());
+        state.update(key_column_name);
+    }
+
     state.update(cte_name.size());
     state.update(cte_name);
 
@@ -264,6 +279,7 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
     result_union_node->is_materialized = is_materialized;
     result_union_node->is_recursive_cte = is_recursive_cte;
     result_union_node->recursive_cte_table = recursive_cte_table;
+    result_union_node->recursive_cte_key_columns = recursive_cte_key_columns;
     result_union_node->cte_name = cte_name;
 
     return result_union_node;
@@ -287,6 +303,13 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 
         auto with_element_ast = make_intrusive<ASTWithElement>();
         with_element_ast->name = cte_name;
+        if (!recursive_cte_key_columns.empty())
+        {
+            auto key_columns_list_ast = make_intrusive<ASTExpressionList>();
+            for (const auto & key_column_name : recursive_cte_key_columns)
+                key_columns_list_ast->children.push_back(make_intrusive<ASTIdentifier>(key_column_name));
+            with_element_ast->key_columns = std::move(key_columns_list_ast);
+        }
         with_element_ast->subquery = make_intrusive<ASTSubquery>(std::move(result_query));
         with_element_ast->children.push_back(with_element_ast->subquery);
 
