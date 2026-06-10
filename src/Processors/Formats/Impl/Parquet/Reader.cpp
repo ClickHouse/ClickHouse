@@ -755,6 +755,26 @@ void Reader::preparePrewhere()
             prewhere_expr_info,
             /*force_short_circuit_execution*/ false);
 
+        /// The reader addresses every cross-step column by its index in `extended_sample_block`, so a
+        /// step that requires a column without a slot there (a shared intermediate the splitter
+        /// promoted to a step boundary) cannot be executed; fall back to a single step.
+        if (success)
+        {
+            for (const auto & step : prewhere_expr_info.steps)
+            {
+                for (const auto & col : step->actions->getActionsDAG().getRequiredColumns())
+                {
+                    if (!extended_sample_block.has(col.name))
+                    {
+                        success = false;
+                        break;
+                    }
+                }
+                if (!success)
+                    break;
+            }
+        }
+
         if (success)
         {
             /// Add all steps separately.
