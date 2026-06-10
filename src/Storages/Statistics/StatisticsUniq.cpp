@@ -47,12 +47,24 @@ void StatisticsUniq::build(const ColumnPtr & column)
 
     /// `collector` is the Null combinator (`getNestedFunction() != nullptr`) iff the declared type
     /// was Nullable. The runtime column may have the opposite nullability, so reconcile it before
-    /// `addBatchSinglePlace`, which otherwise mis-casts to/from ColumnNullable.
+    /// feeding the collector, which otherwise mis-casts to/from ColumnNullable.
     const bool collector_expects_nullable = collector->getNestedFunction() != nullptr;
-    if (collector_expects_nullable && !isColumnNullable(*unwrapped))
+    const bool column_is_nullable = isColumnNullable(*unwrapped);
+
+    if (!collector_expects_nullable && column_is_nullable)
+    {
+        /// Plain `uniq` ignores NULLs but cannot read a ColumnNullable. Pass the nested column with
+        /// its null map so NULL rows are skipped; unwrapping alone would count the synthetic default
+        /// stored at NULL positions and inflate the distinct estimate.
+        const auto & nullable = assert_cast<const ColumnNullable &>(*unwrapped);
+        const IColumn * raw_column_ptr = &nullable.getNestedColumn();
+        collector->addBatchSinglePlaceNotNull(
+            0, raw_column_ptr->size(), data, &(raw_column_ptr), nullable.getNullMapData().data(), nullptr);
+        return;
+    }
+
+    if (collector_expects_nullable && !column_is_nullable)
         unwrapped = makeNullable(unwrapped);
-    else if (!collector_expects_nullable && isColumnNullable(*unwrapped))
-        unwrapped = assert_cast<const ColumnNullable &>(*unwrapped).getNestedColumnPtr();
 
     const IColumn * raw_column_ptr = unwrapped.get();
     collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &(raw_column_ptr), nullptr);

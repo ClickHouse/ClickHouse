@@ -439,7 +439,9 @@ TEST(Statistics, UniqNullabilityMismatch)
         }
 
         stats->build(std::move(col));
-        /// 100 rows, every 7th is NULL → 86 distinct non-null values (i = 0,7,14,... excluded).
-        EXPECT_EQ(stats->estimateCardinality(), 86u);
+        /// 100 rows, every 7th is NULL (15 NULLs at i = 0,7,...,98) → 85 distinct non-null values.
+        /// uniq ignores NULLs: the synthetic default stored in the nested column at NULL rows must
+        /// not be counted (counting it would wrongly yield 86).
+        EXPECT_EQ(stats->estimateCardinality(), 85u);
     }
 }
