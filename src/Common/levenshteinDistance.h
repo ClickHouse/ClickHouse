@@ -50,11 +50,15 @@ size_t levenshteinDistance(std::span<const Element> lhs, std::span<const Element
     return v0[n];
 };
 
-/// Accumulator type for the weighted distance. Integral weights are summed in a wide integer so the
-/// arithmetic stays exact and never overflows (wide::integer has defined wraparound, not signed UB);
-/// floating weights are summed in Float64. The result is converted to Float64 once at the end.
+/// Accumulator type for the weighted distance. Integral weights are summed in a wide integer twice as
+/// wide as the weight (at least 256-bit), so any feasible array sum stays exact and cannot overflow:
+/// overflowing would need more than 2^(weight bits) elements. 256-bit weights therefore accumulate in
+/// 512 bits. Floating weights are summed in Float64. The result is converted to Float64 once at the end.
 template <class Weight>
-using LevenshteinWeightAccumulator = std::conditional_t<is_integer<Weight>, std::conditional_t<is_unsigned_v<Weight>, UInt256, Int256>, Float64>;
+using LevenshteinWeightAccumulator = std::conditional_t<
+    is_integer<Weight>,
+    wide::integer<std::max<size_t>(256, sizeof(Weight) * 8 * 2), std::conditional_t<is_unsigned_v<Weight>, unsigned, signed>>,
+    Float64>;
 
 /// Levenshtein Distance with weights, is used to calculate custom distance from lhs to rhs.
 /// The result is Float64 (the SQL functions return Float64). To avoid overflow/UB on weights near the

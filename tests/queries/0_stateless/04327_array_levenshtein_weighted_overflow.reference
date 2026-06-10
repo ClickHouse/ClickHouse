@@ -12,3 +12,9 @@
 9007199254740994
 9007199254740994
 9007199254740994
+--- widest (256-bit) weights do not wrap the accumulator ---
+1
+0
+1
+1
+1
