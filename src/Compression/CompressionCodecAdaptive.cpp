@@ -46,9 +46,8 @@ constexpr std::array T64_TYPES = {
 /// Candidate codecs for the adaptive pool, grouped by codec expression.
 /// TODO: extend candidates as codecs as we see some proof they are faster than the default and can compress better.
 /// TODO: play around with chains to see if they are worth it (could be too slow). Until then, they are banned.
-/// TODO: pin the optimal T64 flavour.
 constexpr std::array<CandidateGroup, 1> CANDIDATES = {{
-    {"T64", T64_TYPES},
+    {"T64", T64_TYPES}, /// T64 defaults to the byte flavour (over bit). Good: same size + faster [de]compression.
 }};
 
 /// Build the codec described by `expr` for `type` so type-aware codecs get the type they need.
