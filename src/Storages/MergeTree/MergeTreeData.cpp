@@ -10789,7 +10789,9 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
         .min_part_data_versions = std::move(parts_info.min_data_versions),
         .max_mutation_versions = query_context->getPartitionIdToMaxBlock(getStorageID().uuid),
         .need_data_mutations = apply_mutations_on_fly,
-        .need_alter_mutations = apply_mutations_on_fly || apply_patch_parts,
+        /// Always needed: skip-index analysis must see pending ALTER MODIFY COLUMN type changes
+        /// to skip indexes whose on-disk data uses the old, now-incompatible column type.
+        .need_alter_mutations = true,
         .need_patch_parts = apply_patch_parts,
         .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
     };
