@@ -219,62 +219,62 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     /// `NO_REMOTE_SHARD_AVAILABLE. Log: ` with an empty body. The query-shaping settings would
     /// similarly cause the per-shard subquery to be re-shaped a second time. Strip the settings
     /// here so the inter-server `Settings` packet does not carry them.
-    if (settings[Setting::offset] != 0)
+    if (settings[Setting::offset].changed || settings[Setting::offset] != 0)
     {
         new_settings[Setting::offset] = 0;
         new_settings[Setting::offset].changed = false;
     }
-    if (settings[Setting::limit] != 0)
+    if (settings[Setting::limit].changed || settings[Setting::limit] != 0)
     {
         new_settings[Setting::limit] = 0;
         new_settings[Setting::limit].changed = false;
     }
-    if (settings[Setting::page] != 0)
+    if (settings[Setting::page].changed || settings[Setting::page] != 0)
     {
         new_settings[Setting::page] = 0;
         new_settings[Setting::page].changed = false;
     }
-    if (!settings[Setting::select].value.empty())
+    if (settings[Setting::select].changed || !settings[Setting::select].value.empty())
     {
         new_settings[Setting::select] = "";
         new_settings[Setting::select].changed = false;
     }
-    if (!settings[Setting::order].value.empty())
+    if (settings[Setting::order].changed || !settings[Setting::order].value.empty())
     {
         new_settings[Setting::order] = "";
         new_settings[Setting::order].changed = false;
     }
-    if (!settings[Setting::sort].value.empty())
+    if (settings[Setting::sort].changed || !settings[Setting::sort].value.empty())
     {
         new_settings[Setting::sort] = "";
         new_settings[Setting::sort].changed = false;
     }
-    if (!settings[Setting::filter].value.empty())
+    if (settings[Setting::filter].changed || !settings[Setting::filter].value.empty())
     {
         new_settings[Setting::filter] = "";
         new_settings[Setting::filter].changed = false;
     }
-    if (!settings[Setting::additional_result_filter].value.empty())
+    if (settings[Setting::additional_result_filter].changed || !settings[Setting::additional_result_filter].value.empty())
     {
         new_settings[Setting::additional_result_filter] = "";
         new_settings[Setting::additional_result_filter].changed = false;
     }
-    if (!settings[Setting::format].value.empty())
+    if (settings[Setting::format].changed || !settings[Setting::format].value.empty())
     {
         new_settings[Setting::format] = "";
         new_settings[Setting::format].changed = false;
     }
-    if (!settings[Setting::output_format].value.empty())
+    if (settings[Setting::output_format].changed || !settings[Setting::output_format].value.empty())
     {
         new_settings[Setting::output_format] = "";
         new_settings[Setting::output_format].changed = false;
     }
-    if (!settings[Setting::default_format].value.empty())
+    if (settings[Setting::default_format].changed || !settings[Setting::default_format].value.empty())
     {
         new_settings[Setting::default_format] = "";
         new_settings[Setting::default_format].changed = false;
     }
-    if (!settings[Setting::compression].value.empty())
+    if (settings[Setting::compression].changed || !settings[Setting::compression].value.empty())
     {
         new_settings[Setting::compression] = "";
         new_settings[Setting::compression].changed = false;
