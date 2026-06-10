@@ -40,6 +40,14 @@ namespace Setting
 
 namespace
 {
+    StoredObject makeStoredObjectFromMetadata(const std::string & path, const ObjectMetadata & metadata)
+    {
+        if (metadata.is_size_known)
+            return StoredObject(path, path, metadata.size_bytes);
+
+        return StoredObject(path, path);
+    }
+
     /// Decode the HTML entities that commonly appear in `href`/`src` attribute values so the
     /// extracted URL matches what a browser would actually request. For example, index pages
     /// frequently render signed download links as `href="part.tsv?x=1&amp;token=..."`; without
@@ -289,7 +297,7 @@ DirectoryIteratorPtr MetadataStorageFromIndexPages::iterateDirectory(const std::
 StoredObjects MetadataStorageFromIndexPages::getStorageObjects(const std::string & path) const
 {
     auto metadata = object_storage.getObjectMetadata(path, /* with_tags */ false);
-    return {StoredObject(path, path, metadata.size_bytes)};
+    return {makeStoredObjectFromMetadata(path, metadata)};
 }
 
 std::optional<StoredObjects> MetadataStorageFromIndexPages::getStorageObjectsIfExist(const std::string & path) const
@@ -297,7 +305,7 @@ std::optional<StoredObjects> MetadataStorageFromIndexPages::getStorageObjectsIfE
     auto metadata = object_storage.tryGetObjectMetadata(path, /* with_tags */ false);
     if (!metadata)
         return std::nullopt;
-    return StoredObjects{StoredObject(path, path, metadata->size_bytes)};
+    return StoredObjects{makeStoredObjectFromMetadata(path, *metadata)};
 }
 
 std::vector<std::string> MetadataStorageFromIndexPages::makeListingURLs(const std::string & path, size_t shard_index) const
