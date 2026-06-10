@@ -688,6 +688,9 @@ static ColumnWithTypeAndName readColumnWithFixedStringData(const std::shared_ptr
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         const auto & chunk = checkedCastFixedSizeBinary(*(arrow_column->chunk(chunk_i)), column_name);
+        /// An empty chunk can leave the data buffer null; skip before reading raw_values().
+        if (chunk.length() == 0)
+            continue;
         const uint8_t * raw_data = chunk.raw_values();
         column_chars.insert_assume_reserved(raw_data, raw_data + fixed_len * chunk.length());
     }
@@ -714,6 +717,9 @@ static ColumnWithTypeAndName readColumnWithBigIntegerFromFixedBinaryData(const s
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         const auto & chunk = checkedCastFixedSizeBinary(*(arrow_column->chunk(chunk_i)), column_name);
+        /// An empty chunk can leave the data buffer null; skip before reading raw_values().
+        if (chunk.length() == 0)
+            continue;
         const auto * raw_data = reinterpret_cast<const ValueType *>(chunk.raw_values());
         data.insert_assume_reserved(raw_data, raw_data + chunk.length());
     }
@@ -1360,6 +1366,26 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(const std::shar
             using OffsetArray = typename ArrowOffsetArray<ArrowListArray>::type;
             const auto & arrow_offsets = checkedCast<OffsetArray>(*arrow_offsets_array, column_name);
             checkListOffsetsMonotonic(arrow_offsets, column_name);
+
+            /// Flatten() slices the values array over [offset[0], offset[length]].  Monotonic,
+            /// non-negative offsets can still point past the end of (or a negative-length) values
+            /// array, which would fail inside Arrow's ArrayData::Slice; reject it here instead.
+            const auto & values = list_chunk.values();
+            const int64_t values_len = values ? values->length() : 0;
+            if (unlikely(values_len < 0))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow List values array has negative length {} for column '{}'",
+                    values_len, column_name);
+            if (arrow_offsets.length() > 0)
+            {
+                const int64_t last_offset = arrow_offsets.Value(arrow_offsets.length() - 1);
+                if (unlikely(last_offset > values_len))
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Arrow List last offset {} exceeds values array length {} for column '{}'",
+                        last_offset, values_len, column_name);
+            }
         }
         else
         {
@@ -1381,7 +1407,13 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(const std::shar
                     "Arrow FixedSizeList size overflow for column '{}': {} rows × stride {}",
                     column_name, count, stride);
             const auto & values = list_chunk.values();
-            const size_t values_len = values ? static_cast<size_t>(values->length()) : 0;
+            const int64_t values_len_signed = values ? values->length() : 0;
+            if (unlikely(values_len_signed < 0))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow FixedSizeList values array has negative length {} for column '{}'",
+                    values_len_signed, column_name);
+            const size_t values_len = static_cast<size_t>(values_len_signed);
             if (unlikely(required > values_len))
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
@@ -1914,6 +1946,14 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 auto & struct_chunk = assert_cast<arrow::StructArray &>(*(arrow_column->chunk(chunk_i)));
                 for (int i = 0; i < arrow_struct_type->num_fields(); ++i)
                 {
+                    /// field() Slice-clamps a child whose length differs from the struct; a negative
+                    /// child length would fail inside Arrow's ArrayData::Slice, so reject it first.
+                    const auto & child_data = struct_chunk.data()->child_data[i];
+                    if (unlikely(child_data->length < 0))
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Arrow Struct field {} has negative length {} for column '{}'",
+                            i, child_data->length, column_name);
                     auto field_chunk = struct_chunk.field(i);
                     /// field() Slice-clamps children, producing kUnknownNullCount; validate the
                     /// child bitmap before arrow::ChunkedArray's constructor (below) scans it.

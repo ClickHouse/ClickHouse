@@ -43,6 +43,14 @@
 # Class F — FixedSizeList child shorter than length*stride:
 #   FixedSizeList<int32>[7] with 3 rows; child FieldNode.length patched 21→10.  The
 #   pre-Flatten stride/size check rejects it before Arrow's ArrayData::Slice fails.
+#
+# Class G — nested child FieldNode.length = -1:
+#   Struct / List / LargeList / FixedSizeList whose child node length is patched to -1.
+#   StructArray::field()/Flatten() would slice a negative-length array; rejected first.
+#
+# Class H — monotonic offsets pointing past values.length:
+#   List / LargeList whose empty-list offsets are patched [0,0]→[1,1]; offsets are
+#   non-negative and monotonic but exceed values.length (0).  Rejected before Flatten.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -237,6 +245,57 @@ d_f = bytearray(write_arrow(arr_f, name='x'))
 n = patch_all_int64(d_f, 21, 10)
 assert n >= 1, "no int64=21 found in FSL-short-child file"
 open(f'{out}/fsl_short_child.arrow', 'wb').write(d_f)
+
+# Class G — nested child FieldNode.length = -1.  Reaches Arrow's ArrayData::Slice (via
+# StructArray::field() or Flatten()) with a negative array length unless rejected first.
+def patch_fieldnode_length(data, pattern_qs, q_index, value):
+    pat = struct.pack('<' + 'q'*len(pattern_qs), *pattern_qs)
+    idx = data.find(pat)
+    assert idx >= 0, f"FieldNode pattern {pattern_qs} not found"
+    data[idx + 8*q_index : idx + 8*(q_index+1)] = struct.pack('<q', value)
+    return data
+
+# Struct<a:int32> with 1 row; child a FieldNode.length patched 1 -> -1.
+g_struct = pa.StructArray.from_arrays([pa.array([42], type=pa.int32())], names=['a'])
+open(f'{out}/struct_child_neg_length.arrow', 'wb').write(
+    patch_fieldnode_length(write_arrow(g_struct, name='s'), [1,0,1,0], 2, -1))
+# List<int32> with one empty list; child FieldNode.length patched 0 -> -1.
+g_list = pa.array([[]], type=pa.list_(pa.int32()))
+open(f'{out}/list_child_neg_length.arrow', 'wb').write(
+    patch_fieldnode_length(write_arrow(g_list, name='x'), [1,0,0,0], 2, -1))
+# LargeList sibling.
+g_large = pa.array([[]], type=pa.large_list(pa.int32()))
+open(f'{out}/largelist_child_neg_length.arrow', 'wb').write(
+    patch_fieldnode_length(write_arrow(g_large, name='x'), [1,0,0,0], 2, -1))
+# FixedSizeList<int32>[1] with 1 row; child FieldNode.length patched 1 -> -1.
+g_fsl = pa.array([[42]], type=pa.list_(pa.int32(), 1))
+open(f'{out}/fixedlist_child_neg_length.arrow', 'wb').write(
+    patch_fieldnode_length(write_arrow(g_fsl, name='x'), [1,0,1,0], 2, -1))
+
+# Class H — monotonic, non-negative List/LargeList offsets that point past values.length.
+# An empty list's offsets [0,0] are patched to [1,1]; values.length stays 0, so Flatten()
+# would slice values[1,1] out of a 0-length array.  Verified via pyarrow round-trip.
+def patch_offsets_past_values(arr, packed):
+    base = bytearray(write_arrow(arr, name='x'))
+    pos = 0
+    while True:
+        idx = base.find(b'\x00' * len(packed), pos)
+        assert idx >= 0, "offset buffer of zeros not found"
+        cand = bytearray(base)
+        cand[idx:idx+len(packed)] = packed
+        try:
+            with ipc.open_file(pa.py_buffer(bytes(cand))) as reader:
+                a = reader.read_all().column('x').chunks[0]
+            if a.offsets.to_pylist() == [1, 1] and len(a.values) == 0:
+                return cand
+        except Exception:
+            pass
+        pos = idx + 1
+
+open(f'{out}/list_offset_past_values.arrow', 'wb').write(
+    patch_offsets_past_values(pa.array([[]], type=pa.list_(pa.int32())), struct.pack('<2i', 1, 1)))
+open(f'{out}/largelist_offset_past_values.arrow', 'wb').write(
+    patch_offsets_past_values(pa.array([[]], type=pa.large_list(pa.int32())), struct.pack('<2q', 1, 1)))
 PYEOF
 
 check_incorrect_data() {
@@ -282,3 +341,21 @@ check_incorrect_data struct_child_bitmap \
 
 check_incorrect_data fsl_short_child \
     $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/fsl_short_child.arrow', Arrow)"
+
+check_incorrect_data struct_child_neg_length \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/struct_child_neg_length.arrow', Arrow)"
+
+check_incorrect_data list_child_neg_length \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/list_child_neg_length.arrow', Arrow)"
+
+check_incorrect_data largelist_child_neg_length \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/largelist_child_neg_length.arrow', Arrow)"
+
+check_incorrect_data fixedlist_child_neg_length \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/fixedlist_child_neg_length.arrow', Arrow)"
+
+check_incorrect_data list_offset_past_values \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/list_offset_past_values.arrow', Arrow)"
+
+check_incorrect_data largelist_offset_past_values \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/largelist_offset_past_values.arrow', Arrow)"
