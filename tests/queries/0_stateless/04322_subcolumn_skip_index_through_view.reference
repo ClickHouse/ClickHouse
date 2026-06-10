@@ -1,0 +1,12 @@
+1
+1
+1
+Skip
+Name: idx_text
+Skip
+Name: idx_text
+Condition: (t.inner.x in [100, 100])
+Granules: 2/64
+Condition: (t.inner.x in [100, 100])
+Granules: 2/64
+1

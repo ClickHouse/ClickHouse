@@ -948,6 +948,53 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
     return &inverted_dag.addFunction(or_func, std::move(or_children), "");
 }
 
+/// Fold `getSubcolumn(<input>, '<subname>')` into a single INPUT named `<input>.<subname>`, the
+/// canonical subcolumn name an index/primary key is registered under. The cloned DAG is used only
+/// for index/PK granule pruning (never for filter execution), so substituting the equivalent
+/// subcolumn input is faithful. Returns nullptr for any non-foldable shape, so the caller falls
+/// back to generic cloning. See issue #107038.
+static const ActionsDAG::Node * tryFoldGetSubcolumnToInput(
+    const ActionsDAG::Node & node,
+    ActionsDAG & inverted_dag,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping)
+{
+    if (node.children.size() != 2)
+        return nullptr;
+
+    /// Second argument must be a constant String with the subcolumn name.
+    const auto & subname_node = *node.children[1];
+    if (subname_node.type != ActionsDAG::ActionType::COLUMN || !subname_node.column || !isColumnConst(*subname_node.column))
+        return nullptr;
+    Field subname_field = assert_cast<const ColumnConst &>(*subname_node.column).getField();
+    if (subname_field.getType() != Field::Types::String)
+        return nullptr;
+    const String & subname = subname_field.safeGet<String>();
+    if (subname.empty())
+        return nullptr;
+
+    /// First argument must resolve (through aliases) to a plain INPUT - the base column read.
+    /// A nested subcolumn read is itself a foldable getSubcolumn and is handled recursively below.
+    const ActionsDAG::Node * base = node.children[0];
+    while (base->type == ActionsDAG::ActionType::ALIAS)
+        base = base->children.front();
+
+    const ActionsDAG::Node * folded_base = nullptr;
+    if (base->type == ActionsDAG::ActionType::INPUT)
+        folded_base = base;
+    else if (base->type == ActionsDAG::ActionType::FUNCTION && base->function_base->getName() == "getSubcolumn")
+        folded_base = tryFoldGetSubcolumnToInput(*base, inverted_dag, inputs_mapping);
+
+    if (!folded_base)
+        return nullptr;
+
+    /// Build (and dedup) the canonical subcolumn input `<base>.<subname>`, typed as the
+    /// getSubcolumn result (i.e. the subcolumn type).
+    auto & mapped = inputs_mapping[&node];
+    if (mapped == nullptr)
+        mapped = &inverted_dag.addInput(folded_base->result_name + "." + subname, node.result_type);
+    return mapped;
+}
+
 static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     const ActionsDAG::Node & node,
     ActionsDAG & inverted_dag,
@@ -1034,6 +1081,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 /// `need_inversion` was already pushed into the child; avoid adding an extra `not()` wrapper
                 /// Without this, we could add an extra `not()` here (double inversion), e.g. `NOT materialize(x = 0)` -> `not(notEquals(x, 0))`.
                 handled_inversion = true;
+            }
+            else if (!need_inversion && name == "getSubcolumn"
+                && (res = tryFoldGetSubcolumnToInput(node, inverted_dag, inputs_mapping)) != nullptr)
+            {
+                /// Folded `getSubcolumn(col, 'name')` (produced for subcolumn reads through views) into the
+                /// canonical subcolumn input `col.name`, so index/primary-key name matching works the same
+                /// as for a direct table read. `res` is a leaf input; fall through to the inversion wrapper.
             }
             else if (isTrivialCast(node))
             {
