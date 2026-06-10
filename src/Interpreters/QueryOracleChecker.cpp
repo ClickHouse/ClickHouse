@@ -11,6 +11,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
+#include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -2111,6 +2112,28 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
 }
 
 
+namespace
+{
+/// Format the context's non-default settings as `name=value, ...`. Attached
+/// to every mismatch exception so a mismatch found mid-fuzz-sequence (where
+/// earlier `SET`/`SETTINGS` mutations have drifted the session) is
+/// reproducible standalone — without this, many real-looking mismatches
+/// could not be reproduced because the active settings were unknown.
+String formatChangedSettings(const ContextPtr & context)
+{
+    WriteBufferFromOwnString buf;
+    bool first = true;
+    for (const auto & change : context->getSettingsRef().changes())
+    {
+        if (!first)
+            buf << ", ";
+        first = false;
+        buf << change.name << "=" << applyVisitor(FieldVisitorToString(), change.value);
+    }
+    return buf.str();
+}
+}
+
 bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr & context)
 {
     /// The oracle runs after the fuzzed query finished, so the context's
@@ -2184,6 +2207,9 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         select->tables() != nullptr);
 
     bool any_check_performed = false;
+
+    try
+    {
 
     /// TLP WHERE oracle
     try
@@ -2336,6 +2362,18 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     catch (...)
     {
         LOG_TRACE(logger, "Subquery wrap oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
+    }
+
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+        {
+            const String changed = formatChangedSettings(context);
+            if (!changed.empty())
+                e.addMessage("Active non-default settings (for reproduction): {}", changed);
+        }
+        throw;
     }
 
     return any_check_performed;
