@@ -77,6 +77,10 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
     ContextPtr context,
     std::shared_ptr<std::atomic<bool>> is_cancelled);
 
+/// Wake every in-memory exchange waiter of the query. Idempotent and lock-free with respect to the
+/// executor lifecycle, so cancellation paths can call it without waiting for the executor mutex.
+void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id);
+
 /// Contains info about hosts assigned to exchange buckets
 struct ExchangeStreamSources
 {
