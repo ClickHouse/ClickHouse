@@ -32,6 +32,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
+        bool allow_server_credentials_in_user_queries_,
         std::optional<FormatSettings> format_settings_,
         ASTStorage * engine_args,
         LoadingStrictnessLevel mode,

@@ -34,6 +34,7 @@ namespace Setting
 {
     extern const SettingsString s3queue_default_zookeeper_path;
     extern const SettingsBool allow_experimental_object_storage_queue_hive_partitioning;
+    extern const SettingsBool s3_allow_server_credentials_in_user_queries;
 }
 
 namespace ObjectStorageQueueSetting
@@ -121,12 +122,12 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         }
     }
 
-    /// Apply the creating query's session/profile settings onto the storage context, so a setting given in
-    /// the CREATE statement (for example `s3_allow_server_credentials_in_user_queries`) reaches the S3 client
-    /// built in the storage constructor. Mirrors registerStorageObjectStorage; `args.getContext()` alone is
-    /// the global context and would not carry the override.
-    ContextMutablePtr context_copy = Context::createCopy(args.getContext());
-    context_copy->setSettings(args.getLocalContext()->getSettingsCopy());
+    /// The S3 client is built once in the storage constructor and reused by background threads, so the
+    /// constructor needs the effective `s3_allow_server_credentials_in_user_queries` value from the CREATE
+    /// query. The storage itself must keep the persistent global context (`args.getContext()`): it is held
+    /// weakly by `WithContext` and used by background tasks, so a transient settings copy would expire.
+    const bool allow_server_credentials_in_user_queries
+        = args.getLocalContext()->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
 
     return std::make_shared<StorageObjectStorageQueue>(
         std::move(queue_settings),
@@ -135,7 +136,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         args.columns,
         args.constraints,
         args.comment,
-        context_copy,
+        args.getContext(),
+        allow_server_credentials_in_user_queries,
         format_settings,
         args.storage_def,
         args.mode,
