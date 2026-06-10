@@ -1472,6 +1472,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets)
 {
     auto columns = metadata.columns;
+    bool has_modify_column_with_data_type = false;
+    bool has_modify_column_add_enum_values = false;
 
     auto ast_to_str = [](const ASTPtr & query) -> String
     {
@@ -1489,16 +1491,43 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
             if (!has_column && command.if_exists)
                 command.ignore = true;
 
-            /// `ADD ENUM VALUES` derives the resulting type by merging against the existing column, so
-            /// the column must be present in the working snapshot. If it is not (e.g. the column is added
-            /// by a preceding `ADD COLUMN` in the same statement, which does not advance the snapshot),
-            /// fail explicitly instead of silently dropping the modification.
-            if (command.add_enum_values && !has_column && !command.ignore)
-                throw Exception(
-                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                    "Cannot ADD ENUM VALUES to column {}: it does not exist in the table. Adding enum values to a "
-                    "column created in the same ALTER statement is not supported.",
-                    backQuote(command.column_name));
+            if (!command.ignore)
+            {
+                if (command.add_enum_values)
+                {
+                    if (has_modify_column_with_data_type)
+                    {
+                        throw Exception(
+                            ErrorCodes::NOT_IMPLEMENTED,
+                            "Cannot combine `MODIFY COLUMN` with an explicit type and `MODIFY COLUMN ... ADD ENUM VALUES` "
+                            "in a single ALTER query");
+                    }
+
+                    /// `ADD ENUM VALUES` derives the resulting type by merging against the existing column, so
+                    /// the column must be present in the working snapshot. If it is not (e.g. the column is added
+                    /// by a preceding `ADD COLUMN` in the same statement, which does not advance the snapshot),
+                    /// fail explicitly instead of silently dropping the modification.
+                    if (!has_column)
+                        throw Exception(
+                            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                            "Cannot ADD ENUM VALUES to column {}: it does not exist in the table. Adding enum values to a "
+                            "column created in the same ALTER statement is not supported.",
+                            backQuote(command.column_name));
+
+                    has_modify_column_add_enum_values = true;
+                }
+                else if (command.data_type)
+                {
+                    if (has_modify_column_add_enum_values)
+                    {
+                        throw Exception(
+                            ErrorCodes::NOT_IMPLEMENTED,
+                            "Cannot combine `MODIFY COLUMN` with an explicit type and `MODIFY COLUMN ... ADD ENUM VALUES` "
+                            "in a single ALTER query");
+                    }
+                    has_modify_column_with_data_type = true;
+                }
+            }
 
             if (has_column)
             {
@@ -1585,6 +1614,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
                     command.default_kind = column_from_table.default_desc.kind;
                     command.default_expression = column_from_table.default_desc.expression;
                 }
+
             }
         }
         else if (command.type == AlterCommand::ADD_COLUMN)

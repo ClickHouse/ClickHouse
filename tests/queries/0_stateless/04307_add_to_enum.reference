@@ -83,5 +83,6 @@ CREATE TABLE default.enum_chained\n(\n    `x` Enum8(\'base\' = 1, \'a\' = 2, \'b
 base
 a
 b
+======= MODIFY TYPE THEN ADD ENUM VALUES IN ONE STATEMENT ===============
 ======= ALTER AST VALIDATION ===============
 ======= ADD ENUM VALUES SYNTAX ERRORS ===============
