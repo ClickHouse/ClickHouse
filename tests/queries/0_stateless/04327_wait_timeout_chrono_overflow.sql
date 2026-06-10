@@ -1,6 +1,19 @@
--- Regression test for signed integer overflow in std::condition_variable::wait_for.
--- A huge interactive_delay made the lazy-output queue wait with a millisecond timeout that overflowed
--- when libc++ converts the duration to nanoseconds (multiplying by 1'000'000) inside wait_for. UBSan
--- aborts on that overflow (CI STID 2881-3dbd); without sanitizers it silently wraps to a garbage
--- timeout. The timeout is now clamped, so the query must just return its result.
+-- A huge Millisecond-typed wait timeout must saturate, not wrap. 9223372036854775 = INT64_MAX / 1000.
+SELECT toUInt64(value) <= 9223372036854775
+FROM system.settings WHERE name = 'queue_max_wait_ms'
+SETTINGS queue_max_wait_ms = 18446744073709551615;
+
+SELECT toUInt64(value) <= 9223372036854775
+FROM system.settings WHERE name = 'replace_running_query_max_wait_ms'
+SETTINGS replace_running_query_max_wait_ms = 18446744073709551615;
+
+SELECT toUInt64(value) <= 9223372036854775
+FROM system.settings WHERE name = 'low_priority_query_wait_time_ms'
+SETTINGS low_priority_query_wait_time_ms = 18446744073709551615;
+
+SELECT toUInt64(value) <= 9223372036854775
+FROM system.settings WHERE name = 'connection_pool_max_wait_ms'
+SETTINGS connection_pool_max_wait_ms = 18446744073709551615;
+
+-- A query carrying a huge interactive_delay must still complete (lazy-output queue wait is clamped).
 SELECT 1 SETTINGS interactive_delay = 100000000000000000;

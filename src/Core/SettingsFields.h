@@ -6,6 +6,7 @@
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
 
+#include <limits>
 #include <string_view>
 
 namespace DB
@@ -252,17 +253,28 @@ struct SettingFieldTimespan final
     Int64 microseconds = 0;
     bool changed = false;
 
+    /// Convert a value in `unit` to microseconds, saturating to INT64_MAX instead of wrapping.
+    /// Without this, a huge value (e.g. queue_max_wait_ms above ~9.2e15) overflows the
+    /// `x * microseconds_per_unit` multiplication into a negative Int64, so the stored timespan
+    /// becomes negative and totalMilliseconds()/operator UInt64() report garbage.
+    static Int64 unitToMicroseconds(UInt64 x)
+    {
+        if (x > static_cast<UInt64>(std::numeric_limits<Int64>::max()) / microseconds_per_unit)
+            return std::numeric_limits<Int64>::max();
+        return static_cast<Int64>(x * microseconds_per_unit);
+    }
+
     explicit SettingFieldTimespan() = default;
     explicit SettingFieldTimespan(const Poco::Timespan & x) : microseconds(x.totalMicroseconds()) {}
     SettingFieldTimespan(const SettingFieldTimespan &) = default;
     SettingFieldTimespan & operator=(const SettingFieldTimespan &) = default;
 
-    explicit SettingFieldTimespan(UInt64 x) : microseconds(static_cast<Int64>(x * microseconds_per_unit)) {}
+    explicit SettingFieldTimespan(UInt64 x) : microseconds(unitToMicroseconds(x)) {}
     explicit SettingFieldTimespan(const Field & f);
 
     SettingFieldTimespan & operator =(const Poco::Timespan & x) { microseconds = x.totalMicroseconds(); changed = true; return *this; }
 
-    SettingFieldTimespan & operator =(UInt64 x) { microseconds = static_cast<Int64>(x * microseconds_per_unit); changed = true; return *this; }
+    SettingFieldTimespan & operator =(UInt64 x) { microseconds = unitToMicroseconds(x); changed = true; return *this; }
     SettingFieldTimespan & operator =(const Field & f);
 
     bool isChanged() const { return changed; }
