@@ -176,7 +176,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
                 output_dist.columns.push_back({key.left, key.right});
                 if (needs_hash_cast)
                 {
-                    String type_name = hash_type_for(key);
+                    const String & type_name = hash_type_for(key);
                     left_dist.hash_type_names.push_back(type_name);
                     right_dist.hash_type_names.push_back(type_name);
                     output_dist.hash_type_names.push_back(type_name);

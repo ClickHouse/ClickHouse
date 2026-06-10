@@ -81,7 +81,7 @@ struct ExpressionPropertiesHash
 /// Composite key for tracking which (rule, properties) pairs have been applied.
 struct RulePropertiesKey
 {
-    const void * rule_ptr;  /// Address of the rule (stable for the optimizer's lifetime)
+    const void * rule_ptr = nullptr;  /// Address of the rule (stable for the optimizer's lifetime)
     ExpressionProperties properties;
 
     bool operator==(const RulePropertiesKey & other) const = default;

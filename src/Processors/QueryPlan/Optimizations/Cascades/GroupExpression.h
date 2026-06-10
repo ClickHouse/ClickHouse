@@ -53,7 +53,7 @@ public:
 
     struct Input
     {
-        GroupId group_id;
+        GroupId group_id = INVALID_GROUP_ID;
         ExpressionProperties required_properties; /// TODO: optional?
     };
 
