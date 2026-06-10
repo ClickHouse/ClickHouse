@@ -49,6 +49,7 @@ workflow = Workflow.Config(
         JobConfigs.style_check,
         JobConfigs.code_review,
         JobConfigs.docs_job,
+        JobConfigs.docs_job_mintlify,
         JobConfigs.fast_test,
         JobConfigs.ci_tests,
         *JobConfigs.darwin_fast_test_jobs,
@@ -202,6 +203,7 @@ workflow = Workflow.Config(
         "build_debug": "Build (amd_debug)",
         "build": "Build (amd_binary)",
     },
+    runs_on_label_prefix="pr-",
 )
 
 WORKFLOWS = [

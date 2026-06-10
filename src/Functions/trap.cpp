@@ -10,6 +10,7 @@
 #include <base/scope_guard.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ErrnoException.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <thread>
 #include <memory>
@@ -34,7 +35,7 @@ namespace ErrorCodes
 
 
 /// Various illegal actions to test diagnostic features of ClickHouse itself. Should not be enabled in production builds.
-class FunctionTrap : public IFunction, private WithContext
+class FunctionTrap final : public IFunction, private WithContext
 {
 public:
     static constexpr auto name = "trap";
@@ -134,7 +135,7 @@ public:
             }
             else if (mode == "throw exception")
             {
-                std::vector<int>().at(0);
+                VectorWithMemoryTracking<int>().at(0);
             }
             else if (mode == "access context")
             {
@@ -151,7 +152,7 @@ public:
             }
             else if (mode == "mmap many")
             {
-                std::vector<void *> maps;
+                VectorWithMemoryTracking<void *> maps;
                 SCOPE_EXIT(
                 {
                     //for (void * map : maps)

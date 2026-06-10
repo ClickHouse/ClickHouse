@@ -39,7 +39,7 @@ namespace
  * 3. Types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into FixedString,
  * String, and types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID).
  */
-class FunctionReinterpret : public IFunction
+class FunctionReinterpret final : public IFunction
 {
 public:
     static constexpr auto name = "reinterpret";
@@ -424,7 +424,7 @@ private:
 };
 
 template <typename ToDataType, typename Name>
-class FunctionReinterpretAs : public IFunction
+class FunctionReinterpretAs final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -462,7 +462,7 @@ public:
         else
             data_type = std::make_shared<ToDataType>();
 
-        auto type_name_column = DataTypeString().createColumnConst(1, data_type->getName());
+        ColumnPtr type_name_column = DataTypeString().createColumnConst(1, data_type->getName());
         ColumnWithTypeAndName type_column(type_name_column, std::make_shared<DataTypeString>(), "");
 
         ColumnsWithTypeAndName arguments_with_type
