@@ -31,7 +31,7 @@ extern const int LOGICAL_ERROR;
 /// Used to offload the (de)serialization and (de)compression of columns to the pipeline threads instead of TCPHandler and remote connection threads.
 /// Methods `toBLOB` and `fromBLOB` are used to convert between the original column and the BLOB representation.
 /// See `MarshallBlocksTransform`, `UnmarshallBlocksTransform`, and `SerializationDetached`.
-class ColumnBLOB : public COWHelper<IColumnHelper<ColumnBLOB>, ColumnBLOB>
+class ColumnBLOB final : public COWHelper<IColumnHelper<ColumnBLOB>, ColumnBLOB>
 {
 public:
     using BLOB = PODArray<char>;
@@ -193,7 +193,7 @@ public:
         throwInapplicable();
     }
     ColumnPtr replicate(const Offsets &) const override { throwInapplicable(); }
-    MutableColumns scatter(size_t, const Selector &) const override { throwInapplicable(); }
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t, const Selector &) const override { throwInapplicable(); }
     void gather(ColumnGathererStream &) override { throwInapplicable(); }
     void getExtremes(Field &, Field &, size_t, size_t) const override { throwInapplicable(); }
     size_t byteSizeAt(size_t) const override { throwInapplicable(); }
@@ -202,8 +202,8 @@ public:
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwInapplicable(); }
 
     bool hasDynamicStructure() const override { throwInapplicable(); }
-    void takeDynamicStructureFromSourceColumns(const Columns &, std::optional<size_t>) override { throwInapplicable(); }
-    void takeDynamicStructureFromColumn(const ColumnPtr &) override { throwInapplicable(); }
+    void takeExactDynamicStructureFrom(const IColumn &) override { throwInapplicable(); }
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> &, std::optional<size_t>) override { throwInapplicable(); }
     void fixDynamicStructure() override { throwInapplicable(); }
 
 private:

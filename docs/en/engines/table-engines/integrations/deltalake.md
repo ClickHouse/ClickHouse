@@ -26,13 +26,14 @@ To create a DeltaLake table it must already exist in S3, GCP or Azure storage. T
 
 ```sql
 CREATE TABLE table_name
-ENGINE = DeltaLake(url, [aws_access_key_id, aws_secret_access_key,])
+ENGINE = DeltaLake(url, [aws_access_key_id, aws_secret_access_key,] [extra_credentials])
 ```
 
 **Engine parameters**
 
 - `url` — Bucket url with path to the existing Delta Lake table.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file.
+- `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
 Engine parameters can be specified using [Named Collections](/operations/named-collections.md).
 

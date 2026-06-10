@@ -101,7 +101,7 @@ public:
     }
 
     bool hasClientFinished() { return client_runner.has_value() && client_runner->hasFinished(); }
-    int getClientExitCode() { return client_runner.has_value() && client_runner->getExitCode(); }
+    int getClientExitCode() { return client_runner.has_value() ? client_runner->getExitCode() : 0; }
 
 
     DescriptorSet client_input_output;
@@ -345,7 +345,8 @@ public:
         server_cb.userdata = this;
         server_cb.auth_pubkey_function = authPublickeyAdapter<ssh_session, const char *, ssh_key, char>;
         server_cb.auth_password_function = authPasswordAdapter<ssh_session, const char *, const char *>;
-        ssh_set_auth_methods(session.getInternalPtr(), SSH_AUTH_METHOD_PASSWORD | SSH_AUTH_METHOD_PUBLICKEY);
+        server_cb.auth_none_function = authNoneAdapter<ssh_session, const char *>;
+        ssh_set_auth_methods(session.getInternalPtr(), SSH_AUTH_METHOD_PASSWORD | SSH_AUTH_METHOD_PUBLICKEY | SSH_AUTH_METHOD_NONE);
         server_cb.channel_open_request_session_function = channelOpenAdapter<ssh_session>;
 
         ssh_callbacks_init(&server_cb)
@@ -451,6 +452,30 @@ public:
     }
 
     GENERATE_ADAPTER_FUNCTION(SessionCallback, authPassword, int)
+
+    int authNone(ssh_session, const char * user) noexcept
+    {
+        try
+        {
+            LOG_TRACE(log, "Authenticating user '{}' with none", user);
+            auto db_session_created = std::make_unique<Session>(server_context, ClientInfo::Interface::LOCAL);
+            /// Accept the "none" method whenever an empty password authenticates the user.
+            /// This covers both `NO_PASSWORD` and any password-type method whose stored
+            /// credential happens to be the empty string (e.g. `IDENTIFIED WITH plaintext_password BY ''`).
+            db_session_created->authenticate(BasicCredentials{String(user), ""}, peer_address);
+            authenticated = true;
+            db_session = std::move(db_session_created);
+            return SSH_AUTH_SUCCESS;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            ++auth_attempts;
+            return SSH_AUTH_DENIED;
+        }
+    }
+
+    GENERATE_ADAPTER_FUNCTION(SessionCallback, authNone, int)
 
     ssh_server_callbacks_struct server_cb = {};
 };

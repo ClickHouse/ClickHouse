@@ -67,13 +67,13 @@ find_os() {
 download_minio() {
   local os
   local arch
-  local minio_server_version=${MINIO_SERVER_VERSION:-2025-06-13T11-33-47Z}
-  local minio_client_version=${MINIO_CLIENT_VERSION:-2025-05-21T01-59-54Z}
+  local minio_server_version=${MINIO_SERVER_VERSION:-2026-03-20T23-11-32Z}
+  local minio_client_version=${MINIO_CLIENT_VERSION:-2026-03-12T04-18-55Z}
 
   os=$(find_os)
   arch=$(find_arch)
-  wget "https://dl.min.io/server/minio/release/${os}-${arch}/archive/minio.RELEASE.${minio_server_version}" -O ./minio
-  wget "https://dl.min.io/client/mc/release/${os}-${arch}/archive/mc.RELEASE.${minio_client_version}" -O ./mc
+  wget "https://dl.min.io/aistor/minio/release/${os}-${arch}/archive/minio.RELEASE.${minio_server_version}" -O ./minio
+  wget "https://dl.min.io/aistor/mc/release/${os}-${arch}/archive/mc.RELEASE.${minio_client_version}" -O ./mc
   chmod +x ./mc ./minio
 }
 

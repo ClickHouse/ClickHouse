@@ -33,6 +33,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int OPENSSL_ERROR;
 }
 
 
@@ -144,7 +145,7 @@ inline void validateIV(std::string_view iv_value, const size_t cipher_iv_size)
 }
 
 template <typename Impl>
-class FunctionEncrypt : public IFunction
+class FunctionEncrypt final : public IFunction
 {
 public:
     static constexpr OpenSSLDetails::CompatibilityMode compatibility_mode = Impl::compatibility_mode;
@@ -281,6 +282,8 @@ private:
         using namespace OpenSSLDetails;
 
         auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
+        if (!evp_ctx_ptr)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_new failed");
         auto * evp_ctx = evp_ctx_ptr.get();
 
         const auto block_size = static_cast<size_t>(EVP_CIPHER_block_size(evp_cipher));
@@ -310,7 +313,7 @@ private:
 
         auto * encrypted = encrypted_result_column_data.data();
 
-        KeyHolder<mode> key_holder;
+        KeyHolder<mode> key_holder{};
 
         /// For non-GCM modes: when key and IV are constant, we can initialize the cipher
         /// context once before the loop with the full cipher+key+IV, then on each iteration
@@ -471,7 +474,7 @@ private:
 
 /// decrypt(string, key, block_mode[, init_vector])
 template <typename Impl>
-class FunctionDecrypt : public IFunction
+class FunctionDecrypt final : public IFunction
 {
 public:
     static constexpr OpenSSLDetails::CompatibilityMode compatibility_mode = Impl::compatibility_mode;
@@ -609,6 +612,8 @@ private:
         using namespace OpenSSLDetails;
 
         auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
+        if (!evp_ctx_ptr)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_new failed");
         auto * evp_ctx = evp_ctx_ptr.get();
 
         [[maybe_unused]] const auto block_size = static_cast<size_t>(EVP_CIPHER_block_size(evp_cipher));
@@ -646,7 +651,7 @@ private:
 
         auto * decrypted = decrypted_result_column_data.data();
 
-        KeyHolder<mode> key_holder;
+        KeyHolder<mode> key_holder{};
 
         /// For non-GCM modes: when key and IV are constant, we can initialize the cipher
         /// context once before the loop with the full cipher+key+IV, then on each iteration

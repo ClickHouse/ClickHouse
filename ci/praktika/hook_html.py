@@ -79,7 +79,7 @@ class GitCommit:
         else:
             assert env.BRANCH
             s3suffix = f"REFs/{env.BRANCH}"
-        return f"{Settings.HTML_S3_PATH}/{s3suffix}"
+        return f"{Settings.S3_REPORT_BUCKET}/{s3suffix}"
 
     @classmethod
     def pull_from_s3(cls):
@@ -210,8 +210,12 @@ class HtmlRunnerHooks:
     @classmethod
     def pre_run(cls, _workflow, _job):
         result = Result.from_fs(_job.name)
+        # Clear stale workflow-level report messages from this job's previous
+        # run so that resolved warnings/errors don't persist after a rerun.
         _ResultS3.update_workflow_results(
-            workflow_name=_workflow.name, new_sub_results=result
+            workflow_name=_workflow.name,
+            new_sub_results=result,
+            clear_report_sources=[_job.name],
         )
 
     @classmethod
@@ -219,7 +223,7 @@ class HtmlRunnerHooks:
         pass
 
     @classmethod
-    def post_run(cls, _workflow, _job, info_errors):
+    def post_run(cls, _workflow, _job):
         result = Result.from_fs(_job.name)
         env = _Environment.get()
         if env.WORKFLOW_JOB_DATA:
@@ -236,22 +240,11 @@ class HtmlRunnerHooks:
             print("Storage usage data found - add to Result")
             storage_usage = StorageUsage.from_fs()
             result.ext["storage_usage"] = storage_usage
+        report_messages = env.REPORT_MESSAGES
+        _ResultS3.append_report_messages(result, report_messages)
         _ResultS3.copy_result_to_s3(result)
 
         new_sub_results = [result]
-        new_result_info = ""
-        env_info = env.REPORT_INFO
-        if env_info:
-            print(
-                f"WARNING: some info lines are set in Environment - append to report [{env_info}]"
-            )
-            info_errors += env_info
-        if info_errors:
-            info_errors = [f"    |  {error}" for error in info_errors]
-            info_str = f"{_job.name}:\n"
-            info_str += "\n".join(info_errors)
-            print("Update workflow results with new info")
-            new_result_info = info_str
 
         if not result.is_ok() and not result.do_not_block_pipeline_on_failure():
             print(
@@ -278,19 +271,18 @@ class HtmlRunnerHooks:
                 print(
                     f"NOTE: Set job [{dependee}] status to [{Result.Status.DROPPED}] due to current failure"
                 )
-                new_sub_results.append(
-                    Result(
-                        name=dependee,
-                        status=Result.Status.DROPPED,
-                        info=ResultInfo.DROPPED_DUE_TO_PREVIOUS_FAILURE
-                        + f" [{_job.name}]",
-                        start_time=Utils.timestamp(),
-                        duration=0,
-                    )
+                dropped_result = Result(
+                    name=dependee,
+                    status=Result.Status.DROPPED,
+                    start_time=Utils.timestamp(),
+                    duration=0,
                 )
+                dropped_result.add_note(
+                    ResultInfo.DROPPED_DUE_TO_PREVIOUS_FAILURE + f" [{_job.name}]"
+                )
+                new_sub_results.append(dropped_result)
 
         updated_status = _ResultS3.update_workflow_results(
-            new_info=new_result_info,
             new_sub_results=new_sub_results,
             workflow_name=_workflow.name,
             storage_usage=storage_usage,
@@ -299,5 +291,6 @@ class HtmlRunnerHooks:
                 duration=result.duration,
                 job_name=_job.name,
             ),
+            report_messages=report_messages,
         )
         return updated_status

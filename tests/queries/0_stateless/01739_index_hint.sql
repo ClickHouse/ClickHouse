@@ -1,4 +1,7 @@
 -- add_minmax_index_for_numeric_columns=0: Disable minmax index to not interfere with the indexHint tests. With it it would filter out more rows (correctly)
+SET use_skip_indexes_on_data_read = 1;
+SET optimize_trivial_count_query = 1;
+SET optimize_use_projections = 1;
 -- { echo }
 
 drop table if exists tbl;

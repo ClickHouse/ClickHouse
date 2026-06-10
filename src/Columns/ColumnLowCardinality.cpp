@@ -149,7 +149,7 @@ bool ColumnLowCardinality::tryInsert(const Field & x)
 {
     compactIfSharedDictionary();
 
-    size_t index;
+    size_t index = 0;
     if (!dictionary.getColumnUnique().tryUniqueInsert(x, index))
         return false;
 
@@ -405,7 +405,7 @@ void ColumnLowCardinality::getPermutationImpl(IColumn::PermutationSortDirection 
     /// TODO: optimize with sse.
 
     /// Get indexes per row in column_unique.
-    std::vector<std::vector<size_t>> indexes_per_row(getDictionary().size());
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> indexes_per_row(getDictionary().size());
     size_t indexes_size = getIndexes().size();
     for (size_t row = 0; row < indexes_size; ++row)
         indexes_per_row[getIndexes().getUInt(row)].push_back(row);
@@ -447,7 +447,7 @@ struct LowCardinalityComparator
 
     inline bool operator () (size_t lhs, size_t rhs) const
     {
-        int ret;
+        int ret = 0;
 
         const UInt64 lhs_index = real_indexes.getUInt(lhs);
         const UInt64 rhs_index = real_indexes.getUInt(rhs);
@@ -571,7 +571,7 @@ size_t ColumnLowCardinality::estimateCardinalityInPermutedRange(const Permutatio
     return elements.size();
 }
 
-std::vector<MutableColumnPtr> ColumnLowCardinality::scatter(size_t num_columns, const Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> ColumnLowCardinality::scatter(size_t num_columns, const Selector & selector) const
 {
     auto columns = getIndexes().scatter(num_columns, selector);
     ColumnPtr global_unique_ptr = IColumn::mutate(dictionary.getColumnUniquePtr());

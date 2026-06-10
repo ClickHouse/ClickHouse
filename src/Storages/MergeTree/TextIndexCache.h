@@ -1,10 +1,13 @@
 #pragma once
 
-#include <Columns/ColumnString.h>
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/PostingListSegment.h>
 
 #include <absl/container/flat_hash_map.h>
+
+#include <utility>
+#include <variant>
 
 namespace ProfileEvents
 {
@@ -69,13 +72,13 @@ public:
 /// Estimate of the memory usage (bytes) of a text index header in cache
 struct TextIndexHeaderWeightFunction
 {
-    size_t operator()(const DictionarySparseIndex & header) const
+    size_t operator()(const TextIndexHeader & header) const
     {
-        return header.memoryUsageBytes();
+        return header.sparse_index.memoryUsageBytes();
     }
 };
 
-class TextIndexHeaderCache : public CacheBase<UInt128, DictionarySparseIndex, UInt128TrivialHash, TextIndexHeaderWeightFunction>
+class TextIndexHeaderCache : public CacheBase<UInt128, TextIndexHeader, UInt128TrivialHash, TextIndexHeaderWeightFunction>
 {
 public:
     TextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
@@ -102,16 +105,65 @@ public:
     }
 };
 
-/// Estimate of the memory usage (bytes) of a text index posting list in cache
+/// Discriminators mixed into the cache key so the three cell kinds occupy disjoint key spaces.
+enum class TextIndexPostingsCacheKind : UInt8
+{
+    Roaring = 0,
+    Segment = 1,
+    Flat = 2,
+};
+
+/// A single cell of TextIndexPostingsCache. It holds one of:
+///   - PostingListPtr:        a decoded Roaring bitmap of one posting-list block;
+///   - FlatPostingsPtr:       a flattened sorted array of analyzer-folded postings (prebuilt or embedded cursor);
+///   - PostingListSegmentPtr: a decoded segment (payload + per-block index) of a compressed posting list (lazy cursor).
+/// Every payload is held by shared_ptr, so a consumer keeps its data alive by copying the inner pointer
+/// out of the cell — the data then outlives eviction of the (bounded) cache independently of the cell.
+struct TextIndexPostingsCacheCell
+{
+    explicit TextIndexPostingsCacheCell(PostingListPtr postings)
+        : value(std::move(postings))
+    {
+    }
+
+    explicit TextIndexPostingsCacheCell(FlatPostingsPtr flat)
+        : value(std::move(flat))
+    {
+    }
+
+    explicit TextIndexPostingsCacheCell(PostingListSegmentPtr segment)
+        : value(std::move(segment))
+    {
+    }
+
+    std::variant<PostingListPtr, FlatPostingsPtr, PostingListSegmentPtr> value;
+};
+
+/// Estimate of the memory usage (bytes) of a posting cache cell
 struct TextIndexPostingsWeightFunction
 {
-    size_t operator()(const PostingList & postings) const
+    size_t operator()(const TextIndexPostingsCacheCell & cell) const
     {
-        return postings.getSizeInBytes();
+        return std::visit([](const auto & payload) -> size_t
+        {
+            using T = std::decay_t<decltype(payload)>;
+
+            if (!payload)
+                return 0;
+
+            if constexpr (std::is_same_v<T, PostingListPtr>)
+                return payload->getSizeInBytes();
+            else if constexpr (std::is_same_v<T, FlatPostingsPtr>)
+                return payload->allocated_bytes();
+            else if constexpr (std::is_same_v<T, PostingListSegmentPtr>)
+                return payload->bytesAllocated();
+            else
+                static_assert(false, "Unhandled variant type");
+        }, cell.value);
     }
 };
 
-class TextIndexPostingsCache : public CacheBase<UInt128, PostingList, UInt128TrivialHash, TextIndexPostingsWeightFunction>
+class TextIndexPostingsCache : public CacheBase<UInt128, TextIndexPostingsCacheCell, UInt128TrivialHash, TextIndexPostingsWeightFunction>
 {
 public:
     TextIndexPostingsCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
@@ -141,5 +193,29 @@ public:
 using TextIndexTokensCachePtr = std::shared_ptr<TextIndexTokensCache>;
 using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
 using TextIndexPostingsCachePtr = std::shared_ptr<TextIndexPostingsCache>;
+
+class TokensCardinalitiesCache
+{
+public:
+    explicit TokensCardinalitiesCache(std::vector<String> all_search_tokens_);
+
+    void update(const TokenToPostingsInfosMap & token_infos, const absl::flat_hash_set<String> & missing_tokens, size_t total_rows);
+    void sortTokens(std::vector<String> & tokens) const;
+
+private:
+    const std::vector<String> all_search_tokens;
+
+    struct CardinalityAggregate
+    {
+        size_t cardinality = 0;
+        size_t checked_rows = 0;
+
+        bool operator==(const CardinalityAggregate & other) const = default;
+    };
+
+    mutable std::mutex mutex;
+    using CardinalitiesMap = std::unordered_map<String, CardinalityAggregate>;
+    CardinalitiesMap cardinalities TSA_GUARDED_BY(mutex);
+};
 
 }

@@ -1,3 +1,9 @@
+SET optimize_aggregators_of_group_by_keys = 1;
+SET optimize_read_in_order = 1;
+SET optimize_sorting_by_input_stream_properties = 1;
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
+
 drop table if exists tab;
 create table tab (a Int32, b Int32, c Int32, d Int32) engine = MergeTree order by (a, b, c);
 
