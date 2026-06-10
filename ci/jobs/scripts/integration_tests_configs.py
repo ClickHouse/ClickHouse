@@ -22,6 +22,45 @@ LLVM_COVERAGE_SKIP_PREFIXES = [
     "test_ytsaurus/",
 ]
 
+# Heavy modules that must not run concurrently under the flaky/targeted checks'
+# `--dist=each` scheduling. Each starts a Spark JVM plus a multi-node ClickHouse
+# cluster in its module-scoped fixture, so N concurrent copies (N = xdist workers)
+# exhaust memory on smaller runners. In the flaky/targeted path these are moved
+# to the looped sequential phase (one cluster at a time, still repeated >=3x).
+# Normal runs use `--dist=loadfile` (one file -> one worker -> one cluster) and
+# are unaffected.
+FLAKY_FORCE_SEQUENTIAL_PREFIXES = [
+    "test_storage_delta/test.py",
+    "test_storage_delta/test_cdf.py",
+    "test_storage_delta_disks/test.py",
+]
+
+
+def force_heavy_modules_sequential(
+    parallel_test_modules: list[str],
+    sequential_test_modules: list[str],
+) -> tuple[list[str], list[str]]:
+    """Move FLAKY_FORCE_SEQUENTIAL_PREFIXES modules from the parallel to the
+    sequential bucket, preserving order.
+
+    Called only on the flaky/targeted path, where the parallel bucket runs with
+    `--dist=each` (every worker runs every parallel module at once). Heavy
+    modules there would start one cluster per worker and exhaust memory; the
+    sequential bucket runs `-n 1` (one cluster at a time, looped >=3x), which
+    keeps the flakiness signal without the concurrent OOM.
+    """
+    forced = [
+        m
+        for m in parallel_test_modules
+        if any(m.startswith(p) for p in FLAKY_FORCE_SEQUENTIAL_PREFIXES)
+    ]
+    if not forced:
+        return parallel_test_modules, sequential_test_modules
+    new_parallel = [m for m in parallel_test_modules if m not in forced]
+    new_sequential = sequential_test_modules + forced
+    return new_parallel, new_sequential
+
+
 TEST_CONFIGS = [
     TC("test_dns_cache/", False, "uses fixed IPv6 addresses; Docker network startup is serialized via file lock"),
     TC("test_global_overcommit_tracker/", False, "memory overcommit test; isolated to its own ClickHouse instance"),
