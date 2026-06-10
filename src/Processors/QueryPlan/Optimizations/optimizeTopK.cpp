@@ -11,17 +11,23 @@
 #include <Common/logger_useful.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
-
-namespace DB
-{
-FunctionOverloadResolverPtr createInternalFunctionTopKFilterResolver(TopKThresholdTrackerPtr threshold_tracker_);
-}
+#include <Functions/FunctionTopKFilter.h>
 
 namespace DB::QueryPlanOptimizations
 {
 
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
+    /// The dynamic-filtering path injects an internal `__topKFilter` function that
+    /// is created on demand with a runtime threshold tracker and is not registered
+    /// in `FunctionFactory`. The skip-index-on-data-read path likewise relies on a
+    /// `TopKThresholdTracker` shared between `SortingStep` and `ReadFromMergeTree`.
+    /// None of this can be transmitted to remote workers, so when the plan is
+    /// going to be distributed, the remote node would fail to deserialize the
+    /// plan with `Unknown function __topKFilter` (or run with stale state).
+    if (settings.make_distributed_plan)
+        return 0;
+
     QueryPlan::Node * node = parent_node;
 
     auto * limit_step = typeid_cast<LimitStep *>(node->step.get());
@@ -60,6 +66,15 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
     if (!read_from_mergetree_step)
+        return 0;
+
+    /// FINAL queries deduplicate overlapping parts via merging sorted transforms
+    /// (e.g. `ReplacingSortedTransform`, `CollapsingSortedTransform`) which require
+    /// reading all matching rows in primary-key order to determine the winning row
+    /// per key. Both the dynamic prewhere filter and minmax-based granule skipping
+    /// can drop rows that are needed for correct deduplication, producing wrong
+    /// results when these rows are duplicates of a row that survives the top-K.
+    if (read_from_mergetree_step->isQueryWithFinal())
         return 0;
 
     size_t n = limit_step->getLimitForSorting();
@@ -132,10 +147,18 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     /// Dynamic and Variant columns cannot be reliably filtered: their lessOrEquals
     /// returns Nullable(UInt8) rather than UInt8, causing an "Unexpected return type"
     /// logical error when the prewhere filter is executed. Skip the optimization for them.
+    ///
+    /// For variable-length types (e.g. String, Array, Map, Tuple containing variable-length
+    /// elements), the per-row threshold comparison cost can exceed its savings — most notably
+    /// when the column's lex-min value dominates and few granules can be skipped. Gate that
+    /// path behind an explicit opt-in. Nullable and Tuple of fixed-length types are still
+    /// considered fixed-length (haveMaximumSizeOfValue forwards through them).
+    const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
         && !read_from_mergetree_step->getPrewhereInfo()
         && !isDynamic(sort_column.type)
-        && !isVariant(sort_column.type);
+        && !isVariant(sort_column.type)
+        && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
 
     /// When read-in-order optimization is enabled and the sort column is a prefix
     /// of the storage's sorting key, the engine will read data in sorted order.

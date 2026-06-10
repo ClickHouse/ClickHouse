@@ -16,7 +16,7 @@ namespace DB
 /// Transform that builds text indexes and periodically flushes their segments
 /// into temporary storage, when amount of accumulated data reaches some threshold.
 /// Used for materialization of text indexes.
-class BuildTextIndexTransform : public ISimpleTransform
+class BuildTextIndexTransform final : public ISimpleTransform
 {
 public:
     BuildTextIndexTransform(

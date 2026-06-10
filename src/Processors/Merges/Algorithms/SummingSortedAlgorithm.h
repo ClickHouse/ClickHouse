@@ -68,6 +68,10 @@ public:
 
         /// Does SimpleAggregateFunction allocates memory in arena?
         bool allocates_memory_in_arena = false;
+
+        /// Per-column flag: true for Float32/Float64 columns that need bit-exact
+        /// copy via insertFrom() to avoid SNaN→QNaN conversion in Field roundtrip.
+        std::vector<bool> columns_need_exact_copy;
     };
 
     /// Specialization for SummingSortedTransform. Inserts only data for non-aggregated columns.

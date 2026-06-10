@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 // compareSubstrings(str1, str2, offset1, offset2, num_bytes):
 // - Compare str1 from offset1 to offset1 + num_bytes with str2 from offset2 to offset2 + num_bytes.
-class FunctionCompareSubstrings : public IFunction
+class FunctionCompareSubstrings final : public IFunction
 {
 public:
     static constexpr auto name = "compareSubstrings";
