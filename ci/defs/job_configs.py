@@ -551,6 +551,8 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/functional_tests.py",
                 "./ci/jobs/scripts/bugfix_validation.py",
+                "./ci/jobs/scripts/clickhouse_proc.py",
+                "./ci/jobs/scripts/functional_tests_results.py",
                 "./tests/queries",
                 "./tests/clickhouse-test",
                 "./tests/config",
