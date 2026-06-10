@@ -279,17 +279,41 @@ Block flattenNested(const Block & block)
     return flattenImpl(block, false);
 }
 
+const DataTypeTuple * tryGetFlattenableTuple(const DataTypePtr & type)
+{
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+    if (tuple_type && !tuple_type->getElements().empty() && !type->hasCustomName())
+        return tuple_type;
+    return nullptr;
+}
+
+/// Recursively flattens one (column, type) into its leaf columns, calling
+/// `emit_leaf(column, type, name, ancestors)` once per leaf. A leaf is anything
+/// `tryGetFlattenableTuple` does not expand (a non-tuple, or an empty/custom-named tuple);
+/// flattenable tuples are descended into. `name` is the leaf's full dotted path; `ancestors`
+/// are the tuple paths it descends from (the root column plus every intermediate tuple node).
+///
+/// Example — a column `t` of type `Tuple(a UInt64, inner Tuple(c UInt64, d UInt64))`, called with
+/// name_prefix = "t", emits three leaves:
+///   emit_leaf(col, UInt64, "t.a",       ["t"])
+///   emit_leaf(col, UInt64, "t.inner.c", ["t", "t.inner"])
+///   emit_leaf(col, UInt64, "t.inner.d", ["t", "t.inner"])
+///
+/// Names and ancestors are built from real element boundaries, so an element whose own name
+/// contains a dot (e.g. `p.x` in tuple `t`) is not a problem and gives the single leaf `t.p.x`
+/// with the sole ancestor `t`, never the unrelated path `t.p`.
 template <typename LeafCallback>
 static void flattenTupleRecursiveImpl(
     const ColumnPtr & column,
     const DataTypePtr & data_type,
     LeafCallback && emit_leaf,
-    const String & name_prefix = {})
+    const String & name_prefix,
+    const Strings & ancestors)
 {
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(data_type.get());
-    if (!tuple_type || tuple_type->getElements().empty() || data_type->hasCustomName())
+    const auto * tuple_type = tryGetFlattenableTuple(data_type);
+    if (!tuple_type)
     {
-        emit_leaf(column, data_type, name_prefix);
+        emit_leaf(column, data_type, name_prefix, ancestors);
         return;
     }
 
@@ -299,37 +323,40 @@ static void flattenTupleRecursiveImpl(
     const auto * column_tuple = assert_cast<const ColumnTuple *>(materialized_column.get());
 
     const DataTypes & element_types = tuple_type->getElements();
+    const Strings & element_names = tuple_type->getElementNames();
     const auto & sub_columns = column_tuple->getColumns();
+
+    /// `name_prefix` is empty only on the column-only flattening path (flattenTupleColumnsRecursive),
+    /// where leaf names and ancestors are unused, so skip building them there.
+    const bool build_metadata = !name_prefix.empty();
+
+    Strings element_ancestors = ancestors;
+    if (build_metadata)
+        element_ancestors.push_back(name_prefix);
 
     for (size_t i = 0; i < element_types.size(); ++i)
     {
-        ColumnPtr element_col = sub_columns[i];
-
-        if (!name_prefix.empty())
-        {
-            const Strings & element_names = tuple_type->getElementNames();
-            String element_name = concatenateName(name_prefix, element_names[i]);
-            flattenTupleRecursiveImpl(element_col, element_types[i], emit_leaf, element_name);
-        }
-        else
-        {
-            flattenTupleRecursiveImpl(element_col, element_types[i], emit_leaf);
-        }
+        String element_name = build_metadata ? concatenateName(name_prefix, element_names[i]) : String{};
+        flattenTupleRecursiveImpl(sub_columns[i], element_types[i], emit_leaf, element_name, element_ancestors);
     }
 }
 
-Block flattenTupleRecursive(const Block & block)
+Block flattenTupleRecursive(const Block & block, std::vector<Strings> * flattened_ancestors)
 {
     Block result;
+    if (flattened_ancestors)
+        flattened_ancestors->clear();
     for (const auto & elem : block)
     {
         flattenTupleRecursiveImpl(
             elem.column, elem.type,
-            [&result](const ColumnPtr & col, const DataTypePtr & type, const String & name)
+            [&](const ColumnPtr & col, const DataTypePtr & type, const String & name, const Strings & ancestors)
             {
                 result.insert(ColumnWithTypeAndName(col, type, name));
+                if (flattened_ancestors)
+                    flattened_ancestors->push_back(ancestors);
             },
-            elem.name);
+            elem.name, {});
     }
     return result;
 }
@@ -337,8 +364,8 @@ Block flattenTupleRecursive(const Block & block)
 /// Count the number of leaf (non-tuple) columns after recursive flattening.
 static size_t countFlattenedColumnsRecursive(const DataTypePtr & data_type)
 {
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(data_type.get());
-    if (!tuple_type || tuple_type->getElements().empty() || data_type->hasCustomName())
+    const auto * tuple_type = tryGetFlattenableTuple(data_type);
+    if (!tuple_type)
         return 1;
 
     size_t count = 0;
@@ -371,10 +398,11 @@ Columns flattenTupleColumnsRecursive(const Block & header, const Columns & colum
         const auto & header_col = header.getByPosition(i);
         flattenTupleRecursiveImpl(
             columns[i], header_col.type,
-            [&result](const ColumnPtr & col, const DataTypePtr &, const String &)
+            [&result](const ColumnPtr & col, const DataTypePtr &, const String &, const Strings &)
             {
                 result.push_back(col);
-            });
+            },
+            {}, {});
     }
 
     chassert(result.size() == total_flattened);
@@ -383,8 +411,7 @@ Columns flattenTupleColumnsRecursive(const Block & header, const Columns & colum
 
 static ColumnPtr reconstructTupleColumnImpl(const DataTypePtr & data_type, const Columns & flattened_columns, size_t & flattened_idx)
 {
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(data_type.get());
-    if (tuple_type && !tuple_type->getElements().empty() && !data_type->hasCustomName())
+    if (const auto * tuple_type = tryGetFlattenableTuple(data_type))
     {
         const auto & element_types = tuple_type->getElements();
         Columns tuple_columns;
