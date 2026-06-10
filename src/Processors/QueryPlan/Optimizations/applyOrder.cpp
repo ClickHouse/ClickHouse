@@ -39,7 +39,7 @@ struct SortingProperty
     SortScope sort_scope = SortScope::Stream;
 };
 
-SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
+static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(parent->step.get()))
         return {read_from_merge_tree->getSortDescription(), SortingProperty::SortScope::Stream};
@@ -78,6 +78,11 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
             for (auto & sort_column_desc : properties->sort_description)
             {
                 if (!columns.contains(sort_column_desc.column_name))
+                    break;
+
+                /// A collated column is ordered by its collation key, not by value, so equal
+                /// values are not adjacent. DISTINCT in order relies on equal rows being adjacent.
+                if (sort_column_desc.collator)
                     break;
 
                 prefix_sort_description.emplace_back(sort_column_desc);
@@ -137,12 +142,14 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
 
     if (auto * limit_by_step = typeid_cast<LimitByStep *>(parent->step.get()))
     {
-        limit_by_step->applyOrder(properties->sort_description);
+        if (properties->sort_scope == SortingProperty::SortScope::Global)
+            limit_by_step->applyOrder(properties->sort_description.hasPrefixWithoutCollation(limit_by_step->getColumns()));
     }
 
     if (auto * negative_limit_by_step = typeid_cast<NegativeLimitByStep *>(parent->step.get()))
     {
-        negative_limit_by_step->applyOrder(properties->sort_description);
+        if (properties->sort_scope == SortingProperty::SortScope::Global)
+            negative_limit_by_step->applyOrder(properties->sort_description.hasPrefixWithoutCollation(negative_limit_by_step->getColumns()));
     }
 
     if (auto * transforming = dynamic_cast<ITransformingStep *>(parent->step.get()))
@@ -154,16 +161,17 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
     if (auto * /*union_step*/ _ = typeid_cast<UnionStep *>(parent->step.get()))
     {
         SortDescription common_sort_description = std::move(properties->sort_description);
-        auto sort_scope = properties->sort_scope;
 
         for (size_t i = 1; i < parent->children.size(); ++i)
-        {
             common_sort_description = commonPrefix(common_sort_description, properties[i].sort_description);
-            sort_scope = std::min(sort_scope, properties[i].sort_scope);
-        }
 
         if (!common_sort_description.empty())
+        {
+            /// `UnionStep` concatenates child pipelines without a sorted merge, so with multiple
+            /// children each stream stays sorted by the common prefix.
+            auto sort_scope = parent->children.size() == 1 ? properties->sort_scope : SortingProperty::SortScope::Stream;
             return {std::move(common_sort_description), sort_scope};
+        }
     }
 
     return {};

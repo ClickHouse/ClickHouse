@@ -199,6 +199,7 @@ AggregateFunctionPtr createAggregateFunctionSimpleLinearRegression(
 
 }
 
+void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_simpleLinearRegression = R"(

@@ -56,6 +56,7 @@ struct QueryPlanOptimizationSettings
     bool reuse_storage_ordering_for_window_functions;
     bool lift_up_union;
     bool aggregate_partitions_independently;
+    bool limit_by_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
     bool convert_join_to_in;
@@ -63,6 +64,7 @@ struct QueryPlanOptimizationSettings
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;
+    bool top_k_through_join;
     bool remove_unused_columns;
 
     /// If we can swap probe/build tables in join
@@ -79,6 +81,7 @@ struct QueryPlanOptimizationSettings
 
     /// --- Second-pass optimizations
     bool optimize_prewhere;
+    bool optimize_prewhere_after_pushdown;
     bool read_in_order;
     bool distinct_in_order;
     bool optimize_sorting_by_input_stream_properties;
@@ -87,6 +90,7 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache;
     bool read_in_order_through_join;
     bool correlated_subqueries_use_in_memory_buffer;
+    bool push_limit_by_into_sort;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
@@ -94,7 +98,8 @@ struct QueryPlanOptimizationSettings
     bool query_plan_join_shard_by_pk_ranges;
 
     bool make_distributed_plan = false;
-    bool distributed_plan_singe_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
+    bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
+    bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
     UInt64 distributed_plan_default_shuffle_join_bucket_count = 8;
     UInt64 distributed_plan_default_reader_bucket_count = 8; /// Default bucket count for read steps in distributed query plan
     bool distributed_plan_optimize_exchanges = true; /// Removes unnecessary exchanges in distributed query plan
@@ -113,6 +118,12 @@ struct QueryPlanOptimizationSettings
     bool optimize_use_implicit_projections;
     bool force_use_projection;
     String force_projection_name;
+
+    /// Bounds the cost of content-hashing IN-clause sets in projection matchers (today: aggregate
+    /// projection). Sets larger than this are treated as non-matching. Zero disables content-hash
+    /// comparison for IN-clause sets entirely (projection match never succeeds for nodes
+    /// containing such sets).
+    size_t max_set_size_for_projection_match = 0;
 
     /// When optimizing projections for parallel replicas reading, the initiator and the remote replicas require different handling.
     /// This parameter is used to distinguish between the initiator and the remote replicas.
@@ -155,7 +166,7 @@ struct QueryPlanOptimizationSettings
     UInt64 max_size_to_preallocate_for_joins;
     bool collect_hash_table_stats_during_joins;
     String initial_query_id;
-    std::chrono::milliseconds lock_acquire_timeout;
+    std::chrono::milliseconds lock_acquire_timeout{};
     ExpressionActionsSettings actions_settings;
 
     /// JOIN runtime filter settings

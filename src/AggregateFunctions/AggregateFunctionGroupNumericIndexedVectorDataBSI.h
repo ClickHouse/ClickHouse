@@ -298,7 +298,7 @@ public:
           * - When value is a Float32/Float64, fraction_bit_num indicates how many bits are used to represent the decimal, Because the
           *   maximum value of total_bit_num(integer_bit_num + fraction_bit_num) is 64, overflow may occur.
           */
-        Int64 scaled_value;
+        Int64 scaled_value = 0;
         if constexpr (std::is_same_v<ValueType, UInt64>)
         {
             if (value > std::numeric_limits<Int64>::max())
@@ -860,7 +860,7 @@ public:
             for (size_t i = 0; i < cnt; ++i)
             {
                 UInt64 val = bit_buffer[i];
-                UInt64 row;
+                UInt64 row = 0;
                 UInt64 col = val & 0x3f;
 #if defined(__BMI2__) && !defined(__e2k__)
                 ASM_SHIFT_RIGHT(val, shift, row);
@@ -975,7 +975,7 @@ public:
                 constexpr UInt64 shift = 6;
                 for (int j = 0; j < cnt[i]; ++j)
                 {
-                    UInt64 tmp_offset;
+                    UInt64 tmp_offset = 0;
                     UInt64 p = bit_buffer[i][j];
 #if defined(__BMI2__) && !defined(__e2k__)
                     ASM_SHIFT_RIGHT(p, shift, tmp_offset);
@@ -1168,6 +1168,16 @@ public:
         }
         checkValidValue(rhs);
 
+        /// The Float64 conversion below silently clamps to UInt64::max via `float64ToUInt64`.
+        /// Reject UInt64 above Int64::max to stay consistent with `initializeFromVectorAndValue`
+        /// and the other scalar pointwise ops (see PR #102546).
+        if constexpr (std::is_same_v<ValueType, UInt64>)
+        {
+            if (rhs > std::numeric_limits<Int64>::max())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Value {} does not fit in Int64. It should, even when using UInt64.", rhs);
+        }
+
         auto lhs_non_zero_indexes = lhs.getAllNonZeroIndex();
 
         PaddedPODArray<UInt32> indexes(65536);
@@ -1326,7 +1336,7 @@ public:
         /// used by initializeFromVectorAndValue, then compare bit by bit.
         UInt64 scaling = 1ULL << lhs.fraction_bit_num;
 
-        Int64 scaled_value;
+        Int64 scaled_value = 0;
         if constexpr (std::is_floating_point_v<ValueType>)
         {
             auto scaled = static_cast<Float64>(rhs * static_cast<ValueType>(scaling));
@@ -1335,6 +1345,13 @@ public:
             if (scaled >= int64_upper || scaled < -int64_upper)
                 return std::make_shared<Roaring>(); /// Out of representable range, no element can match.
             scaled_value = static_cast<Int64>(rhs * static_cast<ValueType>(scaling));
+        }
+        else if constexpr (std::is_same_v<ValueType, UInt64>)
+        {
+            if (rhs > std::numeric_limits<Int64>::max())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Value {} does not fit in Int64. It should, even when using UInt64.", rhs);
+            scaled_value = static_cast<Int64>(rhs);
         }
         else
         {
