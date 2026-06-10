@@ -125,6 +125,37 @@ def update_path_ch_config(config_file_path=""):
     return True
 
 
+def write_darwin_no_jit_config():
+    # Disable JIT (the embedded LLVM compiler) on macOS for now. JIT-compiled
+    # expressions allocate large objects on the stack, and macOS's smaller
+    # default stack turns this into a stack overflow that surfaces as a SIGILL
+    # ("Illegal instruction"). See
+    # https://github.com/ClickHouse/ClickHouse/pull/102645 and
+    # https://github.com/ClickHouse/ClickHouse/pull/105921.
+    #
+    # The override is written here rather than shipped as a file under
+    # tests/config/users.d/ so it cannot be picked up by any other test config.
+    print("Writing macOS no-JIT users.d override")
+    config = """<clickhouse>
+    <profiles>
+        <default>
+            <compile_expressions>0</compile_expressions>
+            <compile_aggregate_expressions>0</compile_aggregate_expressions>
+            <compile_sort_description>0</compile_sort_description>
+        </default>
+    </profiles>
+</clickhouse>
+"""
+    path = f"{temp_dir}/etc/clickhouse-server/users.d/no_jit.xml"
+    try:
+        with open(path, "w", encoding="utf-8") as file:
+            file.write(config)
+    except Exception as e:
+        print(f"ERROR: failed to write no-JIT config, exception: {e}")
+        return False
+    return True
+
+
 class JobStages(metaclass=MetaClasses.WithIter):
     CHECKOUT_SUBMODULES = "checkout"
     CMAKE = "cmake"
@@ -305,15 +336,7 @@ def main():
             update_path_ch_config,
         ]
         if platform.system() == "Darwin":
-            # Disable JIT (the embedded LLVM compiler) on macOS for now. JIT-compiled
-            # expressions allocate large objects on the stack, and macOS's smaller
-            # default stack turns this into a stack overflow that surfaces as a SIGILL
-            # ("Illegal instruction"). See
-            # https://github.com/ClickHouse/ClickHouse/pull/102645 and
-            # https://github.com/ClickHouse/ClickHouse/pull/105921.
-            commands.append(
-                f"cp ./tests/config/users.d/no_jit.xml {temp_dir}/etc/clickhouse-server/users.d/"
-            )
+            commands.append(write_darwin_no_jit_config)
         results.append(
             Result.from_commands_run(
                 name="Install ClickHouse Config",

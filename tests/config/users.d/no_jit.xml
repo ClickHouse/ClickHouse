@@ -1,9 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <compile_expressions>0</compile_expressions>
-            <compile_aggregate_expressions>0</compile_aggregate_expressions>
-            <compile_sort_description>0</compile_sort_description>
-        </default>
-    </profiles>
-</clickhouse>
