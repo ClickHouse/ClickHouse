@@ -58,7 +58,7 @@ INSERT INTO v VALUES (1, 'hello');
 -- column `c` gets its default value 0.5
 ```
 
-A `WHERE` clause in the view definition acts as a check constraint for inserts: rows that do not satisfy it are rejected with `VIOLATED_CONSTRAINT`. The `WHERE` clause may only reference columns that the view's `SELECT` list projects.
+A `WHERE` clause in the view definition acts as a check constraint for inserts: rows that do not satisfy it are rejected with `VIOLATED_CONSTRAINT`. The `WHERE` clause may only reference columns that the view's `SELECT` list projects. If the `WHERE` clause references a name that is both a column alias and a different column of the underlying table (for example, `SELECT a AS b, b AS a FROM t WHERE a > 0`), the constraint is ambiguous and `INSERT` into such a view is rejected with `NOT_IMPLEMENTED`.
 
 ```sql
 CREATE VIEW v_positive AS SELECT a, b FROM t WHERE a > 0;

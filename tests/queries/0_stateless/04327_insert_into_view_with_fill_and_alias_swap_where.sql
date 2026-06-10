@@ -3,15 +3,22 @@
 -- 1. Plain `ORDER BY` is ignored on the write path and accepted, but `ORDER BY ... WITH FILL`
 --    (and `INTERPOLATE`) synthesize rows at read time, so such views must be rejected at INSERT time.
 --
--- 2. A `WHERE` predicate on a view whose output aliases swap the underlying columns
---    (`SELECT a AS b, b AS a FROM t WHERE a > 0`) must be checked against the value that is
---    actually stored in the predicate's column, not against a colliding view-column name.
+-- 2. A `WHERE` predicate that references a name which is both a view alias and a (different)
+--    underlying column (`SELECT t.a AS b, t.b AS a FROM t WHERE a > 0`) is ambiguous: at read
+--    time the name resolves to the alias by default but to the underlying column under
+--    `prefer_column_name_to_alias = 1`, so there is no single semantics the write-time check
+--    could mirror. Such views must be rejected at INSERT time.
+--
+-- 3. A `WHERE` constraint on a view with non-colliding aliases keeps working: it is evaluated
+--    against the value routed into the underlying column the predicate names.
 
 DROP TABLE IF EXISTS t_fill;
 DROP VIEW IF EXISTS v_fill;
 DROP VIEW IF EXISTS v_interpolate;
 DROP TABLE IF EXISTS t_swap;
 DROP VIEW IF EXISTS v_swap;
+DROP TABLE IF EXISTS t_alias;
+DROP VIEW IF EXISTS v_alias;
 
 CREATE TABLE t_fill (a Int32, b String) ENGINE = MergeTree ORDER BY a;
 
@@ -23,19 +30,26 @@ INSERT INTO v_fill VALUES (1, 'x'); -- { serverError NOT_IMPLEMENTED }
 CREATE VIEW v_interpolate AS SELECT a, b FROM t_fill ORDER BY a WITH FILL INTERPOLATE (b AS b);
 INSERT INTO v_interpolate VALUES (2, 'y'); -- { serverError NOT_IMPLEMENTED }
 
--- 2. Alias swap with a WHERE constraint. The view exposes `b` for the underlying `a` and `a`
---    for the underlying `b`; the WHERE constrains the underlying `a`. The constraint must be
---    evaluated against the underlying `a` value, not the same-named view column.
+-- 2. Alias swap with a WHERE that references a colliding name -> ambiguous -> reject.
+--    Columns in the SELECT list are qualified with the table name so the alias swap is not
+--    misread as a cyclic alias by the old analyzer (`SELECT a AS b, b AS a` is `CYCLIC_ALIASES`
+--    there).
 CREATE TABLE t_swap (a Int32, b Int32) ENGINE = MergeTree ORDER BY a;
-CREATE VIEW v_swap AS SELECT a AS b, b AS a FROM t_swap WHERE a > 0;
+CREATE VIEW v_swap AS SELECT t_swap.a AS b, t_swap.b AS a FROM t_swap WHERE a > 0;
+INSERT INTO v_swap (b, a) VALUES (-1, 100); -- { serverError NOT_IMPLEMENTED }
+INSERT INTO v_swap (b, a) VALUES (7, 100); -- { serverError NOT_IMPLEMENTED }
+SELECT 'swap:', count() FROM t_swap;
 
--- Underlying a = -1 (view column `b`), so the constraint `a > 0` is violated and the row must be rejected.
-INSERT INTO v_swap (b, a) VALUES (-1, 100); -- { serverError VIOLATED_CONSTRAINT }
+-- 3. Non-colliding alias with a WHERE constraint. The view exposes `id` for the underlying `a`;
+--    the WHERE constrains the underlying `a`, which receives the value inserted as `id`.
+CREATE TABLE t_alias (a Int32, b Int32) ENGINE = MergeTree ORDER BY a;
+CREATE VIEW v_alias AS SELECT a AS id, b FROM t_alias WHERE a > 0;
+INSERT INTO v_alias (id, b) VALUES (-1, 100); -- { serverError VIOLATED_CONSTRAINT }
+INSERT INTO v_alias (id, b) VALUES (7, 100);
+SELECT 'alias:', a, b FROM t_alias ORDER BY a;
 
--- Underlying a = 7 (view column `b`), so the constraint is satisfied and the row is stored as (a, b) = (7, 100).
-INSERT INTO v_swap (b, a) VALUES (7, 100);
-SELECT 'swap:', a, b FROM t_swap ORDER BY a;
-
+DROP VIEW v_alias;
+DROP TABLE t_alias;
 DROP VIEW v_swap;
 DROP TABLE t_swap;
 DROP VIEW v_interpolate;

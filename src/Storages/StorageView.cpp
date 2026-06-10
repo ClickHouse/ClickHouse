@@ -251,6 +251,19 @@ void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID 
     /// and should not prevent insertion.
 }
 
+/// Collects the short names of all identifiers referenced in an expression subtree.
+void collectIdentifierShortNames(const ASTPtr & ast, NameSet & names)
+{
+    if (!ast)
+        return;
+
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+        names.insert(identifier->shortName());
+
+    for (const auto & child : ast->children)
+        collectIdentifierShortNames(child, names);
+}
+
 /// Extracts column mapping from view column names to target table column names.
 /// Returns empty map for asterisk (all columns map 1:1 by name).
 ///
@@ -258,6 +271,11 @@ void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID 
 /// Otherwise the projection is not a "simple column reference" — for example, the identifier
 /// could resolve to a `WITH` alias or another non-table symbol — and the view is rejected
 /// as not insertable.
+///
+/// `AS` aliases are the only renaming mechanism that can reach this point: an explicit view
+/// column list, as in `CREATE VIEW v (id, name) AS SELECT a, b FROM t`, is rewritten into
+/// SELECT-list aliases (`SELECT a AS id, b AS name`) when the view is created, so it is
+/// covered by the alias handling here.
 std::unordered_map<String, String> extractColumnMapping(
     const ASTSelectQuery & select,
     const StorageID & view_id,
@@ -531,13 +549,12 @@ public:
                 where_sets_built_ = true;
             }
 
-            /// Build the predicate input block by position. The view's `WHERE` references the
-            /// underlying table's (target) column names, so map each projected view column to its
-            /// target name positionally. Doing this by position rather than by name lookup is
-            /// required for an alias swap such as `SELECT a AS b, b AS a FROM t WHERE a > 0`: a
-            /// name-based copy guarded by `has(target_name)` would see the target name already
-            /// present (as a colliding view-column name) and skip it, leaving the predicate bound
-            /// to the wrong view column and letting a constraint-violating row pass.
+            /// Build the predicate input block by position: map each projected view column to its
+            /// target name. By-position mapping (rather than a name-based copy guarded by
+            /// `has(target_name)`) keeps every value under its correct target name even when the
+            /// projection swaps aliases, e.g. `SELECT a AS b, b AS a, c FROM t WHERE c > 0`.
+            /// A `WHERE` that itself references one of the colliding names is ambiguous and is
+            /// rejected with `NOT_IMPLEMENTED` in `StorageView::write` before the sink is created.
             Block check_block;
             for (const auto & col : block)
             {
@@ -994,6 +1011,39 @@ SinkToStoragePtr StorageView::write(
         target_columns.insert(col.name);
 
     auto column_mapping = extractColumnMapping(select, getStorageID(), target_columns);
+
+    /// A SELECT-list alias may collide with the name of a *different* underlying column, as in
+    /// `SELECT t.a AS b, t.b AS a FROM t WHERE a > 0`. If the WHERE references such a name, the
+    /// constraint is ambiguous: at read time the name resolves to the alias by default but to the
+    /// underlying column under `prefer_column_name_to_alias = 1`, and the old and new analyzers do
+    /// not even agree on whether the unqualified definition is valid (the old one throws
+    /// `CYCLIC_ALIASES`). There is no single read semantics the write-time constraint check could
+    /// mirror, so reject such views as not insertable instead of guessing. An explicit view
+    /// column list (`CREATE VIEW v (b, a) AS SELECT a, b FROM t WHERE a > 0`) is rewritten into
+    /// SELECT-list aliases when the view is created, so colliding renames are caught here
+    /// regardless of which renaming syntax the view was defined with.
+    if (const auto & where_expr = select.where(); where_expr)
+    {
+        NameSet where_identifiers;
+        collectIdentifierShortNames(where_expr, where_identifiers);
+        for (const auto & expr : select.select()->children)
+        {
+            const auto * identifier = expr->as<ASTIdentifier>();
+            if (!identifier)
+                continue;
+
+            const String alias = identifier->tryGetAlias();
+            if (alias.empty() || alias == identifier->shortName())
+                continue;
+
+            if (target_columns.contains(alias) && where_identifiers.contains(alias))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot INSERT into view {} because its WHERE condition references '{}', which is "
+                    "both an alias of the underlying column '{}' and a column of the underlying table "
+                    "itself, so the constraint is ambiguous",
+                    getStorageID().getFullTableName(), alias, identifier->shortName());
+        }
+    }
 
     /// The write path forwards the view-typed values straight into the target table and evaluates
     /// the view's `WHERE` against them. If the view declares an output type that differs from the
