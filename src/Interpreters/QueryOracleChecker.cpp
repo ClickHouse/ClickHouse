@@ -9,6 +9,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -559,6 +561,24 @@ bool hasPasteJoin(const ASTSelectQuery & select)
                 return true;
         }
     }
+    return false;
+}
+
+/// True if the subtree contains a bare `*` or qualified `t.*`. Asterisk
+/// expansion is context-sensitive: when an oracle wraps the query in a
+/// subquery or re-projects it (TLP partitions, NoREC, subquery wrap), a `*`
+/// inside GROUP BY / a projection re-expands over a different column set, so
+/// the rewrite is not equivalent to the original — a false mismatch. The
+/// fuzzer readily produces these (e.g. `GROUP BY toString(g, *, NULL)`).
+bool containsAsterisk(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (ast->as<ASTAsterisk>() || ast->as<ASTQualifiedAsterisk>())
+        return true;
+    for (const auto & child : ast->children)
+        if (containsAsterisk(child))
+            return true;
     return false;
 }
 
@@ -2111,6 +2131,18 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (hasAsofJoinAnywhere(query_ast))
     {
         LOG_TRACE(logger, "Oracle skip: ASOF JOIN (tie-breaking is plan-dependent)");
+        return false;
+    }
+
+    /// A `*` inside GROUP BY / HAVING re-expands over a different column set
+    /// when an oracle wraps or re-projects the query, breaking key
+    /// equivalence. (A bare top-level `SELECT *` or `count(*)` is fine — it
+    /// expands over the same table on both sides — so only the grouping
+    /// clauses are gated, not the SELECT list.)
+    if ((select->groupBy() && containsAsterisk(select->groupBy()))
+        || (select->having() && containsAsterisk(select->having())))
+    {
+        LOG_TRACE(logger, "Oracle skip: asterisk in GROUP BY / HAVING (context-sensitive expansion)");
         return false;
     }
 
