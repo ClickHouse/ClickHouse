@@ -13,7 +13,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/SortingStep.h>
 
-#include <ranges>
 #include <stack>
 #include <string_view>
 #include <unordered_map>
@@ -447,10 +446,21 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
     /// with duplicate names, and the rewritten parent INPUT (resolved by name)
     /// could bind to the original wide source column instead of the scalar we
     /// computed (e.g. `length(s) AS id` colliding with a surviving sort key).
+    const Block & child_output_header = *child_node->step->getOutputHeader();
     for (const auto & pushed_function : pushed_functions)
+    {
         if (child_input_header.has(pushed_function.result_name)
             && !columns_to_drop.contains(pushed_function.result_name))
             return 0;
+
+        /// An Expression / Filter child can itself compute a column with the
+        /// pushed scalar's name. It is invisible in the input header, but after
+        /// `updateInputHeader` the child would output both columns, and the
+        /// rewritten parent INPUT (resolved by name) would bind to the child's
+        /// computed column instead of the pushed scalar.
+        if (child_dag && child_output_header.has(pushed_function.result_name))
+            return 0;
+    }
 
     /// Build the pushed DAG (passthrough minus dropped columns + new FUNCTION nodes).
     auto pushed = buildPushedDag(pushed_functions, child_input_header, columns_to_drop);

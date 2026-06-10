@@ -1,3 +1,7 @@
+-- The plan-shape assertions below describe the step layout produced by the
+-- new analyzer; with the old analyzer the projection expressions are computed
+-- below the Sorting step already and the pass (correctly) never fires.
+SET enable_analyzer = 1;
 SET query_plan_enable_optimizations = 1;
 SET query_plan_max_step_description_length = 10000;
 
@@ -42,11 +46,28 @@ FROM (EXPLAIN description = 1
     SELECT length(s), length(arr), empty(arr), notEmpty(fs) FROM volume_reducing_function_push_down ORDER BY id DESC LIMIT 2
     SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_merge_expressions = 0);
 
+-- The probe computes `length(s)` above a DISTINCT subquery and asserts on the
+-- marker's *position*: the pass walks the function down the Expression chain
+-- (`Projection` → `Change column names` → subquery `Project names`) and must
+-- stop at the `Distinct`, so markers may appear above it (proving the pass was
+-- active, not vacuous) but never below it. A plain whole-plan marker count
+-- cannot express this — the number of Expression steps above the barrier is
+-- a plan-shape detail that varies with settings.
+-- `optimize_functions_to_subcolumns = 0` is pinned so that `length(s)` stays
+-- a FUNCTION candidate: with the subcolumn rewrite enabled there is nothing
+-- to push and the assertion would hold vacuously (this is also what made the
+-- previous formulation flip under randomized settings).
 SELECT 'plan: distinct — barrier respected';
-SELECT countIf(explain LIKE '%[volume-reducing functions]%')
-FROM (EXPLAIN description = 1
-    SELECT DISTINCT length(s) FROM volume_reducing_function_push_down
-    SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_merge_expressions = 0);
+SELECT (countIf(marker AND (rn < first_distinct)) > 0) AND (countIf(marker AND (rn > first_distinct)) = 0)
+FROM (
+    SELECT explain LIKE '%[volume-reducing functions]%' AS marker,
+           rn,
+           minIf(rn, explain LIKE '%Distinct%') OVER () AS first_distinct
+    FROM (SELECT explain, rowNumberInAllBlocks() AS rn FROM (EXPLAIN description = 1
+        SELECT length(s) FROM (SELECT DISTINCT s FROM volume_reducing_function_push_down)
+        SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_merge_expressions = 0,
+                 optimize_functions_to_subcolumns = 0))
+);
 
 SELECT 'plan: group by — barrier respected';
 SELECT countIf(explain LIKE '%[volume-reducing functions]%')
@@ -180,6 +201,31 @@ FROM volume_reducing_function_push_down AS l
 INNER JOIN volume_reducing_function_push_down AS r ON l.s = r.s
 ORDER BY r.id
 SETTINGS query_plan_push_down_volume_reducing_functions = 1;
+
+SELECT 'eq: distinct subquery';
+SELECT *
+FROM (
+    SELECT length(s) FROM (SELECT DISTINCT s FROM volume_reducing_function_push_down)
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1, optimize_functions_to_subcolumns = 0
+)
+EXCEPT ALL
+SELECT *
+FROM (
+    SELECT length(s) FROM (SELECT DISTINCT s FROM volume_reducing_function_push_down)
+    SETTINGS query_plan_push_down_volume_reducing_functions = 0, optimize_functions_to_subcolumns = 0
+);
+
+SELECT *
+FROM (
+    SELECT length(s) FROM (SELECT DISTINCT s FROM volume_reducing_function_push_down)
+    SETTINGS query_plan_push_down_volume_reducing_functions = 0, optimize_functions_to_subcolumns = 0
+)
+EXCEPT ALL
+SELECT *
+FROM (
+    SELECT length(s) FROM (SELECT DISTINCT s FROM volume_reducing_function_push_down)
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1, optimize_functions_to_subcolumns = 0
+);
 
 -- ----------------------------------------------------------------------------
 -- Name-collision regression: when the pushed scalar's output name equals a
