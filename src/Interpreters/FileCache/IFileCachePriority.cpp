@@ -1,5 +1,6 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
+#include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 
@@ -13,8 +14,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-IFileCachePriority::IFileCachePriority(size_t max_size_, size_t max_elements_)
-    : max_size(max_size_), max_elements(max_elements_)
+IFileCachePriority::IFileCachePriority(QueueType queue_type_, size_t max_size_, size_t max_elements_)
+    : queue_type(queue_type_), max_size(max_size_), max_elements(max_elements_)
 {
 }
 
@@ -88,6 +89,19 @@ void IFileCachePriority::removeEntries(
         if (entry_state != Entry::State::Removed)
             it->remove(lock);
     }
+}
+
+IFileCachePriority::IPriorityDump::IPriorityDump() = default;
+IFileCachePriority::IPriorityDump::~IPriorityDump() = default;
+
+IFileCachePriority::IPriorityDump::IPriorityDump(const std::vector<FileSegmentInfo> & infos_)
+    : infos(infos_)
+{
+}
+
+void IFileCachePriority::IPriorityDump::merge(const IPriorityDump & other)
+{
+    infos.insert(infos.end(), other.infos.begin(), other.infos.end());
 }
 
 }
