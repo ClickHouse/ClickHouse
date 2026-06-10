@@ -13,8 +13,12 @@ The protected folders and their owning repos are declared in
 files (repo-relative paths, as they appear in the PR diff) against those
 folders.
 
-It has no CI-framework dependency: the Praktika job feeds it
-``Info().get_changed_files()``; standalone you can pipe ``git diff --name-only``.
+The input must cover *both* sides of renames: a rename out of a protected
+folder is an edit to it (a deletion), and only the source path falls under the
+protected prefix. ``Info().get_changed_files()``, which the Praktika job feeds
+in, includes rename sources; standalone, pipe ``git diff --name-only
+--no-renames`` (with rename detection disabled a rename is listed as a
+deletion plus an addition, so both paths appear).
 """
 
 import argparse
