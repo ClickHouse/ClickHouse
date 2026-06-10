@@ -1502,18 +1502,16 @@ static bool containsNullableFlattenableTuple(const DataTypePtr & type)
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
     {
         const auto & nested = nullable_type->getNestedType();
-        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(nested.get());
-        if (tuple_type && !tuple_type->getElements().empty() && !nested->hasCustomName())
+        if (Nested::tryGetFlattenableTuple(nested))
             return true;
         return containsNullableFlattenableTuple(nested);
     }
 
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    if (const auto * tuple_type = Nested::tryGetFlattenableTuple(type))
     {
-        if (!tuple_type->getElements().empty() && !type->hasCustomName())
-            for (const auto & element : tuple_type->getElements())
-                if (containsNullableFlattenableTuple(element))
-                    return true;
+        for (const auto & element : tuple_type->getElements())
+            if (containsNullableFlattenableTuple(element))
+                return true;
     }
 
     return false;
@@ -1729,8 +1727,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
         for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
         {
             const auto & type = sorting_key.data_types[i];
-            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
-            if (tuple_type && !tuple_type->getElements().empty() && !type->hasCustomName())
+            if (Nested::tryGetFlattenableTuple(type))
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
