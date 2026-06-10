@@ -21,12 +21,16 @@ instance found under a config it uses that config's `region` and
      again, blocking on the Dedicated Host scrub.
 
 Instances are reconciled one at a time so the whole fleet is never stopped at
-once. Only the instance ids you pass are touched; all others are left alone.
+once. Only the instance ids you pass are touched; with no `--instance` every
+live instance of every config is scanned. `--dry-run` prints the update plan
+without changing anything.
 
 Examples:
 
     update_userdata.py --instance i-0123456789abcdef0
     update_userdata.py --instance i-0123456789abcdef0 i-0fedcba9876543210
+    update_userdata.py                 # scan and reconcile the whole fleet
+    update_userdata.py --dry-run       # show what would change
 """
 
 import argparse
@@ -199,12 +203,19 @@ def start_instances(ec2, instance_ids):
     ec2.get_waiter("instance_running").wait(InstanceIds=started)
 
 
-def reconcile_instance(ec2, instance_id, state, user_data, start):
+def reconcile_instance(ec2, instance_id, state, user_data, start, dry_run=False):
     """Reconcile one instance: skip when the live user_data already matches,
     otherwise stop, reinstall, and (when `start`) start it again.
+
+    With `dry_run`, only print whether the instance would be updated; make no
+    changes.
     """
     if user_data_matches(ec2, instance_id, user_data):
         print(f"{instance_id}: user_data already up to date - skip")
+        return
+
+    if dry_run:
+        print(f"{instance_id}: user_data differs - would update (state={state})")
         return
 
     install_user_data(ec2, instance_id, state, user_data)
@@ -230,17 +241,22 @@ def load_user_data(config):
     return user_data
 
 
-def reconcile_instances(configs, requested_ids):
-    """Reconcile the requested instance ids, sourcing each one's `region` and
-    `user_data_file` from the `ci/infra/cloud.py` config that owns it.
+def reconcile_instances(configs, requested_ids, dry_run=False):
+    """Reconcile instances, sourcing each one's `region` and `user_data_file`
+    from the `ci/infra/cloud.py` config that owns it.
+
+    With `requested_ids` set, only those ids are touched and an id that belongs
+    to no config is an error. With `requested_ids` None, every live instance of
+    every config is scanned and reconciled.
 
     Each config's live instances are discovered with praktika's own tag-based
     lookup (`_find_existing_instances`), so the standalone update matches what
-    praktika `deploy` would launch. An id that belongs to no config is an error.
+    praktika `deploy` would launch. With `dry_run`, print the update plan
+    without changing anything.
     """
-    pending = set(requested_ids)
+    pending = None if requested_ids is None else set(requested_ids)
     for config in configs.values():
-        if not pending:
+        if pending is not None and not pending:
             break
         # `_find_existing_instances` builds its own boto3 client from
         # `config.region`, so pin the default region on the config first.
@@ -249,7 +265,7 @@ def reconcile_instances(configs, requested_ids):
         matched = [
             inst
             for inst in config._find_existing_instances()
-            if inst.get("InstanceId") in pending
+            if pending is None or inst.get("InstanceId") in pending
         ]
         if not matched:
             continue
@@ -259,8 +275,11 @@ def reconcile_instances(configs, requested_ids):
         for inst in matched:
             instance_id = inst.get("InstanceId")
             state = (inst.get("State") or {}).get("Name")
-            reconcile_instance(ec2, instance_id, state, user_data, start=True)
-            pending.discard(instance_id)
+            reconcile_instance(
+                ec2, instance_id, state, user_data, start=True, dry_run=dry_run
+            )
+            if pending is not None:
+                pending.discard(instance_id)
 
     if pending:
         raise Exception(
@@ -278,7 +297,6 @@ def main():
     )
     parser.add_argument(
         "--instance",
-        required=True,
         nargs="+",
         metavar="INSTANCE_ID",
         help=(
@@ -286,12 +304,24 @@ def main():
             "is matched to its ci/infra/cloud.py config to source the region "
             "and user_data file, then the instance is stopped, has the "
             "configured user_data installed, and is started again. Other "
-            "instances are left untouched."
+            "instances are left untouched. When omitted, every live instance of "
+            "every config is scanned and reconciled."
+        ),
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Report which instances would be updated (live user_data differs "
+            "from the configured file) without stopping, updating, or starting "
+            "anything."
         ),
     )
     args = parser.parse_args()
 
-    reconcile_instances(configs, args.instance)
+    if args.dry_run:
+        print("dry run - update plan only, no changes will be made")
+    reconcile_instances(configs, args.instance, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
