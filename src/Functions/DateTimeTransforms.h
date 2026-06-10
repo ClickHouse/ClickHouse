@@ -1882,6 +1882,76 @@ struct ToMillisecondImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToMicrosecondImpl
+{
+    static constexpr auto name = "toMicrosecond";
+
+    static UInt32 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
+    {
+        return static_cast<UInt32>(time_zone.toMicrosecond(datetime64, scale_multiplier));
+    }
+
+    static UInt32 execute(const Time64 & time64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
+    {
+        return static_cast<UInt32>(time_zone.toMicrosecond(time64, scale_multiplier));
+    }
+
+    static UInt32 execute(UInt32, const DateLUTImpl &)
+    {
+        return 0;
+    }
+    static UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        throwDate32IsNotSupported(name);
+    }
+    static UInt32 execute(Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
+    static UInt32 execute(UInt16, const DateLUTImpl &)
+    {
+        throwDateIsNotSupported(name);
+    }
+    static constexpr bool hasPreimage() { return false; }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToNanosecondImpl
+{
+    static constexpr auto name = "toNanosecond";
+
+    static UInt32 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
+    {
+        return static_cast<UInt32>(time_zone.toNanosecond(datetime64, scale_multiplier));
+    }
+
+    static UInt32 execute(const Time64 & time64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
+    {
+        return static_cast<UInt32>(time_zone.toNanosecond(time64, scale_multiplier));
+    }
+
+    static UInt32 execute(UInt32, const DateLUTImpl &)
+    {
+        return 0;
+    }
+    static UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        throwDate32IsNotSupported(name);
+    }
+    static UInt32 execute(Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
+    static UInt32 execute(UInt16, const DateLUTImpl &)
+    {
+        throwDateIsNotSupported(name);
+    }
+    static constexpr bool hasPreimage() { return false; }
+
+    using FactorTransform = ZeroTransform;
+};
+
 struct ToISOYearImpl
 {
     static constexpr auto name = "toISOYear";
