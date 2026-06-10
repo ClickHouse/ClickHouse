@@ -72,8 +72,15 @@ jobs:
               DOCKERFILE=${rest%%:*}
               CONTEXT=${rest#*:}
 
-              echo "--- ${IMAGE_NAME}:${VERSION}-distroless ---"
+              echo "--- ${IMAGE_NAME}:${VERSION}-distroless (also tagging ${VERSION_MINOR}, ${VERSION_MAJOR}) ---"
 
+              # Tag with all three precisions so the floating
+              # major.minor and minor refs (e.g. `:26.4-distroless`,
+              # `:26.4.3-distroless`) point at the rebuilt image too.
+              # Without this, a backfill rebuilds `:X.Y.Z.N-distroless`
+              # only — `:X.Y-distroless` keeps pointing at the prior
+              # vulnerable image, so consumers tracking the floating
+              # tag never pick up the patch.
               docker buildx build \
                 --platform=linux/amd64,linux/arm64 \
                 --provenance=true \
@@ -83,12 +90,14 @@ jobs:
                 --label="com.clickhouse.build.githash=${SHA}" \
                 --label="com.clickhouse.build.version=${VERSION}-distroless" \
                 --tag="${IMAGE_NAME}:${VERSION}-distroless" \
+                --tag="${IMAGE_NAME}:${VERSION_MINOR}-distroless" \
+                --tag="${IMAGE_NAME}:${VERSION_MAJOR}-distroless" \
                 --build-arg=VERSION="${VERSION}" \
                 --progress=plain \
                 --file="${DOCKERFILE}" \
                 "${CONTEXT}"
 
-              echo "Done: ${IMAGE_NAME}:${VERSION}-distroless"
+              echo "Done: ${IMAGE_NAME}:${VERSION}-distroless (+ ${VERSION_MINOR}, ${VERSION_MAJOR})"
             done
           done
 
