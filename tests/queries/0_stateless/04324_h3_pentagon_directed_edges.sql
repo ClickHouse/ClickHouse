@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Regression test for the h3o backend: for a pentagon origin, the K direction
 -- (slot 0) is deleted and must be reported as H3_NULL (0), with the remaining
 -- five edges occupying slots 1..5, matching the H3 C API's fixed six-slot layout.
