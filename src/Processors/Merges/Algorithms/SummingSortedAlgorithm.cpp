@@ -360,22 +360,37 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 continue;
             }
 
-            /// Suppose `SummingMergeTree(other)` over a tuple `ratesMap Tuple(ID Array, Value Array)`
-            /// with allow_tuple_element_aggregation = 1. Only `other` is listed, so the expected result
-            /// is that `ratesMap` is left untouched (copied), not aggregated.
-            ///
-            /// Without this guard it would be aggregated anyway: flattening turns `ratesMap` into the
-            /// sub-columns `ratesMap.ID` / `ratesMap.Value`, whose synthesized parent name ends in `Map`,
-            /// so the discovery above would treat them as a summable map and ignore the `columns` list.
-            /// So when a list is given, skip a flattened map sub-column unless it (or a tuple ancestor)
-            /// is in the list. The `!original_column_names.contains(...)` check restricts this to
-            /// flattened names, leaving real top-level Nested `xxxMap` columns aggregated as before.
-            if (allow_tuple_element_aggregation && !original_column_names.contains(column.name)
-                && !column_names_to_sum.empty()
-                && !isColumnOrAncestorInNames(i, header_flatten, flatten_ancestors, column_names_to_sum))
+            /// The following map checks apply only to synthetic flattened leaves: the
+            /// `!original_column_names.contains(...)` guard restricts them to flattened names,
+            /// leaving real top-level Nested `xxxMap` columns aggregated as before.
+            if (allow_tuple_element_aggregation && !original_column_names.contains(column.name))
             {
-                def.column_numbers_not_to_aggregate.push_back(i);
-                continue;
+                /// `map_name` is only a real Nested `xxxMap` when it is one of the leaf's true tuple
+                /// ancestors. A dotted element name such as `ratesMap.ID` inside tuple `metrics`
+                /// flattens to `metrics.ratesMap.ID` and synthesizes the parent `metrics.ratesMap`,
+                /// which is not a real tuple node (the only ancestor is `metrics`), so those arrays
+                /// must be copied rather than map-merged.
+                const bool is_real_map
+                    = std::find(flatten_ancestors[i].begin(), flatten_ancestors[i].end(), map_name) != flatten_ancestors[i].end();
+
+                /// Even a real map is summed only when an explicit `columns` list permits it. Suppose
+                /// `SummingMergeTree(other)` over a tuple `ratesMap Tuple(ID Array, Value Array)` with
+                /// allow_tuple_element_aggregation = 1. Only `other` is listed, so the expected result
+                /// is that `ratesMap` is left untouched (copied), not aggregated.
+                ///
+                /// Without this check it would be aggregated anyway: flattening turns `ratesMap` into the
+                /// sub-columns `ratesMap.ID` / `ratesMap.Value`, whose synthesized parent name ends in `Map`,
+                /// so the discovery above would treat them as a summable map and ignore the `columns` list.
+                /// So when a list is given, a flattened map sub-column is summed only if it (or a tuple
+                /// ancestor) is in the list.
+                const bool excluded_by_columns_list
+                    = !column_names_to_sum.empty() && !isColumnOrAncestorInNames(i, header_flatten, flatten_ancestors, column_names_to_sum);
+
+                if (!is_real_map || excluded_by_columns_list)
+                {
+                    def.column_numbers_not_to_aggregate.push_back(i);
+                    continue;
+                }
             }
 
             discovered_maps[map_name].emplace_back(i);
