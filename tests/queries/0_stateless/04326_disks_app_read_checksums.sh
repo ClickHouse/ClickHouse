@@ -3,6 +3,12 @@
 # The test asserts on the exact set of files inside a part, which depends on the
 # part's physical layout. Disable MergeTree settings randomization so the part
 # always uses the build defaults (a compact part: data.bin, data.cmrk4, ...).
+#
+# The table is pinned to the local `default` disk (see CREATE TABLE below). Under
+# object-storage default policies (e.g. when the CI job runs with `--s3-storage`)
+# a part's local `checksums.txt` is object-storage metadata, not a real part
+# `checksums.txt`, so `read-checksums` would have nothing to parse. The `default`
+# disk is always a plain local disk and is not overridden by those policies.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,7 +23,7 @@ run() {
 
 # Create a MergeTree part.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS rc_test"
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE rc_test (k UInt64, s String) ENGINE = MergeTree ORDER BY k"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE rc_test (k UInt64, s String) ENGINE = MergeTree ORDER BY k SETTINGS disk = 'default'"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO rc_test SELECT number, toString(number) FROM numbers(3)"
 path=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts \
     WHERE database = currentDatabase() AND table = 'rc_test' AND active LIMIT 1")
