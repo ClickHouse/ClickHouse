@@ -874,7 +874,7 @@ TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan
 /// Reads hostnames from `stateless_worker_client.cluster` config.
 /// Throws if cluster name is set but the cluster is not found or has no shards.
 /// Returns empty vector if cluster name is not configured.
-static std::vector<String> getDistributedWorkerHostnames(ContextPtr context)
+static Strings getDistributedWorkerHostnames(ContextPtr context)
 {
     if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
         return {};
@@ -900,7 +900,7 @@ static std::vector<String> getDistributedWorkerHostnames(ContextPtr context)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Stateless worker cluster '{}' must have a single shard, got {}", cluster_name, shard_addresses.size());
 
-    std::vector<String> result;
+    Strings result;
     for (const auto & replica : shard_addresses[0])
         result.push_back(replica.host_name);
     return result;
