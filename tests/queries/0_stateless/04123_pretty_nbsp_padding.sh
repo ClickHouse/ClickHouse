@@ -14,6 +14,22 @@ data_line_hex()
         | tr -d ' \n'
 }
 
+# Header and footer name rows in the `Pretty` (full) style are the only lines
+# that contain the bold bar `┃`; borders use `┏`/`┡`/`━` and data rows use `│`.
+first_bold_bar_line_hex()
+{
+    LC_ALL=C awk -v bar="$(printf '\342\224\203')" 'index($0, bar) { printf "%s", $0; exit }' \
+        | od -An -v -tx1 \
+        | tr -d ' \n'
+}
+
+last_bold_bar_line_hex()
+{
+    LC_ALL=C awk -v bar="$(printf '\342\224\203')" 'index($0, bar) { line = $0 } END { printf "%s", line }' \
+        | od -An -v -tx1 \
+        | tr -d ' \n'
+}
+
 run_pretty()
 {
     local format=$1
@@ -26,6 +42,7 @@ run_pretty()
 N=c2a0           # `U+00A0` NO-BREAK SPACE in UTF-8
 S=20             # ASCII space
 BAR=e29482       # `│` U+2502
+BOLD_BAR=e29483  # `┃` U+2503
 ROW_MARKER=312e20  # `1. `
 
 # `PrettyCompact` data row, NBSP setting on:
@@ -56,6 +73,33 @@ single_digit_row_lead_hex=$(
         | sed -n '2p' | head -c 2 | od -An -v -tx1 | tr -d ' \n'
 )
 
+# `Pretty` header names row, NBSP setting on. The value `1234567890` is wider
+# than the name `n`, so the right-aligned name gets 9 padding characters; the
+# left-aligned `s` gets 1. The row-number gutter (3 chars for one row) and the
+# padding around the bold frame `┃` must be NBSP too.
+#   <3N gutter>┃<1N><9N pad>n<1N>┃<1N>s<1N pad><1N>┃
+expected_header_nbsp="${N}${N}${N}${BOLD_BAR}${N}${N}${N}${N}${N}${N}${N}${N}${N}${N}6e${N}${BOLD_BAR}${N}73${N}${N}${BOLD_BAR}"
+actual_header_nbsp=$(
+    $CLICKHOUSE_CLIENT --output_format_pretty_color=0 \
+        --output_format_pretty_use_nbsp_for_padding=1 \
+        --query="SELECT toUInt64(1234567890) AS n, 'xy' AS s FORMAT Pretty" \
+        | first_bold_bar_line_hex
+)
+
+# `Pretty` footer names row (forced via `..._min_rows = 1`), NBSP setting on.
+# Same shape as the header of that table: values are 10 wide, name `n` gets
+# 9 padding characters, gutter is 3 chars for 3 rows.
+#   <3N gutter>┃<1N><9N pad>n<1N>┃
+expected_footer_nbsp="${N}${N}${N}${BOLD_BAR}${N}${N}${N}${N}${N}${N}${N}${N}${N}${N}6e${N}${BOLD_BAR}"
+actual_footer_nbsp=$(
+    $CLICKHOUSE_CLIENT --output_format_pretty_color=0 \
+        --output_format_pretty_use_nbsp_for_padding=1 \
+        --output_format_pretty_display_footer_column_names=1 \
+        --output_format_pretty_display_footer_column_names_min_rows=1 \
+        --query="SELECT toUInt64(1000000000 + number) AS n FROM numbers(3) FORMAT Pretty" \
+        | last_bold_bar_line_hex
+)
+
 # `PrettyCompact` under `ASCII` charset, setting on: NBSP must be suppressed.
 ascii_charset_hex=$(run_pretty PrettyCompact \
     --output_format_pretty_use_nbsp_for_padding=1 \
@@ -67,6 +111,8 @@ ascii_charset_hex=$(run_pretty PrettyCompact \
 [[ "$expected_p_nbsp"      == "$actual_p_nbsp"      ]] && echo "Pretty NBSP data row matches expected bytes"        || echo "Pretty NBSP data row MISMATCH: $actual_p_nbsp vs $expected_p_nbsp"
 [[ "$expected_ps_nbsp"     == "$actual_ps_nbsp"     ]] && echo "PrettySpace NBSP data row matches expected bytes"   || echo "PrettySpace NBSP data row MISMATCH: $actual_ps_nbsp vs $expected_ps_nbsp"
 [[ "$single_digit_row_lead_hex" == "$N" ]] && echo "Row-number left pad on single-digit row is NBSP" || echo "Row-number left pad MISMATCH: $single_digit_row_lead_hex"
+[[ "$expected_header_nbsp"  == "$actual_header_nbsp"  ]] && echo "Pretty NBSP header row matches expected bytes"      || echo "Pretty NBSP header row MISMATCH: $actual_header_nbsp vs $expected_header_nbsp"
+[[ "$expected_footer_nbsp"  == "$actual_footer_nbsp"  ]] && echo "Pretty NBSP footer row matches expected bytes"      || echo "Pretty NBSP footer row MISMATCH: $actual_footer_nbsp vs $expected_footer_nbsp"
 
 case "$ascii_charset_hex" in
     *${N}*) echo "ASCII charset suppression FAILED (NBSP found)" ;;
