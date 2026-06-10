@@ -140,3 +140,37 @@ SELECT
 SELECT
     (SELECT arraySort(groupArray(toString(k))) FROM (SELECT tuple(v, 1) AS k FROM format(TSV, 'v LowCardinality(Nullable(String))', '\\N\na\nb\nc')) AS t1 LEFT ANTI JOIN (SELECT tuple(v, 1) AS k FROM format(TSV, 'v LowCardinality(Nullable(String))', '\\N\na')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 0)
   = (SELECT arraySort(groupArray(toString(k))) FROM (SELECT tuple(v, 1) AS k FROM format(TSV, 'v LowCardinality(Nullable(String))', '\\N\na\nb\nc')) AS t1 LEFT ANTI JOIN (SELECT tuple(v, 1) AS k FROM format(TSV, 'v LowCardinality(Nullable(String))', '\\N\na')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 1);
+
+-- Map with the null-capable type in the KEY position. hasTypeThatCanContainNulls() recurses into
+-- both the Map key and value types, so a Variant/Dynamic Map key must be covered too (the value-side
+-- cases above only exercise the value branch). Map(Variant, ...) / Map(Dynamic, ...) reach the same
+-- runtime-filter path, and the single-distinct-value "equals" path is what tripped the original
+-- __applyFilter assertion when the nested Variant/Dynamic was not detected.
+
+-- Map(Variant, String) key, exactly 1 distinct value on the right (the "equals" path).
+SELECT *
+FROM
+    (SELECT map(v, 'x') AS k FROM format(TSV, 'v Variant(String, Bool)', 'true\nfalse')) AS t1
+    JOIN
+    (SELECT map(v, 'x') AS k FROM format(TSV, 'v Variant(String, Bool)', 'true')) AS t2
+    USING (k)
+ORDER BY k;
+
+-- Map(Dynamic, String) key, exactly 1 distinct value on the right (the "equals" path).
+SELECT *
+FROM
+    (SELECT map(v, 'x') AS k FROM format(TSV, 'v Dynamic', 'true\nfalse')) AS t1
+    JOIN
+    (SELECT map(v, 'x') AS k FROM format(TSV, 'v Dynamic', 'true')) AS t2
+    USING (k)
+ORDER BY k;
+
+-- Map(Variant, String) key LEFT ANTI JOIN, runtime filters off == on, NULL on both sides.
+SELECT
+    (SELECT arraySort(groupArray(toString(k))) FROM (SELECT map(v, 'x') AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N\ntrue')) AS t1 LEFT ANTI JOIN (SELECT map(v, 'x') AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 0)
+  = (SELECT arraySort(groupArray(toString(k))) FROM (SELECT map(v, 'x') AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N\ntrue')) AS t1 LEFT ANTI JOIN (SELECT map(v, 'x') AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 1);
+
+-- Map(Dynamic, String) key LEFT ANTI JOIN, runtime filters off == on, NULL on both sides.
+SELECT
+    (SELECT arraySort(groupArray(toString(k))) FROM (SELECT map(v, 'x') AS k FROM format(TSV, 'v Dynamic', '\\N\ntrue')) AS t1 LEFT ANTI JOIN (SELECT map(v, 'x') AS k FROM format(TSV, 'v Dynamic', '\\N')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 0)
+  = (SELECT arraySort(groupArray(toString(k))) FROM (SELECT map(v, 'x') AS k FROM format(TSV, 'v Dynamic', '\\N\ntrue')) AS t1 LEFT ANTI JOIN (SELECT map(v, 'x') AS k FROM format(TSV, 'v Dynamic', '\\N')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 1);
