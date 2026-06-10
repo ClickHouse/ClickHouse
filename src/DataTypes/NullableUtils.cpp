@@ -1,3 +1,4 @@
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -129,18 +130,20 @@ ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
     if (canExtractedSubcolumnsBeInsideNullable(prev))
         return ColumnNullable::create(prev, null_map);
 
-    /// `prev` is already `Nullable` (e.g. extracting `Nullable(Decimal)` from
-    /// `Nullable(Tuple(..., Nullable(Decimal), ...))`). We cannot double-wrap, but the outer
-    /// null map must still be propagated by OR-ing it into the inner null map. Otherwise rows
-    /// whose outer tuple is `NULL` but whose inner `Nullable` element has a non-`NULL` value on
-    /// disk would expose that inner value here, which breaks the sort key materialized on
-    /// write (the on-disk sort key combined both masks).
+    /// `prev` already carries its own nulls (e.g. extracting `Nullable(Decimal)` or
+    /// `LowCardinality(Nullable(String))` from `Nullable(Tuple(..., <that element>, ...))`).
+    /// We cannot wrap it in another `Nullable`, but the outer null map must still be propagated
+    /// into the element's own nulls. Otherwise rows whose outer tuple is `NULL` but whose inner
+    /// element has a non-`NULL` value on disk (as `generateRandom` produces) would expose that
+    /// inner value here, which breaks the sort key materialized on write (the on-disk sort key
+    /// combined both masks).
     if (null_map)
     {
+        const auto & outer_null_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
+
         if (const auto * prev_nullable = checkAndGetColumn<ColumnNullable>(prev.get()))
         {
             const auto & inner_null_data = prev_nullable->getNullMapData();
-            const auto & outer_null_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
             chassert(inner_null_data.size() == outer_null_data.size());
 
             auto combined_null_map = ColumnUInt8::create(inner_null_data.size());
@@ -150,6 +153,12 @@ ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
 
             return ColumnNullable::create(prev_nullable->getNestedColumnPtr(), std::move(combined_null_map));
         }
+
+        /// `LowCardinality(Nullable(T))` carries nullability via its dictionary, not an
+        /// `IColumn::isNullable`/`ColumnNullable` wrapper, so it reaches here unchanged. Fold the
+        /// outer mask into it by repointing the outer-`NULL` rows at the dictionary's null index.
+        if (const auto * prev_lc = checkAndGetColumn<ColumnLowCardinality>(prev.get()); prev_lc && prev_lc->nestedIsNullable())
+            return prev_lc->applyExternalNullMap(outer_null_data);
     }
 
     return prev;

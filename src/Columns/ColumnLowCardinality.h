@@ -286,6 +286,12 @@ public:
 
     ColumnPtr cloneWithDefaultOnNull() const;
 
+    /// Returns a copy with every row marked NULL by `null_map` repointed to the dictionary's
+    /// null value index. Requires a nullable dictionary (LC(Nullable(T))); `null_map.size()`
+    /// must equal `size()`. Used to fold an outer null map (e.g. of a `Nullable(Tuple(...))`)
+    /// into an extracted LC subcolumn that already carries its own nulls.
+    ColumnPtr applyExternalNullMap(const ColumnUInt8::Container & null_map) const;
+
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     IColumnUnique & getDictionary() { return dictionary.getColumnUnique(); }
     const ColumnPtr & getDictionaryPtr() const { return dictionary.getColumnUniquePtr(); }

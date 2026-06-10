@@ -732,6 +732,48 @@ ColumnPtr ColumnLowCardinality::cloneWithDefaultOnNull() const
     return res;
 }
 
+namespace
+{
+    template <typename IndexType>
+    void repointNullRowsToNullIndex(IColumn & indexes, const ColumnUInt8::Container & null_map, size_t null_value_index)
+    {
+        auto & data = assert_cast<ColumnVector<IndexType> &>(indexes).getData();
+        const auto null_index = static_cast<IndexType>(null_value_index);
+        for (size_t i = 0, rows = data.size(); i < rows; ++i)
+            if (null_map[i])
+                data[i] = null_index;
+    }
+}
+
+ColumnPtr ColumnLowCardinality::applyExternalNullMap(const ColumnUInt8::Container & null_map) const
+{
+    if (!nestedIsNullable())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "applyExternalNullMap requires a nullable LowCardinality dictionary");
+
+    if (null_map.size() != size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Size of null map ({}) does not match LowCardinality column size ({})",
+            null_map.size(), size());
+
+    /// The dictionary already stores NULL at this index, so pointing a row at it marks the row
+    /// NULL while keeping the LowCardinality(Nullable(T)) type. The null value index is always 0,
+    /// so it fits into any index width without truncation.
+    const size_t null_value_index = getDictionary().getNullValueIndex();
+
+    MutableColumnPtr new_indexes = IColumn::mutate(getIndexesPtr());
+    switch (getSizeOfIndexType())
+    {
+        case sizeof(UInt8): repointNullRowsToNullIndex<UInt8>(*new_indexes, null_map, null_value_index); break;
+        case sizeof(UInt16): repointNullRowsToNullIndex<UInt16>(*new_indexes, null_map, null_value_index); break;
+        case sizeof(UInt32): repointNullRowsToNullIndex<UInt32>(*new_indexes, null_map, null_value_index); break;
+        case sizeof(UInt64): repointNullRowsToNullIndex<UInt64>(*new_indexes, null_map, null_value_index); break;
+        default: throwUnexpectedLowCardinalityIndexType(getSizeOfIndexType());
+    }
+
+    return ColumnLowCardinality::create(getDictionaryPtr(), std::move(new_indexes), isSharedDictionary());
+}
+
 bool isColumnLowCardinalityNullable(const IColumn & column)
 {
     if (const auto * lc_column = checkAndGetColumn<ColumnLowCardinality>(&column))

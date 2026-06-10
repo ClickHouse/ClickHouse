@@ -54,3 +54,31 @@ SELECT count() > 0, uniqExact(_part) FROM t_105356;
 SELECT countIf(c0 IS NULL AND isNotNull(`c0.3`)) FROM t_105356;
 
 DROP TABLE t_105356;
+
+-- Same bug with a `LowCardinality(Nullable(...))` carrier. Such an element reaches the creator
+-- as a `ColumnLowCardinality` (not a `ColumnNullable`), so `canExtractedSubcolumnsBeInsideNullable`
+-- is false and the outer null map was dropped, again tripping `CheckSortedTransform` on merge.
+DROP TABLE IF EXISTS t_105356_lc;
+
+CREATE TABLE t_105356_lc
+(
+    c0 Nullable(Tuple(String, LowCardinality(Nullable(String)), Nullable(Decimal))),
+    c1 String,
+    c2 Decimal,
+    c3 String
+)
+ENGINE = SummingMergeTree()
+ORDER BY (`c0.2`, c2, c3)
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO t_105356_lc (c2, c3, c1, c0) SELECT c2, c3, c1, c0 FROM generateRandom('`c2` Decimal, `c3` String, `c1` String, `c0` Nullable(Tuple(String, LowCardinality(Nullable(String)), Nullable(Decimal)))', 101, 10, 3) LIMIT 10;
+INSERT INTO t_105356_lc (c2, c3, c1, c0) SELECT c2, c3, c1, c0 FROM generateRandom('`c2` Decimal, `c3` String, `c1` String, `c0` Nullable(Tuple(String, LowCardinality(Nullable(String)), Nullable(Decimal)))', 201, 10, 3) LIMIT 10;
+INSERT INTO t_105356_lc (c2, c3, c1, c0) SELECT c2, c3, c1, c0 FROM generateRandom('`c2` Decimal, `c3` String, `c1` String, `c0` Nullable(Tuple(String, LowCardinality(Nullable(String)), Nullable(Decimal)))', 301, 10, 3) LIMIT 10;
+
+OPTIMIZE TABLE t_105356_lc FINAL;
+
+SELECT count() > 0, uniqExact(_part) FROM t_105356_lc;
+
+SELECT countIf(c0 IS NULL AND isNotNull(`c0.2`)) FROM t_105356_lc;
+
+DROP TABLE t_105356_lc;
