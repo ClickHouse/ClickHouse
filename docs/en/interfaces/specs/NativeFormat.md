@@ -45,7 +45,7 @@ flowchart TD
 
     Cdata --> Fixed["Fixed-width<br/>bytes_per_value × num_rows"]
     Cdata --> Comp["Composite<br/>recursive, shape from type string"]
-    Cdata --> Ver["Versioned / stateful<br/>version prefix + cross-block state"]
+    Cdata --> Ver["Versioned / stateful<br/>per-block version prefix"]
 
     Fixed --> FixedEx["Int*, UInt*, Float*, Decimal*<br/>Date, DateTime, DateTime64<br/>UUID, IPv4, IPv6, FixedString(N)"]
     Comp --> CompEx["Nullable(T), Array(T)<br/>Tuple(...), Map(K, V), Nested(...)"]
@@ -54,7 +54,7 @@ flowchart TD
 
 - **Fixed-width** types lay `data` out as `bytes_per_value × num_rows` raw bytes, with no per-row framing.
 - **Composite** types (`Nullable`, `Array`, `Tuple`, `Map`, `Nested`) have a recursive shape fully derivable from the type string, with no version prefix and no cross-block state.
-- **Versioned / stateful** types (`LowCardinality`, `JSON`, `Variant`, `Dynamic`) begin with a serialization-version prefix and may carry state *across* blocks within one query response.
+- **Versioned / stateful** types (`LowCardinality`, `JSON`, `Variant`, `Dynamic`) begin each non-empty block with a serialization-version/state prefix. Over the `Native` wire this prefix and any dictionary are **per block** — the format carries no state *across* blocks (the writer creates fresh serialization state for every block and sets `low_cardinality_max_dictionary_size = 0`). Cross-block state is a MergeTree on-disk concern, not the Native wire layout.
 
 ## Wire primitives {#wire-primitives}
 
@@ -302,7 +302,7 @@ This section documents every type the Native format can encode within a column's
 | Fixed-width                      | [Fixed-width types](#fixed-width-types) | One       | None |
 | Variable-length                  | [Variable-length types](#variable-length-types) | One | None |
 | Composite (fixed shape)          | [Composite types](#composite-types) | Multiple  | None |
-| Versioned / stateful             | [Versioned types](#versioned-types) | Multiple  | Per-column state prefix; possibly cross-block state |
+| Versioned / stateful             | [Versioned types](#versioned-types) | Multiple  | None on the Native wire — per-block state prefix, fresh per block |
 
 ### Fixed-width types {#fixed-width-types}
 
@@ -963,7 +963,7 @@ Two related types are **not** aliases and carry their own specialized encodings,
 
 ### Versioned types {#versioned-types}
 
-Versioned types carry an on-wire serialization-version prefix that declares which variant of the encoding follows. They may also use multiple streams (like the composites) and may maintain cross-block state.
+Versioned types carry an on-wire serialization-version prefix that declares which variant of the encoding follows. They may also use multiple streams (like the composites). On the `Native` wire the prefix and any dictionary are per block — these types maintain no cross-block state (see [the per-block prefix note](#serialization-version-concept) below); cross-block serialization state exists only in the MergeTree on-disk stream.
 
 These types are considerably more involved than the fixed-shape composites, and a client targeting simple analytical queries can defer them.
 
@@ -1050,9 +1050,9 @@ The per-block metadata UInt64 is a bitfield:
 | Bit range    | Meaning |
 |--------------|---------|
 | 0..7         | Key type code: `0` = UInt8, `1` = UInt16, `2` = UInt32, `3` = UInt64. The smallest type that can index `dict_size` entries is chosen. |
-| 8 (`0x100`)  | `NeedGlobalDictionaryBit` — set when the column uses a single dictionary shared across blocks rather than a fresh per-block dictionary. |
-| 9 (`0x200`)  | `HasAdditionalKeysBit` — set when the block carries additional dictionary keys (written before the indexes). |
-| 10 (`0x400`) | `NeedUpdateDictionary` — set when this block's dictionary differs from the previous block's and must be updated. |
+| 8 (`0x100`)  | `NeedGlobalDictionaryBit` — a single dictionary shared across blocks. **Never set in the `Native` format**: the Native writer uses `low_cardinality_max_dictionary_size = 0`, and the Native reader rejects this bit (`native_format` raises `INCORRECT_DATA` — "cannot use global dictionary"). It belongs to the MergeTree on-disk stream, not the wire. |
+| 9 (`0x200`)  | `HasAdditionalKeysBit` — set when the block carries additional dictionary keys (written before the indexes). Always set for a non-empty `Native` block. |
+| 10 (`0x400`) | `NeedUpdateDictionary` — set when the block carries a dictionary update. Always set for a non-empty `Native` block, since each block ships its own self-contained dictionary. |
 
 For a typical query response with a single data block per column, the metadata is `0x600` (HasAdditionalKeys + NeedUpdateDictionary).
 
@@ -1061,7 +1061,7 @@ The dict values are `dict_size` values encoded using the inner type T. The dicti
 The state prefix is read at the start of every block whose row count is greater than zero — header blocks (rows = 0) and empty blocks emit nothing. Within a block, `keys_count` equals the row count, `dict_size` equals the number of values in the dict stream, and each key fits in `1 << key_type_code` bytes.
 
 :::note
-The dictionary can grow **across blocks** within a single query response: a later block may set `NeedUpdateDictionary` and append entries that earlier-block keys do not reference, but that later keys do. A decoder that discards the dictionary after each block cannot decode a multi-block `LowCardinality` column — the dictionary state must persist for the lifetime of the column within the response.
+In the `Native` format each block ships a **self-contained, block-local dictionary** — there is no cross-block dictionary state. The Native writer sets `low_cardinality_max_dictionary_size = 0`, so `SerializationLowCardinality` never builds a shared dictionary: every non-empty block writes its keys as block-local additional keys with `NeedGlobalDictionaryBit` unset (metadata `0x600`), and the Native reader rejects `NeedGlobalDictionaryBit` when `native_format` is true. A decoder must therefore reset the dictionary at each block and read the `dict_size` entries present in that block; carrying a dictionary over from a previous block would misread the next block's keys. (Persisting an LC dictionary across blocks is a MergeTree on-disk concern, not the Native wire layout.)
 :::
 
 `LowCardinality(String)` with values `['a', 'b', 'a', 'c', 'b']`:
