@@ -135,12 +135,8 @@ if (ENABLE_COLORED_BUILD AND CMAKE_GENERATOR STREQUAL "Ninja")
     # --> available since CMake 3.24: https://stackoverflow.com/a/73349744
 endif ()
 
+include (cmake/check_flags.cmake)
 include (cmake/add_warning.cmake)
-
-# Block build-time CMake probes (check_*, try_compile, try_run) project-wide. Compiler and
-# toolchain are fixed (see cmake/tools.cmake), so feature detection is unnecessary - any
-# version-dependent behaviour must be gated on CMAKE_CXX_COMPILER_VERSION explicitly.
-include (cmake/block_build_time_checks.cmake)
 
 option(ENABLE_TESTS "Provide unit_tests_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
@@ -163,12 +159,6 @@ if (OS_LINUX)
         # Fold identical code and data sections to reduce binary size.
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--icf=all")
     endif ()
-
-    # In Release builds, strip residual debug sections that may come from contrib
-    # libraries or Rust crates compiled with debug info by their own build systems.
-    if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" AND NOT SPLIT_DEBUG_SYMBOLS)
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--strip-debug")
-    endif ()
 endif ()
 
 if (OS_DARWIN)
@@ -186,7 +176,7 @@ else ()
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
 endif ()
 
-if (NOT (SANITIZE_COVERAGE OR WITH_COVERAGE)
+if (NOT WITH_COVERAGE
     AND (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
         OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
         OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL"))
@@ -196,9 +186,7 @@ else()
 endif()
 # Provides faster linking and lower binary size.
 # Tradeoff is the inability to debug some source files with e.g. gdb
-# (empty stack frames and no local variables).
-# In Release builds (which have no debug info by default), this option has
-# no effect -- it only reduces debug info for RelWithDebInfo and MinSizeRel.
+# (empty stack frames and no local variables)."
 option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
@@ -300,9 +288,8 @@ set (CMAKE_C_STANDARD 11)
 set (CMAKE_C_EXTENSIONS ON) # required by most contribs written in C
 set (CMAKE_C_STANDARD_REQUIRED ON)
 
-# Align functions and loops to reduce performance sensitivity to code layout changes,
-# providing more stable benchmarks.
-set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64 -falign-loops=32")
+# falign-functions=64 prevents from random performance regressions with the code change. Thus, providing more stable benchmarks.
+set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64")
 
 # Put each function and data item into its own section so that the linker can
 # remove unused ones (--gc-sections / -dead_strip) and fold identical ones (--icf).
@@ -419,6 +406,9 @@ include(cmake/limit_jobs.cmake)
 
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
+
+# Don't use the system compiler-rt library even if it is available. Instead build it directly
+option(USE_SYSTEM_COMPILER_RT "Use the system compiler-rt if available. If disabled it will be built from sources (supported for Linux and FreeBSD)" OFF)
 
 # Increase stack size on Musl. We need big stack for our recursive-descend parser.
 if (USE_MUSL)
