@@ -3,7 +3,7 @@ name: investigate-ci
 description: Investigate a ClickHouse CI failure end-to-end from a PR or S3 report URL. Fetches the failed tests and their output, searches for an existing tracking GitHub issue, classifies each as flaky vs a real regression using play.clickhouse.com master history, downloads and reads the harness artifacts only for failures that history does not explain, and reports a root-cause hypothesis. Read-only first pass — never commits, pushes, or edits.
 argument-hint: "<PR-url | S3-report-url | issue-url> [threshold-days]"
 disable-model-invocation: false
-allowed-tools: Bash, Read, Grep, Glob, Agent, WebFetch
+allowed-tools: Bash, Read, Grep, Glob, Agent, Task, WebFetch
 ---
 
 # Investigate CI Failure Skill
@@ -286,11 +286,13 @@ the specific URLs you need — `--download-logs` only fetches the one logs bundl
 For an integration-test failure, pull the relevant longrepr:
 
 ```bash
-grep "<test_name>" tmp/investigate/ci/tmp/pytest_parallel.jsonl \
+grep -F -- "<test_name>" tmp/investigate/ci/tmp/pytest_parallel.jsonl \
   | jq -r 'select((.longrepr // "") != "") | .longrepr'
 ```
 
-(`jq` is allowed by the locked-down profile; avoid `python3 -c`, which is not.)
+Use `grep -F --` (fixed-string): parametrized names like `test_foo[a]` contain regex
+metacharacters that a basic-regex `grep` would not match literally. (`jq` is allowed by the
+locked-down profile; avoid `python3 -c`, which is not.)
 
 ### 5. Root-cause read (subagents)
 
