@@ -223,9 +223,8 @@ test_params_cohere_wiki_20m = {
     NEW_TRUTH_SET_FILE: None,
     TRUTH_SET_COUNT: 25000,
     RECALL_K: 10,
-    # Let's have more than 1 part for this dataset (7 - 9 parts)
-    MERGE_TREE_SETTINGS: "max_bytes_to_merge_at_max_space_in_pool=11811160064",
-    OTHER_SETTINGS: "min_insert_block_size_rows = 3000000, min_insert_block_size_bytes=11737418240",
+    MERGE_TREE_SETTINGS: None,
+    OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
 }
 
@@ -272,8 +271,6 @@ class RunTest:
         logger(f"Begin loading data into {self._table}")
 
         create_table = f"CREATE TABLE {self._table} ( {self._dataset[SCHEMA]} ) ENGINE = MergeTree ORDER BY {self._id_column}"
-        if self._test_params[MERGE_TREE_SETTINGS] is not None:
-            create_table += f" SETTINGS {self._test_params[MERGE_TREE_SETTINGS]}"
         self._chclient.query(create_table)
 
         for url in self._dataset[S3_URLS]:
@@ -301,10 +298,6 @@ class RunTest:
                     insert
                     + f" ORDER BY {self._id_column} LIMIT {self._test_params[LIMIT_N]}"
                 )
-
-            if self._test_params[OTHER_SETTINGS] is not None:
-                insert += f" SETTINGS {self._test_params[OTHER_SETTINGS]}"
-
             self._chclient.query(insert)
 
             result = self._chclient.query(f"SELECT count() FROM {self._table}")
@@ -324,11 +317,6 @@ class RunTest:
             logger("Waiting for existing merges to complete...")
             time.sleep(5)
 
-        if self._test_params[MERGE_TREE_SETTINGS] is not None:
-            if "max_bytes_to_merge_at_max_space_in_pool" in self._test_params[MERGE_TREE_SETTINGS]:
-                logger("Skipping OPTIMIZE TABLE")
-                return
-
         try:
             self._chclient.query(
                 f"OPTIMIZE TABLE {self._table} FINAL SETTINGS mutations_sync=0"
@@ -346,10 +334,6 @@ class RunTest:
             logger("Waiting for optimize table to complete...")
             time.sleep(5)
 
-    # Runs ALTER TABLE ... ADD INDEX and then MATERIALIZE INDEX
-    def build_index(self):
-        logger("Adding vector similarity index")
-
         result = self._chclient.query(
             f"SELECT name, formatReadableSize(bytes) FROM system.parts WHERE table = '{self._table}' AND active=1"
         )
@@ -357,6 +341,9 @@ class RunTest:
         for row in result.result_rows:
             logger(f"{row[0]}\t\t{row[1]} bytes")
 
+    # Runs ALTER TABLE ... ADD INDEX and then MATERIALIZE INDEX
+    def build_index(self):
+        logger("Adding vector similarity index")
         quantization = self._test_params[QUANTIZATION]
         hnsw_M = self._test_params[HNSW_M]
         hnsw_ef_C = self._test_params[HNSW_EF_CONSTRUCTION]
