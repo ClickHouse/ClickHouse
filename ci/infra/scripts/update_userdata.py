@@ -80,6 +80,22 @@ def get_live_user_data(ec2, instance_id) -> str:
     return base64.b64decode(encoded).decode("utf-8") if encoded else ""
 
 
+def strip_comments(text) -> str:
+    """Drop full-line `#` comments so the match ignores comment-only edits.
+
+    Comments do not affect the booted runner, and pushing a comment-only change
+    would cycle the whole Mac fleet through multi-hour Dedicated Host scrubs for
+    nothing. The shebang (`#!`) is kept - it is functional. Only lines whose
+    first non-blank character is `#` are dropped, so a `#` inside a string or
+    heredoc is left untouched.
+    """
+    return "\n".join(
+        line
+        for line in text.splitlines()
+        if not line.lstrip().startswith("#") or line.lstrip().startswith("#!")
+    )
+
+
 def install_user_data(ec2, instance_id, state, user_data):
     """Stop the instance (waiting until fully stopped) and install `user_data` via
     `ModifyInstanceAttribute`, which requires the instance to be stopped (otherwise
@@ -212,9 +228,12 @@ def reconcile_instance(ec2, instance_id, state, user_data, update, show_diff):
     user_data differs, print a unified diff of live vs configured first. Returns
     True if a diff was printed, so the caller can show it only for the first
     mismatch.
+
+    Comments are ignored when matching (see `strip_comments`), so a comment-only
+    edit does not trigger a fleet-wide stop/start.
     """
     live = get_live_user_data(ec2, instance_id)
-    if live == user_data:
+    if strip_comments(live) == strip_comments(user_data):
         print(f"{instance_id}: user_data already up to date - skip")
         return False
 
