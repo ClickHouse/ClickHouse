@@ -33,6 +33,17 @@ namespace
                 && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, table, wildcard, default_database);
         });
     }
+
+    /// True if pos is at a trailing query-output clause owned by ParserQueryWithOutput.
+    /// The optional policy short name is a bare identifier, so without this guard it would
+    /// swallow these keywords (e.g. FORMAT) instead of leaving them for the outer parser.
+    bool atQueryOutputTail(IParserBase::Pos & pos, Expected & expected)
+    {
+        return ParserKeyword{Keyword::FORMAT}.checkWithoutMoving(pos, expected)
+            || ParserKeyword{Keyword::SETTINGS}.checkWithoutMoving(pos, expected)
+            || ParserKeyword{Keyword::INTO_OUTFILE}.checkWithoutMoving(pos, expected)
+            || ParserKeyword{Keyword::PARALLEL_WITH}.checkWithoutMoving(pos, expected);
+    }
 }
 
 
@@ -84,7 +95,7 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
             else
                 database_and_table_name.emplace(database, table_name);
         }
-        else if (parseIdentifierOrStringLiteral(pos, expected, short_name))
+        else if (!atQueryOutputTail(pos, expected) && parseIdentifierOrStringLiteral(pos, expected, short_name))
         {
         }
         else

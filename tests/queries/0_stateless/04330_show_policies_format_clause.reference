@@ -1,0 +1,15 @@
+SHOW ROW POLICIES query (children 1)
+ Identifier TabSeparated
+SHOW ROW POLICIES query (children 1)
+ Identifier TabSeparated
+SHOW MASKING POLICIES query (children 1)
+ Identifier TabSeparated
+SHOW ROW POLICIES query (children 1)
+ Set
+SHOW ROW POLICIES query (children 1)
+ Literal \'test.tsv\'
+SHOW ROW POLICIES query (children 1)
+ Identifier TabSeparated
+SHOW ROW POLICIES query (children 1)
+ Identifier TabSeparated
+p_04330 ON db.tbl
