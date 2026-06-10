@@ -115,7 +115,7 @@ namespace
 /// Validate that the validity bitmap (buffers[0]) covers all declared rows.
 /// We deliberately do NOT gate on null_count(): for an array produced by Arrow's
 /// Slice/Flatten the null count is kUnknownNullCount, and calling null_count()
-/// triggers a CountSetBits scan over buffers[0] across [offset, offset+length) , 
+/// triggers a CountSetBits scan over buffers[0] across [offset, offset+length),
 /// which reads out of bounds when the bitmap is truncated, the very thing we are
 /// trying to validate.  Instead we validate the buffer size whenever a bitmap is
 /// present (a present-but-undersized bitmap is always malformed), and skip when it
