@@ -1,16 +1,18 @@
-#include <Common/Exception.h>
-#include <Common/ErrnoException.h>
-#include <Common/ThreadProfileEvents.h>
-#include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
-#include <Common/CurrentThread.h>
-#include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
-#include <Common/memory.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+
 #include <Core/Settings.h>
-#include <base/getPageSize.h>
 #include <Interpreters/Context.h>
+#include <base/getPageSize.h>
+#include <Common/CurrentThread.h>
+#include <Common/ErrnoException.h>
+#include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/QueryProfiler.h>
+#include <Common/SignalUnsafeMutationGuard.h>
+#include <Common/ThreadProfileEvents.h>
+#include <Common/logger_useful.h>
+#include <Common/memory.h>
+#include <Common/setThreadName.h>
 
 #include <Poco/Logger.h>
 
@@ -171,16 +173,22 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
 void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
 {
     chassert(query_id.empty());
+    SignalUnsafeMutationGuard guard(is_query_id_usable);
     query_id = std::move(new_query_id);
 }
 
 void ThreadStatus::clearQueryId() noexcept
 {
+    SignalUnsafeMutationGuard guard(is_query_id_usable);
     query_id.clear();
 }
 
-const String & ThreadStatus::getQueryId() const
+std::string_view ThreadStatus::getQueryId() const
 {
+    if (!is_query_id_usable.load(std::memory_order_acquire))
+        return "";
+
+    std::atomic_signal_fence(std::memory_order_seq_cst);
     return query_id;
 }
 
@@ -233,12 +241,12 @@ LogsLevel ThreadStatus::getClientLogsLevel() const
 
 void ThreadStatus::flushUntrackedMemory()
 {
-    Int64 current_untracked_memory = untracked_memory.load();
-    if (current_untracked_memory == 0)
+    if (untracked_memory == 0)
         return;
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
-    untracked_memory.store(0);
+    Int64 current_untracked_memory = untracked_memory;
+    untracked_memory = 0;
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
 

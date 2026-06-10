@@ -157,6 +157,9 @@ namespace ProfileEvents
     extern const Event ReplicaPartialShutdown;
     extern const Event ReplicatedCoveredPartsInZooKeeperOnStart;
     extern const Event MergesRejectedByMemoryLimit;
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection;
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync;
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeMutations;
 }
 
 namespace CurrentMetrics
@@ -755,7 +758,10 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// Mutation maybe killed or whole replica was deleted.
             /// Wait event will unblock at this moment.
             Coordination::Stat exists_stat;
-            if (!getZooKeeper()->exists(fs::path(zookeeper_path) / "mutations" / mutation_id, &exists_stat, wait_event))
+            if (!getZooKeeper()->existsWatch(
+                    fs::path(zookeeper_path) / "mutations" / mutation_id,
+                    &exists_stat,
+                    Coordination::WatchCallbackPtrOrEventPtr{wait_event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeMutations}))
             {
                 throw Exception(ErrorCodes::UNFINISHED, "Mutation {} was killed, manually removed or table was dropped", mutation_id);
             }
@@ -778,7 +784,11 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
             std::string mutation_pointer_value;
             /// Replica could be removed
-            if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, nullptr, wait_event))
+            if (!zookeeper->tryGetWatch(
+                    mutation_pointer,
+                    mutation_pointer_value,
+                    nullptr,
+                    Coordination::WatchCallbackPtrOrEventPtr{wait_event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeMutations}))
             {
                 LOG_WARNING(log, "Replica {} was removed during mutation. "
                     "Mutation will be done asynchronously when replica is restored.", replica);
@@ -6088,6 +6098,12 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    /// Stop assignees before derived member destruction in case shutdown threw
+    /// before doing it. finish is idempotent.
+    background_operations_assignee.finish();
+    background_streaming_assignee.finish();
+    background_moves_assignee.finish();
 }
 
 
@@ -7619,7 +7635,10 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
         bool pulled_to_queue = false;
         do
         {
-            String log_pointer = getZooKeeper()->get(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer", nullptr, watch_event);
+            String log_pointer = getZooKeeper()->getWatch(
+                fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer",
+                nullptr,
+                Coordination::WatchCallbackPtrOrEventPtr{watch_event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync});
             if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
             {
                 pulled_to_queue = true;
@@ -7687,7 +7706,10 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
             {
                 Coordination::EventPtr event = std::make_shared<Poco::Event>();
 
-                log_pointer = getZooKeeper()->get(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer", nullptr, event);
+                log_pointer = getZooKeeper()->getWatch(
+                    fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer",
+                    nullptr,
+                    Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync});
                 if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
                 {
                     pulled_to_queue = true;
@@ -7755,7 +7777,8 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
     /// Third - wait until the entry disappears from the replica queue or replica become inactive.
     String path_to_wait_on = fs::path(table_zookeeper_path) / "replicas" / replica / "queue" / queue_entry_to_wait_for;
 
-    return getZooKeeper()->waitForDisappear(path_to_wait_on, stop_waiting);
+    return getZooKeeper()->waitForDisappear(
+        path_to_wait_on, stop_waiting, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync);
 }
 
 
@@ -9008,7 +9031,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
         && !query_context->getSettingsRef()[Setting::allow_replace_partition_from_empty_source])
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Source table {} has no parts in partition {} — refusing `REPLACE PARTITION` because it would "
+            "Source table {} has no parts in partition {}: refusing `REPLACE PARTITION` because it would "
             "silently drop the destination partition's data. "
             "Set `allow_replace_partition_from_empty_source = 1` to restore the previous behavior, "
             "or use `ALTER TABLE ... DROP PARTITION` if you intend to drop the destination data.",
@@ -11002,6 +11025,7 @@ void StorageReplicatedMergeTree::watchZeroCopyLock(const String & part_name, con
                 *flag = false;
             };
         });
+        watch.setTriggeredEvent(ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection);
         bool exists = zookeeper->tryGetWatch(lock_path, replica, nullptr, watch);
 
         if (exists)

@@ -311,6 +311,13 @@ void StorageMergeTree::shutdown(bool)
 StorageMergeTree::~StorageMergeTree()
 {
     shutdown(false);
+
+    /// Stop assignees before derived member destruction in case shutdown did
+    /// not (flushAndPrepareForShutdown early-returns on flush_called).
+    /// finish is idempotent.
+    background_operations_assignee.finish();
+    background_streaming_assignee.finish();
+    background_moves_assignee.finish();
 }
 
 void StorageMergeTree::read(
@@ -2625,7 +2632,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         && !local_context->getSettingsRef()[Setting::allow_replace_partition_from_empty_source])
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Source table {} has no parts in partition {} — refusing `REPLACE PARTITION` because it would "
+            "Source table {} has no parts in partition {}: refusing `REPLACE PARTITION` because it would "
             "silently drop the destination partition's data. "
             "Set `allow_replace_partition_from_empty_source = 1` to restore the previous behavior, "
             "or use `ALTER TABLE ... DROP PARTITION` if you intend to drop the destination data.",
