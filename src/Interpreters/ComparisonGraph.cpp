@@ -40,9 +40,16 @@ ASTPtr normalizeAtom(const ASTPtr & atom, ContextPtr)
     {
         if (const auto it = inverse_relations.find(func->name); it != std::end(inverse_relations))
         {
-            auto new_func = makeASTOperator(it->second, func->arguments->children[1]->clone(), func->arguments->children[0]->clone());
-            new_func->setIsOperator(func->isOperator());
-            res = new_func;
+            /// Only binary comparisons can be inverted. A malformed atom (e.g. less(x) from a
+            /// fuzzed query or an ASSUME constraint that skips arity validation) is left as-is;
+            /// the constructor's `arguments.size() == 2` check then skips it. Mirrors the
+            /// chassert(arguments.size() == 2) guard in the QueryTreeNodePtr overload below.
+            if (func->arguments && func->arguments->children.size() == 2)
+            {
+                auto new_func = makeASTOperator(it->second, func->arguments->children[1]->clone(), func->arguments->children[0]->clone());
+                new_func->setIsOperator(func->isOperator());
+                res = new_func;
+            }
         }
     }
 
