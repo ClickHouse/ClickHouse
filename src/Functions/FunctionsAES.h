@@ -312,46 +312,6 @@ private:
 
         KeyHolder<mode> key_holder{};
 
-        /// For non-GCM modes: when key and IV are constant, we can initialize the cipher
-        /// context once before the loop with the full cipher+key+IV, then on each iteration
-        /// only reset the IV (passing NULL for cipher and key). This avoids repeated cipher
-        /// setup and key schedule expansion in OpenSSL.
-        const bool const_key = isColumnConst(*key_column);
-        [[maybe_unused]] const bool const_iv = iv_column && isColumnConst(*iv_column);
-
-        bool ctx_initialized = false;
-        std::string_view const_key_value;
-        [[maybe_unused]] std::string_view const_iv_value;
-
-        if constexpr (mode != CipherMode::RFC5116_AEAD_AES_GCM)
-        {
-            if (const_key && (!iv_column || const_iv) && input_rows_count > 0)
-            {
-                const_key_value = key_holder.setKey(key_size, key_column->getDataAt(0));
-                if (iv_column)
-                {
-                    const_iv_value = iv_column->getDataAt(0);
-                    if (const_iv_value.empty())
-                        const_iv_value = std::string_view{};
-                }
-
-                if constexpr (mode != CipherMode::MySQLCompatibility)
-                {
-                    if (const_key_value.size() != key_size)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size {} != expected size {}", const_key_value.size(), key_size);
-                }
-
-                validateIV<mode>(const_iv_value, iv_size);
-
-                if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr,
-                        reinterpret_cast<const unsigned char *>(const_key_value.data()),
-                        reinterpret_cast<const unsigned char *>(const_iv_value.data())) != 1)
-                    onError("EVP_EncryptInit_ex");
-
-                ctx_initialized = true;
-            }
-        }
-
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             const auto key_value = key_holder.setKey(key_size, key_column->getDataAt(row_idx));
@@ -409,27 +369,9 @@ private:
                             onError("EVP_EncryptUpdate");
                     }
                 }
-                else if (ctx_initialized)
-                {
-                    /// Context was already initialized with cipher+key+IV before the loop.
-                    /// Just reset the IV to start a fresh encryption for this row,
-                    /// without repeating cipher setup or key schedule.
-                    ///
-                    /// When the IV is absent or empty, `iv_value.data()` is null. OpenSSL keeps
-                    /// the previous (already advanced) working IV when a null IV is passed on
-                    /// re-init, instead of restoring the initial all-zero IV that the per-row
-                    /// full initialization (the branch below) produces. To stay equivalent we
-                    /// pass an explicit zero IV in that case.
-                    static constexpr unsigned char zero_iv[EVP_MAX_IV_LENGTH] = {};
-                    const auto * iv_ptr = iv_value.empty()
-                        ? zero_iv
-                        : reinterpret_cast<const unsigned char *>(iv_value.data());
-                    if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr, nullptr, iv_ptr) != 1)
-                        onError("EVP_EncryptInit_ex");
-                }
                 else
                 {
-                    // 1.b: Init CTX — full init for non-constant key/IV
+                    // 1.b: Init CTX
                     validateIV<mode>(iv_value, iv_size);
 
                     if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr,
@@ -659,46 +601,6 @@ private:
 
         KeyHolder<mode> key_holder{};
 
-        /// For non-GCM modes: when key and IV are constant, we can initialize the cipher
-        /// context once before the loop with the full cipher+key+IV, then on each iteration
-        /// only reset the IV (passing NULL for cipher and key). This avoids repeated cipher
-        /// setup and key schedule expansion in OpenSSL.
-        const bool const_key = isColumnConst(*key_column);
-        [[maybe_unused]] const bool const_iv = iv_column && isColumnConst(*iv_column);
-
-        bool ctx_initialized = false;
-        std::string_view const_key_value;
-        [[maybe_unused]] std::string_view const_iv_value;
-
-        if constexpr (mode != CipherMode::RFC5116_AEAD_AES_GCM)
-        {
-            if (const_key && (!iv_column || const_iv) && input_rows_count > 0)
-            {
-                const_key_value = key_holder.setKey(key_size, key_column->getDataAt(0));
-                if (iv_column)
-                {
-                    const_iv_value = iv_column->getDataAt(0);
-                    if (const_iv_value.empty())
-                        const_iv_value = std::string_view{};
-                }
-
-                if constexpr (mode != CipherMode::MySQLCompatibility)
-                {
-                    if (const_key_value.size() != key_size)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size {} != expected size {}", const_key_value.size(), key_size);
-                }
-
-                validateIV<mode>(const_iv_value, iv_size);
-
-                if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr,
-                        reinterpret_cast<const unsigned char *>(const_key_value.data()),
-                        reinterpret_cast<const unsigned char *>(const_iv_value.data())) != 1)
-                    onError("EVP_DecryptInit_ex");
-
-                ctx_initialized = true;
-            }
-        }
-
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             // 0: prepare key if required
@@ -773,27 +675,9 @@ private:
                         onError("EVP_DecryptUpdate");
                     }
                 }
-                else if (ctx_initialized)
-                {
-                    /// Context was already initialized with cipher+key+IV before the loop.
-                    /// Just reset the IV to start a fresh decryption for this row,
-                    /// without repeating cipher setup or key schedule.
-                    ///
-                    /// When the IV is absent or empty, `iv_value.data()` is null. OpenSSL keeps
-                    /// the previous (already advanced) working IV when a null IV is passed on
-                    /// re-init, instead of restoring the initial all-zero IV that the per-row
-                    /// full initialization (the branch below) produces. To stay equivalent we
-                    /// pass an explicit zero IV in that case.
-                    static constexpr unsigned char zero_iv[EVP_MAX_IV_LENGTH] = {};
-                    const auto * iv_ptr = iv_value.empty()
-                        ? zero_iv
-                        : reinterpret_cast<const unsigned char *>(iv_value.data());
-                    if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr, nullptr, iv_ptr) != 1)
-                        onError("EVP_DecryptInit_ex");
-                }
                 else
                 {
-                    // 1.b: Init CTX — full init for non-constant key/IV
+                    // 1.b: Init CTX
                     validateIV<mode>(iv_value, iv_size);
 
                     if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr,

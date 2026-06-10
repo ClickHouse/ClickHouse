@@ -1,13 +1,12 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: Depends on OpenSSL
 
--- Regression test for the constant-key fast path in encrypt/decrypt.
--- When the key is constant the cipher context is initialized once and only the IV is reset
--- per row. With an absent or empty IV the per-row reset must restore the initial (zero) IV
--- state, otherwise rows after the first are computed from the previous row's advanced IV.
--- The constant-key fast path must produce exactly the same result as the per-row path,
--- which is forced by materializing the key into a non-constant column. Every comparison
--- below must therefore be 1, independently of the data, for all stateful (non-ECB) modes.
+-- Encrypting/decrypting with a constant key (and absent or empty IV) must produce exactly
+-- the same result as with a non-constant key, for every row. This guards against any
+-- constant-key specialization diverging from the generic path -- e.g. by reusing a single
+-- cipher context across rows and leaking the IV state of the previous row into the next.
+-- The per-row (correct) path is forced by materializing the key into a non-constant column,
+-- so every comparison below must be 1, independently of the data, for all stateful modes.
 -- https://github.com/ClickHouse/ClickHouse/pull/99105
 
 -- The input has a repeated row so that a leak of IV state across rows would change the
