@@ -96,6 +96,8 @@ private:
         std::vector<MarkRanges> patches_ranges;
         Priority priority;
         bool allow_prefetch = false;
+        size_t prefetch_memory_cost = 0;
+        size_t prefetch_readers_cost = 0;
         std::unique_ptr<PrefetchedReaders> readers_future;
     };
 
@@ -112,6 +114,8 @@ private:
 
     void preparePrefetchedReadersIfNeeded(ThreadTask & task);
 
+    bool tryAcquirePrefetchBudget(size_t memory_cost, size_t readers_cost);
+
     /// Must be called with `mutex` held. Returns a task to prepare outside the lock.
     ThreadTaskPtr stealTaskLocked(size_t thread);
     MergeTreeReadTaskPtr createTask(ThreadTask & thread_task, MergeTreeReadTask * previous_task);
@@ -125,6 +129,8 @@ private:
 
     PartStatistics per_part_statistics;
     TasksPerThread per_thread_tasks;
+    size_t remaining_prefetch_memory = 0;
+    std::optional<size_t> remaining_prefetch_readers_num;
     LoggerPtr log;
 
     /// A struct which allows to track max number of tasks which were in the

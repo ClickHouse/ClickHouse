@@ -164,9 +164,29 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
     if (shouldSkipPartRead(*task.read_info))
         return;
 
+    if (!task.allow_prefetch || !tryAcquirePrefetchBudget(task.prefetch_memory_cost, task.prefetch_readers_cost))
+        return;
+
     auto extras = getExtras();
     auto readers = MergeTreeReadTask::createReaders(task.read_info, extras, task.ranges, task.patches_ranges);
     task.readers_future = std::make_unique<PrefetchedReaders>(prefetch_threadpool, std::move(readers), task.priority, *this);
+}
+
+bool MergeTreePrefetchedReadPool::tryAcquirePrefetchBudget(size_t memory_cost, size_t readers_cost)
+{
+    std::lock_guard lock(mutex);
+
+    if (memory_cost > remaining_prefetch_memory)
+        return false;
+
+    if (remaining_prefetch_readers_num.has_value() && readers_cost > remaining_prefetch_readers_num.value())
+        return false;
+
+    remaining_prefetch_memory -= memory_cost;
+    if (remaining_prefetch_readers_num.has_value())
+        *remaining_prefetch_readers_num -= readers_cost;
+
+    return true;
 }
 
 void MergeTreePrefetchedReadPool::preparePrefetchedReadersIfNeeded(ThreadTask & task)
@@ -433,6 +453,9 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
     std::optional<size_t> allowed_prefetches_num
         = reader_settings.filesystem_prefetches_limit ? std::optional<size_t>(reader_settings.filesystem_prefetches_limit) : std::nullopt;
 
+    remaining_prefetch_memory = allowed_memory_usage;
+    remaining_prefetch_readers_num = allowed_prefetches_num;
+
     per_thread_tasks.clear();
     size_t total_tasks = 0;
 
@@ -530,19 +553,14 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
             {
                 allow_prefetch = part_stat.estimated_memory_usage_for_single_prefetch <= allowed_memory_usage
                     && (!allowed_prefetches_num.has_value() || part_stat.required_readers_num <= allowed_prefetches_num.value());
-
-                if (allow_prefetch)
-                {
-                    allowed_memory_usage -= part_stat.estimated_memory_usage_for_single_prefetch;
-                    if (allowed_prefetches_num.has_value())
-                        *allowed_prefetches_num -= part_stat.required_readers_num;
-                }
             }
 
             const auto & read_info = per_part_infos[part_idx];
             auto patch_ranges = ranges_in_patch_parts.getRanges(read_info->data_part, read_info->patch_parts, ranges_to_get_from_part);
             auto thread_task = std::make_unique<ThreadTask>(read_info, ranges_to_get_from_part, std::move(patch_ranges), priority);
             thread_task->allow_prefetch = allow_prefetch;
+            thread_task->prefetch_memory_cost = part_stat.estimated_memory_usage_for_single_prefetch;
+            thread_task->prefetch_readers_cost = part_stat.required_readers_num;
 
             per_thread_tasks[i].push_back(std::move(thread_task));
 
