@@ -8,6 +8,10 @@
 #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
 #pragma clang diagnostic ignored "-Wundef"
 
+#include <memory>
+#include <sstream>
+#include <string>
+
 #include <gtest/gtest.h>
 
 
@@ -18,6 +22,7 @@ namespace ErrorCodes
 extern const int CANNOT_COMPILE_REGEXP;
 extern const int NO_ELEMENTS_IN_CONFIG;
 extern const int INVALID_CONFIG_PARAMETER;
+extern const int LOGICAL_ERROR;
 }
 }
 
@@ -203,4 +208,61 @@ TEST(Common, SensitiveDataMasker)
         masker_xml_based.printStats();
 #endif
     }
+}
+
+
+// Regression test for issue #106441: `Exception::addMessage` must run the appended
+// message through `SensitiveDataMasker::wipeSensitiveData`. Before the fix the
+// 1-argument `MessageMasked` constructor bypassed the masker, so anything appended
+// via `addMessage` (e.g. the `(in file/uri ...)` suffix added by
+// `IInputFormat::generate` for jdbc/odbc table functions) was never masked even
+// when `query_masking_rules` were configured.
+TEST(Common, ExceptionAddMessageMasked)
+{
+    using namespace DB;
+
+    // Build a masker with one rule that masks an URL-encoded password parameter,
+    // matching the security-sensitive case described in issue #106441.
+    std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        xml_isteam(R"END(<clickhouse>
+    <query_masking_rules>
+        <rule>
+            <name>mask URL-encoded password</name>
+            <regexp>password%3D[^%&amp;\s'"]+</regexp>
+            <replace>password%3D***</replace>
+        </rule>
+    </query_masking_rules>
+</clickhouse>)END");
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam);
+    auto masker = std::make_unique<SensitiveDataMasker>(*xml_config, "query_masking_rules");
+    SensitiveDataMasker::setInstance(std::move(masker));
+
+    // The initial exception message goes through the 2-argument MessageMasked ctor
+    // (via the delegating Exception ctor) and was already masked before the fix.
+    std::string sensitive_url = "http://host:9019/?connection_string=jdbc%3Apostgresql%3A%2F%2Fdb%26password%3Ds3cr3t";
+
+    try
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "boom");
+    }
+    catch (Exception & e)
+    {
+        // Mimic IInputFormat::generate appending `(in file/uri <url>)` to the
+        // existing exception. With the fix this string flows through wipeSensitiveData;
+        // before the fix it did not.
+        e.addMessage(fmt::format("(in file/uri {})", sensitive_url));
+
+        const std::string what = e.what();
+        EXPECT_EQ(what.find("password%3Ds3cr3t"), std::string::npos)
+            << "raw secret leaked through addMessage: " << what;
+        EXPECT_NE(what.find("password%3D***"), std::string::npos)
+            << "expected masked replacement not present: " << what;
+    }
+
+    // Restore the global masker to a no-op so other gtests in this binary
+    // see the same state they would without this test.
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> empty_xml_config = new Poco::Util::XMLConfiguration();
+    auto empty_masker = std::make_unique<SensitiveDataMasker>(*empty_xml_config, "");
+    SensitiveDataMasker::setInstance(std::move(empty_masker));
 }
