@@ -70,14 +70,10 @@ class GH:
             repo_name = info.repo_name
             sha = info.sha
         else:
-            repo_url = Shell.get_output(
-                "git config --get remote.origin.url", strict=True
+            repo_name = Shell.get_output(
+                rf"git config --get remote.origin.url | sed -E 's#(git@|https://)[^/:]+[:/](.*)\.git#\\2#'",
+                strict=True,
             )
-            repo_name = cls._repo_name_from_git_remote_url(repo_url)
-            if not repo_name:
-                raise RuntimeError(
-                    f"Failed to extract repository name from remote URL [{repo_url}]"
-                )
             sha = Shell.get_output(f"git rev-parse HEAD", strict=True)
 
         assert repo_name
@@ -113,14 +109,6 @@ class GH:
             raise RuntimeError("Failed to get changed files")
 
         return res
-
-    @staticmethod
-    def _repo_name_from_git_remote_url(repo_url: str) -> str:
-        match = re.match(
-            r"^(?:https?://[^/]+/|git@[^:]+:|ssh://git@[^/]+/)([^/\s]+/[^/\s]+?)(?:\.git)?/?$",
-            repo_url,
-        )
-        return match.group(1) if match else ""
 
     @classmethod
     def do_command_with_retries(cls, command, verbose=False):
@@ -352,17 +340,13 @@ class GH:
 
         Each thread carries its node ``id`` (the value to pass to the
         resolve/unresolve mutations), ``isResolved``, ``isOutdated``,
-        ``resolvedBy`` (``{login}`` of the user who most recently
-        resolved the thread, or ``null`` if never resolved -- consumers
-        use this to tell apart bot-resolved from author-resolved
-        threads in stateless CI runs), ``path``, ``line``, and the
-        full list of comments under it (with ``databaseId`` for use as
-        ``in_reply_to`` when replying, and ``createdAt`` for per-comment
-        timestamps). Both the thread list and each thread's comments
-        are paginated, so long PRs do not silently truncate. Raises
-        ``RuntimeError`` on any transport / parse failure: a failure
-        to read prior discussion must not be confused with "no prior
-        discussion".
+        ``path``, ``line``, and the full list of comments under it (with
+        ``databaseId`` for use as ``in_reply_to`` when replying, and
+        ``createdAt`` for per-comment timestamps). Both
+        the thread list and each thread's comments are paginated, so
+        long PRs do not silently truncate. Raises ``RuntimeError`` on
+        any transport / parse failure: a failure to read prior
+        discussion must not be confused with "no prior discussion".
         """
         if not repo:
             repo = _Environment.get().REPOSITORY
@@ -376,7 +360,7 @@ class GH:
             "pullRequest(number:$pr){"
             "reviewThreads(first:100,after:$after){"
             "pageInfo{hasNextPage endCursor}"
-            "nodes{id isResolved isOutdated resolvedBy{login} path line "
+            "nodes{id isResolved isOutdated path line "
             "comments(first:50){"
             "pageInfo{hasNextPage endCursor}"
             "nodes{databaseId createdAt author{login} body path line originalLine}"
@@ -1032,61 +1016,13 @@ class GH:
                 remaining = len(summary.failed_results) - MAX_JOBS_PER_SUMMARY
                 summary.failed_results = summary.failed_results[:MAX_JOBS_PER_SUMMARY]
                 print(f"NOTE: {remaining} more jobs not shown in PR comment")
-            # Collect links from jobs that have labels with links (e.g. keeper-stress Grafana
-            # links, perf-comparison combined dashboard). Include regardless of success/failure
-            # so links always appear when the job runs.
-            #
-            # Dedup key = the URL set (sorted tuple of label links), not the rendered markdown.
-            # We group by *destination*: jobs that point at the same set of URLs are collapsed
-            # into one PR-comment row regardless of label text or ordering. This is what makes
-            # the 6 (or 12) `Performance Comparison` shards collapse to a single row, while
-            # `keeper-stress` jobs — whose `Grafana: Run details` URL embeds a per-run time
-            # window — stay distinct because their URL sets differ.
-            #
-            # The collapsed row's label is the longest common prefix of the job names trimmed
-            # at a natural break (`(` or `,`), so `Performance Comparison (arm_release,
-            # master_head, 1/6)` ... `6/6` becomes `Performance Comparison`.
-            def _shared_job_label(names):
-                if len(names) == 1:
-                    return names[0]
-                common = os.path.commonprefix(names)
-                for sep in (" (", ", ", "("):
-                    idx = common.rfind(sep)
-                    if idx > 0:
-                        common = common[:idx]
-                        break
-                common = common.rstrip(" ,(-")
-                return common or f"{names[0]} (+{len(names) - 1} more)"
-
-            def _url_key(res):
-                """Sorted tuple of label link URLs (the dedup key)."""
-                urls = []
-                for item in (getattr(res, "ext", {}) or {}).get("labels", []) or []:
-                    if isinstance(item, dict) and item.get("link"):
-                        urls.append(item["link"])
-                for item in (getattr(res, "ext", {}) or {}).get("hlabels", []) or []:
-                    if isinstance(item, (list, tuple)) and len(item) >= 2 and item[1]:
-                        urls.append(item[1])
-                return tuple(sorted(urls))
-
-            groups = {}
-            group_order = []
+            # Collect links from jobs that have labels with links (e.g. keeper-stress Grafana links).
+            # Include regardless of success/failure so Grafana links always appear when keeper-stress runs.
             for job_result in getattr(result, "results", []) or []:
-                if not has_label_links(job_result):
-                    continue
-                links_md = extract_label_links_md(job_result)
-                if not links_md:
-                    continue
-                key = _url_key(job_result)
-                if key not in groups:
-                    groups[key] = {"names": [], "links_md": links_md}
-                    group_order.append(key)
-                groups[key]["names"].append(job_result.name)
-            for key in group_order:
-                group = groups[key]
-                summary.extra_links.append(
-                    (_shared_job_label(group["names"]), group["links_md"])
-                )
+                if has_label_links(job_result):
+                    links_md = extract_label_links_md(job_result)
+                    if links_md:
+                        summary.extra_links.append((job_result.name, links_md))
             return summary
 
         def to_markdown(self, pr_number=0, sha="", workflow_name="", branch=""):
@@ -1102,20 +1038,14 @@ class GH:
                 symbol = "⏳"  # Hourglass (in progress)
 
             body = f"**Summary:** {symbol}\n"
-            # Render each extra_links group as a plain bullet under the Summary
-            # line. Keeping the (un-bolded) job-name prefix tells the reader
-            # which job(s) the labels came from without adding extra weight.
-            for name, links_md in self.extra_links:
-                body += f"- {name}: {links_md}\n"
+            if self.extra_links:
+                for job_name, links_md in self.extra_links:
+                    body += f"**{job_name}:** {links_md}\n"
             if self.failed_results:
-                # Blank line so the failure section isn't parsed as continuation
-                # of the Summary paragraph or the preceding bullet list.
-                body += "\n"
                 if len(self.failed_results) > 15:
-                    # Unindented + terminated with a blank line, otherwise the
-                    # 4-space indent turns this into an indented code block that
-                    # swallows the table that follows.
-                    body += f"*15 failures out of {len(self.failed_results)} shown*:\n\n"
+                    body += (
+                        f"    *15 failures out of {len(self.failed_results)} shown*:\n"
+                    )
                     self.failed_results = self.failed_results[:15]
                 body += "|job_name|test_name|status|info|comment|\n"
                 body += "|:--|:--|:-:|:--|:--|\n"

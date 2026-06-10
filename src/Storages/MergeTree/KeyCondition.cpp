@@ -44,6 +44,7 @@
 #include <IO/Operators.h>
 
 #include <algorithm>
+#include <cassert>
 #include <stack>
 
 #include <boost/geometry.hpp>
@@ -718,7 +719,7 @@ static bool isLogicalOperator(const String & func_name)
 ///   - An "atom" (relational operator, constant, expression)
 ///   - A logical constant expression
 ///   - Any other function
-static ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversion = false)
+ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversion = false)
 {
     const ASTFunction * func = node->as<ASTFunction>();
 
@@ -765,19 +766,14 @@ static ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_i
 
 static bool isTrivialCast(const ActionsDAG::Node & node)
 {
-    /// Recognize both the user-facing `CAST` and the analyzer-internal `_CAST` here; they
-    /// produce the same node shape and our caller treats them identically. Without `_CAST`
-    /// in this check, scalar subquery results wrapped by the analyzer (e.g. `_CAST(Const,
-    /// 'Nullable(Type)')` with matching source/target types) survive into `KeyCondition`
-    /// as un-stripped FUNCTION nodes and block partition pruning (issue #105291).
-    const auto & name = node.function_base->getName();
-    if ((name != "CAST" && name != "_CAST") || node.children.size() != 2 || node.children[1]->type != ActionsDAG::ActionType::COLUMN)
+    if (node.function_base->getName() != "CAST" || node.children.size() != 2 || node.children[1]->type != ActionsDAG::ActionType::COLUMN)
         return false;
 
-    if (!node.children[1]->column)
+    const auto * column_const = typeid_cast<const ColumnConst *>(node.children[1]->column.get());
+    if (!column_const)
         return false;
 
-    Field field = node.children[1]->column->getField();
+    Field field = column_const->getField();
     if (field.getType() != Field::Types::String)
         return false;
 
@@ -836,7 +832,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
 
     auto is_const = [](const ActionsDAG::Node & n)
     {
-        return n.type == ActionsDAG::ActionType::COLUMN;
+        return n.type == ActionsDAG::ActionType::COLUMN && n.column && isColumnConst(*n.column);
     };
 
     const bool c0 = is_const(*node.children[0]);
@@ -898,22 +894,10 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
         cloned_args.push_back(&cloneDAGWithInversionPushDown(*trailing_const, inverted_dag, inputs_mapping, context, false));
     const auto & const_cloned = cloneDAGWithInversionPushDown(*const_node, inverted_dag, inputs_mapping, context, false);
 
-    const String canonical_op_str{canonical_op};
-    auto op_func = FunctionFactory::instance().get(canonical_op_str, context);
+    auto op_func = FunctionFactory::instance().get(String{canonical_op}, context);
     auto make_cmp = [&](const ActionsDAG::Node * lhs) -> const ActionsDAG::Node &
     {
-        const auto & cmp_node = inverted_dag.addFunction(op_func, {lhs, &const_cloned}, "");
-        /// If `lhs` is itself a `coalesce` or `ifNull` (nested coalesce), expand it recursively here.
-        /// Otherwise the inner `coalesce` would remain unexpanded after the first
-        /// `cloneDAGWithInversionPushDown` pass and a subsequent pass (e.g. when each skip index builds its
-        /// own `KeyCondition` via `createIndexCondition`) would expand it then, producing a `KeyCondition`
-        /// whose RPN no longer matches the template's RPN. The disjunction-tracking machinery in
-        /// `MergeTreeDataSelectExecutor::filterMarksUsingIndex` assumes both RPNs share the same length and
-        /// position layout; the mismatch causes an out-of-bounds write into `partial_disjunction_result`
-        /// when the index RPN exceeds `MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT`.
-        if (const auto * rewritten = tryRewriteCoalesceComparison(cmp_node, canonical_op_str, inverted_dag, inputs_mapping, context))
-            return *rewritten;
-        return cmp_node;
+        return inverted_dag.addFunction(op_func, {lhs, &const_cloned}, "");
     };
 
     const size_t total = cloned_args.size();
@@ -973,18 +957,19 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
         case (ActionsDAG::ActionType::COLUMN):
         {
             String name;
-            if (node.column && node.column->getDataType() != TypeIndex::Function)
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
+                column_const && column_const->getDataType() != TypeIndex::Function)
             {
                 /// Re-generate column name for constant.
                 /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
                 /// DAG from the PK does not use it. This breaks matching by column name sometimes.
                 /// Ideally, we should not compare names, but DAG subtrees instead.
-                name = ASTLiteral(node.column->getField()).getColumnName();
+                name = ASTLiteral(column_const->getField()).getColumnName();
             }
             else
                 name = node.result_name;
 
-            res = &inverted_dag.addColumn(node.column, node.result_type, name);
+            res = &inverted_dag.addColumn({node.column, node.result_type, name});
             break;
         }
         case (ActionsDAG::ActionType::ALIAS):
@@ -1058,7 +1043,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 else if (name == "or")
                     function_builder = FunctionFactory::instance().get("and", context);
 
-                chassert(function_builder);
+                assert(function_builder);
 
                 /// We match columns by name, so it is important to fill name correctly.
                 /// So, use empty string to make it automatically.
@@ -1411,7 +1396,7 @@ DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
 /// signatures, and none of the functions produce `NULL` output.
 ///
 /// After functions chain execution, fills result column and its type.
-static bool applyFunctionChainToColumn(
+bool applyFunctionChainToColumn(
     const ColumnPtr & in_column,
     const DataTypePtr & in_data_type,
     const std::vector<FunctionBasePtr> & functions,
@@ -1505,7 +1490,7 @@ static bool applyFunctionChainToColumn(
         auto arg_type_inner = removeLowCardinality(removeNullable(argument_type));
         if (isDateTime64(arg_type_inner) || isTime64(arg_type_inner))
         {
-            Int64 value = 0;
+            Int64 value;
             if (isDateTime64(arg_type_inner))
                 value = (*result_column)[0].safeGet<DateTime64>().getValue();
             else
@@ -1663,7 +1648,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (!can_transform_constant)
         return false;
 
-    ColumnPtr const_column = out_type->createColumnConst(1, out_value);
+    auto const_column = out_type->createColumnConst(1, out_value);
 
     ColumnPtr transformed_const_column;
     DataTypePtr transformed_const_type;
@@ -1812,7 +1797,7 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
 /// - DAG `p -> CAST(p, 'UInt8')`:
 ///   input:  `['123']`  type `String`
 ///   output: `[123]`  type `UInt8`
-static bool applyDeterministicDagToColumn(
+bool applyDeterministicDagToColumn(
     const ColumnPtr & in_column,
     const DataTypePtr & in_type,
     const String & input_name,
@@ -2097,7 +2082,7 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
 
     out_is_injective = isDeterministicTransformInjective(dag.actions->getActionsDAG(), expr_name, dag.output_name);
 
-    ColumnPtr const_column = out_type->createColumnConst(1, out_value);
+    auto const_column = out_type->createColumnConst(1, out_value);
 
     ColumnPtr transformed_const_column;
     DataTypePtr transformed_const_type;
@@ -2112,14 +2097,7 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     if (!constant_transformed)
         return false;
 
-    Field transformed_value = (*transformed_const_column)[0];
-
-    /// If the key transform produces NaN for the constant, the index cannot answer this predicate;
-    /// fall back so the caller scans the granules.
-    if (transformed_value.isNaN())
-        return false;
-
-    out_value = transformed_value;
+    out_value = (*transformed_const_column)[0];
     out_type = transformed_const_type;
     return true;
 }
@@ -2186,7 +2164,7 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
     }
 }
 
-static bool tryPrepareSetColumnsForIndex(
+bool tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
@@ -2879,7 +2857,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     const ActionsDAG::Node * next_node = nullptr;
                     for (const auto * arg : cur_node->children)
                     {
-                        if (arg->column)
+                        if (arg->column && isColumnConst(*arg->column))
                             continue;
 
                         if (next_node)
@@ -2947,7 +2925,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     {
                         const auto * left = func->children[0];
                         const auto * right = func->children[1];
-                        if (left->column)
+                        if (left->column && isColumnConst(*left->column))
                         {
                             const_arg = {left->result_type->createColumnConst(0, (*left->column)[0]), left->result_type, ""};
                             kind = FunctionWithOptionalConstArg::Kind::LEFT_CONST;
@@ -3024,7 +3002,7 @@ struct KeyCondition::RPNElement::Polygon
 
     /// Bounding box of the ring, precomputed once when the RPN element is built
     /// Useful for quick rejection to avoid costly `intersects` checks
-    BoxT bbox{};
+    BoxT bbox;
 };
 
 KeyCondition::RPNElement::RPNElement()
@@ -3411,7 +3389,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             }
 
             /// Looking for func(key, const) or func(const, key).
-            size_t const_arg_pos = 0;
+            size_t const_arg_pos;
             if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
                 const_arg_pos = 1;
             else if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
@@ -3898,18 +3876,18 @@ KeyCondition::Description KeyCondition::getDescription() const
                 break;
             }
             case RPNElement::FUNCTION_NOT:
-                chassert(!rpn_stack.empty());
+                assert(!rpn_stack.empty());
 
                 std::swap(rpn_stack.back().can_be_true, rpn_stack.back().can_be_false);
                 break;
             case RPNElement::FUNCTION_AND:
             {
-                chassert(!rpn_stack.empty());
+                assert(!rpn_stack.empty());
                 auto arg1 = std::move(rpn_stack.back());
 
                 rpn_stack.pop_back();
 
-                chassert(!rpn_stack.empty());
+                assert(!rpn_stack.empty());
                 auto arg2 = std::move(rpn_stack.back());
 
                 Frame frame;
@@ -3921,12 +3899,12 @@ KeyCondition::Description KeyCondition::getDescription() const
             }
             case RPNElement::FUNCTION_OR:
             {
-                chassert(!rpn_stack.empty());
+                assert(!rpn_stack.empty());
                 auto arg1 = std::move(rpn_stack.back());
 
                 rpn_stack.pop_back();
 
-                chassert(!rpn_stack.empty());
+                assert(!rpn_stack.empty());
                 auto arg2 = std::move(rpn_stack.back());
 
                 Frame frame;
@@ -4851,7 +4829,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                             current_intersection = current_intersection & BoolMask(intersects, !contains);
                         }
 
-                        mask = BoolMask::combine(mask, current_intersection);
+                        mask = mask | current_intersection;
                     };
 
                     switch (curve_type(key_column))
@@ -5055,13 +5033,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
-            chassert(!rpn_stack.empty());
+            assert(!rpn_stack.empty());
 
             rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_AND)
         {
-            chassert(!rpn_stack.empty());
+            assert(!rpn_stack.empty());
 
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
@@ -5070,7 +5048,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
         }
         else if (element.function == RPNElement::FUNCTION_OR)
         {
-            chassert(!rpn_stack.empty());
+            assert(!rpn_stack.empty());
 
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
@@ -5385,7 +5363,7 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
                 break;
             case RPNElement::FUNCTION_AND:
             {
-                chassert(!rpn_stack.empty());
+                assert(!rpn_stack.empty());
 
                 auto arg1 = rpn_stack.back();
                 rpn_stack.pop_back();
@@ -5395,7 +5373,7 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
             }
             case RPNElement::FUNCTION_OR:
             {
-                chassert(!rpn_stack.empty());
+                assert(!rpn_stack.empty());
 
                 auto arg1 = rpn_stack.back();
                 rpn_stack.pop_back();
@@ -5450,7 +5428,7 @@ bool KeyCondition::alwaysFalse() const
             }
             case RPNElement::FUNCTION_AND:
             {
-                chassert(!rpn_stack.empty());
+                assert(!rpn_stack.empty());
 
                 auto arg1 = rpn_stack.back();
                 rpn_stack.pop_back();
@@ -5466,7 +5444,7 @@ bool KeyCondition::alwaysFalse() const
             }
             case RPNElement::FUNCTION_OR:
             {
-                chassert(!rpn_stack.empty());
+                assert(!rpn_stack.empty());
 
                 auto arg1 = rpn_stack.back();
                 rpn_stack.pop_back();

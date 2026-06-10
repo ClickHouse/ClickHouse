@@ -54,7 +54,6 @@ std::vector<String> HiveTextFormatReader::readTypes()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "HiveTextRowInputFormat::readTypes is not implemented");
 }
 
-void registerInputFormatHiveText(FormatFactory & factory);
 void registerInputFormatHiveText(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -64,7 +63,6 @@ void registerInputFormatHiveText(FormatFactory & factory)
         });
 }
 
-void registerFileSegmentationEngineHiveText(FormatFactory & factory);
 void registerFileSegmentationEngineHiveText(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngineCreator(
