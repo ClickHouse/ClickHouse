@@ -45,6 +45,11 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+    extern const int INVALID_SCHEDULER_NODE;
+}
+
 namespace ProfileEvents
 {
     extern const Event ConcurrencyControlUpscales;

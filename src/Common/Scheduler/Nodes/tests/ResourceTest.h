@@ -32,7 +32,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int RESOURCE_ACCESS_DENIED;
-    extern const int INVALID_SCHEDULER_NODE;
 }
 
 struct ResourceTestBase
