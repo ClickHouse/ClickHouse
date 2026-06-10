@@ -199,6 +199,7 @@ namespace ActionLocks
     extern const StorageActionBlockType Cleanup;
     extern const StorageActionBlockType ViewRefresh;
     extern const StorageActionBlockType ViewRefreshPause;
+    extern const StorageActionBlockType StreamConsume;
 }
 
 namespace
@@ -259,6 +260,8 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
         return AccessType::SYSTEM_VIEWS;
     if (action_type == ActionLocks::ViewRefreshPause)
         return AccessType::SYSTEM_VIEWS;
+    if (action_type == ActionLocks::StreamConsume)
+        return AccessType::SYSTEM_BACKGROUND;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
 
@@ -933,6 +936,40 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::TEST_VIEW:
             for (const auto & task : getRefreshTasks())
                 task->setFakeTime(query.fake_time_for_view);
+            break;
+        case Type::STOP:
+        case Type::START:
+        case Type::PAUSE:
+        case Type::CANCEL:
+        case Type::REFRESH:
+            controlBackgroundActivity(query);
+            break;
+        case Type::STOP_ALL_BACKGROUND:
+            startStopAction(ActionLocks::ViewRefresh, false);
+            startStopAction(ActionLocks::StreamConsume, false);
+            for (const auto & streaming_storage : getAccessibleStreamingStorages())
+                streaming_storage->cancelBackgroundActivity();
+            break;
+        case Type::START_ALL_BACKGROUND:
+            startStopAction(ActionLocks::ViewRefresh, true);
+            startStopAction(ActionLocks::ViewRefreshPause, true);
+            startStopAction(ActionLocks::StreamConsume, true);
+            break;
+        case Type::PAUSE_ALL_BACKGROUND:
+            startStopAction(ActionLocks::ViewRefreshPause, false);
+            startStopAction(ActionLocks::StreamConsume, false);
+            break;
+        case Type::CANCEL_ALL_BACKGROUND:
+            for (const auto & task : getAccessibleRefreshTasks())
+                task->cancel();
+            for (const auto & streaming_storage : getAccessibleStreamingStorages())
+                streaming_storage->cancelBackgroundActivity();
+            break;
+        case Type::REFRESH_ALL_BACKGROUND:
+            for (const auto & task : getAccessibleRefreshTasks())
+                task->run();
+            for (const auto & streaming_storage : getAccessibleStreamingStorages())
+                streaming_storage->triggerBackgroundActivity();
             break;
         case Type::DROP_REPLICA:
             dropReplica(query);
@@ -2343,6 +2380,100 @@ RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Refreshable view {} doesn't exist", table_id.getNameForLogs());
     return tasks;
+}
+
+RefreshTaskList InterpreterSystemQuery::getAccessibleRefreshTasks()
+{
+    auto ctx = getContext();
+    auto access = ctx->getAccess();
+    RefreshTaskList result;
+    for (const auto & task : ctx->getRefreshSet().getTasks())
+    {
+        auto view_id = task->getInfo().view_id;
+        if (access->isGranted(AccessType::SYSTEM_VIEWS, view_id.database_name, view_id.table_name))
+            result.push_back(task);
+    }
+    return result;
+}
+
+std::vector<StoragePtr> InterpreterSystemQuery::getAccessibleStreamingStorages()
+{
+    auto ctx = getContext();
+    auto access = ctx->getAccess();
+    std::vector<StoragePtr> result;
+    for (const auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    {
+        const auto & database_name = elem.first;
+        for (auto iterator = elem.second->getTablesIterator(ctx); iterator->isValid(); iterator->next())
+        {
+            StoragePtr table = iterator->table();
+            if (table && table->isMessageQueue()
+                && access->isGranted(AccessType::SYSTEM_BACKGROUND, database_name, iterator->name()))
+                result.push_back(table);
+        }
+    }
+    return result;
+}
+
+void InterpreterSystemQuery::controlBackgroundActivity(ASTSystemQuery & query)
+{
+    using Type = ASTSystemQuery::Type;
+    const auto type = query.type;
+    auto storage = DatabaseCatalog::instance().getTable(table_id, getContext());
+
+    if (storage->isMessageQueue())
+    {
+        /// Streaming engines, guarded by SYSTEM BACKGROUND
+        switch (type)
+        {
+            case Type::STOP:
+                startStopAction(ActionLocks::StreamConsume, false);
+                storage->cancelBackgroundActivity();
+                break;
+            case Type::PAUSE:
+                startStopAction(ActionLocks::StreamConsume, false);
+                break;
+            case Type::START:
+                startStopAction(ActionLocks::StreamConsume, true);
+                break;
+            case Type::CANCEL:
+                getContext()->checkAccess(AccessType::SYSTEM_BACKGROUND, table_id);
+                storage->cancelBackgroundActivity();
+                break;
+            case Type::REFRESH:
+                getContext()->checkAccess(AccessType::SYSTEM_BACKGROUND, table_id);
+                storage->triggerBackgroundActivity();
+                break;
+            default:
+                break;
+        }
+        return;
+    }
+
+    /// Refreshable materialized view, alias the existing SYSTEM ... VIEW
+    switch (type)
+    {
+        case Type::STOP:
+            startStopAction(ActionLocks::ViewRefresh, false);
+            break;
+        case Type::START:
+            startStopAction(ActionLocks::ViewRefresh, true);
+            startStopAction(ActionLocks::ViewRefreshPause, true);
+            break;
+        case Type::PAUSE:
+            startStopAction(ActionLocks::ViewRefreshPause, false);
+            break;
+        case Type::CANCEL:
+            for (const auto & task : getRefreshTasks())
+                task->cancel();
+            break;
+        case Type::REFRESH:
+            for (const auto & task : getRefreshTasks())
+                task->run();
+            break;
+        default:
+            break;
+    }
 }
 
 void InterpreterSystemQuery::prewarmMarkCache()

@@ -599,6 +599,14 @@ public:
     /// Call when lock from previous method removed
     virtual void onActionLockRemove(StorageActionBlockType /* action_type */) {}
 
+    /// Trigger an out-of-order run of the table's background activity now.
+    /// Also used to resume promptly after resume). No-op for tables without such activity.
+    virtual void triggerBackgroundActivity() {}
+
+    /// Abort the in-flight unit of background activity without blocking future ones, discarding its
+    /// uncommitted result so it is retried later. No-op for tables without such activity.
+    virtual void cancelBackgroundActivity() {}
+
     std::atomic<bool> is_dropped{false};
     std::atomic<bool> is_detached{false};
     std::atomic<bool> is_being_restarted{false};

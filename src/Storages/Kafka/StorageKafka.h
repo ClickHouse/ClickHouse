@@ -5,6 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Storages/Kafka/Kafka_fwd.h>
+#include <Common/ActionBlocker.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadPool_fwd.h>
@@ -57,6 +58,12 @@ public:
 
     void startup() override;
     void shutdown(bool is_drop) override;
+
+    ActionLock getActionLock(StorageActionBlockType action_type) override;
+    void onActionLockRemove(StorageActionBlockType action_type) override;
+    void triggerBackgroundActivity() override;
+    void cancelBackgroundActivity() override;
+    bool isConsumeCancelRequested() const { return consume_cancel_requested.load(); }
 
     void renameInMemory(const StorageID & new_table_id) override;
 
@@ -157,6 +164,9 @@ private:
     String collection_name;
 
     std::atomic<bool> shutdown_called = false;
+
+    ActionBlocker stream_consume_blocker;
+    std::atomic<bool> consume_cancel_requested = false;
 
     void threadFunc(size_t idx);
 

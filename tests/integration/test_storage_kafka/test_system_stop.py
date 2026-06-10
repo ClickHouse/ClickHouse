@@ -123,8 +123,10 @@ def test_system_pause_start_consuming(kafka_cluster):
         produce(kafka_cluster, table, 0, 10)
         wait_dst_count(table, 10)
 
-        # PAUSE stops further activity: subsequent messages are not consumed.
+        # PAUSE disables future polling cycles but lets the one already running finish and commit.
+        # Post-PAUSE records then have only future (now-disabled) cycles to land in.
         instance.query(f"SYSTEM PAUSE test.{table}")
+        time.sleep(5)
         produce(kafka_cluster, table, 10, 10)
         assert_dst_count_stable(table, 10)
 
@@ -163,6 +165,49 @@ def test_system_refresh_consuming(kafka_cluster):
         wait_dst_count(table, 20)
 
 
+def test_stop_aborts_inflight_block_pause_commits_it(kafka_cluster):
+    admin_client = k.get_admin_client(kafka_cluster)
+
+    for verb in ["PAUSE", "STOP"]:
+        table = f"kafka_inflight_{verb.lower()}_{k.random_string(6)}"
+        with k.kafka_topic(admin_client, table):
+            instance.query(
+                f"""
+                CREATE TABLE test.{table} (key UInt64, value UInt64)
+                    ENGINE = Kafka
+                    SETTINGS kafka_broker_list = 'kafka1:19092',
+                             kafka_topic_list = '{table}',
+                             kafka_group_name = '{table}',
+                             kafka_format = 'JSONEachRow',
+                             kafka_flush_interval_ms = 5000,
+                             kafka_poll_timeout_ms = 1000,
+                             kafka_max_block_size = 1000;
+                CREATE TABLE test.{table}_dst (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
+                CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
+                    SELECT key, value FROM test.{table};
+                """
+            )
+
+            # Pre-load the topic while halted, then resume so a fresh cycle opens a block over the 5
+            # rows and holds it for ~kafka_flush_interval_ms (the block does not commit until then).
+            instance.query(f"SYSTEM STOP test.{table}")
+            produce(kafka_cluster, table, 0, 5)
+            instance.query(f"SYSTEM START test.{table}")
+
+            time.sleep(2)  # the block is now open: rows polled but not yet committed
+            instance.query(f"SYSTEM {verb} test.{table}")
+
+            if verb == "PAUSE":
+                # The in-flight block finishes and commits on its own, without START.
+                wait_dst_count(table, 5)
+            else:
+                # The in-flight block is aborted and never committed (and future cycles are blocked),
+                # so the rows stay invisible until START redelivers them.
+                assert_dst_count_stable(table, 0, seconds=8)
+                instance.query(f"SYSTEM START test.{table}")
+                wait_dst_count(table, 5)
+
+
 def test_system_stop_all_background(kafka_cluster):
     admin_client = k.get_admin_client(kafka_cluster)
     table = f"kafka_allbg_{k.random_string(6)}"
@@ -191,8 +236,10 @@ def test_system_pause_all_background(kafka_cluster):
         produce(kafka_cluster, table, 0, 10)
         wait_dst_count(table, 10)
 
-        # PAUSE ALL BACKGROUND halts consumption for every streaming table.
+        # PAUSE ALL BACKGROUND disables future polling cycles.
+        # Post-PAUSE records only have future cycles to land in.
         instance.query("SYSTEM PAUSE ALL BACKGROUND")
+        time.sleep(5)
         produce(kafka_cluster, table, 10, 10)
         assert_dst_count_stable(table, 10)
 

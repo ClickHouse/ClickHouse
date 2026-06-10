@@ -169,14 +169,29 @@ Chunk KafkaSource::generateImpl()
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
 
+    bool cancelled = false;
+
     while (true)
     {
+        if (storage.isConsumeCancelRequested())
+        {
+            cancelled = true;
+            break;
+        }
+
         size_t new_rows = 0;
         exception_message.reset();
         is_dead_letter = false;
 
         if (auto buf = consumer->consume())
         {
+            /// The cancel may have arrived while consume() was blocked polling; check again so the
+            /// just-polled message is dropped with the rest of the block rather than committed.
+            if (storage.isConsumeCancelRequested())
+            {
+                cancelled = true;
+                break;
+            }
             ProfileEvents::increment(ProfileEvents::KafkaMessagesRead);
             new_rows = executor.execute(*buf);
         }
@@ -306,6 +321,13 @@ Chunk KafkaSource::generateImpl()
         {
             break;
         }
+    }
+
+    if (cancelled)
+    {
+        /// Abort the in-flight block: discard everything polled this cycle
+        consumer->markDirty();
+        return {};
     }
 
     if (total_rows == 0)

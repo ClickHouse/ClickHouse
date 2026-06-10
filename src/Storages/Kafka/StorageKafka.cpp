@@ -106,6 +106,11 @@ namespace ErrorCodes
     extern const int ABORTED;
 }
 
+namespace ActionLocks
+{
+    extern const StorageActionBlockType StreamConsume;
+}
+
 class ReadFromStorageKafka final : public ReadFromStreamLikeEngine
 {
 public:
@@ -300,6 +305,30 @@ void StorageKafka::startup()
         task->holder->activateAndSchedule();
     }
     StreamingStorageRegistry::instance().registerTable(getStorageID());
+}
+
+ActionLock StorageKafka::getActionLock(StorageActionBlockType action_type)
+{
+    if (action_type == ActionLocks::StreamConsume)
+        return stream_consume_blocker.cancel();
+    return {};
+}
+
+void StorageKafka::onActionLockRemove(StorageActionBlockType action_type)
+{
+    if (action_type == ActionLocks::StreamConsume)
+        triggerBackgroundActivity();
+}
+
+void StorageKafka::triggerBackgroundActivity()
+{
+    for (auto & task : tasks)
+        task->holder->schedule();
+}
+
+void StorageKafka::cancelBackgroundActivity()
+{
+    consume_cancel_requested = true;
 }
 
 
@@ -607,14 +636,14 @@ void StorageKafka::threadFunc(size_t idx)
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-        if (num_views)
+        if (num_views && !stream_consume_blocker.isCancelled())
         {
             auto start_time = std::chrono::steady_clock::now();
 
             mv_attached.store(true);
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
-            while (!task->stream_cancelled)
+            while (!task->stream_cancelled && !stream_consume_blocker.isCancelled())
             {
                 if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
                 {
@@ -673,6 +702,7 @@ void StorageKafka::threadFunc(size_t idx)
 bool StorageKafka::streamToViews()
 {
     Stopwatch watch;
+    consume_cancel_requested = false;
 
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());

@@ -9,6 +9,7 @@
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/Kafka_fwd.h>
 #include <Storages/Kafka/KeeperHandlingConsumer.h>
+#include <Common/ActionBlocker.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -88,6 +89,12 @@ public:
 
     void startup() override;
     void shutdown(bool is_drop) override;
+
+    ActionLock getActionLock(StorageActionBlockType action_type) override;
+    void onActionLockRemove(StorageActionBlockType action_type) override;
+    void triggerBackgroundActivity() override;
+    void cancelBackgroundActivity() override;
+    bool isConsumeCancelRequested() const { return consume_cancel_requested.load(); }
 
     void drop() override;
 
@@ -170,6 +177,11 @@ private:
     /// If named_collection is specified.
     String collection_name;
     std::atomic<bool> shutdown_called = false;
+
+    /// Blocks future polling cycles.
+    ActionBlocker stream_consume_blocker;
+    /// in-flight cycle aborts its poll without committing offsets.
+    std::atomic<bool> consume_cancel_requested = false;
     /// Number of background streaming threads currently consuming for materialized views.
     /// Prevents direct SELECTs from using consumers concurrently with MV streaming.
     /// Uses a counter instead of a boolean because with thread_per_consumer=1,

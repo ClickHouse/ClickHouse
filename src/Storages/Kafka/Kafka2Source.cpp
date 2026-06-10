@@ -76,9 +76,17 @@ Chunk Kafka2Source::generateImpl()
 
     is_finished = true;
 
+    if (storage.isConsumeCancelRequested())
+        return {};
+
     auto maybe_blocks_and_guard = storage.pollConsumer(*consumer, total_stopwatch, context, max_block_size);
 
     if (!maybe_blocks_and_guard.has_value())
+        return {};
+
+    /// The cancel may have arrived while pollConsumer was polling. Drop the block by not taking its
+    /// offset guard.
+    if (storage.isConsumeCancelRequested())
         return {};
 
     offset_guard.emplace(std::move(maybe_blocks_and_guard->guard));
