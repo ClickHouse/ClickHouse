@@ -297,6 +297,14 @@ INSERT INTO t_narrow_array_nested SELECT number, range(number % 5)::Array(UInt64
 SELECT '-- 16c. Array .size0 subcolumn';
 SELECT value.`Array(UInt64)`.size0 FROM t_narrow_array_nested ORDER BY id LIMIT 5;
 
+-- 16d. Same nested subcolumn reads under `allow_nullable_tuple_in_extracted_subcolumns = 1`.
+-- The result type changes from bare `T` to `Nullable(T)`; the narrowed-element reader must
+-- wrap the extracted subcolumn so that `result_column->insertRangeFrom` shape-matches.
+SELECT '-- 16d. Tuple .a with allow_nullable_tuple_in_extracted_subcolumns=1 (non-nullable storage)';
+SELECT toTypeName(value.`Tuple(a UInt32, b String)`.a), value.`Tuple(a UInt32, b String)`.a
+FROM t_narrow_nested ORDER BY id ASC LIMIT 3
+SETTINGS allow_nullable_tuple_in_extracted_subcolumns = 1;
+
 -- ============================================================
 -- 17. JSON merge: narrowed dynamic paths keep dynamic_paths_statistics
 -- After OPTIMIZE FINAL, paths that had values should still be dynamic paths,
@@ -357,6 +365,15 @@ FROM numbers(30);
 
 SELECT '-- 19. Nullable narrowed Tuple nested .a';
 SELECT value.`Tuple(a UInt32, b String)`.a FROM t_narrow_nested_null ORDER BY id LIMIT 6;
+
+-- 19b. Same read under `allow_nullable_tuple_in_extracted_subcolumns = 1` so the result type is
+-- `Nullable(UInt32)`. Catches the regression where the narrowed-element reader extracted a bare
+-- `T` column from `Nullable(Tuple)` storage and tried to insert it into a `Nullable(T)` result,
+-- crashing in `ColumnNullable::insertRangeFrom` (data.size() == 0).
+SELECT '-- 19b. Nullable narrowed Tuple nested .a with allow_nullable_tuple_in_extracted_subcolumns=1';
+SELECT toTypeName(value.`Tuple(a UInt32, b String)`.a), value.`Tuple(a UInt32, b String)`.a
+FROM t_narrow_nested_null ORDER BY id LIMIT 6
+SETTINGS allow_nullable_tuple_in_extracted_subcolumns = 1;
 
 -- ============================================================
 -- 20. V3-source-with-NULLs migrated to v4 via OPTIMIZE

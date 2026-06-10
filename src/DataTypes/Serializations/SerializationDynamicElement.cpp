@@ -274,25 +274,48 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         {
             /// Extract the requested subcolumn from the storage column. When storage is
             /// `Nullable(T)`, `Nullable.getSubcolumn(name)` returns a `Nullable(subcolumn_type)`
-            /// even if the subcolumn itself cannot be inside `Nullable` (the framework adds
-            /// `NullableSubcolumnCreator`). The result_column on the other hand may be the bare
-            /// subcolumn type — `DataTypeDynamic::getDynamicSubcolumnData` only wraps in `Nullable`
-            /// when `canExtractedSubcolumnsBeInsideNullable` is true (e.g., never for `Tuple` under
-            /// the default profile). To avoid shape mismatch we unwrap to the non-nullable storage
-            /// before extracting, and project the storage's null map separately if it would have
-            /// influenced the result. For the cases that actually matter (sub-subcolumn reads),
-            /// the inner subcolumn just gives the raw value; NULL rows are still represented as
-            /// defaults of the inner type, which matches the behavior of the equivalent V3 read
-            /// path that goes through `SerializationVariantElement`.
+            /// only when the subcolumn can be inside Nullable (the framework adds
+            /// `NullableSubcolumnCreator`). For Tuple subcolumns under the default profile, the
+            /// inner subcolumn cannot live in Nullable, so we get bare `T`. The result_column may
+            /// or may not be Nullable depending on the user's
+            /// `allow_nullable_tuple_in_extracted_subcolumns` setting and what
+            /// `DataTypeDynamic::getDynamicSubcolumnData` declared. We must always produce a
+            /// column whose top-level shape exactly matches `result_column`.
             ColumnPtr base_storage = storage_column;
             DataTypePtr base_type = storage_type;
+            const ColumnUInt8::Container * src_null_map = nullptr;
             if (dynamic_element_state->narrowed_stored_as_nullable)
             {
-                base_storage = assert_cast<const ColumnNullable &>(*storage_column).getNestedColumnPtr();
+                const auto & nullable = assert_cast<const ColumnNullable &>(*storage_column);
+                base_storage = nullable.getNestedColumnPtr();
                 base_type = dynamic_element_state->narrowed_type;
+                src_null_map = &nullable.getNullMapData();
             }
             auto subcolumn = base_type->getSubcolumn(nested_subcolumn, base_storage);
-            result_column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
+
+            const bool result_is_nullable = result_column->isNullable();
+            ColumnPtr to_insert = subcolumn;
+            if (result_is_nullable && !subcolumn->isNullable())
+            {
+                /// `result_column` is `Nullable(T)` but the extracted subcolumn is bare `T`. Wrap
+                /// it in a `ColumnNullable`, projecting the storage's null map onto NULL rows so
+                /// that the row count of the nested column matches the null map and the
+                /// `ColumnNullable::insertRangeFrom` precondition holds.
+                auto wrapped = ColumnNullable::create(subcolumn->assumeMutable(), ColumnUInt8::create(subcolumn->size(), static_cast<UInt8>(0)));
+                if (src_null_map)
+                {
+                    auto & null_map_data = wrapped->getNullMapData();
+                    null_map_data.assign(src_null_map->begin(), src_null_map->end());
+                }
+                to_insert = std::move(wrapped);
+            }
+            else if (!result_is_nullable && subcolumn->isNullable())
+            {
+                /// `result_column` is bare but the subcolumn is `Nullable(T)`. Unwrap to the nested
+                /// values (NULL rows materialize as default values of T).
+                to_insert = assert_cast<const ColumnNullable &>(*subcolumn).getNestedColumnPtr();
+            }
+            result_column->assumeMutable()->insertRangeFrom(*to_insert, 0, to_insert->size());
             return;
         }
 

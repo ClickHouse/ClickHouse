@@ -99,6 +99,10 @@ s2
 2
 3
 4
+-- 16d. Tuple .a with allow_nullable_tuple_in_extracted_subcolumns=1 (non-nullable storage)
+UInt32	0
+UInt32	1
+UInt32	2
 -- 17. JSON merge: narrowed path "a" is still a dynamic path after merge
 1	10
 2	20
@@ -116,5 +120,12 @@ s2
 0
 4
 5
+-- 19b. Nullable narrowed Tuple nested .a with allow_nullable_tuple_in_extracted_subcolumns=1
+UInt32	0
+UInt32	1
+UInt32	2
+UInt32	0
+UInt32	4
+UInt32	5
 -- 20. V3 sources merged into v4 narrowed part
 200	59
