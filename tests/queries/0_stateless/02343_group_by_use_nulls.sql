@@ -1,4 +1,6 @@
 set optimize_group_by_function_keys=0;
+-- WITH TOTALS + group_by_use_nulls is only supported by the analyzer.
+set enable_analyzer=1;
 -- { echoOn }
 SELECT number, number % 2, sum(number) AS val
 FROM numbers(10)

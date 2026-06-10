@@ -1,5 +1,7 @@
 #include <Planner/Planner.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Functions/FunctionFactory.h>
 
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
@@ -817,6 +819,40 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         settings[Setting::aggregation_in_order_max_block_bytes],
         settings[Setting::enable_memory_bound_merging_of_aggregation_results]);
     query_plan.addStep(std::move(merging_aggregated));
+}
+
+/// With group_by_use_nulls and WITH TOTALS, GROUP BY keys are analyzed as Nullable (see
+/// PlannerExpressionAnalysis), but the aggregation step emits them non-nullable. Convert here, before
+/// TotalsHaving, so the data matches the analyzed type and the TOTALS row (filled from default values)
+/// reports the keys as NULL. Runs for CUBE/ROLLUP WITH TOTALS too: their own nullable conversion happens
+/// after TotalsHaving and would otherwise leave the TOTALS row non-NULL. Already-nullable keys are skipped.
+void addConvertGroupByKeysToNullableStep(QueryPlan & query_plan,
+    const AggregationAnalysisResult & aggregation_analysis_result)
+{
+    const auto & keys = aggregation_analysis_result.aggregation_keys;
+    if (keys.empty())
+        return;
+
+    ActionsDAG dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
+    auto to_nullable = FunctionFactory::instance().get("toNullable", nullptr);
+
+    bool any_converted = false;
+    for (const auto & key : keys)
+    {
+        const auto * node = dag.tryFindInOutputs(key);
+        if (node && removeLowCardinality(node->result_type)->canBeInsideNullable())
+        {
+            dag.addOrReplaceInOutputs(dag.addFunction(to_nullable, {node}, key));
+            any_converted = true;
+        }
+    }
+
+    if (!any_converted)
+        return;
+
+    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
+    expression_step->setStepDescription("Convert GROUP BY keys to Nullable for WITH TOTALS");
+    query_plan.addStep(std::move(expression_step));
 }
 
 void addTotalsHavingStep(QueryPlan & query_plan,
@@ -2449,6 +2485,8 @@ void Planner::buildPlanForQueryNode()
 
             if (query_node.isGroupByWithTotals())
             {
+                if (settings[Setting::group_by_use_nulls])
+                    addConvertGroupByKeysToNullableStep(query_plan, aggregation_analysis_result);
                 addTotalsHavingStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, query_node, useful_sets);
                 having_executed = true;
             }

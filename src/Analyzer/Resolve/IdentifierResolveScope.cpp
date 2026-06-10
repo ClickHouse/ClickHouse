@@ -45,8 +45,11 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
             query_node->getMutableContext()->setDistributed(parent_scope->context->isDistributed());
 
         context = query_node->getContext();
+        /// WITH TOTALS keys are reported as NULL in the totals row, so they must be
+        /// resolved as Nullable here too (kept in sync with the planner-side gate).
         group_by_use_nulls = context->getSettingsRef()[Setting::group_by_use_nulls]
-            && (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
+            && (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube()
+                || query_node->isGroupByWithTotals());
     }
 
     if (context)

@@ -1248,13 +1248,15 @@ Possible values:
     \
     DECLARE(Bool, group_by_use_nulls, false, R"(
 Changes the way the [GROUP BY clause](/sql-reference/statements/select/group-by) treats the types of aggregation keys.
-When the `ROLLUP`, `CUBE`, or `GROUPING SETS` specifiers are used, some aggregation keys may not be used to produce some result rows.
+When the `ROLLUP`, `CUBE`, `GROUPING SETS`, or `WITH TOTALS` modifiers are used, some aggregation keys may not be used to produce some result rows (for example, the `WITH TOTALS` summary row).
 Columns for these keys are filled with either default value or `NULL` in corresponding rows depending on this setting.
 
 Possible values:
 
 - 0 — The default value for the aggregation key type is used to produce missing values.
 - 1 — ClickHouse executes `GROUP BY` the same way as the SQL standard says. The types of aggregation keys are converted to [Nullable](/sql-reference/data-types/nullable). Columns for corresponding aggregation keys are filled with [NULL](/sql-reference/syntax#null) for rows that didn't use it.
+
+With `WITH TOTALS` and `group_by_use_nulls = 1`, real `GROUP BY` keys whose types can be wrapped in `Nullable` are reported as `NULL` in the summary row. Keys whose types cannot be made `Nullable` (for example `Array` or `Map`) keep their default value. A constant key that is folded away before aggregation is not a real key column, so it also keeps its constant value in the summary row.
 
 See also:
 
