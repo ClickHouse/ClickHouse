@@ -109,9 +109,15 @@ MESSAGES_TO_RETRY = [
     "No such file or directory",
     "Permission denied",
     "Net Exception: Connection reset by peer",
-    # Transient Keeper errors that happen under heavy load (e.g. ARM ASan builds)
+    # Transient Keeper errors that happen under heavy load (e.g. ARM ASan builds).
+    # Coordination::Exception has two renderings depending on the constructor: the
+    # socket layer throws "Coordination::Exception: Session expired" while generic
+    # operations (exists/get/getChildren, e.g. the OPTIMIZE wait loop) throw
+    # "Coordination::Exception: Coordination error: Session expired". Match both.
     "Coordination::Exception: Connection loss",
     "Coordination::Exception: Session expired",
+    "Coordination error: Connection loss",
+    "Coordination error: Session expired",
 ]
 
 IGNORED_SANITIZER_ERRORS = [
