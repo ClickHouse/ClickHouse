@@ -12,6 +12,8 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Common/FieldVisitorToString.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Storages/IStorage.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -674,6 +676,43 @@ bool referencesNonDeterministicDatabase(const ASTSelectQuery & select)
         String database = table_id->getDatabaseName();
         if (database == "system" || database == "INFORMATION_SCHEMA" || database == "information_schema")
             return true;
+    }
+    return false;
+}
+
+/// True if any table the query reads from has the `Distributed` engine.
+/// Resolved through the catalog (the engine is not visible at the AST level).
+/// Catalog lookups are best-effort: a missing/unresolvable table is treated as
+/// "not distributed" so this never blocks a checkable query by mistake.
+bool referencesDistributedTable(const ASTSelectQuery & select, const ContextPtr & context)
+{
+    ASTPtr tables = select.tables();
+    if (!tables)
+        return false;
+    for (const auto & table_child : tables->children)
+    {
+        const auto * tables_element = table_child->as<ASTTablesInSelectQueryElement>();
+        if (!tables_element || !tables_element->table_expression)
+            continue;
+        const auto * table_expr = tables_element->table_expression->as<ASTTableExpression>();
+        if (!table_expr || !table_expr->database_and_table_name)
+            continue;
+        const auto * table_id = table_expr->database_and_table_name->as<ASTTableIdentifier>();
+        if (!table_id)
+            continue;
+
+        String database = table_id->getDatabaseName();
+        if (database.empty())
+            database = context->getCurrentDatabase();
+        try
+        {
+            auto storage = DatabaseCatalog::instance().tryGetTable({database, table_id->shortName()}, context);
+            if (storage && storage->getName() == "Distributed")
+                return true;
+        }
+        catch (...) /// Catalog hiccup — fail open (treat as not distributed).
+        {
+        }
     }
     return false;
 }
@@ -2161,6 +2200,16 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (hasAsofJoinAnywhere(query_ast))
     {
         LOG_TRACE(logger, "Oracle skip: ASOF JOIN (tie-breaking is plan-dependent)");
+        return false;
+    }
+
+    /// `Distributed` tables route to remote shards (here, test clusters whose
+    /// replicas all point at localhost), so a row is read once per shard and
+    /// the reference vs rewrite can route/dedup differently — the oracle can't
+    /// validate the result. Resolve each referenced table's engine and skip.
+    if (referencesDistributedTable(*select, context))
+    {
+        LOG_TRACE(logger, "Oracle skip: query reads from a Distributed table");
         return false;
     }
 
