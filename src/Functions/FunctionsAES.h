@@ -209,6 +209,7 @@ private:
 
         /// Fetch provider-backed cipher once per block to avoid implicit
         /// EVP_CIPHER_fetch on every EVP_EncryptInit_ex call in the per-row loop.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/65116
         auto fetched_cipher = fetchCipher(mode);
 
         const auto cipher_mode = EVP_CIPHER_mode(evp_cipher);
@@ -548,6 +549,7 @@ private:
 
         /// Fetch provider-backed cipher once per block to avoid implicit
         /// EVP_CIPHER_fetch on every EVP_DecryptInit_ex call in the per-row loop.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/65116
         auto fetched_cipher = fetchCipher(mode);
 
         OpenSSLDetails::validateCipherMode<compatibility_mode>(evp_cipher);
