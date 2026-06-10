@@ -7,3 +7,10 @@ Access granted
 Unable to Select from overlay tables with BAD user (ACCESS_DENIED)
 ACCESS_DENIED
 ACCESS_DENIED
+A grant on the Overlay database alone allows reading through the facade
+Access granted
+A grant on the Overlay database does not allow reading the underlying database directly
+ACCESS_DENIED
+A grant on an underlying database alone does not allow reading through the facade
+ACCESS_DENIED
+Access granted

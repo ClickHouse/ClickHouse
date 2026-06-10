@@ -16,6 +16,8 @@ T_B="t_b"
 
 USER_OK="u_ok_${SUF}"
 USER_BAD="u_bad_${SUF}"
+USER_OVL="u_ovl_${SUF}"
+USER_SRC="u_src_${SUF}"
 
 # Clean slate
 ${CLICKHOUSE_CLIENT} -nm --query "
@@ -24,6 +26,8 @@ ${CLICKHOUSE_CLIENT} -nm --query "
     DROP DATABASE IF EXISTS ${DB_B};
     DROP USER IF EXISTS ${USER_OK};
     DROP USER IF EXISTS ${USER_BAD};
+    DROP USER IF EXISTS ${USER_OVL};
+    DROP USER IF EXISTS ${USER_SRC};
 "
 
 # Prepare underlying data
@@ -41,18 +45,25 @@ ${CLICKHOUSE_CLIENT} -nm --query "
     CREATE DATABASE ${DB_OVL} ENGINE = Overlay('${DB_A}', '${DB_B}');
 "
 
-# Overlay is a transparent view: a user must have SELECT on the underlying databases that own
-# the tables. To keep the test stable across analyzer/database engines, the OK user also has the
-# grant on the Overlay database itself, so the test passes regardless of which name the access
-# check uses. The BAD user has no grants and is denied in all configurations.
+# Access checks use the database name as written in the query: reading through the Overlay
+# requires a grant on the Overlay database itself; grants on the underlying databases govern
+# only direct access and are not consulted for queries that go through the facade.
 ${CLICKHOUSE_CLIENT} -nm --query "
     CREATE USER ${USER_OK}  NOT IDENTIFIED;
     CREATE USER ${USER_BAD} NOT IDENTIFIED;
+    CREATE USER ${USER_OVL} NOT IDENTIFIED;
+    CREATE USER ${USER_SRC} NOT IDENTIFIED;
 
     -- OK user: grants on both the Overlay and the underlying databases.
     GRANT SELECT ON ${DB_OVL}.* TO ${USER_OK};
     GRANT SELECT ON ${DB_A}.* TO ${USER_OK};
     GRANT SELECT ON ${DB_B}.* TO ${USER_OK};
+
+    -- OVL user: grant on the Overlay database only.
+    GRANT SELECT ON ${DB_OVL}.* TO ${USER_OVL};
+
+    -- SRC user: grant on an underlying database only.
+    GRANT SELECT ON ${DB_A}.* TO ${USER_SRC};
 
     -- BAD user: no grants on either the Overlay or the underlying databases.
 "
@@ -80,10 +91,31 @@ ${CLICKHOUSE_CLIENT} -nm --user="${USER_BAD}" --query "
     SELECT count() FROM ${DB_OVL}.${T_B};
 " 2>&1 | grep -o ACCESS_DENIED | uniq
 
+echo 'A grant on the Overlay database alone allows reading through the facade'
+${CLICKHOUSE_CLIENT} -nm --user="${USER_OVL}" --query "
+    SELECT count() FROM ${DB_OVL}.${T_A};
+" >/dev/null && echo "Access granted"
+
+echo 'A grant on the Overlay database does not allow reading the underlying database directly'
+${CLICKHOUSE_CLIENT} -nm --user="${USER_OVL}" --query "
+    SELECT count() FROM ${DB_A}.${T_A};
+" 2>&1 | grep -o ACCESS_DENIED | uniq
+
+echo 'A grant on an underlying database alone does not allow reading through the facade'
+${CLICKHOUSE_CLIENT} -nm --user="${USER_SRC}" --query "
+    SELECT count() FROM ${DB_OVL}.${T_A};
+" 2>&1 | grep -o ACCESS_DENIED | uniq
+
+${CLICKHOUSE_CLIENT} -nm --user="${USER_SRC}" --query "
+    SELECT count() FROM ${DB_A}.${T_A};
+" >/dev/null && echo "Access granted"
+
 ${CLICKHOUSE_CLIENT} -nm --query "
     DROP DATABASE IF EXISTS ${DB_OVL};
     DROP DATABASE IF EXISTS ${DB_A};
     DROP DATABASE IF EXISTS ${DB_B};
     DROP USER IF EXISTS ${USER_OK};
     DROP USER IF EXISTS ${USER_BAD};
+    DROP USER IF EXISTS ${USER_OVL};
+    DROP USER IF EXISTS ${USER_SRC};
 "
