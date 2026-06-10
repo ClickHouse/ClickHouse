@@ -488,6 +488,11 @@ const std::unordered_set<String> truncating_settings = {
     "max_rows_in_set", "max_bytes_in_set", "set_overflow_mode",
     "max_execution_time", "max_execution_time_leaf", "timeout_overflow_mode", "timeout_overflow_mode_leaf",
     "max_estimated_execution_time",
+    /// Not truncation per se, but the same "results depend on which granules
+    /// the predicate prunes" effect: with exact mode off, skip indexes under
+    /// FINAL may keep stale row versions whose newer version lives in a
+    /// pruned granule — documented behaviour, not comparable across rewrites.
+    "use_skip_indexes_if_final", "use_skip_indexes_if_final_exact_mode",
 };
 
 bool hasTruncatingInlineSettings(const ASTPtr & ast)
@@ -805,6 +810,10 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
                               "join_overflow_mode", "set_overflow_mode",
                               "timeout_overflow_mode"})
         oracle_context->setSetting(mode, String("throw"));
+    /// Session-leaked `SET use_skip_indexes_if_final = 1,
+    /// use_skip_indexes_if_final_exact_mode = 0` would make oracle
+    /// sub-queries keep stale FINAL row versions (see `truncating_settings`).
+    oracle_context->setSetting("use_skip_indexes_if_final_exact_mode", Field(true));
     /// Cap result size so oracle sub-queries (especially TLP's UNION ALL of three
     /// partitions) cannot allocate unbounded memory. We use `result_overflow_mode=throw`
     /// — `break` would silently truncate the result before the cap fires, and the
