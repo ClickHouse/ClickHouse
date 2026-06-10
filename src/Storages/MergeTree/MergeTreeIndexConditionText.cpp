@@ -1015,6 +1015,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// Currently, not all token extractors support LIKE-style matching.
     if (function_name == "like")
     {
+        /// `nextInStringLike` drops the backslash for an unknown escape `\c`, diverging from row-level
+        /// matching, so decline and let row-level evaluation handle it.
+        if (value_field.getType() == Field::Types::String
+            && likePatternHasUnknownBackslashEscape(value_field.safeGet<String>()))
+            return false;
+
         const bool has_preprocessor = preprocessor && preprocessor->hasActions();
         /// Requires explicit opt-in via use_text_index_like_evaluation_by_dictionary_scan because scanning
         /// the index dictionary for pattern-matching tokens has non-trivial overhead.

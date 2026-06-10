@@ -151,3 +151,35 @@ SELECT trimLeft(explain) AS explain FROM (
 ) WHERE explain LIKE '%Granules:%';
 
 DROP TABLE tab;
+
+SELECT 'A plain two-argument LIKE with an unknown backslash escape is also not pruned by the text index';
+
+-- Same divergence as above but for a plain two-argument `LIKE '% a\b %'` (no ESCAPE clause).
+-- The literal token "a\b" is indexed by `splitByNonAlpha` as "a" and "b", but `nextInStringLike`
+-- drops the backslash and asks for "ab", which is absent, so the granule would be wrongly pruned.
+SET optimize_rewrite_like_perfect_affix = 0;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'foo a\\b bar'), (2, 'foo ab bar'), (3, 'nothing here');
+
+SELECT 'Correctness check: the row containing the literal backslash is returned';
+
+SELECT id FROM tab WHERE msg LIKE '% a\\b %' ORDER BY id;
+
+SELECT 'Text index analysis declines the condition: all 3 granules are scanned';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE msg LIKE '% a\\b %'
+) WHERE explain LIKE '%Granules:%';
+
+DROP TABLE tab;

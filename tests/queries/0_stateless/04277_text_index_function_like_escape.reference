@@ -39,3 +39,8 @@ Correctness check: the row containing the literal backslash is returned
 1
 Text index analysis declines the condition: all 3 granules are scanned
 Granules: 3/3
+A plain two-argument LIKE with an unknown backslash escape is also not pruned by the text index
+Correctness check: the row containing the literal backslash is returned
+1
+Text index analysis declines the condition: all 3 granules are scanned
+Granules: 3/3

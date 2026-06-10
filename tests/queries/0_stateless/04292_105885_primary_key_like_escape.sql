@@ -91,3 +91,30 @@ SELECT 'Correctness check: all four rows starting with a literal backslash are r
 SELECT * FROM tab2 WHERE s LIKE 'a\\b%' ESCAPE '\\' ORDER BY s;
 
 DROP TABLE tab2;
+
+-- The same divergence exists for a plain two-argument `LIKE 'a\b%'` (no ESCAPE clause).
+-- `optimize_rewrite_like_perfect_affix` is disabled so the predicate reaches `KeyCondition`
+-- as `like` rather than being rewritten to `startsWith` by the analyzer.
+
+SET optimize_rewrite_like_perfect_affix = 0;
+
+DROP TABLE IF EXISTS tab3;
+
+CREATE TABLE tab3 (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 2;
+
+INSERT INTO tab3 VALUES ('a\\b01'), ('a\\b02'), ('a\\b03'), ('a\\b04'), ('abZZ'), ('zzz');
+
+OPTIMIZE TABLE tab3 FINAL;
+
+SELECT 'Two-argument LIKE with an unknown backslash escape: primary key declines (Condition: true)';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM tab3 WHERE s LIKE 'a\\b%'
+) WHERE explain LIKE '%Condition:%';
+
+SELECT 'Correctness check: all four rows starting with a literal backslash are returned';
+
+SELECT * FROM tab3 WHERE s LIKE 'a\\b%' ORDER BY s;
+
+DROP TABLE tab3;
