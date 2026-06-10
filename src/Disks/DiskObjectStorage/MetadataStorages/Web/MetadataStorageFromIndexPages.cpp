@@ -509,6 +509,8 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
                 for (auto & entry : entries)
                 {
                     auto relative_path = std::make_shared<RelativePathWithMetadata>(std::move(entry), shard_index);
+                    relative_path->path_for_deduplication = WebIndexPage::getEffectiveRelativePathForDeduplication(
+                        relative_path->relative_path, url_options[i].base_url + url_options[i].query_fragment);
                     if (relative_path->relative_path.starts_with(final_path_prefix))
                     {
                         const auto path_for_glob_matching = path_prefix + relative_path->relative_path.substr(final_path_prefix.size());

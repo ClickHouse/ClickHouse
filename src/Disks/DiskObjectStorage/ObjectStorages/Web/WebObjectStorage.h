@@ -128,7 +128,7 @@ private:
     /// Normalizes a listed entry to the effective relative path used by `buildURL` (inheriting the
     /// source shard's query/fragment when the entry has none) so that listing deduplication keys
     /// match the objects that are actually read.
-    std::string getEffectiveRelativePathForKey(const std::string & relative_path, std::optional<size_t> read_source_index) const;
+    std::string getEffectiveRelativePathForKey(const RelativePathWithMetadata & relative_path) const;
 
     static constexpr size_t max_head_support_cache_size = 65536;
 

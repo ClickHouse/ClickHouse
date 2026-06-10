@@ -128,16 +128,20 @@ bool WebObjectStorage::exists(const std::string & path) const
     return tryGetObjectMetadata(path, /* with_tags */ false).has_value();
 }
 
-std::string WebObjectStorage::getEffectiveRelativePathForKey(
-    const std::string & relative_path, std::optional<size_t> read_source_index) const
+std::string WebObjectStorage::getEffectiveRelativePathForKey(const RelativePathWithMetadata & relative_path) const
 {
     /// Two listed entries that differ only by an explicit vs. inherited query/fragment resolve to the
     /// same effective URL in `buildURL`, so deduplication must use the effective form (see thread on
     /// duplicate reads). Keying by the raw listing token would let the same object be read twice.
+    if (relative_path.path_for_deduplication)
+        return *relative_path.path_for_deduplication;
+
+    const auto read_source_index = relative_path.read_source_index;
     if (!read_source_index || *read_source_index >= url_shards.size() || url_shards[*read_source_index].empty())
-        return relative_path;
+        return relative_path.relative_path;
     const auto & url_option = url_shards[*read_source_index].front();
-    return WebIndexPage::getEffectiveRelativePathForDeduplication(relative_path, url_option.base_url + url_option.query_fragment);
+    return WebIndexPage::getEffectiveRelativePathForDeduplication(
+        relative_path.relative_path, url_option.base_url + url_option.query_fragment);
 }
 
 void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
@@ -165,7 +169,7 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
         auto entries = metadata_storage.listDirectoryWithMetadata(current.relative_path, current.read_source_index);
         for (const auto & entry : entries)
         {
-            const auto effective_relative_path = getEffectiveRelativePathForKey(entry->relative_path, entry->read_source_index);
+            const auto effective_relative_path = getEffectiveRelativePathForKey(*entry);
             const auto key = fmt::format("{}:{}", entry->read_source_index.value_or(std::numeric_limits<size_t>::max()), effective_relative_path);
 
             if (pathPartEndsWithSlash(entry->relative_path))
