@@ -271,6 +271,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"allow_experimental_join_right_table_sorting", trueOrFalseSetting},
        {"allow_experimental_text_index_lazy_apply", trueOrFalseSetting},
        {"allow_limit_by_partitions_independently", trueOrFalseSetting},
+       {"allow_distinct_partitions_independently", trueOrFalseSetting},
        {"allow_push_predicate_ast_for_distributed_subqueries", trueOrFalseSetting},
        {"allow_push_predicate_when_subquery_contains_with", trueOrFalseSetting},
        {"allow_reorder_prewhere_conditions", trueOrFalseSetting},

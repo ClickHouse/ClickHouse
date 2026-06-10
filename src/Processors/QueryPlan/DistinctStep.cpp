@@ -72,7 +72,7 @@ void DistinctStep::updateLimitHint(UInt64 hint)
 
 void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (!pre_distinct)
+    if (!pre_distinct && !skip_stream_merging)
         pipeline.resize(1);
 
     {
@@ -164,6 +164,9 @@ void DistinctStep::describeActions(FormatSettings & settings) const
     }
 
     settings.out << '\n';
+
+    if (skip_stream_merging)
+        settings.out << prefix << "Skip stream merging: 1\n";
 }
 
 void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -173,6 +176,8 @@ void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
         columns_array->add(column);
 
     map.add("Columns", std::move(columns_array));
+    if (skip_stream_merging)
+        map.add("Skip stream merging", true);
 }
 
 void DistinctStep::updateOutputHeader()

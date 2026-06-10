@@ -392,6 +392,9 @@ void optimizeTreeSecondPass(
             if (optimization_settings.limit_by_partitions_independently)
                 optimizeLimitByPerPartition(frame_node, nodes, optimization_settings);
 
+            if (optimization_settings.distinct_partitions_independently)
+                optimizeDistinctPerPartition(frame_node, nodes, optimization_settings);
+
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 

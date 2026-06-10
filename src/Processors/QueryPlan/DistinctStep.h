@@ -45,6 +45,11 @@ public:
     void applyOrder(SortDescription sort_desc) { distinct_sort_desc = std::move(sort_desc); }
     const SortDescription & getSortDescription() const override { return distinct_sort_desc; }
 
+    /// Skip the resize-to-one-stream and run one `DistinctTransform` per input stream.
+    /// Set by `optimizeDistinctPerPartition`; assumes upstream streams carry disjoint
+    /// partition sets so no `DISTINCT` key spans two streams.
+    void skipStreamMerging() { skip_stream_merging = true; }
+
 private:
     void updateOutputHeader() override;
 
@@ -53,6 +58,7 @@ private:
     const Names columns;
     bool pre_distinct;
     SortDescription distinct_sort_desc;
+    bool skip_stream_merging = false;
 };
 
 }

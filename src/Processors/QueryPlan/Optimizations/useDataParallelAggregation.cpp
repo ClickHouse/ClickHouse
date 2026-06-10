@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -28,6 +29,9 @@ ReadFromMergeTree * findReadingStep(QueryPlan::Node & node)
     if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step))
         return findReadingStep(*node.children.front());
 
+    if (const auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
+        return findReadingStep(*node.children.front());
+
     return nullptr;
 }
 
@@ -45,6 +49,13 @@ void buildKeyDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag)
         return;
 
     auto * step = node.step.get();
+
+    if (const auto * distinct = typeid_cast<const DistinctStep *>(step); distinct && distinct->isPreliminary())
+    {
+        buildKeyDAG(*node.children.front(), dag);
+        return;
+    }
+
     const ActionsDAG * step_dag = nullptr;
     if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
         step_dag = &expression->getExpression();
@@ -161,6 +172,32 @@ void optimizeLimitByPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, con
     {
         if (reading->requestOutputEachPartitionThroughSeparatePortForLimitBy())
             limit_by_step->skipStreamMerging();
+    }
+}
+
+void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & /*optimization_settings*/)
+{
+    if (node.children.size() != 1)
+        return;
+
+    auto * distinct_step = typeid_cast<DistinctStep *>(node.step.get());
+    if (!distinct_step || distinct_step->isPreliminary())
+        return;
+
+    auto * reading = findReadingStep(*node.children.front());
+    if (!reading)
+        return;
+
+    std::optional<ActionsDAG> dag;
+    buildKeyDAG(*node.children.front(), dag);
+    if (!dag)
+        return;
+
+    if (!reading->willOutputEachPartitionThroughSeparatePort()
+        && isPartitionKeyFunctionOfKeys(*reading, *dag, distinct_step->getColumnNames()))
+    {
+        if (reading->requestOutputEachPartitionThroughSeparatePortForDistinct())
+            distinct_step->skipStreamMerging();
     }
 }
 }

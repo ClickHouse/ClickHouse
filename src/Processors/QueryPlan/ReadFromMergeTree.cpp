@@ -3096,6 +3096,11 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForLimitBy(
     return output_each_partition_through_separate_port = true;
 }
 
+bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForDistinct()
+{
+    return requestOutputEachPartitionThroughSeparatePortForLimitBy();
+}
+
 ReadFromMergeTree::AnalysisResult & ReadFromMergeTree::getAnalysisResultImpl() const
 {
     if (!analyzed_result_ptr)
