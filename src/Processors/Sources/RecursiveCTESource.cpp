@@ -26,6 +26,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 max_recursive_cte_evaluation_depth;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
 }
 
 namespace ErrorCodes
@@ -206,7 +208,17 @@ private:
             return std::make_shared<ExpressionTransform>(input_header, convert_to_temporary_tables_header_actions);
         });
 
-        /// TODO: Support squashing transform
+        /// Squash small chunks before writing them into the intermediate table. Each recursive
+        /// step appends one StorageMemory block per produced chunk, and the next step reads the
+        /// working table block by block, so without squashing deep recursions accumulate a lot
+        /// of tiny blocks and the per-step reads degrade.
+        pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
+        {
+            return std::make_shared<SimpleSquashingChunksTransform>(
+                in_header,
+                recursive_subquery_settings[Setting::min_insert_block_size_rows],
+                recursive_subquery_settings[Setting::min_insert_block_size_bytes]);
+        });
 
         auto intermediate_temporary_table_storage_sink = intermediate_temporary_table_storage->write(
             {},
