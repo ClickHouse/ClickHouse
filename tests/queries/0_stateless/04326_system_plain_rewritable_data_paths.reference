@@ -1,0 +1,8 @@
+-- at least one blob is reported for the disk
+1
+-- remote_path always ends with directory_remote_path/name
+0
+-- remote_path always starts with the common blob prefix
+0
+-- non-root local data paths are present
+1

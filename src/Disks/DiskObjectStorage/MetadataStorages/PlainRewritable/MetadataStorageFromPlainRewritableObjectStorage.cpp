@@ -349,6 +349,37 @@ std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorage::ge
     return StoredObjects{StoredObject(object_key, path, object_size.value())};
 }
 
+std::string MetadataStorageFromPlainRewritableObjectStorage::getCommonKeyPrefix() const
+{
+    return object_storage->getCommonKeyPrefix();
+}
+
+std::vector<PlainRewritableRemoteObject> MetadataStorageFromPlainRewritableObjectStorage::getAllRemoteObjects() const
+{
+    std::vector<PlainRewritableRemoteObject> result;
+
+    for (const auto & [local_path, remote_info] : fs_tree->getSubtreeRemoteInfo(""))
+    {
+        /// Virtual directories have no blobs behind them.
+        if (!remote_info.has_value())
+            continue;
+
+        for (const auto & [file_name, file_info] : remote_info->files)
+        {
+            result.push_back(PlainRewritableRemoteObject{
+                .local_path = local_path,
+                .directory_remote_path = remote_info->remote_path,
+                .file_name = file_name,
+                .remote_path = layout->constructFileObjectKey(remote_info->remote_path, file_name),
+                .size = file_info.bytes_size,
+                .last_modified = file_info.last_modified,
+            });
+        }
+    }
+
+    return result;
+}
+
 Poco::Timestamp MetadataStorageFromPlainRewritableObjectStorage::getLastModified(const std::string & path) const
 {
     if (auto last_modified = getLastModifiedIfExists(path))
