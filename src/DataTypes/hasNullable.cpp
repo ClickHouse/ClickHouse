@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/hasNullable.h>
 
@@ -30,25 +31,24 @@ bool hasNullable(const DataTypePtr & type)
     return false;
 }
 
-bool hasVariantOrDynamic(const DataTypePtr & type)
+bool hasTypeThatCanContainNulls(const DataTypePtr & type)
 {
-    WhichDataType which(type);
-    if (which.isVariant() || which.isDynamic())
+    if (canContainNull(*type))
         return true;
 
     if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))
-        return hasVariantOrDynamic(type_array->getNestedType());
+        return hasTypeThatCanContainNulls(type_array->getNestedType());
     if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
     {
         for (const auto & subtype : type_tuple->getElements())
         {
-            if (hasVariantOrDynamic(subtype))
+            if (hasTypeThatCanContainNulls(subtype))
                 return true;
         }
         return false;
     }
     if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(type.get()))
-        return hasVariantOrDynamic(type_map->getKeyType()) || hasVariantOrDynamic(type_map->getValueType());
+        return hasTypeThatCanContainNulls(type_map->getKeyType()) || hasTypeThatCanContainNulls(type_map->getValueType());
     return false;
 }
 

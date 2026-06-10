@@ -82,3 +82,22 @@ FROM
     (SELECT map('a', v) AS k FROM format(TSV, 'v Dynamic', 'true')) AS t2
     USING (k)
 ORDER BY k;
+
+-- LowCardinality(Nullable(...)) nested in a Tuple: also covered by hasTypeThatCanContainNulls().
+-- One distinct value on the right (the "equals" path).
+SELECT *
+FROM
+    (SELECT tuple(v, 1) AS k FROM format(TSV, 'v LowCardinality(Nullable(String))', 'a\nb')) AS t1
+    JOIN
+    (SELECT tuple(v, 1) AS k FROM format(TSV, 'v LowCardinality(Nullable(String))', 'a')) AS t2
+    USING (k)
+ORDER BY k;
+
+-- Several distinct values on the right (the set-lookup path).
+SELECT *
+FROM
+    (SELECT tuple(v, 1) AS k FROM format(TSV, 'v LowCardinality(Nullable(String))', 'a\nb\nc')) AS t1
+    JOIN
+    (SELECT tuple(v, 1) AS k FROM format(TSV, 'v LowCardinality(Nullable(String))', 'a\nc')) AS t2
+    USING (k)
+ORDER BY k;

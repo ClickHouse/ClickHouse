@@ -105,8 +105,7 @@ public:
         UInt64 exact_values_limit_
     )
         : IRuntimeFilter(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_)
-        , argument_can_have_nulls(hasNullable(filter_column_target_type) ||
-            hasVariantOrDynamic(filter_column_target_type))
+        , argument_can_have_nulls(hasTypeThatCanContainNulls(filter_column_target_type))
         , bytes_limit(bytes_limit_)
         , exact_values_limit(exact_values_limit_)
         , exact_values(std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls))
