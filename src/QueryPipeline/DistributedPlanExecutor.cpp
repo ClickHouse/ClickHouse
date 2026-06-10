@@ -250,7 +250,13 @@ public:
         std::lock_guard lock(mutex);
         auto & element = exchanges_by_query_id[query_id][exchange_id];
         if (!element)
+        {
             element = std::make_shared<InMemoryExchange>(exchange_id);
+            /// A task built concurrently with the cancellation may look up its exchange after
+            /// cancelQuery already ran; hand it out pre-cancelled so its reads do not block forever.
+            if (cancelled_queries.contains(query_id))
+                element->cancel();
+        }
         return element;
     }
 
@@ -260,6 +266,7 @@ public:
     void cancelQuery(const String & query_id)
     {
         std::lock_guard lock(mutex);
+        cancelled_queries.insert(query_id);
         auto it = exchanges_by_query_id.find(query_id);
         if (it == exchanges_by_query_id.end())
             return;
@@ -272,6 +279,7 @@ public:
     {
         std::lock_guard lock(mutex);
         exchanges_by_query_id.erase(query_id);
+        cancelled_queries.erase(query_id);
     }
 
     static std::shared_ptr<InMemoryExchanges> instance()
@@ -284,6 +292,7 @@ private:
     using InMemoryExchangeMap = UnorderedMapWithMemoryTracking<String, InMemoryExchangePtr>;
 
     UnorderedMapWithMemoryTracking<String, InMemoryExchangeMap> exchanges_by_query_id TSA_GUARDED_BY(mutex);
+    UnorderedSetWithMemoryTracking<String> cancelled_queries TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 };
 
@@ -350,6 +359,13 @@ private:
         {
             return exchange->getChunk();
         }
+
+        /// Wake a generate() blocked in getChunk; pipeline cancellation alone cannot interrupt it.
+        void onCancel() noexcept override
+        {
+            exchange->cancel();
+        }
+
     private:
         InMemoryExchangePtr exchange;
     };
@@ -1440,8 +1456,13 @@ void DistributedQueryPlanExecutor::startStageWithDependencies(const String & sta
             }
         }
 
+        /// Wait in bounded steps so cancellation interrupts the wait. The caller holds the
+        /// source's executor mutex, so blocking here unboundedly would also block onCancel.
         for (const auto & dependency : dependencies_to_wait)
-            waitForStage(dependency, std::nullopt);
+        {
+            while (!waitForStage(dependency, /*timeout_ms=*/ 100))
+                checkCancelled();
+        }
     }
 
     const auto & stage = distributed_query_plan.stages.at(stage_name);
@@ -1518,6 +1539,11 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
         executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, task_to_host_map, context, is_cancelled);
 
     return executor;
+}
+
+void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id)
+{
+    InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id));
 }
 
 }

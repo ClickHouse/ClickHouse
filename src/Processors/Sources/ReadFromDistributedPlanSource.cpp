@@ -63,6 +63,9 @@ void ReadFromDistributedPlanSource::onCancel() noexcept
     *cancellation_flag = true;
     try
     {
+        /// Wake exchange waiters before taking the lock: the lock holder itself may be blocked
+        /// on an exchange or on a stage whose tasks are, and would never release it otherwise.
+        cancelDistributedQueryInMemoryExchanges(unique_query_id);
         std::lock_guard lock(executor_mutex);
         cleanupLocked();
     }
