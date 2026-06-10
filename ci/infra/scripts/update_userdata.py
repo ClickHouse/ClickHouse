@@ -8,24 +8,25 @@ Mac instance puts its host into a multi-hour scrub (host state `pending`), so
 `available` again.
 
 This script encapsulates that whole user_data update workflow so it lives apart
-from the praktika `deploy` path. It reuses the `EC2Instance.Config` entries from
-`ci/infra/cloud.py` as the source of truth: each named config supplies the
-`region`, the `user_data_file`, and the tags used to discover the live
-instances. For every instance of a selected config it:
+from the praktika `deploy` path. You pass the EC2 instance ids to touch via
+`--instance`; the `EC2Instance.Config` entries in `ci/infra/cloud.py` are the
+source of truth for everything else. The script discovers each config's live
+instances (matching praktika's own tag-based lookup), and for every requested
+instance found under a config it uses that config's `region` and
+`user_data_file` to:
 
-  1. Compares the live `user_data` with the configured file; skips the instance
+  1. Compare the live `user_data` with the configured file; skip the instance
      when it already matches.
-  2. Otherwise stops the instance, installs the new `user_data`, and starts it
+  2. Otherwise stop the instance, install the new `user_data`, and start it
      again, blocking on the Dedicated Host scrub.
 
 Instances are reconciled one at a time so the whole fleet is never stopped at
-once. Only the configs named with `--instance` are touched; all others are left
-alone.
+once. Only the instance ids you pass are touched; all others are left alone.
 
 Examples:
 
-    update_userdata.py --instance macos_m2
-    update_userdata.py --instance amd_macos_m1 macos_m2
+    update_userdata.py --instance i-0123456789abcdef0
+    update_userdata.py --instance i-0123456789abcdef0 i-0fedcba9876543210
 """
 
 import argparse
@@ -211,18 +212,10 @@ def reconcile_instance(ec2, instance_id, state, user_data, start):
         start_instances(ec2, [instance_id])
 
 
-def reconcile_config(config, start):
-    """Reconcile every live instance of one `EC2Instance.Config`.
-
-    Reuses the config's `region`, `user_data_file`, and tag-based discovery
-    (`_find_existing_instances`) so the standalone update matches what praktika
-    `deploy` would launch.
+def load_user_data(config):
+    """Read the `user_data` file configured for `config`, resolving a relative
+    path against the repo root.
     """
-    region = config.region or DEFAULT_REGION
-    # `_find_existing_instances` builds its own boto3 client from `config.region`,
-    # so pin the default region on the config before discovery.
-    config.region = region
-
     user_data_file = config.user_data_file
     if not user_data_file:
         raise Exception(f"config '{config.name}' has no user_data_file")
@@ -231,20 +224,49 @@ def reconcile_config(config, start):
     with open(user_data_file, "r") as f:
         user_data = f.read()
     print(
-        f"[{config.name}] region={region}, user_data='{user_data_file}' "
+        f"[{config.name}] region={config.region}, user_data='{user_data_file}' "
         f"({len(user_data)} bytes)"
     )
+    return user_data
 
-    instances = config._find_existing_instances()
-    if not instances:
-        print(f"[{config.name}] no instances found - skip")
-        return
 
-    ec2 = boto3.client("ec2", region_name=region)
-    for inst in instances:
-        instance_id = inst.get("InstanceId")
-        state = (inst.get("State") or {}).get("Name")
-        reconcile_instance(ec2, instance_id, state, user_data, start)
+def reconcile_instances(configs, requested_ids):
+    """Reconcile the requested instance ids, sourcing each one's `region` and
+    `user_data_file` from the `ci/infra/cloud.py` config that owns it.
+
+    Each config's live instances are discovered with praktika's own tag-based
+    lookup (`_find_existing_instances`), so the standalone update matches what
+    praktika `deploy` would launch. An id that belongs to no config is an error.
+    """
+    pending = set(requested_ids)
+    for config in configs.values():
+        if not pending:
+            break
+        # `_find_existing_instances` builds its own boto3 client from
+        # `config.region`, so pin the default region on the config first.
+        config.region = config.region or DEFAULT_REGION
+
+        matched = [
+            inst
+            for inst in config._find_existing_instances()
+            if inst.get("InstanceId") in pending
+        ]
+        if not matched:
+            continue
+
+        user_data = load_user_data(config)
+        ec2 = boto3.client("ec2", region_name=config.region)
+        for inst in matched:
+            instance_id = inst.get("InstanceId")
+            state = (inst.get("State") or {}).get("Name")
+            reconcile_instance(ec2, instance_id, state, user_data, start=True)
+            pending.discard(instance_id)
+
+    if pending:
+        raise Exception(
+            f"instance(s) {sorted(pending)} not found under any EC2Instance "
+            f"config in ci/infra/cloud.py"
+        )
 
 
 def main():
@@ -258,19 +280,18 @@ def main():
         "--instance",
         required=True,
         nargs="+",
-        metavar="NAME",
-        choices=sorted(configs),
+        metavar="INSTANCE_ID",
         help=(
-            "EC2Instance config name(s) from ci/infra/cloud.py to reconcile "
-            "(e.g. macos_m2). Every live instance of each named config is "
-            "stopped, has its configured user_data installed, and is started "
-            "again. Configs not named here are left untouched."
+            "EC2 instance ids to reconcile (e.g. i-0123456789abcdef0). Each id "
+            "is matched to its ci/infra/cloud.py config to source the region "
+            "and user_data file, then the instance is stopped, has the "
+            "configured user_data installed, and is started again. Other "
+            "instances are left untouched."
         ),
     )
     args = parser.parse_args()
 
-    for name in args.instance:
-        reconcile_config(configs[name], start=True)
+    reconcile_instances(configs, args.instance)
 
 
 if __name__ == "__main__":
