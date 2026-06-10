@@ -91,7 +91,6 @@ private:
     bool refresh();
     void refreshEntities(const zkutil::ZooKeeperPtr & zookeeper, bool all);
     void refreshEntity(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id);
-    void refreshEntityNoLock(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) TSA_REQUIRES(mutex);
 
     AccessEntityPtr tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) const;
     void setEntityNoLock(const UUID & id, const AccessEntityPtr & entity)  TSA_REQUIRES(mutex);
