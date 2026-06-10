@@ -1679,6 +1679,14 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 key_type = key_type_hint;
             }
 
+            {
+                const auto & off = assert_cast<const ColumnVector<UInt64> &>(*offsets_column).getData();
+                if (!off.empty() && off.back() != key_column->size())
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Arrow Map column '{}': last offset {} does not match nested column size {}",
+                        column_name, off.back(), key_column->size());
+            }
             auto map_column = ColumnMap::create(key_column, value_column, offsets_column);
             auto map_type = std::make_shared<DataTypeMap>(key_type, value_type);
             return {std::move(map_column), std::move(map_type), column_name};
@@ -1800,6 +1808,19 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             else
             {
                 array_type = std::make_shared<DataTypeArray>(nested_column.type);
+            }
+            /// Validate that the last offset matches the nested column size before constructing
+            /// ColumnArray.  ColumnArray's constructor skips data->size() == last_offset when
+            /// data->empty() (the && !data->empty() short-circuit), so a crafted Arrow file
+            /// with an empty child but non-zero offsets would silently produce a column whose
+            /// interior offsets point past the inner allocation.
+            {
+                const auto & off = assert_cast<const ColumnVector<UInt64> &>(*offsets_column).getData();
+                if (!off.empty() && off.back() != array_data_column->size())
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Arrow List column '{}': last offset {} does not match nested column size {}",
+                        column_name, off.back(), array_data_column->size());
             }
             auto array_column = ColumnArray::create(array_data_column, offsets_column);
             return {std::move(array_column), array_type, column_name};
