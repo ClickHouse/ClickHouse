@@ -127,7 +127,7 @@ void checkValidityBitmap(const arrow::Array & chunk, const String & column_name)
         return;
     const auto & buffer = chunk.data()->buffers[0];
     const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
-    const size_t count = static_cast<size_t>(chunk.offset() + chunk.length());
+    const size_t count = static_cast<size_t>(chunk.offset()) + static_cast<size_t>(chunk.length());
     const size_t required = count / 8 + (count % 8 != 0 ? 1 : 0);
     if (unlikely(buffer_size < required))
         throw Exception(
@@ -149,7 +149,7 @@ void checkArrowBuffer(const arrow::Array & chunk, size_t elem_size, const String
             column_name, chunk.length(), chunk.offset());
     const auto & buffer = chunk.data()->buffers[1];
     const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
-    const size_t count = static_cast<size_t>(chunk.offset() + chunk.length());
+    const size_t count = static_cast<size_t>(chunk.offset()) + static_cast<size_t>(chunk.length());
     size_t required = 0;
     if (unlikely(__builtin_mul_overflow(elem_size, count, &required)))
         throw Exception(
@@ -171,7 +171,10 @@ template <typename T>
 const T * getValidatedBuffer(const arrow::Array & chunk, const String & column_name)
 {
     checkArrowBuffer(chunk, sizeof(T), column_name);
-    return reinterpret_cast<const T *>(chunk.data()->buffers[1]->data()) + chunk.offset();
+    const auto * buf = chunk.data()->buffers[1].get();
+    if (!buf)
+        return nullptr; /// empty chunk (offset == 0, length == 0); no elements will be accessed
+    return reinterpret_cast<const T *>(buf->data()) + chunk.offset();
 }
 
 /// Boolean arrays pack 8 values per byte starting at bit chunk.offset(), so the
@@ -185,7 +188,7 @@ void checkBooleanBuffer(const arrow::BooleanArray & chunk, const String & column
             column_name, chunk.length(), chunk.offset());
     const auto & buffer = chunk.data()->buffers[1];
     const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
-    const size_t count = static_cast<size_t>(chunk.offset() + chunk.length());
+    const size_t count = static_cast<size_t>(chunk.offset()) + static_cast<size_t>(chunk.length());
     const size_t required = count / 8 + (count % 8 != 0 ? 1 : 0); /// overflow-safe ceiling division
     if (unlikely(buffer_size < required))
         throw Exception(
@@ -287,7 +290,7 @@ void checkBinaryOffsetsBuffer(const ArrowBinaryArray & chunk, const String & col
             column_name, chunk.length(), chunk.offset());
     const auto & buffer = chunk.data()->buffers[1];
     const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
-    const size_t count_plus_one = static_cast<size_t>(chunk.offset() + chunk.length()) + 1;
+    const size_t count_plus_one = static_cast<size_t>(chunk.offset()) + static_cast<size_t>(chunk.length()) + 1;
     size_t required = 0;
     if (unlikely(__builtin_mul_overflow(sizeof(typename ArrowBinaryArray::offset_type), count_plus_one, &required)))
         throw Exception(
