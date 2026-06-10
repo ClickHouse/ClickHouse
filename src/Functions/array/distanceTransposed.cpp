@@ -419,7 +419,7 @@ private:
         simsimd_kernel_punned_t simd_kernel = nullptr;
         simsimd_capability_t unused = simsimd_cap_any_k;
         simsimd_find_kernel_punned(Kernel::metric_kind, datatype, simsimd_capabilities(), simsimd_cap_any_k, &simd_kernel, &unused);
-        return std::bit_cast<simsimd_metric_dense_punned_t>(simd_kernel);
+        return std::bit_cast<simsimd_metric_dense_punned_t>(simd_kernel); /// NOLINT(bugprone-bitwise-pointer-cast)
     }
 #endif
 
