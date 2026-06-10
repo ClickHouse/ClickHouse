@@ -1,4 +1,3 @@
--- Tags: no-parallel-replicas
 -- https://github.com/ClickHouse/ClickHouse/issues/78761
 -- A non-equi JOIN ON predicate over a Nothing-typed column (e.g. from ARRAY JOIN [])
 -- used to abort with LOGICAL_ERROR "Unexpected expression in JOIN ON section. Expected boolean (UInt8), got 'Nothing'".
