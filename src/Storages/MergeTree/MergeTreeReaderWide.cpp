@@ -102,29 +102,36 @@ bool MergeTreeReaderWide::canServeWholeRangeFromCache() const
         return false;
 
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
-    const size_t row_begin = index_granularity.getMarkStartingRow(all_mark_ranges.front().begin);
-    const size_t row_end = (all_mark_ranges.back().end < index_granularity.getMarksCount())
-        ? index_granularity.getMarkStartingRow(all_mark_ranges.back().end)
-        : data_part_info_for_read->getRowCount();
 
-    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    /// The cache stores blocks per contiguous mark range (readRows bounds them by
+    /// `current_range_last_mark`), so check each range separately: a cached block
+    /// never spans the gaps between ranges of a multi-range task.
+    for (const auto & mark_range : all_mark_ranges)
     {
-        if (isColumnDroppedByPendingMutation(pos))
-            continue;
+        const size_t row_begin = index_granularity.getMarkStartingRow(mark_range.begin);
+        const size_t row_end = (mark_range.end < index_granularity.getMarksCount())
+            ? index_granularity.getMarkStartingRow(mark_range.end)
+            : data_part_info_for_read->getRowCount();
 
-        auto intersecting = columns_cache->getIntersecting(
-            data_part_info_for_read->getTableUUID(),
-            data_part_info_for_read->getPartName(),
-            columns_to_read[pos].name,
-            row_begin,
-            row_end);
+        for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+        {
+            if (isColumnDroppedByPendingMutation(pos))
+                continue;
 
-        /// Need exactly one cached block fully containing the requested range,
-        /// the same condition readRows uses to serve a column from cache.
-        if (!(intersecting.size() == 1
-              && intersecting[0].first.row_begin <= row_begin
-              && intersecting[0].first.row_end >= row_end))
-            return false;
+            auto intersecting = columns_cache->getIntersecting(
+                data_part_info_for_read->getTableUUID(),
+                data_part_info_for_read->getPartName(),
+                columns_to_read[pos].name,
+                row_begin,
+                row_end);
+
+            /// Need exactly one cached block fully containing the requested range,
+            /// the same condition readRows uses to serve a column from cache.
+            if (!(intersecting.size() == 1
+                  && intersecting[0].first.row_begin <= row_begin
+                  && intersecting[0].first.row_end >= row_end))
+                return false;
+        }
     }
 
     return true;
@@ -213,7 +220,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
 }
 
 size_t MergeTreeReaderWide::readRows(
-    size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read,
+    size_t from_mark, size_t current_task_last_mark, size_t current_range_last_mark, bool continue_reading, size_t max_rows_to_read,
     size_t rows_offset, Columns & res_columns)
 {
     size_t read_rows = 0;
@@ -257,8 +264,15 @@ size_t MergeTreeReaderWide::readRows(
         const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
         const size_t mark_row_begin = index_granularity.getMarkStartingRow(from_mark);
         const size_t row_begin = mark_row_begin + rows_offset;
-        const size_t row_end_max = (current_task_last_mark < index_granularity.getMarksCount())
-            ? index_granularity.getMarkStartingRow(current_task_last_mark)
+        /// Cache lookups and writes are bounded by the contiguous mark range being
+        /// read, not by the last mark of the whole task: for a multi-range task,
+        /// bounding by the task's last mark would require cached blocks to span the
+        /// gaps between ranges, so every range except the last would neither hit the
+        /// cache nor populate it. Fall back to the task's last mark when the caller
+        /// did not provide the range end.
+        const size_t cache_last_mark = current_range_last_mark ? current_range_last_mark : current_task_last_mark;
+        const size_t row_end_max = (cache_last_mark < index_granularity.getMarksCount())
+            ? index_granularity.getMarkStartingRow(cache_last_mark)
             : data_part_info_for_read->getRowCount();
         const size_t row_end_query = std::min(row_begin + max_rows_to_read, row_end_max);
 
@@ -487,7 +501,7 @@ size_t MergeTreeReaderWide::readRows(
             {
                 cache_write_pending = true;
                 cache_row_begin = row_begin;
-                cache_task_last_mark = current_task_last_mark;
+                cache_range_last_mark = cache_last_mark;
                 cache_column_sizes_at_task_start.resize(num_columns);
                 /// Capture the table invalidation generation at the start of the
                 /// read. The deferred write below passes it to set(), which drops
@@ -563,11 +577,11 @@ size_t MergeTreeReaderWide::readRows(
                 cache_write_pending = false;
 
             /// Check if deferred cache write should execute.
-            /// We cache only when the full task range has been read (all continuation reads are done).
+            /// We cache only when the full range has been read (all continuation reads are done).
             if (cache_write_pending && read_rows > 0)
             {
-                size_t cache_row_end_max = (cache_task_last_mark < index_granularity.getMarksCount())
-                    ? index_granularity.getMarkStartingRow(cache_task_last_mark)
+                size_t cache_row_end_max = (cache_range_last_mark < index_granularity.getMarksCount())
+                    ? index_granularity.getMarkStartingRow(cache_range_last_mark)
                     : data_part_info_for_read->getRowCount();
 
                 /// Compute total rows read across all calls for this task.

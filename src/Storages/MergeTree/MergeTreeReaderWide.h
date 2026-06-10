@@ -35,6 +35,7 @@ public:
     size_t readRows(
         size_t from_mark,
         size_t current_task_last_mark,
+        size_t current_range_last_mark,
         bool continue_reading,
         size_t max_rows_to_read,
         size_t offset,
@@ -125,19 +126,20 @@ private:
     LoggerPtr log;
 
     /// State for deferred columns cache writes.
-    /// We defer cache writes until all continuation reads for a task range are done,
-    /// so we cache the full range and avoid sharing column pointers with in-progress reads.
+    /// We defer cache writes until all continuation reads for a contiguous mark range
+    /// are done, so we cache the full range and avoid sharing column pointers with
+    /// in-progress reads.
     bool cache_write_pending = false;
     size_t cache_row_begin = 0;
-    size_t cache_task_last_mark = 0;
+    size_t cache_range_last_mark = 0;
     std::vector<size_t> cache_column_sizes_at_task_start;
     /// Table invalidation generation captured when this task's read started.
     /// Passed to ColumnsCache::set so a deferred write is dropped if the table was
     /// invalidated (e.g. RENAME COLUMN) after the read began. See getTableGeneration.
     UInt64 cache_table_generation = 0;
 
-    /// True if the whole task range can be served from the columns cache, so the
-    /// prefetch path can skip scheduling stream reads. See prefetchBeginOfRange.
+    /// True if all mark ranges of the task can be served from the columns cache,
+    /// so the prefetch path can skip scheduling stream reads. See prefetchBeginOfRange.
     bool canServeWholeRangeFromCache() const;
 };
 

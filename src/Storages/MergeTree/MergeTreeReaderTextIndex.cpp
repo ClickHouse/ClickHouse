@@ -327,6 +327,7 @@ PostingListCursorPtr MergeTreeReaderTextIndex::makeLazyCursor(std::string_view t
 size_t MergeTreeReaderTextIndex::readRows(
     size_t from_mark,
     size_t current_task_last_mark,
+    size_t current_range_last_mark,
     bool continue_reading,
     size_t max_rows_to_read,
     size_t rows_offset,
@@ -393,7 +394,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     if (any_use_fallback && fallback_reader && max_rows_to_read > 0)
     {
         Columns fallback_cols(fallback_columns_list.size(), nullptr);
-        fallback_reader->readRows(from_mark, current_task_last_mark, continue_reading, max_rows_to_read, rows_offset, fallback_cols);
+        fallback_reader->readRows(from_mark, current_task_last_mark, current_range_last_mark, continue_reading, max_rows_to_read, rows_offset, fallback_cols);
         size_t col_idx = 0;
         for (const auto & col_name_type : fallback_columns_list)
             fallback_block.insert({fallback_cols[col_idx++], col_name_type.type, col_name_type.name});

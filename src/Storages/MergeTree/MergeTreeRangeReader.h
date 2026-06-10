@@ -190,7 +190,7 @@ private:
     {
     public:
         DelayedStream() = default;
-        DelayedStream(size_t from_mark, size_t current_task_last_mark_, IMergeTreeReader * merge_tree_reader);
+        DelayedStream(size_t from_mark, size_t current_task_last_mark_, size_t current_range_last_mark_, IMergeTreeReader * merge_tree_reader);
 
         /// Read @num_rows rows from @from_mark starting from @offset row
         /// Returns the number of rows added to block.
@@ -215,6 +215,9 @@ private:
         size_t num_delayed_rows = 0;
         /// Last mark from all ranges of current task.
         size_t current_task_last_mark = 0;
+        /// End mark of the contiguous mark range being read. Bounds caching of
+        /// deserialized columns in the reader (see IMergeTreeReader::readRows).
+        size_t current_range_last_mark = 0;
 
         /// Actual reader of data from disk
         IMergeTreeReader * merge_tree_reader = nullptr;

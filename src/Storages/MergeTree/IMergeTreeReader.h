@@ -37,9 +37,14 @@ public:
 
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark.
-    /// current_task_last mark is needed for asynchronous reading (mainly from remote fs).
+    /// current_task_last_mark is needed for asynchronous reading (mainly from remote fs);
+    /// it is the maximum end mark across all mark ranges of the current read task.
+    /// current_range_last_mark is the end mark of the contiguous mark range being read
+    /// (<= current_task_last_mark; equal to it when the read task is one contiguous range).
+    /// It bounds caching of deserialized columns, which must not span the gaps between
+    /// ranges of a multi-range task. 0 means unknown.
     /// If rows_offset is not 0, when reading from MergeTree, the first rows_offset rows will be skipped.
-    virtual size_t readRows(size_t from_mark, size_t current_task_last_mark,
+    virtual size_t readRows(size_t from_mark, size_t current_task_last_mark, size_t current_range_last_mark,
                             bool continue_reading, size_t max_rows_to_read,
                             size_t rows_offset, Columns & res_columns) = 0;
 
