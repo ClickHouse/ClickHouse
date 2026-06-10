@@ -85,6 +85,7 @@ namespace FailPoints
     extern const char mt_alter_throw_in_start_mutation[];
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
+    extern const char mt_alter_throw_in_durable_rollback[];
 }
 
 namespace Setting
@@ -549,8 +550,8 @@ void StorageMergeTree::alter(
             }
 
             /// Durable metadata is committed. Bind the file to the commit so any subsequent
-            /// throw preserves `mutation_*.txt`; the non-replicated rollback below clears
-            /// the flag again before re-throwing when it rolls durable metadata back.
+            /// throw preserves `mutation_*.txt`; the rollback below keeps it alive until the
+            /// durable metadata rollback succeeds, then removes it.
             if (prepared)
                 prepared->entry.is_registered = true;
 
@@ -620,9 +621,13 @@ void StorageMergeTree::alter(
                 }
                 else
                 {
-                    /// Roll durable metadata back to `old_metadata`: revert in-memory metadata,
-                    /// then unregister the rename mutation and remove its file under the lock so
-                    /// `loadMutations` cannot replay it against the rolled-back metadata on restart.
+                    /// Revert in-memory metadata to `old_metadata` and take the rename
+                    /// mutation out of the in-memory map under the lock, so merge selection
+                    /// cannot observe `new_metadata` without a matching mutation while the
+                    /// durable rollback runs. The committed `mutation_*.txt` is kept alive in
+                    /// `held_entry` (its `is_registered` flag stops the destructor from
+                    /// removing it) and is only removed once `alterTable(old_metadata)`
+                    /// durably succeeds. See #80648.
                     try
                     {
                         setProperties(old_metadata, new_metadata, false, local_context);
@@ -632,37 +637,87 @@ void StorageMergeTree::alter(
                         tryLogCurrentException(log, "Failed to revert in-memory metadata; server may be inconsistent until restart");
                     }
 
+                    std::optional<MergeTreeMutationEntry> held_entry;
+                    Int64 held_version = -1;
                     if (mutation_registered)
                     {
                         auto it = current_mutations_by_version.find(mutation_version);
                         if (it != current_mutations_by_version.end())
                         {
                             decrementMutationsCounters(mutation_counters, *it->second.commands);
-                            /// Transfer file ownership back to the destructor on erase.
-                            it->second.is_registered = false;
+                            held_version = it->first;
+                            held_entry.emplace(std::move(it->second));
                             current_mutations_by_version.erase(it);
                         }
                     }
                     else if (prepared)
                     {
-                        /// File still owned by `prepared`; clear the durable-commit flag
-                        /// set after `alterTable` so `~prepared` removes it.
-                        prepared->entry.is_registered = false;
+                        held_version = prepared->version;
+                        held_entry.emplace(std::move(prepared->entry));
                     }
 
                     background_lock.unlock();
 
+                    bool durable_rolled_back = false;
                     try
                     {
+                        fiu_do_on(FailPoints::mt_alter_throw_in_durable_rollback,
+                        {
+                            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in durable rollback");
+                        });
                         database->alterTable(local_context, table_id, old_metadata, /*validate_new_create_query=*/false);
+                        durable_rolled_back = true;
                     }
                     catch (...)
                     {
-                        tryLogCurrentException(log, "Failed to roll back on-disk metadata; server may be inconsistent until restart");
+                        tryLogCurrentException(log, "Failed to roll back on-disk metadata; keeping new metadata and rename mutation in sync instead");
                     }
 
-                    /// Durable metadata is back to `old_metadata`; revert settings to match.
-                    changeSettings(old_metadata.settings_changes, table_lock_holder);
+                    if (durable_rolled_back)
+                    {
+                        /// Durable metadata is `old_metadata` again; the rename mutation is no
+                        /// longer needed. Remove the file now that nothing depends on it.
+                        if (held_entry)
+                        {
+                            try
+                            {
+                                LOG_INFO(log, "Removing rename mutation file {} after rolling durable metadata back", held_entry->file_name);
+                                held_entry->removeFile();
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(log, "Failed to remove rolled-back rename mutation file");
+                            }
+                        }
+                        changeSettings(old_metadata.settings_changes, table_lock_holder);
+                    }
+                    else
+                    {
+                        /// Durable metadata is still `new_metadata` and could not be rolled
+                        /// back. Converge to the successful-alter state instead of leaving
+                        /// in-memory and durable metadata mismatched: re-register the on-disk
+                        /// rename mutation (if any) and republish `new_metadata` so a merge
+                        /// applies the rename consistently. Settings stay new to match durable.
+                        std::lock_guard relock(currently_processing_in_background_mutex);
+                        try
+                        {
+                            if (held_entry)
+                            {
+                                auto [it, inserted] = current_mutations_by_version.try_emplace(held_version, std::move(*held_entry));
+                                if (inserted)
+                                {
+                                    it->second.is_registered = true;
+                                    incrementMutationsCounters(mutation_counters, *it->second.commands);
+                                    background_operations_assignee.trigger();
+                                }
+                            }
+                            setProperties(new_metadata, old_metadata, false, local_context);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(log, "Failed to bring in-memory metadata in sync with durable metadata; server may be inconsistent until restart");
+                        }
+                    }
                 }
                 throw;
             }
