@@ -1017,9 +1017,10 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
                         transaction.commit(parts_lock);
                     else
                     {
-                        /// The cleanup already moved the part to detached and committed its part storage
-                        /// transaction (see forcefullyMovePartToDetachedAndRemoveFromMemory), so there is
-                        /// nothing left to materialize here; just drop the part from the precommitted set.
+                        /// The cleanup already committed the part storage transaction and moved the part
+                        /// to detached (see forcefullyMovePartToDetachedAndRemoveFromMemory). The part state
+                        /// can only leave PreActive after that commit succeeded, so there is nothing left
+                        /// to materialize here; just drop the part from the precommitted set.
                         LOG_DEBUG(log, "Part {} was already discarded by the failed-quorum cleanup, nothing to commit", part->name);
                         transaction.clear();
                     }

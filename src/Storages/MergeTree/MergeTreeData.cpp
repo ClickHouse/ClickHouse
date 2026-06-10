@@ -5813,15 +5813,30 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
     const bool was_preactive = part->getState() == DataPartState::PreActive;
 
     modifyPartState(it_part, DataPartState::Deleting, lock);
-    asMutableDeletingPart(part)->renameToDetached(prefix, /*ignore_error=*/ replicated);
 
     /// A PreActive part discarded mid-insert still owns an uncommitted part storage transaction: on
-    /// object-storage disks its writes and the rename into `detached/` are only buffered and are normally
-    /// materialized by `MergeTreeData::Transaction::commit` via `commitTransaction`. Here the part leaves
-    /// the working set without that commit ever happening, so commit the part storage transaction now;
-    /// otherwise the detached part is never materialized and its blobs are orphaned.
+    /// object-storage disks its writes and renames are only buffered and are normally materialized by
+    /// `MergeTreeData::Transaction::commit` via `commitTransaction`. Here the part leaves the working set
+    /// without that commit ever happening, so commit the part storage transaction now; otherwise the
+    /// detached part is never materialized and its blobs are orphaned. The commit is done before
+    /// `renameToDetached` (so the rename below executes directly instead of being buffered), and if it
+    /// throws, the part state is restored: the part stays PreActive, indexed and with its storage
+    /// transaction still active, so the recovering INSERT can commit or roll it back normally and
+    /// `waitForPreActivePartsInRange` waiters do not sleep forever on a part stuck in the Deleting state.
     if (was_preactive && part->getDataPartStorage().hasActiveTransaction())
-        asMutableDeletingPart(part)->getDataPartStorage().commitTransaction();
+    {
+        try
+        {
+            asMutableDeletingPart(part)->getDataPartStorage().commitTransaction();
+        }
+        catch (...)
+        {
+            modifyPartState(it_part, DataPartState::PreActive, lock);
+            throw;
+        }
+    }
+
+    asMutableDeletingPart(part)->renameToDetached(prefix, /*ignore_error=*/ replicated);
 
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
