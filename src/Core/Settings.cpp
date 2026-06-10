@@ -755,6 +755,8 @@ Possible values:
 )", 0) \
     DECLARE(Bool, enable_hdfs_pread, true, R"(
 Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0) \
+    DECLARE(Bool, use_reader_executor, false, R"(
+Experimental. Route reads through the new pipeline `ReaderExecutor` instead of the legacy matryoshka of read buffers. Falls back to the legacy path for configurations the executor does not yet support.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 
@@ -2452,11 +2454,11 @@ When set to 1, a random seed is generated, when set to a value > 1, that value i
 This is intended for testing to find errors caused by different join orderings.
 )", EXPERIMENTAL) \
     \
-    DECLARE(Bool, enable_join_transitive_predicates, false, R"(
+    DECLARE(Bool, enable_join_transitive_predicates, true, R"(
 Infer transitive equi-join predicates from existing join conditions.
 For example, given `A.x = B.x` and `B.x = C.x`, a synthetic `A.x = C.x` predicate
 is added so the join order optimizer can consider direct (A JOIN C) plans.
-)", EXPERIMENTAL) \
+)", BETA) \
     \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
 Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
@@ -8125,7 +8127,7 @@ Run all tasks of a distributed query plan locally. Useful for testing and debugg
     DECLARE(NonZeroUInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
 Default number of buckets for distributed shuffle-hash-join.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, distributed_plan_default_reader_bucket_count, 8, R"(
+    DECLARE(NonZeroUInt64, distributed_plan_default_reader_bucket_count, 8, R"(
 Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
