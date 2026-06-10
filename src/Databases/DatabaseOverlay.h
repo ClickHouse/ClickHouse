@@ -3,6 +3,8 @@
 #include <Storages/IStorage_fwd.h>
 #include <Databases/IDatabase.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -126,6 +128,12 @@ protected:
     /// In non-readonly mode (clickhouse-local), returns the directly-registered
     /// databases stored in `databases`.
     std::vector<DatabasePtr> resolveDatabases() const;
+
+    /// Recursive helper for `resolveDatabases`: expands nested read-only `Overlay`
+    /// sources into their leaf databases. `resolving` holds the facades on the
+    /// current resolution path and is used to detect reference cycles (which can
+    /// be formed after creation by dropping and re-creating a source database).
+    void resolveDatabasesImpl(std::unordered_set<const IDatabase *> & resolving, std::vector<DatabasePtr> & resolved) const;
 
     /// Directly registered underlying databases (clickhouse-local non-readonly mode).
     /// Empty in readonly mode.

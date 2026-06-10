@@ -69,15 +69,44 @@ std::vector<DatabasePtr> DatabaseOverlay::resolveDatabases() const
 
     std::vector<DatabasePtr> resolved;
     resolved.reserve(source_names.size());
+    std::unordered_set<const IDatabase *> resolving;
+    resolving.insert(this);
+    resolveDatabasesImpl(resolving, resolved);
+    return resolved;
+}
+
+void DatabaseOverlay::resolveDatabasesImpl(std::unordered_set<const IDatabase *> & resolving, std::vector<DatabasePtr> & resolved) const
+{
     for (const auto & name : source_names)
     {
-        if (auto db = DatabaseCatalog::instance().tryGetDatabase(name))
-            resolved.push_back(std::move(db));
+        auto db = DatabaseCatalog::instance().tryGetDatabase(name);
+        if (!db)
+            continue;
         /// If the source is not (yet) registered, skip it silently: during
         /// `loadMetadata` the Overlay may be processed before one of its sources,
         /// and the missing source will simply become visible once it is loaded.
+
+        /// A source can itself be a read-only `Overlay`. Since sources are resolved
+        /// lazily by name, the reference graph can become cyclic after creation:
+        /// create `db_b` as `Overlay('db_a')`, drop `db_a`, re-create `db_a` as
+        /// `Overlay('db_b')` — the per-database self-reference check at CREATE time
+        /// cannot see this. Expand nested facades into their leaf databases here,
+        /// and reject cycles instead of recursing until the stack is exhausted.
+        if (const auto * nested = dynamic_cast<const DatabaseOverlay *>(db.get()); nested && nested->readonly)
+        {
+            if (!resolving.insert(nested).second)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Overlay database {} is part of a reference cycle involving database {}",
+                    backQuote(getDatabaseName()),
+                    backQuote(name));
+            nested->resolveDatabasesImpl(resolving, resolved);
+            resolving.erase(nested);
+            continue;
+        }
+
+        resolved.push_back(std::move(db));
     }
-    return resolved;
 }
 
 bool DatabaseOverlay::isTableExist(const String & table_name, ContextPtr context_) const
@@ -393,6 +422,14 @@ void DatabaseOverlay::alterTable(ContextPtr local_context, const StorageID & tab
 std::vector<std::pair<ASTPtr, StoragePtr>>
 DatabaseOverlay::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
 {
+    /// The read-only facade owns no tables: backing them up here would rewrite their
+    /// `CREATE TABLE` statements to the facade's name, producing a backup that cannot be
+    /// restored (table creation through the facade is rejected). The tables are backed up
+    /// with the source databases that own them; `BACKUP DATABASE` on the facade captures
+    /// only the `CREATE DATABASE ... ENGINE = Overlay(...)` definition.
+    if (readonly)
+        return {};
+
     std::vector<std::pair<ASTPtr, StoragePtr>> result;
     for (const auto & db : resolveDatabases())
     {
