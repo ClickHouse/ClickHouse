@@ -141,6 +141,8 @@ const std::unordered_set<String> non_deterministic_functions = {
     "entropy", "exponentialMovingAverage", "exponentialTimeDecayedAvg",
     "simpleLinearRegression", "sparkBar", "histogram",
     "retentionState",
+    /// Depends on physical data layout, not values.
+    "estimateCompressionRatio",
 };
 
 /// Maximum formatted query length for oracle sub-queries.
@@ -466,6 +468,30 @@ bool referencesAnyAlias(const ASTPtr & ast, const std::unordered_set<String> & a
     return false;
 }
 
+/// True if `clause` defines an alias that is referenced anywhere else in the
+/// SELECT. ClickHouse aliases are visible query-wide, so an oracle rewrite
+/// that removes or replaces such a clause (TLP's reference query drops WHERE
+/// or HAVING entirely) silently rebinds those references — e.g. the fuzzer
+/// produces `SELECT (SELECT x) FROM t WHERE f(... AS x)`: with the WHERE
+/// present `x` is the alias, without it `x` is the table column.
+bool clauseDefinesAliasUsedElsewhere(const ASTSelectQuery & select, const ASTPtr & clause)
+{
+    if (!clause)
+        return false;
+    std::unordered_set<String> aliases;
+    collectAliases(clause, aliases);
+    if (aliases.empty())
+        return false;
+    for (const auto & child : select.children)
+    {
+        if (child == clause)
+            continue;
+        if (referencesAnyAlias(child, aliases))
+            return true;
+    }
+    return false;
+}
+
 /// PASTE JOIN pairs rows by position — WHERE filtering changes positions, breaking the invariant.
 bool hasPasteJoin(const ASTSelectQuery & select)
 {
@@ -718,6 +744,11 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     oracle_context->setSetting("max_execution_time", Field(UInt64(10)));
     /// Prevent the optimizer from pushing TLP predicates across subquery/JOIN boundaries.
     oracle_context->setSetting("enable_optimize_predicate_expression", Field(false));
+    /// A seed query's `SET aggregate_functions_null_for_empty = 1` would leak
+    /// into oracle sub-queries and break NoREC: `count()` over zero input rows
+    /// becomes NULL while `countIf` still aggregates every row and returns 0.
+    /// Pin it off so both sides of every comparison use standard semantics.
+    oracle_context->setSetting("aggregate_functions_null_for_empty", Field(false));
     /// Cap result size so oracle sub-queries (especially TLP's UNION ALL of three
     /// partitions) cannot allocate unbounded memory. We use `result_overflow_mode=throw`
     /// — `break` would silently truncate the result before the cap fires, and the
@@ -873,6 +904,9 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
+    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
+        return false;
+
     ASTPtr predicate = select.where()->clone();
 
     /// Build reference query: original query without WHERE (and without ORDER BY/LIMIT).
@@ -995,6 +1029,9 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
+    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
+        return false;
+
     /// The `countIf` rewrite drops the SELECT list. If the predicate
     /// references an alias defined there (the fuzzer produces e.g.
     /// `SELECT indexOf([1025 AS x, ...], ...) ... WHERE x = 1`), the
@@ -1104,6 +1141,9 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
+    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
+        return false;
+
     ASTPtr predicate = select.where()->clone();
 
     /// Reference: remove WHERE, keep DISTINCT.
@@ -1187,6 +1227,9 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
         return false;
 
     if (hasNonDeterministicFunctions(select.clone(), context))
+        return false;
+
+    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
         return false;
 
     /// A non-injective projection (e.g. `SELECT g % 2 ... GROUP BY g`) can
@@ -1293,6 +1336,9 @@ bool QueryOracleChecker::checkTLPHaving(const ASTSelectQuery & select, const Con
         return false;
 
     if (hasNonDeterministicFunctions(select.clone(), context))
+        return false;
+
+    if (clauseDefinesAliasUsedElsewhere(select, select.having()))
         return false;
 
     ASTPtr having_pred = select.having()->clone();
@@ -1479,6 +1525,9 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
         return false;
 
     if (hasNonDeterministicFunctions(select.clone(), context))
+        return false;
+
+    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
         return false;
 
     /// Collect aggregate functions from the SELECT list.
