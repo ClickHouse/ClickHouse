@@ -190,6 +190,7 @@ static struct InitFiu
     REGULAR(compact_part_writer_fail_in_add_streams) \
     REGULAR(transaction_force_unknown_state_after_commit) \
     PAUSEABLE(transaction_after_commit_pause) \
+    REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
     REGULAR(remote_query_executor_exception_retryable) \
     REGULAR(remote_query_executor_exception_after_sending_data)
 
