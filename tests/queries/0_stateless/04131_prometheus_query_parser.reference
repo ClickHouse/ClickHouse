@@ -1,0 +1,59 @@
+--- scalar expressions ---
+3
+50
+7
+2.5
+32
+1
+--- unary operators ---
+-5
+3.14
+--- bool comparison with bool modifier ---
+0
+1
+1
+1
+1
+1
+--- tryParseScalar: scientific / hex / infinity / NaN ---
+1500
+31
+inf
+inf
+-inf
+nan
+--- vector() and scalar() ---
+42
+7
+--- duration variants: ms, s, m, h, d, w, y ---
+0
+0
+0
+0
+0
+0
+0
+--- compound durations (1h30m / 1y6mo-like) ---
+0
+--- offsets, positive and negative ---
+0
+0
+--- label matchers (=, !=, =~, !~) ---
+0
+0
+0
+0
+--- aggregations with by / without ---
+0
+0
+0
+0
+--- binary ops with group / ignoring / on ---
+0
+0
+0
+0
+--- prometheusQueryRange with various steps ---
+0
+0
+--- error: invalid syntax ---

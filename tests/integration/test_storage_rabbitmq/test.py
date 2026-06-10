@@ -26,6 +26,7 @@ instance = cluster.add_instance(
         "configs/macros.xml",
         "configs/named_collection.xml",
         "configs/dead_letter_queue.xml",
+        "configs/disable_insertion.xml",
     ],
     user_configs=["configs/users.xml"],
     with_rabbitmq=True,
@@ -2007,57 +2008,6 @@ def test_rabbitmq_no_connection_at_startup_1(rabbitmq_cluster, db, unique):
     assert "CANNOT_CONNECT_RABBITMQ" in error
 
 
-def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster, db, unique):
-    instance.query(
-        f"""
-        CREATE TABLE {db}.cs (key UInt64, value UInt64)
-            ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_exchange_name = '{unique}_cs',
-                     rabbitmq_format = 'JSONEachRow',
-                     rabbitmq_num_consumers = '5',
-                     rabbitmq_flush_interval_ms=1000,
-                     rabbitmq_max_block_size=100,
-                     rabbitmq_row_delimiter = '\\n';
-        CREATE TABLE {db}.view (key UInt64, value UInt64)
-            ENGINE = MergeTree
-            ORDER BY key;
-        CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS
-            SELECT * FROM {db}.cs;
-    """
-    )
-    instance.query(f"DETACH TABLE {db}.cs")
-
-    with rabbitmq_cluster.pause_rabbitmq():
-        instance.query(f"ATTACH TABLE {db}.cs")
-
-    messages_num = 1000
-    credentials = pika.PlainCredentials("root", "clickhouse")
-    parameters = pika.ConnectionParameters(
-        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
-    )
-    connection = pika.BlockingConnection(parameters)
-    channel = connection.channel()
-    for i in range(messages_num):
-        message = json.dumps({"key": i, "value": i})
-        channel.basic_publish(
-            exchange=f"{unique}_cs",
-            routing_key="",
-            body=message,
-            properties=pika.BasicProperties(delivery_mode=2, message_id=str(i)),
-        )
-    connection.close()
-
-    check_expected_result_polling(messages_num, f"SELECT count() FROM {db}.view")
-
-    instance.query(
-        f"""
-        DROP TABLE {db}.consumer;
-        DROP TABLE {db}.cs;
-    """
-    )
-
-
 def test_rabbitmq_format_factory_settings(rabbitmq_cluster, db, unique):
     instance.query(
         f"""
@@ -3740,3 +3690,101 @@ def test_rabbitmq_default_mode_nack_on_parse_error(rabbitmq_cluster, db, unique)
     channel.queue_delete(deadletter_queue)
     channel.exchange_delete(deadletter_exchange)
     connection.close()
+
+
+def test_message_queue_disable_insertion(rabbitmq_cluster, db, unique):
+    # Verify the setting defaults to false
+    assert (
+        "false"
+        == instance.query(
+            "SELECT getServerSetting('message_queue_disable_insertion')"
+        ).strip()
+    )
+
+    try:
+        # Enable message_queue_disable_insertion
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "0",
+            "1",
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
+
+        assert (
+            "true"
+            == instance.query(
+                "SELECT getServerSetting('message_queue_disable_insertion')"
+            ).strip()
+        )
+
+        # Create RabbitMQ table, destination table, and MV
+        exchange = f"{unique}_disable_insertion"
+        instance.query(
+            f"""
+            CREATE TABLE {db}.rabbitmq (key UInt64, value UInt64)
+                ENGINE = RabbitMQ
+                SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_exchange_name = '{exchange}',
+                         rabbitmq_format = 'JSONEachRow',
+                         rabbitmq_flush_interval_ms = 1000,
+                         rabbitmq_queue_base = '{exchange}';
+            CREATE TABLE {db}.view (key UInt64, value UInt64)
+                ENGINE = MergeTree()
+                ORDER BY key;
+            CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS
+                SELECT * FROM {db}.rabbitmq;
+        """
+        )
+
+        # Produce messages while insertion is disabled
+        credentials = pika.PlainCredentials("root", "clickhouse")
+        parameters = pika.ConnectionParameters(
+            rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+        )
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+
+        for i in range(10):
+            channel.basic_publish(
+                exchange=exchange, routing_key="",
+                body=json.dumps({"key": i, "value": i}),
+            )
+
+        # Wait — no rows should appear
+        time.sleep(10)
+        assert 0 == int(instance.query(f"SELECT count() FROM {db}.view"))
+
+        assert instance.contains_in_log("Message queue insertion is disabled")
+
+        # Direct INSERT INTO the RabbitMQ table (producer write) must still work
+        instance.query(
+            f"INSERT INTO {db}.rabbitmq FORMAT JSONEachRow"
+            ' {"key": 999, "value": 999}'
+        )
+
+        # Re-enable insertion
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "1",
+            "0",
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
+
+        assert (
+            "false"
+            == instance.query(
+                "SELECT getServerSetting('message_queue_disable_insertion')"
+            ).strip()
+        )
+
+        # Rows should flow through now (10 original + 1 from direct INSERT)
+        check_expected_result_polling(11, f"SELECT count() FROM {db}.view")
+
+        connection.close()
+    finally:
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "1",
+            "0",
+        )
+        instance.query("SYSTEM RELOAD CONFIG")

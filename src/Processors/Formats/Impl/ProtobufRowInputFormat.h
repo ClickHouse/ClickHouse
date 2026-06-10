@@ -64,7 +64,7 @@ private:
     bool oneof_presence;
 };
 
-class ProtobufSchemaReader : public IExternalSchemaReader
+class ProtobufSchemaReader final : public IExternalSchemaReader
 {
 public:
     explicit ProtobufSchemaReader(const FormatSettings & format_settings);

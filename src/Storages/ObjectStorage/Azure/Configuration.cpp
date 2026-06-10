@@ -253,8 +253,13 @@ void AzureStorageParsedArguments::fromNamedCollection(const NamedCollection & co
         partition_strategy_type = partition_strategy_type_opt.value();
     }
 
-    partition_columns_in_data_file = collection.getOrDefault<bool>(
-        "partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
+    if (collection.has("partition_columns_in_data_file"))
+    {
+        partition_columns_in_data_file = collection.get<bool>("partition_columns_in_data_file");
+        partition_columns_in_data_file_was_set = true;
+    }
+    else
+        partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
 
     connection_params = getAzureConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
@@ -327,7 +332,12 @@ bool AzureStorageParsedArguments::collectCredentials(
 
 void AzureStorageParsedArguments::fromDisk(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure)
 {
-    const auto & azure_object_storage = assert_cast<const AzureObjectStorage &>(*disk->getObjectStorage());
+    auto object_storage = disk->getObjectStorage();
+    /// Unwrap decorator object storages (e.g. `CachedObjectStorage`) before the cast.
+    /// See `S3StorageParsedArguments::fromDisk` and issue #89300 for the rationale.
+    while (auto inner = object_storage->getUnderlying())
+        object_storage = std::move(inner);
+    const auto & azure_object_storage = assert_cast<const AzureObjectStorage &>(*object_storage);
 
     connection_params = azure_object_storage.getConnectionParameters();
     ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
@@ -342,16 +352,17 @@ void AzureStorageParsedArguments::fromDisk(DiskPtr disk, ASTs & args, ContextPtr
         structure = *parsing_result.structure;
 }
 
-void AzureStorageParsedArguments::initializeForOneLake(ASTs & args, ContextPtr context)
+void AzureStorageParsedArguments::initializeForOneLake(ASTs & args, ContextPtr context, bool use_blob_endpoint)
 {
     if (args.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only one argument should be provided in OneLake catalog");
 
     String connection_url = checkAndGetLiteralArgument<String>(args[0], "connection_string/storage_account_url");
 
-    fillBlobsFromURLCommon(connection_url, ".com", ".dfs.fabric.microsoft.com");
+    const String full_suffix = use_blob_endpoint ? ".blob.fabric.microsoft.com" : ".dfs.fabric.microsoft.com";
+    fillBlobsFromURLCommon(connection_url, ".com", full_suffix);
 
-    connection_params.endpoint.additional_params = "resource=REDACTED&directory=REDACTED&recursive=REDACTED";
+    connection_params.endpoint.container_already_exists = true;
 
     auto request_settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
     connection_params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *request_settings, /*for_disk=*/ false);
@@ -518,6 +529,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             else
             {
                 partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[6], "partition_columns_in_data_file");
+                partition_columns_in_data_file_was_set = true;
             }
         }
         else
@@ -560,6 +572,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
 
             partition_strategy_type = partition_strategy_type_opt.value();
             partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[6], "partition_columns_in_data_file");
+            partition_columns_in_data_file_was_set = true;
             structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
         }
         else
@@ -623,6 +636,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
         else
         {
             partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[8], "partition_columns_in_data_file");
+            partition_columns_in_data_file_was_set = true;
         }
     }
     else if (engine_args.size() == 10 && with_structure)
@@ -645,13 +659,14 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
         }
         partition_strategy_type = partition_strategy_type_opt.value();
         partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[8], "partition_columns_in_data_file");
+        partition_columns_in_data_file_was_set = true;
         structure = checkAndGetLiteralArgument<String>(engine_args[9], "structure");
     }
 
     connection_params = getAzureConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 
-void addStructureAndFormatToArgsIfNeededAzure(
+static void addStructureAndFormatToArgsIfNeededAzure(
     ASTs & args,
     const String & structure_,
     const String & format_,
@@ -679,7 +694,7 @@ void addStructureAndFormatToArgsIfNeededAzure(
     {
         if (args.size() < 3 || args.size() > AzureStorageParsedArguments::getMaxNumberOfArguments())
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Expected 3 to {} arguments in table function azureBlobStorage, got {}",
                 AzureStorageParsedArguments::getMaxNumberOfArguments(),
                 args.size());
@@ -865,7 +880,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     AzureStorageParsedArguments parsed_arguments;
     if (!onelake_client_id.empty())
     {
-        parsed_arguments.initializeForOneLake(engine_args, context);
+        parsed_arguments.initializeForOneLake(engine_args, context, onelake_use_blob_endpoint);
         parsed_arguments.connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
             onelake_tenant_id,
             onelake_client_id,

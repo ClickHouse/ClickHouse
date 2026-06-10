@@ -27,6 +27,8 @@
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/Streaming/CursorPromoter.h>
+#include <Storages/Streaming/SubscriptionManager.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
@@ -34,7 +36,7 @@
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
 #include <boost/multi_index_container.hpp>
@@ -58,6 +60,7 @@ class Context;
 struct JobAndPool;
 class MergeTreeTransaction;
 struct ZeroCopyLock;
+struct ZooKeeperRetriesInfo;
 
 class IBackupEntry;
 using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
@@ -67,6 +70,7 @@ using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
 
 struct MergeTreeSettings;
 struct WriteSettings;
+enum class MergeTreePartMinMaxIndexColumns : uint64_t;
 
 class MarkCache;
 using MarkCachePtr = std::shared_ptr<MarkCache>;
@@ -447,7 +451,7 @@ public:
             Coalescing          = 8,
         };
 
-        Mode mode;
+        Mode mode{};
 
         /// For Collapsing and VersionedCollapsing mode.
         String sign_column;
@@ -562,6 +566,7 @@ public:
             bool need_data_mutations = false;
             bool need_alter_mutations = false;
             bool need_patch_parts = false;
+            bool has_lightweight_delete_parts = false;
         };
 
         static Int64 getMinPartDataVersionForPartition(const Params & params, const String & partition_id);
@@ -583,6 +588,7 @@ public:
         virtual bool hasDataMutations() const = 0;
         virtual bool hasAlterMutations() const = 0;
         virtual bool hasMetadataMutations() const = 0;
+        virtual bool hasLightweightDeletedMask() const = 0;
     };
 
     struct MutationsSnapshotBase : public IMutationsSnapshot
@@ -603,6 +609,7 @@ public:
         bool hasAlterMutations() const final { return counters.num_alter > 0; }
         bool hasMetadataMutations() const final { return counters.num_metadata > 0; }
         bool hasAnyMutations() const { return hasDataMutations() || hasAlterMutations() || hasMetadataMutations(); }
+        bool hasLightweightDeletedMask() const final { return params.has_lightweight_delete_parts; }
 
     protected:
         NameSet getColumnsUpdatedInPatches() const;
@@ -636,7 +643,10 @@ public:
 
     /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
     /// This method allows read-only replicas of tables on a shared storage.
+    /// `refreshDataParts` is the background-task entry point: it reschedules itself afterwards.
+    /// `refreshDataPartsOnce` performs a single refresh and is also used by `SYSTEM RESTART DISK`.
     void refreshDataParts(UInt64 interval_milliseconds);
+    void refreshDataPartsOnce(UInt64 interval_milliseconds);
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
@@ -931,7 +941,7 @@ public:
     size_t clearEmptyParts();
 
     /// Moves to outdated state patch parts that do not need to be applied to regular parts.
-    size_t clearUnusedPatchParts();
+    virtual size_t clearUnusedPatchParts();
 
     /// After the call to dropAllData() no method can be called.
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
@@ -982,7 +992,7 @@ public:
         const ASTPtr & new_settings,
         AlterLockHolder & table_lock_holder);
 
-    static std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings);
+    std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 
     /// Should be called if part data is suspected to be corrupted.
@@ -1130,10 +1140,14 @@ public:
 
     /// Get constant pointer to storage settings.
     /// Copy this pointer into your scope and you will get consistent settings.
-    /// When `projection` is provided, apply projection-level overrides on top of the table settings.
-    MergeTreeSettingsPtr getSettings(ProjectionDescriptionRawPtr projection = nullptr) const;
+    /// When `settings_changes` is provided, apply the overrides on top of the table settings.
+    MergeTreeSettingsPtr getSettings(const SettingsChanges * settings_changes = nullptr) const;
 
     StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
+
+    /// Whether the per-part metadata version is stored in the engine's metadata storage instead of
+    /// the on-disk `metadata_version.txt` file. When true, the file is not written for new parts.
+    virtual bool storesMetadataVersionInPartAttributes() const { return false; }
 
     String getRelativeDataPath() const { return relative_data_path; }
 
@@ -1199,11 +1213,20 @@ public:
     /// Returns a snapshot of mutations that probably will be applied on the fly to parts during reading.
     virtual MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const = 0;
 
-    /// Returns the minimum version of metadata among parts.
-    static Int64 getMinMetadataVersion(const DataPartsVector & parts);
+    /// Per-partition promoters for streaming reads.
+    virtual CursorPromotersMap buildPromoters() = 0;
+    void triggerStreamingSubscriptionEnrichment() const;
 
-    /// Returns minimum data version among parts inside each of the partitions.
-    static PartitionIdToMinBlockPtr getMinDataVersionForEachPartition(const DataPartsVector & parts);
+    /// Computes snapshot-related part statistics in a single pass:
+    /// min metadata version, per-partition min data version, and whether any part has a lightweight delete mask.
+    struct PartsSnapshotInfo
+    {
+        Int64 min_metadata_version = -1;
+        PartitionIdToMinBlockPtr min_data_versions;
+        bool has_lightweight_delete_parts = false;
+    };
+
+    static PartsSnapshotInfo getPartsSnapshotInfo(const DataPartsVector & parts);
 
     /// Return alter conversions for part which must be applied on fly.
     static AlterConversionsPtr getAlterConversionsForPart(
@@ -1227,9 +1250,12 @@ public:
     size_t getTotalMergesWithTTLInMergeList() const;
 
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
+    /// `metadata_snapshot` must come from the source part being covered
+    /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
-        const String & new_part_name, const MergeTreeTransactionPtr & txn);
+        const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeTransactionPtr & txn);
 
     MergeTreeDataFormatVersion format_version;
 
@@ -1242,12 +1268,13 @@ public:
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
-    /// Get partition key expression on required columns
-    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key, const ExpressionActionsSettings & settings);
-    /// Get column names required for partition key
-    static Names getMinMaxColumnsNames(const KeyDescription & partition_key);
-    /// Get column types required for partition key
-    static DataTypes getMinMaxColumnsTypes(const KeyDescription & partition_key);
+    /// Get expression on columns for which part-level min-max index will be calculated.
+    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key,
+                                              const MergeTreeSettingsPtr & data_settings,
+                                              const ExpressionActionsSettings & expr_settings);
+    /// Get the columns covered by the part-level min-max index.
+    static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to);
+    static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings);
 
     ExpressionActionsPtr
     getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
@@ -1291,7 +1318,9 @@ public:
 
     bool has_non_adaptive_index_granularity_parts = false;
 
-    /// True if at least one part contains lightweight delete.
+    /// True if at least one part contains a lightweight delete mask.
+    /// Used as a fallback in `supportsTrivialCountOptimization` when
+    /// no storage snapshot is available (e.g. from `StorageMerge`).
     mutable std::atomic_bool has_lightweight_delete_parts = false;
 
     /// Parts that currently moving from disk/volume to another.
@@ -1305,12 +1334,21 @@ public:
     /// Mutex for currently_moving_parts
     mutable std::mutex moving_parts_mutex;
 
+    /// Used for streaming queries registration.
+    mutable StreamSubscriptionManager subscription_manager;
+
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
+
+    /// Last-resort guard for the post-vtable-demotion window of STID 3631-4165;
+    /// derived overrides are always picked in normal operation.
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
     /// Schedules job to move parts between disks/volumes and so on.
     bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) override;
     bool areBackgroundMovesNeeded() const;
 
+    /// Schedules continuation jobs for in-fly streaming queries.
+    bool scheduleStreamingJob(BackgroundJobsAssignee & assignee) override;
 
     /// Lock part in zookeeper for shared data in several nodes
     /// Overridden in StorageReplicatedMergeTree
@@ -1351,6 +1389,8 @@ public:
     void waitForOutdatedPartsToBeLoaded() const;
     void waitForUnexpectedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
+
+    void triggerBackgroundOperations();
 
     /// Returns cached metadata snapshot of a patch part that contains the following columns.
     StorageMetadataPtr getPatchPartMetadata(const ColumnsDescription & patch_part_desc, const String & patch_partition_id, ContextPtr local_context) const;
@@ -1416,6 +1456,8 @@ private:
 
 protected:
     void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;
+
+    void unregisterFromMergeSelection(const MergeTreeSettingsPtr & settings);
 
     void resetColumnSizes()
     {
@@ -1538,8 +1580,9 @@ protected:
     /// Another explanation is that moving operations are common for Replicated and Plain MergeTree classes.
     /// Task that schedules this operations is executed with its own timetable and triggered in a specific places in code.
     /// And for ReplicatedMergeTree we don't have LogEntry type for this operation.
-    BackgroundJobsAssignee background_operations_assignee;
-    BackgroundJobsAssignee background_moves_assignee;
+    mutable BackgroundJobsAssignee background_operations_assignee;
+    mutable BackgroundJobsAssignee background_moves_assignee;
+    mutable BackgroundJobsAssignee background_streaming_assignee;
 
     /// Strongly connected with two fields above.
     /// Every task that is finished will ask to assign a new one into an executor.
@@ -1610,7 +1653,6 @@ protected:
         const StorageInMemoryMetadata & old_metadata,
         bool attach,
         bool allow_empty_sorting_key,
-        bool allow_reverse_sorting_key,
         bool allow_nullable_key_,
         ContextPtr local_context) const;
 
@@ -1717,7 +1759,7 @@ protected:
     struct PartBackupEntries
     {
         String part_name;
-        UInt128 part_checksum; /// same as MinimalisticDataPartChecksums::hash_of_all_files
+        UInt128 part_checksum{}; /// same as MinimalisticDataPartChecksums::hash_of_all_files
         BackupEntries backup_entries;
     };
     using PartsBackupEntries = std::vector<PartBackupEntries>;
@@ -1733,7 +1775,7 @@ protected:
     MutableDataPartPtr loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const;
 
     /// Attaches restored parts to the storage.
-    virtual void attachRestoredParts(MutableDataPartsVector && parts) = 0;
+    virtual void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
 
     void resetSerializationHints(const DataPartsLock & lock);
 
@@ -1853,6 +1895,12 @@ protected:
 
     BackgroundSchedulePoolTaskHolder refresh_parts_task;
 
+    /// Serializes refreshDataPartsOnce so the background refresh task and SYSTEM RESTART DISK
+    /// cannot scan and load the same new part concurrently (which would throw a duplicate-part
+    /// LOGICAL_ERROR, because the "is this part already present" check and the actual load are
+    /// not done under a single lock).
+    std::mutex refresh_parts_mutex;
+
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
 
     mutable std::mutex stats_mutex;
@@ -1928,7 +1976,6 @@ private:
     virtual void startBackgroundMovesIfNeeded() = 0;
 
     bool allow_nullable_key = false;
-    bool allow_reverse_key = false;
 
     void addPartContributionToDataVolume(const DataPartPtr & part);
     void removePartContributionToDataVolume(const DataPartPtr & part);

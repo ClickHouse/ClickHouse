@@ -2,6 +2,7 @@
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn_fwd.h>
 #include <Columns/IColumn.h>
@@ -78,9 +79,9 @@ ASTPtr convertASTForIndexColumn(const IndexDescription & index, const ASTPtr & e
             : index.expression_list_ast->children.front();
 
         /// Pack preprocessor expression into lambda.
-        auto lambda_arg = makeASTFunction("tuple", make_intrusive<ASTIdentifier>(preprocessor_lambda_arg));
-        auto lambda_ast = makeASTFunction("lambda", lambda_arg, new_expression);
-        return makeASTFunction("arrayMap", lambda_ast, array_map_arg);
+        return makeASTFunction("arrayMap",
+            makeASTLambda({preprocessor_lambda_arg}, std::move(new_expression)),
+            array_map_arg);
     }
 
     if (replace_index_column)
@@ -224,7 +225,7 @@ String MergeTreeIndexTextPreprocessor::processConstant(const String & input) con
         return input;
 
     auto input_type = std::make_shared<DataTypeString>();
-    auto input_column = input_type->createColumnConst(1, Field(input));
+    ColumnPtr input_column = input_type->createColumnConst(1, Field(input));
     Block block{{ColumnWithTypeAndName(input_column, input_type, preprocessor_column_name)}};
 
     size_t n_rows = 1;
