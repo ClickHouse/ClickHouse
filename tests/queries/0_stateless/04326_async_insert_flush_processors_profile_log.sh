@@ -29,6 +29,9 @@ ${CLICKHOUSE_CLIENT} -q "
           SELECT query_id
           FROM system.query_log
           WHERE event_date >= yesterday()
+            -- The flush runs as a background query whose current_database is always 'default',
+            -- so match on the databases array instead (also what the style check accepts).
+            AND has(databases, currentDatabase())
             AND query_kind = 'AsyncInsertFlush'
             AND type = 'QueryFinish'
             AND has(tables, currentDatabase() || '.t_async_flush_ppl')
