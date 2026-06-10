@@ -579,10 +579,10 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
                 }
                 else
                 {
-                    const auto * blob = ref_list.asBlob();
-                    blob->assertIsRange();
-                    start_word = blob->head;
-                    rows = blob->rows;
+                    const auto * batch = ref_list.asBatch();
+                    batch->assertIsRange();
+                    start_word = batch->head;
+                    rows = batch->total_rows;
                 }
 
                 const ColumnsInfo * columns_info = stored_columns[refWordBlockNo(start_word)];

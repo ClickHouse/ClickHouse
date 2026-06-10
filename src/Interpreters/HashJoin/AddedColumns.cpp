@@ -294,8 +294,11 @@ template <>
 void AddedColumns<true>::appendFromBlock(UInt64 ref_word, bool)
 {
 #ifndef NDEBUG
-    chassert(refWordIsInline(ref_word));
-    checkColumns(lazy_output.stored_columns[refWordBlockNo(ref_word)]->columns);
+    /// `ref_word` may be an inline single ref or a count-tagged list word; firstWord() yields the
+    /// head ref of either, whose block is valid for the column-structure assertion.
+    BuildRefList list;
+    list.word = ref_word;
+    checkColumns(lazy_output.stored_columns[refWordBlockNo(list.firstWord())]->columns);
 #endif
     if (has_columns_to_add)
     {

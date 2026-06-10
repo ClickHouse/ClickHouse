@@ -121,19 +121,10 @@ void addFoundRowAll(
     }
     else if constexpr (AddedColumns::isLazy())
     {
-        /// The singleton fast path: most keys of a typical ALL JOIN are unique, and for them
-        /// the cell value itself is the ref - no extra memory access at all.
-        if (mapped.isSingleton())
-        {
-            added.appendFromBlock(mapped.word, false);
-            ++current_offset;
-        }
-        else
-        {
-            const auto * blob = mapped.asBlob();
-            added.appendFromBlock(blob, false);
-            current_offset += blob->rows;
-        }
+        /// Load-free fast path: the cell word carries the saturating row count, so unique keys
+        /// (singletons) and duplicate keys are both appended without dereferencing the node.
+        added.appendFromBlock(mapped.word, false);
+        current_offset += mapped.rows();
     }
     else
     {

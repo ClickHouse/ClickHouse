@@ -42,8 +42,9 @@ struct JoinOnKeyColumns
 
 struct LazyOutput
 {
-    /// Entries share the encoding of the join hash map cell values (see BuildRef in RowRefs.h):
-    ///   0 - default row; bit 63 set - inline encoded BuildRef; otherwise - BuildRefList::Blob *.
+    /// Entries share the encoding of the join hash map cell values (see RowRefs.h):
+    ///   0 - default row; bit 63 set - inline encoded BuildRef; otherwise - a count-tagged
+    ///   BuildRefList list word (pointer to a Batch node in the low 48 bits).
     /// Exception: for ASOF joins (`row_refs_are_pointers`) non-zero entries are `const RowRef *`.
     PaddedPODArray<UInt64> row_refs;
     size_t row_count = 0;   /// Total number of rows in all refs and ref lists
@@ -66,17 +67,14 @@ struct LazyOutput
 
     void reserve(size_t size) { row_refs.reserve(size); }
 
+    /// `ref_word` is either an inline single ref or a count-tagged BuildRefList list word.
     void addRef(UInt64 ref_word)
     {
-        chassert(refWordIsInline(ref_word));
+        chassert(ref_word != 0);
         row_refs.emplace_back(ref_word);
-        ++row_count;
-    }
-
-    void addBlob(const BuildRefList::Blob * blob)
-    {
-        row_refs.emplace_back(reinterpret_cast<UInt64>(blob));
-        row_count += blob->rows;
+        BuildRefList list;
+        list.word = ref_word;
+        row_count += list.rows();
     }
 
     void addAsofRowRef(const RowRef * row_ref)
@@ -204,25 +202,7 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), lazy_output.type_name[i].type, lazy_output.type_name[i].name);
     }
 
-    void appendFromBlock(const BuildRefList::Blob * blob, bool)
-    {
-        if constexpr (lazy)
-        {
-#ifndef NDEBUG
-            checkColumns(lazy_output.stored_columns[refWordBlockNo(blob->head)]->columns);
-#endif
-            if (has_columns_to_add)
-            {
-                lazy_output.addBlob(blob);
-            }
-        }
-        else
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "AddedColumns are not implemented for BuildRefList in non-lazy mode");
-        }
-    }
-
-    /// Encoded BuildRef word: the common case for all non-ASOF joins.
+    /// Encoded BuildRef word (inline single ref) or count-tagged BuildRefList list word.
     void appendFromBlock(UInt64 ref_word, bool has_default);
 
     /// ASOF join only: a pointer into the sorted lookup vector storage.

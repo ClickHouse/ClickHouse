@@ -64,7 +64,8 @@ struct RowRef
 /// That bit is the INLINE/SINGLETON flag. It is always set for refs stored in hash map
 /// cells and `LazyOutput` entries. It distinguishes an inline ref from:
 ///   - the zero word (the "default row" marker in `LazyOutput::row_refs`),
-///   - a `BuildRefList::Blob *` (user-space pointers have bit 63 clear on x86-64/aarch64).
+///   - a count-tagged `BuildRefList` list word (user-space pointers have bit 63 clear on
+///     x86-64/aarch64, and its count occupies bits 62..48).
 /// Thanks to the flag, unique keys of ALL joins cost no extra memory and no extra loads
 /// at probe time (the win of RadixHashJoin's SINGLETON_FLAG design).
 struct BuildRef
@@ -96,66 +97,64 @@ struct BuildRef
 
 static_assert(sizeof(BuildRef) == 8, "BuildRef must stay 8 bytes: it is the hash map cell payload");
 
-/// Helpers for the encoded 64-bit ref words stored in LazyOutput / BuildRefList batches.
+/// Helpers for the encoded 64-bit ref words stored in LazyOutput / BuildRefList nodes.
 inline bool refWordIsInline(UInt64 word) { return word & BuildRef::SINGLETON_WORD_FLAG; }
 inline UInt32 refWordBlockNo(UInt64 word) { return static_cast<UInt32>(word >> 32) & BuildRef::BLOCK_NO_MASK; }
 inline UInt32 refWordRowNo(UInt64 word) { return static_cast<UInt32>(word); }
 
-/// Mapped value of MapsAll join hash maps (ALL JOINs / non-unique keys): a tagged 8-byte union.
-///   - bit 63 set: the key has exactly one row so far; the word IS the encoded BuildRef.
-///   - bit 63 clear, non-zero: pointer to an arena-allocated Blob with the row count and refs.
-/// The Blob is allocated only when the first duplicate of a key arrives, so ALL-join cells are
-/// as small as ANY-join cells for every key type, and unique keys never touch the arena.
+/// Thrown when an arena pointer does not fit in the low 48 bits of a BuildRefList word, which would
+/// make the count-tagged encoding ambiguous. Should never happen on Linux x86-64/aarch64.
+[[noreturn]] void throwBuildRefPointerTooLarge();
+
+/// Mapped value of MapsAll join hash maps (ALL JOINs / non-unique keys): a tagged 8-byte word.
+///   - bit 63 set: the key has exactly one row so far; the word IS the encoded BuildRef (singleton).
+///   - bit 63 clear, non-zero: a pointer (bits 47..0) to an arena-allocated `Batch` node, with the
+///     duplicate count packed into bits 62..48 (saturating; see COUNT_SAT). The count lets the probe
+///     loop read `rows` straight from the cell word without dereferencing the node.
+/// The node is allocated only when the first duplicate of a key arrives, so ALL-join cells are as
+/// small as ANY-join cells for every key type, and unique keys never touch the arena.
 struct BuildRefList
 {
-    /// Portion of encoded ref words, 8 * (MAX_SIZE + 1) bytes sized.
+    /// Low 48 bits of a list word hold the node pointer; bits 62..48 hold the saturating count.
+    static constexpr UInt64 PTR_MASK = (1ull << 48) - 1;
+    static constexpr UInt32 COUNT_SHIFT = 48;
+    /// Sentinel stored in the count field meaning "count >= COUNT_SAT, load total_rows from the node".
+    static constexpr UInt32 COUNT_SAT = 0x7FFFu;
+
+    /// A single 64-byte node. The cell word always points at the FIRST ("cell") node of a key.
+    ///
+    /// Cell node, unchained (2..7 rows): `head` holds the first row, `slots[0 .. size-2]` the rest;
+    ///   `size == total_rows`; no pointers.
+    /// Cell node, chained (>= 8 rows): `head` + `slots[0..4]` hold the 6 oldest rows; `slots[5]` is a
+    ///   raw pointer to the NEWEST overflow node; `size == 6 != total_rows`.
+    /// Range node (rerange "sorted" path): `is_range == 1`, `head` is the range start ref, `total_rows`
+    ///   is the run length, no slots/chain.
+    /// Overflow node: `head` is repurposed as the raw pointer to the next-older overflow node (0 at the
+    ///   end of the chain); `slots[0 .. size-1]` hold refs; `is_range`/`total_rows` are unused.
+    ///
+    /// Iteration order is head, then the cell node's local slots, then the overflow nodes newest-first.
+    /// This equals the old RowRefList order for keys with up to 8 rows and deviates (deterministically)
+    /// for larger keys; head identity (firstWord) is always the first-inserted row.
     struct Batch
     {
-        static constexpr size_t MAX_SIZE = 7; /// Adequate values are 3, 7, 15, 31.
+        /// Number of refs in `slots`: of an overflow node fully, of a cell node besides the head.
+        static constexpr size_t SLOTS = 6;
 
-        UInt32 size = 0;
-        Batch * next;
-        UInt64 refs[MAX_SIZE]; /// the occupied prefix is initialized by insert
-
-        explicit Batch(Batch * parent) /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-            : next(parent)
-        {}
-
-        bool full() const { return size == MAX_SIZE; }
-
-        Batch * insert(UInt64 ref_word, Arena & pool)
-        {
-            if (full())
-            {
-                auto * batch = pool.alloc<Batch>();
-                *batch = Batch(this);
-                batch->insert(ref_word, pool);
-                return batch;
-            }
-
-            refs[size] = ref_word;
-            ++size;
-            return this;
-        }
-    };
-
-    /// Out-of-line list head for keys with more than one row. The total row count is kept
-    /// at offset 0. If `is_range` is set, the value represents `rows` CONSECUTIVE rows
-    /// starting at `head` (produced by the rerange/"sorted" optimization) and `next` is null.
-    struct Blob
-    {
-        UInt32 rows = 0;
-        UInt32 is_range = 0;
-        UInt64 head = 0; /// encoded BuildRef word of the first row (or the range start)
-        Batch * next = nullptr;
+        UInt64 is_range : 1 = 0;
+        UInt64 size : 7 = 0;        /// cell node: local rows incl. head; overflow node: local refs
+        UInt64 total_rows : 56 = 0; /// whole chain; authoritative in the cell node only
+        UInt64 head = 0;            /// cell node: first ref word; overflow node: next-older Batch *
+        UInt64 slots[SLOTS] {};     /// the occupied prefix is set by insert (Arena::alloc skips ctors)
 
         void assertIsRange() const
         {
-            chassert(rows >= 1, "BuildRefList range should have at least one row");
-            chassert(is_range, "BuildRefList blob does not represent a range");
-            chassert(next == nullptr, "When BuildRefList represents a range, it should not have batches");
+            chassert(is_range, "BuildRefList node does not represent a range");
+            chassert(total_rows >= 1, "BuildRefList range should have at least one row");
         }
     };
+
+    /// head + slots: rows a cell node holds before it has to chain (= 7).
+    static constexpr size_t MAX_LOCAL = 1 + Batch::SLOTS;
 
     UInt64 word = 0;
 
@@ -164,69 +163,118 @@ struct BuildRefList
 
     bool isSingleton() const { return refWordIsInline(word); }
 
-    const Blob * asBlob() const
+    const Batch * asBatch() const
     {
         chassert(word != 0 && !isSingleton());
-        return reinterpret_cast<const Blob *>(word); /// NOLINT(performance-no-int-to-ptr)
+        return reinterpret_cast<const Batch *>(word & PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
     }
 
-    Blob * asBlob() /// NOLINT(readability-make-member-function-const)
+    Batch * asBatch() /// NOLINT(readability-make-member-function-const)
     {
         chassert(word != 0 && !isSingleton());
-        return reinterpret_cast<Blob *>(word); /// NOLINT(performance-no-int-to-ptr)
+        return reinterpret_cast<Batch *>(word & PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
     }
 
-    /// Total number of rows for this key.
-    UInt32 rows() const { return isSingleton() ? 1 : asBlob()->rows; }
+    /// Total number of rows for this key. Load-free unless the count saturated.
+    UInt32 rows() const
+    {
+        if (isSingleton())
+            return 1;
+        const UInt32 count = static_cast<UInt32>((word >> COUNT_SHIFT) & COUNT_SAT);
+        if (count != COUNT_SAT)
+            return count;
+        return static_cast<UInt32>(asBatch()->total_rows);
+    }
 
     /// Encoded ref word of the first row (any-row semantics, e.g. RightAny on MapsAll).
-    UInt64 firstWord() const { return isSingleton() ? word : asBlob()->head; }
+    UInt64 firstWord() const { return isSingleton() ? word : asBatch()->head; }
 
     void setRange(UInt64 start_word, size_t rows_, Arena & pool)
     {
         chassert(refWordIsInline(start_word));
-        auto * blob = pool.alloc<Blob>();
-        *blob = Blob{};
-        blob->rows = static_cast<UInt32>(rows_);
-        blob->is_range = 1;
-        blob->head = start_word;
-        setBlob(blob);
+        auto * b = pool.alloc<Batch>();
+        b->is_range = 1;
+        b->size = 0;
+        b->total_rows = rows_;
+        b->head = start_word;
+        setListWord(b, rows_);
     }
 
-    /// Insert one more row for this key. Preserves the iteration order of the old
-    /// RowRefList: head first, then the newest batch, then progressively older batches.
+    /// Insert one more row for this key. O(1). See the Batch comment for the representation.
     void insert(UInt64 ref_word, Arena & pool)
     {
         chassert(refWordIsInline(ref_word));
 
-        /// Init the first element when starting from a default-constructed value.
+        /// First row: start as a singleton (no allocation).
         if (word == 0)
         {
             word = ref_word;
             return;
         }
 
+        /// Second row: allocate the cell node and move the singleton into its head.
         if (isSingleton())
         {
-            auto * blob = pool.alloc<Blob>();
-            *blob = Blob{};
-            blob->rows = 1;
-            blob->head = word;
-            setBlob(blob);
+            auto * b = pool.alloc<Batch>();
+            b->is_range = 0;
+            b->size = 2;
+            b->total_rows = 2;
+            b->head = word;
+            b->slots[0] = ref_word;
+            setListWord(b, 2);
+            return;
         }
 
-        Blob * blob = asBlob();
-        if (!blob->next)
+        Batch * b = asBatch();
+        chassert(!b->is_range);
+        const UInt64 new_total = b->total_rows + 1;
+
+        if (b->size == b->total_rows) /// unchained cell node
         {
-            blob->next = pool.alloc<Batch>();
-            *blob->next = Batch(nullptr);
+            if (b->size < MAX_LOCAL) /// room left in slots
+            {
+                b->slots[b->size - 1] = ref_word;
+                b->size = b->size + 1;
+            }
+            else /// full: evict the last local ref into a new overflow node, chaining the key
+            {
+                auto * n = pool.alloc<Batch>();
+                n->is_range = 0;
+                n->size = 2;
+                n->total_rows = 0;
+                n->head = 0; /// no older node yet
+                n->slots[0] = b->slots[Batch::SLOTS - 1]; /// the evicted last local ref
+                n->slots[1] = ref_word;
+                b->slots[Batch::SLOTS - 1] = reinterpret_cast<UInt64>(n);
+                b->size = MAX_LOCAL - 1; /// head + (SLOTS-1) local refs remain
+            }
         }
-        blob->next = blob->next->insert(ref_word, pool);
-        ++blob->rows;
+        else /// chained cell node: append into the newest overflow node
+        {
+            auto * newest = reinterpret_cast<Batch *>(b->slots[Batch::SLOTS - 1]); /// NOLINT(performance-no-int-to-ptr)
+            if (newest->size < Batch::SLOTS)
+            {
+                newest->slots[newest->size] = ref_word;
+                newest->size = newest->size + 1;
+            }
+            else
+            {
+                auto * n = pool.alloc<Batch>();
+                n->is_range = 0;
+                n->size = 1;
+                n->total_rows = 0;
+                n->head = reinterpret_cast<UInt64>(newest); /// next-older node
+                n->slots[0] = ref_word;
+                b->slots[Batch::SLOTS - 1] = reinterpret_cast<UInt64>(n);
+            }
+        }
+
+        b->total_rows = new_total;
+        setListWord(b, new_total);
     }
 
-    /// Iterates encoded ref words in the same order as the old RowRefList::ForwardIterator.
-    /// Handles all three representations: singleton, list blob, range blob.
+    /// Iterates encoded ref words: head first, then the cell node's local slots, then the overflow
+    /// nodes newest-first (each in slot order). Handles singleton, list, and range representations.
     class ForwardIterator
     {
     public:
@@ -237,23 +285,39 @@ struct BuildRefList
 
             if (list.isSingleton())
             {
-                head = list.word;
+                head_word = list.word;
                 remaining_range = 1;
+                return;
+            }
+
+            const Batch * b = list.asBatch();
+            head_word = b->head;
+            if (b->is_range)
+            {
+                remaining_range = static_cast<UInt32>(b->total_rows);
+                return;
+            }
+
+            remaining_range = 1; /// yield the head once
+            cell = b;
+            if (b->size != b->total_rows) /// chained
+            {
+                local_refs = Batch::SLOTS - 1;
+                overflow = reinterpret_cast<const Batch *>(b->slots[Batch::SLOTS - 1]); /// NOLINT(performance-no-int-to-ptr)
             }
             else
             {
-                const Blob * blob = list.asBlob();
-                head = blob->head;
-                remaining_range = blob->is_range ? blob->rows : 1;
-                batch = blob->next;
+                local_refs = static_cast<UInt32>(b->size) - 1;
             }
         }
 
         UInt64 operator * () const
         {
             if (remaining_range)
-                return head;
-            return batch->refs[position];
+                return head_word;
+            if (local_pos < local_refs)
+                return cell->slots[local_pos];
+            return overflow->slots[overflow_pos];
         }
 
         void operator ++ ()
@@ -262,42 +326,56 @@ struct BuildRefList
             {
                 --remaining_range;
                 /// Consecutive rows of a range live in one block: only row_no advances.
-                head += 1;
+                head_word += 1;
                 return;
             }
 
-            if (batch)
+            if (local_pos < local_refs)
             {
-                ++position;
-                if (position >= batch->size)
+                ++local_pos;
+                return;
+            }
+
+            if (overflow)
+            {
+                ++overflow_pos;
+                if (overflow_pos >= overflow->size)
                 {
-                    batch = batch->next;
-                    position = 0;
+                    overflow = reinterpret_cast<const Batch *>(overflow->head); /// NOLINT(performance-no-int-to-ptr)
+                    overflow_pos = 0;
                 }
             }
         }
 
-        bool ok() const { return remaining_range || batch; }
+        bool ok() const { return remaining_range || local_pos < local_refs || overflow != nullptr; }
 
     private:
-        UInt64 head = 0;
+        UInt64 head_word = 0;
         UInt32 remaining_range = 0;
-        const Batch * batch = nullptr;
-        size_t position = 0;
+        const Batch * cell = nullptr;
+        const Batch * overflow = nullptr;
+        UInt32 local_refs = 0;
+        UInt32 local_pos = 0;
+        UInt32 overflow_pos = 0;
     };
 
     ForwardIterator begin() const { return ForwardIterator(*this); }
 
 private:
-    void setBlob(Blob * blob)
+    /// Repoint `word` at `b` with the saturating row count in bits 62..48. The cell-node pointer is
+    /// stable across inserts, so this only rewrites the count bits of an already-resident cache line.
+    void setListWord(Batch * b, UInt64 total_rows_)
     {
-        const UInt64 ptr = reinterpret_cast<UInt64>(blob);
-        chassert((ptr & BuildRef::SINGLETON_WORD_FLAG) == 0, "Arena pointer with MSB set cannot be tagged");
-        word = ptr;
+        const UInt64 ptr = reinterpret_cast<UInt64>(b);
+        if (ptr & ~PTR_MASK) [[unlikely]]
+            throwBuildRefPointerTooLarge();
+        const UInt64 count = total_rows_ < COUNT_SAT ? total_rows_ : COUNT_SAT;
+        word = ptr | (count << COUNT_SHIFT);
     }
 };
 
 static_assert(sizeof(BuildRefList) == 8, "BuildRefList must stay 8 bytes: it is the hash map cell payload");
+static_assert(sizeof(BuildRefList::Batch) == 64, "BuildRefList::Batch must stay one cache line");
 
 /// Maps `block_no` (the high half of BuildRef) to the stored block's ColumnsInfo.
 /// Appended under mutex during the build phase (possibly from several ConcurrentHashJoin

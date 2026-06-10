@@ -226,6 +226,13 @@ ColumnsInfo::ColumnsInfo(Columns && columns_) : columns(std::move(columns_))
     rebuildReplicatedColumns();
 }
 
+void throwBuildRefPointerTooLarge()
+{
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "Arena pointer does not fit in 48 bits; BuildRefList count tagging is invalid on this platform");
+}
+
 UInt32 StoredColumnsIndex::add(const ColumnsInfo * columns_info)
 {
     std::lock_guard guard(mutex);
