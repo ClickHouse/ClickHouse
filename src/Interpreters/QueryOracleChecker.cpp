@@ -559,6 +559,23 @@ bool hasPasteJoin(const ASTSelectQuery & select)
     return false;
 }
 
+/// ASOF JOIN tie-breaking among equal asof-column values is
+/// implementation-defined, so which right-side row a left row pairs with can
+/// change between plans — observed as a `Subquery wrap` false mismatch.
+/// Checked recursively: an ASOF join in any subquery taints the whole query.
+bool hasAsofJoinAnywhere(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * join = ast->as<ASTTableJoin>())
+        if (join->strictness == JoinStrictness::Asof)
+            return true;
+    for (const auto & child : ast->children)
+        if (hasAsofJoinAnywhere(child))
+            return true;
+    return false;
+}
+
 /// True if the FROM clause uses a subquery that itself contains UNION ALL /
 /// UNION DISTINCT / INTERSECT / EXCEPT. We skip those: when the union
 /// branches have mismatched column types, the subquery output column ends up
@@ -2082,6 +2099,12 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (hasTruncatingInlineSettings(query_ast))
     {
         LOG_TRACE(logger, "Oracle skip: query carries truncating settings (read/result caps)");
+        return false;
+    }
+
+    if (hasAsofJoinAnywhere(query_ast))
+    {
+        LOG_TRACE(logger, "Oracle skip: ASOF JOIN (tie-breaking is plan-dependent)");
         return false;
     }
 
