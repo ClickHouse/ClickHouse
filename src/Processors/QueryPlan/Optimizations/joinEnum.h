@@ -12,12 +12,12 @@ namespace DB
 
 // generates S subset X, where S is not empty
 template <std::unsigned_integral Tuint>
-class NonEmptySubsetIterator
+class NonEmptySubmasks
 {
 public:
     using bitvector_t = Tuint;
     
-    constexpr explicit NonEmptySubsetIterator(const bitvector_t x) noexcept : start(x) {}
+    constexpr explicit NonEmptySubmasks(const bitvector_t x) noexcept : start(x) {}
     
     constexpr Tuint getFullSet() const noexcept { return start; }
 
@@ -55,7 +55,6 @@ public:
         Tuint current;
     };
 
-    // Range interface factory hooks
     constexpr Iterator begin() const noexcept { return Iterator(start, start & (-start)); }
     constexpr Iterator end() const noexcept   { return Iterator(start, start); } 
 
@@ -158,7 +157,7 @@ void EnumCcpSub<TConsumer, TDptable, TQueryGraph, Tuint>::enumerate(
         if (std::popcount(s) <= 1)
             continue;
 
-        NonEmptySubsetIterator<Tuint> subsets(s);
+        NonEmptySubmasks<Tuint> subsets(s);
         for (auto s_iter : subsets)
         {
             const Tuint lhs = s_iter;
