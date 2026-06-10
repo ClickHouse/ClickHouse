@@ -18,6 +18,9 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 limit;
     extern const SettingsUInt64 offset;
+    extern const SettingsUInt64 max_result_rows;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsBool extremes;
 }
 
 namespace
@@ -28,14 +31,23 @@ namespace
 /// generate from a truncated source just because the user limited the final result, e.g.
 /// `SELECT * FROM obfuscate(SELECT * FROM numbers(1000)) SETTINGS limit = 10`. Clear them
 /// for the inner execution; the outer pipeline still applies them to the obfuscated output.
+/// For the same reason clear the result-size limits and `extremes`: they describe the final
+/// query result, not the hidden source used for training and generation (subqueries and
+/// `StorageView` clear them for their inner contexts as well).
 ContextPtr makeInnerContext(const ContextPtr & context)
 {
-    if (context->getSettingsRef()[Setting::limit] == 0 && context->getSettingsRef()[Setting::offset] == 0)
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::limit] == 0 && settings[Setting::offset] == 0
+        && settings[Setting::max_result_rows] == 0 && settings[Setting::max_result_bytes] == 0
+        && !settings[Setting::extremes])
         return context;
 
     auto inner_context = Context::createCopy(context);
     inner_context->setSetting("limit", Field(UInt64(0)));
     inner_context->setSetting("offset", Field(UInt64(0)));
+    inner_context->setSetting("max_result_rows", Field(UInt64(0)));
+    inner_context->setSetting("max_result_bytes", Field(UInt64(0)));
+    inner_context->setSetting("extremes", Field(false));
     return inner_context;
 }
 
