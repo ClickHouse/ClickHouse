@@ -25,6 +25,13 @@
 #   Case C1: plain Struct<a:int32,b:int32> with 5 rows, field b patched 5→3.
 #   Case C2: Map<int32,int32> with 1 row / 5 entries, value FieldNode.length patched 5→3.
 #   SELECT * triggers an ASan abort on unpatched builds for both.
+#
+# Class D — decreasing offsets that reach Flatten():
+#   List<int32> with offsets patched to [64,0,6].  arrow::ListArray::Flatten() slices
+#   the values array from offset[0]=64 to offset[2]=6 before the offsets reader's
+#   monotonicity check runs, failing deep inside Arrow's ArrayData::Slice (STD_EXCEPTION)
+#   on code that validates monotonicity too late.  The pre-Flatten check rejects it as
+#   INCORRECT_DATA.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -130,6 +137,19 @@ idx_map = d_map.find(pat_map)
 assert idx_map >= 0, "could not find Map FieldNode pattern in map file"
 d_map[idx_map+48:idx_map+56] = struct.pack('<q', 3)
 open(f'{out}/map_value_short.arrow', 'wb').write(d_map)
+
+# Case D: List<int32> with a decreasing offset pair that reaches Arrow's Flatten()
+# before the offsets reader runs.  Valid offsets [0,4,6] are patched to [64,0,6]:
+# Flatten() slices the values array from offset[0]=64 to offset[2]=6, which fails
+# deep inside Arrow's ArrayData::Slice (STD_EXCEPTION) when monotonicity is validated
+# only later.  The pre-Flatten check rejects it as INCORRECT_DATA.
+arr_decr = pa.array([[1,2,3,4],[5,6]], type=pa.list_(pa.int32()))  # offsets [0,4,6]
+d_decr = bytearray(write_arrow(arr_decr))
+needle_decr = struct.pack('<3i', 0, 4, 6)
+idx_decr = d_decr.find(needle_decr)
+assert idx_decr >= 0, "could not find List offsets [0,4,6] in decreasing-offset file"
+d_decr[idx_decr:idx_decr+12] = struct.pack('<3i', 64, 0, 6)
+open(f'{out}/list_decreasing_offset.arrow', 'wb').write(d_decr)
 PYEOF
 
 check_incorrect_data() {
@@ -163,3 +183,6 @@ check_incorrect_data struct_short_b \
 
 check_incorrect_data map_value_short \
     $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/map_value_short.arrow', Arrow)"
+
+check_incorrect_data list_decreasing_offset \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/list_decreasing_offset.arrow', Arrow)"

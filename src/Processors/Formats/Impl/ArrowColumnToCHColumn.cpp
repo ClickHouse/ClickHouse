@@ -754,7 +754,8 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(const std::sh
                         "Arrow BinaryArray data buffer too small for column '{}': "
                         "row {} has offset {} but buffer is {} bytes",
                         column_name, value_i, chunk.value_offset(value_i), data_buf_size);
-                integer_column.insertData(chunk.Value(value_i).data(), sizeof(ValueType));
+                const auto * raw_data = reinterpret_cast<const char *>(chunk.value_data()->data()) + safe_offset;
+                integer_column.insertData(raw_data, sizeof(ValueType));
             }
         }
     }
@@ -1108,6 +1109,34 @@ struct ArrowOffsetArray<arrow::LargeListArray>
     using type = arrow::Int64Array;
 };
 
+/// Validate that an Arrow list offsets array is non-negative and monotonically non-decreasing.
+/// Must run before arrow's Flatten() slices the values array using offset[0]..offset[length]:
+/// a decreasing pair such as [64, 0] otherwise reaches ArrayData::Slice with an out-of-range
+/// length and fails deep inside Arrow instead of being rejected here as INCORRECT_DATA.
+template <typename OffsetArray>
+static void checkListOffsetsMonotonic(const OffsetArray & arrow_offsets, const String & column_name)
+{
+    if (arrow_offsets.length() == 0)
+        return;
+    int64_t previous_offset = arrow_offsets.Value(0);
+    if (unlikely(previous_offset < 0))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow List offsets contain a negative value for column '{}': offset[0]={}",
+            column_name, previous_offset);
+    for (int64_t i = 1; i < arrow_offsets.length(); ++i)
+    {
+        int64_t offset = arrow_offsets.Value(i);
+        if (unlikely(offset < previous_offset))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow List offsets are not monotonically non-decreasing for column '{}': "
+                "offset[{}]={} < offset[{}]={}",
+                column_name, i, offset, i - 1, previous_offset);
+        previous_offset = offset;
+    }
+}
+
 template <typename ArrowListArray>
 static ColumnPtr readOffsetsFromArrowListColumn(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
@@ -1137,22 +1166,14 @@ static ColumnPtr readOffsetsFromArrowListColumn(const std::shared_ptr<arrow::Chu
          * `offsets.back()`. More info can be found in https://lists.apache.org/thread/rrwfb9zo2dc58dhd9rblf20xd7wmy7jm,
          * https://github.com/ClickHouse/ClickHouse/pull/43297 and https://github.com/ClickHouse/ClickHouse/pull/54370
          * */
-        int64_t previous_offset = arrow_offsets.Value(0);
-        if (unlikely(previous_offset < 0))
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Arrow List offsets contain a negative value for column '{}': offset[0]={}",
-                column_name, previous_offset);
+        checkListOffsetsMonotonic(arrow_offsets, column_name);
+        if (arrow_offsets.length() == 0)
+            continue;
 
+        int64_t previous_offset = arrow_offsets.Value(0);
         for (int64_t i = 1; i < arrow_offsets.length(); ++i)
         {
             int64_t offset = arrow_offsets.Value(i);
-            if (unlikely(offset < previous_offset))
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Arrow List offsets are not monotonically non-decreasing for column '{}': "
-                    "offset[{}]={} < offset[{}]={}",
-                    column_name, i, offset, i - 1, previous_offset);
             uint64_t elements = static_cast<uint64_t>(offset - previous_offset);
             previous_offset = offset;
             offsets_data.emplace_back(offsets_data.back() + elements);
@@ -1313,11 +1334,18 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(const std::shar
 
         /// Validate the offsets buffer before Flatten() reads it: Flatten() iterates
         /// over offset[0..length] to slice the values array, so it needs (length+1) entries.
+        /// We also validate monotonicity here, before Flatten(), because Flatten() slices the
+        /// values array from offset[0] to offset[length]; a decreasing pair would otherwise fail
+        /// deep inside Arrow's ArrayData::Slice instead of being rejected as INCORRECT_DATA.
         /// FixedSizeListArray uses a fixed stride instead of a variable-length offsets array.
         if constexpr (!std::is_same_v<ArrowListArray, arrow::FixedSizeListArray>)
         {
+            /// offsets() returns a temporary shared_ptr; keep it alive in a named local so the
+            /// reference returned by checkedCast does not dangle while we validate it.
+            auto arrow_offsets_array = list_chunk.offsets();
             using OffsetArray = typename ArrowOffsetArray<ArrowListArray>::type;
-            checkedCast<OffsetArray>(*list_chunk.offsets(), column_name);
+            const auto & arrow_offsets = checkedCast<OffsetArray>(*arrow_offsets_array, column_name);
+            checkListOffsetsMonotonic(arrow_offsets, column_name);
         }
 
         /*
@@ -1383,7 +1411,8 @@ static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(const std::shared_ptr<
                         "Arrow BinaryArray data buffer too small for column '{}': "
                         "row {} has offset {} but buffer is {} bytes",
                         column_name, value_i, chunk.value_offset(value_i), data_buf_size);
-                ipv6_column.insertData(chunk.Value(value_i).data(), sizeof(IPv6));
+                const auto * raw_data = reinterpret_cast<const char *>(chunk.value_data()->data()) + safe_offset;
+                ipv6_column.insertData(raw_data, sizeof(IPv6));
             }
         }
     }
