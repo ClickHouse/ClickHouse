@@ -76,6 +76,18 @@
                     </main>
                 </volumes>
             </local_cache_3>
+            <!-- Two volumes: data lands on the local-metadata disk, then can be moved to the
+                 plain_rewritable disk. Used to test moving an empty part across metadata types. -->
+            <local_to_plain_rewritable>
+                <volumes>
+                    <local>
+                        <disk>local_disk</disk>
+                    </local>
+                    <plain_rewritable>
+                        <disk>local_plain_rewritable</disk>
+                    </plain_rewritable>
+                </volumes>
+            </local_to_plain_rewritable>
         </policies>
     </storage_configuration>
 </clickhouse>

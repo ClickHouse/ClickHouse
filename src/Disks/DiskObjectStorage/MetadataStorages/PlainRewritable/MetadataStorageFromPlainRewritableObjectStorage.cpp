@@ -404,9 +404,12 @@ TransactionCommitOutcomeVariant MetadataStorageFromPlainRewritableObjectStorageT
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & objects)
 {
+    /// Empty `objects` means a 0-byte file; the operation only uses bytes_size, so record size 0.
+    const StoredObject object
+        = objects.empty() ? StoredObject(/*remote_path_=*/"", /*local_path_=*/path, /*bytes_size_=*/0) : objects.front();
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(
         path,
-        objects.front(),
+        object,
         metadata_storage.object_storage,
         metadata_storage.fs_tree,
         metadata_storage.layout,
