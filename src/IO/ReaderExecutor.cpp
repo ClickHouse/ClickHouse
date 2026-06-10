@@ -1798,23 +1798,10 @@ void ReaderExecutor::serveResidentFromPlan(
     }
 }
 
-bool ReaderExecutor::fetchAndBackfillGaps(
-    ByteRange physical_window,
-    Rope & result,
-    IntervalSet & covered,
-    WritePlan & write_plan,
-    ConnState & conn,
-    bool & eof_latch,
-    MemoryPressureLevel pressure_level,
-    Stats & out_stats)
+VectorWithMemoryTracking<ByteRange> ReaderExecutor::serveCacheTiersCollectingMisses(
+    ByteRange window, Rope & result, IntervalSet & covered, WritePlan & write_plan, Stats & out_stats)
 {
-    /// Synchronous foreground gap read: whatever the plan left uncovered is a remote
-    /// gap. Walk the tiers to create each tier's backfill segments (`getOrSet`) and
-    /// segment/block-align the misses (page-cache misses are whole blocks, disk-cache
-    /// misses are head-aligned), read those aligned misses from the source in one pass,
-    /// append them, and write them back. A byte that became resident between planning
-    /// and now surfaces as a hit here and is served, so no byte is left a hole.
-    VectorWithMemoryTracking<ByteRange> remaining = covered.subtract(physical_window);
+    VectorWithMemoryTracking<ByteRange> remaining = covered.subtract(window);
     for (auto & cache : caches)
     {
         VectorWithMemoryTracking<ByteRange> still_missing;
@@ -1888,6 +1875,24 @@ bool ReaderExecutor::fetchAndBackfillGaps(
         if (remaining.empty())
             break;
     }
+    return remaining;
+}
+
+bool ReaderExecutor::fetchAndBackfillGaps(
+    ByteRange physical_window,
+    Rope & result,
+    IntervalSet & covered,
+    WritePlan & write_plan,
+    ConnState & conn,
+    bool & eof_latch,
+    MemoryPressureLevel pressure_level,
+    Stats & out_stats)
+{
+    /// Synchronous foreground gap read: whatever the plan left uncovered is a remote
+    /// gap. Serve any late cache hit, then read the still-missing ranges from the source
+    /// in one pass and write them back.
+    VectorWithMemoryTracking<ByteRange> remaining = serveCacheTiersCollectingMisses(
+        physical_window, result, covered, write_plan, out_stats);
 
     /// Merge close-together gaps into fewer source requests. The merge may bridge
     /// already-covered bytes; the overlap is dropped below (only the uncovered
@@ -2065,84 +2070,11 @@ void ReaderExecutor::backfillBytes(
 {
     /// Assemble the window from `source_bytes` (the whole window already fetched from
     /// the source - the worker's raw gap bytes at consume, or the foreground's own
-    /// `fetchGapsFromSource` read) plus any cache LATE-HIT (a byte that became resident
-    /// between planning and now), and write the true misses back. FOREGROUND-only
+    /// `fetchGapsFromSource` read) plus any cache LATE-HIT. FOREGROUND-only
     /// (`this->stats`, synchronous `put`): the worker does no cache work, so a
     /// prefetched window is backfilled here at consume.
-    VectorWithMemoryTracking<ByteRange> remaining = covered.subtract(physical_window);
-    for (auto & cache : caches)
-    {
-        VectorWithMemoryTracking<ByteRange> still_missing;
-        const bool is_page = cache->tier() == CacheTier::PageCache;
-        const Stats::Counter tier_counter = is_page ? Stats::BytesFromPageCache : Stats::BytesFromFilesystemCache;
-
-        for (const auto & r : remaining)
-        {
-            /// Split by object boundaries so each `lookup` carries a single
-            /// `StoredObject` (the provider keys/translates per object); handles
-            /// still report file-level ranges.
-            auto pieces = offset_map.map(r);
-            size_t piece_file_start = r.offset;
-            for (const auto & pr : pieces)
-            {
-                const size_t object_file_offset = piece_file_start - pr.object_offset;
-                ByteRange piece_range{piece_file_start, pr.size};
-
-                auto handle = cache->lookup(pr.object, object_file_offset, piece_range);
-                auto status = handle->status();
-
-                /// Test hook: pause after a hit is classified but before `get`,
-                /// so a test can drop the cache in that window. No-op in production.
-                if (!status.hit_ranges.empty())
-                    FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_cache_status);
-
-                bool any_hit_done = false;
-                for (const auto & hit : status.hit_ranges)
-                {
-                    const size_t lo = std::max(hit.offset, piece_range.offset);
-                    const size_t hi = std::min(hit.end(), piece_range.end());
-                    if (lo >= hi)
-                        continue;
-                    ByteRange clamped{lo, hi - lo};
-                    auto useful = covered.subtract(clamped);
-                    if (useful.empty())
-                        continue;
-                    out_stats.add(Stats::CacheGetRequests);
-                    StatTimer get_scope(out_stats, Stats::CacheGetMicroseconds);
-                    Rope hit_rope = handle->get(clamped);
-                    HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
-                        static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
-                    for (const auto & sub : useful)
-                    {
-                        if (!hit_rope.covers(sub))
-                            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "ReaderExecutor: cache {} status() reported a hit at [{}, {}) but get() did not "
-                                "return it - a held FileSegment was not honored across status()/get()",
-                                cache->name(), sub.offset, sub.end());
-                        result.append(hit_rope.extract(sub));
-                        covered.add(sub);
-                        out_stats.add(tier_counter, sub.size);
-                    }
-                    any_hit_done = true;
-                }
-
-                for (const auto & miss : status.miss_ranges)
-                    still_missing.push_back(miss);
-
-                /// Keep every handle that did real work: ones with misses are
-                /// `put` into below and pinned by the caller; the deferred LRU-bump
-                /// of any read hit must land after those `put`s.
-                if (!status.miss_ranges.empty() || any_hit_done)
-                    write_plan.handles.push_back(std::move(handle));
-
-                piece_file_start += pr.size;
-            }
-        }
-
-        remaining = std::move(still_missing);
-        if (remaining.empty())
-            break;
-    }
+    VectorWithMemoryTracking<ByteRange> remaining = serveCacheTiersCollectingMisses(
+        physical_window, result, covered, write_plan, out_stats);
 
     /// Serve the still-missing ranges from the already-fetched `source_bytes`. CLAMP
     /// every append to the range `source_bytes` ACTUALLY delivered: a size-unknown EOF

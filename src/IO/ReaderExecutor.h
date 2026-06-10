@@ -241,13 +241,23 @@ private:
         ByteRange physical_window, Rope & result, IntervalSet & covered,
         const ReadPlanGeometry & geometry, Stats & out_stats);
 
-    /// Synchronous foreground gap read + backfill in one pass: walk the tiers, segment/
-    /// block-align the misses (`getOrSet`), serve any cache hit, read the aligned misses
-    /// from the source, append them, and write them back. Self-aligning - one cache
-    /// lookup. Used by the foreground (`readBigAt`, the sync gap reads, the header);
-    /// the prefetch path instead pre-aligns at submit (`alignToCaches`) and splits this
-    /// into the worker's `fetchGapsFromSource` + the consume's `backfillBytes`. Returns
-    /// true if any source read happened (the caller's live-connection keep/drop signal).
+    /// Walk the cache tiers fastest-first over the gaps in `window`: serve any byte
+    /// resident in a tier into `result`/`covered`, keep each tier's `getOrSet` handle in
+    /// `write_plan` for the later `put`, and propagate the misses down to the next tier.
+    /// Returns the ranges still missing after the slowest tier - the bytes a source fetch
+    /// must supply. A byte cached by another reader since the plan was built surfaces as a
+    /// hit here and is served. Shared by `fetchAndBackfillGaps` (synchronous foreground
+    /// gap read) and `backfillBytes` (prefetch consume).
+    VectorWithMemoryTracking<ByteRange> serveCacheTiersCollectingMisses(
+        ByteRange window, Rope & result, IntervalSet & covered, WritePlan & write_plan, Stats & out_stats);
+
+    /// Synchronous foreground gap read + backfill in one pass: serve any late cache hit
+    /// (`serveCacheTiersCollectingMisses`), read the still-missing ranges from the source,
+    /// append them, and write them back. Used by the foreground (`readBigAt`, the sync gap
+    /// reads, the header); the prefetch path instead pre-aligns at submit (`alignToCaches`)
+    /// and splits this into the worker's `fetchGapsFromSource` + the consume's
+    /// `backfillBytes`. Returns true if any source read happened (the caller's
+    /// live-connection keep/drop signal).
     bool fetchAndBackfillGaps(
         ByteRange physical_window,
         Rope & result,
