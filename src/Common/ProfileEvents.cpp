@@ -117,7 +117,7 @@
     M(TextIndexHeaderCacheHits, "Number of times a header has been found in the cache.", ValueType::Number) \
     M(TextIndexHeaderCacheMisses, "Number of times a header has not been found in the cache.", ValueType::Number) \
     M(TextIndexPostingsCacheHits, "Number of times a text index posting list has been found in the cache.", ValueType::Number) \
-    M(TextIndexPostingsCacheMisses, "Number of times a a text index posting list has not been found in the cache.", ValueType::Number) \
+    M(TextIndexPostingsCacheMisses, "Number of times a text index posting list has not been found in the cache.", ValueType::Number) \
     M(TextIndexReadSparseIndexBlocks, "Number of times a sparse index block has been read from the text index.", ValueType::Number) \
     M(TextIndexReaderTotalMicroseconds, "Total time spent reading the text index.", ValueType::Microseconds) \
     M(TextIndexReadGranulesMicroseconds, "Total time spent reading and analyzing granules of the text index.", ValueType::Microseconds) \
@@ -127,15 +127,13 @@
     M(TextIndexDiscardHint, "Number of index granules where a direct reading from the text index was added as hint and was discarded due to low selectivity.", ValueType::Number) \
     M(TextIndexLazyPackedBlocksDecoded, "Number of packed blocks decoded in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyAdvanceCount, "Number of advance operations performed in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazySegmentsPrepared, "Number of segments prepared (Index Section loaded) in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazySegmentsPrepared, "Number of segments prepared (read from disk or cached) in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazySegmentsBuilt, "Number of segments actually read and decoded (cache misses) in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyBruteForceIntersections, "Number of brute-force intersections performed in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyLeapfrogIntersections, "Number of leapfrog intersections performed in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazySegmentsSkippedDense, "Number of segments skipped via dense-memset optimization in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazySegmentsSkippedCovered, "Number of segments skipped because the output region was already all-ones in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazyBlocksSkippedCovered, "Number of packed blocks skipped because the output region was already all-ones in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazyAndSegmentsSkippedZero, "Number of segments skipped because the output region was all-zeros in lazy AND mode.", ValueType::Number) \
-    M(TextIndexLazyAndBlocksSkippedZero, "Number of packed blocks skipped because the output region was all-zeros in lazy AND mode.", ValueType::Number) \
-    M(TextIndexLazyAndSegmentsSkippedDense, "Number of segments skipped via dense-increment optimization in lazy AND mode.", ValueType::Number) \
+    M(TextIndexLazySegmentsSkippedDense, "Number of fully-dense segments padded as a whole (memset for OR, increment for AND) instead of decoding blocks, in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazySegmentsSkippedResolved, "Number of segments skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazyBlocksSkippedResolved, "Number of packed blocks skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.", ValueType::Number) \
     M(TextIndexDiscardPatternScan, "Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.", ValueType::Number) \
     M(QueryConditionCacheHits, "Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
@@ -332,6 +330,21 @@
     M(ZooKeeperClose, "Number of times connection with ZooKeeper has been closed voluntary.", ValueType::Number) \
     M(ZooKeeperGetACL, "Number of 'getACL' requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperWatchResponse, "Number of times watch notification has been received from ZooKeeper.", ValueType::Number) \
+    M(ZooKeeperWatchCallbackDurationMicroseconds, "Total time spent inside ZooKeeper watch callbacks (network thread).", ValueType::Microseconds) \
+    M(ZooKeeperWatchCallbackErrors, "Number of exceptions thrown from ZooKeeper watch callbacks.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredOther, "Number of watch notifications dispatched to uncategorized callbacks.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredReplicatedMergeTreeLog, "Number of watch notifications dispatched to ReplicatedMergeTree log entries.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredReplicatedMergeTreeMutations, "Number of watch notifications dispatched to ReplicatedMergeTree mutations.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection, "Number of watch notifications dispatched to ReplicatedMergeTree leader election / replica locks.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync, "Number of watch notifications dispatched while waiting for replicas to process log entries (SYNC REPLICA, ALTER, mutations).", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredDistributedDDL, "Number of watch notifications dispatched to DDLWorker queue.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredReplicatedAccessControl, "Number of watch notifications dispatched to ReplicatedAccessStorage.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredUserDefinedSQLObjects, "Number of watch notifications dispatched to UserDefinedSQLObjectsZooKeeperStorage.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredWorkloadEntity, "Number of watch notifications dispatched to WorkloadEntityKeeperStorage.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredBackupCoordination, "Number of watch notifications dispatched to backup / restore coordination.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredObjectStorageQueue, "Number of watch notifications dispatched to ObjectStorageQueue / S3Queue.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredClusterDiscovery, "Number of watch notifications dispatched to ClusterDiscovery.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredMaterializedViewRefresh, "Number of watch notifications dispatched to MaterializedView refresh coordination.", ValueType::Number) \
     M(ZooKeeperUserExceptions, "Number of exceptions while working with ZooKeeper related to the data (no node, bad version or similar).", ValueType::Number) \
     M(ZooKeeperHardwareExceptions, "Number of exceptions while working with ZooKeeper related to network (connection loss or similar).", ValueType::Number) \
     M(ZooKeeperOtherExceptions, "Number of exceptions while working with ZooKeeper other than ZooKeeperUserExceptions and ZooKeeperHardwareExceptions.", ValueType::Number) \
@@ -401,6 +414,9 @@
     M(ReplicaPartialShutdown, "How many times Replicated table has to deinitialize its state due to session expiration in ZooKeeper. The state is reinitialized every time when ZooKeeper is available again.", ValueType::Number) \
     \
     M(IndexAnalysisRounds, "Number of times index analysis was performed within the query.", ValueType::Number) \
+    M(UniqueKeyIndexCacheLookupMicroseconds, "Wall-clock time inside `UniqueKeyIndexCache::Lookup` + `UniqueKeyIndexCache::Insert` (ClickHouse-side `CacheBase` adapter for the RocksDB block cache).", ValueType::Microseconds) \
+    M(UniqueKeyIndexCacheHits, "Number of times an entry has been found in the UNIQUE KEY index cache, so we didn't have to load an SST block.", ValueType::Number) \
+    M(UniqueKeyIndexCacheMisses, "Number of times an entry has not been found in the UNIQUE KEY index cache, so we had to load an SST block from disk.", ValueType::Number) \
     M(UniqueKeySSTWriteMicroseconds, "Total wall-clock time spent inside an `SSTIndexWriter` lifetime — covers SST `Open`, every `addEncoded` Put, and `Finish` + copy-via-`writeFile` in `finalizeToStorage`. Excludes work the static helpers do before constructing the writer (encode + non-prefix-path sort). Emitted once per writer.", ValueType::Microseconds) \
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.", ValueType::Number) \
     M(SelectedPartsTotal, "Number of total data parts before selecting which ones to read from a MergeTree table.", ValueType::Number) \
@@ -763,6 +779,7 @@ The server successfully detected this situation and will download merged part fr
     M(WriteBufferFromS3RequestsErrors, "Number of exceptions while writing to S3.", ValueType::Number) \
     M(WriteBufferFromS3WaitInflightLimitMicroseconds, "Time spent on waiting while some of the current requests are done when its number reached the limit defined by s3_max_inflight_parts_for_one_file.", ValueType::Microseconds) \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.", ValueType::Number) \
+    M(GlobalMemoryLimitExceeded, "Number of times the global memory limit was exceeded.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheck, "Number of times memory has been allocated without checking for memory constraints.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheckBytes, "Amount of bytes that has been allocated without checking for memory constraints.", ValueType::Number) \
     \
@@ -811,7 +828,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache", ValueType::Bytes) \
     M(FilesystemCacheCreatedKeyDirectories, "Number of created key directories", ValueType::Bytes) \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache", ValueType::Number) \
-    M(FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease, "Number of file segments evicted from filesystem cache when increasing priority of file segments (Applies to SLRU cache policy)", ValueType::Number) \
+    M(FilesystemCacheDowngradedFileSegments, "Number of file segments downgraded (moved) from the protected to the probationary queue in SLRU cache policy. This is an internal move within the cache, not an eviction.", ValueType::Number) \
     M(FilesystemCacheBackgroundDownloadQueuePush, "Number of file segments sent for background download in filesystem cache", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being in unreleasable state", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedEvictingFileSegments, "Number of file segments skipped for eviction because of being in evicting state", ValueType::Number) \
@@ -1025,6 +1042,11 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount, "Number requests that have been rejected due to soft memory limit exceeded", ValueType::Number) \
     M(KeeperStaleRequestsSkipped, "Number of Keeper requests skipped because the session is no longer live", ValueType::Number) \
     M(KeeperLiveSessionsLockWaitMicroseconds, "Time spent waiting to acquire Keeper live sessions lock", ValueType::Microseconds) \
+    M(KeeperWatchesTriggered, "Number of watch triggers", ValueType::Number) \
+    M(KeeperWatchTriggeredNodeCreated, "Number of watch triggers by `CREATE` operation", ValueType::Number) \
+    M(KeeperWatchTriggeredNodeDeleted, "Number of watch triggers by `DELETE` operation", ValueType::Number) \
+    M(KeeperWatchTriggeredNodeDataChanged, "Number of watch triggers by change operations", ValueType::Number) \
+    M(KeeperWatchTriggeredNodeChildrenChanged, "Number of watch triggers by children change operations", ValueType::Number) \
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.", ValueType::Number) \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.", ValueType::Number) \
@@ -1366,13 +1388,13 @@ The server successfully detected this situation and will download merged part fr
     M(WasmModuleInstatiate, "Number of WebAssembly compartments created", ValueType::Number) \
     M(WasmMemoryAllocated, "Total memory allocated for WebAssembly compartments", ValueType::Bytes) \
     \
-    M(ExecutableUserDefinedFunctionInvocations, "Number of executable_pool user-defined function invocations.", ValueType::Number) \
-    M(ExecutableUserDefinedFunctionElapsedMicroseconds, "Wall clock time spent executing executable_pool user-defined functions, in microseconds.", ValueType::Microseconds) \
-    M(ExecutableUserDefinedFunctionUserTimeMicroseconds, "User mode CPU time consumed by executable_pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
-    M(ExecutableUserDefinedFunctionSystemTimeMicroseconds, "Kernel mode CPU time consumed by executable_pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
-    M(ExecutableUserDefinedFunctionPeakMemoryByteSeconds, "Per-process peak memory used by executable_pool user-defined function child processes integrated over wall clock time, in byte-seconds.", ValueType::Number) \
-    M(ExecutableUserDefinedFunctionInputBytes, "Total bytes written to the stdin of executable_pool user-defined function child processes.", ValueType::Bytes) \
-    M(ExecutableUserDefinedFunctionOutputBytes, "Total bytes read from the stdout of executable_pool user-defined function child processes.", ValueType::Bytes) \
+    M(ExecutableUserDefinedFunctionInvocations, "Number of executable and executable_pool user-defined function invocations.", ValueType::Number) \
+    M(ExecutableUserDefinedFunctionElapsedMicroseconds, "Wall clock time spent executing executable and executable_pool user-defined functions, in microseconds.", ValueType::Microseconds) \
+    M(ExecutableUserDefinedFunctionUserTimeMicroseconds, "User mode CPU time consumed by executable and executable_pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
+    M(ExecutableUserDefinedFunctionSystemTimeMicroseconds, "Kernel mode CPU time consumed by executable and executable_pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
+    M(ExecutableUserDefinedFunctionPeakMemoryByteSeconds, "Per-process peak memory used by executable and executable_pool user-defined function child processes integrated over wall clock time, in byte-seconds.", ValueType::Number) \
+    M(ExecutableUserDefinedFunctionInputBytes, "Total bytes written to the stdin of executable and executable_pool user-defined function child processes.", ValueType::Bytes) \
+    M(ExecutableUserDefinedFunctionOutputBytes, "Total bytes read from the stdout of executable and executable_pool user-defined function child processes.", ValueType::Bytes) \
     M(ExecutableUserDefinedFunctionPoolWaitMicroseconds, "Time spent waiting on tryBorrowObject when the executable_pool user-defined function pool is exhausted, in microseconds.", ValueType::Microseconds) \
     \
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
@@ -1578,12 +1600,11 @@ void Counters::setTraceProfileEvent(Event event)
     {
         /// It is very unlikely that it will be allocated twice, since we set it at the beginning of the query
         auto fresh = std::make_unique<std::atomic_bool[]>(num_counters);
-        auto * fresh_raw = fresh.get();
         std::atomic_bool * expected = nullptr;
-        if (should_trace_array.compare_exchange_strong(expected, fresh_raw, std::memory_order_release, std::memory_order_relaxed))
+        if (should_trace_array.compare_exchange_strong(expected, fresh.get(), std::memory_order_release, std::memory_order_relaxed))
         {
             should_trace_holder = std::move(fresh);
-            trace_array = fresh_raw;
+            trace_array = should_trace_holder.get();
         }
         else
             trace_array = expected;
