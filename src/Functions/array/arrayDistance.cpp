@@ -1,7 +1,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDenseVector.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 #include <Common/TargetSpecific.h>
@@ -698,12 +697,18 @@ private:
     /// over raw pointers via SimSIMD (with a generic scalar fallback), without building offsets.
     ColumnPtr executeVector(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
-        const auto * vector_type = checkAndGetDataType<DataTypeVector>(arguments[0].type.get());
-        if (!vector_type)
-            vector_type = checkAndGetDataType<DataTypeVector>(arguments[1].type.get());
+        const auto * vector_type_x = checkAndGetDataType<DataTypeVector>(arguments[0].type.get());
+        const auto * vector_type_y = checkAndGetDataType<DataTypeVector>(arguments[1].type.get());
+        const auto * vector_type = vector_type_x ? vector_type_x : vector_type_y;
 
         const size_t dimension = vector_type->getDimension();
-        const DataTypePtr & element_type = vector_type->getElementType();
+
+        /// When the two Vector arguments have different element types, compute in the common (result) type
+        /// instead of downcasting one side; with a single Vector argument, compute in its native element
+        /// type and cast the reference to it (this keeps e.g. the BFloat16 SimSIMD kernels usable).
+        DataTypePtr element_type = vector_type->getElementType();
+        if (vector_type_x && vector_type_y && !vector_type_x->getElementType()->equals(*vector_type_y->getElementType()))
+            element_type = result_type;
 
         switch (result_type->getTypeId())
         {
@@ -761,18 +766,23 @@ private:
     std::pair<const T *, size_t> getVectorData(
         const ColumnWithTypeAndName & argument, const DataTypePtr & element_type, size_t dimension, std::vector<ColumnPtr> & holders) const
     {
-        const ColumnPtr & col = argument.column;
-        const bool is_const = isColumnConst(*col);
-        const IColumn * data_col = is_const ? &assert_cast<const ColumnConst &>(*col).getDataColumn() : col.get();
-
-        if (const auto * vec = typeid_cast<const ColumnDenseVector *>(data_col))
+        if (const auto * argument_vector_type = checkAndGetDataType<DataTypeVector>(argument.type.get()))
         {
-            if (vec->getDimension() != dimension)
+            if (argument_vector_type->getDimension() != dimension)
                 throw Exception(
                     ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Vector arguments for function {} must have equal dimension", getName());
+
+            /// Convert to the common element type if needed (e.g. Vector(Float64, N) against Vector(Float32, N)):
+            /// reading raw data of a different element type as T would silently produce wrong results.
+            ColumnPtr col = argument.column;
+            if (argument_vector_type->getElementTypeIndex() != element_type->getTypeId())
+                col = castColumn(argument, std::make_shared<DataTypeVector>(element_type, dimension));
+
+            const bool is_const = isColumnConst(*col);
+            const IColumn * data_col = is_const ? &assert_cast<const ColumnConst &>(*col).getDataColumn() : col.get();
+            const auto & vec = assert_cast<const ColumnDenseVector &>(*data_col);
             holders.push_back(col);
-            const T * base = reinterpret_cast<const T *>(vec->getFixedStringData().getChars().data());
-            return {base, is_const ? 0 : dimension};
+            return {vec.getTypedData<T>().data(), is_const ? 0 : dimension};
         }
 
         /// The reference vector is an Array. Cast it to Array(element_type) so its data is a ColumnVector<T>.

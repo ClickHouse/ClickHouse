@@ -4594,11 +4594,6 @@ private:
 
     WrapperType createVectorWrapper(const DataTypePtr & from_type_untyped, const DataTypeVector & to_type) const;
 
-    template <typename T>
-    static ColumnPtr convertArrayToVector(
-        ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t dimension);
-
-    template <typename T>
     WrapperType createArrayToVectorWrapper(const DataTypeArray & from_array_type, const DataTypeVector & to_vector_type) const;
 
     /// The case of: tuple([key1, key2, ..., key_n], [value1, value2, ..., value_n])

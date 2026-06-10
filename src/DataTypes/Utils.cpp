@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVector.h>
 
 namespace DB
 {
@@ -227,7 +228,16 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
         case TypeIndex::QBit:
             return to_which_type.isQBit();
         case TypeIndex::Vector:
-            return to_which_type.isVector();
+        {
+            if (!to_which_type.isVector())
+                return false;
+
+            const auto & from_type_vector = assert_cast<const DataTypeVector &>(*from_type);
+            const auto & to_type_vector = assert_cast<const DataTypeVector &>(*to_type_unwrapped);
+
+            return from_type_vector.getDimension() == to_type_vector.getDimension()
+                && canBeSafelyCast(from_type_vector.getElementType(), to_type_vector.getElementType());
+        }
         case TypeIndex::Object:
         case TypeIndex::Variant:
         case TypeIndex::Dynamic:

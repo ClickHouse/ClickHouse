@@ -1,0 +1,24 @@
+-- Vector against a constant Array reference
+1	5	25	7	4	0.4
+2	1	1	1	1	0
+1	4.4979
+2	1
+-- the Array argument may come first
+1	5
+2	1
+-- two Vector columns of the same type
+1	0	0
+2	0	0
+-- mixed element types are converted to the common type, not reinterpreted
+1	0
+2	0
+1	0
+2	0
+0
+-- BFloat16 vectors on both sides
+1	0	0.4
+2	0	0
+-- dimension mismatch is rejected
+-- results match the equivalent Array computation
+1	1	1
+2	1	1

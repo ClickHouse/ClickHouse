@@ -1,0 +1,7 @@
+-- the experimental gate
+-- dimension must be a positive integer
+-- the value size is bounded (no overflow of element_size * dimension)
+-- only float element types are allowed
+-- exactly two arguments
+-- binary type encoding round-trip (decodeDataType validates through the same constructor)
+Vector(Float32, 3)

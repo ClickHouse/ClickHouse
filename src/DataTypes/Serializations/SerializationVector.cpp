@@ -1,12 +1,13 @@
 #include <DataTypes/Serializations/SerializationVector.h>
-#include <DataTypes/Serializations/SerializationFixedString.h>
 
 #include <Columns/ColumnDenseVector.h>
-#include <Columns/ColumnFixedString.h>
 
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 
 #include <base/BFloat16.h>
@@ -18,132 +19,222 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+extern const int CANNOT_READ_ALL_DATA;
+extern const int TOO_LARGE_ARRAY_SIZE;
+extern const int TYPE_MISMATCH;
 }
 
 
-SerializationPtr SerializationVector::create(size_t element_size_, size_t dimension_)
+UInt128 SerializationVector::getHash(TypeIndex element_type_, size_t dimension_)
 {
-    auto nested = SerializationFixedString::create(element_size_ * dimension_);
-    return std::shared_ptr<SerializationVector>(new SerializationVector(nested, element_size_, dimension_));
+    SipHash hash;
+    hash.update("Vector");
+    hash.update(element_type_);
+    hash.update(dimension_);
+    return hash.get128();
 }
 
-template <typename Func>
-void SerializationVector::dispatchByElementSize(Func && func) const
+SerializationPtr SerializationVector::create(TypeIndex element_type_, size_t dimension_)
 {
-    if (element_size == 2)
-        func.template operator()<BFloat16>();
-    else if (element_size == 4)
-        func.template operator()<Float32>();
-    else if (element_size == 8)
-        func.template operator()<Float64>();
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported element size for Vector: {}. Only 2, 4 and 8 are supported", element_size);
+    return ISerialization::pooled(getHash(element_type_, dimension_), [=] { return new SerializationVector(element_type_, dimension_); });
 }
 
-static const ColumnFixedString & extractNestedColumn(const IColumn & column)
+
+void SerializationVector::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    return assert_cast<const ColumnDenseVector &>(column).getFixedStringData();
+    const Array & array = field.safeGet<Array>();
+    if (array.size() != dimension)
+        throw Exception(
+            ErrorCodes::TYPE_MISMATCH,
+            "Cannot serialize array of size {} as a Vector with dimension {}",
+            array.size(),
+            dimension);
+
+    ColumnDenseVector::dispatchByElementType(element_type, [&](auto tag)
+    {
+        using T = decltype(tag);
+        for (size_t i = 0; i < dimension; ++i)
+        {
+            T value = static_cast<T>(array[i].safeGet<T>());
+            writeBinaryLittleEndian(value, ostr);
+        }
+    });
 }
 
-static ColumnFixedString & extractNestedColumn(IColumn & column)
+void SerializationVector::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
-    return assert_cast<ColumnDenseVector &>(column).getFixedStringData();
+    field = Array();
+    Array & array = field.safeGet<Array>();
+    array.reserve(dimension);
+
+    ColumnDenseVector::dispatchByElementType(element_type, [&](auto tag)
+    {
+        using T = decltype(tag);
+        for (size_t i = 0; i < dimension; ++i)
+        {
+            T value;
+            readBinaryLittleEndian(value, istr);
+            array.push_back(static_cast<NearestFieldType<T>>(value));
+        }
+    });
 }
 
-void SerializationVector::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationVector::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    nested->serializeBinary(field, ostr, settings);
+    const auto value = assert_cast<const ColumnDenseVector &>(column).getDataAt(row_num);
+    ostr.write(value.data(), value.size());
 }
 
-void SerializationVector::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationVector::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    nested->deserializeBinary(field, istr, settings);
-}
+    auto & column_vector = assert_cast<ColumnDenseVector &>(column);
 
-void SerializationVector::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    nested->serializeBinary(extractNestedColumn(column), row_num, ostr, settings);
-}
-
-void SerializationVector::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    nested->deserializeBinary(extractNestedColumn(column), istr, settings);
+    ColumnDenseVector::dispatchByElementType(element_type, [&](auto tag)
+    {
+        using T = decltype(tag);
+        auto & data = column_vector.getTypedData<T>();
+        const size_t old_size = data.size();
+        data.resize(old_size + dimension);
+        try
+        {
+            istr.readStrict(reinterpret_cast<char *>(&data[old_size]), dimension * sizeof(T));
+        }
+        catch (...)
+        {
+            data.resize(old_size);
+            throw;
+        }
+    });
 }
 
 void SerializationVector::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-    nested->serializeBinaryBulk(extractNestedColumn(column), ostr, offset, limit);
+    const auto & column_vector = assert_cast<const ColumnDenseVector &>(column);
+    const size_t value_size = column_vector.getValueSize();
+    const size_t size = column_vector.size();
+
+    if (limit == 0 || offset + limit > size)
+        limit = size - offset;
+
+    if (limit)
+        ostr.write(column_vector.getRawData().data() + offset * value_size, limit * value_size);
 }
 
 void SerializationVector::deserializeBinaryBulk(
-    IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const
+    IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
 {
-    nested->deserializeBinaryBulk(extractNestedColumn(column), istr, rows_offset, limit, avg_value_size_hint);
+    auto & column_vector = assert_cast<ColumnDenseVector &>(column);
+    const size_t value_size = column_vector.getValueSize();
+
+    size_t skipped_bytes;
+    if (unlikely(__builtin_mul_overflow(rows_offset, value_size, &skipped_bytes)))
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Deserializing Vector will lead to overflow");
+    istr.ignore(skipped_bytes);
+
+    size_t max_bytes;
+    if (unlikely(__builtin_mul_overflow(limit, value_size, &max_bytes)))
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Deserializing Vector will lead to overflow");
+
+    ColumnDenseVector::dispatchByElementType(element_type, [&](auto tag)
+    {
+        using T = decltype(tag);
+        auto & data = column_vector.getTypedData<T>();
+        const size_t initial_size = data.size();
+
+        data.resize(initial_size + limit * dimension);
+        const size_t read_bytes = istr.readBig(reinterpret_cast<char *>(&data[initial_size]), max_bytes);
+
+        if (read_bytes % value_size != 0)
+            throw Exception(
+                ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Cannot read all data of type Vector. Bytes read: {}. Value size: {}.",
+                read_bytes,
+                value_size);
+
+        data.resize(initial_size + read_bytes / sizeof(T));
+    });
 }
 
 void SerializationVector::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const std::string_view bytes = extractNestedColumn(column).getDataAt(row_num);
+    const auto & column_vector = assert_cast<const ColumnDenseVector &>(column);
 
     writeChar('[', ostr);
-    dispatchByElementSize(
-        [&]<typename T>()
+    ColumnDenseVector::dispatchByElementType(element_type, [&](auto tag)
+    {
+        using T = decltype(tag);
+        const auto & data = column_vector.getTypedData<T>();
+        const size_t offset = row_num * dimension;
+        for (size_t i = 0; i < dimension; ++i)
         {
-            const T * data = reinterpret_cast<const T *>(bytes.data());
-            for (size_t i = 0; i < dimension; ++i)
-            {
-                if (i != 0)
-                    writeChar(',', ostr);
-                writeText(data[i], ostr);
-            }
-        });
+            if (i != 0)
+                writeChar(',', ostr);
+            writeText(data[offset + i], ostr);
+        }
+    });
     writeChar(']', ostr);
+}
+
+void SerializationVector::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    /// There is no good way to serialize an array-like value in CSV. Therefore, we serialize it into a
+    /// string, and then write the resulting string in CSV (the same way as SerializationArray).
+    WriteBufferFromOwnString wb;
+    serializeText(column, row_num, wb, settings);
+    writeCSV(wb.str(), ostr);
+}
+
+void SerializationVector::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String s;
+    readCSV(s, istr, settings.csv);
+    ReadBufferFromString rb(s);
+    deserializeText(column, rb, settings, true);
 }
 
 void SerializationVector::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
-    auto & chars = extractNestedColumn(column).getChars();
-    const size_t value_size = element_size * dimension;
-    const size_t old_size = chars.size();
+    auto & column_vector = assert_cast<ColumnDenseVector &>(column);
 
-    /// Reserve space for one row; roll back on any parse error so the column is left consistent.
-    chars.resize(old_size + value_size);
-
-    try
+    ColumnDenseVector::dispatchByElementType(element_type, [&](auto tag)
     {
-        assertChar('[', istr);
-        skipWhitespaceIfAny(istr);
+        using T = decltype(tag);
+        auto & data = column_vector.getTypedData<T>();
+        const size_t old_size = data.size();
 
-        dispatchByElementSize(
-            [&]<typename T>()
+        /// Reserve space for one row; roll back on any parse error so the column is left consistent.
+        data.resize(old_size + dimension);
+
+        try
+        {
+            assertChar('[', istr);
+            skipWhitespaceIfAny(istr);
+
+            for (size_t i = 0; i < dimension; ++i)
             {
-                T * data = reinterpret_cast<T *>(&chars[old_size]);
-                for (size_t i = 0; i < dimension; ++i)
+                if (i != 0)
                 {
-                    if (i != 0)
-                    {
-                        skipWhitespaceIfAny(istr);
-                        assertChar(',', istr);
-                        skipWhitespaceIfAny(istr);
-                    }
-                    T value;
-                    readText(value, istr);
-                    data[i] = value;
+                    skipWhitespaceIfAny(istr);
+                    assertChar(',', istr);
+                    skipWhitespaceIfAny(istr);
                 }
-            });
+                T value;
+                readText(value, istr);
+                data[old_size + i] = value;
+            }
 
-        skipWhitespaceIfAny(istr);
-        assertChar(']', istr);
+            skipWhitespaceIfAny(istr);
+            assertChar(']', istr);
 
-        if (whole && !istr.eof())
-            throwUnexpectedDataAfterParsedValue(column, istr, settings, "Vector");
-    }
-    catch (...)
-    {
-        chars.resize(old_size);
-        throw;
-    }
+            if (whole && !istr.eof())
+                throwUnexpectedDataAfterParsedValue(column, istr, settings, "Vector");
+        }
+        catch (...)
+        {
+            data.resize(old_size);
+            throw;
+        }
+    });
 }
 
 }

@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeVector.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 
 #include <Core/AccurateComparison.h>
@@ -673,6 +674,32 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         {
             const auto & src_array = src.safeGet<Array>();
             return convert_array_to_qbit(src_array, src_array.size());
+        }
+    }
+    else if (const DataTypeVector * type_vector = typeid_cast<const DataTypeVector *>(&type))
+    {
+        if (src.getType() == Field::Types::Array)
+        {
+            const Array & src_arr = src.safeGet<Array>();
+
+            if (src_arr.size() != type_vector->getDimension())
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "Bad size of Vector in IN or VALUES section. Expected size: {}, actual size: {}",
+                    type_vector->getDimension(),
+                    src_arr.size());
+
+            const auto & element_type = *(type_vector->getElementType());
+            bool have_unconvertible_element = false;
+            Array res(src_arr.size());
+            for (size_t i = 0; i < src_arr.size(); ++i)
+            {
+                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict);
+                if (res[i].isNull())
+                    have_unconvertible_element = true;
+            }
+
+            return have_unconvertible_element ? Field(Null()) : Field(res);
         }
     }
     else if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(&type))

@@ -1,5 +1,7 @@
 -- Tests the Vector(T, N) data type: a fixed-dimension dense vector stored contiguously (FLAT layout).
 
+SET allow_experimental_vector_type = 1;
+
 DROP TABLE IF EXISTS t_vector;
 DROP TABLE IF EXISTS t_array;
 

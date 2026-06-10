@@ -8022,6 +8022,9 @@ Allows creation of [Nullable](../../sql-reference/data-types/nullable) [Tuple](.
 This setting does not control whether extracted tuple subcolumns can be `Nullable` (for example, from Dynamic, Variant, JSON, or Tuple columns).
 Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted tuple subcolumns can be `Nullable`.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_vector_type, false, R"(
+Allows creation of the experimental `Vector` data type: a fixed-dimension dense vector stored contiguously, intended for exact brute-force vector search.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, false, R"(
 Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Nullable(Tuple(...))`.
 

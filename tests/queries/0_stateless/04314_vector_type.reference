@@ -1,0 +1,19 @@
+-- type name and DDL
+v	Vector(Float32, 4)
+-- insert and read back (round-trip)
+1	[1,2,3,4]
+2	[5,6,7,8]
+-- distance functions vs a constant reference vector
+1	5.4772	30	10	0.8174
+2	13.1909	174	26	0.621
+-- distances match the equivalent Array(Float32) column
+1	1	1
+2	1	1
+-- CAST Array -> Vector and Vector -> Vector
+5
+Vector(Float32, 4)
+-- dimension is enforced on CAST
+-- Vector(Float64)
+[1.5,2.5,3.5]	4.5552
+-- Vector(BFloat16)
+[1,2,3,4]	5.48	0.82

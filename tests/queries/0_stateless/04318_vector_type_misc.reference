@@ -1,0 +1,33 @@
+-- ORDER BY follows element-wise (lexicographic) numeric order
+[-1,100]
+[1,2]
+[1,2]
+[1,10]
+[2,1]
+-- GROUP BY and DISTINCT
+[-1,100]	1
+[1,2]	2
+[1,10]	1
+[2,1]	1
+[-1,100]
+[1,2]
+[1,10]
+[2,1]
+4
+-- comparison is element-wise
+1
+1
+[-1,100]	[2,1]
+-- formats round-trip
+"[2,1]"
+"[1,2]"
+{"v":[2,1]}
+{"v":[1,2]}
+[2,1]
+[1,2]
+[1.5,2.5]
+[3.5,4.5]
+-- query parameters keep their literal form
+[1,2]	Vector(Float32, 2)
+-- default value is a zero vector
+1	[0,0,0]

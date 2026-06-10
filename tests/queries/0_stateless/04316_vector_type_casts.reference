@@ -1,0 +1,22 @@
+-- Array -> Vector
+[1,2,3,4]	Vector(Float32, 4)
+[1.5,2.5]	Vector(Float64, 2)
+[1,2,3]
+-- Vector -> Array
+[1,2,3]	Array(Float32)
+[1,2,3]	Array(Float64)
+[1,2,3]	Array(UInt8)
+6
+-- Vector -> Vector with a different element type
+[1,2,3]	Vector(Float64, 3)
+[1,2,3]	Vector(BFloat16, 3)
+-- String -> Vector
+[1,2,3]	Vector(Float32, 3)
+-- accurateCastOrNull
+[1,2,3]	Nullable(Vector(Float32, 3))
+\N	Nullable(Vector(Float32, 3))
+-- Nullable(Vector)
+1	[1,2,3]
+2	\N
+\N
+-- unsupported sources
