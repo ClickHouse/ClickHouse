@@ -155,7 +155,7 @@ class DeadLetterQueue;
 class IAsynchronousReader;
 class IOUringReader;
 class PrefetchThreadPool;
-class SourceBufferLimit;
+class LiveConnectionLimit;
 struct MergeTreeSettings;
 struct DatabaseReplicatedSettings;
 struct DistributedSettings;
@@ -1795,7 +1795,7 @@ public:
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
     std::shared_ptr<PrefetchThreadPool> getPrefetchThreadPool() const;
-    std::shared_ptr<SourceBufferLimit> getSourceBufferLimit() const;
+    std::shared_ptr<LiveConnectionLimit> getLiveConnectionLimit() const;
 #if USE_LIBURING
     IOUringReader & getIOUringReader() const;
 #endif

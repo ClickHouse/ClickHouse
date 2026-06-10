@@ -24,7 +24,7 @@
 #include <IO/ICacheProvider.h>
 #include <IO/DiskCacheProvider.h>
 #include <IO/PageCacheProvider.h>
-#include <IO/SourceBufferLimit.h>
+#include <IO/LiveConnectionLimit.h>
 #include <IO/ReadSettings.h>
 #include <IO/Rope.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -370,7 +370,7 @@ public:
         auto src = std::make_shared<MemBoundedSource>(data);
         ReaderExecutor executor(src, objects, std::move(caches), WINDOW, /*min_bytes_for_seek=*/MIN_BYTES_FOR_SEEK,
                                 BLOCK, /*log_file_path=*/{}, /*max_tail_for_drain=*/MAX_TAIL_FOR_DRAIN);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(buffer_slots));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(buffer_slots));
 
         size_t total = 0;
         for (const auto & rd : reads)

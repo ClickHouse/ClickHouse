@@ -114,7 +114,7 @@
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
 #include <IO/PrefetchThreadPool.h>
-#include <IO/SourceBufferLimit.h>
+#include <IO/LiveConnectionLimit.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/WriteSettings.h>
@@ -355,6 +355,7 @@ namespace Setting
     extern const SettingsUInt64 reader_executor_min_bytes_for_seek;
     extern const SettingsUInt64 reader_executor_max_tail_for_drain;
     extern const SettingsBool reader_executor_use_live_connections;
+    extern const SettingsUInt64 reader_executor_live_connection_min_read_bytes;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
     extern const SettingsString compatibility;
@@ -626,7 +627,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::shared_ptr<PrefetchThreadPool> prefetch_thread_pool;
 
     mutable OnceFlag source_buffer_limit_initialized;
-    mutable std::shared_ptr<SourceBufferLimit> source_buffer_limit;
+    mutable std::shared_ptr<LiveConnectionLimit> source_buffer_limit;
 
 #if USE_LIBURING
     mutable OnceFlag io_uring_reader_initialized;
@@ -7767,13 +7768,13 @@ std::shared_ptr<PrefetchThreadPool> Context::getPrefetchThreadPool() const
     return shared->prefetch_thread_pool;
 }
 
-std::shared_ptr<SourceBufferLimit> Context::getSourceBufferLimit() const
+std::shared_ptr<LiveConnectionLimit> Context::getLiveConnectionLimit() const
 {
     callOnce(shared->source_buffer_limit_initialized, [&]
     {
         const auto & server_settings = getServerSettings();
         size_t max_live = server_settings[ServerSetting::max_remote_read_connections];
-        shared->source_buffer_limit = std::make_shared<SourceBufferLimit>(max_live);
+        shared->source_buffer_limit = std::make_shared<LiveConnectionLimit>(max_live);
     });
     return shared->source_buffer_limit;
 }
@@ -7895,6 +7896,7 @@ ReadSettings Context::getReadSettings() const
     res.reader_executor_min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
     res.reader_executor_max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
     res.reader_executor_use_live_connections = settings_ref[Setting::reader_executor_use_live_connections];
+    res.reader_executor_live_connection_min_read_bytes = settings_ref[Setting::reader_executor_live_connection_min_read_bytes];
 
     return res;
 }

@@ -48,6 +48,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reader_executor_min_bytes_for_seek", 2097152, 2097152, "New experimental setting: forward-gap bound below which the ReaderExecutor bridges/reads through on the open source connection instead of a separate read or reopen."},
             {"reader_executor_max_tail_for_drain", 1048576, 1048576, "New experimental setting: drain bound below which the ReaderExecutor reads a dropped live connection out to its right bound so it returns to the pool reusable."},
             {"reader_executor_use_live_connections", true, true, "New experimental setting to reuse a live source connection across windows in the ReaderExecutor; disabling it forces the stateless one-shot-per-window path."},
+            {"reader_executor_live_connection_min_read_bytes", 0, 0, "New experimental setting: minimum contiguous source read that warrants a live ReaderExecutor connection (0 = use the read window size)."},
             {"ai_function_embedding_max_batch_size", 100, 100, "New setting"},
             {"enable_sharding_aggregator", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."},
             {"allow_experimental_text_index_lazy_apply", false, false, "New setting to gate experimental lazy posting list apply mode"},

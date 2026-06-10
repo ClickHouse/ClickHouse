@@ -6,9 +6,10 @@
 /// (`PageCache` first, then filesystem cache(s)).
 ///
 /// Attribution strategy: each scenario uses SEPARATE executors that SHARE the
-/// same providers. `executor.getSourceRequestsCount()` is the source-read
-/// signal — a fresh executor whose count stays 0 was served entirely from the
-/// warmed cache chain. Cache state (which layer is warm) is controlled via
+/// same providers. The `ReaderExecutorSourceRequests` ProfileEvent (read via
+/// `sourceRequestsSoFar`, flushed when each executor is destroyed) is the
+/// source-read signal — an executor that adds 0 to it was served entirely from
+/// the warmed cache chain. Cache state (which layer is warm) is controlled via
 /// setup: a fresh `PageCacheFile` makes the page layer cold, a fresh
 /// `FileCache` (or `removeAllReleasable`) makes a filesystem layer cold.
 
@@ -17,7 +18,7 @@
 #include <IO/ICacheProvider.h>
 #include <IO/PageCacheProvider.h>
 #include <IO/DiskCacheProvider.h>
-#include <IO/SourceBufferLimit.h>
+#include <IO/LiveConnectionLimit.h>
 #include <IO/ReadSettings.h>
 #include <IO/Rope.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -72,12 +73,30 @@ namespace ProfileEvents
     extern const Event ReaderExecutorBytesFromSource;
     extern const Event ReaderExecutorBytesPushedToCacheSync;
     extern const Event ReaderExecutorBytesPushedToCacheAsync;
+    extern const Event ReaderExecutorSourceRequests;
+    extern const Event ReaderExecutorBytesPromoted;
 }
 
 using namespace DB;
 
 namespace
 {
+
+/// The executor flushes its `stats` into the thread's `ProfileEvents` only in its
+/// destructor (transients never emit - they roll up into the parent). So these read
+/// the CUMULATIVE counter across every executor destroyed so far in the current test;
+/// scope each executor in its own block and take a before/after delta to attribute a
+/// metric to one executor. The fixture installs a `ThreadStatus`, so the counters live
+/// on this thread.
+size_t sourceRequestsSoFar()
+{
+    return CurrentThread::getProfileEvents()[ProfileEvents::ReaderExecutorSourceRequests].load(std::memory_order_relaxed);
+}
+
+size_t promotedBytesSoFar()
+{
+    return CurrentThread::getProfileEvents()[ProfileEvents::ReaderExecutorBytesPromoted].load(std::memory_order_relaxed);
+}
 
 /// In-memory source reader. `open` materializes the requested object into a
 /// temp file and returns a file-backed `ReadBufferFromFileBase`. Temp files
@@ -349,7 +368,7 @@ protected:
 
 /// Scenario 1: both caches empty. Executor#1 reads the whole file from source
 /// and warms the chain; executor#2 (same providers) serves the whole file from
-/// the warmed chain (`getSourceRequestsCount() == 0`).
+/// the warmed chain (adds 0 to `ReaderExecutorSourceRequests`).
 TEST_F(ReaderExecutorCacheChain, ColdPopulatesAllLayers)
 {
     constexpr size_t segment_size = 64;
@@ -376,19 +395,20 @@ TEST_F(ReaderExecutorCacheChain, ColdPopulatesAllLayers)
     /// Executor #1: cold chain → reads from source, warms page + fs.
     {
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
-        EXPECT_GT(executor.getSourceRequestsCount(), 0u) << "cold chain must hit the source";
     }
+    EXPECT_GT(sourceRequestsSoFar(), 0u) << "cold chain must hit the source";
 
     /// Executor #2: same providers, now warm → served entirely from the chain.
+    const size_t src_before_warm = sourceRequestsSoFar();
     {
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
-        EXPECT_EQ(executor.getSourceRequestsCount(), 0u)
-            << "warm chain must serve everything without touching the source";
     }
+    EXPECT_EQ(sourceRequestsSoFar(), src_before_warm)
+        << "warm chain must serve everything without touching the source";
 }
 
 /// Regression: a cold `readBigAt` of a small range strictly inside a page-cache
@@ -415,23 +435,28 @@ TEST_F(ReaderExecutorCacheChain, ReadBigAtInsidePageCacheBlock)
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
     caches.push_back(page_provider);
 
-    ReaderExecutor executor(source, objects, caches, /*window_size=*/4 * block_size, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));   // slot available -> live path
-
     /// [70, 80): a 10-byte slice strictly inside page-cache block [64, 128).
     const size_t off = block_size + 6;
     const size_t want = 10;
-    const String got = readBigAtViaTransient(executor, off, want);
-    EXPECT_EQ(got, content.substr(off, want)) << "cold readBigAt inside a block returns the exact slice";
-    const size_t src_after_first = executor.getSourceRequestsCount();
+    {
+        ReaderExecutor executor(source, objects, caches, /*window_size=*/4 * block_size, /*min_bytes_for_seek=*/0);
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));   // slot available -> live path
+        const String got = readBigAtViaTransient(executor, off, want);
+        EXPECT_EQ(got, content.substr(off, want)) << "cold readBigAt inside a block returns the exact slice";
+    }
+    const size_t src_after_first = sourceRequestsSoFar();
     EXPECT_GT(src_after_first, 0u) << "a cold readBigAt must hit the source";
 
-    /// The over-read populated the whole block: a second readBigAt elsewhere in
-    /// the same block [64, 128) is served from the page cache with no new source
-    /// request.
-    const String got2 = readBigAtViaTransient(executor, block_size + 40, 8);   // [104, 112)
-    EXPECT_EQ(got2, content.substr(block_size + 40, 8));
-    EXPECT_EQ(executor.getSourceRequestsCount(), src_after_first)
+    /// The over-read populated the whole block: a second readBigAt elsewhere in the
+    /// same block [64, 128) is served from the (now-warm) page cache with no new source
+    /// request - a second executor over the same providers sees no source delta.
+    {
+        ReaderExecutor executor(source, objects, caches, /*window_size=*/4 * block_size, /*min_bytes_for_seek=*/0);
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
+        const String got2 = readBigAtViaTransient(executor, block_size + 40, 8);   // [104, 112)
+        EXPECT_EQ(got2, content.substr(block_size + 40, 8));
+    }
+    EXPECT_EQ(sourceRequestsSoFar(), src_after_first)
         << "the cold readBigAt over-read and populated the full page-cache block";
 }
 
@@ -466,7 +491,7 @@ TEST_F(ReaderExecutorCacheChain, PageHitSkipsSourceAndFs)
     /// Warm both layers.
     {
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
     }
 
@@ -474,13 +499,14 @@ TEST_F(ReaderExecutorCacheChain, PageHitSkipsSourceAndFs)
     fc->removeAllReleasable(origin.user_id);
 
     /// Executor #2: page serves everything. fs is empty so it could not have.
+    const size_t src_before_page = sourceRequestsSoFar();
     {
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
-        EXPECT_EQ(executor.getSourceRequestsCount(), 0u)
-            << "page layer must serve everything; fs was emptied and source untouched";
     }
+    EXPECT_EQ(sourceRequestsSoFar(), src_before_page)
+        << "page layer must serve everything; fs was emptied and source untouched";
 
     /// Page hits => executor never populates fs. A fresh fs lookup must still
     /// report only misses across the file.
@@ -527,7 +553,7 @@ TEST_F(ReaderExecutorCacheChain, FsHitIsPromotedToPage)
         caches.push_back(disk_provider);
 
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
     }
 
@@ -535,33 +561,36 @@ TEST_F(ReaderExecutorCacheChain, FsHitIsPromotedToPage)
     /// fs serves the file while page is cold, and the WritePlan PROMOTES each
     /// served run up into the (populatable) page layer.
     auto cold_page_provider = makePageProvider(page_cache, "cold", block_size, file_size);
+    const size_t src_before_2 = sourceRequestsSoFar();
+    const size_t promo_before_2 = promotedBytesSoFar();
     {
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
         caches.push_back(cold_page_provider);
         caches.push_back(disk_provider);
 
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
-        EXPECT_EQ(executor.getSourceRequestsCount(), 0u)
-            << "fs layer must serve everything while page is cold";
-        EXPECT_GT(executor.getPromotedBytes(), 0u)
-            << "fs hits must be promoted up into the cold (populatable) page layer";
     }
+    EXPECT_EQ(sourceRequestsSoFar(), src_before_2)
+        << "fs layer must serve everything while page is cold";
+    EXPECT_GT(promotedBytesSoFar() - promo_before_2, 0u)
+        << "fs hits must be promoted up into the cold (populatable) page layer";
 
     /// Executor #3: reuses #2's page provider with the fs DROPPED from the chain.
     /// Because #2 promoted the fs hits up into the page layer, a page-only chain
     /// now serves everything from page - the source is untouched.
+    const size_t src_before_3 = sourceRequestsSoFar();
     {
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
         caches.push_back(cold_page_provider);
 
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
-        EXPECT_EQ(executor.getSourceRequestsCount(), 0u)
-            << "the fs hits in #2 must have promoted the page layer (cross-tier promotion)";
     }
+    EXPECT_EQ(sourceRequestsSoFar(), src_before_3)
+        << "the fs hits in #2 must have promoted the page layer (cross-tier promotion)";
 }
 
 
@@ -596,7 +625,7 @@ TEST_F(ReaderExecutorCacheChain, PartialFsHitTailFromSource)
     /// Executor #1: read only the prefix `[0, half)` (window == half, one read).
     {
         ReaderExecutor executor(source, objects, caches, /*window_size=*/half, /*min_bytes_for_seek=*/0);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
         auto rope = executor.readNextWindow();
         ASSERT_EQ(rope.range().size, half);
         String prefix;
@@ -608,14 +637,15 @@ TEST_F(ReaderExecutorCacheChain, PartialFsHitTailFromSource)
     auto & counters = CurrentThread::getProfileEvents();
     const auto hit_before = counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load(std::memory_order_relaxed);
     const auto miss_before = counters[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed);
+    const size_t src_before = sourceRequestsSoFar();
 
     /// Executor #2: read the whole file. Prefix from fs, tail from source.
     {
         ReaderExecutor executor(source, objects, caches, /*window_size=*/file_size, /*min_bytes_for_seek=*/0);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
-        EXPECT_GT(executor.getSourceRequestsCount(), 0u) << "the tail must be fetched from source";
     }
+    EXPECT_GT(sourceRequestsSoFar() - src_before, 0u) << "the tail must be fetched from source";
 
     const auto hit_delta = counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load(std::memory_order_relaxed) - hit_before;
     const auto miss_delta = counters[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed) - miss_before;
@@ -653,7 +683,7 @@ TEST_F(ReaderExecutorCacheChain, PageCacheHitAttributedToPageTier)
     /// Warm the page cache.
     {
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
     }
 
@@ -661,16 +691,17 @@ TEST_F(ReaderExecutorCacheChain, PageCacheHitAttributedToPageTier)
     const auto page_before = counters[ProfileEvents::ReaderExecutorBytesFromPageCache].load(std::memory_order_relaxed);
     const auto fs_before = counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load(std::memory_order_relaxed);
     const auto src_before = counters[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed);
+    const size_t src_req_before = sourceRequestsSoFar();
 
     /// Warm read: the page cache serves the whole file.
     {
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
-        EXPECT_EQ(executor.getSourceRequestsCount(), 0u)
-            << "the warm read must be served entirely from the page cache";
     }
 
+    EXPECT_EQ(sourceRequestsSoFar(), src_req_before)
+        << "the warm read must be served entirely from the page cache";
     EXPECT_EQ(counters[ProfileEvents::ReaderExecutorBytesFromPageCache].load(std::memory_order_relaxed) - page_before, file_size)
         << "the warm read must be attributed to the page-cache tier";
     EXPECT_EQ(counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load(std::memory_order_relaxed) - fs_before, 0u)
@@ -704,23 +735,25 @@ TEST_F(ReaderExecutorCacheChain, PageCacheBypassModeDoesNotPopulate)
     const auto pushed_before = counters[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed);
 
     /// Cold read in bypass mode: serves the file from the source, populates nothing.
+    const size_t src_before_cold = sourceRequestsSoFar();
     {
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
-        EXPECT_GT(executor.getSourceRequestsCount(), 0u) << "a cold bypass read hits the source";
     }
+    EXPECT_GT(sourceRequestsSoFar() - src_before_cold, 0u) << "a cold bypass read hits the source";
     EXPECT_EQ(counters[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed) - pushed_before, 0u)
         << "bypass mode must not push (or count) any bytes to the cache";
 
     /// A second reader on the same provider still misses - bypass populated nothing.
+    const size_t src_before_second = sourceRequestsSoFar();
     {
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
-        EXPECT_GT(executor.getSourceRequestsCount(), 0u)
-            << "bypass populated nothing, so the second read still misses";
     }
+    EXPECT_GT(sourceRequestsSoFar() - src_before_second, 0u)
+        << "bypass populated nothing, so the second read still misses";
 }
 
 
@@ -749,20 +782,22 @@ TEST_F(ReaderExecutorCacheChain, SlowFsHitIsNotPromotedToFastFs)
     auto slow_provider = makeDiskProvider(slow_fc);
 
     /// Warm ONLY slowFs (read through a chain of just [slowFs]).
+    const size_t src_before_warm = sourceRequestsSoFar();
     {
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
         caches.push_back(slow_provider);
 
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
-        EXPECT_GT(executor.getSourceRequestsCount(), 0u);
     }
+    EXPECT_GT(sourceRequestsSoFar() - src_before_warm, 0u);
 
     auto page_provider = makePageProvider(page_cache, "obj", block_size, file_size);
 
     /// Executor #2: full chain [page(cold), fastFs(cold), slowFs(warm)].
     /// slowFs serves; page + fastFs are back-filled.
+    const size_t src_before_2 = sourceRequestsSoFar();
     {
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
         caches.push_back(page_provider);
@@ -770,24 +805,25 @@ TEST_F(ReaderExecutorCacheChain, SlowFsHitIsNotPromotedToFastFs)
         caches.push_back(slow_provider);
 
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
-        EXPECT_EQ(executor.getSourceRequestsCount(), 0u)
-            << "slowFs must serve everything; source untouched";
     }
+    EXPECT_EQ(sourceRequestsSoFar(), src_before_2)
+        << "slowFs must serve everything; source untouched";
 
     /// Executor #3: chain of just [fastFs]. fastFs was never promoted (slowFs
     /// served #2 directly), so it is still cold and must fall to the source.
+    const size_t src_before_3 = sourceRequestsSoFar();
     {
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
         caches.push_back(fast_provider);
 
         ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
-        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
         EXPECT_EQ(drainAll(executor), content);
-        EXPECT_GT(executor.getSourceRequestsCount(), 0u)
-            << "fastFs must NOT have been back-filled from slowFs (no cross-tier promotion)";
     }
+    EXPECT_GT(sourceRequestsSoFar() - src_before_3, 0u)
+        << "fastFs must NOT have been back-filled from slowFs (no cross-tier promotion)";
 }
 
 
@@ -823,8 +859,8 @@ TEST_F(ReaderExecutorCacheChain, EvictionInChainKeepsSingleConnection)
     caches.push_back(page_provider);
     caches.push_back(disk_provider);
 
-    ReaderExecutor executor(source, objects, caches, /*window_size=*/window, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, /*window_size=*/window, /*min_bytes_for_seek=*/0);
+    executor->setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
 
     auto flood_fs = [&](size_t round)
     {
@@ -855,7 +891,7 @@ TEST_F(ReaderExecutorCacheChain, EvictionInChainKeepsSingleConnection)
     size_t round = 0;
     while (true)
     {
-        auto rope = executor.readNextWindow();
+        auto rope = executor->readNextWindow();
         if (rope.empty())
             break;
         for (const auto & node : rope.getNodes())
@@ -865,6 +901,8 @@ TEST_F(ReaderExecutorCacheChain, EvictionInChainKeepsSingleConnection)
     }
 
     EXPECT_EQ(result, content) << "no corruption / no missing bytes under eviction pressure";
-    EXPECT_EQ(executor.getSourceRequestsCount(), 1u)
+    /// Destroy the executor so it flushes its `stats` into the thread's ProfileEvents.
+    executor.reset();
+    EXPECT_EQ(sourceRequestsSoFar(), 1u)
         << "the pinned in-flight fs segment must survive eviction; source opened exactly once";
 }

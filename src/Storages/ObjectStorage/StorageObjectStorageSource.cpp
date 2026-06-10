@@ -1145,7 +1145,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         /// it like `DiskObjectStorage::prepareRead` so the setting is honored on the
         /// object-storage table-engine path too.
         if (effective_read_settings.reader_executor_use_live_connections)
-            pipeline.needBufferLimit(context_->getSourceBufferLimit());
+            pipeline.needBufferLimit(context_->getLiveConnectionLimit());
     }
 
     LOG_TRACE(

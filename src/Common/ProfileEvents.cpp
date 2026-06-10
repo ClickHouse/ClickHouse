@@ -852,8 +852,8 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorPrefetchIssuedCacheBytes, "Bytes ReaderExecutor prefetch reads served from cache tiers (near-free), whether or not later consumed.", ValueType::Bytes) \
     M(ReaderExecutorPrefetchWastedSourceBytes, "Source bytes a running ReaderExecutor prefetch materialised into a rope that was then discarded (consumer seeked/closed away) - real wasted bandwidth. Excludes cache puts made in the same window, which persist for later reads.", ValueType::Bytes) \
     M(ReaderExecutorPrefetchWastedCacheBytes, "Cache-tier bytes a running ReaderExecutor prefetch materialised into a rope that was then discarded - near-free, unlike wasted source bytes.", ValueType::Bytes) \
-    M(ReaderExecutorBufferSlotAcquired, "Number of times ReaderExecutor successfully acquired a SourceBufferLimit slot for a live-buffer read.", ValueType::Number) \
-    M(ReaderExecutorBufferSlotFailed, "Number of times ReaderExecutor failed to acquire a SourceBufferLimit slot.", ValueType::Number) \
+    M(ReaderExecutorBufferSlotAcquired, "Number of times ReaderExecutor successfully acquired a LiveConnectionLimit slot for a live-buffer read.", ValueType::Number) \
+    M(ReaderExecutorBufferSlotFailed, "Number of times ReaderExecutor failed to acquire a LiveConnectionLimit slot.", ValueType::Number) \
     \
     M(FilesystemCacheLoadMetadataMicroseconds, "Time spent loading filesystem cache metadata", ValueType::Microseconds) \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache", ValueType::Bytes) \

@@ -4,7 +4,7 @@
 #include <IO/ICacheProvider.h>
 #include <IO/PrefetchThreadPool.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/SourceBufferLimit.h>
+#include <IO/LiveConnectionLimit.h>
 #include <IO/ReadSettings.h>
 #include <IO/Rope.h>
 #include <IO/PageCacheProvider.h>
@@ -62,6 +62,40 @@ namespace DB::FileCacheSetting
 }
 
 using namespace DB;
+
+namespace ProfileEvents
+{
+    extern const Event LiveSourceBufferCreated;
+    extern const Event LiveSourceBufferHits;
+    extern const Event LiveSourceBufferFallbacks;
+    extern const Event LiveSourceBufferBytes;
+    extern const Event ReaderExecutorBufferSlotAcquired;
+    extern const Event ReaderExecutorBytesPushedToCacheSync;
+    extern const Event ReaderExecutorBytesPushedToCacheAsync;
+    extern const Event ReaderExecutorBytesFromSource;
+    extern const Event ReaderExecutorSourceRequests;
+}
+
+namespace
+{
+
+/// RAII helper: creates a ThreadGroup with its own ProfileEvents counters,
+/// attaches the current thread to it, detaches in destructor.
+/// Lets us read per-test ProfileEvents without interference from other tests.
+struct TestThreadGroup
+{
+    /// Create ThreadStatus if none exists (debug build has one, ASan may not).
+    std::optional<DB::ThreadStatus> thread_status_holder{current_thread ? std::nullopt : std::optional<DB::ThreadStatus>(std::in_place)};
+    DB::ThreadGroupPtr thread_group = DB::ThreadGroup::createForQuery(getContext().context);
+    DB::ThreadGroupSwitcher switcher{thread_group, ThreadName::UNKNOWN};
+
+    ProfileEvents::Count get(ProfileEvents::Event event) const
+    {
+        return thread_group->performance_counters[event].load(std::memory_order_relaxed);
+    }
+};
+
+}
 
 namespace
 {
@@ -377,27 +411,31 @@ TEST(ReaderExecutor, PrefetchBoxRoundTripKeepsSingleConnection)
     objects.emplace_back("obj", "", 8000);
 
     auto pool = std::make_shared<PrefetchThreadPool>(2);
-    auto limit = std::make_shared<SourceBufferLimit>(10);
-    /// min_bytes_for_seek=0: contiguous windows continue the open connection.
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
-    executor.setPrefetchPool(pool);
-    executor.setBufferLimit(limit);
-
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
+    TestThreadGroup tg;
     String result;
-    while (true)
     {
-        auto rope = executor.readNextWindow();
-        if (rope.empty())
-            break;
-        for (const auto & node : rope.getNodes())
-            result.append(node.data(), node.size);
-        /// The cluster lives in exactly one place (foreground or the in-flight job),
-        /// so at most one connection slot is ever active - never two.
-        EXPECT_LE(limit->getActive().size(), 1u);
+        /// min_bytes_for_seek=0: contiguous windows continue the open connection.
+        ReaderExecutor executor(source, objects, {}, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
+        executor.setPrefetchPool(pool);
+        executor.setBufferLimit(limit);
+
+        while (true)
+        {
+            auto rope = executor.readNextWindow();
+            if (rope.empty())
+                break;
+            for (const auto & node : rope.getNodes())
+                result.append(node.data(), node.size);
+            /// The cluster lives in exactly one place (foreground or the in-flight job),
+            /// so at most one connection slot is ever active - never two.
+            EXPECT_LE(limit->getActiveCount(), 1u);
+        }
     }
 
-    EXPECT_EQ(result, content);                       /// no corruption across the box move
-    EXPECT_EQ(executor.getSourceRequestsCount(), 1u); /// one connection, round-tripped, never reopened
+    EXPECT_EQ(result, content);   /// no corruption across the box move
+    /// The executor flushed `stats` into the thread group's ProfileEvents on destruction.
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u); /// one connection, round-tripped, never reopened
 }
 
 TEST(ReaderExecutor, SeekInsidePrefetchedWindow)
@@ -540,7 +578,7 @@ TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
         objects.emplace_back("obj", "", 1u << 20);
 
         auto pool = std::make_shared<PrefetchThreadPool>(2);
-        auto limit = std::make_shared<SourceBufferLimit>(0);   // present but no slots -> stateless window reads
+        auto limit = std::make_shared<LiveConnectionLimit>(0);   // present but no slots -> stateless window reads
         ReaderExecutor executor(source, objects, {},
             /*window_size=*/256u << 10, /*min_bytes_for_seek=*/0, /*block_size=*/32u << 10);
         executor.setPrefetchPool(pool);
@@ -765,7 +803,7 @@ TEST(ReaderExecutor, EncryptedEofReleasesBufferLimitSlot)
     /// physical size is larger by `data_start_offset` bytes, so after the
     /// last plaintext byte `position` is strictly less than
     /// `offset_map.totalSize()` and `atEnd` stays false. That skipped the
-    /// EOF branch in `readNextWindow` and left the `SourceBufferLimit`
+    /// EOF branch in `readNextWindow` and left the `LiveConnectionLimit`
     /// slot pinned past EOF.
     String key(16, 'k');
     FileEncryption::InitVector iv(UInt128{0xfeedfacecafeULL});
@@ -777,7 +815,7 @@ TEST(ReaderExecutor, EncryptedEofReleasesBufferLimitSlot)
     StoredObjects objects;
     objects.emplace_back("obj", "", file_bytes.size());
 
-    auto buffer_limit = std::make_shared<SourceBufferLimit>(4);
+    auto buffer_limit = std::make_shared<LiveConnectionLimit>(4);
 
     ReaderExecutor executor(source, objects, {}, /*window_size=*/512);
     executor.setBufferLimit(buffer_limit);
@@ -793,7 +831,7 @@ TEST(ReaderExecutor, EncryptedEofReleasesBufferLimitSlot)
             break;
     }
 
-    EXPECT_EQ(buffer_limit->getActive().size(), 0u);
+    EXPECT_EQ(buffer_limit->getActiveCount(), 0u);
 }
 
 TEST(ReaderExecutor, DecryptInPlaceSmallPayload)
@@ -1006,18 +1044,6 @@ TEST(ReaderExecutor, CacheHitBetweenColdGapsNoDuplicateCoverage)
     EXPECT_EQ(assembled.totalBytes(), 300u);
 }
 
-namespace ProfileEvents
-{
-    extern const Event LiveSourceBufferCreated;
-    extern const Event LiveSourceBufferHits;
-    extern const Event LiveSourceBufferFallbacks;
-    extern const Event LiveSourceBufferBytes;
-    extern const Event ReaderExecutorBufferSlotAcquired;
-    extern const Event ReaderExecutorBytesPushedToCacheSync;
-    extern const Event ReaderExecutorBytesPushedToCacheAsync;
-    extern const Event ReaderExecutorBytesFromSource;
-}
-
 namespace CurrentMetrics
 {
     extern const Metric ReaderExecutorActive;
@@ -1064,22 +1090,6 @@ private:
     std::atomic<size_t> call_count{0};
     size_t file_counter = 0;
     std::vector<std::filesystem::path> temp_files;
-};
-
-/// RAII helper: creates a ThreadGroup with its own ProfileEvents counters,
-/// attaches the current thread to it, detaches in destructor.
-/// Lets us read per-test ProfileEvents without interference from other tests.
-struct TestThreadGroup
-{
-    /// Create ThreadStatus if none exists (debug build has one, ASan may not).
-    std::optional<DB::ThreadStatus> thread_status_holder{current_thread ? std::nullopt : std::optional<DB::ThreadStatus>(std::in_place)};
-    DB::ThreadGroupPtr thread_group = DB::ThreadGroup::createForQuery(getContext().context);
-    DB::ThreadGroupSwitcher switcher{thread_group, ThreadName::UNKNOWN};
-
-    ProfileEvents::Count get(ProfileEvents::Event event) const
-    {
-        return thread_group->performance_counters[event].load(std::memory_order_relaxed);
-    }
 };
 
 }
@@ -1158,7 +1168,7 @@ TEST(ReaderExecutor, DestructorAfterThrownReadNextWindowDoesNotSegfault)
 
 TEST(ReaderExecutor, LocalReadUsesFullWindow)
 {
-    /// Local reads have no SourceBufferLimit / live buffer, so they take the
+    /// Local reads have no LiveConnectionLimit / live buffer, so they take the
     /// stateless path. Like stateless remote reads, they keep the full window
     /// (not a single block) so one open amortises its setup over a window
     /// instead of reopening the source per block.
@@ -1349,7 +1359,7 @@ TEST(ReaderExecutor, LiveBufferReusesConnection)
     StoredObjects objects;
     objects.emplace_back("file", "", 2000);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
 
     ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
@@ -1384,7 +1394,7 @@ TEST(ReaderExecutor, LiveBufferFallbackWhenFull)
     StoredObjects objects;
     objects.emplace_back("file", "", 1000);
 
-    auto limit = std::make_shared<SourceBufferLimit>(0);
+    auto limit = std::make_shared<LiveConnectionLimit>(0);
 
     ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
@@ -1558,10 +1568,10 @@ TEST(ReaderExecutor, SequentialMidReadEvictionDoesNotResetConnection)
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
     caches.push_back(cache);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
 
-    ReaderExecutor executor(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
+    executor->setBufferLimit(limit);
 
     String result;
     auto consume = [&](Rope rope)
@@ -1571,7 +1581,7 @@ TEST(ReaderExecutor, SequentialMidReadEvictionDoesNotResetConnection)
     };
 
     /// Window 1: [0,1000). Fills the segment to cwo=1000; the executor pins it.
-    auto w1 = executor.readNextWindow();
+    auto w1 = executor->readNextWindow();
     ASSERT_FALSE(w1.empty());
     consume(std::move(w1));
 
@@ -1582,14 +1592,16 @@ TEST(ReaderExecutor, SequentialMidReadEvictionDoesNotResetConnection)
     /// Drain the rest sequentially.
     while (true)
     {
-        auto rope = executor.readNextWindow();
+        auto rope = executor->readNextWindow();
         if (rope.empty())
             break;
         consume(std::move(rope));
     }
 
-    EXPECT_EQ(result, content);                       /// no corruption / no missing bytes
-    EXPECT_EQ(executor.getSourceRequestsCount(), 1u); /// connection opened exactly once
+    EXPECT_EQ(result, content);   /// no corruption / no missing bytes
+    /// Destroy the executor so it flushes `stats` into the thread group's ProfileEvents.
+    executor.reset();
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u); /// connection opened exactly once
     EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 1);
 }
 
@@ -1606,24 +1618,26 @@ TEST(ReaderExecutor, MultipleEvictionsKeepSingleConnection)
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
     caches.push_back(cache);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);
-    ReaderExecutor executor(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
+    executor->setBufferLimit(limit);
 
     String result;
     while (true)
     {
-        auto rope = executor.readNextWindow();
+        auto rope = executor->readNextWindow();
         if (rope.empty())
             break;
         for (const auto & node : rope.getNodes())
             result.append(node.data(), node.size);
-        EXPECT_LE(limit->getActive().size(), 1u);   /// no slot churn
+        EXPECT_LE(limit->getActiveCount(), 1u);   /// no slot churn
         cache->evictUnpinned();                      /// eviction pressure before next window
     }
 
     EXPECT_EQ(result, content);
-    EXPECT_EQ(executor.getSourceRequestsCount(), 1u);
+    /// Destroy the executor so it flushes `stats` into the thread group's ProfileEvents.
+    executor.reset();
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u);
     EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 1);
 }
 
@@ -1648,10 +1662,10 @@ TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
     caches.push_back(cache);
 
     auto pool = std::make_shared<PrefetchThreadPool>(2);
-    auto limit = std::make_shared<SourceBufferLimit>(10);
-    ReaderExecutor executor(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
-    executor.setPrefetchPool(pool);
-    executor.setBufferLimit(limit);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
+    executor->setPrefetchPool(pool);
+    executor->setBufferLimit(limit);
 
     String result;
     auto consume = [&](Rope rope)
@@ -1661,12 +1675,12 @@ TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
     };
 
     /// W1 [0,1000) sync (no prefetch in flight yet) -> launches the prefetch for [1000,2000).
-    consume(executor.readNextWindow());
+    consume(executor->readNextWindow());
     /// W2 [1000,2000) consume -> fills segment 0 to 2000 (full).
-    consume(executor.readNextWindow());
+    consume(executor->readNextWindow());
     /// W3 [2000,3000) consume -> first window of segment 1: fills it to cwo=1000 (partial)
     /// and must RE-PIN it at consume; launches the prefetch for [3000,4000).
-    consume(executor.readNextWindow());
+    consume(executor->readNextWindow());
 
     /// Evict everything unpinned. Segment 1 is the partial in-flight segment the consume
     /// just pinned (the pin now rides the in-flight job's connection), so it must survive.
@@ -1676,13 +1690,15 @@ TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
     /// Finish and verify no corruption.
     while (true)
     {
-        auto rope = executor.readNextWindow();
+        auto rope = executor->readNextWindow();
         if (rope.empty())
             break;
         consume(std::move(rope));
     }
     EXPECT_EQ(result, content);
-    EXPECT_EQ(executor.getSourceRequestsCount(), 1u);
+    /// Destroy the executor so it flushes `stats` into the thread group's ProfileEvents.
+    executor.reset();
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u);
 }
 
 TEST(ReaderExecutor, PinReleasedOnSeek)
@@ -1698,7 +1714,7 @@ TEST(ReaderExecutor, PinReleasedOnSeek)
     caches.push_back(cache);
 
     ReaderExecutor executor(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+    executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
 
     ASSERT_FALSE(executor.readNextWindow().empty());      /// [0,1000) fills + pins segment 0
     ASSERT_EQ(cache->downloaded[0], 1000u);
@@ -1732,7 +1748,7 @@ TEST(ReaderExecutor, PutFailedTakesNoPin)
     caches.push_back(cache);
 
     ReaderExecutor executor(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+    executor.setBufferLimit(std::make_shared<LiveConnectionLimit>(10));
 
     auto rope = executor.readNextWindow();   /// [0,1000)
     ASSERT_FALSE(rope.empty());
@@ -1761,8 +1777,9 @@ TEST(ReaderExecutor, TransientReadDoesNotPin)
     auto rope = transient->readNextWindow();
     ASSERT_FALSE(rope.empty());
 
-    /// A transient one-shot read has no buffer_limit -> no live buffer -> the
-    /// pin is cleared each window. Nothing should survive an eviction sweep.
+    /// A `readBigAt` transient does not pin its in-flight segment (it reads its
+    /// bounded extent once and is destroyed, so protecting a partial segment serves
+    /// nothing), so nothing survives an eviction sweep.
     cache->evictUnpinned();
     EXPECT_EQ((cache->downloaded.contains(0) ? cache->downloaded[0] : 0u), 0u);
 }
@@ -1849,14 +1866,14 @@ private:
 
 }
 
-TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionToRequest)
+TEST(ReaderExecutor, ReadBigAtBoundsConnectionToRequest)
 {
-    /// `readBigAt` drives a `makeTransientForReadAt` transient over a bounded
-    /// extent. Even when a slot is available - so the transient takes the live
-    /// path - it must bound the source connection to the request
-    /// [offset, offset+want) (object-local), so the borrowed HTTP connection is
-    /// fully drained and returned to the pool reusable rather than abandoned
-    /// open-ended after the request's bytes.
+    /// `readBigAt` drives a `makeTransientForReadAt` transient over a bounded extent. A
+    /// transient never takes a live-connection lease (it is a one-shot, not a wide
+    /// sequential scan), so it opens a STATELESS connection - but that one-shot must
+    /// still be bounded to the request [offset, offset+want) (object-local), so the
+    /// borrowed HTTP connection is fully drained and returned to the pool reusable
+    /// rather than abandoned open-ended after the request's bytes.
     const size_t offset = 4096;
     const size_t want = 8192;
 
@@ -1866,7 +1883,7 @@ TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionToRequest)
     StoredObjects objects;
     objects.emplace_back("obj", "", 1u << 20);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);   // slot available -> transient takes the live path
+    auto limit = std::make_shared<LiveConnectionLimit>(10);   // a unit is free, but a transient never takes one
     ReaderExecutor executor(source, objects, {}, /*window_size=*/64u << 10, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
 
@@ -1883,11 +1900,13 @@ TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionToRequest)
     }
 
     EXPECT_EQ(total, want) << "the transient reads exactly the requested extent";
-    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 1)
-        << "a slot was available, so the transient opened a live connection";
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 0)
+        << "a transient never opens a live connection - it takes a one-shot";
+    EXPECT_GT(tg.get(ProfileEvents::LiveSourceBufferFallbacks), 0u)
+        << "the transient read goes the stateless one-shot path";
     ASSERT_FALSE(log.read_until.empty());
     EXPECT_EQ(log.start_offset[0], offset);
-    ASSERT_TRUE(log.read_until[0].has_value()) << "the live connection must be right-bounded, not open-ended";
+    ASSERT_TRUE(log.read_until[0].has_value()) << "the one-shot connection must be right-bounded, not open-ended";
     EXPECT_EQ(*log.read_until[0], offset + want) << "bounded to the request extent (object-local coordinates)";
 }
 
@@ -1914,7 +1933,7 @@ TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionOnEncryptedFile)
     StoredObjects objects;
     objects.emplace_back("obj", "", file_bytes.size());
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);   // slot available -> live path
+    auto limit = std::make_shared<LiveConnectionLimit>(10);   // slot available -> live path
     ReaderExecutor executor(source, objects, {}, /*window_size=*/256u << 10, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
     executor.addDecryptionLayer("/test", 0, [&](UInt128, const String &) { return key; });
@@ -1967,7 +1986,7 @@ TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionToObjectEndAcrossBoundary)
     objects.emplace_back("o0", "", s0);
     objects.emplace_back("o1", "", s1);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);   // slot available -> live path on the first object
+    auto limit = std::make_shared<LiveConnectionLimit>(10);   // slot available -> live path on the first object
     ReaderExecutor executor(source, objects, {}, /*window_size=*/1u << 20, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
 
@@ -2012,7 +2031,7 @@ TEST(ReaderExecutor, SequentialReaderBoundsConnectionToAdvertisedExtent)
     StoredObjects objects;
     objects.emplace_back("obj", "", file_size);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
     ReaderExecutor executor(source, objects, {}, /*window_size=*/64u << 10, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
 
@@ -2050,7 +2069,7 @@ TEST(ReaderExecutor, UnknownSizeReaderWithExtentBoundsAndReleasesConnection)
 {
     /// An unknown-size source given a finite advertised extent (via setReadExtent)
     /// must still bound its live connection to the extent - so the connection
-    /// drains and its SourceBufferLimit slot is released when the consumer stops
+    /// drains and its LiveConnectionLimit slot is released when the consumer stops
     /// at the extent - instead of leaving an open-ended connection + slot pinned.
     const size_t data_size = 1u << 20;   // 1 MiB available at the source
     const size_t extent = 200u << 10;    // consumer advertises reading only 200 KiB
@@ -2061,7 +2080,7 @@ TEST(ReaderExecutor, UnknownSizeReaderWithExtentBoundsAndReleasesConnection)
     StoredObjects objects;
     objects.emplace_back("obj", "", StoredObject::UnknownSize);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
     ReaderExecutor executor(source, objects, {}, /*window_size=*/64u << 10, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
     executor.setReadExtent(extent);
@@ -2080,14 +2099,14 @@ TEST(ReaderExecutor, UnknownSizeReaderWithExtentBoundsAndReleasesConnection)
     ASSERT_TRUE(log.read_until[0].has_value())
         << "the connection must be bounded to the extent even for unknown size, not open-ended";
     EXPECT_EQ(*log.read_until[0], extent) << "bounded to the advertised extent (object-local)";
-    EXPECT_EQ(limit->getActive().size(), 0u)
+    EXPECT_EQ(limit->getActiveCount(), 0u)
         << "the live buffer + slot must be released once the extent is reached, not pinned";
 }
 
 TEST(ReaderExecutor, UnknownSizeStatelessReaderBoundsOneShotToExtent)
 {
     /// The no-slot one-shot branch: an unknown-size source with a finite advertised
-    /// extent but no available SourceBufferLimit slot must still bound each one-shot
+    /// extent but no available LiveConnectionLimit slot must still bound each one-shot
     /// connection (to what it reads), so it drains and is returned to the pool
     /// reusable instead of an open-ended GET abandoned after the clamped read.
     /// Before the fix the bound was skipped whenever the size was unknown, even with
@@ -2123,10 +2142,11 @@ TEST(ReaderExecutor, UnknownSizeStatelessReaderBoundsOneShotToExtent)
 
 TEST(ReaderExecutor, ReadBigAtTransientStatsRollUpToParent)
 {
-    /// A `readBigAt` transient must not emit its own ProfileEvents /
-    /// reader_executor_log row (that would double-count); instead its stats roll
-    /// up to the parent via mergeTransientStats, so random-access reads are not
-    /// invisible in the parent's observability.
+    /// ProfileEvents are emitted at the read site (instant), so a `readBigAt` transient's
+    /// source reads show up immediately in the current thread group - even before the
+    /// transient is destroyed. `mergeTransientStats` then rolls its stats into the parent's
+    /// REPORT aggregate (the `reader_executor_log` row), which is a separate sink and does
+    /// NOT re-emit - so random-access reads are visible AND never double-counted.
     TestThreadGroup tg;
     String content(4000, 'B');
     auto source = std::make_shared<MemorySourceReader>(
@@ -2146,83 +2166,77 @@ TEST(ReaderExecutor, ReadBigAtTransientStatsRollUpToParent)
             if (rope.empty())
                 break;
         }
-        const size_t transient_src = transient->getSourceRequestsCount();
-        EXPECT_GT(transient_src, 0u) << "the transient performed source reads";
-        EXPECT_EQ(parent->getSourceRequestsCount(), 0u) << "parent has not read directly";
+        /// The transient already emitted its source reads to ProfileEvents at the read
+        /// site - observable now, while it is still alive.
+        EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 0u)
+            << "a transient emits its ProfileEvents at the read site (instant)";
+        EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 0)
+            << "a transient emits its ProfileEvents at the read site (instant)";
         parent->mergeTransientStats(*transient);
-        EXPECT_EQ(parent->getSourceRequestsCount(), transient_src)
-            << "the transient's source reads roll up to the parent";
         /// `transient` is destroyed here.
     }
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 0)
-        << "a transient must not emit its own ProfileEvents (would double-count)";
 
-    parent.reset();   /// parent destructor emits the rolled-up stats
-    EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 0u)
-        << "the parent emits the rolled-up source bytes";
+    const auto src_after_transient = tg.get(ProfileEvents::ReaderExecutorSourceRequests);
+    const auto bytes_after_transient = tg.get(ProfileEvents::ReaderExecutorBytesFromSource);
+
+    parent.reset();   /// parent destruction writes its report aggregate; it must NOT re-emit
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), src_after_transient)
+        << "mergeTransientStats feeds the parent's report aggregate, not ProfileEvents - no double-count";
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), bytes_after_transient)
+        << "the parent's destruction does not re-emit the rolled-up source bytes";
 }
 
-TEST(SourceBufferLimit, MoveAssignReleasesPreviousSlot)
+TEST(LiveConnectionLimit, MoveAssignReleasesPreviousSlot)
 {
-    /// Defaulted move-assignment used to overwrite `limit` / `slot_id`
-    /// without calling `release` on the previously held slot, permanently
-    /// pinning one unit of capacity. The explicit move-assignment must
-    /// release the old slot first.
-    auto limit = std::make_shared<SourceBufferLimit>(2);
+    /// Move-assignment must release the currently-held unit BEFORE taking `other`'s,
+    /// else a unit of capacity leaks permanently.
+    auto limit = std::make_shared<LiveConnectionLimit>(2);
 
-    auto a = limit->tryAcquire(limit, "obj-a");
-    auto b = limit->tryAcquire(limit, "obj-b");
-    ASSERT_TRUE(a.has_value());
-    ASSERT_TRUE(b.has_value());
-    EXPECT_EQ(limit->getActive().size(), 2u);
+    auto a = limit->tryAcquire(limit);
+    auto b = limit->tryAcquire(limit);
+    ASSERT_TRUE(a);
+    ASSERT_TRUE(b);
+    EXPECT_EQ(limit->getActiveCount(), 2u);
 
-    /// Move-assign `b` into `a` — slot for `obj-a` must come back.
-    *a = std::move(*b);
-    EXPECT_EQ(limit->getActive().size(), 1u);
+    /// Move-assign `b` into `a` — a's unit must come back to the counter.
+    a = std::move(b);
+    EXPECT_EQ(limit->getActiveCount(), 1u);
 
-    /// The remaining active slot is the one moved from `b` (obj-b).
-    EXPECT_EQ(limit->getActive().front().object_path, "obj-b");
-
-    a.reset();
-    b.reset();
-    EXPECT_EQ(limit->getActive().size(), 0u);
+    a = {};
+    EXPECT_EQ(limit->getActiveCount(), 0u);
 }
 
-TEST(SourceBufferLimit, MoveAssignFromEmptySlotReleasesCurrent)
+TEST(LiveConnectionLimit, MoveAssignFromEmptyLeaseReleasesCurrent)
 {
-    /// Edge case: assigning a moved-from / empty `SourceBufferSlot` into a
-    /// holding one should still release the current slot.
-    auto limit = std::make_shared<SourceBufferLimit>(2);
+    /// Assigning an empty lease into a holding one must still release the current unit.
+    auto limit = std::make_shared<LiveConnectionLimit>(2);
 
-    auto a = limit->tryAcquire(limit, "obj-a");
-    ASSERT_TRUE(a.has_value());
-    EXPECT_EQ(limit->getActive().size(), 1u);
+    auto a = limit->tryAcquire(limit);
+    ASSERT_TRUE(a);
+    EXPECT_EQ(limit->getActiveCount(), 1u);
 
-    auto empty = limit->tryAcquire(limit, "obj-tmp");
-    ASSERT_TRUE(empty.has_value());
-    auto moved_from = std::move(*empty);  // `*empty` is now empty (no slot)
-    (void)moved_from;                      // moved_from owns the slot
-    EXPECT_EQ(limit->getActive().size(), 2u);
-
-    *a = std::move(*empty);   // assign an empty slot — must drop a's slot
-    EXPECT_EQ(limit->getActive().size(), 1u);
+    LiveConnectionSlot empty;          // holds no unit
+    a = std::move(empty);            // must drop a's unit
+    EXPECT_FALSE(a);
+    EXPECT_EQ(limit->getActiveCount(), 0u);
 }
 
-TEST(SourceBufferLimit, SelfMoveAssignIsNoOp)
+TEST(LiveConnectionLimit, SelfMoveAssignIsNoOp)
 {
-    /// Self-assignment (e.g. `*s = std::move(*s)`) must not double-release.
-    auto limit = std::make_shared<SourceBufferLimit>(1);
-    auto s = limit->tryAcquire(limit, "obj");
-    ASSERT_TRUE(s.has_value());
-    EXPECT_EQ(limit->getActive().size(), 1u);
+    /// Self-assignment must not double-release.
+    auto limit = std::make_shared<LiveConnectionLimit>(1);
+    auto s = limit->tryAcquire(limit);
+    ASSERT_TRUE(s);
+    EXPECT_EQ(limit->getActiveCount(), 1u);
 
-    *s = std::move(*s);   // not a real-world pattern, but must be safe
-    EXPECT_EQ(limit->getActive().size(), 1u);
+    auto * self = &s;                // via pointer so the compiler doesn't flag self-move
+    s = std::move(*self);
+    EXPECT_EQ(limit->getActiveCount(), 1u);
 }
 
 TEST(ReaderExecutor, LiveBufferReleasedAtEof)
 {
-    /// Once the caller reads to EOF, the per-stream `SourceBufferLimit`
+    /// Once the caller reads to EOF, the per-stream `LiveConnectionLimit`
     /// slot (and the associated open connection) must be returned even if
     /// the `ReaderExecutor` itself is not yet destroyed. Otherwise a
     /// finished-but-still-held reader pins capacity from the global
@@ -2234,7 +2248,7 @@ TEST(ReaderExecutor, LiveBufferReleasedAtEof)
     StoredObjects objects;
     objects.emplace_back("file", "", 2000);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
 
     ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
@@ -2242,7 +2256,7 @@ TEST(ReaderExecutor, LiveBufferReleasedAtEof)
     /// Read every window — last call returns an empty rope (EOF).
     auto r1 = executor.readNextWindow();
     EXPECT_EQ(r1.range().size, 500u);
-    EXPECT_EQ(limit->getActive().size(), 1u) << "expected one open slot during streaming";
+    EXPECT_EQ(limit->getActiveCount(), 1u) << "expected one open slot during streaming";
 
     auto r2 = executor.readNextWindow();
     auto r3 = executor.readNextWindow();
@@ -2250,19 +2264,19 @@ TEST(ReaderExecutor, LiveBufferReleasedAtEof)
     EXPECT_EQ(r2.range().size, 500u);
     EXPECT_EQ(r3.range().size, 500u);
     EXPECT_EQ(r4.range().size, 500u);
-    EXPECT_EQ(limit->getActive().size(), 1u);
+    EXPECT_EQ(limit->getActiveCount(), 1u);
 
     /// EOF — slot must be released by readNextWindow itself.
     auto r5 = executor.readNextWindow();
     EXPECT_TRUE(r5.empty());
-    EXPECT_EQ(limit->getActive().size(), 0u)
+    EXPECT_EQ(limit->getActiveCount(), 0u)
         << "live buffer slot must be released when EOF is reached";
 
     /// Idempotent: calling readNextWindow again at EOF is still EOF and
     /// keeps the slot count at zero.
     auto r6 = executor.readNextWindow();
     EXPECT_TRUE(r6.empty());
-    EXPECT_EQ(limit->getActive().size(), 0u);
+    EXPECT_EQ(limit->getActiveCount(), 0u);
 }
 
 TEST(PageCacheProvider, BypassMissDoesNotPolluteCache)
@@ -2488,7 +2502,7 @@ TEST(ReaderExecutor, UnknownSizeZeroByteTerminalReleasesLiveSlot)
     /// Unknown-size source whose content is an exact multiple of the window
     /// size, so the terminal live read returns 0 bytes: readNextWindow returns
     /// an empty rope and the caller stops, never making the follow-up call that
-    /// would hit the pre-read EOF gate. The live buffer + its SourceBufferLimit
+    /// would hit the pre-read EOF gate. The live buffer + its LiveConnectionLimit
     /// slot must still be released as soon as EOF is latched, not leaked until
     /// the executor is destroyed.
     String content(1000, 'E');   /// exactly 2 * window
@@ -2497,7 +2511,7 @@ TEST(ReaderExecutor, UnknownSizeZeroByteTerminalReleasesLiveSlot)
     StoredObjects objects;
     objects.emplace_back("obj", "", StoredObject::UnknownSize);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
     ReaderExecutor executor(source, objects, {}, /*window_size=*/500);
     executor.setBufferLimit(limit);
 
@@ -2511,7 +2525,7 @@ TEST(ReaderExecutor, UnknownSizeZeroByteTerminalReleasesLiveSlot)
             collected.append(node.data(), node.size);
     }
     EXPECT_EQ(collected, content);
-    EXPECT_EQ(limit->getActive().size(), 0u)
+    EXPECT_EQ(limit->getActiveCount(), 0u)
         << "live buffer + slot must be released when EOF is latched on a zero-byte terminal read";
 }
 
@@ -2546,60 +2560,63 @@ TEST(ReaderExecutor, LiveBufferReacquiredAfterSeekBackFromEof)
     StoredObjects objects;
     objects.emplace_back("file", "", 1500);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
 
     ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
 
     /// Read to EOF.
     while (!executor.readNextWindow().empty()) {}
-    EXPECT_EQ(limit->getActive().size(), 0u);
+    EXPECT_EQ(limit->getActiveCount(), 0u);
 
     /// Seek back to the start and read again — slot must come back.
     executor.seek(0);
     auto r = executor.readNextWindow();
     EXPECT_EQ(r.range().offset, 0u);
     EXPECT_EQ(r.range().size, 500u);
-    EXPECT_EQ(limit->getActive().size(), 1u)
+    EXPECT_EQ(limit->getActiveCount(), 1u)
         << "slot must be re-acquired after backward seek + read";
 }
 
 TEST(ReaderExecutor, CacheOnlyWindowClosesStaleLiveBuffer)
 {
-    /// Window 1 misses -> opens a live connection at the frontier. Window 2 is
-    /// served entirely from cache (no source read), leaving the live buffer
-    /// parked behind the new position where it can no longer continue the
-    /// stream. It must be closed (slot freed) at the end of the cache-only
-    /// window, not held idle until the next source miss / EOF.
+    /// A wide cold gap (two segments, > a window) opens a live connection that holds the
+    /// lease. A later window served entirely from cache leaves that connection parked
+    /// behind the cursor where it can no longer continue the stream; it must be closed and
+    /// its lease released at the cache-only window, not held idle until the next miss/EOF.
     constexpr size_t window_bytes = 1000;
-    String content(3 * window_bytes, 'X');
+    String content(4 * window_bytes, 'X');
     auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"obj", content}});
     StoredObjects objects;
-    objects.emplace_back("obj", "", 3 * window_bytes);
+    objects.emplace_back("obj", "", 4 * window_bytes);
 
-    /// Segment 1 ([window, 2*window)) pre-marked fully downloaded so window 2
-    /// is a pure cache hit; segments 0 and 2 are empty, so windows 1 and 3
-    /// would read from source.
+    /// Segments 0,1 ([0, 2*window)) empty -> a 2-window cold gap, so the read opens a
+    /// kept-live connection (reach > a window). Segments 2,3 ([2*window, 4*window))
+    /// pre-downloaded so the windows over them are pure cache hits.
     auto cache = std::make_shared<EvictableSegmentMockCache>(window_bytes);
-    cache->downloaded[1] = window_bytes;
+    cache->downloaded[2] = window_bytes;
+    cache->downloaded[3] = window_bytes;
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
     caches.push_back(cache);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
     ReaderExecutor executor(source, objects, caches, /*window_size=*/window_bytes, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
 
-    /// Window 1 [0, window): miss -> source read -> live connection open.
-    auto w1 = executor.readNextWindow();
-    ASSERT_FALSE(w1.empty());
-    EXPECT_EQ(limit->getActive().size(), 1u) << "window 1 opens a live connection";
+    /// Window 1 [0, window): cold gap (reach 2 windows) -> live connection + lease.
+    ASSERT_FALSE(executor.readNextWindow().empty());
+    EXPECT_EQ(limit->getActiveCount(), 1u) << "a wide cold gap opens a live connection";
 
-    /// Window 2 [window, 2*window): full cache hit, no source read.
-    auto w2 = executor.readNextWindow();
-    ASSERT_FALSE(w2.empty());
-    EXPECT_EQ(limit->getActive().size(), 0u)
-        << "cache-only window must close the now-stale live connection";
+    /// Window 2 [window, 2*window): still the cold gap -> the live connection continues.
+    ASSERT_FALSE(executor.readNextWindow().empty());
+    EXPECT_EQ(limit->getActiveCount(), 1u);
+
+    /// Window 3 [2*window, 3*window): full cache hit, no source read -> the now-stale
+    /// live connection is closed and its lease released.
+    ASSERT_FALSE(executor.readNextWindow().empty());
+    EXPECT_EQ(limit->getActiveCount(), 0u)
+        << "cache-only window must close the now-stale live connection and release its lease";
 }
 
 TEST(ReaderExecutor, SeekClosesStaleLiveBufferEvenWithoutReadFromSource)
@@ -2607,7 +2624,7 @@ TEST(ReaderExecutor, SeekClosesStaleLiveBufferEvenWithoutReadFromSource)
     /// Regression: `seek` used to defer closing a stale `live_buffer` to
     /// `readFromSource`. If the next window was fully cache-served (or just
     /// nothing was read after seek), the old connection — and its
-    /// `SourceBufferLimit` slot — stayed open until EOF or executor
+    /// `LiveConnectionLimit` slot — stayed open until EOF or executor
     /// destruction, burning `max_remote_read_connections` capacity.
     String content_a(2000, 'A');
     String content_b(2000, 'B');
@@ -2618,7 +2635,7 @@ TEST(ReaderExecutor, SeekClosesStaleLiveBufferEvenWithoutReadFromSource)
     objects.emplace_back("a", "", 2000);
     objects.emplace_back("b", "", 2000);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
 
     ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
@@ -2626,12 +2643,12 @@ TEST(ReaderExecutor, SeekClosesStaleLiveBufferEvenWithoutReadFromSource)
     /// Read from object "a" — opens a live buffer + acquires a slot.
     auto rope = executor.readNextWindow();
     EXPECT_EQ(rope.range().size, 500u);
-    EXPECT_EQ(limit->getActive().size(), 1u);
+    EXPECT_EQ(limit->getActiveCount(), 1u);
 
     /// Seek into object "b". No read afterwards — the stale connection to
     /// "a" must be closed by `seek` itself, not by a future `readFromSource`.
     executor.seek(2500);
-    EXPECT_EQ(limit->getActive().size(), 0u)
+    EXPECT_EQ(limit->getActiveCount(), 0u)
         << "stale live buffer + slot must be released by seek when the "
            "target is in a different object";
 }
@@ -2649,7 +2666,7 @@ TEST(ReaderExecutor, LiveBufferClosedOnSeek)
     StoredObjects objects;
     objects.emplace_back("file", "", 2000);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
 
     ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
@@ -3104,13 +3121,13 @@ TEST(ReaderExecutor, CacheLookupSplitByObjectBoundary)
     }
 }
 
-TEST(ReaderExecutor, MultiObjectWindowAcquiresOneSlotThenFallsBack)
+TEST(ReaderExecutor, MultiObjectWindowReusesOneLeaseAcrossObjects)
 {
-    /// A gather window that spans two objects pre-acquires exactly one slot - for
-    /// the object under the window start ("a"), which becomes a live connection.
-    /// `readFromSource` never acquires a slot itself, so the second object ("b")
-    /// takes the non-live one-shot path. The next window (starting in "b") would
-    /// pre-acquire its own slot for "b".
+    /// A gather window spanning two objects takes exactly ONE lease (it is
+    /// object-agnostic now). "a" opens a live connection with it; then "b" reuses the
+    /// SAME lease - `readFromSource` closes "a"'s connection and reopens for "b" keeping
+    /// the lease, so "b" also goes live (sequential, never two connections at once)
+    /// instead of falling back to a stateless one-shot read.
     TestThreadGroup tg;
     auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"a", String(500, 'A')}, {"b", String(500, 'B')}});
@@ -3118,18 +3135,20 @@ TEST(ReaderExecutor, MultiObjectWindowAcquiresOneSlotThenFallsBack)
     objects.emplace_back("a", "", 500);
     objects.emplace_back("b", "", 500);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);
-    ReaderExecutor executor(source, objects, {}, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
+    /// window 600 < the 1000-byte file, so the plan spans more than a window -> a wide
+    /// plan that takes the lease; the [0, 600) window still straddles "a" (500) and "b".
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/600, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
 
-    /// One window [0, 1000) spans both objects: "a" consumes the pre-acquired slot
-    /// (live), "b" falls back to a non-live one-shot read.
     auto rope = executor.readNextWindow();
-    ASSERT_EQ(rope.range().size, 1000u);
+    ASSERT_EQ(rope.range().size, 600u);
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBufferSlotAcquired), 1)
-        << "only the window-start object pre-acquires a slot; readFromSource never acquires one";
-    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 1) << "object \"a\" opened a live connection";
-    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferFallbacks), 1) << "object \"b\" took the non-live path";
+        << "one object-agnostic lease covers the whole wide plan";
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 2)
+        << "both objects open a live connection in turn, reusing the one lease";
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferFallbacks), 0)
+        << "no stateless fallback - the lease is reused across the object boundary";
 }
 
 TEST(ReaderExecutor, PreAcquiredSlotMatchesObjectAtCursor)
@@ -3150,7 +3169,7 @@ TEST(ReaderExecutor, PreAcquiredSlotMatchesObjectAtCursor)
     objects.emplace_back("obj_A", "", 500);
     objects.emplace_back("obj_B", "", 500);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
 
     ReaderExecutor executor(source, objects, {}, /*window_size=*/200, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
@@ -3160,11 +3179,11 @@ TEST(ReaderExecutor, PreAcquiredSlotMatchesObjectAtCursor)
     auto rope = executor.readNextWindow();
     EXPECT_EQ(rope.range().offset, 700u);
 
-    /// Exactly one active slot, and its path is obj_B (not obj_A).
-    const auto active = limit->getActive();
-    ASSERT_EQ(active.size(), 1u);
-    EXPECT_EQ(active.front().object_path, "obj_B")
-        << "pre-acquired slot must match the object at the cursor, not the first object in the file";
+    /// Exactly one lease held. The lease is object-agnostic now, so seeking past
+    /// obj_A no longer reserves (and leaks) a per-object slot - the read against
+    /// obj_B simply uses the one lease.
+    EXPECT_EQ(limit->getActiveCount(), 1u)
+        << "a seek past the first object must not leave an extra leased unit";
 }
 
 TEST(ReaderExecutor, SlotReleasedOnSeekToDifferentObject)
@@ -3182,7 +3201,7 @@ TEST(ReaderExecutor, SlotReleasedOnSeekToDifferentObject)
     objects.emplace_back("obj_A", "", 500);
     objects.emplace_back("obj_B", "", 500);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
 
     ReaderExecutor executor(source, objects, {}, /*window_size=*/200, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
@@ -3190,16 +3209,16 @@ TEST(ReaderExecutor, SlotReleasedOnSeekToDifferentObject)
     /// First read from object A.
     auto r1 = executor.readNextWindow();
     EXPECT_EQ(r1.range().offset, 0u);
-    EXPECT_EQ(limit->getActive().size(), 1u);
+    EXPECT_EQ(limit->getActiveCount(), 1u);
 
     /// Seek into object B and read.
     executor.seek(750);
     auto r2 = executor.readNextWindow();
     EXPECT_EQ(r2.range().offset, 750u);
 
-    const auto active = limit->getActive();
-    ASSERT_EQ(active.size(), 1u) << "must not accumulate slots across cross-object seeks";
-    EXPECT_EQ(active.front().object_path, "obj_B");
+    /// The object-agnostic lease is reused across the cross-object seek, so the count
+    /// stays at one - it never accumulates a unit per object.
+    EXPECT_EQ(limit->getActiveCount(), 1u) << "must not accumulate leases across cross-object seeks";
 }
 
 namespace
@@ -3254,7 +3273,7 @@ TEST(ReaderExecutor, PreAcquiredSlotReleasedWhenPrefetchNotSubmitted)
     objects.emplace_back("obj_A", "", 500);
     objects.emplace_back("obj_B", "", 500);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
     auto pool = std::make_shared<FakePrefetchPool>();
 
     ReaderExecutor executor(source, objects, {}, /*window_size=*/200, /*min_bytes_for_seek=*/0);
@@ -3264,19 +3283,17 @@ TEST(ReaderExecutor, PreAcquiredSlotReleasedWhenPrefetchNotSubmitted)
     /// `seek(0)`'s tail `maybeTriggerPrefetch` pre-acquires an obj_A slot, then
     /// `submit` returns nullptr -> the slot is released right away.
     executor.seek(0);
-    EXPECT_EQ(limit->getActive().size(), 0u)
+    EXPECT_EQ(limit->getActiveCount(), 0u)
         << "a prefetch that was never submitted must not leave its slot reserved";
 
     /// Same on a cross-object seek into obj_B: no stale obj_A slot accumulates.
     executor.seek(700);
-    EXPECT_EQ(limit->getActive().size(), 0u);
+    EXPECT_EQ(limit->getActiveCount(), 0u);
 
-    /// The read itself acquires exactly one slot, for obj_B.
+    /// The read itself takes exactly one lease.
     auto rope = executor.readNextWindow();
     EXPECT_EQ(rope.range().offset, 700u);
-    const auto active = limit->getActive();
-    ASSERT_EQ(active.size(), 1u) << "the read holds exactly one slot";
-    EXPECT_EQ(active.front().object_path, "obj_B");
+    EXPECT_EQ(limit->getActiveCount(), 1u) << "the read holds exactly one lease";
 }
 
 /// Pre-fix: for an unknown-size source, the prefetch worker can set
@@ -3582,11 +3599,11 @@ TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsConnection)
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
     caches.push_back(provider);
 
-    auto limit = std::make_shared<SourceBufferLimit>(10);
+    auto limit = std::make_shared<LiveConnectionLimit>(10);
     /// NOTE: no prefetch pool — keep reads synchronous so the flood between
     /// windows is deterministic.
-    ReaderExecutor executor(source, objects, caches, /*window_size=*/2000, /*min_bytes_for_seek=*/0);
-    executor.setBufferLimit(limit);
+    auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, /*window_size=*/2000, /*min_bytes_for_seek=*/0);
+    executor->setBufferLimit(limit);
 
     /// Flood the cache with unrelated keys to force eviction of any releasable
     /// segment. The streamed segment must survive because it is pinned.
@@ -3622,12 +3639,13 @@ TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsConnection)
 
     auto & profile_events = DB::CurrentThread::getProfileEvents();
     const auto created_before = profile_events[ProfileEvents::LiveSourceBufferCreated].load();
+    const auto src_before = profile_events[ProfileEvents::ReaderExecutorSourceRequests].load();
 
     String result;
     int round = 0;
     while (true)
     {
-        auto rope = executor.readNextWindow();
+        auto rope = executor->readNextWindow();
         if (rope.empty())
             break;
         for (const auto & node : rope.getNodes())
@@ -3637,7 +3655,9 @@ TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsConnection)
 
     EXPECT_EQ(result, content);
     /// The streamed segment stayed pinned through every flood, so the live
-    /// connection was never reset and the left bytes were never re-read.
-    EXPECT_EQ(executor.getSourceRequestsCount(), 1u);
+    /// connection was never reset and the left bytes were never re-read. Destroy the
+    /// executor so it flushes `stats` into the thread's ProfileEvents.
+    executor.reset();
+    EXPECT_EQ(profile_events[ProfileEvents::ReaderExecutorSourceRequests].load() - src_before, 1u);
     EXPECT_EQ(profile_events[ProfileEvents::LiveSourceBufferCreated].load() - created_before, 1);
 }

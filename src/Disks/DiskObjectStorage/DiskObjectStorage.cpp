@@ -887,7 +887,7 @@ void DiskObjectStorage::prepareRead(
         /// Without a buffer limit the executor takes the stateless (one-shot per
         /// window) path; `reader_executor_use_live_connections=0` selects it.
         if (read_settings.reader_executor_use_live_connections)
-            pipeline.needBufferLimit(global_context->getSourceBufferLimit());
+            pipeline.needBufferLimit(global_context->getLiveConnectionLimit());
     }
 }
 

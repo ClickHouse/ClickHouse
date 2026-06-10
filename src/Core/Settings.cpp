@@ -767,6 +767,8 @@ Forward-gap bound for the experimental `ReaderExecutor`: a gap up to this is ski
 Drain bound for the experimental `ReaderExecutor`: a live source connection dropped within this many bytes of its right bound is read out to the bound first, so it completes and returns to the connection pool reusable instead of counting as an incomplete connection.)", EXPERIMENTAL) \
     DECLARE(Bool, reader_executor_use_live_connections, true, R"(
 Reuse a bounded live source connection across windows in the experimental `ReaderExecutor`. When disabled, the executor takes no connection-pool budget and every window opens a short-lived one-shot connection (the stateless path).)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_live_connection_min_read_bytes, 0, R"(
+Minimum contiguous source read - the gap reach from the cursor - that warrants a live source connection (and a connection-pool lease) in the experimental `ReaderExecutor`. A gap that streams fewer than this many bytes is served by a one-shot stateless read; a wider one opens a bounded live connection reused across windows. 0 means use the read window size (`reader_executor_window_size`).)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 

@@ -2,7 +2,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <Common/MemoryPressureMonitor.h>
-#include <IO/SourceBufferLimit.h>
+#include <IO/LiveConnectionLimit.h>
 
 #include <memory>
 #include <Interpreters/ClientInfo.h>
@@ -2639,7 +2639,7 @@ try
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_level_2_pct],
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_level_3_pct]);
 
-            global_context->getSourceBufferLimit()->setCapacity(
+            global_context->getLiveConnectionLimit()->setCapacity(
                 new_server_settings[ServerSetting::max_remote_read_connections]);
 
             if (config().has("resources"))

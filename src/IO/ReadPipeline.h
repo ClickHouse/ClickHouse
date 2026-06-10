@@ -21,7 +21,7 @@ class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class PageCache;
 class PrefetchThreadPool;
-class SourceBufferLimit;
+class LiveConnectionLimit;
 class IAsynchronousReader;
 class IBackup;
 struct AsyncReadCounters;
@@ -162,7 +162,7 @@ public:
     void needPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool);
 
     /// Used only by the `ReaderExecutor` live-buffer optimization.
-    void needBufferLimit(std::shared_ptr<SourceBufferLimit> limit);
+    void needBufferLimit(std::shared_ptr<LiveConnectionLimit> limit);
 
     /// `key_finder` is invoked at build time with the key fingerprint parsed
     /// from the encryption header and must return the decryption key.
@@ -233,7 +233,7 @@ private:
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
-    std::shared_ptr<SourceBufferLimit> buffer_limit;
+    std::shared_ptr<LiveConnectionLimit> buffer_limit;
     VectorWithMemoryTracking<DecryptionStage> decryption_stages;
 
     /// `query_id` is captured once on the calling thread before any stage

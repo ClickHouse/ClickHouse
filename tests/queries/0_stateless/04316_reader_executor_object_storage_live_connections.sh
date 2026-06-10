@@ -29,11 +29,14 @@ SCAN="SELECT count() FROM $S3 WHERE NOT ignore(*) FORMAT Null"
 OFF_ID="04316_off_${CLICKHOUSE_DATABASE}"
 ON_ID="04316_on_${CLICKHOUSE_DATABASE}"
 
+# Lower the live-connection threshold so this small Parquet's column-chunk reads (well under
+# the default 8 MiB window) take a live connection when enabled.
+RE_MIN=--reader_executor_live_connection_min_read_bytes=4096
 # Disabled: the executor must use stateless one-shot reads.
-$CLICKHOUSE_CLIENT --use_reader_executor=1 --reader_executor_use_live_connections=0 \
+$CLICKHOUSE_CLIENT --use_reader_executor=1 --reader_executor_use_live_connections=0 "$RE_MIN" \
     --query_id "$OFF_ID" --query "$SCAN"
 # Enabled: the executor may open and reuse live connections.
-$CLICKHOUSE_CLIENT --use_reader_executor=1 --reader_executor_use_live_connections=1 \
+$CLICKHOUSE_CLIENT --use_reader_executor=1 --reader_executor_use_live_connections=1 "$RE_MIN" \
     --query_id "$ON_ID" --query "$SCAN"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"

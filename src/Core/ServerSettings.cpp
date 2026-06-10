@@ -10,7 +10,7 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <IO/UncompressedCache.h>
 #include <IO/SharedThreadPools.h>
-#include <IO/SourceBufferLimit.h>
+#include <IO/LiveConnectionLimit.h>
 #include <IO/S3Defines.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -1899,7 +1899,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             /// `ReaderExecutor` settings applied live in `Server.cpp` reload
             /// path — report the live values from their owning components.
             {"max_remote_read_connections",
-             {std::to_string(context->getSourceBufferLimit()->getCapacity()), ChangeableWithoutRestart::Yes}},
+             {std::to_string(context->getLiveConnectionLimit()->getCapacity()), ChangeableWithoutRestart::Yes}},
             {"reader_executor_memory_pressure_level_1_pct",
              {std::to_string(memoryPressureMonitor().getThresholds().l1_pct), ChangeableWithoutRestart::Yes}},
             {"reader_executor_memory_pressure_level_2_pct",

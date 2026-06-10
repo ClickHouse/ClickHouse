@@ -35,8 +35,10 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO t_re_pool SELECT number, number, number, number, number FROM numbers(512 * 64)
 "
 
-# Executor on, prefetch off, single-threaded so connection use is sequential.
-RE_SETTINGS=(--use_reader_executor=1 --remote_filesystem_read_prefetch=0 --max_threads=1)
+# Executor on, prefetch off, single-threaded so connection use is sequential. Lower the
+# live-connection threshold so this small table's column reads (well under the default 8 MiB
+# window) still take a live connection / pool slot - the path under test.
+RE_SETTINGS=(--use_reader_executor=1 --remote_filesystem_read_prefetch=0 --max_threads=1 --reader_executor_live_connection_min_read_bytes=4096)
 SCAN="SELECT count() FROM t_re_pool WHERE NOT ignore(c1, c2, c3, c4, c5) FORMAT Null"
 
 for _ in {0..19}
