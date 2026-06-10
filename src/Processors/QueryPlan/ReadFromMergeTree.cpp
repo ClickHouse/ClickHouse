@@ -2107,11 +2107,11 @@ void ReadFromMergeTree::buildIndexes(
         if (condition && !condition->alwaysUnknownOrTrue())
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
         else
-            rejected_indexes.rejected_indices.push_back({
+            rejected_indexes.rejected_indices.emplace_back(
                 index.name,
                 index.type,
                 index.granularity,
-                condition ? condition->rejectionReason() : "no condition could be created from the query predicate"});
+                condition ? condition->rejectionReason() : "no condition could be created from the query predicate");
 
         auto can_skip_index_be_used_for_top_k_filtering = [top_k_filter_info](const MergeTreeIndexPtr & skip_index)
         {
@@ -4161,6 +4161,7 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
         && !(index_stats.size() == 1 && index_stats.front().type == IndexType::None);
     bool has_rejected_indexes = !result.rejected_skip_indexes.empty();
 
+    /// No indexes to describe at all — nothing to print.
     if (!has_applied_indexes && !has_rejected_indexes)
         return;
 
@@ -4245,6 +4246,7 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
         && !(index_stats.size() == 1 && index_stats.front().type == IndexType::None);
     bool has_rejected_indexes = !result.rejected_skip_indexes.empty();
 
+    /// No indexes to describe at all — nothing to print.
     if (!has_applied_indexes && !has_rejected_indexes)
         return;
 

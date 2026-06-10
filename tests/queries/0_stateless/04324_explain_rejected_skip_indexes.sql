@@ -21,6 +21,17 @@ SETTINGS index_granularity = 3;
 
 INSERT INTO tab VALUES (1, [1.0, 0.0], 'a'), (2, [1.1, 0.0], 'b'), (3, [1.2, 0.0], 'c');
 
+SELECT 'Full EXPLAIN indexes output with rejected indexes';
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT id FROM tab WHERE id > 0
+)
+WHERE explain LIKE '%Indexes%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Keys%'
+    OR explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%'
+    OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Ranges%'
+    OR explain LIKE '%Skip%' OR explain LIKE '%Name:%' OR explain LIKE '%Description%'
+    OR explain LIKE '%Status%' OR explain LIKE '%Reason%';
+
 SELECT 'Both skip indexes rejected when query does not match either';
 SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1

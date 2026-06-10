@@ -1,3 +1,22 @@
+Full EXPLAIN indexes output with rejected indexes
+Indexes:
+PrimaryKey
+Keys:
+Condition: (id in [1, +Inf))
+Parts: 1/1
+Granules: 1/1
+Search Algorithm: binary search
+Ranges: 1
+Skip
+Name: idx_vec
+Description: vector_similarity GRANULARITY 10000
+Status: NOT APPLIED
+Reason: query is not a vector search query (requires ORDER BY <distance_function>(column, reference_vector) ASC LIMIT N)
+Skip
+Name: idx_bloom
+Description: bloom_filter GRANULARITY 1
+Status: NOT APPLIED
+Reason: condition is always unknown or true
 Both skip indexes rejected when query does not match either
 Name: idx_vec
 Status: NOT APPLIED
