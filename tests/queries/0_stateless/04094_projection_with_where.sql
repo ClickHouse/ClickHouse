@@ -69,7 +69,7 @@ ORDER BY time;
 
 -- Verify projection stores only filtered rows
 SELECT 'Projection row count';
-SELECT count() FROM t_proj_where WHERE event_type = 'pageview';
+SELECT sum(rows) FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_proj_where' AND name = 'proj_pageview' AND active;
 
 -- Cleanup
 DROP TABLE t_proj_where;
@@ -106,7 +106,8 @@ ALTER TABLE t_proj_with MATERIALIZE PROJECTION p_with;
 
 -- The query uses the table column `c` in WHERE. Result must reflect the table column,
 -- regardless of whether the optimizer considers projection `p_with`.
-SELECT a FROM t_proj_with WHERE c ORDER BY a;
+SELECT a FROM t_proj_with WHERE c ORDER BY a
+SETTINGS force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
 
 DROP TABLE t_proj_with;
 
@@ -136,7 +137,8 @@ ALTER TABLE t_proj_alias ADD PROJECTION p_alias
 ALTER TABLE t_proj_alias MATERIALIZE PROJECTION p_alias;
 
 -- The query uses the table column `c` in WHERE. Result must reflect the table column.
-SELECT a FROM t_proj_alias WHERE c ORDER BY a;
+SELECT a FROM t_proj_alias WHERE c ORDER BY a
+SETTINGS force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
 
 DROP TABLE t_proj_alias;
 
