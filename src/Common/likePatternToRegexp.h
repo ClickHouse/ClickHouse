@@ -13,4 +13,9 @@ String likePatternToRegexp(std::string_view pattern);
 /// Example: with escape_char='#': "50#%off" -> "50\%off"
 String likePatternWithCustomEscapeToLikePattern(std::string_view pattern, char escape_char);
 
+/// Whether a standard-backslash LIKE pattern contains an "unknown" escape `\c` where `c` is not `%`, `_` or `\`.
+/// Such a sequence keeps the literal backslash at row-level (see `likePatternToRegexp`), but the index-side
+/// prefix extractor and the `nextInStringLike` tokenizer drop it, so they must decline patterns that contain it.
+bool likePatternHasUnknownBackslashEscape(std::string_view pattern);
+
 }

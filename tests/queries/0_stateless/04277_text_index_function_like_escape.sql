@@ -118,3 +118,36 @@ SELECT count() FROM tab WHERE like(tag, '%Cloud%', unhex('FF')); -- { serverErro
 EXPLAIN indexes = 1 SELECT count() FROM tab WHERE like(tag, '%Cloud%', unhex('FF')); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE tab;
+
+SELECT 'An unknown backslash escape is not pruned by the text index (would otherwise drop the literal backslash and tokenize differently than the indexed value)';
+
+-- The row contains the literal token "a\b" (a, backslash, b). `splitByNonAlpha` indexes it as the
+-- tokens "a" and "b", but `nextInStringLike` on the rewritten pattern drops the backslash and asks
+-- for the single token "ab", which is absent, so the granule would be wrongly pruned. The analyzer
+-- declines the 3-argument condition for unknown backslash escapes and falls back to row-level.
+-- ('foo a\\b bar' is the literal string with one backslash before b.)
+
+CREATE TABLE tab
+(
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'foo a\\b bar'), (2, 'foo ab bar'), (3, 'nothing here');
+
+SELECT 'Correctness check: the row containing the literal backslash is returned';
+
+SELECT id FROM tab WHERE msg LIKE '% a\\b %' ESCAPE '\\' ORDER BY id;
+
+SELECT 'Text index analysis declines the condition: all 3 granules are scanned';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE msg LIKE '% a\\b %' ESCAPE '\\'
+) WHERE explain LIKE '%Granules:%';
+
+DROP TABLE tab;

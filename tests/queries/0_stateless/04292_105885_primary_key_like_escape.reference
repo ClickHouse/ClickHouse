@@ -22,3 +22,10 @@ abc%
 abcd
 xyz
 A non-ASCII ESCAPE byte is rejected at planning time by the primary-key analyzer
+Unknown backslash escape: primary key declines (Condition: true) so matching rows are not pruned
+Condition: true
+Correctness check: all four rows starting with a literal backslash are returned
+a\\b01
+a\\b02
+a\\b03
+a\\b04

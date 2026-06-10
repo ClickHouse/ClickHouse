@@ -34,3 +34,8 @@ Description: text GRANULARITY 100000000
 Parts: 1/4
 Granules: 1024/4096
 A non-ASCII ESCAPE byte is rejected at planning time so the direct-read text-index optimization cannot strip the call
+An unknown backslash escape is not pruned by the text index (would otherwise drop the literal backslash and tokenize differently than the indexed value)
+Correctness check: the row containing the literal backslash is returned
+1
+Text index analysis declines the condition: all 3 granules are scanned
+Granules: 3/3

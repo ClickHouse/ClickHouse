@@ -3335,6 +3335,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                 String rewritten = likePatternWithCustomEscapeToLikePattern(
                     pattern_field.safeGet<String>(), escape_str[0]);
+                /// An unknown backslash escape (e.g. `a\b`) keeps the literal backslash at row-level
+                /// but `extractFixedPrefixFromLikePattern` drops it, building a prefix range that can
+                /// skip matching rows. Decline and fall back to row-level evaluation.
+                if (likePatternHasUnknownBackslashEscape(rewritten))
+                    return false;
                 rewritten_like_pattern = Field(std::move(rewritten));
                 rewritten_like_pattern_type = pattern_type;
                 rewritten_like = true;

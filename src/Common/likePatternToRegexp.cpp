@@ -152,4 +152,28 @@ String likePatternWithCustomEscapeToLikePattern(std::string_view pattern, char e
     return res;
 }
 
+bool likePatternHasUnknownBackslashEscape(std::string_view pattern)
+{
+    const char * pos = pattern.data();
+    const char * const end = pattern.data() + pattern.size();
+
+    while (pos < end)
+    {
+        if (*pos == '\\')
+        {
+            ++pos;
+            if (pos == end)
+                return false;
+            /// `\%`, `\_` and `\\` are interpreted identically by row-level matching and by the
+            /// index-side prefix extractor / `nextInStringLike` tokenizer. Any other `\c` keeps the
+            /// literal backslash at row-level but is dropped index-side, so it is "unknown".
+            if (*pos != '%' && *pos != '_' && *pos != '\\')
+                return true;
+        }
+        ++pos;
+    }
+
+    return false;
+}
+
 }

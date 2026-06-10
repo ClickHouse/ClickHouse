@@ -526,6 +526,11 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
                 String rewritten = likePatternWithCustomEscapeToLikePattern(
                     pattern_field.safeGet<String>(), escape_str[0]);
+                /// An unknown backslash escape (e.g. `a\b`) keeps the literal backslash at row-level
+                /// but `nextInStringLike` drops it, so the tokens would not match the indexed value and
+                /// the index could wrongly prune a granule. Decline and fall back to row-level evaluation.
+                if (likePatternHasUnknownBackslashEscape(rewritten))
+                    return false;
                 Field rewritten_field(std::move(rewritten));
                 if (traverseFunctionNode(function, lhs_argument, pattern_type, rewritten_field, out))
                     return true;
