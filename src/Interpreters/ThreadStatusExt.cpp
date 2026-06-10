@@ -180,7 +180,7 @@ void maybeBorrowedGroupAttachSleep(const ThreadGroup * group)
     }();
     if (!sleep_ms)
         return;
-    bool is_borrowed;
+    bool is_borrowed = false;
     {
         auto & r = borrowedGroupRegistry();
         std::lock_guard lock(r.mutex);
