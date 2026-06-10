@@ -12,8 +12,8 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 from typing import Optional
-from integration.helpers.client import Client, CommandRequest
-from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from tests.integration.helpers.client import Client, CommandRequest
+from tests.integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 
 @dataclass

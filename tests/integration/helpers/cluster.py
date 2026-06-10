@@ -2692,7 +2692,7 @@ class ClickHouseCluster:
             if not detach:
                 assert not get_exec_id
                 return output.decode()
-            return exec_id if get_exec_id else output
+            return exec_id["Id"] if get_exec_id else output
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
         with open(local_path, "rb") as fdata:
@@ -4165,10 +4165,12 @@ class ClickHouseCluster:
                     self.exec_in_container(
                         instance.docker_id, ["chmod", "+777", "/usr/bin/clickhouse"]
                     )
-                    instance.exec_in_container(
+                    instance.clickhouse_exec_id = instance.exec_in_container(
                         ["bash", "-c", instance.clickhouse_start_command],
                         user=str(os.getuid()),
                         detach=True,
+                        use_cli=False,
+                        get_exec_id=True,
                     )
 
             start_timeout = 300.0  # seconds
@@ -4244,13 +4246,6 @@ class ClickHouseCluster:
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
-                # Collect exit codes for later inspection
-                if self.with_dolor:
-                    container = self.docker_client.containers.get(instance.docker_id)
-                    res = container.wait()
-                    exit_code = res["StatusCode"]
-                    logging.info(f"The server {name} exited with code: {exit_code}")
-
                 if instance.contains_in_log(
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
@@ -4978,6 +4973,7 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
+        self.clickhouse_exec_id = ""
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -5366,6 +5362,7 @@ class ClickHouseInstance:
             while time.time() <= start_time + stop_wait_sec:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
+                    self.clickhouse_exec_id = ""  # old exec is no longer valid
                     return True
                 else:
                     time.sleep(1)
@@ -5415,7 +5412,7 @@ class ClickHouseInstance:
             pid = self.get_process_pid("clickhouse")
             if pid is None:
                 logging.debug("No clickhouse process running. Start new one.")
-                exec_id = self.exec_in_container(
+                self.clickhouse_exec_id = exec_id = self.exec_in_container(
                     ["bash", "-c", self.clickhouse_start_command],
                     user=str(os.getuid()),
                     detach=True,
@@ -5774,9 +5771,14 @@ class ClickHouseInstance:
             ],
             user="root",
         )
-        self.exec_in_container(
+        # Make sure no ClickHouse exec id is set before starting
+        self.clickhouse_exec_id = ""
+        self.clickhouse_exec_id = self.exec_in_container(
             ["bash", "-c", self.clickhouse_start_command_in_daemon],
             user=str(os.getuid()),
+            detach=True,
+            use_cli=False,
+            get_exec_id=True,
         )
 
         # wait start
@@ -5855,9 +5857,14 @@ class ClickHouseInstance:
                     "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE default ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
                 ]
             )
-        self.exec_in_container(
+        # Make sure no ClickHouse exec id is set before starting
+        self.clickhouse_exec_id = ""
+        self.clickhouse_exec_id = self.exec_in_container(
             ["bash", "-c", self.clickhouse_start_command_in_daemon],
             user=str(os.getuid()),
+            detach=True,
+            use_cli=False,
+            get_exec_id=True,
         )
 
         # wait start
@@ -6351,7 +6358,7 @@ class ClickHouseInstance:
 
         if self.cluster.with_dolor:
             entrypoint_cmd = "bash -c 'coproc tail -f /dev/null; wait $!'"
-        if self.stay_alive:
+        elif self.stay_alive:
             entrypoint_cmd = self.clickhouse_stay_alive_command
         else:
             entrypoint_cmd = self.clickhouse_start_command

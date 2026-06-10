@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import random
+import secrets
 from pathlib import Path
 
 from ci.jobs.ast_fuzzer_job import run_fuzz_job
@@ -8,13 +9,7 @@ from ci.jobs.ci_utils import is_extended_run
 from ci.praktika.utils import Utils
 
 
-def main():
-    temp_dir = Path(f"{Utils.cwd()}/ci/tmp/")
-    workspace_path = temp_dir / "workspace"
-    buzz_config_file = workspace_path / "fuzz.json"
-
-    workspace_path.mkdir(parents=True, exist_ok=True)
-
+def generate_buzz_config(workspace_path: Path, log_path: str | None = None):
     # Sometimes disallow SQL types to reduce number of combinations
     disabled_types_str = ""
     if random.randint(1, 2) == 1:
@@ -159,6 +154,8 @@ def main():
         "temporary_files_buffer_size",
         "trace_profile_events",
         "unknown_packet_in_send_data",
+        "use_query_cache",
+        "enable_writes_to_query_cache",
     ]
     if allow_transactions:
         # Doesn't work well with transactions
@@ -194,7 +191,7 @@ def main():
         max_depth_high = 3
 
     buzz_config = {
-        "seed": random.randint(1, 18446744073709551615),
+        "seed": secrets.randbits(64),
         "max_depth": random.randint(2, max_depth_high),
         "max_width": random.randint(2, 7),
         "max_databases": random.randint(2, 5),
@@ -240,7 +237,9 @@ def main():
         "allow_hardcoded_inserts": allow_hardcoded_inserts,
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",
-        "log_path": "/workspace/fuzzerout.sql",
+        "log_path": (
+            log_path if log_path is not None else str(workspace_path / "fuzzerout.sql")
+        ),
         "read_log": False,
         "allow_memory_tables": random.choice([True, False]),
         "allow_client_restarts": random.choice([True, False]),
@@ -289,8 +288,16 @@ def main():
             "vertical_merge_optimize_ttl_delete",
         ],
     }
-    with open(buzz_config_file, "w") as outfile:
+    with open(workspace_path / "fuzz.json", "w") as outfile:
         outfile.write(json.dumps(buzz_config))
+
+
+def main():
+    temp_dir = Path(f"{Utils.cwd()}/ci/tmp/")
+    workspace_path = temp_dir / "workspace"
+    workspace_path.mkdir(parents=True, exist_ok=True)
+    # BuzzHouse runs inside Docker where workspace is mounted at /workspace
+    generate_buzz_config(workspace_path, log_path="/workspace/fuzzerout.sql")
 
     run_fuzz_job("BuzzHouse")
 

@@ -2,13 +2,14 @@ from abc import abstractmethod
 import xml.etree.ElementTree as ET
 import tempfile
 import multiprocessing
+import os
 import random
 import string
 import typing
 
 from environment import get_system_timezones
-from integration.helpers.cluster import ClickHouseCluster
-from integration.helpers.config_cluster import mongo_pass, mysql_pass, pg_pass
+from tests.integration.helpers.cluster import ClickHouseCluster
+from tests.integration.helpers.config_cluster import mongo_pass, mysql_pass, pg_pass
 
 
 def generate_xml_safe_string(length: int = 10) -> str:
@@ -1180,7 +1181,7 @@ class DatabaseReplicatedGroup(PropertiesGroup):
             "internal_replication": true_false_lambda,
             "logs_to_keep": threshold_generator(0.2, 0.2, 0, 3000),
             "max_broken_tables_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-            "max_replication_lag_to_enqueue": threshold_generator(0.2, 0.2, 0, 200),
+            "max_replication_lag_to_enqueue": threshold_generator(0.2, 0.2, 1, 200),
         }
         apply_properties_recursively(property_element, replicated_settings, 0)
 
@@ -1542,7 +1543,7 @@ def modify_server_settings(
         temp_path = None
         # Create a temporary file
         with tempfile.NamedTemporaryFile(
-            dir=args.tmp_files_dir, suffix=".xml", delete=False
+            dir=args.tmp_files_dir, prefix="config_", suffix=".xml", delete=False
         ) as temp_file:
             temp_path = temp_file.name
             # Write the modified XML to the temporary file
@@ -1586,7 +1587,7 @@ def modify_user_settings(
         temp_path = None
         # Create a temporary file
         with tempfile.NamedTemporaryFile(
-            dir=args.tmp_files_dir, suffix=".xml", delete=False
+            dir=args.tmp_files_dir, prefix="user_", suffix=".xml", delete=False
         ) as temp_file:
             temp_path = temp_file.name
             # Write the modified XML to the temporary file
@@ -1788,7 +1789,9 @@ def modify_keeper_settings(args, is_private_binary: bool) -> list[str]:
         session_timeout_ms_xml = ET.SubElement(
             coordination_settings_xml, "session_timeout_ms"
         )
-        session_timeout_ms_xml.text = "15000"
+        session_timeout_ms_xml.text = (
+            "60000" if os.environ.get("CLICKHOUSE_IS_SANITIZED") == "1" else "15000"
+        )
         raft_logs_level_xml = ET.SubElement(
             coordination_settings_xml, "raft_logs_level"
         )
@@ -1814,7 +1817,7 @@ def modify_keeper_settings(args, is_private_binary: bool) -> list[str]:
 
         ET.indent(tree, space="    ", level=0)
         with tempfile.NamedTemporaryFile(
-            dir=args.tmp_files_dir, suffix=".xml", delete=False
+            dir=args.tmp_files_dir, prefix="keeper_", suffix=".xml", delete=False
         ) as temp_file:
             result_configs.append(temp_file.name)
             tree.write(temp_file.name, encoding="utf-8", xml_declaration=True)

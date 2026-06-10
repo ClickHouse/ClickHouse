@@ -2,7 +2,6 @@
 import logging
 import os
 import random
-import subprocess
 import sys
 import traceback
 from pathlib import Path
@@ -73,32 +72,207 @@ def get_run_command(
     )
 
 
+def analyze_job_logs(
+    paths: list[Path],
+    server_died: bool,
+    fuzzer_exit_code: int,
+    is_sanitized: bool,
+    fuzzer_out: Path,
+    fuzzer_log: Path,
+    dmesg_log: Path,
+    server_logs: list[Path],
+    stderr_logs: list[Path],
+    fatal_logs: list[Path],
+    extra_results: list[Result],
+    sw: Utils.Stopwatch,
+    server_fuzzer: bool,
+) -> Result:
+    # parse runner script exit status
+    status = Result.Status.FAIL
+    info = []
+    is_failed = True
+    if server_died:
+        # Server died - status will be determined after OOM checks
+        is_failed = True
+    elif fuzzer_exit_code in (
+        (-9, -15, -2, 0, 32, 130, 137, 143, 210) if server_fuzzer else (0, 137, 143)
+    ):
+        # normal exit with timeout or OOM kill
+        is_failed = False
+        status = Result.Status.OK
+        messages = {
+            0: "Fuzzer exited with success",
+            -2: "Fuzzer killed with SIGINT",
+            -9: "Fuzzer killed with SIGKILL",
+            -15: "Fuzzer killed with SIGTERM",
+            32: "Fuzzer exited after ATTEMPT_TO_READ_AFTER_EOF error",
+            130: "Fuzzer killed with SIGINT",
+            137: "Fuzzer killed with SIGKILL",
+            143: "Fuzzer killed with SIGTERM",
+            210: "Fuzzer exited with network timeout",
+        }
+        if fuzzer_exit_code in messages:
+            info.append(messages[fuzzer_exit_code])
+        else:
+            info.append("Fuzzer exited with timeout")
+        info.append("\n")
+    elif fuzzer_exit_code in (227,):
+        # BuzzHouse exception, it means a query oracle failed, or
+        # an unwanted exception was found
+        status = Result.Status.ERROR
+        error_info = (
+            Shell.get_output(
+                f"rg --text -o 'DB::Exception: Found disallowed error code.*' {fuzzer_log}"
+            )
+            or "BuzzHouse fuzzer exception not found, fuzzer issue?"
+        )
+        info.append(f"ERROR: {error_info}")
+    else:
+        status = Result.Status.ERROR
+        # The server was alive, but the fuzzer returned some error. This might
+        # be some client-side error detected by fuzzing, or a problem in the
+        # fuzzer itself. Don't grep the server log in this case, because we will
+        # find a message about normal server termination (Received signal 15),
+        # which is confusing.
+        info.append("Client failure (see logs)")
+        info.append("---\nFuzzer log (last 200 lines):")
+        info.extend(
+            Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
+        )
+
+    # server_logs = primary logs (one per node) + rotated logs appended after.
+    # stderr_logs has exactly one entry per node, so slicing by its length
+    # isolates the primary logs. This slice is used wherever per-node
+    # semantics matter (OOM detection, fatal log extraction).
+    primary_server_logs = server_logs[: len(stderr_logs)]
+
+    if is_failed:
+        if is_sanitized:
+            oom_nodes = []
+            non_oom_failure_found = False
+            # Only scan primary logs. Rotated logs may contain sanitizer signals
+            # from previous restarts that would incorrectly set
+            # non_oom_failure_found and block the OOM-is-success path.
+            for i, server_log in enumerate(primary_server_logs):
+                sanitizer_oom = Shell.get_output(
+                    f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {server_log}"
+                )
+                if sanitizer_oom:
+                    print(f"Sanitizer OOM on server {i}")
+                    oom_nodes.append(i)
+                else:
+                    # Check if this node has a non-OOM sanitizer/failure signal
+                    non_oom_signal = Shell.get_output(
+                        f"rg --text 'Sanitizer|AddressSanitizer|UndefinedBehaviorSanitizer|ThreadSanitizer|MemorySanitizer|SIGSEGV|SIGABRT|signal [0-9]' {server_log}"
+                    )
+                    if non_oom_signal:
+                        non_oom_failure_found = True
+            if oom_nodes and not non_oom_failure_found:
+                for i in oom_nodes:
+                    info.append(
+                        f"WARNING: Sanitizer OOM on server {i} - test considered passed"
+                    )
+                status = Result.Status.OK
+                is_failed = False
+        else:
+            # Check for OOM in dmesg for non-sanitized builds
+            if Shell.check(f"dmesg > {dmesg_log}", verbose=True):
+                if Shell.check(
+                    f"cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
+                    verbose=True,
+                ):
+                    info.append("ERROR: OOM in dmesg")
+                    status = Result.Status.ERROR
+            else:
+                print("WARNING: dmesg not enabled")
+
+    results = []
+    if is_failed and status != Result.Status.ERROR:
+        # died server - lets fetch failure from log
+        fuzzer_log_parser = FuzzerLogParser(
+            server_logs=server_logs,
+            stderr_logs=stderr_logs,
+            fuzzer_log=fuzzer_out,
+        )
+        parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
+
+        if parsed_name:
+            results.append(
+                Result(
+                    name=parsed_name,
+                    info=parsed_info,
+                    status=Result.Status.FAIL,
+                    files=files,
+                )
+            )
+
+    result = Result.create_from(
+        results=extra_results + results,
+        status=status if not results else None,
+        info=info,
+        stopwatch=sw,
+    )
+
+    if is_failed:
+        # generate fatal log
+        for server_log, fatal_log in zip(primary_server_logs, fatal_logs):
+            if not Shell.check(f"rg --text '\\s<Fatal>\\s' {server_log} > {fatal_log}"):
+                Path(fatal_log).unlink(missing_ok=True)
+
+        # Encrypt and attach any core dumps found under WORKSPACE_PATH. Without this
+        # step the report carries only the logs and the e2e test (ci/tests/test_e2e.py)
+        # fails because no `.zst.enc` / `.rsa` artifact is produced for cores.
+        result.set_files(ClickHouseService.collect_cores(WORKSPACE_PATH))
+
+        for file in paths:
+            if file.exists() and file.stat().st_size > 0:
+                result.set_files(file)
+
+    return result
+
+
 def _collect_targeted_queries(info: Info) -> tuple[list[str], Result]:
     targeter = Targeting(info=info)
     targeter.job_type = Targeting.STATELESS_JOB_TYPE
 
     # Step 1: changed/new test files in this PR
     changed_tests = targeter.get_changed_tests()
-    logging.info("[targeted-fuzzer] Step 1 — changed/new tests (%d): %s",
-                 len(changed_tests), ", ".join(sorted(changed_tests)) or "(none)")
+    logging.info(
+        "[targeted-fuzzer] Step 1 — changed/new tests (%d): %s",
+        len(changed_tests),
+        ", ".join(sorted(changed_tests)) or "(none)",
+    )
 
     # Step 2: tests that failed in previous CI runs for this PR
     try:
         previously_failed = targeter.get_previously_failed_tests()
     except Exception as e:
-        logging.warning("[targeted-fuzzer] Step 2 — failed to fetch previously-failed tests: %s", e)
+        logging.warning(
+            "[targeted-fuzzer] Step 2 — failed to fetch previously-failed tests: %s", e
+        )
         previously_failed = []
-    logging.info("[targeted-fuzzer] Step 2 — previously failed tests (%d): %s",
-                 len(previously_failed), ", ".join(previously_failed) or "(none)")
+    logging.info(
+        "[targeted-fuzzer] Step 2 — previously failed tests (%d): %s",
+        len(previously_failed),
+        ", ".join(previously_failed) or "(none)",
+    )
 
     # Step 3: coverage-relevant tests (direct lines, indirect callees, siblings)
     try:
         relevant_tests, relevant_tests_result = targeter.get_most_relevant_tests()
     except Exception as e:
-        logging.warning("[targeted-fuzzer] Step 3 — failed to fetch coverage-relevant tests: %s", e)
+        logging.warning(
+            "[targeted-fuzzer] Step 3 — failed to fetch coverage-relevant tests: %s", e
+        )
         relevant_tests = []
-        relevant_tests_result = Result(name="tests found by coverage", status=Result.Status.OK, info=f"Skipped: {e}")
-    logging.info("[targeted-fuzzer] Step 3 — coverage-relevant tests (%d)", len(relevant_tests))
+        relevant_tests_result = Result(
+            name="tests found by coverage",
+            status=Result.Status.OK,
+            info=f"Skipped: {e}",
+        )
+    logging.info(
+        "[targeted-fuzzer] Step 3 — coverage-relevant tests (%d)", len(relevant_tests)
+    )
 
     # Merge all three sets preserving priority order (changed first)
     seen: set = set()
@@ -118,7 +292,11 @@ def _collect_targeted_queries(info: Info) -> tuple[list[str], Result]:
             f"/repo/{query_file.relative_to(cwd)}"
         )
 
-    logging.debug("Indexed %d unique SQL query base names from %s", len(available_queries), stateless_tests_dir)
+    logging.debug(
+        "Indexed %d unique SQL query base names from %s",
+        len(available_queries),
+        stateless_tests_dir,
+    )
 
     targeted_queries: list[str] = []
     seen_queries = set()
@@ -150,6 +328,7 @@ def _collect_targeted_queries(info: Info) -> tuple[list[str], Result]:
 
 
 def run_fuzz_job(check_name: str):
+    sw = Utils.Stopwatch()
     logging.basicConfig(level=logging.INFO)
     is_targeted = "targeted" in check_name.lower()
     buzzhouse: bool = check_name.lower().startswith("buzzhouse")
@@ -175,7 +354,9 @@ def run_fuzz_job(check_name: str):
                 status=Result.Status.SKIPPED,
                 info="No relevant tests found for targeted AST fuzzer",
                 results=extra_results,
+                stopwatch=sw,
             ).complete_job()
+            return
         targeted_queries_file = WORKSPACE_PATH / "ci-targeted-queries.txt"
 
     is_old_compatibility = "old_compatibility" in check_name.lower()
@@ -189,9 +370,7 @@ def run_fuzz_job(check_name: str):
         elif is_targeted:
             compatibility_setting = None
         else:
-            compatibility_setting = (
-                f"{random.randint(24, 27)}.{random.randint(1, 12)}"
-            )
+            compatibility_setting = f"{random.randint(24, 27)}.{random.randint(1, 12)}"
         if compatibility_setting:
             logging.info("AST fuzzer compatibility setting: %s", compatibility_setting)
         else:
@@ -229,7 +408,6 @@ def run_fuzz_job(check_name: str):
 
     server_log, fuzzer_log, stderr_log, dmesg_log, fatal_log = JOB_ARTIFACTS
     paths = list(JOB_ARTIFACTS)
-
     if buzzhouse:
         paths.extend([WORKSPACE_PATH / "fuzzerout.sql", WORKSPACE_PATH / "fuzz.json"])
 
@@ -254,111 +432,28 @@ def run_fuzz_job(check_name: str):
         # Runner may have aborted before writing status.tsv (e.g. early server
         # abort); attach available artifacts (incl. sanitizer.log.*) so the report
         # is not lost.
-        early_result = Result.create_from(status=Result.Status.ERROR, info=error_info)
+        early_result = Result.create_from(status=Result.Status.ERROR, info=error_info, stopwatch=sw)
         for file in paths:
             if file.exists() and file.stat().st_size > 0:
                 early_result.set_files(file)
         early_result.complete_job()
+        return
 
-    # parse runner script exit status
-    status = Result.Status.FAIL
-    info = []
-    is_failed = True
-    if server_died:
-        # Server died - status will be determined after OOM checks
-        is_failed = True
-    elif fuzzer_exit_code in (0, 137, 143):
-        # normal exit with timeout or OOM kill
-        is_failed = False
-        status = Result.Status.OK
-        if fuzzer_exit_code == 0:
-            info.append("Fuzzer exited with success")
-        elif fuzzer_exit_code == 137:
-            info.append("Fuzzer killed")
-        else:
-            info.append("Fuzzer exited with timeout")
-        info.append("\n")
-    elif fuzzer_exit_code in (227,):
-        # BuzzHouse exception, it means a query oracle failed, or
-        # an unwanted exception was found
-        status = Result.Status.ERROR
-        error_info = (
-            Shell.get_output(
-                f"rg --text -o 'DB::Exception: Found disallowed error code.*' {fuzzer_log}"
-            )
-            or "BuzzHouse fuzzer exception not found, fuzzer issue?"
-        )
-        info.append(f"ERROR: {error_info}")
-    else:
-        status = Result.Status.ERROR
-        # The server was alive, but the fuzzer returned some error. This might
-        # be some client-side error detected by fuzzing, or a problem in the
-        # fuzzer itself. Don't grep the server log in this case, because we will
-        # find a message about normal server termination (Received signal 15),
-        # which is confusing.
-        info.append("Client failure (see logs)")
-        info.append("---\nFuzzer log (last 200 lines):")
-        info.extend(
-            Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
-        )
-
-    if is_failed:
-        if is_sanitized:
-            sanitizer_oom = Shell.get_output(
-                f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {server_log}"
-            )
-            if sanitizer_oom:
-                print("Sanitizer OOM")
-                info.append("WARNING: Sanitizer OOM - test considered passed")
-                status = Result.Status.OK
-                is_failed = False
-        else:
-            # Check for OOM in dmesg for non-sanitized builds
-            if Shell.check(f"dmesg > {dmesg_log}", verbose=True):
-                if Shell.check(
-                    f"cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
-                    verbose=True,
-                ):
-                    info.append("ERROR: OOM in dmesg")
-                    status = Result.Status.ERROR
-            else:
-                print("WARNING: dmesg not enabled")
-
-    results = []
-    if is_failed and status != Result.Status.ERROR:
-        # died server - lets fetch failure from log
-        fuzzer_log_parser = FuzzerLogParser(
-            server_log=str(server_log),
-            stderr_log=str(stderr_log),
-            fuzzer_log=str(
-                WORKSPACE_PATH / "fuzzerout.sql" if buzzhouse else fuzzer_log
-            ),
-        )
-        parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
-
-        if parsed_name:
-            results.append(
-                Result(
-                    name=parsed_name,
-                    info=parsed_info,
-                    status=Result.Status.FAIL,
-                    files=files,
-                )
-            )
-
-    result = Result.create_from(
-        results=extra_results + results,
-        status=status if not results else None,
-        info=info,
+    result = analyze_job_logs(
+        paths,
+        server_died,
+        fuzzer_exit_code,
+        is_sanitized,
+        WORKSPACE_PATH / "fuzzerout.sql" if buzzhouse else fuzzer_log,
+        fuzzer_log,
+        dmesg_log,
+        [server_log],
+        [stderr_log],
+        [fatal_log],
+        extra_results,
+        sw,
+        False,
     )
-
-    if is_failed:
-        # generate fatal log
-        Shell.check(f"rg --text '\\s<Fatal>\\s' {server_log} > {fatal_log}")
-        result.set_files(ClickHouseService.collect_cores(WORKSPACE_PATH))
-        for file in paths:
-            if file.exists() and file.stat().st_size > 0:
-                result.set_files(file)
 
     result.complete_job()
 
