@@ -71,9 +71,25 @@ public:
     ASTPtr clone() const override
     {
         auto res = make_intrusive<ASTExplainQuery>(*this);
+
+        /// Do not assume anything about the order of `children`: re-add the named children
+        /// explicitly. (For example, the EXPLAIN settings, when present, are parsed and added
+        /// to the children before the explained query.)
         res->children.clear();
-        if (!children.empty())
-            res->children.push_back(children[0]->clone());
+        res->query = nullptr;
+        res->ast_settings = nullptr;
+        res->table_function = nullptr;
+        res->table_override = nullptr;
+
+        if (query)
+            res->setExplainedQuery(query->clone());
+        if (ast_settings)
+            res->setSettings(ast_settings->clone());
+        if (table_function)
+            res->setTableFunction(table_function->clone());
+        if (table_override)
+            res->setTableOverride(table_override->clone());
+
         cloneOutputOptions(*res);
         return res;
     }

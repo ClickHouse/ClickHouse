@@ -141,37 +141,24 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         /// We also keep the FORMAT on the INSERT when it describes the insert's input data,
         /// i.e. when the data is read FROM INFILE or via the `input` table function -- in
         /// those cases the format is required for the insert input, not the EXPLAIN output.
+        ASTPtr explain_output_format;
         if (auto * insert_query = query->as<ASTInsertQuery>())
         {
             ASTPtr input_function;
             insert_query->tryFindInputFunction(input_function);
 
-            /// The FORMAT belongs to the EXPLAIN output whenever the INSERT reads its data from a
-            /// SELECT (so the FORMAT does not describe any insert input). It must stay on the INSERT
-            /// only when the data comes FROM INFILE or via the `input` table function, where the
-            /// FORMAT is required for the insert input. The output format name (e.g. `Values`) and
-            /// the presence and position of SETTINGS do not matter here.
             if (insert_query->select && !insert_query->format.empty() && !insert_query->infile && !input_function)
             {
                 ParserKeyword s_format(Keyword::FORMAT);
-                /// Skip the move when another FORMAT keyword follows: the user wrote the explicit
-                /// double-FORMAT form, the first FORMAT genuinely belongs to the INSERT, and the
-                /// second one is parsed as the EXPLAIN output format by ParserQueryWithOutput.
                 if (!s_format.checkWithoutMoving(pos, expected))
                 {
-                    /// Move the FORMAT from the INSERT to the EXPLAIN output. We set the output
-                    /// format on the EXPLAIN query directly instead of rewinding `pos` and letting
-                    /// ParserQueryWithOutput re-parse it: a `pos` rewind is only correct when
-                    /// `FORMAT <name>` is the last thing the INSERT consumed, which is not the case
-                    /// when SETTINGS follow the FORMAT (allow_settings_after_format_in_insert).
-                    /// Setting the output format directly keeps the decision independent of the
-                    /// clause order, so it is stable across a formatting roundtrip (the formatter
-                    /// always emits SETTINGS before the SELECT and the INSERT FORMAT last, which
-                    /// would otherwise flip a position-dependent decision on re-parsing).
-                    ASTPtr format_ast = make_intrusive<ASTIdentifier>(insert_query->format);
-                    setIdentifierSpecial(format_ast);
-                    explain_query->format_ast = format_ast;
-                    explain_query->children.push_back(format_ast);
+                    /// We set the output format on the EXPLAIN query directly instead of rewinding
+                    /// `pos` and letting ParserQueryWithOutput re-parse it: a `pos` rewind is only
+                    /// correct when `FORMAT <name>` is the last thing the INSERT consumed, which is
+                    /// not the case when SETTINGS follow the FORMAT
+                    /// (allow_settings_after_format_in_insert).
+                    explain_output_format = make_intrusive<ASTIdentifier>(insert_query->format);
+                    setIdentifierSpecial(explain_output_format);
 
                     insert_query->format.clear();
                     insert_query->data = nullptr;
@@ -181,6 +168,11 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
 
         explain_query->setExplainedQuery(std::move(query));
+
+        /// Attach the moved FORMAT only after setExplainedQuery, so that the explained query
+        /// is added to the children first, as the rest of the code expects.
+        if (explain_output_format)
+            explain_query->set(explain_query->format_ast, std::move(explain_output_format));
     }
     else
     {
