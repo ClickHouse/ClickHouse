@@ -118,6 +118,64 @@ class TestAnyArrayRewrite(unittest.TestCase):
         self.assertEqual(rewrite_query(sql), sql)
 
 
+class TestProtectedSpans(unittest.TestCase):
+    def test_offset_fetch_inside_string_literal_left_untouched(self):
+        # The rewrites must not fire inside string literals: only dialect
+        # syntax outside literals should change.
+        sql = "SELECT 'OFFSET 5 ROWS FETCH FIRST 10 ROWS ONLY' AS s"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_function_name_inside_string_literal_left_untouched(self):
+        sql = "SELECT 'STRING_TO_ARRAY(x, y)' AS s"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_rewrite_outside_literal_still_applies(self):
+        # A literal earlier in the query must not shield the real `OFFSET ...
+        # LIMIT` that follows it.
+        self.assertEqual(
+            rewrite_query("SELECT 'note: OFFSET 1 LIMIT 2' AS s, x OFFSET 5 LIMIT 10"),
+            "SELECT 'note: OFFSET 1 LIMIT 2' AS s, x LIMIT 10 OFFSET 5",
+        )
+
+    def test_string_literal_left_hand_side_of_any_still_rewritten(self):
+        # A literal operand is masked, but it is still a single token, so
+        # `'tag' = ANY(tags)` is rewritten and the literal restored.
+        self.assertEqual(
+            rewrite_query("SELECT * FROM t WHERE 'tag' = ANY(tags)"),
+            "SELECT * FROM t WHERE has(tags, 'tag')",
+        )
+
+    def test_at_time_zone_literal_preserved(self):
+        # The timezone literal is masked, matched as a placeholder, and restored.
+        self.assertEqual(
+            rewrite_query("SELECT ts AT TIME ZONE 'UTC' FROM t"),
+            "SELECT toTimezone(ts, 'UTC') FROM t",
+        )
+
+
+class TestUnnestJoinRewrite(unittest.TestCase):
+    def test_unnest_with_function_operand_balanced_parens(self):
+        # The operand contains nested parentheses (after function rewriting);
+        # the structural scan must capture it in full instead of stopping at the
+        # first `)`.
+        self.assertEqual(
+            rewrite_query("SELECT * FROM t CROSS JOIN UNNEST(string_to_array(tags, ',')) AS u(tag)"),
+            "SELECT * FROM t \nARRAY JOIN splitByString(',', assumeNotNull(tags)) AS tag",
+        )
+
+    def test_left_join_unnest_alias_col_on_true(self):
+        self.assertEqual(
+            rewrite_query("SELECT * FROM t LEFT JOIN UNNEST(arr) AS u(tag) ON TRUE WHERE id = 1"),
+            "SELECT * FROM t \nLEFT ARRAY JOIN arr AS tag WHERE id = 1",
+        )
+
+    def test_unnest_in_expression_position_left_untouched(self):
+        # `unnest(expr)` outside JOIN/FROM position is resolved by the native
+        # alias and must not be rewritten.
+        sql = "SELECT unnest(arr) FROM t"
+        self.assertEqual(rewrite_query(sql), sql)
+
+
 def _sort_key(f):
     """Mirror of `runner._sort_key` — kept inline to avoid importing the runner
     (which has heavy side imports). If runner's sort key changes, update here."""

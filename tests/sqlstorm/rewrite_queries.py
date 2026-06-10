@@ -18,6 +18,50 @@ import re
 import sys
 
 
+# String literals, quoted identifiers and comments are "protected spans": the
+# syntax rewrites below must never fire inside them, otherwise they would alter
+# literal values (e.g. `SELECT 'OFFSET 5 FETCH FIRST 10 ROWS ONLY'`) instead of
+# dialect syntax. Before rewriting we replace each protected span with an opaque,
+# identifier-shaped placeholder that survives every rewrite as a single token,
+# and restore the original text at the end.
+_PROTECTED_RE = re.compile(
+    r"""
+      '(?:[^'\\]|\\.|'')*'        # single-quoted string literal
+    | "(?:[^"\\]|\\.|"")*"        # double-quoted identifier
+    | `(?:[^`\\]|\\.|``)*`        # backtick-quoted identifier
+    | --[^\n]*                    # line comment
+    | /\*.*?\*/                   # block comment
+    """,
+    re.VERBOSE | re.DOTALL,
+)
+
+# Pattern fragment matching a placeholder, for embedding in rewrites that must
+# still recognize a (now masked) string literal as a syntactic argument.
+_PLACEHOLDER = r"__sqlstorm_protected_\d+__"
+
+_RESTORE_RE = re.compile(r"__sqlstorm_protected_(\d+)__")
+
+
+def mask_protected_spans(sql):
+    """Replace string literals, quoted identifiers and comments with opaque
+    identifier-shaped placeholders so the syntax rewrites cannot fire inside
+    them. Returns `(masked_sql, spans)` where `spans[i]` is the original text of
+    placeholder `i`."""
+    spans = []
+
+    def repl(m):
+        spans.append(m.group(0))
+        return f"__sqlstorm_protected_{len(spans) - 1}__"
+
+    return _PROTECTED_RE.sub(repl, sql), spans
+
+
+def restore_protected_spans(sql, spans):
+    """Inverse of `mask_protected_spans`. Restored text is not re-scanned, so a
+    literal that happens to contain a placeholder-shaped substring is safe."""
+    return _RESTORE_RE.sub(lambda m: spans[int(m.group(1))], sql)
+
+
 def find_balanced_parens(s, start):
     """Find the matching closing paren for the opening paren at position start.
     Returns the index of the closing paren, or -1 if not found."""
@@ -238,53 +282,15 @@ def rewrite_functions(sql):
 
 def rewrite_unnest_lateral(sql):
     """
-    Rewrite UNNEST/LATERAL JOIN patterns to ClickHouse ARRAY JOIN. The standalone
-    `unnest(expr)` function call form is handled natively by an alias on master.
+    Rewrite LATERAL and `JOIN (SELECT unnest(expr) AS col) ... ON TRUE` patterns.
+
+    Direct `UNNEST(expr)` in JOIN/FROM position is handled structurally by
+    `rewrite_arrayjoin_to_array_join` (balanced-parens scan), so it is not
+    matched here. The standalone `unnest(expr)` function call form in expression
+    position is handled natively by an alias on master.
     """
     # Remove LATERAL keyword (not supported in ClickHouse)
     sql = re.sub(r'\bLATERAL\s+', '', sql, flags=re.IGNORECASE)
-
-    # Pattern: CROSS JOIN UNNEST(expr) AS alias(col) ON TRUE
-    # -> ARRAY JOIN expr AS col
-    sql = re.sub(
-        r'\bCROSS\s+JOIN\s+[Uu][Nn][Nn][Ee][Ss][Tt]\(([^)]+)\)\s+AS\s+\w+\((\w+)\)\s*(?:ON\s+TRUE)?',
-        r'ARRAY JOIN \1 AS \2',
-        sql,
-        flags=re.IGNORECASE,
-    )
-
-    # Pattern: LEFT JOIN UNNEST(expr) AS alias(col) ON TRUE
-    # -> LEFT ARRAY JOIN expr AS col
-    sql = re.sub(
-        r'\bLEFT\s+JOIN\s+[Uu][Nn][Nn][Ee][Ss][Tt]\(([^)]+)\)\s+AS\s+\w+\((\w+)\)\s*(?:ON\s+TRUE)?',
-        r'LEFT ARRAY JOIN \1 AS \2',
-        sql,
-        flags=re.IGNORECASE,
-    )
-
-    # Pattern: CROSS JOIN UNNEST(expr) AS col ON TRUE (no parens around col)
-    sql = re.sub(
-        r'\bCROSS\s+JOIN\s+[Uu][Nn][Nn][Ee][Ss][Tt]\(([^)]+)\)\s+AS\s+(\w+)\s*(?:ON\s+TRUE)?',
-        r'ARRAY JOIN \1 AS \2',
-        sql,
-        flags=re.IGNORECASE,
-    )
-
-    # Pattern: LEFT JOIN UNNEST(expr) AS col ON TRUE
-    sql = re.sub(
-        r'\bLEFT\s+JOIN\s+[Uu][Nn][Nn][Ee][Ss][Tt]\(([^)]+)\)\s+AS\s+(\w+)\s*(?:ON\s+TRUE)?',
-        r'LEFT ARRAY JOIN \1 AS \2',
-        sql,
-        flags=re.IGNORECASE,
-    )
-
-    # Pattern: , UNNEST(expr) AS col (in FROM clause, comma-joined)
-    sql = re.sub(
-        r',\s*[Uu][Nn][Nn][Ee][Ss][Tt]\(([^)]+)\)\s+AS\s+(\w+)\s*(?:ON\s+TRUE)?',
-        r' ARRAY JOIN \1 AS \2',
-        sql,
-        flags=re.IGNORECASE,
-    )
 
     # Pattern: JOIN (SELECT unnest(expr) AS col) alias ON TRUE
     # -> ARRAY JOIN expr AS col
@@ -315,16 +321,21 @@ def rewrite_pg_cast(sql):
     # ::regclass -> remove
     sql = re.sub(r'::\s*regclass\b', '', sql, flags=re.IGNORECASE)
     # PostgreSQL JSON operators: ->> 'key' -> JSONExtractString(expr, 'key')
-    # This is complex to handle in general; just remove the operator for now
-    sql = re.sub(r"\s*->>\s*'(\w+)'", r"", sql)
+    # This is complex to handle in general; just remove the operator and its
+    # (masked) key literal for now.
+    sql = re.sub(r"\s*->>\s*" + _PLACEHOLDER, r"", sql)
     return sql
 
 
 def rewrite_arrayjoin_to_array_join(sql):
-    """Convert arrayJoin(expr) in FROM/JOIN position to ARRAY JOIN expr AS alias.
-    Uses find_balanced_parens to correctly handle nested parentheses."""
-    # Find all occurrences of arrayJoin( in the SQL
-    pat = re.compile(r'arrayJoin\s*\(', re.IGNORECASE)
+    """Convert arrayJoin(expr)/UNNEST(expr) in FROM/JOIN position to
+    `ARRAY JOIN expr AS alias`. Uses find_balanced_parens to correctly handle
+    nested parentheses, so function operands such as
+    `UNNEST(splitByString(',', tags))` are captured in full. `unnest(expr)` in
+    expression position (prefix is not a JOIN/FROM keyword) is left alone for the
+    server's native alias to resolve."""
+    # Find all occurrences of arrayJoin( or unnest( in the SQL
+    pat = re.compile(r'(?:arrayJoin|unnest)\s*\(', re.IGNORECASE)
     result = []
     i = 0
     while i < len(sql):
@@ -494,6 +505,10 @@ def rewrite_any_array(sql):
 
 def rewrite_query(sql):
     """Apply all rewrites to a SQL query."""
+    # 0. Hide string literals, quoted identifiers and comments so none of the
+    #    syntax rewrites below can fire inside them. Restored at the end.
+    sql, protected_spans = mask_protected_spans(sql)
+
     # 1. Function rewrites (handle balanced parens)
     sql = rewrite_functions(sql)
 
@@ -503,9 +518,11 @@ def rewrite_query(sql):
     sql = rewrite_any_array(sql)
 
     # 3. Rewrite PostgreSQL `AT TIME ZONE 'tz'` -> `toTimezone(expr, 'tz')`.
+    #    The timezone literal is masked, so match its placeholder; it restores
+    #    to the original quoted string at the end.
     sql = re.sub(
-        r"(\w+(?:\.\w+)?)\s+AT\s+TIME\s+ZONE\s+'([^']+)'",
-        r"toTimezone(\1, '\2')",
+        r"(\w+(?:\.\w+)?)\s+AT\s+TIME\s+ZONE\s+(" + _PLACEHOLDER + r")",
+        r"toTimezone(\1, \2)",
         sql,
         flags=re.IGNORECASE,
     )
@@ -559,6 +576,10 @@ def rewrite_query(sql):
         sql,
         flags=re.IGNORECASE,
     )
+
+    # 9. Restore the string literals, quoted identifiers and comments hidden in
+    #    step 0.
+    sql = restore_protected_spans(sql, protected_spans)
 
     return sql
 
