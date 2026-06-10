@@ -56,9 +56,7 @@ class IcebergMetadata;
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int PATH_ACCESS_DENIED;
 }
 
 namespace DataLakeStorageSetting
