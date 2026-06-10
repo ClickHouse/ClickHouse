@@ -4,7 +4,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
-#include <base/scope_guard.h>
 
 #include <algorithm>
 
@@ -33,26 +32,52 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
+namespace
+{
+    /// Heuristic S3 cost weights (microseconds) for the modeled-cost KPI, documented at
+    /// `ProfileEvents::ReaderExecutorModeledCostMicroseconds`. Each counter contributes
+    /// `weight * count` to the modeled cost as it changes. Only the source-side weights
+    /// are used in this slice; the cache / connection weights land with their features.
+    constexpr UInt64 SOURCE_REQUEST_COST_US = 30000;
+    constexpr UInt64 SOURCE_BYTES_COST_US_PER_MIB = 20000;
+
+    /// RAII timer: on destruction adds its lifetime (microseconds) to `counter` and
+    /// increments the matching ProfileEvent, so a scope's elapsed time is accounted
+    /// without a separate SCOPE_EXIT.
+    class StatTimer
+    {
+    public:
+        StatTimer(UInt64 & counter_, ProfileEvents::Event event_) : counter(counter_), event(event_) {}
+        ~StatTimer()
+        {
+            const UInt64 us = watch.elapsedMicroseconds();
+            counter += us;
+            ProfileEvents::increment(event, us);
+        }
+
+        StatTimer(const StatTimer &) = delete;
+        StatTimer & operator=(const StatTimer &) = delete;
+
+    private:
+        UInt64 & counter;
+        ProfileEvents::Event event;
+        Stopwatch watch;
+    };
+}
+
 void ReaderExecutor::Stats::onSourceRead(size_t bytes)
 {
-    /// Bump the modeled cost by the running delta so its cumulative value stays exact
-    /// (no per-read integer-division loss in the per-MiB term).
-    const size_t cost_before = modeledCostMicroseconds();
+    const UInt64 cost = SOURCE_REQUEST_COST_US + SOURCE_BYTES_COST_US_PER_MIB * bytes / (1024 * 1024);
+
     source_requests += 1;
     bytes_from_source += bytes;
     bytes_requested += bytes;
+    modeled_cost_us += cost;
 
     ProfileEvents::increment(ProfileEvents::ReaderExecutorSourceRequests, 1);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromSource, bytes);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorRequestedBytes, bytes);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds,
-        modeledCostMicroseconds() - cost_before);
-}
-
-void ReaderExecutor::Stats::onWork(size_t microseconds)
-{
-    work_microseconds += microseconds;
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorWorkMicroseconds, microseconds);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, cost);
 }
 
 ReaderExecutor::ReaderExecutor(
@@ -79,13 +104,12 @@ ReaderExecutor::~ReaderExecutor()
         "Finished: file={}, source_requests={}, bytes_from_source={}, bytes_requested={}, "
         "work_us={}, modeled_cost_us={}",
         log_file_path, stats.source_requests, stats.bytes_from_source, stats.bytes_requested,
-        stats.work_microseconds, stats.modeledCostMicroseconds());
+        stats.work_microseconds, stats.modeled_cost_us);
 }
 
 ReaderExecutor::Chunk ReaderExecutor::readNextChunk()
 {
-    Stopwatch watch;
-    SCOPE_EXIT({ stats.onWork(watch.elapsedMicroseconds()); });
+    StatTimer work_timer(stats.work_microseconds, ProfileEvents::ReaderExecutorWorkMicroseconds);
 
     if (atEnd())
         return {};

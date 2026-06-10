@@ -70,32 +70,23 @@ private:
     /// when the corresponding feature PRs add their increment sites.
     struct Stats
     {
-        size_t source_requests = 0;          /// chunks opened and read from the source
-        size_t bytes_from_source = 0;        /// physical bytes read from the source
-        size_t bytes_requested = 0;          /// useful bytes delivered to the caller (KPI denominator)
-        size_t incomplete_connections = 0;   /// 0: no source-connection reuse yet
-        size_t cache_get_requests = 0;       /// 0: no cache tiers yet
-        size_t cache_populate_requests = 0;  /// 0: no cache tiers yet
-        size_t work_microseconds = 0;        /// total time spent in readNextChunk
+        UInt64 source_requests = 0;          /// chunks opened and read from the source
+        UInt64 bytes_from_source = 0;        /// physical bytes read from the source
+        UInt64 bytes_requested = 0;          /// useful bytes delivered to the caller (KPI denominator)
+        UInt64 incomplete_connections = 0;   /// 0: no source-connection reuse yet
+        UInt64 cache_get_requests = 0;       /// 0: no cache tiers yet
+        UInt64 cache_populate_requests = 0;  /// 0: no cache tiers yet
+        UInt64 work_microseconds = 0;        /// total time spent in readNextChunk
+        /// Modeled I/O cost in microseconds: a synthetic optimality proxy (not latency),
+        /// accumulated as `weight * count` whenever a related counter changes (the
+        /// heuristic S3 weights are documented at
+        /// `ProfileEvents::ReaderExecutorModeledCostMicroseconds`). The cache / connection
+        /// terms are 0 until those features add their own increment sites.
+        UInt64 modeled_cost_us = 0;
 
-        /// Record a source read of `bytes`: update the tally and increment the matching
-        /// ProfileEvents instantly (the modeled cost by its running delta, kept exact).
+        /// Record a source read of `bytes`: update the tally, add the source terms to the
+        /// modeled cost, and increment the matching ProfileEvents instantly.
         void onSourceRead(size_t bytes);
-        /// Record `microseconds` spent in readNextChunk (tally + ProfileEvents).
-        void onWork(size_t microseconds);
-
-        /// Modeled I/O cost in microseconds: weighted sum with the heuristic S3 weights
-        /// documented at `ProfileEvents::ReaderExecutorModeledCostMicroseconds` (30ms/source
-        /// request, 5ms/incomplete connection, 20ms per MiB from source, 0.1ms/cache put,
-        /// 0.05ms/cache get). A synthetic optimality proxy, not latency.
-        size_t modeledCostMicroseconds() const
-        {
-            return 30000 * source_requests
-                + 5000 * incomplete_connections
-                + 20000 * bytes_from_source / (1024 * 1024)
-                + 100 * cache_populate_requests
-                + 50 * cache_get_requests;
-        }
     };
 
     /// At known size, EOF is `position >= totalSize`. At unknown size, a short
