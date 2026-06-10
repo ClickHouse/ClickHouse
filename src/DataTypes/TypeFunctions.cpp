@@ -23,6 +23,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/Field.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
 
@@ -40,6 +41,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace FunctionSignatures
@@ -56,14 +58,20 @@ static UInt64 fieldToUInt64(const Field & field)
 }
 
 /// `DataTypeDateTime64` / `DataTypeTime64` take a `UInt32` scale and validate its maximum
-/// after the conversion. A captured constant above `UINT32_MAX` would wrap before that check
-/// (e.g. `4294967305` becomes `9`), so range-check it here and let the type constructor reject
-/// any remaining out-of-range scale.
+/// after the conversion. A captured negative or above-`UINT32_MAX` constant would wrap before
+/// that check (e.g. `-1` becomes `4294967295` and `4294967305` becomes `9`), so range-check it
+/// here — with the same `ARGUMENT_OUT_OF_BOUND` code the legacy per-function extractors used —
+/// and let the type constructor reject any remaining out-of-range scale.
 static UInt32 fieldToScale(const Field & field, const std::string & type_function_name)
 {
+    if ((field.getType() == Field::Types::Int64 && field.safeGet<Int64>() < 0)
+        || (field.getType() == Field::Types::Float64 && field.safeGet<Float64>() < 0))
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Scale {} is out of range for type function {}", applyVisitor(FieldVisitorToString(), field), type_function_name);
+
     const UInt64 scale = fieldToUInt64(field);
     if (scale > std::numeric_limits<UInt32>::max())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "Scale {} is out of range for type function {}", scale, type_function_name);
     return static_cast<UInt32>(scale);
 }
