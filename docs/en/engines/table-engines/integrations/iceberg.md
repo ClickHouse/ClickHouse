@@ -90,9 +90,9 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 | `date` | `Date32` | |
 | `time` | `Int64` | Microseconds since midnight |
 | `timestamp` | `DateTime64(6)` | Microseconds, no timezone |
-| `timestamptz` | `DateTime64(6, 'UTC')` | Microseconds, UTC timezone |
+| `timestamptz` | `DateTime64(6, timezone)` | Microseconds, timezone from `iceberg_timezone_for_timestamptz` setting, UTC by default |
 | `timestamp_ns` | `DateTime64(9)` | Nanoseconds, no timezone (since Iceberg v3 only) |
-| `timestamptz_ns` | `DateTime64(9, 'UTC')` | Nanoseconds, UTC timezone (since Iceberg v3 only) |
+| `timestamptz_ns` | `DateTime64(9, 'UTC')` | Nanoseconds, timezone from `iceberg_timezone_for_timestamptz` setting, UTC by default (since Iceberg v3 only) |
 | `string`, `binary` | `String` | |
 | `uuid` | `UUID` | |
 | `fixed(N)` | `FixedString(N)` | |
