@@ -63,7 +63,7 @@ static void restoreEnvVarForAwsS3ClientTests(const char * name, bool had_value, 
     }
 }
 
-static String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
+String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
 {
     String content;
     for (const auto & [header_name, header_value] : message_header)
@@ -86,7 +86,7 @@ static String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_he
     return content;
 }
 
-static void doReadRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
+void doReadRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
 {
     String version_id;
     UInt64 max_single_read_retries = 1;
@@ -107,7 +107,7 @@ static void doReadRequest(std::shared_ptr<const DB::S3::Client> client, const DB
     DB::readStringUntilEOF(content, read_buffer);
 }
 
-static void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
+void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
 {
     UInt64 max_unexpected_write_error_retries = 1;
 
@@ -128,7 +128,7 @@ static void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const D
 
 using RequestFn = std::function<void(std::shared_ptr<const DB::S3::Client>, const DB::S3::URI &)>;
 
-static void testServerSideEncryption(
+void testServerSideEncryption(
     RequestFn do_request,
     bool disable_checksum,
     String server_side_encryption_customer_key_base64,

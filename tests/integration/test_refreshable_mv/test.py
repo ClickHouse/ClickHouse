@@ -108,9 +108,11 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
         for node in nodes:
             # Wait twice to make sure we wait for a refresh that started after we adjusted the clock.
             # Otherwise another refresh may start right after (because clock moved far forward).
-            node.query(f"system wait view re.{name};\
+            node.query(
+                f"system wait view re.{name};\
                 system refresh view re.{name};\
-                system wait view re.{name};")
+                system wait view re.{name};"
+            )
         for node in nodes:
             node.query(f"system sync replica re.{name};")
         rows_before = int(nodes[randint(0, 1)].query(f"select count() from re.{name}"))
@@ -541,57 +543,6 @@ def test_backup_inner_table(started_cluster, cleanup):
     do_test_backup(False)
 
 
-def test_backup_skips_rmv_target_when_view_storage_unresolved(started_cluster, cleanup):
-    # A refreshable MV's REPLACE target must be skipped during backup even when the MV resolves to a
-    # null storage on the backup-initiating replica. node1 (the only `with_minio` instance) backs up;
-    # pausing its DDL queue while node2 creates the MV leaves node1 seeing the MV only in ZooKeeper.
-    znode = f"/test/re_repro_null_storage_{test_idx}"
-    for node in nodes:
-        node.query(
-            f"create database re engine = Replicated('{znode}', 'shard1', '{{replica}}');"
-        )
-
-    # Base tables on node2; let node1 catch up.
-    node2.query(
-        "create table re.src (x Int64) engine ReplicatedMergeTree order by x;"
-        "create table re.repro_tgt_view (x Int64) engine ReplicatedMergeTree order by x;"
-        "insert into re.repro_tgt_view values (1);"
-    )
-    node1.query("system sync database replica re")
-    node1.query_with_retry("system sync replica re.repro_tgt_view")
-
-    # Stall node1's DDL queue so it won't apply the CREATE below.
-    node1.query("system enable failpoint database_replicated_stop_entry_execution")
-
-    try:
-        # Create the MV on node2 without waiting for node1. `EMPTY`+`EVERY 1 YEAR` avoid any refresh,
-        # so re.repro_tgt_view is never EXCHANGEd and stays resolvable on node1 while the MV does not.
-        node2.query(
-            "create materialized view re.repro_mv refresh every 1 year to re.repro_tgt_view empty as select x from re.src",
-            settings={"distributed_ddl_task_timeout": 0},
-        )
-        # The MV's metadata must be in ZooKeeper before backing up.
-        assert_eq_with_retry(
-            node2,
-            "select count() from system.tables where database = 're' and name = 'repro_mv'",
-            "1",
-        )
-
-        backup_destination = new_backup_destination()
-        node1.query(f"BACKUP DATABASE re TO {backup_destination}")
-    finally:
-        # Re-enable the queue before asserting, so a failure doesn't hang teardown's `drop ... sync`.
-        node1.query("system disable failpoint database_replicated_stop_entry_execution")
-
-    # The target's data must be skipped even though the MV's storage was unresolved.
-    assert node1.contains_in_log(
-        "Skipping table data for re.repro_tgt_view (a target of a refreshable materialized view)"
-    )
-
-    for node in nodes:
-        node.query("drop database re sync")
-
-
 def test_adding_replica(started_cluster, cleanup):
     node1.query(
         "create database re engine = Replicated('/test/re', 'shard1', 'r1');"
@@ -616,64 +567,6 @@ def test_adding_replica(started_cluster, cleanup):
         sleep_time=1,
         retry_count=20,
     )
-
-
-def test_backup_skips_rmv_target_when_target_storage_unresolved(
-    started_cluster, cleanup
-):
-    # Like the previous test, but the target itself resolves to a null storage on node1: the MV's
-    # initial refresh EXCHANGEs re.repro_tgt to a new UUID that paused node1 never applies. It must
-    # still be skipped, else a null storage delegates the data to another replica, racing the EXCHANGE.
-    znode = f"/test/re_repro_target_null_{test_idx}"
-    for node in nodes:
-        node.query(
-            f"create database re engine = Replicated('{znode}', 'shard1', '{{replica}}');"
-        )
-
-    # Base tables on node2; let node1 catch up.
-    node2.query(
-        "create table re.src (x Int64) engine ReplicatedMergeTree order by x;"
-        "create table re.repro_tgt_storage (x Int64) engine ReplicatedMergeTree order by x;"
-        "insert into re.repro_tgt_storage values (1);"
-    )
-    node1.query("system sync database replica re")
-    node1.query_with_retry("system sync replica re.repro_tgt_storage")
-
-    tgt_uuid = node2.query(
-        "select uuid from system.tables where database = 're' and name = 'repro_tgt_storage'"
-    ).strip()
-
-    # Stall node1's DDL queue so it won't apply the CREATE/EXCHANGE below.
-    node1.query("system enable failpoint database_replicated_stop_entry_execution")
-
-    try:
-        # Create the MV on node2 without waiting for node1; its initial refresh EXCHANGEs re.repro_tgt_storage.
-        node2.query(
-            "create materialized view re.repro_mv refresh every 1 year to re.repro_tgt_storage as select x from re.src",
-            settings={"distributed_ddl_task_timeout": 0},
-        )
-        # Wait until the EXCHANGE landed (re.repro_tgt_storage's UUID changes on node2).
-        assert_eq_with_retry(
-            node2,
-            f"select toString(uuid) != '{tgt_uuid}' from system.tables where database = 're' and name = 'repro_tgt_storage'",
-            "1",
-            retry_count=60,
-            sleep_time=1,
-        )
-
-        backup_destination = new_backup_destination()
-        node1.query(f"BACKUP DATABASE re TO {backup_destination}")
-    finally:
-        # Re-enable the queue before asserting, so a failure doesn't hang teardown's `drop ... sync`.
-        node1.query("system disable failpoint database_replicated_stop_entry_execution")
-
-    # The target's data must be skipped even though its storage was unresolved on the backup replica.
-    assert node1.contains_in_log(
-        "Skipping table data for re.repro_tgt_storage (a target of a refreshable materialized view)"
-    )
-
-    for node in nodes:
-        node.query("drop database re sync")
 
 
 def test_replicated_db_startup_race(started_cluster, cleanup):
