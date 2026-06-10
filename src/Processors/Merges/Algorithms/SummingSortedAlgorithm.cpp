@@ -262,9 +262,22 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
 {
     SummingSortedAlgorithm::ColumnsDefinition def;
     def.allow_tuple_element_aggregation = allow_tuple_element_aggregation;
-    auto header_flatten = allow_tuple_element_aggregation ? Nested::flattenTupleRecursive(header) : header;
+
+    /// `flatten_ancestors[i]` holds, for flattened column `i`, the list of its true tuple
+    /// ancestor paths (empty for columns that are not the result of tuple flattening).
+    std::vector<Strings> flatten_ancestors;
+    Block header_flatten;
+    if (allow_tuple_element_aggregation)
+        header_flatten = Nested::flattenTupleRecursive(header, &flatten_ancestors);
+    else
+    {
+        header_flatten = header;
+        flatten_ancestors.resize(header.columns());
+    }
+
     def.column_names = header_flatten.getNames();
     size_t num_columns = header_flatten.columns();
+    chassert(flatten_ancestors.size() == num_columns);
 
     NameSet original_column_names = header.getNameSet();
 
@@ -284,16 +297,18 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         bool is_non_empty_tuple = typeid_cast<const DataTypeTuple *>(column.type.get()) && !typeid_cast<const DataTypeTuple *>(column.type.get())->getElements().empty();
         if (aggregate_all_columns && (is_non_empty_tuple || typeid_cast<const DataTypeArray *>(column.type.get())) && !simple)
         {
-            /// Under flattening, use splitName(reverse=true) to keep the full parent path
-            /// for nested Map columns like "a.bMap.c".
-            const auto map_name = allow_tuple_element_aggregation
-                ? Nested::splitName(column.name, /*reverse=*/true).first
-                : Nested::extractTableName(column.name);
+            /// if nested table name ends with `Map` it is a possible candidate for special handling
+            bool is_nested_map_candidate = false;
+            if (!allow_tuple_element_aggregation)
+            {
+                const auto map_name = Nested::extractTableName(column.name);
+                is_nested_map_candidate = map_name != column.name && endsWith(map_name, "Map");
+            }
 
-            if (map_name == column.name || !endsWith(map_name, "Map") || allow_tuple_element_aggregation)
+            if (!is_nested_map_candidate)
             {
                 if (!column_names_to_sum.empty()
-                    && !isColumnOrAncestorInNames(column.name, column_names_to_sum, original_column_names, allow_tuple_element_aggregation))
+                    && !isColumnOrAncestorInNames(i, header_flatten, flatten_ancestors, column_names_to_sum))
                 {
                     def.column_numbers_not_to_aggregate.push_back(i);
                 }
@@ -352,6 +367,24 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 continue;
             }
 
+            /// Suppose `SummingMergeTree(other)` over a tuple `ratesMap Tuple(ID Array, Value Array)`
+            /// with allow_tuple_element_aggregation = 1. Only `other` is listed, so the expected result
+            /// is that `ratesMap` is left untouched (copied), not aggregated.
+            ///
+            /// Without this guard it would be aggregated anyway: flattening turns `ratesMap` into the
+            /// sub-columns `ratesMap.ID` / `ratesMap.Value`, whose synthesized parent name ends in `Map`,
+            /// so the discovery above would treat them as a summable map and ignore the `columns` list.
+            /// So when a list is given, skip a flattened map sub-column unless it (or a tuple ancestor)
+            /// is in the list. The `!original_column_names.contains(...)` check restricts this to
+            /// flattened names, leaving real top-level Nested `xxxMap` columns aggregated as before.
+            if (allow_tuple_element_aggregation && !original_column_names.contains(column.name)
+                && !column_names_to_sum.empty()
+                && !isColumnOrAncestorInNames(i, header_flatten, flatten_ancestors, column_names_to_sum))
+            {
+                def.column_numbers_not_to_aggregate.push_back(i);
+                continue;
+            }
+
             discovered_maps[map_name].emplace_back(i);
         }
         else
@@ -382,14 +415,14 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
 
             /// Are they inside the sorting key or partition key? Check both to ignore columns with order expression.
             if (isInSortingKey(description, column.name)
-                || isColumnOrAncestorInNames(column.name, partition_and_sorting_required_columns, original_column_names, allow_tuple_element_aggregation))
+                || isColumnOrAncestorInNames(i, header_flatten, flatten_ancestors, partition_and_sorting_required_columns))
             {
                 def.column_numbers_not_to_aggregate.push_back(i);
                 continue;
             }
 
             if (column_names_to_sum.empty()
-                || isColumnOrAncestorInNames(column.name, column_names_to_sum, original_column_names, allow_tuple_element_aggregation))
+                || isColumnOrAncestorInNames(i, header_flatten, flatten_ancestors, column_names_to_sum))
             {
                 // Create aggregator to sum this column
                 SummingSortedAlgorithm::AggregateDescription desc;
@@ -441,7 +474,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         auto column_num_it = map.second.begin();
         for (; column_num_it != map.second.end(); ++column_num_it)
             if (isInSortingKey(description, header_flatten.safeGetByPosition(*column_num_it).name)
-                || isColumnOrAncestorInNames(header_flatten.safeGetByPosition(*column_num_it).name, partition_and_sorting_required_columns, original_column_names, allow_tuple_element_aggregation))
+                || isColumnOrAncestorInNames(*column_num_it, header_flatten, flatten_ancestors, partition_and_sorting_required_columns))
                 break;
         if (column_num_it != map.second.end())
         {
