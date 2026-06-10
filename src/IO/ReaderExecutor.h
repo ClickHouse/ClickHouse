@@ -4,6 +4,7 @@
 #include <IO/IFileBasedSourceReader.h>
 #include <IO/BufferWithOwnMemory.h>
 
+#include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
 #include <base/types.h>
 
@@ -60,6 +61,37 @@ public:
     /// empty when no objects are configured.
     String getFileName() const { return log_file_path; }
 
+    /// Per-instance tally of the inputs to the modeled-cost KPI. Accumulated as the
+    /// executor runs and flushed to ProfileEvents in the destructor. The
+    /// cache/connection fields stay 0 in this minimal slice (those features are not
+    /// implemented yet); they are kept so the KPI formula is complete and lights up
+    /// when the corresponding feature PRs add their increment sites.
+    struct Stats
+    {
+        size_t source_requests = 0;          /// chunks opened and read from the source
+        size_t bytes_from_source = 0;        /// physical bytes read from the source
+        size_t bytes_requested = 0;          /// useful bytes delivered to the caller (KPI denominator)
+        size_t incomplete_connections = 0;   /// 0: no source-connection reuse yet
+        size_t cache_get_requests = 0;       /// 0: no cache tiers yet
+        size_t cache_populate_requests = 0;  /// 0: no cache tiers yet
+        size_t work_microseconds = 0;        /// total time spent in readNextChunk
+    };
+
+    const Stats & getStats() const { return stats; }
+
+    /// Modeled I/O cost in microseconds: weighted sum of the `Stats` counters with the
+    /// heuristic S3 weights documented at `ProfileEvents::ReaderExecutorModeledCostMicroseconds`
+    /// (30ms/source request, 5ms/incomplete connection, 20ms per MiB from source,
+    /// 0.1ms/cache put, 0.05ms/cache get). A synthetic optimality proxy, not latency.
+    size_t modeledCostMicroseconds() const
+    {
+        return 30000 * stats.source_requests
+            + 5000 * stats.incomplete_connections
+            + 20000 * stats.bytes_from_source / (1024 * 1024)
+            + 100 * stats.cache_populate_requests
+            + 50 * stats.cache_get_requests;
+    }
+
 private:
     /// At known size, EOF is `position >= totalSize`. At unknown size, a short
     /// source read latches `reached_eof`; a backward `seek` clears it. A
@@ -82,6 +114,11 @@ private:
 
     /// Backs the bytes returned by the latest `readNextChunk`.
     Memory<> block;
+
+    Stats stats;
+    /// Bumps `CurrentMetrics::ReaderExecutorActive` for the executor's lifetime
+    /// (constructed in the .cpp where the metric symbol is declared).
+    CurrentMetrics::Increment active_metric;
 
     LoggerPtr log = getLogger("ReaderExecutor");
 };

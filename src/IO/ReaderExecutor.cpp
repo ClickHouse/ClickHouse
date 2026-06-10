@@ -1,9 +1,29 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 #include <algorithm>
+
+namespace ProfileEvents
+{
+    extern const Event ReaderExecutorSourceRequests;
+    extern const Event ReaderExecutorBytesFromSource;
+    extern const Event ReaderExecutorRequestedBytes;
+    extern const Event ReaderExecutorCacheGetRequests;
+    extern const Event ReaderExecutorCachePopulateRequests;
+    extern const Event ReaderExecutorIncompleteConnections;
+    extern const Event ReaderExecutorWorkMicroseconds;
+    extern const Event ReaderExecutorModeledCostMicroseconds;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric ReaderExecutorActive;
+}
 
 namespace DB
 {
@@ -19,6 +39,7 @@ ReaderExecutor::ReaderExecutor(
     size_t block_size_)
     : source(std::move(source_))
     , block_size(block_size_ ? block_size_ : DEFAULT_BLOCK_SIZE)
+    , active_metric(CurrentMetrics::ReaderExecutorActive)
 {
     offset_map.build(objects);
     log_file_path = objects.empty() ? "" : objects.front().remote_path;
@@ -26,10 +47,27 @@ ReaderExecutor::ReaderExecutor(
         source ? source->name() : "none", objects.size(), offset_map.totalSize(), block_size);
 }
 
-ReaderExecutor::~ReaderExecutor() = default;
+ReaderExecutor::~ReaderExecutor()
+{
+    /// Flush the per-instance tally to the global ProfileEvents once, so the
+    /// numbers attribute to the reading thread/query rather than churning the
+    /// global counters on every chunk. The cache/connection counters are 0 in
+    /// this minimal slice but are emitted so the KPI series exists from day one.
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorSourceRequests, stats.source_requests);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromSource, stats.bytes_from_source);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorRequestedBytes, stats.bytes_requested);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheGetRequests, stats.cache_get_requests);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorCachePopulateRequests, stats.cache_populate_requests);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorIncompleteConnections, stats.incomplete_connections);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorWorkMicroseconds, stats.work_microseconds);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, modeledCostMicroseconds());
+}
 
 ReaderExecutor::Chunk ReaderExecutor::readNextChunk()
 {
+    Stopwatch watch;
+    SCOPE_EXIT({ stats.work_microseconds += watch.elapsedMicroseconds(); });
+
     if (atEnd())
         return {};
 
@@ -76,6 +114,13 @@ ReaderExecutor::Chunk ReaderExecutor::readNextChunk()
 
     block.resize(want);
     const size_t got = buffer->read(block.data(), want);
+
+    /// One open+read per chunk in this minimal slice; every chunk is served straight
+    /// from the source, so requested bytes equal source bytes (they diverge once
+    /// caches and over-read coalescing land).
+    stats.source_requests += 1;
+    stats.bytes_from_source += got;
+    stats.bytes_requested += got;
 
     if (offset_map.hasUnknownSize())
     {

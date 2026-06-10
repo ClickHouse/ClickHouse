@@ -188,4 +188,62 @@ TEST_F(ReaderExecutorTest, TruncatedKnownSizeFileThrows)
     EXPECT_ANY_THROW(ex.readNextChunk());
 }
 
+TEST_F(ReaderExecutorTest, StatsCountSourceReadsAndBytes)
+{
+    /// 1 MiB file read in 256 KiB blocks -> 4 source reads, all bytes served.
+    constexpr size_t size = 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", size)};
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/256 * 1024);
+
+    drain(ex);
+
+    const auto & stats = ex.getStats();
+    EXPECT_EQ(stats.source_requests, 4u);
+    EXPECT_EQ(stats.bytes_from_source, size);
+    EXPECT_EQ(stats.bytes_requested, size);
+    /// The cache / connection KPI inputs are not implemented in this slice.
+    EXPECT_EQ(stats.cache_get_requests, 0u);
+    EXPECT_EQ(stats.cache_populate_requests, 0u);
+    EXPECT_EQ(stats.incomplete_connections, 0u);
+}
+
+TEST_F(ReaderExecutorTest, ModeledCostMatchesFormula)
+{
+    /// Modeled cost = 30ms/source request + 20ms/MiB from source (cache/conn terms 0).
+    constexpr size_t size = 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", size)};
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/256 * 1024);
+
+    drain(ex);
+
+    const auto & stats = ex.getStats();
+    const size_t expected_cost_us = 30000 * stats.source_requests
+        + 20000 * stats.bytes_from_source / (1024 * 1024);
+    EXPECT_EQ(expected_cost_us, 30000u * 4 + 20000u);  // 4 reads + 1 MiB
+    EXPECT_EQ(ex.modeledCostMicroseconds(), expected_cost_us);
+
+    /// The KPI: modeled ms per requested MiB.
+    const double ms_per_mib = (static_cast<double>(ex.modeledCostMicroseconds()) / 1000.0)
+        / (static_cast<double>(stats.bytes_requested) / (1024.0 * 1024.0));
+    EXPECT_DOUBLE_EQ(ms_per_mib, 140.0);
+}
+
+TEST_F(ReaderExecutorTest, ModeledCostScalesWithSourceRequests)
+{
+    /// Smaller blocks over the same data -> more source requests -> higher modeled cost,
+    /// so the KPI (cost per requested MiB) rises even though the bytes are unchanged.
+    constexpr size_t size = 1024 * 1024;
+    StoredObjects big_block{makeFile("a.bin", size)};
+    StoredObjects small_block{makeFile("b.bin", size)};
+    ReaderExecutor coarse(std::make_shared<LocalSourceReader>(), big_block, /*block_size=*/1024 * 1024);
+    ReaderExecutor fine(std::make_shared<LocalSourceReader>(), small_block, /*block_size=*/64 * 1024);
+
+    drain(coarse);
+    drain(fine);
+
+    EXPECT_EQ(coarse.getStats().source_requests, 1u);
+    EXPECT_EQ(fine.getStats().source_requests, 16u);
+    EXPECT_GT(fine.modeledCostMicroseconds(), coarse.modeledCostMicroseconds());
+}
+
 }
