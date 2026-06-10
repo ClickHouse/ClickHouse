@@ -150,7 +150,7 @@ public:
 using FunctionSplitByRegexp = FunctionTokens<SplitByRegexpImpl>;
 
 /// Fallback splitByRegexp to splitByChar when its 1st argument is a trivial char for better performance
-class SplitByRegexpOverloadResolver final : public IFunctionOverloadResolver
+class SplitByRegexpOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "splitByRegexp";

@@ -13,7 +13,6 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/ProfileEvents.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -48,7 +47,7 @@ public:
     using TokenNBC = NaiveBayesClassifier<TokenPolicy>;
 
     using Model = std::variant<ByteNBC, CodeNBC, TokenNBC>;
-    using Models = UnorderedMapWithMemoryTracking<String, Model>;
+    using Models = std::unordered_map<String, Model>;
 
     // context from the FIRST call is used to build the registry.
     // Later calls ignore their argument — they only return the map.
@@ -223,7 +222,7 @@ void NBModelRegistry::load(ContextPtr context)
     }
 }
 
-class FunctionNaiveBayesClassifier final : public IFunction
+class FunctionNaiveBayesClassifier : public IFunction
 {
 private:
     const NBModelRegistry::Models & models;

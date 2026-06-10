@@ -62,12 +62,6 @@ public:
 
     void add(const Self & to, Arena * arena)
     {
-        if (to.is_null)
-        {
-            is_null = true;
-            return;
-        }
-
         if (!to.data().has())
             return;
 

@@ -748,7 +748,7 @@ struct ComparisonParams
 };
 
 template <template <typename, typename> class Op, typename Name, bool is_null_safe_cmp_mode = false>
-class FunctionComparison final : public IFunction
+class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

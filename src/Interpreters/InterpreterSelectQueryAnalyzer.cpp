@@ -221,20 +221,6 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
-static void tweakSettingsForStreamingQuery(const ContextMutablePtr & context, const QueryTreeNodePtr & query_tree)
-{
-    for (const auto & node : extractAllTableReferences(query_tree))
-    {
-        const auto & table_node = node->as<TableNode &>();
-        if (auto modifiers = table_node.getTableExpressionModifiers(); modifiers && modifiers->hasStream())
-        {
-            context->setSetting("output_format_pretty_squash_consecutive_ms", Field{UInt64{0}});
-            context->setSetting("output_format_pretty_squash_max_wait_ms", Field{UInt64{0}});
-            return;
-        }
-    }
-}
-
 static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const SelectQueryOptions & select_query_options,
     const ContextPtr & context,
@@ -277,7 +263,6 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
           { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, column_names); })
 {
-    tweakSettingsForStreamingQuery(context, query_tree);
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -299,7 +284,6 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            select_options = select_query_options_,
            column_names]() { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, storage, column_names); })
 {
-    tweakSettingsForStreamingQuery(context, query_tree);
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -314,7 +298,6 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]()
           { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options); })
 {
-    tweakSettingsForStreamingQuery(context, query_tree);
 }
 
 SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,

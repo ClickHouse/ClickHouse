@@ -18,7 +18,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionTrim final : public IFunction
+class FunctionTrim : public IFunction
 {
 public:
     FunctionTrim(const char * name_, bool trim_left_, bool trim_right_)

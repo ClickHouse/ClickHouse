@@ -11,7 +11,6 @@
 #include <Functions/IFunction.h>
 #include <Common/intExp.h>
 #include <Common/NaNUtils.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <cmath>
@@ -677,7 +676,7 @@ public:
 /// Functions that round the value of an input parameter of type (U)Int8/16/32/64, Float32/64 or Decimal32/64/128.
 /// Accept an additional optional parameter of type (U)Int8/16/32/64 (0 by default).
 template <typename Name, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
-class FunctionRounding final : public IFunction
+class FunctionRounding : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -766,7 +765,7 @@ public:
 
 /// Rounds down to a number within explicitly specified array.
 /// If the value is less than the minimal bound - returns the minimal bound.
-class FunctionRoundDown final : public IFunction
+class FunctionRoundDown : public IFunction
 {
 public:
     static constexpr auto name = "roundDown";
@@ -878,7 +877,7 @@ private:
     void NO_INLINE executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries) const
     {
         using ValueType = typename Container::value_type;
-        VectorWithMemoryTracking<ValueType> boundary_values(boundaries.size());
+        std::vector<ValueType> boundary_values(boundaries.size());
         for (size_t i = 0; i < boundaries.size(); ++i)
             boundary_values[i] = static_cast<ValueType>(boundaries[i].safeGet<ValueType>());
 

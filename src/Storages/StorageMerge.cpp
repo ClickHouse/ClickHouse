@@ -1495,7 +1495,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
     else
     {
         /// database_name argument is a regexp
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
 
         for (const auto & db : databases)
         {
@@ -1733,18 +1733,6 @@ QueryPlanRawPtrs ReadFromMerge::getChildPlans()
     for (auto & child_plan : *child_plans)
         if (child_plan.plan.isInitialized())
             plans.push_back(&child_plan.plan);
-
-    return plans;
-}
-
-std::vector<QueryPlan *> ReadFromMerge::getAllChildPlans()
-{
-    filterTablesAndCreateChildrenPlans();
-
-    std::vector<QueryPlan *> plans;
-    plans.reserve(child_plans->size());
-    for (auto & child_plan : *child_plans)
-        plans.push_back(child_plan.plan.isInitialized() ? &child_plan.plan : nullptr);
 
     return plans;
 }
