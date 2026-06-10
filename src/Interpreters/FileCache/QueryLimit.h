@@ -2,6 +2,8 @@
 #include <Interpreters/FileCache/Guards.h>
 #include <Interpreters/FileCache/LRUFileCachePriority.h>
 
+#include <mutex>
+
 namespace DB
 {
 struct ReadSettings;
@@ -77,6 +79,11 @@ public:
 private:
     using QueryContextMap = std::unordered_map<String, QueryContextPtr>;
     QueryContextMap query_map;
+    /// query_map is reached under two different cache locks: reads (tryGetQueryContext) run under
+    /// CacheStateGuard while writes (getOrSetQueryContext/removeQueryContext) run under
+    /// CachePriorityGuard, so neither cache lock serializes access to the map by itself. This
+    /// dedicated leaf mutex is the single lock that actually guards query_map.
+    mutable std::mutex query_map_mutex;
 };
 
 using FileCacheQueryLimitPtr = std::unique_ptr<FileCacheQueryLimit>;

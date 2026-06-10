@@ -24,12 +24,14 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext(con
     if (!isQueryInitialized())
         return nullptr;
 
+    std::lock_guard lock(query_map_mutex);
     auto query_iter = query_map.find(std::string(CurrentThread::getQueryId()));
     return (query_iter == query_map.end()) ? nullptr : query_iter->second;
 }
 
 void FileCacheQueryLimit::removeQueryContext(const std::string & query_id, const CachePriorityGuard::WriteLock &)
 {
+    std::lock_guard lock(query_map_mutex);
     auto query_iter = query_map.find(query_id);
     if (query_iter == query_map.end())
     {
@@ -49,6 +51,7 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
     if (query_id.empty())
         return nullptr;
 
+    std::lock_guard lock(query_map_mutex);
     auto [it, inserted] = query_map.emplace(query_id, nullptr);
     if (inserted)
     {
