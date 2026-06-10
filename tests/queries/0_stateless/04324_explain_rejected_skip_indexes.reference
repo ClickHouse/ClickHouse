@@ -1,0 +1,17 @@
+Both skip indexes rejected when query does not match either
+Name: idx_vec
+Status: NOT APPLIED
+Reason: query is not a vector search query (requires ORDER BY <distance_function>(column, reference_vector) ASC LIMIT N)
+Name: idx_bloom
+Status: NOT APPLIED
+Reason: condition is always unknown or true
+vector_similarity applied, bloom_filter rejected (no predicate)
+Name: idx_vec
+Name: idx_bloom
+Status: NOT APPLIED
+Reason: no condition could be created from the query predicate
+bloom_filter applied, vector_similarity rejected (no ORDER BY LIMIT)
+Name: idx_bloom
+Name: idx_vec
+Status: NOT APPLIED
+Reason: query is not a vector search query (requires ORDER BY <distance_function>(column, reference_vector) ASC LIMIT N)

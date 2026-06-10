@@ -160,6 +160,7 @@ public:
 
     /// Returns a human-readable reason why the index condition is not useful.
     /// Only meaningful when alwaysUnknownOrTrue() returns true.
+    /// Used by EXPLAIN indexes=1 to show why a skip index was not applied.
     virtual std::string rejectionReason() const { return "condition is always unknown or true"; }
 
     using UpdatePartialDisjunctionResultFn = KeyCondition::UpdatePartialDisjunctionResultFn;
