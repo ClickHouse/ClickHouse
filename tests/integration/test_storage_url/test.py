@@ -435,6 +435,17 @@ def test_url_wildcard_failover_resets_credentials():
     assert result.strip() == "23"
 
 
+def test_url_wildcard_archive_metadata_uses_shard_identity():
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT sum(x) FROM url('"
+            "http://resolver:8087/data/archive_identity/archive*.zip?shard={0,1} :: value.tsv', "
+            "'TSV', 'x UInt64')"
+        )
+    )
+    assert result.strip() == "303"
+
+
 def test_url_wildcard_ignores_failed_failover_option_after_success():
     result = node1.query(
         with_url_wildcard_setting(

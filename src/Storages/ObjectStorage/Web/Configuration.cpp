@@ -4,6 +4,7 @@
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/parseRemoteDescription.h>
 #include <Core/Settings.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
@@ -24,12 +25,14 @@ namespace Setting
     extern const SettingsSchemaInferenceMode schema_inference_mode;
     extern const SettingsBool schema_inference_use_cache_for_url;
     extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsBool allow_archive_path_syntax;
 }
 
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -118,6 +121,14 @@ StorageObjectStorageQuerySettings StorageWebConfiguration::getQuerySettings(cons
         .list_object_keys_size = settings[Setting::glob_expansion_max_elements],
         .throw_on_zero_files_match = false,
         .ignore_non_existent_file = false};
+}
+
+std::string StorageWebConfiguration::getPathInArchive() const
+{
+    if (archive_pattern.has_value())
+        return archive_pattern.value();
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not an archive", getRawPath().path);
 }
 
 void StorageWebConfiguration::check(ContextPtr context)
@@ -253,18 +264,23 @@ void StorageWebConfiguration::fromDisk(const String & disk_name, ASTs & args, Co
 void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
 {
     const auto max_addresses = context->getSettingsRef()[Setting::glob_expansion_max_elements];
-    const auto scheme_pos = raw_url.find("://");
-    const auto authority_start = scheme_pos == String::npos ? 0 : scheme_pos + 3;
-    const auto path_start = raw_url.find('/', authority_start);
-    const auto query_or_fragment_pos = raw_url.find_first_of("?#", authority_start);
-    const bool has_path = path_start != String::npos && (query_or_fragment_pos == String::npos || path_start < query_or_fragment_pos);
-    const auto path_end = query_or_fragment_pos == String::npos ? raw_url.size() : query_or_fragment_pos;
+    String url = raw_url;
+    archive_pattern.reset();
+    if (context->getSettingsRef()[Setting::allow_archive_path_syntax])
+        std::tie(url, archive_pattern) = getURIAndArchivePattern(raw_url);
 
-    const auto url_root_for_expansion = has_path ? raw_url.substr(0, path_start + 1) : raw_url.substr(0, path_end) + "/";
-    const auto query_fragment_part = query_or_fragment_pos == String::npos ? String{} : raw_url.substr(query_or_fragment_pos);
+    const auto scheme_pos = url.find("://");
+    const auto authority_start = scheme_pos == String::npos ? 0 : scheme_pos + 3;
+    const auto path_start = url.find('/', authority_start);
+    const auto query_or_fragment_pos = url.find_first_of("?#", authority_start);
+    const bool has_path = path_start != String::npos && (query_or_fragment_pos == String::npos || path_start < query_or_fragment_pos);
+    const auto path_end = query_or_fragment_pos == String::npos ? url.size() : query_or_fragment_pos;
+
+    const auto url_root_for_expansion = has_path ? url.substr(0, path_start + 1) : url.substr(0, path_end) + "/";
+    const auto query_fragment_part = query_or_fragment_pos == String::npos ? String{} : url.substr(query_or_fragment_pos);
     const auto url_shards_with_failover = parseURLShardsWithFailover(url_root_for_expansion + query_fragment_part, max_addresses, "url");
 
-    path.path = has_path ? raw_url.substr(path_start, path_end - path_start) : String{};
+    path.path = has_path ? url.substr(path_start, path_end - path_start) : String{};
     while (path.path.starts_with('/'))
         path.path.erase(0, 1);
 

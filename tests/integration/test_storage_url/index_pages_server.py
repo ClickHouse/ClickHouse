@@ -1,8 +1,18 @@
 import sys
 import json
 import re
+import io
+import zipfile
 from urllib.parse import urlparse
 from http.server import BaseHTTPRequestHandler, HTTPServer
+
+
+def make_zip_file(entries):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
+        for name, data in entries:
+            archive.writestr(name, data)
+    return buffer.getvalue()
 
 
 DATA_PARTS = {
@@ -40,6 +50,9 @@ DATA_PARTS = {
     "/data/redirect_target/part1.tsv": "19\n",
     "/data/auth_failover/part1.tsv": "23\n",
 }
+
+SHARD_0_ARCHIVE = make_zip_file([("value.tsv", "101\n")])
+SHARD_1_ARCHIVE = make_zip_file([("value.tsv", "202\n"), ("padding.txt", "x" * 1024)])
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -88,6 +101,16 @@ class RequestHandler(BaseHTTPRequestHandler):
         next_level = len(levels)
         return f"<a href=\"{next_level}/\">{next_level}/</a>\n"
 
+    def _archive_data_for_request(self, parsed_url):
+        if parsed_url.path != "/data/archive_identity/archive.zip":
+            return None
+
+        if parsed_url.query == "shard=0":
+            return SHARD_0_ARCHIVE
+        if parsed_url.query == "shard=1":
+            return SHARD_1_ARCHIVE
+        return None
+
     def do_HEAD(self):
         if self._handle_control():
             return
@@ -95,6 +118,14 @@ class RequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         self._record_request("HEAD", path)
+        archive_data = self._archive_data_for_request(parsed)
+        if archive_data is not None:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Length", str(len(archive_data)))
+            self.end_headers()
+            return
+
         if path.startswith("/data/head_fallback/part"):
             self.send_response(405)
             self.end_headers()
@@ -155,6 +186,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             "/data/mixed_headers/",
             "/data/redirect/",
             "/data/redirect_target/",
+            "/data/archive_identity/",
         ):
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
@@ -227,6 +259,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 return
             body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/archive_identity/":
+            body = "<a href=\"archive.zip\">archive.zip</a>\n"
             self._send_html(body)
             return
         if path == "/data/order/":
@@ -396,6 +432,15 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_header("X-Probe-Method", "GET")
             self.end_headers()
             self.wfile.write(data)
+            return
+
+        archive_data = self._archive_data_for_request(parsed)
+        if archive_data is not None:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Length", str(len(archive_data)))
+            self.end_headers()
+            self.wfile.write(archive_data)
             return
 
         self.send_response(404)

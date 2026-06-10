@@ -79,6 +79,9 @@ public:
 
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr & context) const override;
 
+    bool isArchive() const override { return archive_pattern.has_value(); }
+    std::string getPathInArchive() const override;
+
     void check(ContextPtr context) override;
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
@@ -104,6 +107,7 @@ private:
     String namespace_prefix;
     Path path;
     Paths paths;
+    std::optional<String> archive_pattern;
     HTTPHeaderEntries headers_from_ast;
 };
 
