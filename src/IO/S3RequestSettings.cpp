@@ -84,8 +84,21 @@ namespace ErrorCodes
     REQUEST_SETTINGS(M, ALIAS) \
     PART_UPLOAD_SETTINGS(M, ALIAS)
 
-DECLARE_SETTINGS_TRAITS(S3RequestSettingsTraits, REQUEST_SETTINGS_LIST, S3REQUEST_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(S3RequestSettingsTraits, REQUEST_SETTINGS_LIST, S3RequestSettings, S3RequestSetting)
+DECLARE_SETTINGS_TRAITS(S3RequestSettingsTraits, REQUEST_SETTINGS_LIST)
+IMPLEMENT_SETTINGS_TRAITS(S3RequestSettingsTraits, REQUEST_SETTINGS_LIST)
+
+struct S3RequestSettingsImpl : public BaseSettings<S3RequestSettingsTraits>
+{
+};
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) S3RequestSettings##TYPE NAME = &S3RequestSettingsImpl ::NAME;
+
+namespace S3RequestSetting
+{
+REQUEST_SETTINGS_LIST(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+}
+
+#undef INITIALIZE_SETTING_EXTERN
 
 namespace S3
 {
@@ -102,7 +115,12 @@ S3RequestSettings::S3RequestSettings(const S3RequestSettings & settings)
 {
 }
 
-S3RequestSettings::S3RequestSettings(S3RequestSettings && settings) noexcept = default;
+S3RequestSettings::S3RequestSettings(S3RequestSettings && settings) noexcept
+    : request_throttler(std::move(settings.request_throttler))
+    , proxy_resolver(std::move(settings.proxy_resolver))
+    , impl(std::make_unique<S3RequestSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 S3RequestSettings::S3RequestSettings(
     const Poco::Util::AbstractConfiguration & config,
@@ -117,16 +135,6 @@ S3RequestSettings::S3RequestSettings(
         auto path = fmt::format("{}.{}{}", config_prefix, setting_name_prefix, field.getName());
 
         bool updated = S3::setValueFromConfig(config, path, field);
-
-        /// The storage class option has two interchangeable names: `storage_class_name` (the canonical
-        /// request setting) and `storage_class` (used by the BACKUP command and historical disk configs,
-        /// e.g. `s3_storage_class`). Accept both so configurations are interchangeable. See issue #68551.
-        if (!updated && field.getName() == "storage_class_name")
-        {
-            auto legacy_path = fmt::format("{}.{}storage_class", config_prefix, setting_name_prefix);
-            updated = S3::setValueFromConfig(config, legacy_path, field);
-        }
-
         if (!updated)
         {
             auto setting_name = "s3_" + field.getName();
@@ -143,12 +151,7 @@ S3RequestSettings::S3RequestSettings(const NamedCollection & collection, const D
     auto values = impl->allMutable();
     for (auto & field : values)
     {
-        auto path = field.getName();
-
-        /// `storage_class` is an interchangeable alias for `storage_class_name` (see issue #68551).
-        if (!collection.has(path) && field.getName() == "storage_class_name" && collection.has("storage_class"))
-            path = "storage_class";
-
+        const auto path = field.getName();
         if (collection.has(path))
         {
             auto which = field.getValue().getType();
@@ -169,7 +172,14 @@ S3RequestSettings::~S3RequestSettings() = default;
 
 S3REQUEST_SETTINGS_SUPPORTED_TYPES(S3RequestSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
-S3RequestSettings & S3RequestSettings::operator=(S3RequestSettings && settings) noexcept = default;
+S3RequestSettings & S3RequestSettings::operator=(S3RequestSettings && settings) noexcept
+{
+    request_throttler = std::move(settings.request_throttler);
+    proxy_resolver = std::move(settings.proxy_resolver);
+    *impl = std::move(*settings.impl);
+
+    return *this;
+}
 
 void S3RequestSettings::updateFromSettings(const DB::Settings & settings, bool if_changed, bool validate_settings)
 {
@@ -198,50 +208,50 @@ void S3RequestSettings::updateIfChanged(const S3RequestSettings & settings)
 
 void S3RequestSettings::validateUploadSettings()
 {
-    if (!(*this)[S3RequestSetting::max_part_number])
+    if (!impl->max_part_number)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
             "Setting max_part_number cannot be zero");
 
-    if (!(*this)[S3RequestSetting::strict_upload_part_size])
+    if (!impl->strict_upload_part_size)
     {
-        if (!(*this)[S3RequestSetting::min_upload_part_size])
+        if (!impl->min_upload_part_size)
             throw Exception(
                 ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting min_upload_part_size ({}) cannot be zero",
-                ReadableSize((*this)[S3RequestSetting::min_upload_part_size].value));
+                ReadableSize(impl->min_upload_part_size.value));
 
-        if ((*this)[S3RequestSetting::max_upload_part_size] < (*this)[S3RequestSetting::min_upload_part_size])
+        if (impl->max_upload_part_size < impl->min_upload_part_size)
             throw Exception(
                 ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting max_upload_part_size ({}) can't be less than setting min_upload_part_size ({})",
-                ReadableSize((*this)[S3RequestSetting::max_upload_part_size].value), ReadableSize((*this)[S3RequestSetting::min_upload_part_size].value));
+                ReadableSize(impl->max_upload_part_size.value), ReadableSize(impl->min_upload_part_size.value));
 
-        if (!(*this)[S3RequestSetting::upload_part_size_multiply_factor])
+        if (!impl->upload_part_size_multiply_factor)
             throw Exception(
                 ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting upload_part_size_multiply_factor cannot be zero");
 
-        if (!(*this)[S3RequestSetting::upload_part_size_multiply_parts_count_threshold])
+        if (!impl->upload_part_size_multiply_parts_count_threshold)
             throw Exception(
                 ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting upload_part_size_multiply_parts_count_threshold cannot be zero");
 
-        size_t maybe_overflow = 0;
-        if (common::mulOverflow((*this)[S3RequestSetting::max_upload_part_size].value, (*this)[S3RequestSetting::upload_part_size_multiply_factor].value, maybe_overflow))
+        size_t maybe_overflow;
+        if (common::mulOverflow(impl->max_upload_part_size.value, impl->upload_part_size_multiply_factor.value, maybe_overflow))
             throw Exception(
                             ErrorCodes::INVALID_SETTING_VALUE,
                             "Setting upload_part_size_multiply_factor is too big ({}). "
                             "Multiplication to max_upload_part_size ({}) will cause integer overflow",
-                            (*this)[S3RequestSetting::upload_part_size_multiply_factor].value, ReadableSize((*this)[S3RequestSetting::max_upload_part_size].value));
+                            impl->upload_part_size_multiply_factor.value, ReadableSize(impl->max_upload_part_size.value));
     }
 
-    NameSet storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
-    if (!(*this)[S3RequestSetting::storage_class_name].value.empty() && !storage_class_names.contains((*this)[S3RequestSetting::storage_class_name]))
+    std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
+    if (!impl->storage_class_name.value.empty() && !storage_class_names.contains(impl->storage_class_name))
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
             "Setting storage_class has invalid value {} which only supports STANDARD and INTELLIGENT_TIERING",
-            (*this)[S3RequestSetting::storage_class_name].value);
+            impl->storage_class_name.value);
 
     /// TODO: it's possible to set too small limits.
     /// We can check that max possible object size is not too small.
@@ -300,8 +310,8 @@ void S3RequestSettings::finishInit(const DB::Settings & settings, bool validate_
 
 void S3RequestSettings::normalizeSettings()
 {
-    if (!(*this)[S3RequestSetting::storage_class_name].value.empty() && (*this)[S3RequestSetting::storage_class_name].changed)
-        (*this)[S3RequestSetting::storage_class_name] = Poco::toUpperInPlace((*this)[S3RequestSetting::storage_class_name].value);
+    if (!impl->storage_class_name.value.empty() && impl->storage_class_name.changed)
+        impl->storage_class_name = Poco::toUpperInPlace(impl->storage_class_name.value);
 }
 
 void S3RequestSettings::serialize(WriteBuffer & out, ContextPtr) const
