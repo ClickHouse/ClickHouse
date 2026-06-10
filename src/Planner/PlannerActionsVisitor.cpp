@@ -81,17 +81,34 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
     if (requires_cast_call)
         buffer << "_CAST(";
 
-    /// When the constant was folded from _CAST on a secondary server, we must use
-    /// the pre-cast type (the source _CAST function's first argument type) for the
-    /// inner type annotation. This ensures the column name matches what the initiator
-    /// produces when naming the _CAST FunctionNode recursively from its arguments.
+    /// When the constant was folded from _CAST on a secondary server and the
+    /// inner argument is a "simple" constant (its natural field type matches its
+    /// stored type, so it wouldn't get its own _CAST wrapping), we use the first
+    /// argument's type for the inner annotation. This matches how the initiator
+    /// names the _CAST FunctionNode recursively from its arguments.
+    /// We must NOT do this when the first arg itself would need cast wrapping
+    /// (e.g., NULL with type Nullable(Nothing)), because in that case the _CAST
+    /// was added during AST serialization and the initiator used getResultType.
     DataTypePtr inner_type = constant_node.getResultType();
     if (requires_cast_call && constant_node.receivedFromInitiatorServer())
     {
         const auto * cast_function = constant_node.getSourceExpression()->as<FunctionNode>();
         const auto & cast_args = cast_function->getArguments().getNodes();
         if (!cast_args.empty())
-            inner_type = cast_args[0]->getResultType();
+        {
+            if (const auto * first_arg_const = cast_args[0]->as<ConstantNode>())
+            {
+                try
+                {
+                    auto first_arg_field_type = applyVisitor(FieldToDataType(), first_arg_const->getValue());
+                    if (!ConstantNode::requiresCastCall(first_arg_field_type, first_arg_const->getResultType()))
+                        inner_type = first_arg_const->getResultType();
+                }
+                catch (...)
+                {
+                }
+            }
+        }
     }
 
     buffer << name << "_" << inner_type->getName();
