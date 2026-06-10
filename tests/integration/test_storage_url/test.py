@@ -368,24 +368,29 @@ def test_url_wildcard_resets_headers_between_files():
 def test_url_wildcard_headers_are_not_read_from_page_cache():
     reset_index_page_server_stats()
 
-    node1.query(
+    warmup_result = node1.query(
         with_url_wildcard_setting(
-            "SELECT sum(x) FROM url('http://resolver:8087/data/mixed_headers/part1.tsv', 'TSV', 'x UInt64') "
+            "SELECT sum(x), countIf(_etag = 'mixed-part1.tsv'), countIf(_etag = 'mixed-part2.tsv') "
+            "FROM url('http://resolver:8087/data/mixed_headers/part*.tsv', 'TSV', 'x UInt64') "
             "SETTINGS use_page_cache_for_object_storage=1"
         )
     )
+    assert warmup_result == "3\t1\t1\n"
 
     result = node1.query(
         with_url_wildcard_setting(
-            "SELECT any(_etag), any(_headers['X-Source-File']), any(_headers['X-Probe-Method']) "
-            "FROM url('http://resolver:8087/data/mixed_headers/part1.tsv', 'TSV', 'x UInt64') "
+            "SELECT _file, any(_headers['X-Source-File']), any(_headers['X-Probe-Method']) "
+            "FROM url('http://resolver:8087/data/mixed_headers/part*.tsv', 'TSV', 'x UInt64') "
+            "GROUP BY _file "
+            "ORDER BY _file "
             "SETTINGS use_page_cache_for_object_storage=1"
         )
     )
-    assert result == "mixed-part1.tsv\tpart1.tsv\tGET\n"
+    assert result == "part1.tsv\tpart1.tsv\tGET\npart2.tsv\tpart2.tsv\tGET\n"
 
     stats = get_index_page_server_stats()
     assert stats["GET /data/mixed_headers/part1.tsv"] == 2
+    assert stats["GET /data/mixed_headers/part2.tsv"] == 2
 
 
 def test_url_wildcard_limits_directory_traversal():
