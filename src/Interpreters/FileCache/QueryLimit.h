@@ -23,7 +23,7 @@ public:
         const FilesystemCacheSettings & settings,
         const CachePriorityGuard::WriteLock &);
 
-    void removeQueryContext(const std::string & query_id, const CachePriorityGuard::WriteLock &);
+    void removeQueryContext(const std::string & query_id, const QueryContextPtr & context, const CachePriorityGuard::WriteLock &);
 
     class QueryContext
     {
