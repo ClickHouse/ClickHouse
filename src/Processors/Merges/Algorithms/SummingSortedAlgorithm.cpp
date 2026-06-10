@@ -297,6 +297,15 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         bool is_non_empty_tuple = typeid_cast<const DataTypeTuple *>(column.type.get()) && !typeid_cast<const DataTypeTuple *>(column.type.get())->getElements().empty();
         if (aggregate_all_columns && (is_non_empty_tuple || typeid_cast<const DataTypeArray *>(column.type.get())) && !simple)
         {
+            /// A column that is in the sorting key, or required by the sorting/partition key, must
+            /// not be aggregated.
+            if (isInSortingKey(description, column.name)
+                || isColumnOrAncestorInNames(i, header_flatten, flatten_ancestors, partition_and_sorting_required_columns))
+            {
+                def.column_numbers_not_to_aggregate.push_back(i);
+                continue;
+            }
+
             /// In aggregate_all_columns (Coalescing) mode every column is aggregated as a whole,
             /// tuples and arrays included. The `xxxMap` name convention is a SummingMergeTree feature
             /// (sumMap merges values by key, see the Array branch below); Coalescing has no by-key
