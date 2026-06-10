@@ -49,19 +49,56 @@ jobs:
           GITHUB_RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           SHA=$(git rev-parse HEAD)
 
+          # Validate every input version before doing anything. We want to
+          # bail loudly on the first bad version rather than rebuild some
+          # of the multi-version input and then fail halfway through.
           for VERSION in $INPUT_VERSIONS; do
-            echo "============================================"
-            echo "Building distroless images for ${VERSION}"
-            echo "============================================"
-
-            # Validate version format
             if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "ERROR: Invalid version format: ${VERSION}"
               exit 1
             fi
+          done
+
+          # Sort versions descending so that within any X.Y or X.Y.Z group
+          # the HIGHEST patch is processed first. We use that ordering to
+          # decide which version "owns" the floating refs: only the first
+          # version seen for a given X.Y / X.Y.Z gets to update those
+          # floating tags. Without this, an input like
+          # `versions="26.4.4.10 26.4.3.37"` would publish the floating
+          # `:26.4-distroless` ref pointing at the older 26.4.3.37 image
+          # because the lower version is processed last.
+          SORTED_VERSIONS=$(printf '%s\n' $INPUT_VERSIONS | sort -rV)
+
+          SEEN_MINOR=""
+          SEEN_MAJOR=""
+
+          for VERSION in $SORTED_VERSIONS; do
+            echo "============================================"
+            echo "Building distroless images for ${VERSION}"
+            echo "============================================"
 
             VERSION_MINOR=${VERSION%.*}
             VERSION_MAJOR=${VERSION_MINOR%.*}
+
+            # Decide which floating tags THIS version is allowed to write.
+            # First time we see a given X.Y.Z or X.Y in this run, we let
+            # this build update that floating ref. Subsequent (lower)
+            # versions in the same group skip it.
+            FLOATING_TAGS=""
+            case " $SEEN_MINOR " in
+              *" $VERSION_MINOR "*)
+                echo "skipping :${VERSION_MINOR}-distroless — already updated by a higher patch in this run" ;;
+              *)
+                FLOATING_TAGS="$FLOATING_TAGS:${VERSION_MINOR}"
+                SEEN_MINOR="$SEEN_MINOR $VERSION_MINOR" ;;
+            esac
+            case " $SEEN_MAJOR " in
+              *" $VERSION_MAJOR "*)
+                echo "skipping :${VERSION_MAJOR}-distroless — already updated by a higher patch in this run" ;;
+              *)
+                FLOATING_TAGS="$FLOATING_TAGS:${VERSION_MAJOR}"
+                SEEN_MAJOR="$SEEN_MAJOR $VERSION_MAJOR" ;;
+            esac
 
             for image_config in \
               "clickhouse/clickhouse-server:docker/server/Dockerfile.distroless:docker/server" \
@@ -72,15 +109,19 @@ jobs:
               DOCKERFILE=${rest%%:*}
               CONTEXT=${rest#*:}
 
-              echo "--- ${IMAGE_NAME}:${VERSION}-distroless (also tagging ${VERSION_MINOR}, ${VERSION_MAJOR}) ---"
+              # Build the --tag args. Full-version tag always written;
+              # floating tags only for versions that won the descending-
+              # sort race above.
+              TAG_ARGS="--tag=${IMAGE_NAME}:${VERSION}-distroless"
+              IFS=':' read -ra _floats <<<"${FLOATING_TAGS}"
+              for _f in "${_floats[@]}"; do
+                if [ -n "$_f" ]; then
+                  TAG_ARGS="${TAG_ARGS} --tag=${IMAGE_NAME}:${_f}-distroless"
+                fi
+              done
 
-              # Tag with all three precisions so the floating
-              # major.minor and minor refs (e.g. `:26.4-distroless`,
-              # `:26.4.3-distroless`) point at the rebuilt image too.
-              # Without this, a backfill rebuilds `:X.Y.Z.N-distroless`
-              # only — `:X.Y-distroless` keeps pointing at the prior
-              # vulnerable image, so consumers tracking the floating
-              # tag never pick up the patch.
+              echo "--- ${IMAGE_NAME}:${VERSION}-distroless${FLOATING_TAGS:+ (also${FLOATING_TAGS//:/ +})} ---"
+
               docker buildx build \
                 --platform=linux/amd64,linux/arm64 \
                 --provenance=true \
@@ -89,15 +130,13 @@ jobs:
                 --label="build-url=${GITHUB_RUN_URL}" \
                 --label="com.clickhouse.build.githash=${SHA}" \
                 --label="com.clickhouse.build.version=${VERSION}-distroless" \
-                --tag="${IMAGE_NAME}:${VERSION}-distroless" \
-                --tag="${IMAGE_NAME}:${VERSION_MINOR}-distroless" \
-                --tag="${IMAGE_NAME}:${VERSION_MAJOR}-distroless" \
+                ${TAG_ARGS} \
                 --build-arg=VERSION="${VERSION}" \
                 --progress=plain \
                 --file="${DOCKERFILE}" \
                 "${CONTEXT}"
 
-              echo "Done: ${IMAGE_NAME}:${VERSION}-distroless (+ ${VERSION_MINOR}, ${VERSION_MAJOR})"
+              echo "Done: ${IMAGE_NAME}:${VERSION}-distroless"
             done
           done
 
