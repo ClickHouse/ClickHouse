@@ -42,14 +42,11 @@ namespace OpenSSLDetails
 [[noreturn]] void onError(std::string error_message);
 std::string_view foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, std::string_view key, std::array<char, EVP_MAX_KEY_LENGTH> & folded_key);
 
-const EVP_CIPHER * getCipherByName(std::string_view name);
-
 using EVP_CIPHER_ptr = std::unique_ptr<EVP_CIPHER, decltype(&EVP_CIPHER_free)>;
 
-/// Fetches a provider-backed cipher via EVP_CIPHER_fetch.
-/// Unlike getCipherByName which returns a legacy cipher (prov == NULL),
-/// the fetched cipher avoids implicit EVP_CIPHER_fetch calls on every
-/// EVP_EncryptInit_ex / EVP_DecryptInit_ex invocation in OpenSSL 3.x.
+/// Fetches a provider-backed cipher via EVP_CIPHER_fetch, which (unlike a legacy cipher with
+/// prov == NULL) avoids implicit EVP_CIPHER_fetch calls on every EVP_EncryptInit_ex /
+/// EVP_DecryptInit_ex invocation in OpenSSL 3.x. Returns nullptr for an unknown cipher name.
 EVP_CIPHER_ptr fetchCipher(std::string_view name);
 
 enum class CompatibilityMode : uint8_t
@@ -203,14 +200,13 @@ private:
         if (mode.empty() || !mode.starts_with("aes-"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode);
 
-        const auto * evp_cipher = getCipherByName(mode);
-        if (evp_cipher == nullptr)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode);
-
-        /// Fetch provider-backed cipher once per block to avoid implicit
-        /// EVP_CIPHER_fetch on every EVP_EncryptInit_ex call in the per-row loop.
+        /// Fetch a provider-backed cipher once per block to avoid implicit EVP_CIPHER_fetch
+        /// on every EVP_EncryptInit_ex call in the per-row loop.
         /// See https://github.com/ClickHouse/ClickHouse/issues/65116
         auto fetched_cipher = fetchCipher(mode);
+        if (fetched_cipher == nullptr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode);
+        const auto * evp_cipher = fetched_cipher.get();
 
         const auto cipher_mode = EVP_CIPHER_mode(evp_cipher);
 
@@ -543,14 +539,13 @@ private:
         if (mode.empty() || !mode.starts_with("aes-"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode);
 
-        const auto * evp_cipher = getCipherByName(mode);
-        if (evp_cipher == nullptr)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode);
-
-        /// Fetch provider-backed cipher once per block to avoid implicit
-        /// EVP_CIPHER_fetch on every EVP_DecryptInit_ex call in the per-row loop.
+        /// Fetch a provider-backed cipher once per block to avoid implicit EVP_CIPHER_fetch
+        /// on every EVP_DecryptInit_ex call in the per-row loop.
         /// See https://github.com/ClickHouse/ClickHouse/issues/65116
         auto fetched_cipher = fetchCipher(mode);
+        if (fetched_cipher == nullptr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode);
+        const auto * evp_cipher = fetched_cipher.get();
 
         OpenSSLDetails::validateCipherMode<compatibility_mode>(evp_cipher);
 

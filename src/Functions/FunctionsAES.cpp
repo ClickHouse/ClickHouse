@@ -36,23 +36,15 @@ std::string_view foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size
     return std::string_view(folded_key.data(), cipher_key_size);
 }
 
-const EVP_CIPHER * getCipherByName(std::string_view cipher_name)
-{
-    /// NOTE: the cipher obtained via EVP_get_cipherbyname has prov == NULL.
-    /// When such cipher is passed to EVP_EncryptInit_ex / EVP_DecryptInit_ex,
-    /// OpenSSL 3.x implicitly calls EVP_CIPHER_fetch on every invocation,
-    /// which involves locking and provider lookups.
-    /// Use `fetchCipher` to obtain a provider-backed cipher that avoids this overhead.
-
-    /// We need zero-terminated string here:
-    return EVP_get_cipherbyname(std::string{cipher_name}.c_str());
-}
-
 EVP_CIPHER_ptr fetchCipher(std::string_view cipher_name)
 {
+    /// A cipher obtained via EVP_get_cipherbyname has prov == NULL, which makes OpenSSL 3.x
+    /// implicitly call EVP_CIPHER_fetch (with locking and provider lookups) on every
+    /// EVP_EncryptInit_ex / EVP_DecryptInit_ex invocation. Fetching the cipher explicitly
+    /// here returns a provider-backed cipher and avoids that per-row overhead.
+    /// Returns nullptr for an unknown cipher name; the caller reports it as an invalid mode.
+    /// We need a zero-terminated string here:
     auto * fetched = EVP_CIPHER_fetch(nullptr, std::string{cipher_name}.c_str(), nullptr);
-    if (!fetched)
-        onError("EVP_CIPHER_fetch");
     return EVP_CIPHER_ptr(fetched, EVP_CIPHER_free);
 }
 
