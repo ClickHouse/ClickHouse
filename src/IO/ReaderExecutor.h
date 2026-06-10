@@ -64,13 +64,10 @@ public:
     String getFileName() const { return log_file_path; }
 
 private:
-    /// Per-instance tally of the read-path counters. `add` is the only mutator and the
-    /// single place a counter maps to its ProfileEvent (and, for the cost-model counters,
-    /// to the modeled-cost contribution), so a counter and its event can never drift and
-    /// every update is observable instantly. `get` reads back for the final report. The
-    /// cache / connection counters have no caller in this minimal slice (those features
-    /// are not implemented yet); they stay 0 but are listed so the cost model is complete
-    /// and lights up when the corresponding feature PRs add their `add` sites.
+    /// Per-instance read-path counters. `add` is the only mutator and the single place a
+    /// counter maps to its ProfileEvent (and modeled-cost contribution), so they never
+    /// drift and every update is instantly observable. The cache / connection counters
+    /// have no caller in this minimal slice, so they stay 0 until their features land.
     struct Stats
     {
         enum Counter : size_t
@@ -78,25 +75,18 @@ private:
             SourceRequests,         /// chunks opened and read from the source
             BytesFromSource,        /// physical bytes read from the source
             RequestedBytes,         /// useful bytes delivered to the caller (KPI denominator)
-            IncompleteConnections,  /// 0: no source-connection reuse yet
-            CacheGetRequests,       /// 0: no cache tiers yet
-            CachePopulateRequests,  /// 0: no cache tiers yet
-            WorkMicroseconds,       /// total time spent in readNextChunk
+            IncompleteConnections,
+            CacheGetRequests,
+            CachePopulateRequests,
+            WorkMicroseconds,
             NumCounters,
         };
 
-        /// Setter: bump `c` by `value` AND emit its ProfileEvent (plus the modeled-cost
-        /// contribution for the cost-model counters) -- the one place ProfileEvents are
-        /// incremented, so events advance as the read happens.
         void add(Counter c, UInt64 value = 1);
-
-        /// Getter: read a counter for the final report. Does not emit.
         UInt64 get(Counter c) const { return values[c]; }
 
-        /// Roll another tally into this one for the report aggregate WITHOUT re-emitting
-        /// (the source already emitted each counter at its `add`). Lets a future transient
-        /// sub-executor (e.g. a random-access `readBigAt`) report through the parent. No
-        /// caller yet in this slice.
+        /// Roll a future transient sub-executor's tally into the parent without re-emitting
+        /// (each counter was already emitted at its `add`).
         Stats & operator+=(const Stats & o)
         {
             for (size_t i = 0; i < NumCounters; ++i)
@@ -108,9 +98,7 @@ private:
         std::array<UInt64, NumCounters> values{};
     };
 
-    /// RAII timer: on scope exit adds the elapsed microseconds to a `Stats` timing counter
-    /// via `Stats::add` (which also emits the matching ProfileEvent), so even the `_us`
-    /// counters flow through the one setter.
+    /// RAII timer: on scope exit adds its lifetime to a `Stats` timing counter via `add`.
     class StatTimer
     {
     public:
@@ -149,9 +137,7 @@ private:
     Memory<> block;
 
     Stats stats;
-    /// Bumps `CurrentMetrics::ReaderExecutorActive` for the executor's lifetime
-    /// (constructed in the .cpp where the metric symbol is declared).
-    CurrentMetrics::Increment active_metric;
+    CurrentMetrics::Increment active_metric;  /// CurrentMetrics::ReaderExecutorActive for the lifetime
 
     LoggerPtr log = getLogger("ReaderExecutor");
 };

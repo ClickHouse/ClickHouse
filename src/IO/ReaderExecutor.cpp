@@ -35,10 +35,8 @@ namespace ErrorCodes
 void ReaderExecutor::Stats::add(Counter c, UInt64 value)
 {
     values[c] += value;
-    /// Map the counter to its ProfileEvent, and for the cost-model counters also emit the
-    /// modeled-cost contribution -- the heuristic S3 weights (microseconds) documented at
-    /// `ProfileEvents::ReaderExecutorModeledCostMicroseconds`. Counters whose features are
-    /// not implemented yet (cache, connection reuse) have no caller, so they stay 0.
+    /// Each counter emits its ProfileEvent; cost-model counters also emit the modeled-cost
+    /// contribution (weights documented at ProfileEvents::ReaderExecutorModeledCostMicroseconds).
     switch (c)
     {
         case SourceRequests:
@@ -88,10 +86,8 @@ ReaderExecutor::ReaderExecutor(
 
 ReaderExecutor::~ReaderExecutor()
 {
-    /// ProfileEvents are emitted instantly inside `Stats::add` so `system.events` and the
-    /// KPI reflect the executor in real time. The per-instance `Stats` are read back here
-    /// only to write this final summary report (a future PR will also turn it into a
-    /// `system.reader_executor_log` row).
+    /// ProfileEvents are emitted instantly in `Stats::add`; `Stats` are read back here only
+    /// for this summary report (a future PR turns it into a `system.reader_executor_log` row).
     LOG_DEBUG(log,
         "Destroyed: file={} src_reqs={} from_source={} requested={} work_us={}",
         log_file_path, stats.get(Stats::SourceRequests), stats.get(Stats::BytesFromSource),
@@ -149,9 +145,7 @@ ReaderExecutor::Chunk ReaderExecutor::readNextChunk()
     block.resize(want);
     const size_t got = buffer->read(block.data(), want);
 
-    /// One open+read per chunk in this minimal slice; every chunk is served straight from
-    /// the source, so requested bytes equal source bytes. Each `add` updates the tally and
-    /// emits the matching ProfileEvent (and the modeled-cost contribution) instantly.
+    /// One open+read per chunk; requested bytes equal source bytes until caches/over-read land.
     stats.add(Stats::SourceRequests);
     stats.add(Stats::BytesFromSource, got);
     stats.add(Stats::RequestedBytes, got);

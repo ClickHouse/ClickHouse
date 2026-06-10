@@ -189,10 +189,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
     }
 
-    /// Modeled read-path efficiency for the experimental ReaderExecutor: modeled cost (ms)
-    /// per MiB of requested (useful) bytes, as the ratio of two ProfileEvents' deltas over
-    /// the last update interval (instance-wide, recent activity). A ratio, not a per-second
-    /// rate, so the interval length does not divide in; an idle interval reports 0.
+    /// Experimental ReaderExecutor read-path efficiency KPI: modeled cost (ms) per MiB of
+    /// requested bytes, as a ratio of two ProfileEvents' deltas over the interval (idle -> 0).
     {
         const UInt64 cost_us = static_cast<UInt64>(
             ProfileEvents::global_counters[ProfileEvents::ReaderExecutorModeledCostMicroseconds].load(std::memory_order_relaxed));

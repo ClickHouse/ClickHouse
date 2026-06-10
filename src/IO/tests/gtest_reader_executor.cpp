@@ -226,9 +226,8 @@ TEST_F(ReaderExecutorTest, TruncatedKnownSizeFileThrows)
     EXPECT_ANY_THROW(ex.readNextChunk());
 }
 
-/// The metrics tests observe the ProfileEvents the executor emits, captured in a fresh
-/// per-test ThreadGroup -- the same instant path that feeds `system.events` -- rather than
-/// any executor accessor. The group starts at zero, so the counters read absolutely.
+/// The metrics tests read the executor's ProfileEvents from a fresh per-test ThreadGroup
+/// (starts at zero) -- the same path that feeds `system.events`.
 TEST_F(ReaderExecutorTest, ProfileEventsCountSourceReadsAndBytes)
 {
     TestThreadGroup tg;
