@@ -3,8 +3,9 @@ description: 'Documentation for SAMPLE Clause'
 sidebar_label: 'SAMPLE'
 slug: /sql-reference/statements/select/sample
 title: 'SAMPLE Clause'
-doc_type: 'reference'
 ---
+
+# SAMPLE Clause
 
 The `SAMPLE` clause allows for approximated `SELECT` query processing.
 

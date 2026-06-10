@@ -1,14 +1,13 @@
-#include <filesystem>
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupIO_Disk.h>
 #include <Backups/BackupIO_File.h>
 #include <Backups/BackupImpl.h>
-#include <Core/Settings.h>
+#include <Common/quoteString.h>
 #include <Disks/IDisk.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
-#include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/quoteString.h>
+#include <filesystem>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -20,11 +19,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
-}
-
-namespace Setting
-{
-extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
 }
 
 
@@ -105,8 +99,6 @@ namespace
 }
 
 
-void registerBackupEnginesFileAndDisk(BackupFactory &);
-
 void registerBackupEnginesFileAndDisk(BackupFactory & factory)
 {
     auto creator_fn = [](const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>
@@ -165,7 +157,6 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
             archive_params.compression_method = params.compression_method;
             archive_params.compression_level = params.compression_level;
             archive_params.password = params.password;
-            archive_params.adaptive_buffer_max_size = params.context->getSettingsRef()[Setting::archive_adaptive_buffer_max_size_bytes];
         }
         else
         {

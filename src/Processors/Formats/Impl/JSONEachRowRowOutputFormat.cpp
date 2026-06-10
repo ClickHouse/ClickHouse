@@ -1,4 +1,5 @@
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/JSONEachRowRowOutputFormat.h>
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
@@ -97,7 +98,6 @@ void JSONEachRowRowOutputFormat::resetFormatterImpl()
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 }
 
-void registerOutputFormatJSONEachRow(FormatFactory & factory);
 void registerOutputFormatJSONEachRow(FormatFactory & factory)
 {
     auto register_function = [&](const String & format, bool serialize_as_strings, bool pretty_json)

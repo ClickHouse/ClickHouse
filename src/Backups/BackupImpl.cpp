@@ -4,16 +4,13 @@
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
-#include <Backups/getBackupDataFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
-#include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
 #include <base/hex.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/XMLUtils.h>
-#include <Core/UUID.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/IArchiveWriter.h>
 #include <IO/Archives/createArchiveReader.h>
@@ -169,8 +166,6 @@ BackupImpl::BackupImpl(
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
-    , data_file_name_generator(params.data_file_name_generator)
-    , data_file_name_prefix_length(params.data_file_name_prefix_length)
     , coordination(params.backup_coordination)
     , uuid(params.backup_uuid)
     , version(CURRENT_BACKUP_VERSION)
@@ -183,13 +178,15 @@ BackupImpl::BackupImpl(
 BackupImpl::BackupImpl(
     const BackupInfo & backup_info_,
     const ArchiveParams & archive_params_,
-    std::shared_ptr<IBackupReader> reader_)
+    std::shared_ptr<IBackupReader> reader_,
+    std::shared_ptr<IBackupWriter> lightweight_snapshot_writer_)
     : backup_info(backup_info_)
     , backup_name_for_logging(backup_info.toStringForLogging())
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::UNLOCK)
     , reader(reader_)
+    , lightweight_snapshot_writer(lightweight_snapshot_writer_)
     , log(getLogger("BackupImpl"))
 {
     open();
@@ -280,8 +277,7 @@ void BackupImpl::openArchive()
     }
     else
     {
-        archive_writer = createArchiveWriter(
-            archive_name, writer->writeFile(archive_name), DBMS_DEFAULT_BUFFER_SIZE, archive_params.adaptive_buffer_max_size);
+        archive_writer = createArchiveWriter(archive_name, writer->writeFile(archive_name));
         archive_writer->setPassword(archive_params.password);
         archive_writer->setCompression(archive_params.compression_method, archive_params.compression_level);
     }
@@ -386,7 +382,7 @@ void BackupImpl::writeBackupMetadata()
     LOG_TRACE(log, "Backup {}: Writing metadata", backup_name_for_logging);
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupWriteMetadataMicroseconds);
 
-    chassert(!params.is_internal_backup);
+    assert(!params.is_internal_backup);
     checkLockFile(true);
 
     std::unique_ptr<WriteBuffer> out;
@@ -400,9 +396,6 @@ void BackupImpl::writeBackupMetadata()
     *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
     *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
-    if (data_file_name_generator != BackupDataFileNameGeneratorType::FirstFileName)
-        *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(data_file_name_generator)
-             << "</data_file_name_generator>";
 
     auto all_file_infos = coordination->getFileInfosForAllHosts();
 
@@ -470,10 +463,7 @@ void BackupImpl::writeBackupMetadata()
         }
 
         total_size += info.size;
-        bool has_entry = !params.deduplicate_files
-            || (info.size && (info.size != info.base_size)
-                && (info.data_file_name.empty()
-                    || info.data_file_name == getBackupDataFileName(info, data_file_name_generator, data_file_name_prefix_length)));
+        bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
         if (has_entry)
         {
             ++num_entries;
@@ -608,7 +598,7 @@ void BackupImpl::readBackupMetadata()
 
             ++num_files;
             total_size += info.size;
-            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
+            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
             if (has_entry)
             {
                 ++num_entries;
@@ -639,7 +629,7 @@ void BackupImpl::checkBackupDoesntExist() const
     /// Check that no other backup (excluding internal backups) is writing to the same destination.
     if (!params.is_internal_backup)
     {
-        chassert(!lock_file_name.empty());
+        assert(!lock_file_name.empty());
         if (writer->fileExists(lock_file_name))
             throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} is being written already", backup_name_for_logging);
     }
@@ -648,9 +638,9 @@ void BackupImpl::checkBackupDoesntExist() const
 void BackupImpl::createLockFile()
 {
     /// Internal backup must not create the lock file (it should be created by the initiator).
-    chassert(!params.is_internal_backup);
+    assert(!params.is_internal_backup);
 
-    chassert(uuid);
+    assert(uuid);
     auto out = writer->writeFile(lock_file_name);
     writeUUIDText(*uuid, *out);
     out->finalize();
@@ -660,12 +650,9 @@ bool BackupImpl::checkLockFile(bool throw_if_failed) const
 {
     if (!lock_file_name.empty() && uuid)
     {
-        LOG_TRACE(log, "Checking lock file {}", lock_file_name);
         ProfileEvents::increment(ProfileEvents::BackupLockFileReads);
-        String actual_file_contents;
-        if (writer->fileContentsEqual(lock_file_name, toString(*uuid), actual_file_contents))
+        if (writer->fileContentsEqual(lock_file_name, toString(*uuid)))
             return true;
-        LOG_TRACE(log, "Lock file {} contents do not match, expected: {}, actual: {}", lock_file_name, toString(*uuid), actual_file_contents);
     }
 
     if (throw_if_failed)
@@ -1226,6 +1213,31 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
         writer->removeFiles(files_to_remove);
         removeLockFile();
         writer->removeEmptyDirectories();
+        return true;
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(log, "Caught exception while removing files of a corrupted backup");
+        return false;
+    }
+}
+
+bool BackupImpl::tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept
+{
+    try
+    {
+        LOG_INFO(log, "Removing all files of under directory {}", directory);
+
+        Strings files_to_remove = listFiles(directory, true);
+        Strings objects_to_remove;
+        for (const String & file_name : files_to_remove)
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            String file_object_key = file_object_keys.at(fs::path(removeLeadingSlash(directory)) / file_name);
+            objects_to_remove.push_back(file_object_key);
+        }
+
+        lightweight_snapshot_writer->removeFiles(objects_to_remove);
         return true;
     }
     catch (...)
