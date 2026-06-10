@@ -71,6 +71,7 @@ the step-4 download) and rely on the issue body's failure output plus step 3 (do
 missing `node` as a fatal error):
 
 ```bash
+mkdir -p tmp/investigate   # primary inputs (PR/S3) skip step 0, so create it here before the redirect
 if command -v node >/dev/null; then
   node .claude/tools/fetch_ci_report.js "$0" --failed --cidb > tmp/investigate/failed.txt 2>&1
 else
@@ -262,10 +263,14 @@ or the build log for an `INFRA/BUILD` failure. Then pull **only the specific fil
 the gap, not the whole bundle reflexively (it is large and sometimes truncates).
 
 `--download-logs <path>` takes a **file path** (not a directory) and downloads the single
-`logs.tar.gz`/`logs.tar.zst` bundle to it — this replaces hand-supplying a base dir:
+`logs.tar.gz`/`logs.tar.zst` bundle to it — this replaces hand-supplying a base dir. It works
+only against a **single concrete report** (an S3 `json.html`/`result_*.json` URL). A bare PR URL
+takes the multi-report path and returns after the summary **without downloading**, so substitute
+`<report-url>` — the S3 report URL for the failing check, or narrow the PR with `--report <n>`
+first (list reports by running the tool with no `--failed`):
 
 ```bash
-node .claude/tools/fetch_ci_report.js "$0" --failed --download-logs tmp/investigate/ci_logs.tar.gz
+node .claude/tools/fetch_ci_report.js "<report-url>" --failed --download-logs tmp/investigate/ci_logs.tar.gz
 ```
 
 The tool prints the saved path and lists the archive's pytest logs. The compression may be zstd
@@ -282,8 +287,10 @@ For an integration-test failure, pull the relevant longrepr:
 
 ```bash
 grep "<test_name>" tmp/investigate/ci/tmp/pytest_parallel.jsonl \
-  | python3 -c "import sys,json; [print(json.loads(l).get('longrepr','')) for l in sys.stdin if 'failed' in l]"
+  | jq -r 'select((.longrepr // "") != "") | .longrepr'
 ```
+
+(`jq` is allowed by the locked-down profile; avoid `python3 -c`, which is not.)
 
 ### 5. Root-cause read (subagents)
 
