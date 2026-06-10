@@ -643,14 +643,25 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector TSA_GUARDED_BY(storage_policies_mutex);
     /// Tracks custom-disk registrations performed by in-flight ALTER validations.
     ///
-    /// The `active_owners` vector lists every `CustomDiskRegistrationScope *` (used as opaque
-    /// tokens, never dereferenced) that has either freshly registered the disk or merely
-    /// observed an existing tentative registration via `getOrCreateDisk`. The disk is rolled
-    /// back from the global `DiskSelector` only when (a) `committed` is `false`, AND (b) the
-    /// last scope leaves `active_owners`. Any scope that calls
-    /// `clearPendingCustomDiskRegistration` (after committing its metadata transition) flips
-    /// `committed` to `true`; from that point no destructor rolls the disk back, which keeps
-    /// the disk reachable for the metadata that is now committed against it.
+    /// The `active_owners` vector lists every scoped `CustomDiskRegistrationScope *` (used as
+    /// opaque tokens, never dereferenced) that has either freshly registered the disk or
+    /// merely observed an existing tentative registration via `getOrCreateDisk`.
+    ///
+    /// `unscoped_observers` counts the unscoped CREATE / ATTACH callers (those that pass no
+    /// `CustomDiskRegistrationScope *`) currently validating an observed registration. Each
+    /// such observer is a single anonymous reference: `getOrCreateDisk` increments the counter
+    /// when it observes a tentative entry, and the observer drops it exactly once via
+    /// `commitUnscopedDiskObservation` (success) or `releaseUnscopedDiskObservation` (failure).
+    /// A plain counter rather than a sentinel value in `active_owners` is required because
+    /// every unscoped observer of the same disk name would otherwise push an identical token,
+    /// and removing "the" token would drop every co-observer's reference at once.
+    ///
+    /// The disk is rolled back from the global `DiskSelector` only when (a) `committed` is
+    /// `false`, AND (b) the last reference leaves, i.e. `active_owners` is empty AND
+    /// `unscoped_observers == 0`. Any scope that calls `clearPendingCustomDiskRegistration`
+    /// (after committing its metadata transition) flips `committed` to `true`; from that point
+    /// no destructor rolls the disk back, which keeps the disk reachable for the metadata that
+    /// is now committed against it.
     ///
     /// `we_inserted_cache_entry` records whether the FIRST registrar of this name also
     /// inserted a fresh entry into `FileCacheFactory::caches_by_name` (i.e. `disk(type =
@@ -662,6 +673,7 @@ struct ContextSharedPart : boost::noncopyable
     struct TentativeDiskRegistration
     {
         std::vector<const void *> active_owners;
+        size_t unscoped_observers = 0;
         bool committed = false;
         bool we_inserted_cache_entry = false;
     };
@@ -6527,23 +6539,17 @@ DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator, const
     {
         /// Unscoped observer (CREATE / ATTACH path that does not own a
         /// `CustomDiskRegistrationScope`). If a tentative entry is in flight for this name,
-        /// pin it with a sentinel slot in `active_owners` so a concurrent scope's destructor
-        /// cannot roll the disk back while this caller is still validating it (e.g. the
-        /// settings-hash check in `getOrCreateCustomDisk`). The caller MUST drop the sentinel
-        /// after validation by calling either `commitUnscopedDiskObservation` (success path,
-        /// flips `committed`) or `releaseUnscopedDiskObservation` (failure path, removes the
-        /// sentinel and lets a still-active scope roll back normally). The sentinel pointer
-        /// returned via `out_unscoped_observation_token` is opaque to callers; treat it as a
-        /// handle to be returned to one of those two methods.
+        /// pin it with an anonymous reference (`unscoped_observers` counter) so a concurrent
+        /// scope's destructor cannot roll the disk back while this caller is still validating
+        /// it (e.g. the settings-hash check in `getOrCreateCustomDisk`). The caller MUST drop
+        /// the reference after validation by calling either `commitUnscopedDiskObservation`
+        /// (success path, flips `committed`) or `releaseUnscopedDiskObservation` (failure
+        /// path, lets a still-active scope or the last leaver roll back normally). A counter
+        /// rather than a token in `active_owners` keeps co-observers of the same disk name
+        /// independent: dropping one observer's reference must not drop another's.
         auto it = shared->tentative_disk_registrations.find(name);
         if (it != shared->tentative_disk_registrations.end())
-        {
-            /// Use the entry pointer itself as the sentinel: it is unique per disk name and
-            /// distinguishable from any real `CustomDiskRegistrationScope *` (scopes live on
-            /// the validation thread's stack, the entry lives in `tentative_disk_registrations`).
-            const void * sentinel = static_cast<const void *>(&it->second);
-            it->second.active_owners.push_back(sentinel);
-        }
+            ++it->second.unscoped_observers;
     }
 
     return disk;
@@ -6558,17 +6564,22 @@ bool Context::commitUnscopedDiskObservation(const String & disk_name) const
         return false;
 
     auto & entry = it->second;
-    const void * sentinel = static_cast<const void *>(&entry);
 
-    /// Drop the sentinel slot if present (paired with the `else` branch in `getOrCreateDisk`)
-    /// and flip the registration to committed. Tolerates being called on an entry where the
-    /// sentinel is already gone (e.g. `getOrCreateDisk` did not insert one because no
-    /// tentative was in flight at observation time, but a subsequent ALTER created one
-    /// before this commit ran): the caller's metadata is still about to land, so committing
-    /// is the correct outcome.
-    auto & owners = entry.active_owners;
-    owners.erase(std::remove(owners.begin(), owners.end(), sentinel), owners.end());
+    /// Drop this observer's anonymous reference (paired with the `else` branch in
+    /// `getOrCreateDisk`) and flip the registration to committed. Tolerates being called on
+    /// an entry where no reference is outstanding (e.g. `getOrCreateDisk` did not take one
+    /// because no tentative was in flight at observation time, but a subsequent ALTER created
+    /// one before this commit ran): the caller's metadata is still about to land, so
+    /// committing is the correct outcome.
+    if (entry.unscoped_observers > 0)
+        --entry.unscoped_observers;
     entry.committed = true;
+
+    /// If we are the last reference to leave a now-committed entry, drop the bookkeeping
+    /// (the disk stays registered). Symmetric with the erase-on-last-reference branches in
+    /// `clearPendingCustomDiskRegistration` and `releaseUnscopedDiskObservation`.
+    if (entry.active_owners.empty() && entry.unscoped_observers == 0)
+        shared->tentative_disk_registrations.erase(it);
     return true;
 }
 
@@ -6646,26 +6657,27 @@ void Context::releaseUnscopedDiskObservation(const String & disk_name) const
         return;
 
     auto & entry = it->second;
-    const void * sentinel = static_cast<const void *>(&entry);
 
-    /// Drop the sentinel slot.
-    auto & owners = entry.active_owners;
-    owners.erase(std::remove(owners.begin(), owners.end(), sentinel), owners.end());
+    /// Drop only this observer's anonymous reference. Co-observers of the same disk name keep
+    /// their own references, so a failing observer can never tear another observer's slot out.
+    if (entry.unscoped_observers > 0)
+        --entry.unscoped_observers;
 
-    /// If any other scoped owner is still in flight or someone has committed, leave the
-    /// rollback to whichever path runs next (`removePendingCustomDiskIfOwned` for the last
-    /// scoped owner, or `clearPendingCustomDiskRegistration` for an explicit commit).
-    if (!owners.empty() || entry.committed)
+    /// If any scoped owner is still in flight, another unscoped observer is still validating,
+    /// or someone has committed, leave the rollback to whichever path runs next
+    /// (`removePendingCustomDiskIfOwned` for the last scoped owner, this function for the last
+    /// unscoped observer, or `clearPendingCustomDiskRegistration` for an explicit commit).
+    if (!entry.active_owners.empty() || entry.unscoped_observers > 0 || entry.committed)
     {
-        if (owners.empty() && entry.committed)
+        if (entry.active_owners.empty() && entry.unscoped_observers == 0 && entry.committed)
             shared->tentative_disk_registrations.erase(it);
         return;
     }
 
-    /// We are the last owner to leave AND no one committed. This happens when a scoped
+    /// We are the last reference to leave AND no one committed. This happens when a scoped
     /// owner's destructor ran first (e.g. an outer alterTable / ZK commit failed) and then
-    /// the unscoped observer's validation failed too. The scoped owner saw a non-empty
-    /// `active_owners` (sentinel still present), deferred the rollback, and is gone now;
+    /// the unscoped observer's validation failed too. The scoped owner saw outstanding
+    /// references (this observer still counted), deferred the rollback, and is gone now;
     /// the unscoped observer must perform the rollback itself or the disk leaks until
     /// server restart.
     rollbackTentativeDiskUnderLock(disk_name, lock);
@@ -6688,20 +6700,23 @@ bool Context::removePendingCustomDiskIfOwned(const String & disk_name, const voi
 
     /// If anyone in the chain has committed, the disk is permanently reachable. Drop our
     /// slot, leak everything else (the existing settings-hash check protects future ALTERs
-    /// from redefining the name with different settings).
+    /// from redefining the name with different settings). Only erase the bookkeeping entry
+    /// once every reference (scoped owners AND unscoped observers) is gone.
     if (entry.committed)
     {
-        if (owners.empty())
+        if (owners.empty() && entry.unscoped_observers == 0)
             shared->tentative_disk_registrations.erase(it);
         return false;
     }
 
-    /// Other scopes are still in flight. They might commit; defer removal to whichever
-    /// scope is the last to leave.
-    if (!owners.empty())
+    /// Other scopes are still in flight, or an unscoped CREATE / ATTACH observer is still
+    /// validating an observed registration. They might commit; defer removal to whichever
+    /// reference is the last to leave (`removePendingCustomDiskIfOwned` for the last scope,
+    /// `releaseUnscopedDiskObservation` for the last observer).
+    if (!owners.empty() || entry.unscoped_observers > 0)
         return false;
 
-    /// We are the last scope to leave and no one committed. Roll back globally. The helper
+    /// We are the last reference to leave and no one committed. Roll back globally. The helper
     /// re-locates the iterator from `disk_name`; we drop our reference (`entry`/`owners`)
     /// before calling it so the helper's `erase` does not invalidate anything live here.
     return rollbackTentativeDiskUnderLock(disk_name, lock);
@@ -6721,11 +6736,12 @@ void Context::clearPendingCustomDiskRegistration(const String & disk_name, const
     /// holding a slot will roll back the disk. This is the only place that flips the flag.
     entry.committed = true;
 
-    /// Drop our slot. Other observers may still be in flight; their destructors will see
-    /// `committed == true` and merely shrink the active set.
+    /// Drop our slot. Other scopes / unscoped observers may still be in flight; their
+    /// destructors or release calls will see `committed == true` and merely shrink the
+    /// reference set. Only erase the bookkeeping entry once every reference is gone.
     auto & owners = entry.active_owners;
     owners.erase(std::remove(owners.begin(), owners.end(), owner), owners.end());
-    if (owners.empty())
+    if (owners.empty() && entry.unscoped_observers == 0)
         shared->tentative_disk_registrations.erase(it);
 }
 

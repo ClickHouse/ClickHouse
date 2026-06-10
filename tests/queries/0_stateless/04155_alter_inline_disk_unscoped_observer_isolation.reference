@@ -1,0 +1,4 @@
+alter_rejected: yes
+mismatch_create_rejected: yes
+matching_create_succeeded: yes
+1	42

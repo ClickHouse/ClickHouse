@@ -1658,17 +1658,19 @@ public:
     /// Two-phase commit for unscoped CREATE / ATTACH observers (callers that pass
     /// `pending_rollback_owner == nullptr` to `getOrCreateDisk`). When such a caller observes
     /// a disk whose name is currently in flight as a tentative scoped registration,
-    /// `getOrCreateDisk` inserts a sentinel slot into the entry's active-owners list to keep
-    /// the disk pinned during the unscoped caller's own validation (e.g. the settings-hash
-    /// check in `getOrCreateCustomDisk`). The caller then drops the sentinel by calling
-    /// either of:
+    /// `getOrCreateDisk` takes an anonymous reference (the entry's `unscoped_observers`
+    /// counter) to keep the disk pinned during the unscoped caller's own validation (e.g. the
+    /// settings-hash check in `getOrCreateCustomDisk`). Each observer holds exactly one
+    /// reference, independent of any co-observer of the same disk name. The caller then drops
+    /// its reference by calling either of:
     /// - `commitUnscopedDiskObservation` after the validation has succeeded and the caller
     ///   is about to commit metadata against the disk; this also flips `committed = true`
     ///   so no still-in-flight scope's destructor rolls the disk back later. Returns true if
     ///   the entry was found, false if it had already been cleared.
-    /// - `releaseUnscopedDiskObservation` if the validation failed; this removes the
-    ///   sentinel without committing, allowing the original scoped owner's destructor to
-    ///   roll the disk back normally if it later fails too.
+    /// - `releaseUnscopedDiskObservation` if the validation failed; this drops the observer's
+    ///   reference without committing, and rolls the disk back itself only if it is the last
+    ///   reference to leave with the entry uncommitted (otherwise a still-active scope or
+    ///   co-observer performs the rollback).
     bool commitUnscopedDiskObservation(const String & disk_name) const;
     void releaseUnscopedDiskObservation(const String & disk_name) const;
 
