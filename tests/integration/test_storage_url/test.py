@@ -365,6 +365,29 @@ def test_url_wildcard_resets_headers_between_files():
     assert result == "part1.tsv\tpart1.tsv\tGET\npart2.tsv\tpart2.tsv\tGET\n"
 
 
+def test_url_wildcard_headers_are_not_read_from_page_cache():
+    reset_index_page_server_stats()
+
+    node1.query(
+        with_url_wildcard_setting(
+            "SELECT sum(x) FROM url('http://resolver:8087/data/mixed_headers/part1.tsv', 'TSV', 'x UInt64') "
+            "SETTINGS use_page_cache_for_object_storage=1"
+        )
+    )
+
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT any(_etag), any(_headers['X-Source-File']), any(_headers['X-Probe-Method']) "
+            "FROM url('http://resolver:8087/data/mixed_headers/part1.tsv', 'TSV', 'x UInt64') "
+            "SETTINGS use_page_cache_for_object_storage=1"
+        )
+    )
+    assert result == "mixed-part1.tsv\tpart1.tsv\tGET\n"
+
+    stats = get_index_page_server_stats()
+    assert stats["GET /data/mixed_headers/part1.tsv"] == 2
+
+
 def test_url_wildcard_limits_directory_traversal():
     error = node1.query_and_get_error(
         with_url_wildcard_setting(

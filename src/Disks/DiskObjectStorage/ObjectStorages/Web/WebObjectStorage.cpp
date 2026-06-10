@@ -391,7 +391,11 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
         for (const auto & header : response_buf->getResponseHeaders())
         {
             const auto & tuple = header.safeGet<Tuple>();
-            metadata.attributes.emplace(tuple[0].safeGet<String>(), tuple[1].safeGet<String>());
+            const auto & header_name = tuple[0].safeGet<String>();
+            const auto & header_value = tuple[1].safeGet<String>();
+            metadata.attributes.emplace(header_name, header_value);
+            if (header_name == "ETag")
+                metadata.etag = header_value;
         }
         return metadata;
     };
