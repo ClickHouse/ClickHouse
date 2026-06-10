@@ -227,7 +227,7 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     size_t alignment,
     bool compress_empty)
 {
-    assert(method != CompressionMethod::None);
+    chassert(method != CompressionMethod::None);
     return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty);
 }
 

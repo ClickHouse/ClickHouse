@@ -20,21 +20,23 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
-#include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
 #include <Interpreters/RewriteSumFunctionWithSumAndCountVisitor.h>
 #include <Interpreters/OptimizeDateOrDateTimeConverterWithPreimageVisitor.h>
 
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Storages/IStorage.h>
 
 
@@ -58,7 +60,6 @@ namespace Setting
     extern const SettingsBool optimize_time_filter_with_preimage;
     extern const SettingsBool optimize_using_constraints;
     extern const SettingsBool optimize_redundant_functions_in_order_by;
-    extern const SettingsBool optimize_rewrite_array_exists_to_has;
     extern const SettingsBool optimize_or_like_chain;
 }
 
@@ -163,6 +164,13 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
             else
             {
                 FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context); /// NOLINT(readability-static-accessed-through-instance)
+
+                if (!function_builder)
+                {
+                    auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
+                    if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
+                        function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(function->name, context);
+                }
 
                 if (!function_builder)
                     function_builder = function_factory.get(function->name, context);
@@ -533,12 +541,6 @@ void optimizeAggregationFunctions(ASTPtr & query)
     ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
 }
 
-void optimizeArrayExistsFunctions(ASTPtr & query)
-{
-    RewriteArrayExistsFunctionVisitor::Data data = {};
-    RewriteArrayExistsFunctionVisitor(data).visit(query);
-}
-
 void optimizeMultiIfToIf(ASTPtr & query)
 {
     OptimizeMultiIfToIfVisitor::Data data;
@@ -689,9 +691,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     if (settings[Setting::optimize_normalize_count_variants])
         optimizeCountConstantAndSumOne(query, context);
-
-    if (settings[Setting::optimize_rewrite_array_exists_to_has])
-        optimizeArrayExistsFunctions(query);
 
     /// Remove injective functions inside uniq
     if (settings[Setting::optimize_injective_functions_inside_uniq])

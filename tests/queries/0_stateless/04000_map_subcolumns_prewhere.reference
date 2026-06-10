@@ -1,0 +1,74 @@
+-- Section 1: PREWHERE optimization with with_buckets
+-- PREWHERE m[key1] is rewritten to m.key_key1
+1
+-- arrayElement should NOT appear in PREWHERE
+1
+-- Correctness: PREWHERE m[key1] > 90
+91	{'key2':910,'key1':91}	91	910
+92	{'key2':920,'key1':92}	92	920
+93	{'key2':930,'key1':93}	93	930
+94	{'key2':940,'key1':94}	94	940
+95	{'key2':950,'key1':95}	95	950
+96	{'key2':960,'key1':96}	96	960
+97	{'key2':970,'key1':97}	97	970
+98	{'key2':980,'key1':98}	98	980
+99	{'key2':990,'key1':99}	99	990
+-- Correctness: same without optimization
+91	{'key2':910,'key1':91}	91	910
+92	{'key2':920,'key1':92}	92	920
+93	{'key2':930,'key1':93}	93	930
+94	{'key2':940,'key1':94}	94	940
+95	{'key2':950,'key1':95}	95	950
+96	{'key2':960,'key1':96}	96	960
+97	{'key2':970,'key1':97}	97	970
+98	{'key2':980,'key1':98}	98	980
+99	{'key2':990,'key1':99}	99	990
+-- Section 2: PREWHERE + WHERE combined
+-- PREWHERE on map subcolumn, WHERE on v
+1
+-- Correctness: PREWHERE m[a] > 80 WHERE v < 3
+84	84	168	0
+85	85	170	1
+86	86	172	2
+91	91	182	0
+92	92	184	1
+93	93	186	2
+98	98	196	0
+99	99	198	1
+-- Section 3: Multiple map key lookups in PREWHERE
+-- Both m.key_x and m.key_y should appear
+1
+1
+-- arrayElement should NOT appear
+1
+-- Correctness: PREWHERE m[x] > 70 AND m[y] > 70 (empty result expected)
+0
+-- Correctness: PREWHERE m[x] > 90 AND m[y] < 20
+91	91	9
+92	92	8
+93	93	7
+94	94	6
+95	95	5
+96	96	4
+97	97	3
+98	98	2
+99	99	1
+-- Section 4: PREWHERE with basic serialization
+-- Optimization still rewrites to subcolumn
+1
+-- Correctness: PREWHERE with basic serialization
+96	96	960
+97	97	970
+98	98	980
+99	99	990
+-- Section 5: PREWHERE with UInt64 key
+-- m.key_1 should appear
+1
+-- Correctness: PREWHERE m[1] = 99
+99	99	990
+-- Section 6: Optimization disabled
+-- arrayElement should remain when optimization disabled
+1
+-- Both produce same result
+9
+9

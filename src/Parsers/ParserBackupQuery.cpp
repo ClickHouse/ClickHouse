@@ -309,7 +309,7 @@ namespace
 
     bool parseSyncOrAsync(IParser::Pos & pos, Expected & expected, ASTPtr & settings)
     {
-        bool async;
+        bool async = false;
         if (ParserKeyword(Keyword::ASYNC).ignore(pos, expected))
             async = true;
         else if (ParserKeyword(Keyword::SYNC).ignore(pos, expected))
@@ -345,7 +345,7 @@ namespace
 
 bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Kind kind;
+    Kind kind = {};
     if (ParserKeyword(Keyword::BACKUP).ignore(pos, expected))
         kind = Kind::BACKUP;
     else if (ParserKeyword(Keyword::RESTORE).ignore(pos, expected))
@@ -353,8 +353,14 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
         return false;
 
+    ASTPtr base_snapshot_name = nullptr;
     std::vector<Element> elements;
-    if (!parseElements(pos, expected, elements))
+    if (kind == Kind::BACKUP && ParserKeyword(Keyword::FROM_SNAPSHOT).ignore(pos, expected))
+    {
+        if (!parseBackupName(pos, expected, base_snapshot_name))
+            return false;
+    }
+    else if (!parseElements(pos, expected, elements))
         return false;
 
     String cluster;
@@ -388,6 +394,9 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (base_backup_name)
         query->set(query->base_backup_name, base_backup_name);
+
+    if (base_snapshot_name)
+        query->set(query->base_snapshot_name, base_snapshot_name);
 
     return true;
 }

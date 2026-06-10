@@ -16,6 +16,25 @@ We also consider the test to be unstable, if the observed difference is less tha
 performance differences above 5% more often than in 5% runs, so the test is likely
 to have false positives.
 
+### Where the results live
+
+In addition to the static `report.html` and `logs.tar.zst` bundle described
+below, every perf-comparison run uploads its results to the `play.clickhouse.com`
+ClickHouse cluster.
+
+| Table | Contents |
+| --- | --- |
+| `query_metrics_v2` | One row per `(test, query_index, metric)` with medians, diff and stat threshold. |
+| `query_metric_runs_v1` | Full per-run data (one row per `(test, query_index, side, query_id, metric)`). |
+| `perf_test_times_v1` | Per-test run times (Test Times section). |
+| `perf_test_perf_changes_v1` | Per-test summary of performance changes. |
+| `perf_partial_queries_v1` | Backward-incompatible queries that ran only on the new server. |
+| `perf_skipped_tests_v1` | Tests skipped during the run and why. |
+| `perf_run_errors_v1` | Errors captured from `run-errors.tsv`. |
+| `perf_metric_changes_v1` | Changes in `system.asynchronous_metric_log` medians. |
+| `perf_flamegraph_stacks_v1` | Collapsed flamegraph stacks per query/side/trace type. |
+
+
 ### How to Read the Report
 
 The check status summarizes the report in a short text message like `1 faster, 10 unstable`:

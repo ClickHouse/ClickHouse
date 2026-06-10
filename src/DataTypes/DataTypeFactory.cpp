@@ -220,11 +220,11 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
     }
     else
     {
-        assert(creator);
+        chassert(creator);
         data_type = (*creator)(parameters);
     }
 
-    auto query_context = CurrentThread::getQueryContext();
+    auto query_context = CurrentThread::tryGetQueryContext();
     if (query_context && query_context->getSettingsRef()[Setting::log_queries])
     {
         query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, data_type->getName());

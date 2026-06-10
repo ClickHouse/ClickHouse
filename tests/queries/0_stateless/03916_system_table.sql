@@ -38,3 +38,22 @@ SELECT name, enabled FROM system.fail_points WHERE name = 'replicated_merge_tree
 SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause;
 SELECT name, enabled FROM system.fail_points WHERE name = 'replicated_merge_tree_insert_retry_pause';
 -- Expected: replicated_merge_tree_insert_retry_pause 0
+
+-- Regression test for https://github.com/ClickHouse/ClickHouse/issues/103403
+-- Querying system.fail_points must NOT consume ONCE / PAUSEABLE_ONCE failpoints.
+-- Previously fillData called fiu_fail() which triggered and consumed ONETIME points.
+
+-- ONCE failpoint: should still report enabled=1 across repeated SELECTs.
+SYSTEM ENABLE FAILPOINT replicated_queue_fail_next_entry;
+SELECT 'once_first', enabled FROM system.fail_points WHERE name = 'replicated_queue_fail_next_entry';
+SELECT 'once_second', enabled FROM system.fail_points WHERE name = 'replicated_queue_fail_next_entry';
+SELECT 'once_third', enabled FROM system.fail_points WHERE name = 'replicated_queue_fail_next_entry';
+SYSTEM DISABLE FAILPOINT replicated_queue_fail_next_entry;
+SELECT 'once_disabled', enabled FROM system.fail_points WHERE name = 'replicated_queue_fail_next_entry';
+
+-- PAUSEABLE_ONCE failpoint: same regression, must not be consumed by SELECT.
+SYSTEM ENABLE FAILPOINT smt_commit_tweaks_gate_open;
+SELECT 'pauseable_once_first', enabled FROM system.fail_points WHERE name = 'smt_commit_tweaks_gate_open';
+SELECT 'pauseable_once_second', enabled FROM system.fail_points WHERE name = 'smt_commit_tweaks_gate_open';
+SYSTEM DISABLE FAILPOINT smt_commit_tweaks_gate_open;
+SELECT 'pauseable_once_disabled', enabled FROM system.fail_points WHERE name = 'smt_commit_tweaks_gate_open';

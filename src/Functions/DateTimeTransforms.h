@@ -11,7 +11,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/ColumnDecimal.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/FieldInterval.h>
 #include <Functions/FunctionHelpers.h>
@@ -75,6 +74,28 @@ struct ZeroTransform
     static UInt16 execute(Int32, const DateLUTImpl &) { return 0; }
     static UInt16 execute(UInt16, const DateLUTImpl &) { return 0; }
 };
+
+/// Returns the factor transform value used by monotonicity analysis (see getMonotonicityForRange).
+///
+/// `Transform::execute` clamps an out-of-range result to a representable Date. For example,
+/// rounding a pre-epoch Date32/DateTime64 down with toMonday/toStartOfMonth/toStartOfYear gives a
+/// day number before 1970-01-01, which is clamped to 1970-01-01 (day 0); a day number after
+/// 2149-06-06 is clamped to 2149-06-06 (day 0xFFFF). That clamp is correct for the value the
+/// function returns, but it is wrong for monotonicity: it collapses every out-of-range
+/// week/month/year to the same factor, so a function that actually wraps within those periods
+/// (toDayOfWeek, toMonth, toDayOfMonth, ...) would be reported as monotonic and corrupt
+/// index/partition pruning.
+///
+/// `executeExtendedResult` keeps the unclamped, order-preserving extended day number, so prefer it
+/// when the factor transform provides it; otherwise fall back to the plain `execute`.
+template <typename FactorTransform, typename ArgType>
+auto extendedFactorForMonotonicity(ArgType arg, const DateLUTImpl & date_lut)
+{
+    if constexpr (requires { FactorTransform::executeExtendedResult(arg, date_lut); })
+        return FactorTransform::executeExtendedResult(arg, date_lut);
+    else
+        return FactorTransform::execute(arg, date_lut);
+}
 
 template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
 struct ToDateImpl
@@ -216,17 +237,17 @@ struct ToMondayImpl
 
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        //return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t));
-        return static_cast<UInt16>(time_zone.toFirstDayNumOfWeek(t));
+        const int res = time_zone.toFirstDayNumOfWeek(t);
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        //return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t));
         return time_zone.toFirstDayNumOfWeek(t);
     }
     static UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d)));
+        const int res = time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -249,7 +270,8 @@ struct ToStartOfMonthImpl
 
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toFirstDayNumOfMonth(time_zone.toDayNum(t)));
+        const int res = time_zone.toFirstDayNumOfMonth(time_zone.toDayNum(t));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -257,7 +279,8 @@ struct ToStartOfMonthImpl
     }
     static UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toFirstDayNumOfMonth(ExtendedDayNum(d)));
+        const int res = time_zone.toFirstDayNumOfMonth(ExtendedDayNum(d));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -281,7 +304,8 @@ struct ToLastDayOfMonthImpl
 
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toLastDayNumOfMonth(time_zone.toDayNum(t)));
+        const int res = time_zone.toLastDayNumOfMonth(time_zone.toDayNum(t));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -289,7 +313,8 @@ struct ToLastDayOfMonthImpl
     }
     static UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toLastDayNumOfMonth(ExtendedDayNum(d)));
+        const int res = time_zone.toLastDayNumOfMonth(ExtendedDayNum(d));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -312,7 +337,8 @@ struct ToStartOfQuarterImpl
 
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toFirstDayNumOfQuarter(time_zone.toDayNum(t)));
+        const int res = time_zone.toFirstDayNumOfQuarter(time_zone.toDayNum(t));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -320,7 +346,8 @@ struct ToStartOfQuarterImpl
     }
     static UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(d)));
+        const int res = time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(d));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -343,7 +370,8 @@ struct ToStartOfYearImpl
 
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toFirstDayNumOfYear(time_zone.toDayNum(t)));
+        const int res = time_zone.toFirstDayNumOfYear(time_zone.toDayNum(t));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -351,7 +379,8 @@ struct ToStartOfYearImpl
     }
     static UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toFirstDayNumOfYear(ExtendedDayNum(d)));
+        const int res = time_zone.toFirstDayNumOfYear(ExtendedDayNum(d));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -397,6 +426,7 @@ struct ToYearWeekImpl
         return yw.first * 100 + yw.second;
     }
 
+    static constexpr bool hasMonotonicity() { return true; }
     using FactorTransform = ZeroTransform;
 };
 
@@ -408,16 +438,17 @@ struct ToStartOfWeekImpl
     static UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         const int res = time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-        return static_cast<UInt16>(std::max(res, 0));
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode));
+        const int res = time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
@@ -432,6 +463,7 @@ struct ToStartOfWeekImpl
         return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
     }
 
+    static constexpr bool hasMonotonicity() { return true; }
     using FactorTransform = ZeroTransform;
 };
 
@@ -442,7 +474,8 @@ struct ToLastDayOfWeekImpl
 
     static UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode));
+        const int res = time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
@@ -450,7 +483,8 @@ struct ToLastDayOfWeekImpl
     }
     static UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode));
+        const int res = time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
+        return static_cast<UInt16>(std::clamp(res, 0, DATE_LUT_MAX_DAY_NUM));
     }
     static UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
@@ -465,6 +499,7 @@ struct ToLastDayOfWeekImpl
         return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
     }
 
+    static constexpr bool hasMonotonicity() { return true; }
     using FactorTransform = ZeroTransform;
 };
 
@@ -494,6 +529,11 @@ struct ToWeekImpl
         YearWeek yw = time_zone.toYearWeek(DayNum(d), week_mode);
         return yw.second;
     }
+
+    /// toWeek() is not monotonic because week numbers can wrap at year boundaries
+    /// (e.g. ISO week 52 -> week 1 in late December), depending on the week_mode.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/90240
+    static constexpr bool hasMonotonicity() { return false; }
 
     using FactorTransform = ToStartOfYearImpl;
 };
@@ -568,10 +608,23 @@ struct ToStartOfInterval<IntervalKind::Kind::Microsecond>
         else if (scale_multiplier > 1000000)
         {
             Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000000);
+            Int64 microseconds_scaled = 0;
+            if (common::mulOverflow(microseconds, scale_diff, microseconds_scaled))
+                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
             if (t >= 0) [[likely]] /// When we divide the `t` value we should round the result
-                return (t + scale_diff / 2) / (microseconds * scale_diff) * microseconds;
+            {
+                Int64 t_rounded = 0;
+                if (common::addOverflow(t, scale_diff / 2, t_rounded))
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+                return t_rounded / microseconds_scaled * microseconds;
+            }
             else
-                return ((t + 1) / microseconds / scale_diff - 1) * microseconds;
+            {
+                Int64 result = 0;
+                if (common::mulOverflow((t + 1) / microseconds / scale_diff - 1, microseconds, result))
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+                return result;
+            }
         }
         else
             if (t >= 0) [[likely]]
@@ -611,10 +664,23 @@ struct ToStartOfInterval<IntervalKind::Kind::Millisecond>
         else if (scale_multiplier > 1000)
         {
             Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000);
+            Int64 milliseconds_scaled = 0;
+            if (common::mulOverflow(milliseconds, scale_diff, milliseconds_scaled))
+                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
             if (t >= 0) [[likely]]  /// When we divide the `t` value we should round the result
-                return (t + scale_diff / 2) / (milliseconds * scale_diff) * milliseconds;
+            {
+                Int64 t_rounded = 0;
+                if (common::addOverflow(t, scale_diff / 2, t_rounded))
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+                return t_rounded / milliseconds_scaled * milliseconds;
+            }
             else
-                return ((t + 1) / milliseconds / scale_diff - 1) * milliseconds;
+            {
+                Int64 result = 0;
+                if (common::mulOverflow((t + 1) / milliseconds / scale_diff - 1, milliseconds, result))
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+                return result;
+            }
         }
         else
             if (t >= 0) [[likely]]
@@ -727,7 +793,10 @@ struct ToStartOfInterval<IntervalKind::Kind::Week>
     {
         if (!origin.has_value())
             return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
-        return ToStartOfInterval<IntervalKind::Kind::Day>::execute(t, weeks * 7, time_zone, scale_multiplier, origin);
+        Int64 days = 0;
+        if (common::mulOverflow(weeks, static_cast<Int64>(7), days))
+            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+        return ToStartOfInterval<IntervalKind::Kind::Day>::execute(t, days, time_zone, scale_multiplier, origin);
     }
 };
 
@@ -783,7 +852,10 @@ struct ToStartOfInterval<IntervalKind::Kind::Quarter>
     {
         if (!origin.has_value())
             return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
-        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, quarters * 3, time_zone, scale_multiplier, origin);
+        Int64 months = 0;
+        if (common::mulOverflow(quarters, static_cast<Int64>(3), months))
+            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, months, time_zone, scale_multiplier, origin);
     }
 };
 
@@ -806,7 +878,10 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
     {
         if (!origin.has_value())
             return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
-        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, years * 12, time_zone, scale_multiplier, origin);
+        Int64 months = 0;
+        if (common::mulOverflow(years, static_cast<Int64>(12), months))
+            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, months, time_zone, scale_multiplier, origin);
     }
 };
 
@@ -962,7 +1037,8 @@ struct ToStartOfMillisecondImpl
         }
         if (scale_multiplier <= 1000)
         {
-            return datetime64 * (1000 / scale_multiplier);
+            /// Use unsigned arithmetic to avoid signed overflow UB.
+            return static_cast<DateTime64>(static_cast<UInt64>(datetime64) * static_cast<UInt64>(1000 / scale_multiplier));
         }
 
         auto droppable_part_with_sign
@@ -983,7 +1059,8 @@ struct ToStartOfMillisecondImpl
         }
         if (scale_multiplier <= 1000)
         {
-            return time64 * (1000 / scale_multiplier);
+            /// Use unsigned arithmetic to avoid signed overflow UB.
+            return static_cast<Time64>(static_cast<UInt64>(time64) * static_cast<UInt64>(1000 / scale_multiplier));
         }
 
         auto droppable_part_with_sign
@@ -1030,7 +1107,8 @@ struct ToStartOfMicrosecondImpl
         }
         if (scale_multiplier <= 1000000)
         {
-            return datetime64 * (1000000 / scale_multiplier);
+            /// Use unsigned arithmetic to avoid signed overflow UB.
+            return static_cast<DateTime64>(static_cast<UInt64>(datetime64) * static_cast<UInt64>(1000000 / scale_multiplier));
         }
 
         auto droppable_part_with_sign
@@ -1052,7 +1130,8 @@ struct ToStartOfMicrosecondImpl
         }
         if (scale_multiplier <= 1000000)
         {
-            return time64 * (1000000 / scale_multiplier);
+            /// Use unsigned arithmetic to avoid signed overflow UB.
+            return static_cast<Time64>(static_cast<UInt64>(time64) * static_cast<UInt64>(1000000 / scale_multiplier));
         }
 
         auto droppable_part_with_sign
@@ -1567,6 +1646,34 @@ struct ToDayOfMonthImpl
     using FactorTransform = ToStartOfMonthImpl;
 };
 
+struct ToDaysInMonthImpl
+{
+    static constexpr auto name = "toDaysInMonth";
+    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.daysInMonth(t);
+    }
+    static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.daysInMonth(t);
+    }
+    static UInt8 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.daysInMonth(t);
+    }
+    static UInt8 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.daysInMonth(ExtendedDayNum(d));
+    }
+    static UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.daysInMonth(DayNum(d));
+    }
+
+    static constexpr bool hasPreimage() { return false; }
+    using FactorTransform = ToStartOfMonthImpl;
+};
+
 struct ToDayOfWeekImpl
 {
     static constexpr auto name = "toDayOfWeek";
@@ -1592,6 +1699,7 @@ struct ToDayOfWeekImpl
         return time_zone.toDayOfWeek(DayNum(d), mode);
     }
 
+    static constexpr bool hasMonotonicity() { return true; }
     using FactorTransform = ToMondayImpl;
 };
 
@@ -1643,7 +1751,10 @@ public:
     }
     static UInt32 execute(Int32 d, const DateLUTImpl &)
     {
-        return DAYS_BETWEEN_YEARS_0_AND_1970 + d;
+        /// Cast to `UInt32` so the addition is performed in unsigned arithmetic
+        /// and out-of-range `d` (e.g. fuzzer-supplied values near `INT32_MAX`)
+        /// does not trigger a signed integer overflow.
+        return DAYS_BETWEEN_YEARS_0_AND_1970 + static_cast<UInt32>(d);
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl &)
     {
@@ -1796,6 +1907,76 @@ struct ToMillisecondImpl
         throwTimeIsNotSupported(name);
     }
     static UInt16 execute(UInt16, const DateLUTImpl &)
+    {
+        throwDateIsNotSupported(name);
+    }
+    static constexpr bool hasPreimage() { return false; }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToMicrosecondImpl
+{
+    static constexpr auto name = "toMicrosecond";
+
+    static UInt32 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
+    {
+        return static_cast<UInt32>(time_zone.toMicrosecond(datetime64, scale_multiplier));
+    }
+
+    static UInt32 execute(const Time64 & time64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
+    {
+        return static_cast<UInt32>(time_zone.toMicrosecond(time64, scale_multiplier));
+    }
+
+    static UInt32 execute(UInt32, const DateLUTImpl &)
+    {
+        return 0;
+    }
+    static UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        throwDate32IsNotSupported(name);
+    }
+    static UInt32 execute(Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
+    static UInt32 execute(UInt16, const DateLUTImpl &)
+    {
+        throwDateIsNotSupported(name);
+    }
+    static constexpr bool hasPreimage() { return false; }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToNanosecondImpl
+{
+    static constexpr auto name = "toNanosecond";
+
+    static UInt32 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
+    {
+        return static_cast<UInt32>(time_zone.toNanosecond(datetime64, scale_multiplier));
+    }
+
+    static UInt32 execute(const Time64 & time64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
+    {
+        return static_cast<UInt32>(time_zone.toNanosecond(time64, scale_multiplier));
+    }
+
+    static UInt32 execute(UInt32, const DateLUTImpl &)
+    {
+        return 0;
+    }
+    static UInt32 execute(Int32, const DateLUTImpl &)
+    {
+        throwDate32IsNotSupported(name);
+    }
+    static UInt32 execute(Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
+    static UInt32 execute(UInt16, const DateLUTImpl &)
     {
         throwDateIsNotSupported(name);
     }
@@ -2370,9 +2551,9 @@ struct ToYYYYMMDDhhmmssImpl
 
 struct DateTimeComponentsWithFractionalPart : public DateLUTImpl::DateTimeComponents
 {
-    UInt16  millisecond;
-    UInt16  microsecond;
-    UInt16  nanosecond;
+    UInt16  millisecond{};
+    UInt16  microsecond{};
+    UInt16  nanosecond{};
 };
 
 struct ToDateTimeComponentsImpl

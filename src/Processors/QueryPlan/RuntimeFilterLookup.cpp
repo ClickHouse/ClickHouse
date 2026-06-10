@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
@@ -248,7 +249,7 @@ ColumnPtr RuntimeFilterBase<negate>::findImpl(const ColumnWithTypeAndName & valu
         case ValuesCount::ONE:
         {
             /// If only 1 element in the set then use "value == const" instead of set lookup
-            auto const_column = filter_column_target_type->createColumnConst(values.column->size(), *single_element_in_set);
+            ColumnPtr const_column = filter_column_target_type->createColumnConst(values.column->size(), *single_element_in_set);
             ColumnsWithTypeAndName arguments = {
                 values,
                 ColumnWithTypeAndName(const_column, filter_column_target_type, String())

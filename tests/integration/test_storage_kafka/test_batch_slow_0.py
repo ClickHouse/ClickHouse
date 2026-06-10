@@ -383,13 +383,16 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
         assert TSV(result) == TSV(expected), "Proper result for format: {}".format(
             format_name
         )
-        errors_result = json.loads(
-            instance.query(
-                "SELECT raw_message, error FROM test.kafka_errors_{format_name}_mv format JSONEachRow".format(
-                    format_name=format_name
-                )
-            )
+        errors_query = "SELECT raw_message, error FROM test.kafka_errors_{format_name}_mv FORMAT JSONEachRow".format(
+            format_name=format_name
         )
+        errors_text = instance.query_with_retry(
+            errors_query,
+            retry_count=30,
+            sleep_time=1,
+            check_callback=lambda res: len(res) > 0,
+        )
+        errors_result = json.loads(errors_text)
         # print(errors_result.strip())
         # print(errors_expected.strip())
         assert (

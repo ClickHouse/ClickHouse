@@ -8,8 +8,6 @@ title: 'Backup'
 doc_type: 'reference'
 ---
 
-# Backup
-
 Database backup allows to instantly attach table/database from [backups](/operations/backup/overview) in read-only mode.
 
 Database backup works with both incremental and non-incremental backups.

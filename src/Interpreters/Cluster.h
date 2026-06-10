@@ -2,6 +2,7 @@
 
 #include <Client/ConnectionPool_fwd.h>
 #include <Core/Protocol.h>
+#include <Core/Types.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
 #include <Common/MultiVersion.h>
@@ -11,6 +12,7 @@
 #include <Poco/Timespan.h>
 
 #include <map>
+#include <optional>
 #include <string>
 #include <unordered_set>
 
@@ -37,7 +39,11 @@ struct DatabaseReplicaInfo
     String hostname;
     String shard_name;
     String replica_name;
+    std::optional<bool> is_local;
 };
+
+/// List of replica hostnames grouped per shard. Used to construct a Cluster for the remote() function.
+using HostsByShard = std::vector<Strings>;
 
 struct ClusterConnectionParameters
 {
@@ -74,14 +80,15 @@ public:
     /// Used for remote() function.
     Cluster(
         const Settings & settings,
-        const std::vector<std::vector<String>> & names,
+        const HostsByShard & names,
         const ClusterConnectionParameters & params);
 
 
     Cluster(
         const Settings & settings,
         const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
-        const ClusterConnectionParameters & params);
+        const ClusterConnectionParameters & params,
+        bool internal_replication = false);
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -308,7 +315,6 @@ private:
         UInt32 current_shard_num,
         String current_shard_name = "",
         UInt32 weight = 1,
-        ShardInfoInsertPathForInternalReplication insert_paths = {},
         bool internal_replication = false);
 
     /// Inter-server secret

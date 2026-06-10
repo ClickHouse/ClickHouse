@@ -23,12 +23,10 @@ Filter
 8	9
 9	10
 > filter should be pushed down after aggregating, column after aggregation is const
-COLUMN Const(UInt8) -> notEquals(y, 0)
 Aggregating
 Filter
 Filter
 > (analyzer) filter should be pushed down after aggregating, column after aggregation is const
-COLUMN Const(UInt8) -> notEquals(__table1.y, 0_UInt8)
 Aggregating
 Filter
 Filter

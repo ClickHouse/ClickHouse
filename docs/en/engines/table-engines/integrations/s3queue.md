@@ -21,7 +21,7 @@ It is important to understand this note from the [original PR for S3Queue implem
 
 ```sql
 CREATE TABLE s3_queue_engine_table (name String, value UInt32)
-    ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression], [headers])
+    ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression], [headers], [extra_credentials])
     [SETTINGS]
     [mode = '',]
     [after_processing = 'keep',]
@@ -171,6 +171,16 @@ Possible values:
 - String.
 
 Default value: empty string.
+
+### `after_processing_move_preserve_path` {#after_processing_move_preserve_path}
+
+If `true`, the full source object path is appended to `after_processing_move_prefix` when moving a successfully processed file, so the source directory structure under the bucket is preserved at the destination. If `false`, only the file name is used and the source directory structure is flattened.
+
+Possible values:
+
+- `true` / `false`.
+
+Default value: `false`.
 
 ### `after_processing_move_secret_access_key` {#after_processing_move_secret_access_key}
 
@@ -328,11 +338,11 @@ For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Q
 
 By default S3Queue table has always used ephemeral processing nodes, which could lead to duplicates in data in case zookeeper session expires before S3Queue commits processed files in zookeeper, but after it has started processing. This setting forces the server to eliminate possibility of duplicates in case of expired keeper session.
 
-### `persistent_processing_nodes_ttl_seconds` {#persistent_processing_nodes_ttl_seconds}
+### `persistent_processing_node_ttl_seconds` {#persistent_processing_node_ttl_seconds}
 
-In case of non-graceful server termination, it is possible that if `use_persistent_processing_nodes` is enabled, we can have not removed processing nodes. This setting defines a period of time when these processing nodes can safely be cleaned up.
+In case of non-graceful server termination, it is possible that if `use_persistent_processing_nodes` is enabled, we can have not removed processing nodes. This setting defines a period of time when these processing nodes can safely be cleaned up. The same TTL is also used for the bucket lock in `Ordered` mode, which can be held for a longer time than a single processing node, so the value should account for that as well.
 
-Default value: `3600` (1 hour).
+Default value: `21600` (6 hours).
 
 ## S3-related settings {#s3-settings}
 

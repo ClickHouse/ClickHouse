@@ -231,9 +231,20 @@ DiskPtr StoragePolicy::getAnyDisk() const
 DiskPtr StoragePolicy::tryGetDiskByName(const String & disk_name) const
 {
     for (auto && volume : volumes)
+    {
         for (auto && disk : volume->getDisks())
+        {
             if (disk->getName() == disk_name)
                 return disk;
+
+            /// If the requested name matches a wrapped (underlying) disk of a cache layer,
+            /// resolve to the cache disk. This provides backward compatibility for TTL TO DISK
+            /// and MOVE PARTITION TO DISK referencing base disk names (e.g. 's3' instead of 's3_cache').
+            if (disk->supportsCache() && disk->getCacheLayersNames().contains(disk_name))
+                return disk;
+        }
+    }
+
     return {};
 }
 

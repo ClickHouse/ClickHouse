@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Shared settings for TPC-H tests, derived from tests/benchmarks/tpc-h/settings.json.
+# See tests/benchmarks/tpc-h/README.md for known issues and workaround details.
+
+TPCH_SETTINGS_JSON="$CURDIR/../../benchmarks/tpc-h/settings.json"
+
+# --max_rows_to_read 0 because of https://github.com/ClickHouse/ClickHouse/issues/99937. Can be removed after the issue is closed.
+SETTINGS=(-m --max_rows_to_read 0)
+_tpch_output=$(jq -e -r '
+    (.settings | to_entries[] | "--\(.key)", (.value | tostring))
+' "$TPCH_SETTINGS_JSON")
+readarray -t _tpch_lines <<< "$_tpch_output"
+SETTINGS+=("${_tpch_lines[@]}")

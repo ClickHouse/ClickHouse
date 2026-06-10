@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Common/threadPoolCallbackRunner.h>
+#include <exception>
+#include <mutex>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Block.h>
 
@@ -69,11 +70,9 @@ struct FormatFilterInfo
     /// all columns of the sample block.
     Block additional_columns;
 
-    /// IInputFormat implementation may put arbitrary state here.
-    std::shared_ptr<void> opaque;
-
     ColumnMapperPtr column_mapper;
 
+    std::optional<size_t> condition_hash;
 private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;
@@ -82,13 +81,16 @@ private:
 public:
     bool hasFilter() const;
 
-    /// Creates `key_condition` and `additional_columns`.
-    /// Call inside initOnce.
-    void initKeyCondition(const Block & keys);
+    /// Creates `key_condition` and `additional_columns` with std::call_once semantics.
+    /// If a previous init attempt threw an exception, rethrows it instead of retrying.
+    void initKeyConditionOnce(const Block & keys);
 
-    /// Does std::call_once(init_flag, ...).
-    /// If a previous init attempt threw exception, rethrows it instead retrying.
-    void initOnce(std::function<void()> f);
+    /// Returns `base` extended with columns required by PREWHERE / row-level filter.
+    /// Hint: pass `base` with `std::move` to avoid copying
+    static Block buildKeyConditionInputs(
+        Block base,
+        const PrewhereInfoPtr & prewhere_info,
+        const FilterDAGInfoPtr & row_level_filter);
 };
 
 }

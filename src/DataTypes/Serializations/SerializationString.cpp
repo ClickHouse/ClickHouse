@@ -1,3 +1,5 @@
+#include <Common/SipHash.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationString.h>
 
 #include <Columns/ColumnString.h>
@@ -29,6 +31,19 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
+UInt128 SerializationString::getHash(MergeTreeStringSerializationVersion version_)
+{
+    SipHash hash;
+    hash.update("String");
+    hash.update(static_cast<int>(version_));
+    return hash.get128();
+}
+
+SerializationPtr SerializationString::create(MergeTreeStringSerializationVersion version_)
+{
+    return ISerialization::pooled(getHash(version_), [=] { return new SerializationString(version_); });
+}
+
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const String & s = field.safeGet<String>();
@@ -47,7 +62,7 @@ void SerializationString::serializeBinary(const Field & field, WriteBuffer & ost
 
 void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    UInt64 size;
+    UInt64 size = 0;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(
@@ -86,7 +101,7 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr,
     ColumnString::Chars & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();
 
-    UInt64 size;
+    UInt64 size = 0;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(
@@ -152,7 +167,7 @@ try
         if (istr.eof())
             break;
 
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, istr);
 
         static constexpr size_t max_string_size = 16_GiB;   /// Arbitrary value to prevent logical errors and overflows, but large enough.
@@ -210,7 +225,7 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
     /// Skip certain number of values if requested
     for (size_t i = 0; i < rows_offset; ++i)
     {
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, istr);
         istr.ignore(size);
     }
@@ -318,22 +333,28 @@ void SerializationString::enumerateStreamsWithoutSize(
     if (settings.enumerate_virtual_streams)
     {
         const auto * type_string = data.type ? &assert_cast<const DataTypeString &>(*data.type) : nullptr;
-        const auto * column_string = data.column ? &assert_cast<const ColumnString &>(*data.column) : nullptr;
-        ColumnPtr sizes_column;
-        if (column_string)
+
+        auto sizes_serialization = SerializationStringSize::create(version);
+
+        /// Inlined size stream. The column is not computed eagerly; instead a
+        /// lazy column creator is attached so that `createFromPath` can derive it
+        /// on demand when the `.size` subcolumn is actually requested.
+        settings.path.push_back(Substream::InlinedStringSizes);
+
+        auto substream_data = SubstreamData(sizes_serialization)
+                                  .withType(type_string ? std::make_shared<DataTypeUInt64>() : nullptr)
+                                  .withColumn(nullptr)
+                                  .withSerializationInfo(data.serialization_info);
+
+        if (data.column)
         {
-            /// TODO(ab): Will this unnecessarily create useless .size subcolumn?
-            sizes_column = column_string->createSizeSubcolumn();
+            substream_data.withLazyColumnCreator([parent_col = data.column]() -> ColumnPtr
+            {
+                return assert_cast<const ColumnString &>(*parent_col).createSizeSubcolumn();
+            });
         }
 
-        auto sizes_serialization = std::make_shared<SerializationStringSize>(version);
-
-        /// Inlined size stream
-        settings.path.push_back(Substream::InlinedStringSizes);
-        settings.path.back().data = SubstreamData(sizes_serialization)
-                                        .withType(type_string ? std::make_shared<DataTypeUInt64>() : nullptr)
-                                        .withColumn(std::move(sizes_column))
-                                        .withSerializationInfo(data.serialization_info);
+        settings.path.back().data = std::move(substream_data);
 
         callback(settings.path);
         settings.path.pop_back();
@@ -497,7 +518,7 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
     {
         String field;
         readJSONField(field, istr, settings.json);
-        Float64 tmp;
+        Float64 tmp = 0;
         ReadBufferFromString buf(field);
         if (tryReadFloatText(tmp, buf) && buf.eof())
             read<void>(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
@@ -542,7 +563,7 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
         if (!tryReadJSONField(field, istr, settings.json))
             return false;
 
-        Float64 tmp;
+        Float64 tmp = 0;
         ReadBufferFromString buf(field);
         if (tryReadFloatText(tmp, buf) && buf.eof())
         {
@@ -655,22 +676,26 @@ void SerializationString::enumerateStreamsWithSize(
     const SubstreamData & data) const
 {
     const auto * type_string = data.type ? &assert_cast<const DataTypeString &>(*data.type) : nullptr;
-    const auto * column_string = data.column ? &assert_cast<const ColumnString &>(*data.column) : nullptr;
-    ColumnPtr sizes_column;
-    if (column_string)
+
+    auto sizes_serialization = SerializationStringSize::create(version);
+
+    /// Size stream. Same lazy pattern as in `enumerateStreamsWithoutSize`.
+    settings.path.push_back(Substream::StringSizes);
+
+    auto substream_data = SubstreamData(sizes_serialization)
+                              .withType(type_string ? std::make_shared<DataTypeUInt64>() : nullptr)
+                              .withColumn(nullptr)
+                              .withSerializationInfo(data.serialization_info);
+
+    if (data.column)
     {
-        /// TODO(ab): Will this unnecessarily create useless .size subcolumn?
-        sizes_column = column_string->createSizeSubcolumn();
+        substream_data.withLazyColumnCreator([parent_col = data.column]() -> ColumnPtr
+        {
+            return assert_cast<const ColumnString &>(*parent_col).createSizeSubcolumn();
+        });
     }
 
-    auto sizes_serialization= std::make_shared<SerializationStringSize>(version);
-
-    /// Size stream
-    settings.path.push_back(Substream::StringSizes);
-    settings.path.back().data = SubstreamData(sizes_serialization)
-                                    .withType(type_string ? std::make_shared<DataTypeUInt64>() : nullptr)
-                                    .withColumn(std::move(sizes_column))
-                                    .withSerializationInfo(data.serialization_info);
+    settings.path.back().data = std::move(substream_data);
     callback(settings.path);
 
     /// Regular stream
@@ -794,7 +819,7 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
             string_state->size_column = ColumnUInt64::create();
 
         size_t prev_size = string_state->size_column->size();
-        SerializationNumber<UInt64>().deserializeBinaryBulk(
+        SerializationNumber<UInt64>::create()->deserializeBinaryBulk(
             *string_state->size_column->assumeMutable(), *size_stream, 0, rows_offset + limit, 0);
         num_read_rows = string_state->size_column->size() - prev_size;
         /// We are not going to apply rows_offsets to sizes column here, so we can put it as is in the cache.
