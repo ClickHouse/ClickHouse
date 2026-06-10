@@ -319,12 +319,14 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo()
 MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlainObjectStorageWriteFileOperation(
     std::string path_,
     StoredObject object_,
+    bool create_empty_object_,
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_)
     : path(std::move(path_))
     , object(std::move(object_))
+    , create_empty_object(create_empty_object_)
     , object_storage(std::move(object_storage_))
     , fs_tree(std::move(fs_tree_))
     , layout(std::move(layout_))
@@ -337,19 +339,33 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
 {
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file '{}', size: {}", path, object.bytes_size);
 
-    if (!fs_tree->existsFile(path))
+    if (fs_tree->existsFile(path))
+        return;
+
+    /// plain_rewritable rebuilds metadata from the object listing, so a 0-byte file with no copied
+    /// blob must still get a real (empty) object here or it would not survive reload or a later copy.
+    if (create_empty_object)
     {
-        fs_tree->recordFile(path, {object.bytes_size, std::time(nullptr)});
-        written = true;
+        object_storage->writeObject(
+            object,
+            WriteMode::Rewrite,
+            /*object_attributes*/ std::nullopt,
+            /*buf_size*/ 128,
+            /*settings*/ getWriteSettings())->finalize();
+        object_written = true;
     }
+
+    fs_tree->recordFile(path, {object.bytes_size, std::time(nullptr)});
+    written = true;
 }
 
 void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo()
 {
-    if (!written)
-        return;
+    if (written)
+        fs_tree->removeFile(path);
 
-    fs_tree->removeFile(path);
+    if (object_written)
+        object_storage->removeObjectIfExists(object);
 }
 
 MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(

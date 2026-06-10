@@ -1,4 +1,8 @@
 local_disk	0
 local_plain_rewritable	0
 0
+local_plain_rewritable	0
+0
+local_disk	0
+0
 42

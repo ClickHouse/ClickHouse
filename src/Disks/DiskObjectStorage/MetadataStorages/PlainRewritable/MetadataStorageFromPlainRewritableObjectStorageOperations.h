@@ -98,17 +98,21 @@ class MetadataStorageFromPlainObjectStorageWriteFileOperation final : public IMe
 private:
     const std::filesystem::path path;
     const StoredObject object;
+    /// The file is 0-byte with no copied blob; materialize an empty object at `object.remote_path`.
+    const bool create_empty_object;
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
 
     bool written = false;
+    bool object_written = false;
 
 public:
     MetadataStorageFromPlainObjectStorageWriteFileOperation(
         std::string path_,
         StoredObject object_,
+        bool create_empty_object_,
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,

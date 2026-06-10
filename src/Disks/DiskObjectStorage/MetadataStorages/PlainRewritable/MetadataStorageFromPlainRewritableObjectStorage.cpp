@@ -404,12 +404,16 @@ TransactionCommitOutcomeVariant MetadataStorageFromPlainRewritableObjectStorageT
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & objects)
 {
-    /// Empty `objects` means a 0-byte file; the operation only uses bytes_size, so record size 0.
-    const StoredObject object
-        = objects.empty() ? StoredObject(/*remote_path_=*/"", /*local_path_=*/path, /*bytes_size_=*/0) : objects.front();
+    /// Non-empty `objects`: the caller already copied the blob for this key. Empty `objects`: a
+    /// 0-byte file; plain_rewritable has no blobless files, so generate a key and materialize it.
+    const bool create_empty_object = objects.empty();
+    const StoredObject object = create_empty_object
+        ? StoredObject(generateObjectKeyForPath(path).serialize(), /*local_path_=*/path, /*bytes_size_=*/0)
+        : objects.front();
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(
         path,
         object,
+        create_empty_object,
         metadata_storage.object_storage,
         metadata_storage.fs_tree,
         metadata_storage.layout,

@@ -16,14 +16,32 @@ ALTER TABLE t_move_empty_pr DROP PARTITION tuple();
 SELECT disk_name, rows FROM system.parts
 WHERE database = currentDatabase() AND table = 't_move_empty_pr' AND active;
 
--- The empty part has no blobs on the local disk. Moving it to a plain_rewritable disk used to
--- crash (front() on an empty StoredObjects vector). It must succeed now.
+-- The empty part has 0-byte column files and thus no blobs on the local disk. Moving it to a
+-- plain_rewritable disk used to crash (front() on an empty StoredObjects vector). It must succeed.
 ALTER TABLE t_move_empty_pr MOVE PARTITION tuple() TO DISK 'local_plain_rewritable';
 
 SELECT disk_name, rows FROM system.parts
 WHERE database = currentDatabase() AND table = 't_move_empty_pr' AND active;
 
--- The moved empty part stays fully functional.
+SELECT count() FROM t_move_empty_pr;
+
+-- Reload plain_rewritable metadata from the object listing. plain_rewritable persists files by the
+-- objects under the directory, so the empty part's 0-byte files survive a reload only if a real
+-- 0-byte object was materialized (not just an in-memory metadata entry).
+SYSTEM DROP DISK METADATA CACHE local_plain_rewritable;
+
+SELECT disk_name, rows FROM system.parts
+WHERE database = currentDatabase() AND table = 't_move_empty_pr' AND active;
+
+SELECT count() FROM t_move_empty_pr;
+
+-- Moving the empty part back reads its (0-byte) objects, which must exist on the disk.
+ALTER TABLE t_move_empty_pr MOVE PARTITION tuple() TO DISK 'local_disk';
+
+SELECT disk_name, rows FROM system.parts
+WHERE database = currentDatabase() AND table = 't_move_empty_pr' AND active;
+
+-- The part is still fully functional after the round trip.
 SELECT count() FROM t_move_empty_pr;
 INSERT INTO t_move_empty_pr VALUES (42);
 SELECT * FROM t_move_empty_pr ORDER BY c0;
