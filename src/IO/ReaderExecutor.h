@@ -137,7 +137,7 @@ private:
     Memory<> block;
 
     Stats stats;
-    CurrentMetrics::Increment active_metric;  /// CurrentMetrics::ReaderExecutorActive for the lifetime
+    CurrentMetrics::Increment active_metric;  /// the ReaderExecutorActive gauge, for the lifetime
 
     LoggerPtr log = getLogger("ReaderExecutor");
 };
