@@ -1069,6 +1069,12 @@ static ColumnWithTypeAndName readColumnWithUUIDFromFixedBinaryData(
 /// Creates a null bytemap from arrow's null bitmap
 static ColumnPtr readByteMapFromArrowColumn(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
+    /// Validate every chunk's validity bitmap before allocating the null map, so a forged length
+    /// whose validity bitmap is too small is rejected as INCORRECT_DATA instead of triggering a
+    /// huge null-map allocation.
+    for (int chunk_i = 0; chunk_i != arrow_column->num_chunks(); ++chunk_i)
+        checkValidityBitmap(*arrow_column->chunk(chunk_i), column_name);
+
     if (!arrow_column->null_count())
         return ColumnUInt8::create(arrow_column->length(), static_cast<UInt8>(0));
 
@@ -1079,7 +1085,6 @@ static ColumnPtr readByteMapFromArrowColumn(const std::shared_ptr<arrow::Chunked
     for (int chunk_i = 0; chunk_i != arrow_column->num_chunks(); ++chunk_i)
     {
         std::shared_ptr<arrow::Array> chunk = arrow_column->chunk(chunk_i);
-        checkValidityBitmap(*chunk, column_name);
 
         for (size_t value_i = 0; value_i != static_cast<size_t>(chunk->length()); ++value_i)
             bytemap_data.emplace_back(chunk->IsNull(value_i));
@@ -2091,7 +2096,25 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             ColumnPtr tuple_column;
             if (tuple_elements.empty())
+            {
+                /// A fields-less struct has no field buffers, so its declared length is backed
+                /// only by the validity bitmap.  Without a bitmap the length is unbounded and a
+                /// nullable wrapper would materialize an arbitrarily large null map from a tiny
+                /// file, so require the bitmap to cover the length (checkValidityBitmap) and
+                /// reject a non-empty chunk that has no bitmap at all.
+                for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+                {
+                    const auto & struct_chunk = *arrow_column->chunk(chunk_i);
+                    checkValidityBitmap(struct_chunk, column_name);
+                    if (unlikely(struct_chunk.length() > 0 && struct_chunk.data()->buffers[0] == nullptr))
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Arrow fields-less Struct column '{}' declares {} rows but has no validity "
+                            "bitmap to back that length",
+                            column_name, struct_chunk.length());
+                }
                 tuple_column = ColumnTuple::create(arrow_column->length());
+            }
             else
                 tuple_column = ColumnTuple::create(std::move(tuple_elements));
             auto tuple_type = std::make_shared<DataTypeTuple>(std::move(tuple_types), std::move(tuple_names));

@@ -63,6 +63,13 @@
 #   while a struct child field length is 0.  StructArray::field() would slice child[1:2] out
 #   of a 0-length field; the struct branch must reject struct.offset + struct.length >
 #   child.length before reaching Arrow's ArrayData::Slice.
+#
+# Class K: fields-less (zero-field) Struct with a forged-huge length:
+#   A zero-field struct has no field buffers, so its length is backed only by the validity
+#   bitmap.  Top-level and List/LargeList/FixedSizeList<Struct<>> repros force a 2^62 / 2^30
+#   length with no bitmap, which a nullable Tuple() wrapper would turn into a length-sized null
+#   map.  The struct branch rejects a non-empty fields-less struct chunk that has no bitmap, and
+#   readByteMapFromArrowColumn validates the bitmap before allocating for the null_count>0 case.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -375,6 +382,83 @@ open(f'{out}/largelist_struct_offset_child_zero.arrow', 'wb').write(
     patch_struct_slice(pa.array([[{'a': 20}]], type=pa.large_list(pa.struct([('a', pa.int32())]))), 'x', [1,0,1,0,1,0], 2, 4, '<2q'))
 open(f'{out}/map_offset_key_zero.arrow', 'wb').write(
     patch_struct_slice(pa.array([[(1, 10)]], type=pa.map_(pa.int32(), pa.int32())), 'm', [1,0,1,0,1,0,1,0], 2, 4, '<2i'))
+
+# Class K: a fields-less (zero-field) Struct with a forged-huge length and no validity bitmap.
+# Such a struct has no field buffers and no bitmap, so the length is unbacked; read as a nullable
+# Tuple() it would materialize a length-sized null map.  The struct branch rejects it instead.
+def write_struct_schema(arr, name, nullable=True):
+    sch = pa.schema([pa.field(name, arr.type, nullable=nullable)])
+    buf = io.BytesIO()
+    with ipc.new_file(buf, sch) as w:
+        w.write_table(pa.Table.from_arrays([arr], schema=sch))
+    return bytearray(buf.getvalue())
+
+# K1: top-level empty Struct, RecordBatch/FieldNode length patched 5 -> 2^62.
+d = write_struct_schema(pa.array([{} for _ in range(5)], type=pa.struct([])), 's')
+pos = [i for i in range(0, len(d) - 7, 8) if struct.unpack_from('<q', d, i)[0] == 5]
+assert len(pos) >= 2, f"expected >=2 int64=5, got {len(pos)}"
+for p in pos:
+    d[p:p+8] = struct.pack('<q', HUGE)
+open(f'{out}/empty_struct_huge_nullable.arrow', 'wb').write(d)
+
+# K2/K3: List/LargeList<Struct<>> whose child empty-struct length and last offset are forged huge.
+def write_list_empty_struct(list_type, off_fmt, length):
+    d = bytearray(write_arrow(pa.array([[]], type=list_type), name='x'))
+    fn = d.find(struct.pack('<4q', 1, 0, 0, 0))  # [list(1,0), struct(0,0)]
+    assert fn >= 0, "list<struct<>> FieldNode pattern not found"
+    d[fn+16:fn+24] = struct.pack('<q', length)   # struct child length -> huge
+    old = struct.pack(off_fmt, 0, 0)
+    pos = 0
+    while True:
+        oi = d.find(old, pos)
+        assert oi >= 0, "list offsets [0,0] not found"
+        cand = bytearray(d)
+        cand[oi:oi+len(old)] = struct.pack(off_fmt, 0, length)
+        try:
+            with ipc.open_file(pa.py_buffer(bytes(cand))) as reader:
+                a = reader.read_all().column('x').chunks[0]
+            if a.offsets.to_pylist() == [0, length]:
+                return cand
+        except Exception:
+            pass
+        pos = oi + 1
+
+open(f'{out}/list_empty_struct_huge_child.arrow', 'wb').write(
+    write_list_empty_struct(pa.list_(pa.struct([])), '<2i', 1 << 30))
+open(f'{out}/largelist_empty_struct_huge_child.arrow', 'wb').write(
+    write_list_empty_struct(pa.large_list(pa.struct([])), '<2q', 1 << 62))
+
+# K4: FixedSizeList<Struct<>> with the schema list size and child FieldNode length patched huge.
+FIXED = 1 << 30
+df = bytearray(write_arrow(pa.array([[{}]], type=pa.list_(pa.struct([]), 1)), name='x'))
+patched = None
+for p in range(0, len(df) - 3):
+    if struct.unpack_from('<i', df, p)[0] != 1:
+        continue
+    cand = bytearray(df)
+    cand[p:p+4] = struct.pack('<i', FIXED)
+    try:
+        with ipc.open_file(pa.py_buffer(bytes(cand))) as reader:
+            a = reader.read_all().column('x').chunks[0]
+        if getattr(a.type, 'list_size', None) == FIXED:
+            patched = cand
+            break
+    except Exception:
+        pass
+assert patched is not None, "FixedSizeList size marker not found"
+fn = patched.find(struct.pack('<4q', 1, 0, 1, 0))  # [fixedlist(1,0), struct(1,0)]
+assert fn >= 0, "fixedlist<struct<>> FieldNode pattern not found"
+patched[fn+16:fn+24] = struct.pack('<q', FIXED)  # struct child length -> FIXED
+open(f'{out}/fixedlist_empty_struct_huge_child.arrow', 'wb').write(patched)
+
+# K5: a fields-less Struct WITH a validity bitmap (null_count>0) but a forged-huge length; the
+# null-map allocation must be rejected by validating the bitmap (too small) before allocating.
+d = write_struct_schema(pa.array([{}, None, {}, None, {}], type=pa.struct([])), 's')
+pos = [i for i in range(0, len(d) - 7, 8) if struct.unpack_from('<q', d, i)[0] == 5]
+assert len(pos) >= 2
+for p in pos:
+    d[p:p+8] = struct.pack('<q', HUGE)
+open(f'{out}/empty_struct_huge_nullcount.arrow', 'wb').write(d)
 PYEOF
 
 check_incorrect_data() {
@@ -465,3 +549,18 @@ check_incorrect_data largelist_struct_offset_child_zero \
 
 check_incorrect_data map_offset_key_zero \
     $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/map_offset_key_zero.arrow', Arrow)"
+
+check_incorrect_data empty_struct_huge_nullable \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/empty_struct_huge_nullable.arrow', Arrow)"
+
+check_incorrect_data list_empty_struct_huge_child \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/list_empty_struct_huge_child.arrow', Arrow)"
+
+check_incorrect_data largelist_empty_struct_huge_child \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/largelist_empty_struct_huge_child.arrow', Arrow)"
+
+check_incorrect_data fixedlist_empty_struct_huge_child \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/fixedlist_empty_struct_huge_child.arrow', Arrow)"
+
+check_incorrect_data empty_struct_huge_nullcount \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/empty_struct_huge_nullcount.arrow', Arrow)"
