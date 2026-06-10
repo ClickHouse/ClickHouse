@@ -18,7 +18,6 @@
 #include <Common/StringUtils.h>
 #include <Common/ShellCommand.h>
 #include <Common/re2.h>
-#include <Common/shellQuote.h>
 #include <base/find_symbols.h>
 
 #include <IO/ReadHelpers.h>
@@ -1126,12 +1125,9 @@ static void processCommit(
   */
 static auto gitShow(const std::string & hash)
 {
-    /// `hash` is parsed from `git log --pretty=%H` output, which is hex-only today,
-    /// but quote it anyway so a future format change or a hand-crafted hash list
-    /// cannot inject shell syntax through `/bin/sh -c`.
     std::string command = fmt::format(
         "git show --raw --pretty='format:%ct%x00%aN%x00%P%x00%s%x00' --patch --unified=0 {}",
-        shellQuote(hash));
+        hash);
 
     return ShellCommand::execute(command);
 }
@@ -1203,7 +1199,7 @@ try
 {
     using namespace DB;
 
-    po::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
+    po::options_description desc("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help,h", "produce help message")
         ("skip-commits-without-parents", po::value<bool>()->default_value(true),
@@ -1232,11 +1228,11 @@ try
     if (options.contains("help"))
     {
         std::cout << documentation << '\n'
-            << "Usage: clickhouse git-import\n"
+            << "Usage: " << argv[0] << '\n'
             << desc << '\n'
             << "\nExample:\n"
             << "\nclickhouse git-import --skip-paths 'generated\\.cpp|^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/' --skip-commits-with-messages '^Merge branch '\n";
-        return 0;
+        return 1;
     }
 
     processLog(Options(options));

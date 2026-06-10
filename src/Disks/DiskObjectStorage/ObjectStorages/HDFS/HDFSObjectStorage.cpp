@@ -77,30 +77,17 @@ bool HDFSObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>,
-    bool use_external_buffer,
-    bool /* restrict_seek */) const
+    std::optional<size_t>) const
 {
     initializeHDFSFS();
     auto path = extractObjectKeyFromURL(object);
-
-    BlobStorageLogWriterPtr blob_storage_log;
-    if (read_settings.enable_blob_storage_log_for_read_operations)
-    {
-        blob_storage_log = BlobStorageLogWriter::create(disk_name);
-        if (blob_storage_log)
-            blob_storage_log->local_path = object.local_path;
-    }
-
     return std::make_unique<ReadBufferFromHDFS>(
         fs::path(url_without_path) / "",
         fs::path(data_directory) / path,
         config,
         patchSettings(read_settings),
         /* read_until_position */0,
-        use_external_buffer,
-        object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt,
-        std::move(blob_storage_log));
+        read_settings.remote_read_buffer_use_external_buffer);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOLINT

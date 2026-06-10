@@ -1067,7 +1067,7 @@ bool Dwarf::findLocation(
     const LocationInfoMode mode,
     CompilationUnit & cu,
     LocationInfo & info,
-    VectorWithMemoryTracking<SymbolizedFrame> & inline_frames,
+    std::vector<SymbolizedFrame> & inline_frames,
     bool assume_in_cu_range) const
 {
     Die die = getDieAtOffset(cu, cu.first_die);
@@ -1181,7 +1181,7 @@ bool Dwarf::findLocation(
             // they can be used for the second last location when we don't have
             // enough inline frames for all inline functions call stack.
             const size_t max_size = Dwarf::kMaxInlineLocationInfoPerFrame + 1;
-            VectorWithMemoryTracking<CallLocation> call_locations;
+            std::vector<CallLocation> call_locations;
             call_locations.reserve(Dwarf::kMaxInlineLocationInfoPerFrame + 1);
 
             findInlinedSubroutineDieForAddress(cu, subprogram, line_vm, address, base_addr_cu, call_locations, max_size);
@@ -1319,7 +1319,7 @@ void Dwarf::findInlinedSubroutineDieForAddress(
     const LineNumberVM & line_vm,
     uint64_t address,
     std::optional<uint64_t> base_addr_cu,
-    VectorWithMemoryTracking<CallLocation> & locations,
+    std::vector<CallLocation> & locations,
     const size_t max_size) const
 {
     if (locations.size() >= max_size)
@@ -1491,7 +1491,7 @@ void Dwarf::findInlinedSubroutineDieForAddress(
 }
 
 bool Dwarf::findAddress(
-    uintptr_t address, LocationInfo & locationInfo, LocationInfoMode mode, VectorWithMemoryTracking<SymbolizedFrame> & inline_frames) const
+    uintptr_t address, LocationInfo & locationInfo, LocationInfoMode mode, std::vector<SymbolizedFrame> & inline_frames) const
 {
     locationInfo = LocationInfo();
 
