@@ -38,7 +38,7 @@ namespace LIBC_NAMESPACE_DECL {
 // the main-loop preamble: align `dst` to 32 bytes (Arg::Dst) instead of `src`
 // to 16 (Arg::Src). Stores benefit from alignment more than loads on Neoverse
 // / Apple cores; this matches what musl's hand-written aarch64 memcpy does.
-[[gnu::flatten, gnu::always_inline]] LIBC_INLINE void
+__attribute__((flatten, always_inline)) LIBC_INLINE void
 ch_inline_memcpy_aarch64(Ptr __restrict dst, CPtr __restrict src,
                          size_t count) {
   if (count == 0)
@@ -83,7 +83,7 @@ LLVM_LIBC_FUNCTION(void *, memcpy,
 // memset
 // ============================================================================
 
-[[gnu::flatten, gnu::always_inline]] LIBC_INLINE void
+__attribute__((flatten, always_inline)) LIBC_INLINE void
 ch_inline_memset_aarch64(Ptr dst, uint8_t value, size_t count) {
   using uint128_t = generic_v128;
   using uint256_t = generic_v256;
@@ -141,7 +141,7 @@ LLVM_LIBC_FUNCTION(void *, memset,
 // `count`. Using uint512_t (64 B) would consume up to 128 B and leave the
 // main loop with count < SIZE — corrupting the trailing bytes via a
 // do-while iteration that runs once even when the loop condition is false.
-[[gnu::flatten, gnu::always_inline]] LIBC_INLINE void
+__attribute__((flatten, always_inline)) LIBC_INLINE void
 ch_inline_memmove_follow_up_aarch64(Ptr dst, CPtr src, size_t count) {
   using uint256_t = generic_v256;
   using uint512_t = generic_v512;
@@ -224,7 +224,7 @@ LLVM_LIBC_FUNCTION(void *, memmove,
 // Collapse a uint8x16_t mask (each lane is 0x00 or 0xFF) to a uint64_t where
 // each nibble represents one input byte (Lemire). __builtin_ctzll on the
 // result gives 4 * lane_index of the first set bit.
-[[gnu::always_inline]] static inline uint64_t
+__attribute__((always_inline)) static inline uint64_t
 neon_mask_to_u64(uint8x16_t m) noexcept
 {
     uint8x8_t narrowed = vshrn_n_u16(vreinterpretq_u16_u8(m), 4);

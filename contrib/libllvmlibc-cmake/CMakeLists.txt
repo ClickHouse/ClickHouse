@@ -71,6 +71,12 @@ if (ARCH_AMD64)
     add_library(libllvmlibc ${SRCS})
     set_target_properties(libllvmlibc PROPERTIES FOLDER "contrib/libllvmlibc-cmake")
 
+    # This library *implements* memset/memcpy/memmove: without -fno-builtin,
+    # clang's loop-idiom recognition rewrites their inner loops into calls to
+    # the very functions being defined (infinite recursion in a static link).
+    # Upstream LLVM-libc builds with -ffreestanding for the same reason.
+    target_compile_options(libllvmlibc PRIVATE -ffreestanding -fno-builtin)
+
     if (X86_ARCH_LEVEL VERSION_LESS 3)
         # Compat build: SSE2 baseline
         target_compile_definitions(libllvmlibc PRIVATE
@@ -133,6 +139,9 @@ elseif (ARCH_AARCH64)
     # Uses LIBC_COPT_PUBLIC_PACKAGING to emit public C symbols directly
     add_library(libllvmlibc ${SRCS})
     set_target_properties(libllvmlibc PROPERTIES FOLDER "contrib/libllvmlibc-cmake")
+
+    # See the ARCH_AMD64 branch: prevent loop-idiom self-calls in mem*.
+    target_compile_options(libllvmlibc PRIVATE -ffreestanding -fno-builtin)
     target_compile_definitions(libllvmlibc PRIVATE
         ${LLVMLIBC_DEFS_COMMON}
         LIBC_NAMESPACE=${LIBC_NAMESPACE}

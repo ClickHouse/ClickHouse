@@ -87,10 +87,16 @@ elseif (ARCH_AMD64)
     # x86-64 microarchitecture levels (https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels):
     #   1 - SSE2 baseline, maximum compatibility with older/embedded hardware
     #   2 - SSE4.2, SSSE3, POPCNT (ClickHouse's historical baseline)
-    #   3 - AVX2, BMI1/2, FMA, F16C, LZCNT, MOVBE etc.
-    #   4 - AVX-512F/BW/CD/DQ/VL (default — activates the AVX-512 mem* paths in
-    #       contrib/libllvmlibc-cmake/string/x86_64_mem_functions.cpp)
-    set (X86_ARCH_LEVEL "4" CACHE STRING "x86-64 microarchitecture level (1, 2, 3, 4)")
+    #   3 - AVX2, BMI1/2, FMA, F16C, LZCNT, MOVBE etc. (default)
+    #   4 - AVX-512F/BW/CD/DQ/VL
+    #
+    # Do not raise the default above 3: `src/CMakeLists.txt` turns off
+    # `ENABLE_MULTITARGET_CODE` for any level != 3, which deletes the
+    # `TargetSpecific::x86_64_v4` AVX-512 kernels and silently downgrades
+    # hashes/distances/aggregation to scalar code (2-4x slower). AVX-512 in
+    # `mem*` is reached via runtime dispatch instead — see
+    # contrib/libllvmlibc-cmake/string/x86_64_mem_functions.cpp.
+    set (X86_ARCH_LEVEL "3" CACHE STRING "x86-64 microarchitecture level (1, 2, 3, 4)")
     set_property (CACHE X86_ARCH_LEVEL PROPERTY STRINGS "1" "2" "3" "4")
 
     if (NOT X86_ARCH_LEVEL MATCHES "^[1-4]$")
