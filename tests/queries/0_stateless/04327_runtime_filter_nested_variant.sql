@@ -42,3 +42,43 @@ FROM
     (SELECT map('a', v) AS k FROM format(TSV, 'v Variant(String, Bool)', 'true')) AS t2
     USING (k)
 ORDER BY k;
+
+-- Dynamic behaves like Variant here (NULL without a Nullable wrapper), so the same nested
+-- cases must be covered to guard the hasVariantOrDynamic() contract for Dynamic.
+SET allow_dynamic_type_in_join_keys = 1;
+
+-- Tuple(Dynamic, ...), exactly 1 distinct value on the right (the "equals" path).
+SELECT *
+FROM
+    (SELECT tuple(v, 1) AS k FROM format(TSV, 'v Dynamic', 'true\nfalse')) AS t1
+    JOIN
+    (SELECT tuple(v, 1) AS k FROM format(TSV, 'v Dynamic', 'true')) AS t2
+    USING (k)
+ORDER BY k;
+
+-- Tuple(Dynamic, ...), several distinct values on the right (the set-lookup path).
+SELECT *
+FROM
+    (SELECT tuple(v, 1) AS k FROM format(TSV, 'v Dynamic', 'true\nfalse\nstr')) AS t1
+    JOIN
+    (SELECT tuple(v, 1) AS k FROM format(TSV, 'v Dynamic', 'true\nstr')) AS t2
+    USING (k)
+ORDER BY k;
+
+-- Array(Dynamic) as the join key.
+SELECT *
+FROM
+    (SELECT [v] AS k FROM format(TSV, 'v Dynamic', 'true\nfalse')) AS t1
+    JOIN
+    (SELECT [v] AS k FROM format(TSV, 'v Dynamic', 'true')) AS t2
+    USING (k)
+ORDER BY k;
+
+-- Map(String, Dynamic) as the join key.
+SELECT *
+FROM
+    (SELECT map('a', v) AS k FROM format(TSV, 'v Dynamic', 'true\nfalse')) AS t1
+    JOIN
+    (SELECT map('a', v) AS k FROM format(TSV, 'v Dynamic', 'true')) AS t2
+    USING (k)
+ORDER BY k;
