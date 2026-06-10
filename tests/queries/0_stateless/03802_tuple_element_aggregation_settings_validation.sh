@@ -9,11 +9,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Immutability.
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_alter_table (\`n\` Tuple(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();"
-$CLICKHOUSE_CLIENT -q "ALTER TABLE test_alter_table MODIFY SETTING allow_tuple_element_aggregation = 1; -- { serverError READONLY_SETTING }"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE test_alter_table MODIFY SETTING allow_tuple_element_aggregation = 1;" 2>&1 | grep -m 1 -o -F 'READONLY_SETTING'
 $CLICKHOUSE_CLIENT -q "DROP TABLE test_alter_table;"
 
 # CREATE path.
-$CLICKHOUSE_CLIENT -q "CREATE TABLE test_tuple_order (\`n\` Tuple(a UInt32, b UInt32)) ENGINE = SummingMergeTree ORDER BY n SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE test_tuple_order (\`n\` Tuple(a UInt32, b UInt32)) ENGINE = SummingMergeTree ORDER BY n SETTINGS allow_tuple_element_aggregation = 1;" 2>&1 | grep -m 1 -o -F 'BAD_ARGUMENTS'
 
 # ATTACH path: generate a random UUID to avoid collisions in Atomic databases.
 # -m1 because the error message contains the error code name multiple times.
