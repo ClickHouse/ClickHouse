@@ -58,7 +58,7 @@ uint64_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
 {
     std::filesystem::path path(snapshot_path);
     std::string filename = path.stem();
-    std::vector<std::string_view> name_parts;
+    Strings name_parts;
     splitInto<'_', '.'>(name_parts, filename);
     return parse<uint64_t>(name_parts[1]);
 }
@@ -159,13 +159,13 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                     if (with_node_stats)
                     {
                         std::cout << "Finding biggest subtrees... " << std::endl;
-                        std::unordered_map<std::string_view, size_t> subtree_sizes;
+                        std::unordered_map<StringRef, size_t> subtree_sizes;
                         for (const auto & path : result.paths)
                         {
                             if (path == "/")
                                 continue;
 
-                            std::string_view current_path = path;
+                            StringRef current_path = path;
                             while (true)
                             {
                                 auto parent = parentNodePath(current_path);
@@ -475,9 +475,9 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
             for (const auto & child : value.getChildren())
             {
                 if (key == "/")
-                    keys.push(fmt::format("/{}", child));
+                    keys.push(key + child.toString());
                 else
-                    keys.push(fmt::format("{}/{}", key, child));
+                    keys.push(key + "/" + child.toString());
             }
         }
     };
@@ -536,7 +536,7 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
             res_columns[i++]->insert(value.stats.aversion);
             res_columns[i++]->insert(value.stats.ephemeralOwner());
             res_columns[i++]->insert(value.stats.data_size);
-            res_columns[i++]->insert(value.numChildren());
+            res_columns[i++]->insert(value.stats.numChildren());
             res_columns[i++]->insert(value.stats.pzxid);
             res_columns[i++]->insert(value.getData());
 
@@ -573,7 +573,7 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
             value.stats.ephemeralOwner(),
             value.stats.czxid,
             value.stats.mzxid,
-            value.numChildren(),
+            value.stats.numChildren(),
             value.stats.data_size);
 
         if (with_acl)
@@ -623,7 +623,6 @@ auto op_num_enum = std::make_shared<DataTypeEnum16>(DataTypeEnum16::Values
     {"CheckNotExists", static_cast<Int16>(Coordination::OpNum::CheckNotExists)},
     {"CreateIfNotExists", static_cast<Int16>(Coordination::OpNum::CreateIfNotExists)},
     {"RemoveRecursive", static_cast<Int16>(Coordination::OpNum::RemoveRecursive)},
-    {"CheckStat", static_cast<Int16>(Coordination::OpNum::CheckStat)},
 });
 }
 
@@ -643,6 +642,7 @@ int dumpStateMachine(
     Poco::Logger::root().setLevel("trace");
 
     auto logger = getLogger("keeper-utils");
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
 
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
@@ -650,7 +650,7 @@ int dumpStateMachine(
     keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", log_path));
     keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", snapshot_path));
 
-    auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(queue, snapshots_queue, keeper_context, nullptr);
     state_machine->init();
     size_t last_committed_index = state_machine->last_commit_index();
 
@@ -751,11 +751,12 @@ int deserializeChangelog(
                 desc->from_log_index + entry_storage.size());
         }
 
+        ResponsesQueue queue(std::numeric_limits<size_t>::max());
         SnapshotsQueue snapshots_queue{1};
         KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
         keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", fs::temp_directory_path() / "keeper-utils-log"));
         keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", fs::temp_directory_path() / "keeper-utils-snapshot"));
-        auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, keeper_context, nullptr);
+        auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(queue, snapshots_queue, keeper_context, nullptr);
 
         if (!output_file.empty())
         {

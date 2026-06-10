@@ -6,8 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateFunctionQuery.h>
 
 namespace DB
 {
@@ -22,8 +21,25 @@ namespace ErrorCodes
     extern const int UNKNOWN_FUNCTION;
 }
 
+namespace
+{
+
+ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const ContextPtr & context)
+{
+    auto ptr = create_function_query.clone();
+    auto & res = typeid_cast<ASTCreateFunctionQuery &>(*ptr);
+    res.if_not_exists = false;
+    res.or_replace = false;
+    FunctionNameNormalizer::visit(res.function_core.get());
+    NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
+    NormalizeSelectWithUnionQueryVisitor{data}.visit(res.function_core);
+    return ptr;
+}
+
+}
+
 UserDefinedSQLObjectsStorageBase::UserDefinedSQLObjectsStorageBase(ContextPtr global_context_)
-    : WithContext(global_context_)
+    : global_context(std::move(global_context_))
 {}
 
 ASTPtr UserDefinedSQLObjectsStorageBase::get(const String & object_name) const
@@ -55,9 +71,9 @@ bool UserDefinedSQLObjectsStorageBase::has(const String & object_name) const
     return tryGet(object_name) != nullptr;
 }
 
-Strings UserDefinedSQLObjectsStorageBase::getAllObjectNames() const
+std::vector<std::string> UserDefinedSQLObjectsStorageBase::getAllObjectNames() const
 {
-    Strings object_names;
+    std::vector<std::string> object_names;
 
     std::lock_guard lock(mutex);
     object_names.reserve(object_name_to_create_object_map.size());
@@ -140,20 +156,20 @@ std::unique_lock<std::recursive_mutex> UserDefinedSQLObjectsStorageBase::getLock
     return std::unique_lock{mutex};
 }
 
-void UserDefinedSQLObjectsStorageBase::setAllObjects(const VectorWithMemoryTracking<std::pair<String, ASTPtr>> & new_objects)
+void UserDefinedSQLObjectsStorageBase::setAllObjects(const std::vector<std::pair<String, ASTPtr>> & new_objects)
 {
-    UnorderedMapWithMemoryTracking<String, ASTPtr> normalized_functions;
+    std::unordered_map<String, ASTPtr> normalized_functions;
     for (const auto & [function_name, create_query] : new_objects)
-        normalized_functions[function_name] = normalizeCreateFunctionQuery(*create_query, getContext());
+        normalized_functions[function_name] = normalizeCreateFunctionQuery(*create_query, global_context);
 
     std::lock_guard lock(mutex);
     object_name_to_create_object_map = std::move(normalized_functions);
 }
 
-VectorWithMemoryTracking<std::pair<String, ASTPtr>> UserDefinedSQLObjectsStorageBase::getAllObjects() const
+std::vector<std::pair<String, ASTPtr>> UserDefinedSQLObjectsStorageBase::getAllObjects() const
 {
     std::lock_guard lock{mutex};
-    VectorWithMemoryTracking<std::pair<String, ASTPtr>> all_objects;
+    std::vector<std::pair<String, ASTPtr>> all_objects;
     all_objects.reserve(object_name_to_create_object_map.size());
     std::copy(object_name_to_create_object_map.begin(), object_name_to_create_object_map.end(), std::back_inserter(all_objects));
     return all_objects;
@@ -162,7 +178,7 @@ VectorWithMemoryTracking<std::pair<String, ASTPtr>> UserDefinedSQLObjectsStorage
 void UserDefinedSQLObjectsStorageBase::setObject(const String & object_name, const IAST & create_object_query)
 {
     std::lock_guard lock(mutex);
-    object_name_to_create_object_map[object_name] = normalizeCreateFunctionQuery(create_object_query, getContext());
+    object_name_to_create_object_map[object_name] = normalizeCreateFunctionQuery(create_object_query, global_context);
 }
 
 void UserDefinedSQLObjectsStorageBase::removeObject(const String & object_name)

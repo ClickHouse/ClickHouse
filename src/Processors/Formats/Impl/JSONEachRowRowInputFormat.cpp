@@ -1,18 +1,14 @@
-#include <algorithm>
-#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 
-#include <Core/CaseAwareBlockNameMap.h>
-
+#include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
+#include <Formats/JSONUtils.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
+#include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Formats/EscapingRuleUtils.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/JSONUtils.h>
-#include <Formats/SchemaInferenceUtils.h>
-#include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
@@ -31,8 +27,7 @@ namespace
 enum
 {
     UNKNOWN_FIELD = size_t(-1),
-    NESTED_FIELD = size_t(-2),
-    NOT_INITIALIZED = size_t(-3)
+    NESTED_FIELD = size_t(-2)
 };
 
 }
@@ -45,23 +40,22 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     const FormatSettings & format_settings_,
     bool yield_strings_)
     : IRowInputFormat(header_, in_, std::move(params_))
-    , name_map(format_settings_.input_format_column_matching_case_sensitivity)
-    , prev_positions(header_->columns(), {std::string_view{}, NOT_INITIALIZED})
+    , prev_positions(header_->columns())
     , yield_strings(yield_strings_)
     , format_settings(format_settings_)
 {
-    name_map.initFromBlock(getPort().getHeader());
     const auto & header = getPort().getHeader();
+    name_map = getNamesToIndexesMap(header);
     if (format_settings_.import_nested_json)
     {
         for (size_t i = 0; i != header.columns(); ++i)
         {
-            const std::string_view column_name = header.getByPosition(i).name;
-            const auto split = Nested::splitName(column_name);
+            const StringRef column_name = header.getByPosition(i).name;
+            const auto split = Nested::splitName(column_name.toView());
             if (!split.second.empty())
             {
-                const std::string_view table_name = column_name.substr(0, split.first.size());
-                name_map.add(table_name, NESTED_FIELD);
+                const StringRef table_name(column_name.data, split.first.size());
+                name_map[table_name] = NESTED_FIELD;
             }
         }
     }
@@ -72,32 +66,34 @@ const String & JSONEachRowRowInputFormat::columnName(size_t i) const
     return getPort().getHeader().getByPosition(i).name;
 }
 
-inline size_t JSONEachRowRowInputFormat::columnIndex(std::string_view name, size_t key_index)
+inline size_t JSONEachRowRowInputFormat::columnIndex(StringRef name, size_t key_index)
 {
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
-    if (prev_positions.size() > key_index && prev_positions[key_index].second != NOT_INITIALIZED
-        && name_map.equal(name, prev_positions[key_index].first))
+
+    if (prev_positions.size() > key_index
+        && prev_positions[key_index] != BlockNameMap::const_iterator{}
+        && name == prev_positions[key_index]->first)
     {
-        return prev_positions[key_index].second;
+        return prev_positions[key_index]->second;
     }
 
-    auto position = name_map.get(name);
-    if (position != CaseAwareBlockNameMap::NOT_FOUND)
+    const auto it = name_map.find(name);
+    if (it != name_map.end())
     {
-        if (key_index < prev_positions.size() && position < getPort().getHeader().columns())
-            prev_positions[key_index] = {getPort().getHeader().getByPosition(position).name, position};
+        if (key_index < prev_positions.size())
+            prev_positions[key_index] = it;
 
-        return position;
+        return it->second;
     }
     return UNKNOWN_FIELD;
 }
 
 /** Read the field name and convert it to column name
   *  (taking into account the current nested name prefix)
-  * Resulting std::string_view is valid only before next read from buf.
+  * Resulting StringRef is valid only before next read from buf.
   */
-std::string_view JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
+StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
 {
     // This is just an optimization: try to avoid copying the name into current_column_name
 
@@ -109,7 +105,7 @@ std::string_view JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
         {
             /// The most likely option is that there is no escape sequence in the key name, and the entire name is placed in the buffer.
             assertChar('"', buf);
-            std::string_view res(buf.position(), next_pos - buf.position());
+            StringRef res(buf.position(), next_pos - buf.position());
             buf.position() = next_pos + 1;
             return res;
         }
@@ -120,12 +116,12 @@ std::string_view JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
     return current_column_name;
 }
 
-void JSONEachRowRowInputFormat::skipUnknownField(std::string_view name_ref)
+void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
 {
     if (!format_settings.skip_unknown_fields)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref.toString());
 
-    skipJSONField(*in, name_ref, format_settings.json);
+    skipJSONField(*in, std::string_view(name_ref.data, name_ref.size), format_settings.json);
 }
 
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
@@ -163,7 +159,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
 
     for (size_t key_index = 0; advanceToNextKey(key_index); ++key_index)
     {
-        std::string_view name_ref = readColumnName(*in);
+        StringRef name_ref = readColumnName(*in);
         if (seen_columns_count >= total_columns && format_settings.json.ignore_unnecessary_fields)
         {
             // Keep parsing the remaining fields in case of the json is invalid.
@@ -180,15 +176,15 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             /// and input buffer may be filled with new data on next read
             /// If we want to use name_ref after another reads from buffer, we must copy it to temporary string.
 
-            current_column_name.assign(name_ref.data(), name_ref.size());
-            name_ref = std::string_view(current_column_name);
+            current_column_name.assign(name_ref.data, name_ref.size);
+            name_ref = StringRef(current_column_name);
 
             JSONUtils::skipColon(*in);
 
             if (column_index == UNKNOWN_FIELD)
                 skipUnknownField(name_ref);
             else if (column_index == NESTED_FIELD)
-                readNestedData(std::string{name_ref}, columns);
+                readNestedData(name_ref.toString(), columns);
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal value of column_index");
         }
@@ -410,7 +406,6 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
 
     register_format("JSONEachRow", false);
     register_format("JSONLines", false);
-    register_format("JSONL", false);
     register_format("NDJSON", false);
 
     factory.registerFileExtension("ndjson", "JSONEachRow");

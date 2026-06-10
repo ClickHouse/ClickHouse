@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnReplicated.h>
 #include <Core/Block.h>
 #include <base/defines.h>
 #include <Common/PODArray.h>
@@ -283,36 +282,6 @@ struct ScatteredBlock : private boost::noncopyable
         selector = Selector(std::move(new_selector));
     }
 
-    /// Creates ColumnReplicated to lazily apply index from `selector` to the `block`
-    void filterBySelectorLazily()
-    {
-        if (block.empty() || !wasScattered())
-            return;
-
-        if (selector.isContinuousRange())
-        {
-            filterBySelector();
-            return;
-        }
-
-        /// The general case when `selector` is non-trivial (likely the result of applying a filter)
-        auto indexes_col = selector.getIndexes().getPtr();
-        auto columns = block.getColumns();
-        transformColumnsWithSharedIndex(
-            columns,
-            [&](const ColumnPtr & index) { return index->index(selector.getIndexes(), /*limit*/ 0); },
-            [&](ColumnPtr & col)
-            {
-                if (col->isConst())
-                    col = col->index(selector.getIndexes(), /*limit*/ 0);
-                else
-                    col = ColumnReplicated::create(col, indexes_col);
-            }
-        );
-        block.setColumns(columns);
-        selector = Selector(block.rows());
-    }
-
     /// Applies `selector` to the `block` in-place
     void filterBySelector()
     {
@@ -322,25 +291,24 @@ struct ScatteredBlock : private boost::noncopyable
         if (selector.isContinuousRange())
         {
             const auto range = selector.getRange();
-            auto columns = block.getColumns();
-            transformColumnsWithSharedIndex(
-                columns,
-                [&](const ColumnPtr & col) { return col->cut(range.first, range.second - range.first); });
-            block.setColumns(columns);
+            for (size_t i = 0; i < block.columns(); ++i)
+            {
+                auto & col = block.getByPosition(i);
+                col.column = col.column->cut(range.first, range.second - range.first);
+            }
             selector = Selector(block.rows());
             return;
         }
 
         /// The general case when `selector` is non-trivial (likely the result of applying a filter)
         auto columns = block.getColumns();
-        transformColumnsWithSharedIndex(
-            columns,
-            [&](const ColumnPtr & col) { return col->index(selector.getIndexes(), /*limit*/ 0); });
+        for (auto & col : columns)
+            col = col->index(selector.getIndexes(), /*limit*/ 0);
         block.setColumns(columns);
         selector = Selector(block.rows());
     }
 
-    /// Cuts first `num_rows` rows from `block` in place and returns a block with the remaining rows
+    /// Cut first `num_rows` rows from `block` in place and returns block with remaining rows
     ScatteredBlock cut(size_t num_rows)
     {
         if (num_rows >= rows())

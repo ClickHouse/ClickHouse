@@ -10,7 +10,7 @@
 #include <IO/ReadHelpers.h>
 
 
-int mainEntryExampleCompressedBuffer(int, char **)
+int main(int, char **)
 {
     try
     {
@@ -31,7 +31,7 @@ int mainEntryExampleCompressedBuffer(int, char **)
             }
             stopwatch.stop();
             std::cout << "Writing done (1). Elapsed: " << stopwatch.elapsedSeconds()
-                << ", " << (static_cast<double>(compressed_buf.count()) / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
+                << ", " << (compressed_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
                 << std::endl;
         }
 
@@ -53,7 +53,7 @@ int mainEntryExampleCompressedBuffer(int, char **)
             }
             stopwatch.stop();
             std::cout << "Reading done (1). Elapsed: " << stopwatch.elapsedSeconds()
-                << ", " << (static_cast<double>(compressed_buf.count()) / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
+                << ", " << (compressed_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
                 << std::endl;
         }
     }

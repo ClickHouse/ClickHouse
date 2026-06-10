@@ -4,7 +4,10 @@
 
 namespace DB
 {
-
+namespace ErrorCodes
+{
+extern const int ILLEGAL_STATISTICS;
+}
 
 StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
@@ -35,16 +38,16 @@ void StatisticsTDigest::serialize(WriteBuffer & buf)
     t_digest.serialize(buf);
 }
 
-void StatisticsTDigest::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
+void StatisticsTDigest::deserialize(ReadBuffer & buf)
 {
     t_digest.deserialize(buf);
 }
 
-std::optional<Float64> StatisticsTDigest::estimateLess(const Field & val) const
+Float64 StatisticsTDigest::estimateLess(const Field & val) const
 {
     auto val_as_float = StatisticsUtils::tryConvertToFloat64(val, data_type);
-    if (!val_as_float)
-        return std::nullopt;
+    if (!val_as_float.has_value())
+        return 0;
     return t_digest.getCountLessThan(*val_as_float);
 }
 
@@ -56,11 +59,12 @@ Float64 StatisticsTDigest::estimateEqual(const Field & val) const
     return t_digest.getCountEqual(*val_as_float);
 }
 
-bool tdigestStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+void tdigestStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
     DataTypePtr inner_data_type = removeNullable(data_type);
     inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    return inner_data_type->isValueRepresentedByNumber() && !isIPv4(inner_data_type);
+    if (!inner_data_type->isValueRepresentedByNumber())
+        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'tdigest' do not support type {}", data_type->getName());
 }
 
 StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

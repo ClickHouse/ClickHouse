@@ -1,15 +1,14 @@
 #include <unistd.h>
+#include <vector>
 #include <stdexcept>
 
 #include <zlib.h>
 
-#include <Common/VectorWithMemoryTracking.h>
-
 /// https://github.com/zlib-ng/zlib-ng/issues/494
-int mainEntryExampleZlibNgBug(int, char **)
+int main(int, char **)
 {
-    DB::VectorWithMemoryTracking<unsigned char> in(1048576);
-    DB::VectorWithMemoryTracking<unsigned char> out(1048576);
+    std::vector<unsigned char> in(1048576);
+    std::vector<unsigned char> out(1048576);
 
     ssize_t in_size = read(STDIN_FILENO, in.data(), 1048576);
     if (in_size < 0)

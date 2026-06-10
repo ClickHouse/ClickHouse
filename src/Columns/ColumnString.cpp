@@ -3,7 +3,7 @@
 #include <Columns/Collator.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/ColumnsNumber.h>
+#include <Columns/MaskOperations.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
@@ -11,11 +11,6 @@
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 
-#if USE_EMBEDDED_COMPILER
-#    include <llvm/IR/Function.h>
-#    include <llvm/IR/IRBuilder.h>
-#    include <llvm/IR/Module.h>
-#endif
 
 namespace DB
 {
@@ -47,12 +42,6 @@ void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t l
 void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
 #endif
 {
-    /// Inserting zero copies is a no-op regardless of `position`. Returning early avoids
-    /// eagerly reading `offsets[position - 1]` below, which would go out of bounds on
-    /// a caller-side garbage `position` (e.g. from a `size_t` underflow).
-    if (length == 0)
-        return;
-
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
     const UInt8 * src_buf = &src_concrete.chars[src_concrete.offsets[position - 1]];
     const size_t src_buf_size
@@ -184,14 +173,6 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     return res;
 }
 
-void ColumnString::filter(const Filter & filt)
-{
-    if (offsets.empty())
-        return;
-
-    filterArraysImplInPlace<UInt8>(chars, offsets, filt);
-}
-
 void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
 {
     auto & offsets_data = getOffsets();
@@ -281,20 +262,23 @@ std::optional<size_t> ColumnString::getSerializedValueSize(size_t n, const IColu
     return byteSizeAt(n) + serialize_string_with_zero_byte;
 }
 
-std::string_view ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
+StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
 
     size_t string_size = sizeAt(n) + serialize_string_with_zero_byte;
     size_t offset = offsetAt(n);
 
-    auto result_size = sizeof(string_size) + string_size;
-    char * pos = arena.allocContinue(result_size, begin);
+    StringRef res;
+    res.size = sizeof(string_size) + string_size;
+    char * pos = arena.allocContinue(res.size, begin);
     memcpy(pos, &string_size, sizeof(string_size));
     memcpy(pos + sizeof(string_size), &chars[offset], string_size - serialize_string_with_zero_byte);
     if (serialize_string_with_zero_byte)
         *(pos + sizeof(string_size) + string_size - 1) = 0;
-    return {pos, result_size};
+    res.data = pos;
+
+    return res;
 }
 
 ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
@@ -311,7 +295,7 @@ ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * mem
     return memory + string_size;
 }
 
-void ColumnString::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
+void ColumnString::batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const
 {
     chassert(memories.size() == size());
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
@@ -359,7 +343,7 @@ ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    chassert(limit <= indexes.size());
+    assert(limit <= indexes.size());
     if (limit == 0)
         return ColumnString::create();
 
@@ -371,9 +355,9 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     size_t new_chars_size = 0;
     for (size_t i = 0; i < limit; ++i)
         new_chars_size += sizeAt(indexes[i]);
-    res_chars.resize_exact(new_chars_size);
+    res_chars.resize(new_chars_size);
 
-    res_offsets.resize_exact(limit);
+    res_offsets.resize(limit);
 
     Offset current_new_offset = 0;
 
@@ -527,7 +511,7 @@ size_t ColumnString::estimateCardinalityInPermutedRange(const Permutation & perm
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        auto value = getDataAt(permuted_i);
+        StringRef value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();
@@ -541,7 +525,7 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 
     auto res = ColumnString::create();
 
-    if (col_size == 0 || replicate_offsets.back() == 0)
+    if (0 == col_size)
         return res;
 
     Offsets & res_offsets = res->offsets;
@@ -588,7 +572,7 @@ size_t ColumnString::capacity() const
     return offsets.capacity();
 }
 
-void ColumnString::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnString::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
     size_t new_size = size();
     size_t new_chars_size = chars.size();
@@ -609,20 +593,22 @@ void ColumnString::shrinkToFit()
     offsets.shrink_to_fit();
 }
 
-void ColumnString::getExtremes(Field & min, Field & max, size_t start, size_t end) const
+void ColumnString::getExtremes(Field & min, Field & max) const
 {
     min = String();
     max = String();
 
-    if (start >= end)
+    size_t col_size = size();
+
+    if (col_size == 0)
         return;
 
-    size_t min_idx = start;
-    size_t max_idx = start;
+    size_t min_idx = 0;
+    size_t max_idx = 0;
 
     ComparatorBase cmp_op(*this);
 
-    for (size_t i = start + 1; i < end; ++i)
+    for (size_t i = 1; i < col_size; ++i)
     {
         if (cmp_op.compare(i, min_idx) < 0)
             min_idx = i;
@@ -700,63 +686,6 @@ ColumnPtr ColumnString::compress(bool force_compression) const
         });
 }
 
-#if USE_EMBEDDED_COMPILER
-bool ColumnString::isComparatorCompilable() const
-{
-    return true;
-}
-
-llvm::Value * ColumnString::compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const
-{
-    llvm::Value * lhs_chars_ptr = b.CreateExtractValue(lhs, {0});
-    llvm::Value * lhs_offset_ptr = b.CreateExtractValue(lhs, {1});
-    llvm::Value * lhs_index = b.CreateExtractValue(lhs, {2});
-
-    llvm::Value * rhs_chars_ptr = b.CreateExtractValue(rhs, {0});
-    llvm::Value * rhs_offset_ptr = b.CreateExtractValue(rhs, {1});
-    llvm::Value * rhs_index = b.CreateExtractValue(rhs, {2});
-
-    auto * size_type = b.getInt64Ty();
-
-    llvm::Value * const_one = llvm::ConstantInt::get(size_type, 1);
-
-    auto load_offset = [&](llvm::Value * offset_array, llvm::Value * index)
-    {
-        /// Not inbounds: for row 0 the index is -1 (wrapped unsigned), accessing
-        /// the PaddedPODArray padding element before the start of the array.
-        auto * element_ptr = b.CreateGEP(size_type, offset_array, index);
-        return b.CreateLoad(size_type, element_ptr);
-    };
-    auto * lhs_prev_index = b.CreateSub(lhs_index, const_one);
-    auto * lhs_current_start_offset = load_offset(lhs_offset_ptr, lhs_prev_index);
-    auto * lhs_current_end_offset = load_offset(lhs_offset_ptr, lhs_index);
-    auto * lhs_current_size = b.CreateSub(lhs_current_end_offset, lhs_current_start_offset);
-    auto * lhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), lhs_chars_ptr, lhs_current_start_offset);
-
-    auto * rhs_prev_index = b.CreateSub(rhs_index, const_one);
-    auto * rhs_current_start_offset = load_offset(rhs_offset_ptr, rhs_prev_index);
-    auto * rhs_current_end_offset = load_offset(rhs_offset_ptr, rhs_index);
-    auto * rhs_current_size = b.CreateSub(rhs_current_end_offset, rhs_current_start_offset);
-    auto * rhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), rhs_chars_ptr, rhs_current_start_offset);
-
-    // Call memcmpSmallAllowOverflow15, same as in ColumnString::compareAt
-    llvm::Module * module = b.GetInsertBlock()->getModule();
-    llvm::FunctionType * memcmp_func_type = llvm::FunctionType::get(
-        b.getInt32Ty(),
-        {b.getInt8Ty()->getPointerTo(), b.getInt64Ty(), b.getInt8Ty()->getPointerTo(), b.getInt64Ty()},
-        false
-    );
-
-    llvm::Function * memcmp_func = llvm::dyn_cast<llvm::Function>(
-        module->getOrInsertFunction("memcmpSmallCharsAllowOverflow15", memcmp_func_type).getCallee()
-    );
-
-    auto * compare_result = b.CreateCall(memcmp_func, {lhs_current_ptr, lhs_current_size, rhs_current_ptr, rhs_current_size});
-
-    /// memcmpSmallAllowOverflow15 returns -1/0/1, so truncating i32 to i8 is safe
-    return b.CreateTrunc(compare_result, b.getInt8Ty());
-}
-#endif
 
 int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const
 {
@@ -795,39 +724,10 @@ void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
     hash.update(UInt8(0));
 }
 
-void ColumnString::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
-{
-    size_t chars_begin = offsetAt(begin);
-    size_t chars_end = offsetAt(end);
-    hash.update(reinterpret_cast<const char *>(&chars[chars_begin]), chars_end - chars_begin);
-    hash.update(reinterpret_cast<const char *>(&offsets[begin]), (end - begin) * sizeof(offsets[0]));
-}
-
 void ColumnString::updateHashFast(SipHash & hash) const
 {
     hash.update(reinterpret_cast<const char *>(offsets.data()), offsets.size() * sizeof(offsets[0]));
     hash.update(reinterpret_cast<const char *>(chars.data()), chars.size() * sizeof(chars[0]));
-}
-
-ColumnPtr ColumnString::createSizeSubcolumn() const
-{
-    MutableColumnPtr column_sizes = ColumnUInt64::create();
-    size_t rows = offsets.size();
-    if (rows == 0)
-        return column_sizes;
-
-    auto & sizes_data = assert_cast<ColumnUInt64 &>(*column_sizes).getData();
-    sizes_data.resize(rows);
-
-    IColumn::Offset prev_offset = 0;
-    for (size_t i = 0; i < rows; ++i)
-    {
-        auto current_offset = offsets[i];
-        sizes_data[i] = current_offset - prev_offset;
-        prev_offset = current_offset;
-    }
-
-    return column_sizes;
 }
 
 }

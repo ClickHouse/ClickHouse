@@ -10,7 +10,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void checkHyperscanRegexp(const VectorWithMemoryTracking<std::string_view> & regexps, size_t max_hyperscan_regexp_length, size_t max_hyperscan_regexp_total_length)
+void checkHyperscanRegexp(const std::vector<std::string_view> & regexps, size_t max_hyperscan_regexp_length, size_t max_hyperscan_regexp_total_length)
 {
     if (max_hyperscan_regexp_length > 0 || max_hyperscan_regexp_total_length > 0)
     {
@@ -45,7 +45,7 @@ bool isLargerThanFifty(std::string_view str)
 /// Check for sub-patterns of the form x{n} or x{n,} can be expensive. Ignore spaces before/after n and m.
 bool SlowWithHyperscanChecker::isSlowOneRepeat(std::string_view regexp)
 {
-    std::string_view haystack = regexp;
+    std::string_view haystack(regexp.data(), regexp.size());
     std::string_view matches[2];
     size_t start_pos = 0;
     while (start_pos < haystack.size())
@@ -67,7 +67,7 @@ bool SlowWithHyperscanChecker::isSlowOneRepeat(std::string_view regexp)
 /// Check if sub-patterns of the form x{n,m} can be expensive. Ignore spaces before/after n and m.
 bool SlowWithHyperscanChecker::isSlowTwoRepeats(std::string_view regexp)
 {
-    std::string_view haystack = regexp;
+    std::string_view haystack(regexp.data(), regexp.size());
     std::string_view matches[3];
     size_t start_pos = 0;
     while (start_pos < haystack.size())

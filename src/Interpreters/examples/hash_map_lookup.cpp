@@ -40,9 +40,6 @@ done
 */
 
 
-namespace
-{
-
 template <typename Map>
 void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
 {
@@ -70,7 +67,7 @@ void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
     }
     watch.stop();
     std::cerr << std::fixed << std::setprecision(2) << "HashMap (" << name << "). Size: " << map.size()
-              << ", elapsed: " << watch.elapsedSeconds() << " (" << static_cast<double>(data.size()) / watch.elapsedSeconds() << " elem/sec.)"
+              << ", elapsed: " << watch.elapsedSeconds() << " (" << data.size() / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
               << ", collisions: " << map.getCollisions()
 #endif
@@ -78,7 +75,7 @@ void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
 }
 
 template <typename Map>
-void insert(Map & map, std::string_view & k)
+void insert(Map & map, StringRef & k)
 {
     bool inserted;
     typename Map::LookupResult it;
@@ -90,9 +87,7 @@ void insert(Map & map, std::string_view & k)
     std::cout << map.find(k)->getMapped() << std::endl;
 }
 
-}
-
-int mainEntryExampleHashMapLookup(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     if (argc < 3)
     {
@@ -116,7 +111,7 @@ int mainEntryExampleHashMapLookup(int argc, char ** argv)
 
         watch.stop();
         std::cerr << std::fixed << std::setprecision(2) << "Vector. Size: " << n << ", elapsed: " << watch.elapsedSeconds() << " ("
-                  << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)" << std::endl;
+                  << n / watch.elapsedSeconds() << " elem/sec.)" << std::endl;
     }
 
     using OldLookup = HashMap<UInt16, UInt8, TrivialHash, HashTableFixedGrower<16>>;

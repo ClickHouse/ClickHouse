@@ -1,22 +1,17 @@
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Core/Settings.h>
 
-#include <Interpreters/TemporaryDataOnDisk.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
-#include <Storages/VirtualColumnsDescription.h>
+#include <DataTypes/ObjectUtils.h>
 
 #include <IO/WriteHelpers.h>
 #include <QueryPipeline/Pipe.h>
@@ -69,9 +64,6 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int BACKUP_ENTRY_NOT_FOUND;
-    extern const int LOGICAL_ERROR;
-    extern const int TIMEOUT_EXCEEDED;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace FailPoints
@@ -79,7 +71,7 @@ namespace FailPoints
     extern const char backup_add_empty_memory_table[];
 }
 
-class MemorySink final : public SinkToStorage
+class MemorySink : public SinkToStorage
 {
 public:
     MemorySink(
@@ -98,6 +90,14 @@ public:
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         storage_snapshot->metadata->check(block, true);
+        if (!storage_snapshot->object_columns.empty())
+        {
+            auto extended_storage_columns = storage_snapshot->getColumns(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
+
+            convertDynamicColumnsToTuples(block, storage_snapshot);
+        }
+
         if (storage.getMemorySettingsRef()[MemorySetting::compress])
         {
             Block compressed_block;
@@ -168,7 +168,7 @@ StorageMemory::StorageMemory(
     ConstraintsDescription constraints_,
     const String & comment,
     const MemorySettings & memory_settings_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
     , data(std::make_unique<const Blocks>())
     , memory_settings(std::make_unique<MemorySettings>(memory_settings_))
 {
@@ -177,16 +177,7 @@ StorageMemory::StorageMemory(
     storage_metadata.setConstraints(std::move(constraints_));
     storage_metadata.setComment(comment);
     storage_metadata.setSettingsChanges(memory_settings->getSettingsChangesQuery());
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StorageMemory::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 StorageMemory::~StorageMemory() = default;
@@ -198,10 +189,20 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     /// Not guaranteed to match `blocks`, but that's ok. It would probably be better to move
     /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
     snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
+
+    if (!hasDynamicSubcolumnsDeprecated(metadata_snapshot->getColumns()))
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
+
+    auto object_columns = getConcreteObjectColumns(
+        snapshot_data->blocks->begin(),
+        snapshot_data->blocks->end(),
+        metadata_snapshot->getColumns(),
+        [](const auto & block) -> const auto & { return block.getColumnsWithTypeAndName(); });
+
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns), std::move(snapshot_data));
 }
 
-void StorageMemory::readImpl(
+void StorageMemory::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -247,7 +248,7 @@ void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*
 void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context)
 {
     std::lock_guard lock(mutex);
-    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
 
@@ -273,79 +274,31 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         out.push_back(block);
     }
 
-    /// `pull` returns `false` either on normal end-of-stream or on cancellation (including soft timeout
-    /// with `timeout_overflow_mode = 'break'`). On true cancellation the pipeline may not have produced
-    /// all expected blocks, and a partial result must not be swapped into a `Memory` table.
-    const auto final_status = executor.getExecutionStatus();
-    const bool cancelled
-        = final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
-        || final_status == PipelineExecutor::ExecutionStatus::CancelledByUser;
-
-    auto throw_on_cancellation = [&]
-    {
-        if (final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while mutating `Memory` table");
-    };
-
     std::unique_ptr<Blocks> new_data;
 
     // all column affected
     if (interpreter->isAffectingAllColumns())
     {
-        /// Replacing the entire data set: we cannot validate completeness precisely (some mutations
-        /// legitimately change the block count). Fail-close on cancellation rather than silently
-        /// swap in a possibly-truncated result.
-        if (cancelled)
-            throw_on_cancellation();
         new_data = std::make_unique<Blocks>(out);
     }
     else
     {
         /// just some of the column affected, we need update it with new column
-        const auto & old_data = *(data.get());
-        /// Partial-column mutations preserve the input block count *and* per-block row counts.
-        /// Both shape checks are required before suppressing a late cancellation flag, because
-        /// `PullingPipelineExecutor::pull(Block)` can return `true` with an empty block on
-        /// timeout. A block-count match alone would let that empty trailing block slip past:
-        /// `updateBlockData` no-ops on a block with no columns, silently keeping the
-        /// un-mutated old block.
-        auto reject_incomplete = [&](const String & reason)
-        {
-            if (cancelled)
-                throw_on_cancellation();
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Mutation of `Memory` table produced incomplete output: {}",
-                reason);
-        };
-
-        if (out.size() != old_data.size())
-            reject_incomplete(fmt::format(
-                "got {} blocks, expected {}", out.size(), old_data.size()));
-
-        for (size_t i = 0; i < out.size(); ++i)
-        {
-            if (out[i].rows() != old_data[i].rows())
-                reject_incomplete(fmt::format(
-                    "block {} has {} rows, expected {}", i, out[i].rows(), old_data[i].rows()));
-        }
-
-        new_data = std::make_unique<Blocks>(old_data);
+        new_data = std::make_unique<Blocks>(*(data.get()));
         auto data_it = new_data->begin();
         auto out_it = out.begin();
 
         while (data_it != new_data->end())
         {
             /// Mutation does not change the number of blocks
-            chassert(out_it != out.end());
+            assert(out_it != out.end());
 
             updateBlockData(*data_it, *out_it);
             ++data_it;
             ++out_it;
         }
 
-        chassert(out_it == out.end());
+        assert(out_it == out.end());
     }
 
     size_t rows = 0;
@@ -372,7 +325,7 @@ void StorageMemory::truncate(
 void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr context, DB::IStorage::AlterLockHolder & /*alter_lock_holder*/)
 {
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
 
     if (params.isSettingsAlter())
@@ -418,7 +371,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
         *memory_settings = std::move(changed_settings);
     }
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }
 
@@ -433,13 +386,15 @@ namespace
             const StorageMetadataPtr & metadata_snapshot_,
             const std::shared_ptr<const Blocks> blocks_,
             const String & data_path_in_backup,
-            const TemporaryDataOnDiskScopePtr & tmp_data_,
-            const ReadSettings & read_settings_)
+            const DiskPtr & temp_disk_,
+            const ReadSettings & read_settings_,
+            UInt64 max_compress_block_size_)
             : context(context_)
             , metadata_snapshot(metadata_snapshot_)
             , blocks(blocks_)
-            , tmp_data(tmp_data_)
+            , temp_disk(temp_disk_)
             , read_settings(read_settings_)
+            , max_compress_block_size(max_compress_block_size_)
         {
             fs::path data_path_in_backup_fs = data_path_in_backup;
             data_bin_pos = file_paths.size();
@@ -470,25 +425,38 @@ namespace
             BackupEntries backup_entries;
             backup_entries.resize(file_paths.size());
 
+            temp_dir_owner.emplace(temp_disk);
+            fs::path temp_dir = temp_dir_owner->getRelativePath();
+            temp_disk->createDirectories(temp_dir);
+
             /// Writing data.bin
             IndexForNativeFormat index;
             {
-                auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
-                NativeWriter block_out{data_out->getCompressedWriteBuffer(), 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()), std::nullopt, false, &index};
+                auto data_file_path = temp_dir / fs::path{file_paths[data_bin_pos]}.filename();
+                auto data_out_compressed = temp_disk->writeFile(data_file_path);
+                auto data_out = std::make_unique<CompressedWriteBuffer>(*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
+                NativeWriter block_out{*data_out, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()), std::nullopt, false, &index};
+
                 for (const auto & block : *blocks)
                     block_out.write(block);
-                data_out->finishWriting();
-                backup_entries[data_bin_pos]
-                    = {file_paths[data_bin_pos], std::make_shared<BackupEntryFromAppendOnlyFile>(std::move(data_out))};
+                data_out->finalize();
+                data_out.reset();
+                data_out_compressed->finalize();
+                data_out_compressed.reset();
+                backup_entries[data_bin_pos] = {file_paths[data_bin_pos], std::make_shared<BackupEntryFromAppendOnlyFile>(temp_disk, data_file_path)};
             }
 
             /// Writing index.mrk
             {
-                auto index_mrk_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
+                auto index_mrk_path = temp_dir / fs::path{file_paths[index_mrk_pos]}.filename();
+                auto index_mrk_out_compressed = temp_disk->writeFile(index_mrk_path);
+                auto index_mrk_out = std::make_unique<CompressedWriteBuffer>(*index_mrk_out_compressed);
                 index.write(*index_mrk_out);
-                index_mrk_out->finishWriting();
-                backup_entries[index_mrk_pos]
-                    = {file_paths[index_mrk_pos], std::make_shared<BackupEntryFromAppendOnlyFile>(std::move(index_mrk_out))};
+                index_mrk_out->finalize();
+                index_mrk_out.reset();
+                index_mrk_out_compressed->finalize();
+                index_mrk_out_compressed.reset();
+                backup_entries[index_mrk_pos] = {file_paths[index_mrk_pos], std::make_shared<BackupEntryFromAppendOnlyFile>(temp_disk, index_mrk_path)};
             }
 
             /// Writing columns.txt
@@ -507,17 +475,16 @@ namespace
 
             /// Writing sizes.json
             {
-                FileChecker file_checker{"tmp_sizes_json"};
+                auto sizes_json_path = temp_dir / fs::path{file_paths[sizes_json_pos]}.filename();
+                FileChecker file_checker{temp_disk, sizes_json_path};
                 for (size_t i = 0; i != file_paths.size(); ++i)
                 {
                     if (i == sizes_json_pos)
                         continue;
-                    file_checker.update(std::filesystem::path{file_paths[i]}.filename(), backup_entries[i].second->getSize());
+                    file_checker.update(temp_dir / fs::path{file_paths[i]}.filename());
                 }
-
-                WriteBufferFromOwnString write_buffer;
-                file_checker.save(write_buffer);
-                backup_entries[sizes_json_pos] = {file_paths[sizes_json_pos], std::make_shared<BackupEntryFromMemory>(std::move(write_buffer.str()))};
+                file_checker.save();
+                backup_entries[sizes_json_pos] = {file_paths[sizes_json_pos], std::make_shared<BackupEntryFromSmallFile>(temp_disk, sizes_json_path, read_settings)};
             }
 
             /// We don't need to keep `blocks` any longer.
@@ -530,8 +497,10 @@ namespace
         ContextPtr context;
         StorageMetadataPtr metadata_snapshot;
         std::shared_ptr<const Blocks> blocks;
-        TemporaryDataOnDiskScopePtr tmp_data;
+        DiskPtr temp_disk;
+        std::optional<TemporaryFileOnDisk> temp_dir_owner;
         ReadSettings read_settings;
+        UInt64 max_compress_block_size;
         Strings file_paths;
         size_t data_bin_pos, index_mrk_pos, columns_txt_pos, count_txt_pos, sizes_json_pos;
     };
@@ -547,19 +516,18 @@ void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector
             return;
     }
 
-    TemporaryDataOnDiskSettings tmp_data_settings;
-    auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
-    tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
-    auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
+    auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
     const auto & read_settings = backup_entries_collector.getReadSettings();
+    auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
 
     backup_entries_collector.addBackupEntries(std::make_shared<MemoryBackup>(
         backup_entries_collector.getContext(),
-        getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false),
+        getInMemoryMetadataPtr(),
         data.get(),
         data_path_in_backup,
-        tmp_data,
-        read_settings)->getBackupEntries());
+        temp_disk,
+        read_settings,
+        max_compress_block_size)->getBackupEntries());
 }
 
 void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
@@ -571,12 +539,14 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!restorer.isNonEmptyTableAllowed() && total_size_bytes)
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
+    auto temp_disk = restorer.getContext()->getGlobalTemporaryVolume()->getDisk(0);
+
     restorer.addDataRestoreTask(
-        [storage = std::static_pointer_cast<StorageMemory>(shared_from_this()), backup, data_path_in_backup]
-        { storage->restoreDataImpl(backup, data_path_in_backup); });
+        [storage = std::static_pointer_cast<StorageMemory>(shared_from_this()), backup, data_path_in_backup, temp_disk]
+        { storage->restoreDataImpl(backup, data_path_in_backup, temp_disk); });
 }
 
-void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup)
+void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const DiskPtr & temporary_disk)
 {
     /// Our data are in the StripeLog format.
 
@@ -622,6 +592,15 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
             throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file_path);
 
         auto in = backup->readFile(data_file_path);
+        std::optional<TemporaryFileOnDisk> temp_data_file;
+        if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
+        {
+            temp_data_file.emplace(temporary_disk);
+            auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getAbsolutePath());
+            copyData(*in, *out);
+            out->finalize();
+            in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
+        }
         std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
         CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
         NativeReader block_in{compressed_in, 0, index.blocks.begin(), index.blocks.end()};

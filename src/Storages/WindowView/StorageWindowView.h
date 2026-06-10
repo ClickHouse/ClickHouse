@@ -13,7 +13,9 @@
 
 namespace DB
 {
+class IAST;
 class WindowViewSource;
+using ASTPtr = std::shared_ptr<IAST>;
 
 /**
  * StorageWindowView.

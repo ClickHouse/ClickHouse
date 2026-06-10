@@ -1,6 +1,5 @@
 #include <Loggers/Loggers.h>
 
-#include <Core/Types.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnJSONPatternFormatter.h>
 #include <Loggers/OwnPatternFormatter.h>
@@ -115,7 +114,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     /// Use extended interface of Channel for more comprehensive logging.
     if (config.getBool("logger.async", true))
     {
-        auto async_queue_size = config.getUInt("logger.async_queue_max_size", 65536);
+        auto async_queue_size = config.getUInt("logger.async_queue_max_size", 10000);
         split = new DB::OwnAsyncSplitChannel(static_cast<size_t>(async_queue_size));
     }
     else
@@ -147,7 +146,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         // Set up two channel chains.
         log_file = new Poco::FileChannel;
         log_file->setProperty(Poco::FileChannel::PROP_PATH, fs::weakly_canonical(log_path));
-        log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.rotation", config.getRawString("logger.size", "100M")));
+        log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
         log_file->setProperty(Poco::FileChannel::PROP_STREAMCOMPRESS, config.getRawString("logger.stream_compress", "false"));
@@ -305,7 +304,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     logger.root().setChannel(logger.getChannel());
 
     // Set level and channel to all already created loggers
-    DB::Strings names;
+    std::vector<std::string> names;
     logger.names(names);
 
     for (const auto & name : names)
@@ -386,7 +385,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     logger.setLevel(max_log_level);
 
     // Set level to all already created loggers
-    DB::Strings names;
+    std::vector<std::string> names;
 
     logger.root().names(names);
     for (const auto & name : names)

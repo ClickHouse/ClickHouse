@@ -10,7 +10,6 @@
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -167,7 +166,7 @@ public:
         *  depending on values of conditions.
         */
 
-        VectorWithMemoryTracking<Instruction> instructions;
+        std::vector<Instruction> instructions;
         instructions.reserve(arguments.size() / 2 + 1);
 
         Columns converted_columns_holder;
@@ -324,7 +323,7 @@ public:
 
 private:
 
-    static void executeInstructions(VectorWithMemoryTracking<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    static void executeInstructions(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
     {
         for (size_t i = 0; i < rows; ++i)
         {
@@ -360,9 +359,9 @@ private:
 
     /// We should read source from which instruction on each row?
     template <typename S>
-    static NO_INLINE void calculateInserts(const VectorWithMemoryTracking<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
+    static NO_INLINE void calculateInserts(const std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
     {
-        for (S i = static_cast<S>(instructions.size() - 1); i != static_cast<S>(-1); --i)
+        for (S i = instructions.size() - 1; i != static_cast<S>(-1); --i)
         {
             const auto & instruction = instructions[i];
             if (instruction.condition_always_true)
@@ -402,7 +401,7 @@ private:
 
     template <typename T, typename S, bool nullable_result = false>
     static NO_INLINE void executeInstructionsColumnar(
-        const VectorWithMemoryTracking<Instruction> & instructions,
+        const std::vector<Instruction> & instructions,
         size_t rows,
         PaddedPODArray<T> & res_data,
         PaddedPODArray<UInt8> * res_null_map = nullptr)
@@ -419,8 +418,8 @@ private:
             res_null_map->resize_exact(rows);
         }
 
-        VectorWithMemoryTracking<const T *> data_cols(instructions.size(), nullptr);
-        VectorWithMemoryTracking<const UInt8 *> null_map_cols(instructions.size(), nullptr);
+        std::vector<const T *> data_cols(instructions.size(), nullptr);
+        std::vector<const UInt8 *> null_map_cols(instructions.size(), nullptr);
         for (size_t i = 0; i < instructions.size(); ++i)
         {
             const auto & instruction = instructions[i];
@@ -585,7 +584,7 @@ FROM LEFT_RIGHT;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Conditional;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMultiIf>(documentation);
 

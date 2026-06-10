@@ -19,7 +19,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -88,7 +87,7 @@ static std::string getBaseName(const String & path)
     return path.substr(basename_start + 1);
 }
 
-class StorageHiveSource final : public ISource, WithContext
+class StorageHiveSource : public ISource, WithContext
 {
 public:
     using FileFormat = StorageHive::FileFormat;
@@ -101,24 +100,36 @@ public:
         NamesAndTypesList partition_name_types;
 
         std::atomic<size_t> next_uri_to_read = 0;
+
+        bool need_path_column = false;
+        bool need_file_column = false;
     };
 
     using SourcesInfoPtr = std::shared_ptr<SourcesInfo>;
 
-    static Block getHeader(Block header, const Block & virtual_header)
+    static Block getHeader(Block header, const SourcesInfoPtr & source_info)
     {
-        for (const auto & column : virtual_header)
-            header.insert(column);
+        if (source_info->need_path_column)
+            header.insert(
+                {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                 "_path"});
+        if (source_info->need_file_column)
+            header.insert(
+                {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                 "_file"});
 
         return header;
     }
 
-    static ColumnsDescription getColumnsDescription(Block header, const Block & virtual_header)
+    static ColumnsDescription getColumnsDescription(Block header, const SourcesInfoPtr & source_info)
     {
         ColumnsDescription columns_description{header.getNamesAndTypesList()};
-        for (const auto & column : virtual_header)
-            columns_description.add({column.name, column.type});
-
+        if (source_info->need_path_column)
+            columns_description.add({"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())});
+        if (source_info->need_file_column)
+            columns_description.add({"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())});
         return columns_description;
     }
 
@@ -127,27 +138,26 @@ public:
         String hdfs_namenode_url_,
         String format_,
         String compression_method_,
-        Block requested_columns_header_,
-        const Block & requested_virtuals_header_,
+        Block sample_block_,
         ContextPtr context_,
         UInt64 max_block_size_,
         const StorageHive & storage_,
         const Names & text_input_field_names_ = {})
-        : ISource(std::make_shared<const Block>(getHeader(requested_columns_header_, requested_virtuals_header_)))
+        : ISource(std::make_shared<const Block>(getHeader(sample_block_, source_info_)))
         , WithContext(context_)
         , source_info(std::move(source_info_))
         , hdfs_namenode_url(std::move(hdfs_namenode_url_))
         , format(std::move(format_))
         , compression_method(std::move(compression_method_))
         , max_block_size(max_block_size_)
-        , requested_columns_header(std::move(requested_columns_header_))
-        , columns_description(getColumnsDescription(requested_columns_header, requested_virtuals_header_))
+        , sample_block(std::move(sample_block_))
+        , columns_description(getColumnsDescription(sample_block, source_info))
         , storage(storage_)
         , text_input_field_names(text_input_field_names_)
         , format_settings(getFormatSettings(getContext()))
         , read_settings(getContext()->getReadSettings())
     {
-        to_read_block = requested_columns_header;
+        to_read_block = sample_block;
 
         /// Initialize to_read_block, which is used to read data from HDFS.
         for (const auto & name_type : source_info->partition_name_types)
@@ -157,8 +167,8 @@ public:
         }
 
         /// Apply read buffer prefetch for HiveText format, because it is read sequentially
-        if (read_settings.remote_fs_settings.prefetch)
-            read_settings.remote_fs_settings.prefetch = format == "HiveText";
+        if (read_settings.remote_fs_prefetch)
+            read_settings.remote_fs_prefetch = format == "HiveText";
 
         /// Decide if we could generate blocks from partition values
         /// Only for ORC or Parquet format file, we could get number of rows from metadata without scanning the whole file
@@ -168,7 +178,7 @@ public:
         /// See issue: https://github.com/ClickHouse/ClickHouse/issues/37671
         if (!generate_chunk_from_metadata && !to_read_block.columns())
         {
-            const auto metadata = storage.getInMemoryMetadataPtr(getContext(), false);
+            const auto & metadata = storage.getInMemoryMetadataPtr();
             for (const auto & column : metadata->getColumns().getAllPhysical())
             {
                 bool is_partition_column = false;
@@ -230,7 +240,7 @@ public:
                 {
                     auto get_raw_read_buf = [&]() -> std::unique_ptr<ReadBuffer>
                     {
-                        bool thread_pool_read = read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool;
+                        bool thread_pool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
                         if (thread_pool_read)
                         {
                             auto buf = std::make_unique<ReadBufferFromHDFS>(
@@ -254,7 +264,7 @@ public:
                     };
 
                     raw_read_buf = get_raw_read_buf();
-                    if (read_settings.remote_fs_settings.prefetch)
+                    if (read_settings.remote_fs_prefetch)
                         raw_read_buf->prefetch(DEFAULT_PREFETCH_PRIORITY);
                 }
                 catch (const Exception & e)
@@ -303,7 +313,7 @@ public:
             }
 
             reader.reset();
-            pipeline = nullptr;
+            pipeline.reset();
             read_buf.reset();
         }
     }
@@ -332,25 +342,27 @@ public:
                 continue;
             }
 
-            /// Virtual columns
+            // Enrich virtual column _path
             if (column.name == "_path")
             {
-                result_columns.emplace_back(column.type->createColumnConst(num_rows, current_path)->convertToFullColumnIfConst());
-                continue;
-            }
-            if (column.name == "_file")
-            {
-                size_t last_slash_pos = current_path.find_last_of('/');
-                result_columns.emplace_back(column.type->createColumnConst(num_rows, current_path.substr(last_slash_pos + 1))->convertToFullColumnIfConst());
-                continue;
-            }
-            if (column.name == "_table")
-            {
-                result_columns.emplace_back(column.type->createColumnConst(num_rows, source_info->table_name)->convertToFullColumnIfConst());
+                auto path_column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, current_path);
+                result_columns.emplace_back(path_column->convertToFullColumnIfConst());
                 continue;
             }
 
-            /// Partition columns
+            /// Enrich virtual column _file
+            if (column.name == "_file")
+            {
+                size_t last_slash_pos = current_path.find_last_of('/');
+                auto file_name = current_path.substr(last_slash_pos + 1);
+
+                auto file_column
+                    = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, std::move(file_name));
+                result_columns.emplace_back(file_column->convertToFullColumnIfConst());
+                continue;
+            }
+
+            /// Enrich partition columns
             const auto names = source_info->partition_name_types.getNames();
             size_t pos = names.size();
             for (size_t i = 0; i < names.size(); ++i)
@@ -384,7 +396,7 @@ private:
     String format;
     String compression_method;
     UInt64 max_block_size;
-    Block requested_columns_header;
+    Block sample_block;
     Block to_read_block;
     ColumnsDescription columns_description;
     const StorageHive & storage;
@@ -429,13 +441,9 @@ StorageHive::StorageHive(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment_);
-    storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, storage_metadata.columns, {}, getContext());
+    storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, storage_metadata.columns, getContext());
 
-    VirtualColumnsDescription virtuals_desc;
-    virtuals_desc.addEphemeral("_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
-    virtuals_desc.addEphemeral("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
-    virtuals_desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
-    storage_metadata.setVirtuals(std::move(virtuals_desc));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -495,7 +503,7 @@ void StorageHive::lazyInitialize()
 
 void StorageHive::initMinMaxIndexExpression()
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     ASTPtr partition_key_expr_list = extractKeyExpressionList(partition_by_ast);
     if (!partition_key_expr_list->children.empty())
     {
@@ -523,7 +531,7 @@ void StorageHive::initMinMaxIndexExpression()
 ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
 {
     if (!node)
-        return make_intrusive<ASTExpressionList>();
+        return std::make_shared<ASTExpressionList>();
 
     const auto * expr_func = node->as<ASTFunction>();
     if (expr_func && expr_func->name == "tuple")
@@ -533,7 +541,7 @@ ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
     }
 
     /// Primary key consists of one column.
-    auto res = make_intrusive<ASTExpressionList>();
+    auto res = std::make_shared<ASTExpressionList>();
     res->children.push_back(node);
     return res;
 }
@@ -776,8 +784,7 @@ public:
         HDFSBuilderWrapper builder_,
         HDFSFSPtr fs_,
         HiveMetastoreClient::HiveTableMetadataPtr hive_table_metadata_,
-        Block requested_columns_header_,
-        Block requested_virtuals_header_,
+        Block sample_block_,
         LoggerPtr log_,
         size_t max_block_size_,
         size_t num_streams_)
@@ -787,8 +794,7 @@ public:
         , builder(std::move(builder_))
         , fs(std::move(fs_))
         , hive_table_metadata(std::move(hive_table_metadata_))
-        , requested_columns_header(std::move(requested_columns_header_))
-        , requested_virtuals_header(std::move(requested_virtuals_header_))
+        , sample_block(std::move(sample_block_))
         , log(log_)
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
@@ -801,8 +807,7 @@ private:
     HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
     HiveMetastoreClient::HiveTableMetadataPtr hive_table_metadata;
-    Block requested_columns_header;
-    Block requested_virtuals_header;
+    Block sample_block;
     LoggerPtr log;
 
     size_t max_block_size;
@@ -856,27 +861,27 @@ void StorageHive::read(
             return settings[Setting::input_format_orc_case_insensitive_column_matching];
         return false;
     };
-    Block requested_columns_header;
-    Block requested_virtuals_header;
-    const auto & virtuals_ptr = storage_snapshot->metadata->virtuals;
+    Block sample_block;
     NestedColumnExtractHelper nested_columns_extractor(header_block, case_insensitive_matching());
     for (const auto & column : column_names)
     {
         if (header_block.has(column))
         {
-            requested_columns_header.insert(header_block.getByName(column));
+            sample_block.insert(header_block.getByName(column));
             continue;
         }
 
         auto subset_column = nested_columns_extractor.extractColumn(column);
         if (subset_column)
         {
-            requested_columns_header.insert(std::move(*subset_column));
+            sample_block.insert(std::move(*subset_column));
             continue;
         }
 
-        if (auto virt = virtuals_ptr.tryGet(column, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
-            requested_virtuals_header.insert({virt->type->createColumn(), virt->type, virt->name});
+        if (column == "_path")
+            sources_info->need_path_column = true;
+        if (column == "_file")
+            sources_info->need_file_column = true;
     }
 
     auto this_ptr = std::static_pointer_cast<StorageHive>(shared_from_this());
@@ -886,14 +891,13 @@ void StorageHive::read(
         query_info,
         storage_snapshot,
         context_,
-        StorageHiveSource::getHeader(requested_columns_header, requested_virtuals_header),
+        StorageHiveSource::getHeader(sample_block, sources_info),
         std::move(this_ptr),
         std::move(sources_info),
         std::move(builder),
         std::move(fs),
         std::move(hive_table_metadata),
-        std::move(requested_columns_header),
-        std::move(requested_virtuals_header),
+        std::move(sample_block),
         log,
         max_block_size,
         num_streams);
@@ -922,8 +926,7 @@ void ReadFromHive::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             storage->hdfs_namenode_url,
             storage->format_name,
             storage->compression_method,
-            requested_columns_header,
-            requested_virtuals_header,
+            sample_block,
             context,
             max_block_size,
             *storage,

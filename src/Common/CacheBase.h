@@ -116,27 +116,6 @@ public:
         return res;
     }
 
-    std::vector<MappedPtr> getMany(const std::vector<Key> & keys)
-    {
-        std::vector<MappedPtr> values;
-        values.resize(keys.size());
-
-        std::lock_guard lock(mutex);
-
-        for (size_t i = 0; i < keys.size(); ++i)
-        {
-            auto res = cache_policy->get(keys[i]);
-            if (res)
-                ++hits;
-            else
-                ++misses;
-
-            values[i] = std::move(res);
-        }
-
-        return values;
-    }
-
     bool contains(const Key & key) const
     {
         std::lock_guard lock(mutex);
@@ -261,12 +240,6 @@ public:
     {
         std::lock_guard lock(mutex);
         return cache_policy->maxSizeInBytes();
-    }
-
-    size_t maxCount() const
-    {
-        std::lock_guard lock(mutex);
-        return cache_policy->maxCount();
     }
 
     void setMaxCount(size_t max_count)

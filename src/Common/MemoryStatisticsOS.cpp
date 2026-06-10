@@ -8,13 +8,13 @@
 #endif
 #include <fcntl.h>
 #include <unistd.h>
+#include <cassert>
 
 #include <Common/MemoryStatisticsOS.h>
 
 #include <Common/logger_useful.h>
 #include <base/getPageSize.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
@@ -80,7 +80,7 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, filename, "Cannot read from file {}", filename);
         }
 
-        chassert(res >= 0);
+        assert(res >= 0);
         break;
     } while (true);
 
