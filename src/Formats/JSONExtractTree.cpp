@@ -713,15 +713,9 @@ public:
                 return false;
             }
         }
-        else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
+        else if (element.isUInt64() && insert_settings.allow_type_conversion)
         {
-            if (element.isInt64() && (element.getInt64() < 0))
-            {
-                error = fmt::format("cannot convert negative integer value {} to DateTime", element.getInt64());
-                return false;
-            }
-
-            value = element.isInt64() ? element.getInt64() : element.getUInt64();
+            value = element.getUInt64();
         }
         else
         {
@@ -784,9 +778,9 @@ public:
                 return false;
             }
         }
-        else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
+        else if (element.isUInt64() && insert_settings.allow_type_conversion)
         {
-            value = element.isInt64() ? element.getInt64() : element.getUInt64();
+            value = element.getUInt64();
         }
         else
         {
@@ -1828,12 +1822,7 @@ public:
     {
         if (element.isNull() && format_settings.null_as_default)
         {
-            auto & column_object = assert_cast<ColumnObject &>(column);
-            for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
-                typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
-            for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
-                dynamic_column->insertDefault();
-            column_object.getSharedDataColumn().insertDefault();
+            column.insertDefault();
             return true;
         }
 

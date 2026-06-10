@@ -16,11 +16,7 @@ public:
 
     using FindResult = ColumnsHashing::columns_hashing_impl::FindResultImpl<Mapped, true>;
 
-    static constexpr bool has_cheap_key_calculation = false;
-
     KeyGetterEmpty() = default;
-
-    size_t getKeyHolder(size_t, Arena &) const { return 0; }
 
     FindResult findKey(MappedType, size_t, const Arena &) { return FindResult(); }
 };
