@@ -29,5 +29,10 @@
 123
 -- isValidJSON with big integer (issue #45782)
 1
--- JSONExtract functions with big integers (issue #49895)
+-- JSONExtractString/Float with big integers
 -57783588950605040000	-57783588950605040000
+-- Invalid JSON: big integer followed by non-structural character must be rejected
+0
+0
+0
+1

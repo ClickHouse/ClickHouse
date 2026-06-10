@@ -49,7 +49,13 @@ SELECT JSONExtractString('{"id":"123","big_number":100000000000000000000000000}'
 SELECT '-- isValidJSON with big integer (issue #45782)';
 SELECT isValidJSON('{"value": 7230000000000000000000000000000000000000000000000000000000000000000000000000}');
 
-SELECT '-- JSONExtract functions with big integers (issue #49895)';
+SELECT '-- JSONExtractString/Float with big integers';
 SELECT
     JSONExtractString('{ "a": -57783588950605040000 }', 'a'),
     JSONExtractFloat('{ "a": -57783588950605040000 }', 'a');
+
+SELECT '-- Invalid JSON: big integer followed by non-structural character must be rejected';
+SELECT isValidJSON('{"a":123456789123456789123x}');
+SELECT isValidJSON('123456789123456789123x');
+SELECT isValidJSON('{"a":-99999999999999999999x}');
+SELECT isValidJSON('{"a":123456789123456789123}');  -- valid: structural "}" follows
