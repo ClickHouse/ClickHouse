@@ -396,7 +396,7 @@ void StorageView::drop()
 
 void StorageView::shutdown(bool)
 {
-    /// Mirror `StorageMaterializedView::shutdown` for non-permanent `DETACH TABLE`.
+    /// Make sure the dependency is removed after DETACH TABLE.
     DatabaseCatalog::instance().removePlainViewDependencies(getStorageID());
 }
 

@@ -27,7 +27,6 @@ TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases database
     , loading_dependencies("LoadingDeps")
     , mv_to_dependencies("MaterializedViewToDeps")
     , mv_from_dependencies("MaterializedViewFromDeps")
-    , plain_view_dependencies("PlainViewDeps")
     , all_loading_dependencies("LoadingDeps")
     , async_loader(global_context->getAsyncLoader())
 {
@@ -180,9 +179,6 @@ void TablesLoader::buildDependencyGraph()
         if (new_ref_dependencies.mv_from_dependency)
             mv_from_dependencies.addDependency(new_ref_dependencies.mv_from_dependency.value(), StorageID{table_name});
 
-        for (const auto & source_table : new_ref_dependencies.plain_view_dependencies)
-            plain_view_dependencies.addDependency(StorageID{source_table}, StorageID{table_name});
-
         if (!new_loading_dependencies.empty())
             loading_dependencies.addDependencies(table_name, new_loading_dependencies);
 
@@ -195,7 +191,6 @@ void TablesLoader::buildDependencyGraph()
     all_loading_dependencies.log();
     mv_from_dependencies.log();
     mv_to_dependencies.log();
-    plain_view_dependencies.log();
 }
 
 void TablesLoader::removeUnresolvableDependencies()

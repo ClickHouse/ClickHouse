@@ -1093,6 +1093,12 @@ std::vector<StorageID> DatabaseCatalog::getAllDependentViews(const StorageID & s
     return result;
 }
 
+std::vector<StorageID> DatabaseCatalog::takePlainViewDependents(const StorageID & source_table_id)
+{
+    std::lock_guard lock{databases_mutex};
+    return plain_view_dependencies.removeDependencies(source_table_id, /* remove_isolated_tables= */ true);
+}
+
 std::vector<StorageID> DatabaseCatalog::takeSourceViewDependencies(const StorageID & source_table_id)
 {
     std::lock_guard lock{databases_mutex};
@@ -1831,7 +1837,7 @@ std::vector<StorageID> DatabaseCatalog::getLoadingDependents(const StorageID & t
     return loading_dependencies.getDependents(table_id);
 }
 
-std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> DatabaseCatalog::removeDependencies(
+std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> DatabaseCatalog::removeDependencies(
     const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database, bool is_view)
 {
     std::lock_guard lock{databases_mutex};
@@ -1854,17 +1860,11 @@ std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID
         old_plain_view_dependencies.insert(old_plain_view_dependencies.end(), plain_view_sources.begin(), plain_view_sources.end());
     }
 
-    /// Remove outgoing plain_view_dependencies edges where table_id appears as a source
-    /// (i.e. plain views that read from table_id). The return value is preserved so that
-    /// a rename can re-add these edges under the new table identity.
-    auto old_plain_view_dependents = plain_view_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true);
-
     return {
         referential_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),
         loading_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),
         old_view_dependencies,
-        old_plain_view_dependencies,
-        old_plain_view_dependents};
+        old_plain_view_dependencies};
 }
 
 void DatabaseCatalog::updateDependencies(

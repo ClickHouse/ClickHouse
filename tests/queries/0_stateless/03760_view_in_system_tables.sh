@@ -226,4 +226,48 @@ DETACH VIEW 03760_det_view;
 SELECT arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = '03760_det_src';
 
 DROP TABLE 03760_det_src;
+
+-- DETACH VIEW (non-permanent) when the view is itself a source for another view:
+-- both the source->v1 and v1->v2 edges must be gone; re-ATTACH must not duplicate.
+DROP TABLE IF EXISTS 03760_det2_src;
+DROP VIEW  IF EXISTS 03760_det2_v1;
+DROP VIEW  IF EXISTS 03760_det2_v2;
+
+CREATE TABLE 03760_det2_src (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE VIEW 03760_det2_v1 AS SELECT * FROM 03760_det2_src;
+CREATE VIEW 03760_det2_v2 AS SELECT * FROM 03760_det2_v1;
+
+SELECT arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = '03760_det2_src';
+SELECT arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = '03760_det2_v1';
+
+DETACH VIEW 03760_det2_v1;
+
+SELECT arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = '03760_det2_src';
+
+ATTACH TABLE 03760_det2_v1;
+
+SELECT arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = '03760_det2_src';
+SELECT arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = '03760_det2_v1';
+
+DROP VIEW 03760_det2_v2;
+DROP VIEW 03760_det2_v1;
+DROP TABLE 03760_det2_src;
+
+-- DROP source table while the plain view still exists, then recreate the source:
+-- the edge is name-bound and must survive (same as for materialized views).
+DROP TABLE IF EXISTS 03760_keep_src;
+DROP VIEW  IF EXISTS 03760_keep_view;
+
+CREATE TABLE 03760_keep_src (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE VIEW 03760_keep_view AS SELECT * FROM 03760_keep_src;
+
+SELECT arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = '03760_keep_src';
+
+DROP TABLE 03760_keep_src;
+CREATE TABLE 03760_keep_src (id UInt64) ENGINE = MergeTree ORDER BY id;
+
+SELECT arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = '03760_keep_src';
+
+DROP VIEW 03760_keep_view;
+DROP TABLE 03760_keep_src;
 EOF

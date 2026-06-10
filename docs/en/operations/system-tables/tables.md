@@ -28,7 +28,7 @@ Contains metadata of each table that the server knows about.
 - `metadata_modification_time` ([DateTime](/sql-reference/data-types/datetime)) — Time of latest modification of the table metadata.
 - `metadata_version` ([Int32](/sql-reference/data-types/int-uint)) — Metadata version for ReplicatedMergeTree table, 0 for non ReplicatedMergeTree table.
 - `dependencies_database` ([Array(String)](/sql-reference/data-types/array)) — Database dependencies.
-- `dependencies_table` ([Array(String)](/sql-reference/data-types/array)) — Table dependencies (materialized views the current table).
+- `dependencies_table` ([Array(String)](/sql-reference/data-types/array)) — Table dependencies (views, both regular and materialized).
 - `create_table_query` ([String](/sql-reference/data-types/string)) — The query that was used to create the table.
 - `engine_full` ([String](/sql-reference/data-types/string)) — Parameters of the table engine.
 - `as_select` ([String](/sql-reference/data-types/string)) — SELECT query for view.

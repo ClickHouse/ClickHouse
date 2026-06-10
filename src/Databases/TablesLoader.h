@@ -75,7 +75,6 @@ private:
     TablesDependencyGraph loading_dependencies;
     TablesDependencyGraph mv_to_dependencies;
     TablesDependencyGraph mv_from_dependencies;
-    TablesDependencyGraph plain_view_dependencies;  /// display plain views only
     TablesDependencyGraph all_loading_dependencies;
     LoggerPtr log;
     std::atomic<size_t> tables_processed{0};
