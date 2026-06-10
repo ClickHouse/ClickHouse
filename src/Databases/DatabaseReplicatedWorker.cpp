@@ -47,6 +47,7 @@ namespace FailPoints
 {
     extern const char database_replicated_delay_recovery[];
     extern const char database_replicated_delay_entry_execution[];
+    extern const char database_replicated_stop_entry_execution[];
 }
 
 
@@ -581,6 +582,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         std::chrono::milliseconds sleep_time{1000 + thread_local_rng() % 1000};
         std::this_thread::sleep_for(sleep_time);
     });
+    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_stop_entry_execution);
 
     if (unsynced_after_recovery)
     {
