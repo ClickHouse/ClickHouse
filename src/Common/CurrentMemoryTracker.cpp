@@ -1,6 +1,5 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -86,7 +85,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
             }
         }
 
-        return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
+        return AllocationTrace(memory_tracker->getSampleProbability(size));
     }
 
     return AllocationTrace(0);
@@ -132,7 +131,7 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
             return memory_tracker->free(-untracked_memory);
         }
 
-        return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
+        return AllocationTrace(memory_tracker->getSampleProbability(size));
     }
 
     return AllocationTrace(0);

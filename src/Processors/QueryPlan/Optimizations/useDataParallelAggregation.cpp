@@ -41,8 +41,7 @@ bool isPartitionKeySuitsGroupByKey(
 
     const auto & gb_key_required_columns = group_by_key_actions.getRequiredColumnsNames();
 
-    const auto & partition_key = reading.getStorageMetadata()->getPartitionKey();
-    const auto & partition_actions = partition_key.expression->getActionsDAG();
+    const auto & partition_actions = reading.getStorageMetadata()->getPartitionKey().expression->getActionsDAG();
 
     /// Check that PK columns is a subset of GBK columns.
     for (const auto & col : partition_actions.getRequiredColumnsNames())
@@ -53,13 +52,7 @@ bool isPartitionKeySuitsGroupByKey(
 
     const auto matches = matchTrees(group_by_key_actions.getOutputs(), partition_actions);
 
-    /// `partition_actions.getOutputs()` contains both the partition key columns and source columns.
-    /// For example, if `PARTITION BY toYYYYMM(date)`, then `getOutputs() = [toYYYYMM(date), date]`. The `date` column is a source
-    /// column but not a key value, and should be excluded from checks. We need to find the actual partition key output
-    /// nodes to check that they depend only on the allowed set of nodes (`irreducible_nodes`).
-    const auto partition_key_outputs = partition_actions.findInOutputs(partition_key.column_names);
-
-    return allOutputsDependsOnlyOnAllowedNodes(partition_key_outputs, irreducibe_nodes, matches);
+    return allOutputsDependsOnlyOnAllowedNodes(partition_actions, irreducibe_nodes, matches);
 }
 }
 

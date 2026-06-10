@@ -19,7 +19,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -52,7 +51,7 @@ class NullMapBuilder;
   * The index begins with 1. Also, the index can be negative - then it is counted from the end of the array.
   */
 template <ArrayElementExceptionMode mode = ArrayElementExceptionMode::Zero>
-class FunctionArrayElement final : public IFunction
+class FunctionArrayElement : public IFunction
 {
 public:
     static constexpr bool is_null_mode = (mode == ArrayElementExceptionMode::Null);
@@ -680,7 +679,7 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        VectorWithMemoryTracking<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
+        std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
         selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
@@ -742,7 +741,7 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        VectorWithMemoryTracking<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
+        std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
         selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {

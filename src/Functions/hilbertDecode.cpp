@@ -1,5 +1,4 @@
 #include <limits>
-#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/BitHelpers.h>
 #include <Functions/hilbertDecode2DLUT.h>
@@ -8,7 +7,7 @@
 namespace DB
 {
 
-class FunctionHilbertDecode final : public FunctionSpaceFillingCurveDecode<2, 0, 32>
+class FunctionHilbertDecode : public FunctionSpaceFillingCurveDecode<2, 0, 32>
 {
 public:
     static constexpr auto name = "hilbertDecode";

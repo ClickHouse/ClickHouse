@@ -1,9 +1,7 @@
 #pragma once
 
-#include <base/arithmeticOverflow.h>
 #include <base/types.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Core/AccurateComparison.h>
@@ -16,7 +14,6 @@ namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace DB::GatherUtils
@@ -200,10 +197,10 @@ void NO_INLINE concat(SourceA && src_a, SourceB && src_b, Sink && sink)
 }
 
 template <typename Source, typename Sink>
-void concat(const VectorWithMemoryTracking<std::unique_ptr<IArraySource>> & array_sources, Sink && sink)
+void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Sink && sink)
 {
     size_t sources_num = array_sources.size();
-    VectorWithMemoryTracking<char> is_const(sources_num);
+    std::vector<char> is_const(sources_num);
 
     auto check_and_get_size_to_reserve = [] (auto source, IArraySource * array_source)
     {
@@ -384,28 +381,7 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
         Int64 size = has_length ? length_nested_column->getInt(row_num) : static_cast<Int64>(src.getElementSize());
 
         if (size < 0)
-        {
-            Int64 abs_size;
-            if (common::subOverflow(Int64(0), size, abs_size))
-                throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "Overflow in length argument of substring-like function: {}", size);
-            Int64 adjustment;
-            if (offset > 0)
-            {
-                adjustment = static_cast<Int64>(src.getElementSize()) - (offset - 1);
-            }
-            else
-            {
-                if (common::subOverflow(Int64(0), offset, adjustment))
-                    throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "Overflow in offset argument of substring-like function: {}", offset);
-            }
-            Int64 new_size;
-            if (common::addOverflow(size, adjustment, new_size))
-                throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "Overflow when computing slice size in substring-like function: size={}, adjustment={}", size, adjustment);
-            size = new_size;
-        }
+            size += offset > 0 ? static_cast<Int64>(src.getElementSize()) - (offset - 1) : -UInt64(offset);
 
         if (offset != 0 && size > 0)
         {
@@ -524,9 +500,9 @@ bool sliceHasImplStartsEndsWith(const FirstSliceType & first, const SecondSliceT
 /// https://en.wikipedia.org/wiki/Knuth%E2%80%93Morris%E2%80%93Pratt_algorithm.
 /// A "prefix-function" is defined as: i-th element is the length of the longest of all prefixes that end in i-th position
 template <typename SliceType, typename EqualityFunc>
-VectorWithMemoryTracking<size_t> buildKMPPrefixFunction(const SliceType & pattern, const EqualityFunc & isEqualFunc)
+std::vector<size_t> buildKMPPrefixFunction(const SliceType & pattern, const EqualityFunc & isEqualFunc)
 {
-    VectorWithMemoryTracking<size_t> result(pattern.size);
+    std::vector<size_t> result(pattern.size);
     result[0] = 0;
 
     for (size_t i = 1; i < pattern.size; ++i)
@@ -559,7 +535,7 @@ bool sliceHasImplSubstr(const FirstSliceType & first, const SecondSliceType & se
     const bool has_first_null_map = first_null_map != nullptr;
     const bool has_second_null_map = second_null_map != nullptr;
 
-    VectorWithMemoryTracking<size_t> prefix_function;
+    std::vector<size_t> prefix_function;
     if (has_second_null_map)
     {
         prefix_function = buildKMPPrefixFunction(second,
