@@ -56,7 +56,6 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
     extern const SettingsBool enable_lightweight_update;
-    extern const SettingsBool validate_mutation_query;
     extern const SettingsTimezone session_timezone;
 }
 
@@ -311,17 +310,8 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             {
                 auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 table->checkMutationIsPossible(*mutation_commands, settings);
-                /// Replicated-storage non-determinism check must always run, even when
-                /// `validate_mutation_query=0` — bypassing it would let nondeterministic mutations
-                /// diverge replicas.  The heavier query-shape validation that constructs a full
-                /// `MutationsInterpreter` is gated by the setting, since invalid mutations may
-                /// reference not-yet-existing objects when the user opts out of validation.
-                MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, *mutation_commands, context);
-                if (settings[Setting::validate_mutation_query])
-                {
-                    MutationsInterpreter::Settings mutation_settings(false);
-                    MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
-                }
+                MutationsInterpreter::Settings mutation_settings(false);
+                MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
                 table->mutate(*mutation_commands, context);
             }
         }

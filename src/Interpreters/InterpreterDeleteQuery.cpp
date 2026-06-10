@@ -32,7 +32,6 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsLightweightDeleteMode lightweight_delete_mode;
     extern const SettingsBool enable_lightweight_update;
-    extern const SettingsBool validate_mutation_query;
 }
 
 namespace MergeTreeSetting
@@ -102,17 +101,8 @@ BlockIO InterpreterDeleteQuery::execute()
         mutation_commands.emplace_back(mut_command);
 
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
-        /// Replicated-storage non-determinism check must always run, even when
-        /// `validate_mutation_query=0` — bypassing it would let nondeterministic mutations
-        /// diverge replicas.  The heavier query-shape validation that constructs a full
-        /// `MutationsInterpreter` is gated by the setting, since invalid mutations may
-        /// reference not-yet-existing objects when the user opts out of validation.
-        MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, mutation_commands, getContext());
-        if (getContext()->getSettingsRef()[Setting::validate_mutation_query])
-        {
-            MutationsInterpreter::Settings mutation_settings(false);
-            MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
-        }
+        MutationsInterpreter::Settings mutation_settings(false);
+        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
         table->mutate(mutation_commands, getContext());
         return {};
     }

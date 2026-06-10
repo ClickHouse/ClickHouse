@@ -1,5 +1,4 @@
 #include <filesystem>
-#include <thread>
 #include <Core/Settings.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseFactory.h>

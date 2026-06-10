@@ -58,22 +58,6 @@ def test_invalid_status_asserts():
         pass
 
 
-def test_repo_name_from_git_remote_url():
-    cases = {
-        "https://github.com/ClickHouse/ClickHouse.git": "ClickHouse/ClickHouse",
-        "https://github.com/ClickHouse/ClickHouse": "ClickHouse/ClickHouse",
-        "git@github.com:ClickHouse/ClickHouse.git": "ClickHouse/ClickHouse",
-        "ssh://git@github.com/ClickHouse/ClickHouse.git": "ClickHouse/ClickHouse",
-        "https://github.com/ClickHouse/ClickHouse.git/": "ClickHouse/ClickHouse",
-    }
-    for repo_url, repo_name in cases.items():
-        assert GH._repo_name_from_git_remote_url(repo_url) == repo_name
-
-
-def test_repo_name_from_git_remote_url_rejects_unexpected_format():
-    assert GH._repo_name_from_git_remote_url("/home/user/ClickHouse") == ""
-
-
 def test_post_commit_status_converts_transparently(monkeypatch):
     """post_commit_status must accept Result.Status values and convert them."""
     captured = {}

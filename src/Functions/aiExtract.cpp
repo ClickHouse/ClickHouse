@@ -137,7 +137,7 @@ private:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "aiExtract: 'instruction_or_schema' must be a JSON object mapping field names to descriptions");
 
-                Strings keys;
+                std::vector<String> keys;
                 user_obj->getNames(keys);
                 for (const auto & key : keys)
                 {

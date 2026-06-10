@@ -559,7 +559,7 @@ size_t rawSize(const std::string_view & t)
 
 }
 
-class JoinSource final : public ISource
+class JoinSource : public ISource
 {
 public:
     JoinSource(HashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, SharedHeader sample_block_)

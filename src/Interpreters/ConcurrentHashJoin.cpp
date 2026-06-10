@@ -21,7 +21,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/HashJoin/HashJoin.h>

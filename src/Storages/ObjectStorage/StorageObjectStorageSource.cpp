@@ -12,7 +12,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -361,11 +360,6 @@ void StorageObjectStorageSource::lazyInitialize()
     initialized = true;
 }
 
-void StorageObjectStorageSource::onFinish()
-{
-    parser_shared_resources->finishStream();
-}
-
 Chunk StorageObjectStorageSource::generate()
 {
     lazyInitialize();
@@ -413,7 +407,9 @@ Chunk StorageObjectStorageSource::generate()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     read_from_format_info.hive_partition_columns_to_read_from_file_path,
-                    path);
+                    path,
+                    format_settings,
+                    read_context);
             }
 
             const String * iceberg_metadata_file_path = nullptr;
@@ -436,7 +432,8 @@ Chunk StorageObjectStorageSource::generate()
                     .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
                     .iceberg_metadata_file_path = iceberg_metadata_file_path,
                 },
-                read_context);
+                read_context,
+                format_settings);
 
 #if USE_PARQUET
             if (chunk_size && chunk.hasColumns())

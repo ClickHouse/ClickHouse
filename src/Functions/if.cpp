@@ -272,7 +272,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
 };
 
 
-class FunctionIf final : public FunctionIfBase
+class FunctionIf : public FunctionIfBase
 {
 public:
     static constexpr auto name = "if";

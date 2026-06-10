@@ -136,7 +136,7 @@ void VersionMetadata::setAndStoreCreationCSN(CSN csn)
 
 void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid)
 {
-    LOG_TEST(log, "Object {}, setAndStoreRemovalTID {}", getObjectName(), tid);
+    LOG_DEBUG(log, "Object {}, setAndStoreRemovalTID {}", getObjectName(), tid);
 
     auto update_function = [tid](VersionInfo & info)
     {
@@ -154,7 +154,7 @@ void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid)
 
 void VersionMetadata::lockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context)
 {
-    LOG_TEST(
+    LOG_DEBUG(
         log,
         "Object {}, trying to lock removal_tid by {}, table: {}, part: {}",
         getObjectName(),
@@ -210,7 +210,7 @@ void VersionMetadata::lockRemovalTID(const TransactionID & tid, const Transactio
 
 void VersionMetadata::setAndStoreCreationTID(const TransactionID & tid, TransactionInfoContext * context)
 {
-    LOG_TEST(log, "Object {}, setAndStoreCreationTID {}", getObjectName(), tid);
+    LOG_DEBUG(log, "Object {}, setAndStoreCreationTID {}", getObjectName(), tid);
     auto update_function = [tid](VersionInfo & info)
     {
         /// NOTE ReplicatedMergeTreeSink may add one part multiple times — skip if already set.
@@ -328,7 +328,7 @@ void VersionMetadata::setInfo(const VersionInfo & new_info)
 {
     std::lock_guard lock(version_info_mutex);
 
-    LOG_TEST(log, "Object {}, setInfo {}", getObjectName(), new_info.toString(/*one_line=*/true));
+    LOG_DEBUG(log, "Object {}, setInfo {}", getObjectName(), new_info.toString(/*one_line=*/true));
 
     if (new_info.storing_version < version_info.storing_version)
     {

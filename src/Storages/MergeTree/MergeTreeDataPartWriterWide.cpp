@@ -307,7 +307,7 @@ void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_wri
     }
 }
 
-void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache)
+void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermutation * permutation)
 {
     Block block_to_write = block;
 
@@ -357,9 +357,9 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
 
     Block primary_key_block;
     if (settings.rewrite_primary_key)
-        primary_key_block = getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation, permuted_columns_cache);
+        primary_key_block = getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
 
-    Block skip_indexes_block = getIndexBlockAndPermute(block, getSkipIndicesColumns(), permutation, permuted_columns_cache);
+    Block skip_indexes_block = getIndexBlockAndPermute(block, getSkipIndicesColumns(), permutation);
 
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
@@ -384,9 +384,6 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
             else
             {
                 /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
-                /// The permuted columns cache is populated above only with PK and skip-index columns
-                /// (via `getIndexBlockAndPermute`), so by construction it cannot contain this column,
-                /// and there is no point looking it up here.
                 ColumnPtr permuted_column = column.column->permute(*permutation, 0);
                 writeColumn(*it, *permuted_column, offset_substreams, granules_to_write);
             }

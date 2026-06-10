@@ -9,7 +9,6 @@
 #include <memory>
 #include <optional>
 #include <sstream>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeSet.h>
@@ -1159,7 +1158,7 @@ void IcebergMetadata::addDeleteTransformers(
                 = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
             FutureSetPtr future_set = std::make_shared<FutureSetFromTuple>(
                 CityHash_v1_0_2::uint128(), nullptr, block_for_set.getColumnsWithTypeAndName(), true, size_limits_for_set);
-            ColumnPtr set_col = ColumnConst::create(ColumnSet::create(1, future_set), 1);
+            ColumnPtr set_col = ColumnSet::create(1, future_set);
             ActionsDAG dag(header->getColumnsWithTypeAndName());
             /// Construct right argument of 'not in' expression, it is the column set.
             const ActionsDAG::Node * in_rhs_arg = &dag.addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
