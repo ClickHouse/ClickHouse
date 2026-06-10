@@ -8,3 +8,7 @@
 --- results stay finite ---
 1
 1
+--- large integer weights stay exact (sum accumulated without rounding) ---
+9007199254740994
+9007199254740994
+9007199254740994

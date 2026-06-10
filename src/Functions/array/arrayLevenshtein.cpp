@@ -528,12 +528,15 @@ private:
                 res_values[row] = 1.0;
                 continue;
             }
-            // Accumulate in Float64 to match the distance domain and avoid overflow in the weight type.
-            Float64 weights_sum = 0;
+            // Sum the weights in a wide accumulator (exact for integral weights, no overflow/UB), then
+            // convert once to Float64 to match the distance domain. Mirrors levenshteinDistanceWeighted.
+            using Acc = LevenshteinWeightAccumulator<W>;
+            Acc weights_acc = 0;
             for (const auto & weight : from_weights)
-                weights_sum += static_cast<Float64>(weight);
+                weights_acc += static_cast<Acc>(weight);
             for (const auto & weight : to_weights)
-                weights_sum += static_cast<Float64>(weight);
+                weights_acc += static_cast<Acc>(weight);
+            const Float64 weights_sum = static_cast<Float64>(weights_acc);
             if (weights_sum == 0)
             {
                 res_values[row] = 1.0;

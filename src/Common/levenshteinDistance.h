@@ -1,11 +1,13 @@
 #pragma once
 
 #include <base/types.h>
+#include <base/extended_types.h>
 #include <Common/PODArray.h>
 #include <Common/iota.h>
 #include <span>
 
 #include <algorithm>
+#include <type_traits>
 
 namespace DB
 {
@@ -48,12 +50,22 @@ size_t levenshteinDistance(std::span<const Element> lhs, std::span<const Element
     return v0[n];
 };
 
+/// Accumulator type for the weighted distance. Integral weights are summed in a wide integer so the
+/// arithmetic stays exact and never overflows (wide::integer has defined wraparound, not signed UB);
+/// floating weights are summed in Float64. The result is converted to Float64 once at the end.
+template <class Weight>
+using LevenshteinWeightAccumulator = std::conditional_t<is_integer<Weight>, std::conditional_t<is_unsigned_v<Weight>, UInt256, Int256>, Float64>;
+
 /// Levenshtein Distance with weights, is used to calculate custom distance from lhs to rhs.
-/// All callers consume the result as Float64, so sums are accumulated in Float64 to avoid integer overflow.
+/// The result is Float64 (the SQL functions return Float64). To avoid overflow/UB on weights near the
+/// type maximum, the dynamic-programming sums use a wide internal accumulator (see above): integral
+/// weights stay exact, then the final value is cast to Float64 only once.
 template <class Element, class Weight>
 Float64 levenshteinDistanceWeighted(std::span<const Element> lhs, std::span<const Element> rhs,
                                     std::span<const Weight> lhs_weights, std::span<const Weight> rhs_weights)
 {
+    using Acc = LevenshteinWeightAccumulator<Weight>;
+
     if (lhs.size() != lhs_weights.size() || rhs.size() != rhs_weights.size())
         throw Exception(
             ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
@@ -63,16 +75,16 @@ Float64 levenshteinDistanceWeighted(std::span<const Element> lhs, std::span<cons
             rhs.size(),
             rhs_weights.size());
 
-    auto sum_span = [](const std::span<const Weight> & span) -> Float64
+    auto sum_span = [](const std::span<const Weight> & span) -> Acc
     {
-        Float64 sum = 0;
+        Acc sum = 0;
         for (const auto & weight : span)
-            sum += static_cast<Float64>(weight);
+            sum += static_cast<Acc>(weight);
         return sum;
     };
     if (lhs.empty() || rhs.empty())
     {
-        return sum_span(lhs_weights) + sum_span(rhs_weights);
+        return static_cast<Float64>(sum_span(lhs_weights) + sum_span(rhs_weights));
     }
 
     // Consume minimum memory by allocating sliding vector for min `m`
@@ -85,19 +97,19 @@ Float64 levenshteinDistanceWeighted(std::span<const Element> lhs, std::span<cons
     const size_t m = lhs.size();
     const size_t n = rhs.size();
 
-    PODArray<Float64> row(m + 1);
+    PODArray<Acc> row(m + 1);
 
     row[0] = 0;
     for (size_t i = 1; i <= m; ++i)
-        row[i] = row[i - 1] + static_cast<Float64>(lhs_weights[i - 1]);
+        row[i] = row[i - 1] + static_cast<Acc>(lhs_weights[i - 1]);
 
     for (size_t j = 1; j <= n; ++j)
     {
-        Float64 prev = row[0];
-        row[0] += static_cast<Float64>(rhs_weights[j - 1]);
+        Acc prev = row[0];
+        row[0] += static_cast<Acc>(rhs_weights[j - 1]);
         for (size_t i = 1; i <= m; ++i)
         {
-            Float64 old = row[i];
+            Acc old = row[i];
             if (lhs[i - 1] == rhs[j - 1])
             {
                 row[i] = prev;
@@ -106,14 +118,14 @@ Float64 levenshteinDistanceWeighted(std::span<const Element> lhs, std::span<cons
             }
 
             row[i] = std::min(
-                {old + static_cast<Float64>(rhs_weights[j - 1]), // deletion
-                 row[i - 1] + static_cast<Float64>(lhs_weights[i - 1]), // insertion
-                 prev + static_cast<Float64>(lhs_weights[i - 1]) + static_cast<Float64>(rhs_weights[j - 1])}); // substitution
+                {old + static_cast<Acc>(rhs_weights[j - 1]), // deletion
+                 row[i - 1] + static_cast<Acc>(lhs_weights[i - 1]), // insertion
+                 prev + static_cast<Acc>(lhs_weights[i - 1]) + static_cast<Acc>(rhs_weights[j - 1])}); // substitution
             prev = old;
         }
     }
 
-    return row[m];
+    return static_cast<Float64>(row[m]);
 };
 
 }
