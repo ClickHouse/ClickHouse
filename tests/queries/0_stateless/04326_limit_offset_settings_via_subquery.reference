@@ -38,3 +38,21 @@ SELECT number FROM numbers(10) ORDER BY number SETTINGS limit = 3, offset = 2;
 2
 3
 4
+-- A `limit` / `offset` carried by a subquery's own `SETTINGS` clause is applied by wrapping that
+-- subquery too, so it works identically with and without the analyzer (it used to only work with
+-- the analyzer), and supports negative / fractional values.
+SET enable_analyzer = 1;
+SELECT count() FROM (SELECT * FROM numbers(10) SETTINGS limit = 5);
+5
+SET enable_analyzer = 0;
+SELECT count() FROM (SELECT * FROM numbers(10) SETTINGS limit = 5);
+5
+SET enable_analyzer = 1;
+SELECT count() FROM (SELECT * FROM numbers(10) LIMIT 8 SETTINGS limit = 5);
+5
+SELECT count() FROM (SELECT * FROM numbers(10) ORDER BY number SETTINGS limit = -3);
+3
+SELECT count() FROM (SELECT * FROM numbers(10) SETTINGS limit = 0.5);
+5
+SELECT count() FROM view(SELECT * FROM numbers(10) SETTINGS limit = 5);
+5

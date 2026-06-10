@@ -62,8 +62,6 @@ namespace Setting
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool enable_order_by_all;
-    extern const SettingsDouble limit;
-    extern const SettingsDouble offset;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsString implicit_table_at_top_level;
 }
@@ -272,54 +270,18 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     auto select_settings = select_query_typed.settings();
     SettingsChanges settings_changes;
 
-    /// We are going to remove settings LIMIT and OFFSET and
-    /// further replace them with corresponding expression nodes.
-    /// `limit` / `offset` are `Double` settings — they may be negative or fractional, which is
-    /// passed through to ClickHouse's native negative/fractional `LIMIT`/`OFFSET` support.
-    Float64 limit = 0;
-    Float64 offset = 0;
-
-    auto field_to_float = [](const Field & f) -> Float64
-    {
-        if (f.getType() == Field::Types::Float64)
-            return f.safeGet<Float64>();
-        if (f.getType() == Field::Types::UInt64)
-            return static_cast<Float64>(f.safeGet<UInt64>());
-        if (f.getType() == Field::Types::Int64)
-            return static_cast<Float64>(f.safeGet<Int64>());
-        if (f.getType() == Field::Types::String)
-            return ::DB::parseFromString<Float64>(f.safeGet<String>());
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Expected numeric or string value for `limit` / `offset` setting, got {}",
-            f.getTypeName());
-    };
-
-    /// Remove global settings limit and offset
-    if (const auto & settings_ref = updated_context->getSettingsRef(); settings_ref[Setting::limit] != 0 || settings_ref[Setting::offset] != 0)
-    {
-        Settings settings = updated_context->getSettingsCopy();
-        limit = settings[Setting::limit];
-        offset = settings[Setting::offset];
-        settings[Setting::limit] = 0;
-        settings[Setting::offset] = 0;
-        updated_context->setSettings(settings);
-    }
-
     if (select_settings)
     {
         auto & set_query = select_settings->as<ASTSetQuery &>();
 
-        /// Remove expression settings limit and offset
-        if (auto * limit_field = set_query.changes.tryGet("limit"))
-        {
-            limit = field_to_float(*limit_field);
-            set_query.changes.removeSetting("limit");
-        }
-        if (auto * offset_field = set_query.changes.tryGet("offset"))
-        {
-            offset = field_to_float(*offset_field);
-            set_query.changes.removeSetting("offset");
-        }
+        /// `limit` / `offset` settings are applied earlier in `executeQuery`
+        /// (`applyQueryConstructionSettings` / `wrapNestedLimitOffsetSettings`) by wrapping the
+        /// query — including subqueries that carry the setting in their own `SETTINGS` clause — as a
+        /// derived table with an outer `LIMIT` / `OFFSET`. Drop them here so they are not re-applied
+        /// to this (sub)query's context; the query tree's `LIMIT` / `OFFSET` come from the SQL
+        /// clauses below.
+        set_query.changes.removeSetting("limit");
+        set_query.changes.removeSetting("offset");
 
         if (!set_query.changes.empty())
         {
@@ -502,87 +464,16 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         current_query_tree->getLimitByNode() = buildExpressionList(select_limit_by, current_context);
 
     /// Combine limit expression with limit and offset settings into final limit expression
-    /// The sequence of application is the following - offset expression, limit expression, offset setting, limit setting.
-    /// Since offset setting is applied after limit expression, but we want to transfer settings into expression
-    /// we must decrease limit expression by offset setting and then add offset setting to offset expression.
-    ///    select_limit - limit expression
-    ///    limit        - limit setting
-    ///    offset       - offset setting
-    ///
-    /// if select_limit
-    ///   -- if offset >= select_limit                (expr 0)
-    ///      then (0) (0 rows)
-    ///   -- else if limit > 0                        (expr 1)
-    ///      then min(select_limit - offset, limit)   (expr 2)
-    ///   -- else
-    ///      then (select_limit - offset)             (expr 3)
-    /// else if limit > 0
-    ///    then limit
-    ///
-    /// offset = offset + of_expr
-    /// The `least`/`minus` combine math below assumes non-negative values. `limit` / `offset` were
-    /// widened to `Float64` and may now be negative (e.g. `limit=-1` for tail pagination). Combining
-    /// a negative setting with an explicit SQL `LIMIT` via `least` would invert the intended cap, so
-    /// when either setting is negative we keep the query's own `LIMIT`/`OFFSET` and let ClickHouse's
-    /// native negative/fractional support handle them — the setting then only applies when the query
-    /// has no such clause.
-    const bool settings_combinable = limit >= 0 && offset >= 0;
+    /// `LIMIT` / `OFFSET` come straight from the SQL clauses. The `limit` / `offset` settings are no
+    /// longer folded in here — they are materialized as an outer query's `LIMIT` / `OFFSET` by the
+    /// subquery-wrapping in `executeQuery` (`applyQueryConstructionSettings` for the top-level query,
+    /// `wrapNestedLimitOffsetSettings` for subqueries that carry the setting in their `SETTINGS`
+    /// clause), so combining with the setting is left to the optimizer's limit push-down.
+    if (auto select_limit = select_query_typed.limitLength())
+        current_query_tree->getLimit() = buildExpression(select_limit, current_context);
 
-    auto select_limit = select_query_typed.limitLength();
-    if (select_limit)
-    {
-        /// Shortcut: nothing combinable to fold in, or a negative setting that must pass through.
-        if ((offset == 0 && limit == 0) || !settings_combinable)
-        {
-            current_query_tree->getLimit() = buildExpression(select_limit, current_context);
-        }
-        else
-        {
-            /// expr 3
-            auto expr_3 = std::make_shared<FunctionNode>("minus");
-            expr_3->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
-            expr_3->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
-
-            /// expr 2
-            auto expr_2 = std::make_shared<FunctionNode>("least");
-            expr_2->getArguments().getNodes().push_back(expr_3->clone());
-            expr_2->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(limit));
-
-            /// expr 0
-            auto expr_0 = std::make_shared<FunctionNode>("greaterOrEquals");
-            expr_0->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
-            expr_0->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
-
-            /// expr 1 — `limit` may be negative or fractional (e.g. `limit=-1` for tail
-            /// pagination), so the guard mirrors the `limit != 0` checks below.
-            auto expr_1 = std::make_shared<ConstantNode>(limit != 0);
-
-            auto function_node = std::make_shared<FunctionNode>("multiIf");
-            function_node->getArguments().getNodes().push_back(expr_0);
-            function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(0));
-            function_node->getArguments().getNodes().push_back(expr_1);
-            function_node->getArguments().getNodes().push_back(expr_2);
-            function_node->getArguments().getNodes().push_back(expr_3);
-
-            current_query_tree->getLimit() = std::move(function_node);
-        }
-    }
-    else if (limit != 0)
-        current_query_tree->getLimit() = std::make_shared<ConstantNode>(limit);
-
-    /// Combine offset expression with offset setting into final offset expression
-    auto select_offset = select_query_typed.limitOffset();
-    if (select_offset && offset != 0 && settings_combinable)
-    {
-        auto function_node = std::make_shared<FunctionNode>("plus");
-        function_node->getArguments().getNodes().push_back(buildExpression(select_offset, current_context));
-        function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
-        current_query_tree->getOffset() = std::move(function_node);
-    }
-    else if (select_offset)
+    if (auto select_offset = select_query_typed.limitOffset())
         current_query_tree->getOffset() = buildExpression(select_offset, current_context);
-    else if (offset != 0)
-        current_query_tree->getOffset() = std::make_shared<ConstantNode>(offset);
 
     return current_query_tree;
 }
