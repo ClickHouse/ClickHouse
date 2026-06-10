@@ -16,27 +16,27 @@ INSERT INTO t_agg_in_order_limit SELECT number % 100 AS key, number AS value FRO
 
 -- Basic: GROUP BY pk ORDER BY pk LIMIT
 SELECT key, count() FROM t_agg_in_order_limit GROUP BY key ORDER BY key ASC LIMIT 5
-SETTINGS optimize_aggregation_in_order = 1;
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1;
 
 -- With OFFSET
 SELECT key, count() FROM t_agg_in_order_limit GROUP BY key ORDER BY key ASC LIMIT 3 OFFSET 5
-SETTINGS optimize_aggregation_in_order = 1;
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1;
 
 -- Multiple aggregate functions
 SELECT key, count(), sum(value) FROM t_agg_in_order_limit GROUP BY key ORDER BY key ASC LIMIT 5
-SETTINGS optimize_aggregation_in_order = 1;
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1;
 
 -- Negative case: HAVING present — should still return correct results
 SELECT key, count() AS c FROM t_agg_in_order_limit GROUP BY key HAVING c > 5 ORDER BY key ASC LIMIT 5
-SETTINGS optimize_aggregation_in_order = 1;
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1;
 
 -- Negative case: ORDER BY DESC — should still return correct results
 SELECT key, count() FROM t_agg_in_order_limit GROUP BY key ORDER BY key DESC LIMIT 5
-SETTINGS optimize_aggregation_in_order = 1;
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1;
 
 -- Negative case: WITH TOTALS — should still return correct results
 SELECT key, count() FROM t_agg_in_order_limit GROUP BY key WITH TOTALS ORDER BY key ASC LIMIT 5
-SETTINGS optimize_aggregation_in_order = 1;
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1;
 
 -- Negative case: ARRAY JOIN between aggregation and outer LIMIT changes row count;
 -- the optimization must not push the limit through ExpressionStep that has ARRAY JOIN.
@@ -44,12 +44,12 @@ SELECT key, count() FROM (
     SELECT key FROM t_agg_in_order_limit GROUP BY key
 ) ARRAY JOIN [1, 2, 3] AS x
 GROUP BY key ORDER BY key ASC LIMIT 5
-SETTINGS optimize_aggregation_in_order = 1;
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1;
 
 -- Negative case: extremes are computed before LIMIT — pushing the limit past
 -- ExtremesStep would give wrong min/max.
 SELECT key, count() FROM t_agg_in_order_limit GROUP BY key ORDER BY key ASC LIMIT 5
-SETTINGS optimize_aggregation_in_order = 1, extremes = 1;
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1, extremes = 1;
 
 -- Regression: an ExpressionStep rewrites the ORDER BY key after aggregation
 -- but reuses the same user-visible name (`-key AS k`). The optimization must

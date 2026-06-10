@@ -3,7 +3,10 @@
          Exercises the aggregation-in-order limit push-down optimization:
          early termination after producing enough groups. -->
 
-    <settings><optimize_aggregation_in_order>1</optimize_aggregation_in_order></settings>
+    <settings>
+        <optimize_aggregation_in_order>1</optimize_aggregation_in_order>
+        <optimize_aggregation_in_order_limit>1</optimize_aggregation_in_order_limit>
+    </settings>
 
     <!-- GROUP BY first PK column, ORDER BY same, small LIMIT -->
     <query>SELECT CounterID, count() FROM hits_100m_single GROUP BY CounterID ORDER BY CounterID ASC LIMIT 10 FORMAT Null</query>
