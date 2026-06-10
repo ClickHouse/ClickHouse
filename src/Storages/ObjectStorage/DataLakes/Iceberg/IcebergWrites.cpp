@@ -422,11 +422,16 @@ void generateManifestFile(
             /// are already the raw serialized bytes from the source manifest, so they are written
             /// back as-is (no type-aware re-serialization, no sample_block lookup needed).
             const auto & stats = per_file_statistics[file_idx];
+            /// Bounds are Iceberg `bytes` fields. The source stores them as raw byte strings, so
+            /// convert to std::vector<uint8_t> to produce an Avro `bytes` datum (matching the schema
+            /// and the type produced by dumpFieldToBytes), not a `string` datum.
+            auto to_bytes = [](Int32, const String & value)
+            { return std::vector<uint8_t>(value.begin(), value.end()); };
             set_fields(stats.column_sizes, Iceberg::f_column_sizes, [](Int32, Int64 value) { return value; });
             set_fields(stats.value_counts, Iceberg::f_value_counts, [](Int32, Int64 value) { return value; });
             set_fields(stats.null_value_counts, Iceberg::f_null_value_counts, [](Int32, Int64 value) { return value; });
-            set_fields(stats.lower_bounds, Iceberg::f_lower_bounds, [](Int32, const String & value) { return value; });
-            set_fields(stats.upper_bounds, Iceberg::f_upper_bounds, [](Int32, const String & value) { return value; });
+            set_fields(stats.lower_bounds, Iceberg::f_lower_bounds, to_bytes);
+            set_fields(stats.upper_bounds, Iceberg::f_upper_bounds, to_bytes);
         }
         else if (data_file_statistics)
         {
