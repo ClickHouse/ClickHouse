@@ -1318,9 +1318,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         }
 
                         // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
-                        if (reading_node && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
+                        // Note: reading_steps can have several steps in case of reading from view with UNION
+                        // In such case, we avoid using parallel_replicas_min_number_of_rows_per_replica for all tables, -
+                        // parallel_replicas_min_number_of_rows_per_replica will be replaced by automatic_parallel_replicas_mode
+                        if (reading_node && reading_steps.size() == 1
+                            && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
                         {
-                            const auto * reading_step = typeid_cast<ReadFromMergeTree*>(reading_steps.front()->step.get());
+                            const auto * reading_step = typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get());
                             auto result_ptr = reading_step->selectRangesToRead();
                             UInt64 rows_to_read = result_ptr->selected_rows;
 
