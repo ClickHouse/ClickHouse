@@ -255,12 +255,13 @@ RemoveOrphanFilesResult removeOrphanFiles(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_table_components)
+    const PersistentTableComponents & persistent_table_components,
+    SecondaryStorages & secondary_storages)
 {
     auto log = getLogger("IcebergRemoveOrphanFiles");
 
     auto [reachable, metadata_version] = collectReachableFiles(
-        object_storage, persistent_table_components, data_lake_settings, context, log);
+        object_storage, persistent_table_components, data_lake_settings, context, log, secondary_storages);
 
     String scan_path = resolveScanPath(persistent_table_components.table_path, params);
     if (!object_storage->existsOrHasAnyChild(scan_path))
@@ -277,7 +278,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
         return tallyByCategory(scan.orphan_paths, scan.skipped_missing_metadata);
 
     auto [_recheck_files, recheck_version] = collectReachableFiles(
-        object_storage, persistent_table_components, data_lake_settings, context, log);
+        object_storage, persistent_table_components, data_lake_settings, context, log, secondary_storages);
     if (recheck_version != metadata_version)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Metadata version changed during orphan scan (v{} -> v{}); "
@@ -305,7 +306,8 @@ Pipe executeRemoveOrphanFiles(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_components)
+    const PersistentTableComponents & persistent_components,
+    SecondaryStorages & secondary_storages)
 {
     if (persistent_components.format_version < 2)
         throw Exception(
@@ -342,7 +344,7 @@ Pipe executeRemoveOrphanFiles(
         params.location = parsed.getAs<String>("location");
     params.dry_run = parsed.getAs<UInt64>("dry_run") != 0;
 
-    auto result = removeOrphanFiles(params, context, object_storage, data_lake_settings, persistent_components);
+    auto result = removeOrphanFiles(params, context, object_storage, data_lake_settings, persistent_components, secondary_storages);
 
     return resultToPipe(result);
 }

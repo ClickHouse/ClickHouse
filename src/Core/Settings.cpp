@@ -642,6 +642,9 @@ Use multiple threads for azure multipart upload.
     DECLARE(Bool, s3_throw_on_zero_files_match, false, R"(
 Throw an error, when ListObjects request cannot match any files
 )", 0) \
+    DECLARE(Bool, object_storage_propagate_credentials_to_other_storages, false, R"(
+Reuse base-storage credentials for a secondary object storage. For `S3`, credentials are reused when the endpoint matches; when this setting is enabled, they are also reused across different endpoints, including less secure connections (for example, from `https` to plain `http`). For `Azure`, reads stay within the base account.
+)", 0) \
     DECLARE(Bool, hdfs_throw_on_zero_files_match, false, R"(
 Throw an error if matched zero files according to glob expansion rules.
 

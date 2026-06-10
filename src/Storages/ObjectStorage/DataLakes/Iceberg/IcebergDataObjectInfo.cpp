@@ -1,3 +1,4 @@
+#include <Poco/String.h>
 #include "config.h"
 
 #include <Core/Field.h>
@@ -11,15 +12,18 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Core/ProtocolDefines.h>
 
 namespace DB::ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
 extern const int UNKNOWN_PROTOCOL;
+extern const int PROTOCOL_VERSION_MISMATCH;
 }
 
 
@@ -53,10 +57,11 @@ String computePartitionId(const Row & partition_key_value)
 #if USE_AVRO
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(
-    Iceberg::ProcessedManifestFileEntryPtr data_manifest_file_entry_, const String & resolved_storage_path_, Int32 schema_id_relevant_to_iterator_)
-    : ObjectInfo(RelativePathWithMetadata(resolved_storage_path_))
+    Iceberg::ProcessedManifestFileEntryPtr data_manifest_file_entry_, const String & metadata_path_, Int32 schema_id_relevant_to_iterator_, ObjectStoragePtr resolved_storage_, const String & resolved_key_)
+    : ObjectInfo(RelativePathWithMetadata(resolved_key_.empty() ? metadata_path_ : resolved_key_))
     , info{
           data_manifest_file_entry_->parsed_entry->file_path_key,
+          metadata_path_,
           data_manifest_file_entry_->resolved_schema_id,
           schema_id_relevant_to_iterator_,
           data_manifest_file_entry_->sequence_number,
@@ -67,7 +72,11 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
           /* equality_deletes_objects */ {},
           data_manifest_file_entry_->parsed_entry->record_count,
           data_manifest_file_entry_->parsed_entry->file_size_in_bytes}
+    , resolved_storage(std::move(resolved_storage_))
 {
+    /// resolved_storage and resolved_key must be provided together or neither must be provided
+    /// (default-constructed, meaning the path has not been resolved yet).
+    chassert(resolved_key_.empty() == (resolved_storage == nullptr));
 }
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & path_)
@@ -86,13 +95,15 @@ std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransf
     const SharedHeader & header,
     const std::optional<FormatSettings> & format_settings,
     FormatParserSharedResourcesPtr parser_shared_resources,
-    ContextPtr context_)
+    ContextPtr context_,
+    const Iceberg::IcebergPathResolver & path_resolver,
+    std::shared_ptr<SecondaryStorages> secondary_storages)
 {
     IcebergDataObjectInfoPtr self = shared_from_this();
     if (!context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
-        return std::make_shared<IcebergStreamingPositionDeleteTransform>(header, self, object_storage, format_settings, parser_shared_resources, context_);
+        return std::make_shared<IcebergStreamingPositionDeleteTransform>(header, self, object_storage, format_settings, parser_shared_resources, context_, path_resolver, secondary_storages);
     else
-        return std::make_shared<IcebergBitmapPositionDeleteTransform>(header, self, object_storage, format_settings, parser_shared_resources, context_);
+        return std::make_shared<IcebergBitmapPositionDeleteTransform>(header, self, object_storage, format_settings, parser_shared_resources, context_, path_resolver, secondary_storages);
 }
 
 void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFileEntryPtr position_delete_object, const String & resolved_storage_path)
@@ -123,7 +134,30 @@ void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ProcessedMani
 void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const
 {
     checkVersion(protocol_version);
+
+    if (requires_external_storage && protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH)
+    {
+        throw Exception(
+            ErrorCodes::PROTOCOL_VERSION_MISMATCH,
+            "Iceberg data file '{}' is outside of the table location, "
+            "worker needs to have protocol version >= {}, but has {}. ",
+            data_object_file_metadata_path,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH,
+            protocol_version);
+    }
+
+    auto path_for_protocol = [&](const String & path) -> String
+    {
+        if (protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH)
+            return SchemeAuthorityKey(path).key;
+        return path;
+    };
+
     writeStringBinary(data_object_file_path_key.serialize(), out);
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH)
+    {
+        writeStringBinary(data_object_file_metadata_path, out);
+    }
     writeVarInt(underlying_format_read_schema_id, out);
     writeVarInt(schema_id_relevant_to_iterator, out);
     writeVarInt(sequence_number, out);
@@ -132,12 +166,12 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
         writeVarUInt(position_deletes_objects.size(), out);
         for (const auto & pos_delete_obj : position_deletes_objects)
         {
-            writeStringBinary(pos_delete_obj.file_path, out);
+            writeStringBinary(path_for_protocol(pos_delete_obj.file_path), out);
             writeStringBinary(pos_delete_obj.file_format, out);
             if (pos_delete_obj.reference_data_file_path.has_value())
             {
                 writeVarUInt(1, out);
-                writeStringBinary(pos_delete_obj.reference_data_file_path.value(), out);
+                writeStringBinary(path_for_protocol(pos_delete_obj.reference_data_file_path.value()), out);
             }
             else
             {
@@ -149,7 +183,7 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
         writeVarUInt(equality_deletes_objects.size(), out);
         for (const auto & eq_delete_obj : equality_deletes_objects)
         {
-            writeStringBinary(eq_delete_obj.file_path, out);
+            writeStringBinary(path_for_protocol(eq_delete_obj.file_path), out);
             writeStringBinary(eq_delete_obj.file_format, out);
             writeVarInt(eq_delete_obj.schema_id, out);
             if (eq_delete_obj.equality_ids.has_value())
@@ -197,6 +231,10 @@ void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBu
         String raw_path;
         readStringBinary(raw_path, in);
         data_object_file_path_key = IcebergPathFromMetadata::deserialize(std::move(raw_path));
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_ABSOLUTE_PATH)
+    {
+        readStringBinary(data_object_file_metadata_path, in);
     }
     readVarInt(underlying_format_read_schema_id, in);
     readVarInt(schema_id_relevant_to_iterator, in);

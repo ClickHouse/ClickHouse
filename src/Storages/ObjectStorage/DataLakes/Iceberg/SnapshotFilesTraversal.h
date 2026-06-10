@@ -15,6 +15,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 namespace DB::Iceberg
 {
@@ -35,7 +36,8 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    Int32 current_schema_id);
+    Int32 current_schema_id,
+    SecondaryStorages & secondary_storages);
 
 struct ReachableFilesResult
 {
@@ -54,7 +56,8 @@ ReachableFilesResult collectReachableFiles(
     const PersistentTableComponents & persistent_table_components,
     const DataLakeStorageSettings & data_lake_settings,
     ContextPtr context,
-    LoggerPtr log);
+    LoggerPtr log,
+    SecondaryStorages & secondary_storages);
 
 }
 

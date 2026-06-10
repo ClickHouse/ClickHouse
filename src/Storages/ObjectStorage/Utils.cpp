@@ -1,5 +1,6 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Common/SipHash.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Macros.h>
 #include <Core/UUID.h>
@@ -18,6 +19,26 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/UUIDGenerator.h>
+#include <Common/logger_useful.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
+#include <Poco/Util/MapConfiguration.h>
+#include <IO/S3/URI.h>
+#include <fmt/format.h>
+#include <filesystem>
+#include <functional>
+#if USE_AWS_S3
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#endif
+#if USE_AVRO
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
+#endif
+#if USE_AZURE_BLOB_STORAGE
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#endif
+#if USE_HDFS
+#include <Disks/DiskObjectStorage/ObjectStorages/HDFS/HDFSObjectStorage.h>
+#endif
+
 
 namespace DB
 {
@@ -27,6 +48,173 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int PATH_ACCESS_DENIED;
+}
+
+namespace
+{
+
+#if USE_AVRO
+std::string normalizeScheme(const std::string & scheme)
+{
+    auto scheme_lowercase = Poco::toLower(scheme);
+
+    if (scheme_lowercase == "s3a" || scheme_lowercase == "s3n" || scheme_lowercase == "gs" || scheme_lowercase == "gcs" || scheme_lowercase == "oss")
+        scheme_lowercase = "s3";
+    else if (scheme_lowercase == "wasb" || scheme_lowercase == "wasbs" || scheme_lowercase == "abfss")
+        scheme_lowercase = "abfs";
+
+    return scheme_lowercase;
+}
+
+std::string factoryTypeForScheme(const std::string & normalized_scheme)
+{
+    if (normalized_scheme == "s3") return "s3";
+    if (normalized_scheme == "abfs") return "azure";
+    if (normalized_scheme == "hdfs") return "hdfs";
+    if (normalized_scheme == "file") return "local";
+    return "";
+}
+
+#if USE_AWS_S3
+/// For s3:// URIs (generic), bucket needs to match.
+/// For explicit http(s):// URIs, both bucket and endpoint must match.
+bool s3URIMatches(const S3::URI & target_uri, const std::string & base_bucket, const std::string & base_endpoint, const std::string & target_scheme_normalized)
+{
+    bool bucket_matches = (target_uri.bucket == base_bucket);
+    bool endpoint_matches = (target_uri.endpoint == base_endpoint);
+    bool is_generic_s3_uri = (target_scheme_normalized == "s3");
+    return bucket_matches && (endpoint_matches || is_generic_s3_uri);
+}
+
+bool sameEndpoint(const std::string & a, const std::string & b)
+{
+    SchemeAuthorityKey pa(a);
+    SchemeAuthorityKey pb(b);
+    if (pa.authority.empty() || pb.authority.empty())
+        return false;
+    return pa.scheme == pb.scheme && pa.authority == pb.authority;
+}
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+/// Storage account in an Azure service URL: the first host label for a `*.core.*` endpoint
+/// (`acc.blob.core.windows.net` -> `acc`), otherwise the first path segment (Azurite `host:port/acc` -> `acc`).
+std::string azureAccountFromServiceUrl(const std::string & url)
+{
+    auto scheme_end = url.find("://");
+    if (scheme_end == std::string::npos)
+        return "";
+    auto host_begin = scheme_end + 3;
+    auto path_begin = url.find('/', host_begin);
+    std::string host = url.substr(host_begin, path_begin == std::string::npos ? std::string::npos : path_begin - host_begin);
+
+    if (host.find(".core.") != std::string::npos)
+        return Poco::toLower(host.substr(0, host.find('.')));
+
+    if (path_begin == std::string::npos)
+        return "";
+    auto seg_end = url.find('/', path_begin + 1);
+    return Poco::toLower(url.substr(path_begin + 1, seg_end == std::string::npos ? std::string::npos : seg_end - path_begin - 1));
+}
+#endif
+
+std::pair<ObjectStoragePtr, std::string> getOrCreateStorageAndKey(
+    const std::string & cache_key,
+    const std::string & key_to_use,
+    const std::string & storage_type,
+    SecondaryStorages & secondary_storages,
+    const ContextPtr & context,
+    std::function<void(Poco::Util::MapConfiguration &, const std::string &)> configure_fn,
+    const std::string & supersedes_prefix = {})
+{
+    std::lock_guard lock(secondary_storages.mutex);
+    if (auto it = secondary_storages.storages.find(cache_key); it != secondary_storages.storages.end())
+        return {it->second, key_to_use};
+
+    Poco::AutoPtr<Poco::Util::MapConfiguration> cfg(new Poco::Util::MapConfiguration);
+    const std::string config_prefix = "object_storages." + cache_key;
+
+    cfg->setString(config_prefix + ".object_storage_type", storage_type);
+
+    configure_fn(*cfg, config_prefix);
+
+    /// Create under lock to avoid duplicate creation and wasted work
+    ObjectStoragePtr storage = ObjectStorageFactory::instance().create(cache_key, *cfg, config_prefix, context, /*skip_access_check*/ true);
+
+    /// Drop entries this one supersedes (same endpoint/bucket, older credential generation), so the
+    /// cache holds at most one storage per logical target instead of growing once per rotation. In-flight
+    /// readers keep their own `shared_ptr`, so an evicted storage stays alive until they are done with it.
+    if (!supersedes_prefix.empty())
+        std::erase_if(secondary_storages.storages, [&](const auto & entry) { return entry.first.starts_with(supersedes_prefix); });
+
+    secondary_storages.storages.emplace(cache_key, storage);
+    return {storage, key_to_use};
+}
+
+/// A path is absolute if `SchemeAuthorityKey` assigns it a scheme (`scheme://...`
+/// or the RFC 8089 `scheme:/path` form such as `file:/var/...`) or a key rooted at
+/// '/'. Reuse the same parser so this predicate cannot drift from the resolution
+/// logic in `tryResolveObjectStorageForPath`, which decomposes the path the same way.
+bool isAbsolutePath(const std::string & path)
+{
+    if (path.empty())
+        return false;
+
+    SchemeAuthorityKey decomposed{path};
+    return !decomposed.scheme.empty() || decomposed.key.starts_with('/');
+}
+
+#endif // USE_AVRO
+
+}
+
+SchemeAuthorityKey::SchemeAuthorityKey(const std::string & uri)
+{
+    if (uri.empty())
+        return;
+
+    if (auto scheme_sep = uri.find("://"); scheme_sep != std::string_view::npos)
+    {
+        scheme = Poco::toLower(uri.substr(0, scheme_sep));
+        auto rest = uri.substr(scheme_sep + 3); // skip ://
+
+        // authority is up to next '/'
+        auto slash = rest.find('/');
+        if (slash == std::string_view::npos)
+        {
+            /// Bad URI: missing path component after authority.
+            /// Exception will be thrown when looking up non-existing object in the storage, so we can just return here.
+            authority = std::string(rest);
+            key = "/";
+            return;
+        }
+        authority = std::string(rest.substr(0, slash));
+        /// For file:// URIs, the path is absolute, so we need to keep the leading '/'
+        /// e.g. file:///home/user/data -> scheme="file", authority="", key="/home/user/data"
+        if (scheme == "file")
+            key = std::string(rest.substr(slash));
+        else
+            key = std::string(rest.substr(++slash));
+        return;
+    }
+
+    /// Check for scheme:/path (common for file: https://datatracker.ietf.org/doc/html/rfc8089#appendix-B)
+    if (auto colon = uri.find(':'); colon != std::string_view::npos && colon > 0)
+    {
+        auto after_colon = uri.substr(colon + 1);
+
+        if (!after_colon.empty() && after_colon[0] == '/')
+        {
+            scheme = Poco::toLower(uri.substr(0, colon));
+            authority = "";  // No authority
+            key = std::string(after_colon);
+            return;
+        }
+    }
+
+    // Relative path (paths starting with '/' without a scheme are now handled by the caller)
+    key = std::string(uri);
 }
 
 namespace DataLakeStorageSetting
@@ -348,5 +536,443 @@ extern const SettingsUInt64 max_download_buffer_size;
 extern const SettingsBool use_cache_for_count_from_files;
 extern const SettingsString filesystem_cache_name;
 extern const SettingsUInt64 filesystem_cache_boundary_alignment;
+extern const SettingsBool object_storage_propagate_credentials_to_other_storages;
 }
+
+#if USE_AVRO
+/// Resolve an absolute metadata path directly to its (object storage, key) by parsing the URI.
+/// The storage may be `base_storage` or a secondary one. Returns std::nullopt for paths that must
+/// instead go through `path_resolver`: relative paths and bare local-fs absolute base paths.
+std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStorageForPath(
+    const std::string & table_location,
+    const std::string & path,
+    const DB::ObjectStoragePtr & base_storage,
+    SecondaryStorages & secondary_storages,
+    const DB::ContextPtr & context)
+{
+    if (!isAbsolutePath(path))
+        return std::nullopt; // Relative path always belongs to base storage
+
+    auto ensure_local_path_inside_user_files = [&](const std::string & local_path)
+    {
+        const auto target_path = std::filesystem::path(local_path).lexically_normal();
+        const auto user_files_path = std::filesystem::path(context->getUserFilesPath()).lexically_normal();
+
+        if (user_files_path.empty() || !fileOrSymlinkPathStartsWith(target_path.string(), user_files_path.string()))
+            throw DB::Exception(
+                DB::ErrorCodes::PATH_ACCESS_DENIED,
+                "File URI '{}' is outside of allowed `user_files` path '{}'",
+                local_path,
+                user_files_path.string());
+    };
+
+    SchemeAuthorityKey table_location_decomposed{table_location};
+    SchemeAuthorityKey target_decomposed{path};
+
+    if (target_decomposed.scheme.empty() && target_decomposed.key.starts_with('/'))
+    {
+        if (base_storage->getType() == ObjectStorageType::Local)
+            ensure_local_path_inside_user_files(target_decomposed.key);
+
+        return std::nullopt;
+    }
+
+    const std::string base_scheme_normalized = normalizeScheme(table_location_decomposed.scheme);
+    const std::string target_scheme_normalized = normalizeScheme(target_decomposed.scheme);
+
+    /// `file://` paths must stay inside `user_files`.
+    /// Without this check, metadata could drive reads from arbitrary local paths.
+    if (target_scheme_normalized == "file")
+    {
+        ensure_local_path_inside_user_files(target_decomposed.key);
+    }
+
+    // For S3 URIs, use S3::URI to properly handle all kinds of URIs, e.g. https://s3.amazonaws.com/bucket/... == s3://bucket/...
+    #if USE_AWS_S3
+    if (target_scheme_normalized == "s3" || target_scheme_normalized == "https" || target_scheme_normalized == "http")
+    {
+        std::string normalized_path = path;
+        if (target_decomposed.scheme == "s3a" || target_decomposed.scheme == "s3n" || target_decomposed.scheme == "oss")
+        {
+            normalized_path = "s3://" + target_decomposed.authority + "/" + target_decomposed.key;
+        }
+        else if (target_decomposed.scheme == "gcs")
+        {
+            normalized_path = "gs://" + target_decomposed.authority + "/" + target_decomposed.key;
+        }
+        /// Paths from metadata already have correct encoding; disable Poco::URI
+        /// percent-decoding so that keys like `col=12%3A00%3A00` are preserved as-is.
+        S3::URI s3_uri(normalized_path, /*allow_archive_path_syntax*/ false,
+                       /*keep_presigned_query_parameters*/ true, /*uri_style*/ S3UriStyle::AUTO,
+                       /*enable_url_encoding*/ false);
+
+        std::string key_to_use = s3_uri.key;
+
+        bool use_base_storage = false;
+        if (base_storage->getType() == ObjectStorageType::S3)
+        {
+            if (auto s3_storage = std::dynamic_pointer_cast<S3ObjectStorage>(base_storage))
+            {
+                const std::string base_bucket = s3_storage->getObjectsNamespace();
+                const std::string base_endpoint = s3_storage->getDescription();
+
+                if (s3URIMatches(s3_uri, base_bucket, base_endpoint, target_scheme_normalized))
+                    use_base_storage = true;
+            }
+        }
+
+        if (!use_base_storage && (base_scheme_normalized == "s3" || base_scheme_normalized == "https" || base_scheme_normalized == "http"))
+        {
+            std::string normalized_table_location = table_location;
+            if (table_location_decomposed.scheme == "s3a" || table_location_decomposed.scheme == "s3n" || table_location_decomposed.scheme == "oss")
+            {
+                normalized_table_location = "s3://" + table_location_decomposed.authority + "/" + table_location_decomposed.key;
+            }
+            else if (table_location_decomposed.scheme == "gcs")
+            {
+                normalized_table_location = "gs://" + table_location_decomposed.authority + "/" + table_location_decomposed.key;
+            }
+            S3::URI base_s3_uri(normalized_table_location, /*allow_archive_path_syntax*/ false,
+                                /*keep_presigned_query_parameters*/ true, /*uri_style*/ S3UriStyle::AUTO,
+                                /*enable_url_encoding*/ false);
+
+            if (s3URIMatches(s3_uri, base_s3_uri.bucket, base_s3_uri.endpoint, target_scheme_normalized))
+                use_base_storage = true;
+        }
+
+        if (use_base_storage)
+            return std::make_pair(base_storage, key_to_use);
+
+        /// Construct the endpoint for this storage, then build the cache key from it.
+        /// A generic `s3://bucket/...` inherits one from the base storage.
+        const bool endpoint_explicit = (target_decomposed.scheme == "http" || target_decomposed.scheme == "https");
+
+        std::string endpoint_to_use;
+
+        /// Build an endpoint that keeps the bucket: `ObjectStorageFactory` re-parses the endpoint
+        /// from the config to determine the bucket, and reads use keys relative to the bucket, so
+        /// an endpoint without the bucket would address the wrong one (see `getS3URI`).
+        auto make_endpoint_with_bucket = [&]() -> std::string
+        {
+            if (s3_uri.endpoint.empty())
+                return "https://" + s3_uri.bucket + ".s3.amazonaws.com";
+
+            const auto scheme_end = s3_uri.endpoint.find("://");
+            if (s3_uri.is_virtual_hosted_style && scheme_end != std::string::npos)
+            {
+                /// Virtual-hosted style: https://s3.region.amazonaws.com -> https://bucket.s3.region.amazonaws.com
+                return s3_uri.endpoint.substr(0, scheme_end + 3) + s3_uri.bucket + "." + s3_uri.endpoint.substr(scheme_end + 3);
+            }
+
+            /// Path style: http://minio:9000 -> http://minio:9000/bucket
+            return s3_uri.endpoint + "/" + s3_uri.bucket;
+        };
+
+        if (endpoint_explicit)
+        {
+            endpoint_to_use = make_endpoint_with_bucket();
+        }
+        else
+        {
+            std::string base_endpoint;
+            if (base_storage->getType() == ObjectStorageType::S3)
+                base_endpoint = base_storage->getDescription();
+
+            if (!base_endpoint.empty())
+            {
+                if (base_endpoint.find(".s3.") != std::string::npos && base_endpoint.find(".amazonaws.com") != std::string::npos)
+                {
+                    /// AWS-style: https://oldbucket.s3.us-east-1.amazonaws.com -> https://newbucket.s3.us-east-1.amazonaws.com
+                    size_t s3_pos = base_endpoint.find(".s3.");
+                    size_t scheme_end = base_endpoint.find("://");
+                    if (scheme_end != std::string::npos)
+                    {
+                        std::string scheme = base_endpoint.substr(0, scheme_end + 3);
+                        std::string suffix = base_endpoint.substr(s3_pos);
+
+                        /// Trim path after endpoint
+                        size_t slash_pos = suffix.find('/', 1);
+                        if (slash_pos != std::string::npos)
+                            suffix = suffix.substr(0, slash_pos);
+                        endpoint_to_use = scheme + s3_uri.bucket + suffix;
+                    }
+                }
+                else
+                {
+                    /// Path-style (e.g. minio): http://host:port/oldbucket -> http://host:port/newbucket
+                    size_t scheme_end = base_endpoint.find("://");
+                    if (scheme_end != std::string::npos)
+                    {
+                        size_t path_start = base_endpoint.find('/', scheme_end + 3);
+                        if (path_start != std::string::npos)
+                            base_endpoint = base_endpoint.substr(0, path_start);
+                    }
+                    if (!base_endpoint.empty() && base_endpoint.back() == '/')
+                        base_endpoint.pop_back();
+                    endpoint_to_use = base_endpoint + "/" + s3_uri.bucket;
+                }
+            }
+
+            /// Fallback: base storage is not S3
+            if (endpoint_to_use.empty())
+                endpoint_to_use = make_endpoint_with_bucket();
+        }
+
+        /// Compare service endpoints (`scheme://authority`, no bucket) when deciding whether base
+        /// credentials apply: `getDescription` of the base storage carries no bucket, while
+        /// `endpoint_to_use` now does (in the host or in the path). A bucket in the path is ignored
+        /// by `sameEndpoint`, but a bucket in the host (virtual-hosted style) would break the match.
+        const std::string service_endpoint = (endpoint_explicit && !s3_uri.endpoint.empty()) ? s3_uri.endpoint : endpoint_to_use;
+
+        const bool propagate_creds = context->getSettingsRef()[Setting::object_storage_propagate_credentials_to_other_storages];
+
+        /// Copy credentials from the base storage when the endpoint is the same or
+        /// `object_storage_propagate_credentials_to_other_storages` is enabled. Capture the current
+        /// generation once here (rather than inside `configure_fn`, which runs only on a cache miss):
+        /// the base `S3ObjectStorage` can rotate catalog-vended/temporary credentials between queries,
+        /// and different users may issue queries against the same table, so the captured generation is
+        /// folded into the cache key below to keep them from being reused once they no longer apply.
+        String access_key_id;
+        String secret_access_key;
+        String session_token;
+        String region;
+        if (base_storage->getType() == ObjectStorageType::S3
+            && (propagate_creds || sameEndpoint(base_storage->getDescription(), service_endpoint)))
+        {
+            if (auto s3_storage = std::dynamic_pointer_cast<S3ObjectStorage>(base_storage))
+            {
+                if (auto s3_client = s3_storage->tryGetS3StorageClient())
+                {
+                    const auto credentials = s3_client->getCredentials();
+                    access_key_id = credentials.GetAWSAccessKeyId();
+                    secret_access_key = credentials.GetAWSSecretKey();
+                    session_token = credentials.GetSessionToken();
+                    region = s3_client->getRegion();
+                }
+            }
+        }
+
+        /// `configure_fn` runs only on a cache miss, so every input that shapes the created storage must
+        /// be part of the cache key. Include the credential-propagation flag and, when credentials are
+        /// propagated, a fingerprint of that generation: when the base storage rotates its (temporary)
+        /// credentials or a different user queries the table, the fingerprint changes and a fresh secondary
+        /// storage is built, instead of a cache hit silently reusing an expired or foreign token.
+        std::string storage_cache_key = "s3://" + s3_uri.bucket + "@" + endpoint_to_use
+            + "#propagate=" + (propagate_creds ? "1" : "0");
+
+        /// When credentials are propagated, the older generations of the same target become unreachable
+        /// once the fingerprint changes; pass their common prefix so they are evicted instead of leaking.
+        std::string supersedes_prefix;
+        if (!access_key_id.empty() || !session_token.empty())
+        {
+            supersedes_prefix = storage_cache_key + "#cred=";
+
+            SipHash creds_hash;
+            creds_hash.update(access_key_id);
+            creds_hash.update(secret_access_key);
+            creds_hash.update(session_token);
+            storage_cache_key = supersedes_prefix + std::to_string(creds_hash.get64());
+        }
+
+        return getOrCreateStorageAndKey(
+            storage_cache_key,
+            key_to_use,
+            "s3",
+            secondary_storages,
+            context,
+            [&](Poco::Util::MapConfiguration & cfg, const std::string & config_prefix)
+            {
+                cfg.setString(config_prefix + ".endpoint", endpoint_to_use);
+
+                /// Apply the credentials captured above (the exact generation the cache key fingerprints).
+                if (!access_key_id.empty())
+                    cfg.setString(config_prefix + ".access_key_id", access_key_id);
+                if (!secret_access_key.empty())
+                    cfg.setString(config_prefix + ".secret_access_key", secret_access_key);
+                if (!session_token.empty())
+                    cfg.setString(config_prefix + ".session_token", session_token);
+                if (!region.empty())
+                    cfg.setString(config_prefix + ".region", region);
+            },
+            supersedes_prefix);
+    }
+    #endif
+
+    #if USE_HDFS
+    if (target_scheme_normalized == "hdfs")
+    {
+        bool use_base_storage = false;
+
+        // Check if base_storage matches (only if it's HDFS)
+        if (base_storage->getType() == ObjectStorageType::HDFS)
+        {
+            if (auto hdfs_storage = std::dynamic_pointer_cast<HDFSObjectStorage>(base_storage))
+            {
+                const std::string base_url = hdfs_storage->getDescription();
+                // Extract endpoint from base URL (hdfs://namenode:port/path -> hdfs://namenode:port)
+                std::string base_endpoint;
+                if (auto pos = base_url.find('/', base_url.find("//") + 2); pos != std::string::npos)
+                    base_endpoint = base_url.substr(0, pos);
+                else
+                    base_endpoint = base_url;
+
+                // For HDFS, compare endpoints (namenode addresses)
+                std::string target_endpoint = target_scheme_normalized + "://" + target_decomposed.authority;
+
+                if (base_endpoint == target_endpoint)
+                    use_base_storage = true;
+
+                // Also check if table_location matches
+                if (!use_base_storage && base_scheme_normalized == "hdfs")
+                {
+                    if (table_location_decomposed.authority == target_decomposed.authority)
+                        use_base_storage = true;
+                }
+            }
+        }
+
+        if (use_base_storage)
+            return std::make_pair(base_storage, target_decomposed.key);
+    }
+    #endif
+
+    /// Fallback for schemes not handled above (e.g., abfs, file)
+    if (base_scheme_normalized == target_scheme_normalized && table_location_decomposed.authority == target_decomposed.authority)
+        return std::make_pair(base_storage, target_decomposed.key);
+
+    const std::string type_for_factory = factoryTypeForScheme(target_scheme_normalized);
+    if (type_for_factory.empty())
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unsupported storage scheme '{}' in path '{}'", target_scheme_normalized, path);
+
+    /// For `file://` URIs the authority is always empty, so using just `"file://"` as the
+    /// cache key would cause every directory to share a single `LocalObjectStorage` instance
+    /// whose root (`key_prefix`) is set to the parent directory of the first file ever seen.
+    /// To avoid this, include the parent directory of the target file in the cache key so that
+    /// each directory gets its own storage instance with the correct root.
+    std::string file_dir_path; // only set for file:// URIs
+    std::string cache_key;
+    if (target_scheme_normalized == "file")
+    {
+        std::filesystem::path fs_path(target_decomposed.key);
+        file_dir_path = fs_path.parent_path().string();
+        if (file_dir_path.empty() || file_dir_path == "/")
+            file_dir_path = "/";
+        else if (file_dir_path.back() != '/')
+            file_dir_path += '/';
+        cache_key = "file://" + file_dir_path;
+    }
+    else
+    {
+        cache_key = target_scheme_normalized + "://" + target_decomposed.authority;
+    }
+
+    /// Handle storage types that need new storage creation
+    return getOrCreateStorageAndKey(
+        cache_key,
+        target_decomposed.key,
+        type_for_factory,
+        secondary_storages,
+        context,
+        [&](Poco::Util::MapConfiguration & cfg, const std::string & config_prefix)
+        {
+            if (target_scheme_normalized == "file")
+            {
+                cfg.setString(config_prefix + ".path", file_dir_path);
+            }
+            else if (target_scheme_normalized == "abfs")
+            {
+                std::string container_name;
+                std::string account_name;
+                const auto & authority = target_decomposed.authority;
+
+                auto at_pos = authority.find('@');
+                if (at_pos != std::string::npos)
+                {
+                    container_name = authority.substr(0, at_pos);
+                    account_name = authority.substr(at_pos + 1);
+                    /// Remove .dfs.core.windows.net suffix if present
+                    auto suffix_pos = account_name.find('.');
+                    if (suffix_pos != std::string::npos)
+                        account_name = account_name.substr(0, suffix_pos);
+                }
+                else
+                    container_name = authority;
+
+                cfg.setString(config_prefix + ".container_name", container_name);
+                if (!account_name.empty())
+                    cfg.setString(config_prefix + ".account_name", account_name);
+
+#if USE_AZURE_BLOB_STORAGE
+                /// Copy credentials from base Azure storage if available
+                if (base_storage->getType() == ObjectStorageType::Azure)
+                {
+                    if (auto azure_storage = std::dynamic_pointer_cast<AzureObjectStorage>(base_storage))
+                    {
+                        const auto & conn_params = azure_storage->getConnectionParameters();
+                        const auto & auth_method = azure_storage->getAzureBlobStorageAuthMethod();
+
+                        /// The base credentials/endpoint identify the base account and cannot authenticate a
+                        /// different one, so reject cross-account paths instead of silently serving them from
+                        /// the base account. The base account comes from the base service URL, so this works
+                        /// regardless of how the base was authenticated.
+                        const std::string target_account = Poco::toLower(account_name);
+                        const std::string base_account = azureAccountFromServiceUrl(conn_params.getConnectionURL());
+
+                        if (!target_account.empty() && !base_account.empty() && target_account != base_account)
+                            throw DB::Exception(
+                                DB::ErrorCodes::BAD_ARGUMENTS,
+                                "Iceberg metadata references Azure storage account '{}', which differs from the table's "
+                                "base account '{}'. Reading across Azure accounts is not supported; configure access to "
+                                "account '{}'.",
+                                account_name, base_account, account_name);
+
+                        if (std::holds_alternative<AzureBlobStorage::ConnectionString>(auth_method))
+                        {
+                            cfg.setString(config_prefix + ".connection_string",
+                                std::get<AzureBlobStorage::ConnectionString>(auth_method).toUnderType());
+                        }
+                        else
+                        {
+                            const auto & endpoint = conn_params.endpoint;
+                            if (!endpoint.storage_account_url.empty())
+                                cfg.setString(config_prefix + ".storage_account_url", endpoint.storage_account_url);
+                            if (account_name.empty() && !endpoint.account_name.empty())
+                                cfg.setString(config_prefix + ".account_name", endpoint.account_name);
+                            /// The accounts are the same (checked above), so the base shared key authenticates
+                            /// this container too. Without it `getAuthMethod` would silently fall back to
+                            /// managed identity for the secondary storage.
+                            if (!endpoint.account_key.empty())
+                                cfg.setString(config_prefix + ".account_key", endpoint.account_key);
+                        }
+                    }
+                }
+#endif
+            }
+            else if (target_scheme_normalized == "hdfs")
+            {
+                // HDFS endpoint must end with '/'
+                auto endpoint = target_scheme_normalized + "://" + target_decomposed.authority;
+                if (!endpoint.empty() && endpoint.back() != '/')
+                    endpoint.push_back('/');
+                cfg.setString(config_prefix + ".endpoint", endpoint);
+            }
+        });
+}
+
+std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
+    const std::string & table_location,
+    const std::string & path,
+    const DB::ObjectStoragePtr & base_storage,
+    SecondaryStorages & secondary_storages,
+    const DB::ContextPtr & context,
+    const Iceberg::IcebergPathResolver & path_resolver)
+{
+    if (auto resolved = tryResolveObjectStorageForPath(table_location, path, base_storage, secondary_storages, context))
+        return *resolved;
+    /// Relative paths only: map via path_resolver (table_location -> table_root translation).
+    return {base_storage, path_resolver.resolve(Iceberg::IcebergPathFromMetadata::deserialize(path))};
+}
+
+#endif
+
 }
