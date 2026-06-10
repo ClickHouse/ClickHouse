@@ -1517,6 +1517,60 @@ static bool containsNullableFlattenableTuple(const DataTypePtr & type)
     return false;
 }
 
+/// Validates the constraints that `allow_tuple_element_aggregation` imposes on a table's schema:
+///   - no column type may contain a Nullable Tuple (tuple elements are flattened and aggregated
+///     independently during merges, which a Nullable Tuple cannot represent)
+///   - no sorting-key column may be a plain Tuple
+///   - flattening must not produce two leaves with the same name (the flattened header is keyed
+///     by name for sort/key lookups, so duplicate names would be ambiguous).
+static void checkTupleElementAggregationConstraints(const StorageInMemoryMetadata & metadata)
+{
+    for (const auto & column : metadata.getColumns().getAllPhysical())
+    {
+        if (containsNullableFlattenableTuple(column.type))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Column '{}' has type '{}' which contains a Nullable Tuple, which is not supported "
+                "when setting 'allow_tuple_element_aggregation' is enabled.",
+                column.name,
+                column.type->getName());
+    }
+
+    const auto & sorting_key = metadata.getSortingKey();
+    for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
+    {
+        const auto & type = sorting_key.data_types[i];
+        if (Nested::tryGetFlattenableTuple(type))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Sorting key column '{}' has Tuple type '{}', which is not supported when setting "
+                "'allow_tuple_element_aggregation' is enabled. "
+                "Consider extracting individual fields as separate sorting key columns.",
+                sorting_key.column_names[i],
+                type->getName());
+    }
+
+    std::unordered_map<String, String> leaf_to_column;
+    for (const auto & column : metadata.getColumns().getAllPhysical())
+    {
+        Names leaves;
+        Nested::flattenTupleLeafNames(column.name, column.type, leaves);
+        for (const auto & leaf : leaves)
+        {
+            auto [it, inserted] = leaf_to_column.emplace(leaf, column.name);
+            if (!inserted)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Duplicate column name '{}' (from '{}' and '{}'). When setting "
+                    "'allow_tuple_element_aggregation' is enabled, Tuple sub-column names must be "
+                    "unique across the table.",
+                    leaf,
+                    it->second,
+                    column.name);
+        }
+    }
+}
+
 void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const
 {
     const auto columns = metadata.getColumns().getAllPhysical();
