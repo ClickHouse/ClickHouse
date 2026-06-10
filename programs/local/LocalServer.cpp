@@ -632,6 +632,8 @@ void LocalServer::startServers(const ServerType & server_type)
                 result.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentConnections(), 0});
             return result;
         };
+        /// Note: we intentionally don't call `start` on it, to avoid an extra background thread
+        /// in clickhouse-local. The object only satisfies the dependency of `createHandlerFactory`.
         async_metrics = std::make_unique<ServerAsynchronousMetrics>(
             global_context,
             /* update_period_seconds= */ 60,
@@ -1597,7 +1599,7 @@ void LocalServer::processConfig()
     if (!getClientConfiguration().has("tcp_port"))
         getClientConfiguration().setInt("tcp_port", DBMS_DEFAULT_PORT);
     if (!getClientConfiguration().has("http_port"))
-        getClientConfiguration().setInt("http_port", 8123);
+        getClientConfiguration().setInt("http_port", DBMS_DEFAULT_HTTP_PORT);
 
     /// Register callbacks for SYSTEM START/STOP LISTEN queries.
     global_context->setStartServersCallback([this](const ServerType & server_type)
