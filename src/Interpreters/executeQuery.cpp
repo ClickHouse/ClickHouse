@@ -1410,6 +1410,35 @@ static void applyQueryConstructionSettings(
         }
     }
 
+    /// The trailing `SETTINGS` clause of the base query is the *query-level* `SETTINGS` clause: the
+    /// parser attaches it to the last `SELECT` of the union, and that is where
+    /// `InterpreterSetQuery::applySettingsFromQuery` reads the query-level settings from. Keep it
+    /// query-level by detaching it from the (now nested) base query and merging it into the outer
+    /// query's `SETTINGS`. Otherwise a query-level setting would silently change meaning by becoming
+    /// subquery-level — e.g. `use_query_cache` on a subquery is an explicit opt-in for the Planner's
+    /// subquery-level query result cache.
+    if (!base_select->list_of_selects->children.empty())
+    {
+        if (auto * last_select = base_select->list_of_selects->children.back()->as<ASTSelectQuery>())
+        {
+            if (ASTPtr last_settings = last_select->settings())
+            {
+                last_select->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
+                if (!base_settings)
+                    base_settings = last_settings;
+                else
+                {
+                    /// Both can be present (e.g. `(SELECT … SETTINGS a = 1) SETTINGS b = 2`); the
+                    /// union-level clause is the outer one, so it wins on conflicts.
+                    auto & merged = base_settings->as<ASTSetQuery &>().changes;
+                    for (const auto & change : last_settings->as<ASTSetQuery &>().changes)
+                        if (!merged.tryGet(change.name))
+                            merged.push_back(change);
+                }
+            }
+        }
+    }
+
     auto outer_select = make_intrusive<ASTSelectQuery>();
 
     ASTPtr select_list;
