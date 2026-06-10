@@ -1,3 +1,4 @@
+#include <limits>
 #include <string>
 #include <unordered_set>
 #include <Columns/IColumn.h>
@@ -748,8 +749,17 @@ static bool writeConsolidatedManifestFile(
                 file_byte_counts.push_back(static_cast<UInt64>(file_size_in_bytes));
                 manifest_existing_rows += record_count;
             }
+
+            /// Lowest data sequence number across this manifest's files. The files keep their
+            /// original (older) sequence numbers, so the manifest-list min_sequence_number must
+            /// reflect that minimum rather than the new snapshot's sequence. All lineage entries
+            /// carry a resolved (inheritance-aware) non-null sequence number.
+            Int64 manifest_min_sequence_number = std::numeric_limits<Int64>::max();
+            for (const auto & lineage : pd.file_entry_lineage)
+                manifest_min_sequence_number = std::min(manifest_min_sequence_number, lineage.sequence_number.value_or(0));
+
             existing_entry_counts.push_back(
-                {static_cast<Int64>(pd.file_paths.size()), manifest_existing_rows});
+                {static_cast<Int64>(pd.file_paths.size()), manifest_existing_rows, manifest_min_sequence_number});
 
             /// Rewrite this manifest under the partition spec its source files used, not the default.
             const auto & resolved_spec = resolve_partition_spec(pd.partition_spec_id);

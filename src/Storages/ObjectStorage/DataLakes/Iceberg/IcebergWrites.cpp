@@ -601,8 +601,14 @@ void generateManifestList(
         if (version > 1)
         {
             entry.field(Iceberg::f_content) = static_cast<Int32>(content_type);
-            entry.field(Iceberg::f_sequence_number) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
-            entry.field(Iceberg::f_min_sequence_number) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
+            /// The manifest's own sequence number is the snapshot that wrote it (this rewrite). But
+            /// min_sequence_number is the lowest data sequence number of the files it references: for
+            /// a manifest-only rewrite those are the preserved original (older) sequence numbers, so
+            /// use the per-manifest minimum rather than the new snapshot's sequence.
+            const Int64 new_sequence_number = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
+            entry.field(Iceberg::f_sequence_number) = new_sequence_number;
+            entry.field(Iceberg::f_min_sequence_number)
+                = manifest_only_rewrite ? existing_entry_counts[entry_idx].min_sequence_number : new_sequence_number;
         }
 
         auto set_versioned_field = [&](const auto & value, const String & field_name)

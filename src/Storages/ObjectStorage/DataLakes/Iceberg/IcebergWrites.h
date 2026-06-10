@@ -115,6 +115,10 @@ struct ManifestListEntryExistingCounts
 {
     Int64 existing_files_count = 0;
     Int64 existing_rows_count = 0;
+    /// Minimum data sequence number across the entries written into this manifest. For a
+    /// manifest-only rewrite the files keep their original (older) sequence numbers, so the
+    /// manifest-list `min_sequence_number` must be this minimum, not the new snapshot's sequence.
+    Int64 min_sequence_number = 0;
 };
 
 void generateManifestList(
