@@ -1,8 +1,5 @@
 #include <base/getL2CacheSize.h>
 
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 #include <unistd.h>
 
 #if defined(__x86_64__)
@@ -62,31 +59,6 @@ namespace
     }
 #endif
 
-#if defined(OS_LINUX)
-    size_t readL2FromSysfs()
-    {
-        FILE * f = std::fopen("/sys/devices/system/cpu/cpu0/cache/index2/size", "r");
-        if (!f)
-            return 0;
-
-        char buf[32] = {};
-        size_t n = std::fread(buf, 1, sizeof(buf) - 1, f);
-        (void)std::fclose(f);
-        if (n == 0)
-            return 0;
-
-        char * end = nullptr;
-        uint64_t value = std::strtoull(buf, &end, 10);
-        if (end == buf)
-            return 0;
-        if (*end == 'K' || *end == 'k')
-            value *= 1024ull;
-        else if (*end == 'M' || *end == 'm')
-            value *= 1024ull * 1024ull;
-        return static_cast<size_t>(value);
-    }
-#endif
-
     size_t getL2CacheSizeImpl()
     {
 #if defined(__x86_64__)
@@ -97,10 +69,15 @@ namespace
         if (auto ret = ::sysconf(_SC_LEVEL2_CACHE_SIZE); ret > 0)
             return static_cast<size_t>(ret);
 #endif
-#if defined(OS_LINUX)
-        if (size_t fs = readL2FromSysfs())
-            return fs;
-#endif
+        /// Deliberately no sysfs fallback for non-x86. glibc implements the
+        /// cache-size `sysconf` only on x86, so the callers' heuristics
+        /// (`Aggregator` / `HashJoin` prefetch thresholds = 4 x L2,
+        /// `HashMethodSerialized` batching) have always run with this 256 KiB
+        /// default on aarch64. Reporting the true L2 (2 MiB on Graviton 4) makes
+        /// those thresholds 8x larger and disables hash-table prefetch for
+        /// 1-8 MiB tables — `topn_aggregation` got 1.3x slower in CI. Retuning
+        /// the heuristics for real cache sizes deserves its own change with its
+        /// own perf validation.
         return default_l2_size;
     }
 }
