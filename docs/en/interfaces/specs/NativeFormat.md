@@ -1051,7 +1051,7 @@ The per-block metadata UInt64 is a bitfield:
 
 For a typical query response with a single data block per column, the metadata is `0x600` (HasAdditionalKeys + NeedUpdateDictionary).
 
-The dict values are `dict_size` values encoded using the inner type T, with `dict[0]` an empty/default placeholder by convention. For `LowCardinality(Nullable(T))` the wire encodes the dict as plain T (no null-map stream): `dict[1]` is the null marker and real values start at `dict[2..]`. The keys are indices into the dict, with `keys.len()` equal to the block's row count; each index is `1 << key_type_code` bytes (1, 2, 4, or 8), and logical row `N` is reconstructed as `dict[keys[N]]`.
+The dict values are `dict_size` values encoded using the inner type T. The dictionary reserves leading slots for special values: a non-nullable column reserves one (`dict[0]` holds the inner type's default value, e.g. `""` for `String`), and real distinct values start at `dict[1]`. For `LowCardinality(Nullable(T))` the dict is still encoded as plain T (no null-map stream), but **two** slots are reserved: `dict[0]` is the NULL marker and `dict[1]` is the inner type's default value (e.g. `""` for `String`); real distinct values start at `dict[2]`. A NULL row's key points at `dict[0]`, and that slot is written on the wire as the inner type's default bytes. The keys are indices into the dict, with `keys.len()` equal to the block's row count; each index is `1 << key_type_code` bytes (1, 2, 4, or 8), and logical row `N` is reconstructed as `dict[keys[N]]`.
 
 The state prefix is read once per column per query, before the first block whose row count is greater than zero — header blocks (rows = 0) and empty blocks emit nothing. Within a block, `keys_count` equals the row count, `dict_size` equals the number of values in the dict stream, and each key fits in `1 << key_type_code` bytes.
 
@@ -1074,6 +1074,22 @@ The dictionary can grow **across blocks** within a single query response: a late
 ```
 
 Reconstructed: `dict[1], dict[2], dict[1], dict[3], dict[2]` = `["a", "b", "a", "c", "b"]`.
+
+`LowCardinality(Nullable(String))` with values `['a', NULL, '', 'b']` shows both reserved slots — `dict[0]` for NULL and `dict[1]` for the empty-string default:
+
+```text
+01 00 00 00 00 00 00 00      state prefix Int64 = 1
+00 06 00 00 00 00 00 00      metadata UInt64 = 0x600
+04 00 00 00 00 00 00 00      dict_size = 4
+00                           dict[0] = "" → NULL marker
+00                           dict[1] = "" → inner default value
+01 'a'                       dict[2] = "a"
+01 'b'                       dict[3] = "b"
+04 00 00 00 00 00 00 00      keys_count = 4
+02 00 01 03                  keys (UInt8): 2, 0, 1, 3
+```
+
+Reconstructed: `dict[2]` = `"a"`, `dict[0]` = `NULL`, `dict[1]` = `""`, `dict[3]` = `"b"`, i.e. `["a", NULL, "", "b"]`. Both `dict[0]` and `dict[1]` are empty bytes on the wire; the null-ness comes from the key pointing at slot `0`, not from the bytes.
 
 #### JSON (Tier 1: String fallback) {#json-tier-1-string-fallback}
 
