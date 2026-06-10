@@ -265,7 +265,14 @@ struct HalfMD5Impl
         }();
 
         thread_local EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
-
+        
+        if (!ctx)
+        {
+            ctx.reset(EVP_MD_CTX_new());
+            if (!ctx)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+        }
+        
         if (EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed: {}", getOpenSSLErrors());
 
