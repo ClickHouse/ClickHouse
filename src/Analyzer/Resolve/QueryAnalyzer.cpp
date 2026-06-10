@@ -3033,19 +3033,27 @@ void QueryAnalyzer::applyGroupByUseNullsToExpression(QueryTreeNodePtr & node, Id
             auto it = scope_ptr->nullable_group_by_keys.find(node);
             if (it != scope_ptr->nullable_group_by_keys.end())
             {
-                if (scope_ptr == &scope)
+                /// Non-correlated reference: the matched key belongs to the same query as `node`.
+                /// That is either `scope_ptr == &scope` (resolved directly in the query) or, when
+                /// the reference sits inside a lambda body, an enclosing non-`QUERY` scope of that
+                /// same query (e.g. `arrayMap(x -> intDiv(x, key), ...)` where `key` is a GROUP BY
+                /// key of the surrounding query). In both cases the reference is not correlated, so
+                /// replace it with a clone of the key to pick up the post-rollup Nullable type.
+                /// The `scope_ptr == &scope` check short-circuits the correlated-columns analysis
+                /// for the common direct-projection match.
+                if (scope_ptr == &scope || !is_correlated())
                 {
-                    /// Own key: replace with a clone of the key to pick up its Nullable type.
                     node = it->node->clone();
                     node->convertToNullable();
                     break;
                 }
 
-                /// Outer-scope key. `nullable_group_by_keys` matches ignoring types and column
-                /// source (`IQueryTreeNode` hash/equality), so an intermediate query with a
-                /// same-named key could match a correlated reference whose real source is further
-                /// out. Only the scope that owns the correlated source may apply its keys.
-                if (is_correlated() && ownsCorrelatedSource(*scope_ptr, *correlated_columns))
+                /// Correlated reference to an outer query's key. `nullable_group_by_keys` matches
+                /// ignoring types and column source (`IQueryTreeNode` hash/equality), so an
+                /// intermediate query with a same-named key could match a correlated reference
+                /// whose real source is further out. Only the scope that owns the correlated
+                /// source may apply its keys.
+                if (ownsCorrelatedSource(*scope_ptr, *correlated_columns))
                 {
                     node->convertToNullable();
                     break;
