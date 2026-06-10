@@ -327,7 +327,10 @@ void optimizeTreeSecondPass(
         });
 
     /// Run Cascades optimizer after all push down and join order optimizations.
-    if (optimization_settings.enable_cascades_optimizer)
+    /// Only `convertToDistributed` can execute the exchange steps Cascades produces;
+    /// without `make_distributed_plan` they would build as no-op pipeline steps (e.g.
+    /// partial aggregation states reaching consumers unmerged).
+    if (make_distributed_plan && optimization_settings.enable_cascades_optimizer)
     {
         CascadesOptimizer cascades_optimizer(query_plan);
         cascades_optimizer.optimize();
