@@ -322,9 +322,10 @@ namespace
 template<typename Storage>
 void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Storage> & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context)
 {
+    if (snapshot.version < SnapshotVersion::V8)
     {
         SharedLockGuard storage_lock(snapshot.storage->storage_mutex);
-        if (!snapshot.storage->ttl_paths.empty() && snapshot.version < SnapshotVersion::V8)
+        if (!snapshot.storage->ttl_paths.empty())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot serialize snapshot with version {}: storage contains {} TTL node(s), which require snapshot "
