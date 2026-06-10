@@ -12,17 +12,19 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 query_id="distributed_plan_cancel_${CLICKHOUSE_DATABASE}"
 
-$CLICKHOUSE_CLIENT -q "CREATE TABLE t_dp_cancel (x UInt64) ENGINE = MergeTree ORDER BY tuple()"
-$CLICKHOUSE_CLIENT -q "INSERT INTO t_dp_cancel SELECT number FROM numbers(10000000)"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_dp_cancel (x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1000"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_dp_cancel SELECT number FROM numbers(100000)"
 
 client_log="${CLICKHOUSE_TMP}/04335_client_${CLICKHOUSE_DATABASE}.err"
 
-# sleepEachRow is capped at 3 seconds per block, so the per-row delay must keep a full 8192-row
-# granule block under the cap; 0.0001s gives ~0.8s per block and a ~1000s natural query duration.
+# sleepEachRow is capped at 3 seconds of sleep per block, so bound the block size: read blocks are
+# granule-sized at minimum (hence index_granularity = 1000 above) and max_block_size is pinned
+# against randomization. 1000 rows x 0.001s = 1s per block, ~100s natural query duration.
 $CLICKHOUSE_CLIENT --query-id="$query_id" -q "
-    SELECT x, count() FROM t_dp_cancel WHERE NOT sleepEachRow(0.0001) GROUP BY x FORMAT Null
+    SELECT x, count() FROM t_dp_cancel WHERE NOT sleepEachRow(0.001) GROUP BY x FORMAT Null
     SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
-        distributed_plan_max_rows_to_broadcast = 0, max_rows_to_group_by = 0, max_execution_time = 300
+        distributed_plan_max_rows_to_broadcast = 0, max_rows_to_group_by = 0, max_execution_time = 300,
+        max_block_size = 1000
 " 2> "$client_log" &
 query_pid=$!
 
