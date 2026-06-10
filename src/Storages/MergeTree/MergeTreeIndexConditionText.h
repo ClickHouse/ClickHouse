@@ -51,7 +51,7 @@ struct TextSearchQuery
     VectorWithMemoryTracking<String> tokens;
     std::vector<OptimizedRegularExpression> patterns;
     /// not sorted, not deduplicated
-    std::vector<String> phrase_tokens;
+    VectorWithMemoryTracking<String> phrase_tokens;
 
     SipHash getHash() const;
 };

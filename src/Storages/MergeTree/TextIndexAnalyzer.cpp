@@ -217,6 +217,8 @@ double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_bu
     switch (query.search_mode)
     {
         case TextSearchMode::All:
+        /// A phrase requires all its tokens to be present.
+        case TextSearchMode::Phrase:
         {
             /// |intersection| ≈ |C_read| * prod(|Ai|/n) over tokens whose postings are still unread.
             /// When no postings have been read yet, treat the read intersection as the universe (n).

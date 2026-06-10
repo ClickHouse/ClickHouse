@@ -315,7 +315,7 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
             /// intersection of its tokens (a safe upper bound) from the analyzer's per-token cardinalities.
             const auto & all_token_infos = analyzer.getAllTokenInfos();
             const auto & settings = condition_text.getContext()->getSettingsRef();
-            double selectivity_threshold = settings[Setting::text_index_hint_max_selectivity];
+            double selectivity_threshold = static_cast<double>(settings[Setting::text_index_hint_max_selectivity]);
             size_t num_rows_in_part = data_part_info_for_read->getRowCount();
 
             double log_cardinality = 0.0;

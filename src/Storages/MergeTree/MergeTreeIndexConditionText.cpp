@@ -980,7 +980,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (has_positions)
         {
             /// For phrase queries, we need tokens in their original order with duplicates preserved.
-            std::vector<String> phrase_tokens;
+            VectorWithMemoryTracking<String> phrase_tokens;
             tokenizer->stringToTokens(value.data(), value.size(), phrase_tokens);
             if (phrase_tokens.empty())
                 return false;
