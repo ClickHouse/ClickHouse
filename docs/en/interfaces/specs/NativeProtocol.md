@@ -204,23 +204,22 @@ At any moment a connection is in exactly one of four states: `HANDSHAKE`, `READY
 
 ### States {#states}
 
-```text
-  [Connect]
-      |
-      v
-  HANDSHAKE ---- error ----> [Disconnect]
-      |
-      ok
-      |
-      v
-  READY <----------------------------------+
-      |                                     |
-      |--- Ping -------> Pong ----------->--|
-      |                                     |
-      |--- Query ------> READING_RESPONSE ->|
-      |                                     |
-      +-------------------------------------+
+```mermaid
+stateDiagram-v2
+    [*] --> HANDSHAKE: TCP connect
+
+    HANDSHAKE --> READY: handshake ok
+    READY --> READING_RESPONSE: send Query
+    READING_RESPONSE --> READY: EndOfStream / Exception
+    READY --> READY: Ping / Pong
+
+    HANDSHAKE --> Terminated: handshake error
+    READING_RESPONSE --> Terminated: protocol violation / I/O error
+    READY --> Terminated: close
+    Terminated --> [*]
 ```
+
+The happy path runs straight down — `HANDSHAKE → READY → READING_RESPONSE → READY` — with the `Ping`/`Pong` self-loop and every failure edge funnelling into the single `Terminated` sink.
 
 | State              | Description |
 |--------------------|-------------|
@@ -235,14 +234,22 @@ Authenticates and negotiates the protocol version. Happens exactly once per conn
 
 The TCP connection has just opened and no messages have been exchanged. The flow:
 
-```text
-Client                              Server
-  |--- ClientHello ------------------>|
-  |<--- ServerHello ------------------|    or Exception
-  |                                   |
-  |    (compute negotiated_version)   |
-  |                                   |
-  |--- Addendum --------------------->|    only if negotiated_version ≥ 54458
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant S as Server
+
+    C->>S: ClientHello
+    alt success
+        S->>C: ServerHello
+    else error
+        S->>C: Exception — connection terminates
+    end
+    Note over C,S: negotiated_version = min(client, server)
+    opt negotiated_version ≥ 54458
+        C->>S: Addendum
+    end
 ```
 
 1. The client sends [`ClientHello`](#clienthello) with its maximum supported protocol version.
@@ -264,10 +271,18 @@ An application-level liveness check, independent of TCP keepalive. A successful 
 
 Starting from `READY`, the flow is:
 
-```text
-Client                              Server
-  |--- Ping (0x04) ------------------>|
-  |<--- Pong (0x04) ------------------|
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant S as Server
+
+    C->>S: Ping (0x04)
+    alt responsive
+        S->>C: Pong (0x04)
+    else error
+        S->>C: Exception
+    end
 ```
 
 1. The client sends [`Ping`](#ping).
@@ -285,24 +300,28 @@ The client submits a SQL statement; the server streams back result blocks and ex
 
 Starting from `READY`, the flow is:
 
-```text
-Client                              Server
-  |--- Query ------------------------>|     the Query message
-  |--- ExternalTable (data) --------->|     optional, for temp tables
-  |--- Empty Data marker ------------>|     required, end-of-client-data
-  |                                    |
-  |<--- Data (header block) ----------|     schema: N cols, 0 rows
-  |<--- Progress ---------------------|     0 or more, interleaved
-  |<--- Log --------------------------|     0 or more (if logs enabled)
-  |<--- Data (result block) ----------|     0 or more: N cols, M rows each
-  |<--- Totals / Extremes ------------|     0 or more (aggregation queries)
-  |<--- ProfileInfo / ProfileEvents --|     0 or more (profiling)
-  |<--- Data (empty block) -----------|     boundary marker
-  |<--- Progress ---------------------|     final updates
-  |<--- EndOfStream ------------------|     authoritative end of query
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant S as Server
+
+    C->>S: Query message
+    C->>S: External-table Data packets (0 or more)
+    C->>S: Empty Data marker — end-of-client-data (required)
+    S->>C: Data — header block (N cols, 0 rows)
+    loop until EndOfStream or Exception
+        S->>C: Progress / Log (interleaved)
+        S->>C: Data — result block (N cols, M rows)
+        S->>C: Totals / Extremes (aggregation queries)
+        S->>C: ProfileInfo / ProfileEvents (profiling)
+    end
+    S->>C: Data — empty block (boundary marker)
+    S->>C: Progress — final updates
+    S->>C: EndOfStream — authoritative end of query
 ```
 
-On error at any point the server sends an `Exception`, which terminates the query.
+On error at any point the server sends an `Exception` instead of `EndOfStream`, which terminates the query.
 
 1. The client sends [`Query`](#query) with a unique `query_id` (typically a UUID).
 2. The client sends any external tables, then the empty Data marker. The empty Data packet has `table_name = ""`, `num_columns = 0`, `num_rows = 0`. The server does not begin executing the query until it receives this marker.
@@ -335,17 +354,31 @@ The INSERT phase is the [Query phase](#query-phase) with two extra exchanges. Th
 
 Starting from `READY`, the SQL is an `INSERT` of the form `INSERT INTO <table> [(<cols>)] VALUES` — with no inline `VALUES (...)` literal, since the row data flows through Data packets. The flow:
 
-```text
-Client                                  Server
-[Query packet — INSERT body]          → 
-[ExternalTable*, then empty terminator] →
-                                        ← [optional metadata: TableColumns, Progress, ...]
-                                        ← [Data packet: schema block (rows = 0)]
-[Data packet: rows N]                 →
-[Data packet: rows M]                 →   (additional blocks, optional)
-[Data packet: empty block (rows 0)]   →   (end-of-input terminator)
-                                        ← [optional Progress, ProfileInfo, Log, ProfileEvents]
-                                        ← [EndOfStream]
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant S as Server
+
+    C->>S: Query packet (INSERT body)
+    C->>S: External-table Data packets (0 or more)
+    C->>S: Empty Data marker — end of client input setup
+    opt metadata before schema
+        S->>C: TableColumns / Progress / ...
+    end
+    S->>C: Data packet — schema block (columns, 0 rows)
+    Note over C,S: Schema block is the contract:<br/>rows sent next must match these column shapes
+    loop one or more blocks
+        C->>S: Data packet (rows N)
+    end
+    C->>S: Data packet — empty block (0 rows), end-of-input terminator
+    loop until EndOfStream or Exception
+        S->>C: Progress / ProfileInfo / Log / ProfileEvents
+    end
+    opt async_insert = 1 and negotiated_version ≥ 54484
+        S->>C: trailing Progress, then insert ProfileEvents
+    end
+    S->>C: EndOfStream
 ```
 
 1. The client sends [`Query`](#query) with `body` set to the INSERT SQL.
@@ -707,13 +740,22 @@ The flow runs in place of password authentication, and the challenge-response ex
 4. The client signs the bytes with its SSH private key and sends `SSHChallengeResponse` (packet 12) with the signature.
 5. The server verifies the signature against the user's registered public key. On success it sends `ServerHello` — the same reply as in the password flow — and the handshake continues normally (Addendum, etc.); on failure it returns an `Exception` and terminates the connection.
 
-```text
-Client                              Server
-  |--- ClientHello (SSH marker) ----->|
-  |--- SSHChallengeRequest (11) ----->|    (server has NOT sent ServerHello yet)
-  |<--- SSHChallenge (18) ------------|
-  |--- SSHChallengeResponse (12) ---->|
-  |<--- ServerHello -------------------|    or Exception on failure
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant S as Server
+
+    C->>S: ClientHello (SSH marker user, empty password)
+    C->>S: SSHChallengeRequest (11)
+    Note over C,S: Server has NOT sent ServerHello yet —<br/>it authenticates first and blocks here
+    S->>C: SSHChallenge (18) — random bytes to sign
+    C->>S: SSHChallengeResponse (12) — signed challenge
+    alt signature verifies
+        S->>C: ServerHello — handshake continues normally
+    else verification fails
+        S->>C: Exception — connection terminates
+    end
 ```
 
 :::note
