@@ -258,11 +258,13 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     return file_metadata;
 }
 
-void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle) const
+void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle, bool only_spatial_bbox) const
 {
     for (const PrimitiveColumnInfo & column_info : primitive_columns)
     {
         if (!column_info.used_by_key_condition)
+            continue;
+        if (only_spatial_bbox && !column_info.is_spatial_bbox_column)
             continue;
         if (!column_info.decoder.allow_stats)
             continue;
@@ -509,14 +511,27 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                 spatial_key_conditions.push_back(sc);
 
                 /// Mark bbox primitives so getHyperrectangleForRowGroup reads their stats.
+                /// Also record their primitive_columns indices for null_count checks at
+                /// row-group pruning time (NULL bbox = unknown extent, must not prune).
                 const std::array<const String *, 4> bbox_col_ptrs = {
                     &bbox_cov.xmin_column, &bbox_cov.ymin_column,
                     &bbox_cov.xmax_column, &bbox_cov.ymax_column};
+                std::array<size_t, 4> bbox_pc_indices = {SIZE_MAX, SIZE_MAX, SIZE_MAX, SIZE_MAX};
+                for (size_t bi = 0; bi < 4; ++bi)
+                    for (size_t ci = 0; ci < primitive_columns.size(); ++ci)
+                        if (primitive_columns[ci].name == *bbox_col_ptrs[bi])
+                        {
+                            bbox_pc_indices[bi] = ci;
+                            break;
+                        }
+                spatial_key_condition_bbox_col_indices.push_back(bbox_pc_indices);
+
                 for (const String * col : bbox_col_ptrs)
                     for (auto & pc : primitive_columns)
                         if (pc.name == *col)
                         {
                             pc.used_by_key_condition = true;
+                            pc.is_spatial_bbox_column = true;
                             /// Columns that Phase A injected are statistics-only: they are not
                             /// user outputs and not needed for filter evaluation. Suppress data
                             /// decoding by using SIZE_MAX as a sentinel step index that
@@ -551,7 +566,13 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         if ((options.format.parquet.filter_push_down && format_filter_info->key_condition)
             || !spatial_key_conditions.empty())
-            getHyperrectangleForRowGroup(meta, hyperrectangle);
+        {
+            /// When filter_push_down is disabled, only read bbox column stats to preserve the
+            /// escape hatch for malformed non-spatial stats: spatial pruning builds its own
+            /// hyperrectangle from the four bbox primitives only.
+            bool only_spatial_bbox = !options.format.parquet.filter_push_down || !format_filter_info->key_condition;
+            getHyperrectangleForRowGroup(meta, hyperrectangle, only_spatial_bbox);
+        }
 
         if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
         {
@@ -564,13 +585,37 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         /// All spatial conditions here come from AND-conjunctive extraction, so if ANY
         /// single condition cannot be satisfied in this row group, the full conjunction
         /// cannot be true — prune the row group.
+        /// A spatial condition is skipped when any of its four bbox columns has non-zero or
+        /// unknown null_count: NULL bbox means unknown spatial extent and must not be pruned.
         if (!spatial_key_conditions.empty())
         {
-            auto spatial_predicate = [&](const auto & sc)
+            bool prune_by_spatial = false;
+            for (size_t sci = 0; sci < spatial_key_conditions.size(); ++sci)
             {
-                return !sc->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true;
-            };
-            if (std::any_of(spatial_key_conditions.begin(), spatial_key_conditions.end(), spatial_predicate))
+                bool all_zero_nulls = true;
+                for (size_t bbox_pc_idx : spatial_key_condition_bbox_col_indices[sci])
+                {
+                    if (bbox_pc_idx == SIZE_MAX)
+                    {
+                        all_zero_nulls = false;
+                        break;
+                    }
+                    const auto & stats = meta->columns.at(primitive_columns[bbox_pc_idx].column_idx).meta_data.statistics;
+                    if (!stats.__isset.null_count || stats.null_count != 0)
+                    {
+                        all_zero_nulls = false;
+                        break;
+                    }
+                }
+                if (!all_zero_nulls)
+                    continue;
+                if (!spatial_key_conditions[sci]->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true)
+                {
+                    prune_by_spatial = true;
+                    break;
+                }
+            }
+            if (prune_by_spatial)
                 continue;
         }
 
@@ -1168,7 +1213,12 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             bool always_null = !column_index.null_pages.empty() && column_index.null_pages[page_idx];
             bool can_be_null = !column_index.__isset.null_counts || column_index.null_counts[page_idx] != 0;
 
-            if (nullable && always_null)
+            if (column_info.is_spatial_bbox_column && can_be_null)
+            {
+                /// NULL bbox means unknown spatial extent. Leave range as whole universe so
+                /// this page is never pruned based on spatial predicates.
+            }
+            else if (nullable && always_null)
             {
                 /// Single-point range containing either the default value or one of the infinities.
                 if (null_as_default)

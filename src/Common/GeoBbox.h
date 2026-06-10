@@ -33,10 +33,11 @@ struct BboxAccumulator
     double xmax = -std::numeric_limits<double>::infinity();
     double ymax = -std::numeric_limits<double>::infinity();
     bool found = false;
+    bool valid = true; // false if any non-finite coordinate was seen; pruning must fail closed
 
     void add(double x, double y)
     {
-        if (!std::isfinite(x) || !std::isfinite(y)) return;
+        if (!std::isfinite(x) || !std::isfinite(y)) { valid = false; return; }
         xmin = std::min(xmin, x);
         ymin = std::min(ymin, y);
         xmax = std::max(xmax, x);
@@ -188,7 +189,7 @@ inline bool tryExtractBboxFromColumn(
     {
         Field field;
         data_col->get(0, field);
-        if (!extractBboxFromFieldValue(field, acc))
+        if (!extractBboxFromFieldValue(field, acc) || !acc.valid)
             return false;
     }
     else
@@ -199,6 +200,8 @@ inline bool tryExtractBboxFromColumn(
             Field field;
             data_col->get(i, field);
             extractBboxFromFieldValue(field, acc);
+            if (!acc.valid)
+                return false;
         }
     }
 
@@ -206,7 +209,7 @@ inline bool tryExtractBboxFromColumn(
     ymin = acc.ymin;
     xmax = acc.xmax;
     ymax = acc.ymax;
-    return true;
+    return acc.found;
 }
 
 }

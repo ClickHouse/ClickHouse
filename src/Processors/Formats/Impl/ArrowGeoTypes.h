@@ -36,8 +36,8 @@ enum class GeoType : uint8_t
 
 struct GeoColumnMetadata
 {
-    GeoEncoding encoding;
-    GeoType type;
+    GeoEncoding encoding = GeoEncoding::WKT;
+    GeoType type = GeoType::Mixed;
 
     /// GeoParquet covering.bbox: names of the four Float64 scalar columns that store per-row
     /// bounding box coordinates. Row group min/max statistics on these columns give the spatial

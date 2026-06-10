@@ -21,7 +21,7 @@ struct SpatialFilter
     String geometry_column_name;
 
     /// Bounding box of the constant query geometry.
-    double query_xmin, query_ymin, query_xmax, query_ymax;
+    double query_xmin = 0, query_ymin = 0, query_xmax = 0, query_ymax = 0;
 };
 
 /// Walk filter_actions_dag looking for calls to spatial functions with isSpatialPredicate()==true
