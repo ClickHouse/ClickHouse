@@ -405,7 +405,11 @@ profiles:
     def start_log_exports(self, check_start_time):
         print("Start log export")
         if not self.log_export_host:
-            self._fetch_log_export_credentials()
+            try:
+                self._fetch_log_export_credentials()
+            except Exception as e:
+                print(f"WARNING: Failed to fetch CI logs credentials: {e}")
+                return False
         if self.log_export_host:
             os.environ["CLICKHOUSE_CI_LOGS_CLUSTER"] = CLICKHOUSE_CI_LOGS_CLUSTER
             os.environ["CLICKHOUSE_CI_LOGS_HOST"] = self.log_export_host
