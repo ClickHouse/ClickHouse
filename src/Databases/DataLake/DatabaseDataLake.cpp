@@ -32,7 +32,9 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <Interpreters/evaluateConstantExpression.h>

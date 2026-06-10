@@ -11,7 +11,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfigurationTemplate.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ErrnoException.h>
 #include <base/getFQDNOrHostName.h>

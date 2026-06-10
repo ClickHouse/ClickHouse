@@ -27,6 +27,10 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
+/// Explicit includes for types previously pulled in transitively through
+/// `StorageObjectStorage.h` / `StorageObjectStorageConfiguration.h`.
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ReadFromTableChangesStep.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>

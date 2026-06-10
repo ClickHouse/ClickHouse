@@ -22,6 +22,7 @@
 #include <Storages/ObjectStorage/DataLakes/Paimon/PartitionPruner.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeTableState.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -360,10 +361,10 @@ bool PaimonMetadata::operator==(const IDataLakeMetadata & other) const
 
 PaimonTableStatePtr PaimonMetadata::extractTableState(StorageMetadataPtr storage_metadata)
 {
-    if (!storage_metadata || !storage_metadata->datalake_table_state.has_value())
+    if (!storage_metadata || !storage_metadata->datalake_table_state)
         return nullptr;
 
-    const auto * paimon_state = std::get_if<Paimon::TableStateSnapshot>(&*storage_metadata->datalake_table_state);
+    const auto * paimon_state = storage_metadata->datalake_table_state->tryGet<Paimon::TableStateSnapshot>();
     if (!paimon_state)
         return nullptr;
 

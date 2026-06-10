@@ -21,6 +21,10 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/VirtualColumnsDescription.h>
+/// `DataLakeTableState` is held by `unique_ptr` in the header; its destructor must be
+/// instantiated where the type is complete, which is here.
+#include <Storages/ObjectStorage/DataLakes/DataLakeTableState.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 
 
 namespace DB
@@ -38,6 +42,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_QUERY;
 }
+
+StorageInMemoryMetadata::StorageInMemoryMetadata() = default;
+StorageInMemoryMetadata::~StorageInMemoryMetadata() = default;
+
+StorageInMemoryMetadata::StorageInMemoryMetadata(StorageInMemoryMetadata && other) noexcept = default;
+StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(StorageInMemoryMetadata && other) noexcept = default;
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
     : columns(other.columns)
@@ -67,7 +77,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , sql_security_type(other.sql_security_type)
     , comment(other.comment)
     , metadata_version(other.metadata_version)
-    , datalake_table_state(other.datalake_table_state)
+    , datalake_table_state(other.datalake_table_state ? other.datalake_table_state->clone() : nullptr)
 {
 }
 
@@ -108,7 +118,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     sql_security_type = other.sql_security_type;
     comment = other.comment;
     metadata_version = other.metadata_version;
-    datalake_table_state = other.datalake_table_state;
+    datalake_table_state = other.datalake_table_state ? other.datalake_table_state->clone() : nullptr;
 
     return *this;
 }
@@ -255,10 +265,40 @@ void StorageInMemoryMetadata::setMetadataVersion(int32_t metadata_version_)
     metadata_version = metadata_version_;
 }
 
-void StorageInMemoryMetadata::setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_)
+void StorageInMemoryMetadata::setDataLakeTableState(std::unique_ptr<DataLakeTableState> state)
 {
-    datalake_table_state = datalake_table_state_;
+    datalake_table_state = std::move(state);
 }
+
+template <typename Snapshot>
+void StorageInMemoryMetadata::setDataLakeTableState(Snapshot && snapshot)
+{
+    datalake_table_state = DataLakeTableState::fromSnapshot(std::forward<Snapshot>(snapshot));
+}
+
+/// Explicit instantiations for all callers that use the variant alias directly
+/// (`StorageObjectStorage`, `StorageObjectStorageCluster`, and the per-format metadata
+/// implementations). Keeping these here means the header does not need to know about the
+/// variant alternatives.
+#if USE_AVRO
+template void StorageInMemoryMetadata::setDataLakeTableState(Iceberg::TableStateSnapshot &&);
+template void StorageInMemoryMetadata::setDataLakeTableState(const Iceberg::TableStateSnapshot &);
+template void StorageInMemoryMetadata::setDataLakeTableState(Iceberg::TableStateSnapshot &);
+template void StorageInMemoryMetadata::setDataLakeTableState(Paimon::TableStateSnapshot &&);
+template void StorageInMemoryMetadata::setDataLakeTableState(const Paimon::TableStateSnapshot &);
+template void StorageInMemoryMetadata::setDataLakeTableState(Paimon::TableStateSnapshot &);
+#endif
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+template void StorageInMemoryMetadata::setDataLakeTableState(DeltaLake::TableStateSnapshot &&);
+template void StorageInMemoryMetadata::setDataLakeTableState(const DeltaLake::TableStateSnapshot &);
+template void StorageInMemoryMetadata::setDataLakeTableState(DeltaLake::TableStateSnapshot &);
+#endif
+
+/// Some callers pass the variant itself (`DataLakeTableStateSnapshot`) \u2014 explicit
+/// instantiation for the alias too.
+template void StorageInMemoryMetadata::setDataLakeTableState(DataLakeTableStateSnapshot &&);
+template void StorageInMemoryMetadata::setDataLakeTableState(const DataLakeTableStateSnapshot &);
+template void StorageInMemoryMetadata::setDataLakeTableState(DataLakeTableStateSnapshot &);
 
 StorageInMemoryMetadata StorageInMemoryMetadata::withMetadataVersion(int32_t metadata_version_) const
 {
