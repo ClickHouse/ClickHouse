@@ -48,15 +48,13 @@ ObjectIteratorWithPathAndFileFilter::ObjectIteratorWithPathAndFileFilter(
     const NamesAndTypesList & virtual_columns_,
     const NamesAndTypesList & hive_partition_columns_,
     const std::string & object_namespace_,
-    const ContextPtr & context_,
-    std::function<void(FileProgress)> file_progress_callback_)
+    const ContextPtr & context_)
     : WithContext(context_)
     , iterator(iterator_)
     , object_namespace(object_namespace_)
     , virtual_columns(virtual_columns_)
     , hive_partition_columns(hive_partition_columns_)
     , filter_actions(getExpressionActions(filter_, virtual_columns, context_))
-    , file_progress_callback(std::move(file_progress_callback_))
 {
 }
 
@@ -92,14 +90,6 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
                 LOG_TRACE(log, "Filtered out object: {}", object->getPath());
                 continue;
             }
-        }
-
-        if (file_progress_callback)
-        {
-            if (auto metadata = object->getObjectMetadata())
-                file_progress_callback(FileProgress(0, metadata->size_bytes));
-            else if (auto hint = object->getFileSizeHint())
-                file_progress_callback(FileProgress(0, *hint));
         }
 
         return object;

@@ -54,9 +54,7 @@ static constexpr auto DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS = 54475;
 
 static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 1;
-/// Version 1 added the initiator's settings changes to the task.
-static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 1;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 0;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;
 
@@ -85,21 +83,6 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS = 54459;
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS = 54460;
 
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES = 54461;
-
-/// Upper bound on the number of password-complexity rules carried in the server
-/// Hello packet. Real-world configurations declare a handful of rules at most.
-/// The server rejects configurations that exceed this when constructing its Hello
-/// so the operator sees the limit at its own boundary; the client enforces the
-/// same bound on receive so a hostile server cannot force a huge `reserve`.
-static constexpr auto DBMS_MAX_PASSWORD_COMPLEXITY_RULES = 256;
-
-/// Upper bound on every server-supplied display string carried in the Hello packet
-/// (server name, time zone, display name, password-rule patterns and messages) and
-/// in post-handshake updates of the same fields. Legitimate values are short; a
-/// high cap is purely an attack surface. Enforced symmetrically: the server refuses
-/// to construct an oversized Hello (pointing at the misconfigured field), the
-/// client refuses to read one (defending against a hostile server).
-static constexpr auto DBMS_MAX_HELLO_STRING_SIZE = 4096;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 = 54462;
 
