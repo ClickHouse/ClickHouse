@@ -25,23 +25,18 @@ namespace ErrorCodes
 namespace
 {
 
-/// Returns true if the float column slice [start, end) contains at least one NaN.
-/// `ColumnVector::getExtremes` deliberately skips NaN when computing min/max (correct for
-/// `SELECT min()/max()` display), so a granule like `[1.0, nan, 3.0]` yields the clean range
-/// `[1.0, 3.0]` with no trace of the NaN. The minmax skip index, however, must reflect that the
-/// granule may contain NaN: in ClickHouse sort order NaN sorts after `+inf`, so the granule's true
-/// upper bound is NaN. Without it, a negated comparison such as `NOT ((val >= 0) AND (val <= 3))`
-/// is wrongly pruned even though NaN rows satisfy it (issue #106948). This detects that case so the
-/// aggregator can widen the stored max to NaN, tripping the existing NaN guard in
-/// `KeyCondition::checkInHyperrectangle`.
+/// Returns true if the float column slice [start, end) contains at least one non-NULL NaN.
+/// getExtremes skips NaN, so the aggregator needs this to detect a NaN the stored [min, max] hides.
+/// LowCardinality is materialized so the nested float is visible to the type checks below.
 bool columnSliceHasNaN(const IColumn & column, size_t start, size_t end)
 {
-    const IColumn * nested = &column;
+    auto full_column = column.convertToFullColumnIfLowCardinality();
+    const IColumn * nested = full_column.get();
     const NullMap * null_map = nullptr;
-    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(&column))
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(nested))
     {
-        nested = &column_nullable->getNestedColumn();
         null_map = &column_nullable->getNullMapData();
+        nested = &column_nullable->getNestedColumn();
     }
 
     auto check = [&](const auto & typed_column) -> bool
@@ -217,16 +212,20 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
     {
         auto index_column_name = index_sample_block.getByPosition(i).name;
         const auto & column = block.getByName(index_column_name).column;
-        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+        /// Materialize LowCardinality so getExtremesNullLast and the NaN check below see the nested float.
+        auto column_full = column->convertToFullColumnIfLowCardinality();
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column_full.get()))
             column_nullable->getExtremesNullLast(field_min, field_max, range_start, range_end);
         else
-            column->getExtremes(field_min, field_max, range_start, range_end);
+            column_full->getExtremes(field_min, field_max, range_start, range_end);
 
-        /// `getExtremes` skips NaN, so a granule that mixes finite floats with NaN (e.g. `[1.0, nan, 3.0]`)
-        /// reports a clean range that hides the NaN. NaN sorts after `+inf` in ClickHouse order, so the
-        /// granule's real upper bound is NaN; record it as the stored max so range analysis cannot prune
-        /// the granule under a negated comparison whose NaN rows actually match (issue #106948).
-        if (columnSliceHasNaN(*column, range_start, range_end))
+        /// getExtremes skips NaN, so a mixed granule (e.g. [1.0, nan, 3.0]) stores a clean [min, max] that
+        /// hides the NaN. NaN sorts after +inf, so the granule's true max is NaN: widen the stored max so
+        /// the NaN guard in KeyCondition::checkInHyperrectangle keeps the granule under a negated range.
+        /// But keep the NULLS_LAST +inf sentinel getExtremesNullLast sets for a NULL in the granule: it
+        /// already keeps the granule under negated ranges, and overwriting it with NaN would let
+        /// isNull(val) wrongly prune the granule. isPositiveInfinity() matches only that sentinel.
+        if (!field_max.isPositiveInfinity() && columnSliceHasNaN(*column_full, range_start, range_end))
             field_max = std::numeric_limits<Float64>::quiet_NaN();
 
         if (hyperrectangle.size() <= i)
