@@ -444,8 +444,8 @@ MULTITARGET_FUNCTION_HEADER(
                     params);
 
         typename Kernel::template State<ResultType> state;
-        for (size_t s = 0; s < unroll_count; ++s)
-            Kernel::template combine<ResultType>(state, partial[s], params);
+        for (const auto & p : partial)
+            Kernel::template combine<ResultType>(state, p, params);
 
         for (; i < count; ++i)
             Kernel::template accumulate<ResultType>(
@@ -518,8 +518,8 @@ MULTITARGET_FUNCTION_HEADER(
                     params);
 
         typename Kernel::template State<ResultType> state;
-        for (size_t s = 0; s < unroll_count; ++s)
-            Kernel::template combine<ResultType>(state, partial[s], params);
+        for (const auto & p : partial)
+            Kernel::template combine<ResultType>(state, p, params);
 
         for (; i < count; ++i)
             Kernel::template accumulate<ResultType>(
@@ -594,8 +594,8 @@ MULTITARGET_FUNCTION_HEADER(
                     params);
 
         typename Kernel::template State<ResultType> state;
-        for (size_t s = 0; s < unroll_count; ++s)
-            Kernel::template combine<ResultType>(state, partial[s], params);
+        for (const auto & p : partial)
+            Kernel::template combine<ResultType>(state, p, params);
 
         for (; i < array_size; ++i)
             Kernel::template accumulate<ResultType>(
@@ -665,8 +665,8 @@ MULTITARGET_FUNCTION_HEADER(
                     params);
 
         typename Kernel::template State<ResultType> state;
-        for (size_t s = 0; s < unroll_count; ++s)
-            Kernel::template combine<ResultType>(state, partial[s], params);
+        for (const auto & p : partial)
+            Kernel::template combine<ResultType>(state, p, params);
 
         for (; i < array_size; ++i)
             Kernel::template accumulate<ResultType>(
