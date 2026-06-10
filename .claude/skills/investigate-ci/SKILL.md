@@ -82,6 +82,8 @@ This pulls the failed tests **and their output** straight from the praktika `res
   after listing reports (run the tool with no `--failed` to see the index).
 - Record the PR number and the exact failed **test names** as they appear — the names must
   match `checks.test_name` for step 3 (and feed the issue search in step 2).
+- Record the **count** of failed tests. The cheap steps (2–3) always run over all of them, but
+  a large count changes how step 3 scopes the expensive deep-dive — see "Scope the deep-dive".
 
 ### 2. Search for an existing GitHub issue
 
@@ -193,6 +195,21 @@ Always keep the per-test **CIDB link** from step 1 in the final report for manua
 Tests classified **FLAKY** need no artifacts — go straight to the report. Only **REAL**,
 **UNCERTAIN**, or **INFRA/BUILD** failures need the step-4 download.
 
+**Scope the deep-dive (many failures).** Steps 2–3 are cheap and always classify *every* failed
+test — never silently drop any. The classification itself is the first filter: it usually leaves
+only a handful of non-FLAKY tests, and steps 4–5 deep-dive only those. Before fanning out, check
+two things:
+
+- **Shared root cause?** When many *unrelated* tests fail with the **same** proximate error
+  (server won't start, a build/link error, an early-setup or infra failure), they almost always
+  share one cause. Investigate it **once**, not per-test — group them in the report under a single
+  hypothesis. The step-3 per-failure detail query (failure-mode preview) is how you spot this.
+- **Still many independent failures?** If more than a handful (~5) of genuinely distinct
+  non-FLAKY failures remain, do **not** auto-spawn a subagent per test. List them with their
+  one-line classifications and **ask the user which to investigate** (e.g. "the test this PR adds",
+  "the 3 REAL ones", or a named subset). Report the full classification table regardless; only the
+  expensive root-cause read is gated on the user's choice.
+
 ### 4. Download the harness artifacts (only as needed)
 
 Download applies **only to the tests step 3 left as `REAL`, `UNCERTAIN`, or `INFRA/BUILD`**. If
@@ -256,10 +273,11 @@ grep "<test_name>" tmp/investigate/ci/tmp/pytest_parallel.jsonl \
 ### 5. Root-cause read (subagents)
 
 If reading the error and source in step 4 already settled the root cause, just write it up — this
-step is only for failures that still need digging. When delegating, and especially when there are
-artifacts to wade through, use subagents that return a concise summary, not raw dumps (per
-CLAUDE.md). Launch one subagent per failed test (or per log bundle) in parallel. Give each
-subagent:
+step is only for failures that still need digging. Dig **only into the failures step 3 scoped for
+deep-dive** — the non-FLAKY ones the user confirmed, or a single shared-root-cause group — not
+every failed test. When delegating, and especially when there are artifacts to wade through, use
+subagents that return a concise summary, not raw dumps (per CLAUDE.md). Launch one subagent per
+selected failure (or per shared-cause group) in parallel. Give each subagent:
 
 - the failure output from step 1,
 - the path(s) to any artifacts downloaded in step 4 (omit if none were needed),
