@@ -12,11 +12,11 @@ namespace ProfileEvents
     extern const Event ReaderExecutorSourceRequests;
     extern const Event ReaderExecutorBytesFromSource;
     extern const Event ReaderExecutorRequestedBytes;
+    extern const Event ReaderExecutorCacheGetRequests;
+    extern const Event ReaderExecutorCachePopulateRequests;
+    extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorWorkMicroseconds;
     extern const Event ReaderExecutorModeledCostMicroseconds;
-    /// ReaderExecutorCacheGetRequests / ReaderExecutorCachePopulateRequests /
-    /// ReaderExecutorIncompleteConnections are declared in ProfileEvents.cpp and read 0
-    /// until the cache and connection-reuse features add their increment sites.
 }
 
 namespace CurrentMetrics
@@ -32,52 +32,44 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-namespace
+void ReaderExecutor::Stats::add(Counter c, UInt64 value)
 {
-    /// Heuristic S3 cost weights (microseconds) for the modeled-cost KPI, documented at
-    /// `ProfileEvents::ReaderExecutorModeledCostMicroseconds`. Each counter contributes
-    /// `weight * count` to the modeled cost as it changes. Only the source-side weights
-    /// are used in this slice; the cache / connection weights land with their features.
-    constexpr UInt64 SOURCE_REQUEST_COST_US = 30000;
-    constexpr UInt64 SOURCE_BYTES_COST_US_PER_MIB = 20000;
-
-    /// RAII timer: on destruction adds its lifetime (microseconds) to `counter` and
-    /// increments the matching ProfileEvent, so a scope's elapsed time is accounted
-    /// without a separate SCOPE_EXIT.
-    class StatTimer
+    values[c] += value;
+    /// Map the counter to its ProfileEvent, and for the cost-model counters also emit the
+    /// modeled-cost contribution -- the heuristic S3 weights (microseconds) documented at
+    /// `ProfileEvents::ReaderExecutorModeledCostMicroseconds`. Counters whose features are
+    /// not implemented yet (cache, connection reuse) have no caller, so they stay 0.
+    switch (c)
     {
-    public:
-        StatTimer(UInt64 & counter_, ProfileEvents::Event event_) : counter(counter_), event(event_) {}
-        ~StatTimer()
-        {
-            const UInt64 us = watch.elapsedMicroseconds();
-            counter += us;
-            ProfileEvents::increment(event, us);
-        }
-
-        StatTimer(const StatTimer &) = delete;
-        StatTimer & operator=(const StatTimer &) = delete;
-
-    private:
-        UInt64 & counter;
-        ProfileEvents::Event event;
-        Stopwatch watch;
-    };
-}
-
-void ReaderExecutor::Stats::onSourceRead(size_t bytes)
-{
-    const UInt64 cost = SOURCE_REQUEST_COST_US + SOURCE_BYTES_COST_US_PER_MIB * bytes / (1024 * 1024);
-
-    source_requests += 1;
-    bytes_from_source += bytes;
-    bytes_requested += bytes;
-    modeled_cost_us += cost;
-
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorSourceRequests, 1);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromSource, bytes);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorRequestedBytes, bytes);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, cost);
+        case SourceRequests:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorSourceRequests, value);
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 30000 * value);
+            break;
+        case BytesFromSource:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromSource, value);
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 20000ULL * value / (1024 * 1024));
+            break;
+        case RequestedBytes:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorRequestedBytes, value);
+            break;
+        case IncompleteConnections:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorIncompleteConnections, value);
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 5000 * value);
+            break;
+        case CacheGetRequests:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheGetRequests, value);
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 50 * value);
+            break;
+        case CachePopulateRequests:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorCachePopulateRequests, value);
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 100 * value);
+            break;
+        case WorkMicroseconds:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorWorkMicroseconds, value);
+            break;
+        case NumCounters:
+            break;
+    }
 }
 
 ReaderExecutor::ReaderExecutor(
@@ -96,20 +88,19 @@ ReaderExecutor::ReaderExecutor(
 
 ReaderExecutor::~ReaderExecutor()
 {
-    /// ProfileEvents are incremented instantly in `readNextChunk` so `system.events`
-    /// and the KPI reflect the executor in real time. The per-instance `Stats` mirror
-    /// them only to write this final summary report (a future PR will also turn it
-    /// into a `system.reader_executor_log` row).
+    /// ProfileEvents are emitted instantly inside `Stats::add` so `system.events` and the
+    /// KPI reflect the executor in real time. The per-instance `Stats` are read back here
+    /// only to write this final summary report (a future PR will also turn it into a
+    /// `system.reader_executor_log` row).
     LOG_DEBUG(log,
-        "Finished: file={}, source_requests={}, bytes_from_source={}, bytes_requested={}, "
-        "work_us={}, modeled_cost_us={}",
-        log_file_path, stats.source_requests, stats.bytes_from_source, stats.bytes_requested,
-        stats.work_microseconds, stats.modeled_cost_us);
+        "Destroyed: file={} src_reqs={} from_source={} requested={} work_us={}",
+        log_file_path, stats.get(Stats::SourceRequests), stats.get(Stats::BytesFromSource),
+        stats.get(Stats::RequestedBytes), stats.get(Stats::WorkMicroseconds));
 }
 
 ReaderExecutor::Chunk ReaderExecutor::readNextChunk()
 {
-    StatTimer work_timer(stats.work_microseconds, ProfileEvents::ReaderExecutorWorkMicroseconds);
+    StatTimer work_timer(stats, Stats::WorkMicroseconds);
 
     if (atEnd())
         return {};
@@ -158,10 +149,12 @@ ReaderExecutor::Chunk ReaderExecutor::readNextChunk()
     block.resize(want);
     const size_t got = buffer->read(block.data(), want);
 
-    /// One open+read per chunk in this minimal slice; every chunk is served straight
-    /// from the source. `onSourceRead` updates the tally and increments the matching
-    /// ProfileEvents instantly.
-    stats.onSourceRead(got);
+    /// One open+read per chunk in this minimal slice; every chunk is served straight from
+    /// the source, so requested bytes equal source bytes. Each `add` updates the tally and
+    /// emits the matching ProfileEvent (and the modeled-cost contribution) instantly.
+    stats.add(Stats::SourceRequests);
+    stats.add(Stats::BytesFromSource, got);
+    stats.add(Stats::RequestedBytes, got);
 
     if (offset_map.hasUnknownSize())
     {

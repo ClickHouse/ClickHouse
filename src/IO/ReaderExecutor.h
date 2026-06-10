@@ -6,8 +6,10 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
+#include <Common/Stopwatch.h>
 #include <base/types.h>
 
+#include <array>
 #include <memory>
 #include <optional>
 
@@ -62,31 +64,66 @@ public:
     String getFileName() const { return log_file_path; }
 
 private:
-    /// Per-instance tally of the inputs to the modeled-cost KPI. Mirrors the
-    /// ProfileEvents that `onSourceRead` / `onWork` increment instantly; kept per
-    /// instance only to write the final summary log report in the destructor. The
-    /// cache/connection fields stay 0 in this minimal slice (those features are not
-    /// implemented yet); they are kept so the KPI formula is complete and lights up
-    /// when the corresponding feature PRs add their increment sites.
+    /// Per-instance tally of the read-path counters. `add` is the only mutator and the
+    /// single place a counter maps to its ProfileEvent (and, for the cost-model counters,
+    /// to the modeled-cost contribution), so a counter and its event can never drift and
+    /// every update is observable instantly. `get` reads back for the final report. The
+    /// cache / connection counters have no caller in this minimal slice (those features
+    /// are not implemented yet); they stay 0 but are listed so the cost model is complete
+    /// and lights up when the corresponding feature PRs add their `add` sites.
     struct Stats
     {
-        UInt64 source_requests = 0;          /// chunks opened and read from the source
-        UInt64 bytes_from_source = 0;        /// physical bytes read from the source
-        UInt64 bytes_requested = 0;          /// useful bytes delivered to the caller (KPI denominator)
-        UInt64 incomplete_connections = 0;   /// 0: no source-connection reuse yet
-        UInt64 cache_get_requests = 0;       /// 0: no cache tiers yet
-        UInt64 cache_populate_requests = 0;  /// 0: no cache tiers yet
-        UInt64 work_microseconds = 0;        /// total time spent in readNextChunk
-        /// Modeled I/O cost in microseconds: a synthetic optimality proxy (not latency),
-        /// accumulated as `weight * count` whenever a related counter changes (the
-        /// heuristic S3 weights are documented at
-        /// `ProfileEvents::ReaderExecutorModeledCostMicroseconds`). The cache / connection
-        /// terms are 0 until those features add their own increment sites.
-        UInt64 modeled_cost_us = 0;
+        enum Counter : size_t
+        {
+            SourceRequests,         /// chunks opened and read from the source
+            BytesFromSource,        /// physical bytes read from the source
+            RequestedBytes,         /// useful bytes delivered to the caller (KPI denominator)
+            IncompleteConnections,  /// 0: no source-connection reuse yet
+            CacheGetRequests,       /// 0: no cache tiers yet
+            CachePopulateRequests,  /// 0: no cache tiers yet
+            WorkMicroseconds,       /// total time spent in readNextChunk
+            NumCounters,
+        };
 
-        /// Record a source read of `bytes`: update the tally, add the source terms to the
-        /// modeled cost, and increment the matching ProfileEvents instantly.
-        void onSourceRead(size_t bytes);
+        /// Setter: bump `c` by `value` AND emit its ProfileEvent (plus the modeled-cost
+        /// contribution for the cost-model counters) -- the one place ProfileEvents are
+        /// incremented, so events advance as the read happens.
+        void add(Counter c, UInt64 value = 1);
+
+        /// Getter: read a counter for the final report. Does not emit.
+        UInt64 get(Counter c) const { return values[c]; }
+
+        /// Roll another tally into this one for the report aggregate WITHOUT re-emitting
+        /// (the source already emitted each counter at its `add`). Lets a future transient
+        /// sub-executor (e.g. a random-access `readBigAt`) report through the parent. No
+        /// caller yet in this slice.
+        Stats & operator+=(const Stats & o)
+        {
+            for (size_t i = 0; i < NumCounters; ++i)
+                values[i] += o.values[i];
+            return *this;
+        }
+
+    private:
+        std::array<UInt64, NumCounters> values{};
+    };
+
+    /// RAII timer: on scope exit adds the elapsed microseconds to a `Stats` timing counter
+    /// via `Stats::add` (which also emits the matching ProfileEvent), so even the `_us`
+    /// counters flow through the one setter.
+    class StatTimer
+    {
+    public:
+        StatTimer(Stats & target_, Stats::Counter counter_) : target(target_), counter(counter_) {}
+        ~StatTimer() { target.add(counter, watch.elapsedMicroseconds()); }
+
+        StatTimer(const StatTimer &) = delete;
+        StatTimer & operator=(const StatTimer &) = delete;
+
+    private:
+        Stats & target;
+        Stats::Counter counter;
+        Stopwatch watch;
     };
 
     /// At known size, EOF is `position >= totalSize`. At unknown size, a short
