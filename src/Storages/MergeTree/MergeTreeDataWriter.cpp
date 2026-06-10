@@ -756,7 +756,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    if (((*data_settings)[MergeTreeSetting::optimize_row_order] || ((*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by] && !metadata_snapshot->hasSortingKey()))
+    /// An explicitly set `optimize_row_order = 0` opts the table out of row order optimization
+    /// even when `optimize_row_order_if_no_order_by` would enable it for a table without a sorting key.
+    const bool optimize_row_order_enabled = (*data_settings)[MergeTreeSetting::optimize_row_order]
+        || ((*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by]
+            && !data_settings->isChanged("optimize_row_order")
+            && !metadata_snapshot->hasSortingKey());
+    if (optimize_row_order_enabled
         && data.merging_params.mode
             == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
@@ -1103,9 +1109,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     /// The `optimize_row_order_if_no_order_by` setting refers to the parent table having no explicit `ORDER BY`,
     /// not to the projection's own (often empty) sorting key. A sorted parent table may have unsorted/aggregate
     /// projections, and we should not broaden the new default to them. Explicit `optimize_row_order` keeps applying
-    /// to projections as before.
+    /// to projections as before, and an explicitly set `optimize_row_order = 0` opts out here as well.
     const bool parent_table_has_sorting_key = parent_part->getMetadataSnapshot()->hasSortingKey();
-    if (((*data_settings)[MergeTreeSetting::optimize_row_order] || ((*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by] && !parent_table_has_sorting_key))
+    const bool optimize_row_order_enabled = (*data_settings)[MergeTreeSetting::optimize_row_order]
+        || ((*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by]
+            && !data_settings->isChanged("optimize_row_order")
+            && !parent_table_has_sorting_key);
+    if (optimize_row_order_enabled
         && data.merging_params.mode
             == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {

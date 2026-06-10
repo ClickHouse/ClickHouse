@@ -1061,6 +1061,9 @@ namespace ErrorCodes
     optimize the row order of the new data. Disable this setting if preserving the
     original insert order of the rows or maximizing insert throughput matters more
     than compression.
+
+    An explicitly set `optimize_row_order = 0` takes precedence: such a table is
+    never row-order optimized, regardless of this setting.
     )", 0) \
     DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
     Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
@@ -2611,6 +2614,11 @@ MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, IMPLEMENT_SETTING_SUBSCRIP
 bool MergeTreeSettings::has(std::string_view name) const
 {
     return impl->has(name);
+}
+
+bool MergeTreeSettings::isChanged(std::string_view name) const
+{
+    return impl->isChanged(name);
 }
 
 bool MergeTreeSettings::tryGet(std::string_view name, Field & value) const

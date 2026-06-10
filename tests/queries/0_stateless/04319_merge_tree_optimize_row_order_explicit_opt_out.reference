@@ -1,0 +1,8 @@
+opt_out preserves insertion order
+1
+opt_out wins over explicit enable
+1
+opt_out with projection preserves insertion order
+1
+optimized differs from insertion order
+1
