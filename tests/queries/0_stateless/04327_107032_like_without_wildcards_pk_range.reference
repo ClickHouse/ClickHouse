@@ -17,3 +17,6 @@ Text index is used for a wildcard-free LIKE
 Name: idx
 1
 1
+A trailing escape is not optimized into an exact point range
+Condition: (value in [\'a\', \'b\'))
+LIKE / NOT LIKE with a trailing escape raise instead of being pruned away

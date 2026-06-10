@@ -56,3 +56,22 @@ SELECT count() FROM t_like_text WHERE value LIKE 'needle';
 SELECT count() FROM t_like_text WHERE value = 'needle';
 
 DROP TABLE t_like_text;
+
+DROP TABLE IF EXISTS t_like_trailing_escape;
+
+CREATE TABLE t_like_trailing_escape (value String)
+ENGINE = MergeTree ORDER BY value SETTINGS index_granularity = 8192;
+
+-- 'a\' sorts before 'aa', so an exact range ['a', 'a'] would wrongly prune the 'a\' granule and the
+-- query would never reach the matcher that rejects a trailing escape with CANNOT_PARSE_ESCAPE_SEQUENCE.
+INSERT INTO t_like_trailing_escape VALUES ('a\\'), ('aa');
+
+SELECT 'A trailing escape is not optimized into an exact point range';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_like_trailing_escape WHERE value LIKE 'a\\') WHERE explain LIKE '%Condition:%';
+
+SELECT 'LIKE / NOT LIKE with a trailing escape raise instead of being pruned away';
+SELECT count() FROM t_like_trailing_escape WHERE value LIKE 'a\\'; -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+SELECT count() FROM t_like_trailing_escape WHERE value NOT LIKE 'a\\'; -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+SELECT count() FROM t_like_trailing_escape WHERE value LIKE 'a\\' SETTINGS force_primary_key = 1; -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+
+DROP TABLE t_like_trailing_escape;

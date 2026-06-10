@@ -88,8 +88,14 @@ std::tuple<String, bool, bool> extractFixedPrefixFromLikePattern(std::string_vie
             case '\\':
             {
                 ++pos;
+                /// A trailing escape is an invalid pattern the matcher rejects; never report it as exact,
+                /// or a point range would prune the granule and skip that exception.
                 if (pos == end)
-                    break;
+                {
+                    if (requires_perfect_prefix)
+                        return {"", false, false};
+                    return {fixed_prefix, false, false};
+                }
                 [[fallthrough]];
             }
             default:
