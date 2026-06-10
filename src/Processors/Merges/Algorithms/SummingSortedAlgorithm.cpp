@@ -297,51 +297,44 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         bool is_non_empty_tuple = typeid_cast<const DataTypeTuple *>(column.type.get()) && !typeid_cast<const DataTypeTuple *>(column.type.get())->getElements().empty();
         if (aggregate_all_columns && (is_non_empty_tuple || typeid_cast<const DataTypeArray *>(column.type.get())) && !simple)
         {
-            /// if nested table name ends with `Map` it is a possible candidate for special handling
-            bool is_nested_map_candidate = false;
-            if (!allow_tuple_element_aggregation)
+            /// In aggregate_all_columns (Coalescing) mode every column is aggregated as a whole,
+            /// tuples and arrays included. The `xxxMap` name convention is a SummingMergeTree feature
+            /// (sumMap merges values by key, see the Array branch below); Coalescing has no by-key
+            /// merge, so a `…Map` column is coalesced like any other column (its last value wins).
+            if (!column_names_to_sum.empty()
+                && !isColumnOrAncestorInNames(i, header_flatten, flatten_ancestors, column_names_to_sum))
             {
-                const auto map_name = Nested::extractTableName(column.name);
-                is_nested_map_candidate = map_name != column.name && endsWith(map_name, "Map");
+                def.column_numbers_not_to_aggregate.push_back(i);
             }
-
-            if (!is_nested_map_candidate)
+            else
             {
-                if (!column_names_to_sum.empty()
-                    && !isColumnOrAncestorInNames(i, header_flatten, flatten_ancestors, column_names_to_sum))
+                bool is_agg_func = WhichDataType(column.type).isAggregateFunction();
+
+                SummingSortedAlgorithm::AggregateDescription desc;
+                desc.remove_default_values = remove_default_values;
+                desc.aggregate_all_columns = aggregate_all_columns;
+                desc.sum_function_map_name = sum_function_map_name;
+                desc.is_agg_func_type = is_agg_func;
+                desc.column_numbers = {i};
+
+                desc.real_type = column.type;
+                desc.nested_type = recursiveRemoveLowCardinality(desc.real_type);
+                if (desc.real_type.get() == desc.nested_type.get())
+                    desc.nested_type = nullptr;
+
+                if (simple)
                 {
-                    def.column_numbers_not_to_aggregate.push_back(i);
+                    // simple aggregate function
+                    desc.init(simple->getFunction(), true);
+                    if (desc.function->allocatesMemoryInArena())
+                        def.allocates_memory_in_arena = true;
                 }
-                else
+                else if (!is_agg_func)
                 {
-                    bool is_agg_func = WhichDataType(column.type).isAggregateFunction();
-
-                    SummingSortedAlgorithm::AggregateDescription desc;
-                    desc.remove_default_values = remove_default_values;
-                    desc.aggregate_all_columns = aggregate_all_columns;
-                    desc.sum_function_map_name = sum_function_map_name;
-                    desc.is_agg_func_type = is_agg_func;
-                    desc.column_numbers = {i};
-
-                    desc.real_type = column.type;
-                    desc.nested_type = recursiveRemoveLowCardinality(desc.real_type);
-                    if (desc.real_type.get() == desc.nested_type.get())
-                        desc.nested_type = nullptr;
-
-                    if (simple)
-                    {
-                        // simple aggregate function
-                        desc.init(simple->getFunction(), true);
-                        if (desc.function->allocatesMemoryInArena())
-                            def.allocates_memory_in_arena = true;
-                    }
-                    else if (!is_agg_func)
-                    {
-                        desc.init(sum_function_name.c_str(), {column.type});
-                    }
-
-                    def.columns_to_aggregate.emplace_back(std::move(desc));
+                    desc.init(sum_function_name.c_str(), {column.type});
                 }
+
+                def.columns_to_aggregate.emplace_back(std::move(desc));
             }
 
             continue;
