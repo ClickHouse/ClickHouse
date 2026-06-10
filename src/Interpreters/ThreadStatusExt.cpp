@@ -144,12 +144,14 @@ void checkAndUnregisterOnDestroy(const ThreadGroup * group)
     std::lock_guard lock(r.mutex);
     r.child_to_parent.erase(group);
     r.child_create_stack.erase(group);
+    bool violated = false;
     for (const auto & [child, parent] : r.child_to_parent)
     {
         if (parent != group)
             continue;
+        violated = true;
         const auto it = r.child_create_stack.find(child);
-        LOG_ERROR(
+        LOG_FATAL(
             getLogger("BorrowedThreadGroupChecker"),
             "BORROWED THREADGROUP INVARIANT VIOLATION: ThreadGroup {} is being destroyed while borrowed child {} still references it "
             "as parent — its raw memory_tracker/performance_counters pointers now dangle. The borrowed child was created at:\n{}",
@@ -157,6 +159,10 @@ void checkAndUnregisterOnDestroy(const ThreadGroup * group)
             static_cast<const void *>(child),
             it != r.child_create_stack.end() ? it->second.toString() : String("<no stack captured>"));
     }
+    /// Fail loudly instead of only logging, so CI catches the violation deterministically — even in a
+    /// debug build, or an ASan run where the racy use-after-free read happens not to land.
+    if (violated)
+        abort();
 }
 
 /// Borrowed-ThreadGroup traverse-sleep amplifier (debug/sanitizer only; ON by default). When a thread is
