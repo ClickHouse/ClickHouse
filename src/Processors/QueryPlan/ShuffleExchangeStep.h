@@ -27,7 +27,7 @@ public:
 
     QueryPlanStepPtr clone() const override
     {
-        return std::make_unique<ShuffleExchangeStep>(input_headers.front(), key_names, source_bucket_count, result_bucket_count);
+        return std::make_unique<ShuffleExchangeStep>(input_headers.front(), key_names, source_bucket_count, result_bucket_count, hash_cast_types);
     }
 
     void transformPipeline(QueryPipelineBuilder & /*pipeline*/, const BuildQueryPipelineSettings &) override

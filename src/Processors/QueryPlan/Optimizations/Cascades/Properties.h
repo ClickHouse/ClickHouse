@@ -26,6 +26,9 @@ using DistributionColumns = std::vector<NameSet>;
 struct DistributionDescription
 {
     DistributionColumns columns;    /// Columns by which data is distributed. E.g. for shuffle exchange or partitioned table scan.
+    /// Type each key is cast to before hashing (parallel to `columns`; empty when the raw
+    /// types agree). Aligns buckets across both sides of a shuffle join.
+    Names hash_type_names;
     bool is_replicated = false;     /// All data is replicated to all nodes, so any distribution is satisfied. E.g. for small tables that are broadcasted to all nodes.
     size_t node_count = 1;          /// Number of nodes among which data is distributed. E.g. for shuffle exchange of partitioned read.
 
@@ -62,6 +65,8 @@ struct ExpressionPropertiesHash
         for (const auto & col_set : props.distribution.columns)
             for (const auto & name : col_set)
                 boost::hash_combine(h, name);
+        for (const auto & type_name : props.distribution.hash_type_names)
+            boost::hash_combine(h, type_name);
         for (const auto & col : props.sorting)
             boost::hash_combine(h, col.column_name);
         return h;

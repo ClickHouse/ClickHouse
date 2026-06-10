@@ -1,3 +1,4 @@
+#include <DataTypes/getLeastSupertype.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -72,8 +73,12 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
         return result;
 
     /// Pre-compute equi-join key pairs for shuffle strategies (shared across all node counts).
-    struct JoinKeyPair { String left; String right; };
+    /// `hash_type_name` is the least supertype both sides are cast to before hashing when
+    /// the raw key types differ (otherwise the sides hash to different buckets); empty when
+    /// they agree. Keys with no common supertype are skipped.
+    struct JoinKeyPair { String left; String right; String hash_type_name; String raw_type_name; };
     std::vector<JoinKeyPair> equi_keys;
+    bool needs_hash_cast = false;
     if (!join_step->getJoinOperator().expression.empty())
     {
         for (const auto & predicate : join_step->getJoinOperator().expression)
@@ -87,9 +92,28 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
             else if (!left_node.fromLeft() || !right_node.fromRight())
                 continue;
 
-            equi_keys.push_back({left_node.getColumnName(), right_node.getColumnName()});
+            String hash_type_name;
+            DataTypePtr left_type = left_node.getType();
+            DataTypePtr right_type = right_node.getType();
+            if (!left_type->equals(*right_type))
+            {
+                DataTypePtr common_type = tryGetLeastSupertype(DataTypes{left_type, right_type});
+                if (!common_type)
+                    continue;
+                hash_type_name = common_type->getName();
+                needs_hash_cast = true;
+            }
+
+            equi_keys.push_back({left_node.getColumnName(), right_node.getColumnName(), std::move(hash_type_name), left_type->getName()});
         }
     }
+
+    /// When any key needs a cast, the cast type must be pinned for every shuffle key so
+    /// that the per-key type lists on both sides stay aligned with the key order.
+    auto hash_type_for = [&](const JoinKeyPair & key) -> const String &
+    {
+        return key.hash_type_name.empty() ? key.raw_type_name : key.hash_type_name;
+    };
 
     /// Broadcast replicates the right side, so it is only safe when every output row is
     /// driven by the partitioned left side: RIGHT and FULL emit unmatched right-side rows
@@ -145,22 +169,45 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
             DistributionDescription output_dist;
             output_dist.node_count = candidate_node_count;
 
+            auto add_key = [&](const JoinKeyPair & key)
+            {
+                left_dist.columns.push_back({key.left});
+                right_dist.columns.push_back({key.right});
+                output_dist.columns.push_back({key.left, key.right});
+                if (needs_hash_cast)
+                {
+                    String type_name = hash_type_for(key);
+                    left_dist.hash_type_names.push_back(type_name);
+                    right_dist.hash_type_names.push_back(type_name);
+                    output_dist.hash_type_names.push_back(type_name);
+                }
+            };
+            auto clear_keys = [&]()
+            {
+                left_dist.columns.clear();
+                right_dist.columns.clear();
+                output_dist.columns.clear();
+                left_dist.hash_type_names.clear();
+                right_dist.hash_type_names.clear();
+                output_dist.hash_type_names.clear();
+            };
+
             /// If the parent requires specific distribution columns, try to match them to join
             /// keys so the join output directly satisfies the parent's distribution requirement.
             /// Fall back to all equi-join keys if not all required columns can be matched.
+            /// Note: with pinned hash types the parent requirement (no types) never matches,
+            /// so this colocation shortcut applies only to equal-type keys.
             if (!required_properties.distribution.columns.empty())
             {
                 bool all_matched = true;
                 for (const auto & required_col_set : required_properties.distribution.columns)
                 {
                     bool found = false;
-                    for (const auto & [left_col, right_col] : equi_keys)
+                    for (const auto & key : equi_keys)
                     {
-                        if (required_col_set.contains(left_col) || required_col_set.contains(right_col))
+                        if (required_col_set.contains(key.left) || required_col_set.contains(key.right))
                         {
-                            left_dist.columns.push_back({left_col});
-                            right_dist.columns.push_back({right_col});
-                            output_dist.columns.push_back({left_col, right_col});
+                            add_key(key);
                             found = true;
                             break;
                         }
@@ -175,25 +222,15 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
                 if (!all_matched)
                 {
                     /// Required columns cannot all be matched to join keys — use all equi-join keys.
-                    left_dist.columns.clear();
-                    right_dist.columns.clear();
-                    output_dist.columns.clear();
-                    for (const auto & [left_col, right_col] : equi_keys)
-                    {
-                        left_dist.columns.push_back({left_col});
-                        right_dist.columns.push_back({right_col});
-                        output_dist.columns.push_back({left_col, right_col});
-                    }
+                    clear_keys();
+                    for (const auto & key : equi_keys)
+                        add_key(key);
                 }
             }
             else
             {
-                for (const auto & [left_col, right_col] : equi_keys)
-                {
-                    left_dist.columns.push_back({left_col});
-                    right_dist.columns.push_back({right_col});
-                    output_dist.columns.push_back({left_col, right_col});
-                }
+                for (const auto & key : equi_keys)
+                    add_key(key);
             }
 
             GroupExpressionPtr partitioned_join = std::make_shared<GroupExpression>(*expression);
@@ -215,23 +252,30 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
         /// matching pairs where A=A' are co-located; B=B' is checked locally in the hash table.
         if (equi_keys.size() >= 2)
         {
-            for (const auto & [left_col, right_col] : equi_keys)
+            for (const auto & key : equi_keys)
             {
                 DistributionDescription single_left_dist;
                 single_left_dist.node_count = candidate_node_count;
-                single_left_dist.columns.push_back({left_col});
+                single_left_dist.columns.push_back({key.left});
 
                 DistributionDescription single_right_dist;
                 single_right_dist.node_count = candidate_node_count;
-                single_right_dist.columns.push_back({right_col});
+                single_right_dist.columns.push_back({key.right});
 
                 DistributionDescription single_output_dist;
                 single_output_dist.node_count = candidate_node_count;
-                single_output_dist.columns.push_back({left_col, right_col});
+                single_output_dist.columns.push_back({key.left, key.right});
+
+                if (!key.hash_type_name.empty())
+                {
+                    single_left_dist.hash_type_names.push_back(key.hash_type_name);
+                    single_right_dist.hash_type_names.push_back(key.hash_type_name);
+                    single_output_dist.hash_type_names.push_back(key.hash_type_name);
+                }
 
                 GroupExpressionPtr single_key_join = std::make_shared<GroupExpression>(*expression);
                 single_key_join->strategy = std::make_shared<ShuffleJoinStrategy>();
-                single_key_join->description_suffix = fmt::format("(by {})", left_col);
+                single_key_join->description_suffix = fmt::format("(by {})", key.left);
                 single_key_join->inputs[0].required_properties.distribution = single_left_dist;
                 single_key_join->inputs[1].required_properties.distribution = single_right_dist;
                 single_key_join->properties.distribution = single_output_dist;

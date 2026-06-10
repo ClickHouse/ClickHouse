@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeFactory.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -133,17 +134,29 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
             shuffle_columns.push_back(*distribution_column.begin());
         }
 
+        /// Cast keys before hashing when the requirement pins hash types (mismatched
+        /// join key types), so both sides of the join hash into the same buckets.
+        DataTypes hash_cast_types;
+        if (!required_properties.distribution.hash_type_names.empty())
+        {
+            const auto & type_factory = DataTypeFactory::instance();
+            for (const auto & type_name : required_properties.distribution.hash_type_names)
+                hash_cast_types.push_back(type_factory.get(type_name));
+        }
+
         QueryPlanStepPtr exchange_step =
             (expression->properties.distribution.node_count == 1)
             ? QueryPlanStepPtr(std::make_unique<ScatterExchangeStep>(
                 input_header,
                 std::move(shuffle_columns),
-                required_properties.distribution.node_count))
+                required_properties.distribution.node_count,
+                std::move(hash_cast_types)))
             : QueryPlanStepPtr(std::make_unique<ShuffleExchangeStep>(
                 input_header,
                 std::move(shuffle_columns),
                 expression->properties.distribution.node_count,
-                required_properties.distribution.node_count));
+                required_properties.distribution.node_count,
+                std::move(hash_cast_types)));
 
         ExpressionProperties input_required;
         input_required.distribution.node_count = expression->properties.distribution.node_count;

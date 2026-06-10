@@ -36,21 +36,24 @@ bool ExpressionProperties::isDistributionSatisfiedBy(const DistributionDescripti
     if (required.columns.size() != existing.columns.size())
         return false;
 
-    for (const auto & required_column : required.columns)
+    /// The partition hash chains the key columns in order and may cast them first, so the
+    /// match must be positional and the hash types must agree: data shuffled by `(b, a)`
+    /// or hashed at a different type does not colocate with data shuffled by `(a, b)`.
+    if (required.hash_type_names != existing.hash_type_names)
+        return false;
+
+    for (size_t i = 0; i < required.columns.size(); ++i)
     {
+        const auto & required_column = required.columns[i];
+        const auto & existing_column = existing.columns[i];
         bool found = false;
         for (const auto & equivalent_column : required_column)
         {
-            for (const auto & existing_column : existing.columns)
+            if (existing_column.contains(equivalent_column))
             {
-                if (existing_column.contains(equivalent_column))
-                {
-                    found = true;
-                    break;
-                }
-            }
-            if (found)
+                found = true;
                 break;
+            }
         }
         if (!found)
             return false;
