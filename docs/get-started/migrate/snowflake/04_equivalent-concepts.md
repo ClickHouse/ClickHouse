@@ -69,7 +69,11 @@ ClickHouse has no separate database-role tier, but ClickHouse Cloud can still gr
 
 ## Billing and pricing model {#billing}
 
-ClickHouse Cloud meters compute as per-minute [compute units (8 GiB RAM, 2 vCPU)](/cloud/manage/billing/overview#how-is-compute-metered) rather than as credits scaled by warehouse size, charges for storage as compressed bytes without Time Travel or Fail-safe overhead, and bills backups as a separate line item rather than bundling them into retention windows. Most Snowflake "serverless compute" features (Snowpipe, Search Optimization, Auto-clustering, materialized view refresh, Cortex) are bundled into service compute on ClickHouse; [ClickPipes](/integrations/clickpipes) is the explicit exception and is [metered separately](/cloud/reference/billing/clickpipes). As in Snowflake, ClickHouse Cloud charges for public internet egress and cross-region data transfer and offers committed-spend discounts. See [ClickHouse Cloud pricing](/cloud/manage/billing/overview) for current rates, tiers, and commitment options.
+ClickHouse bills based on dedicated machines, metered in per-minute [compute units (8 GiB RAM, 2 vCPU)](https://github.com/cloud/manage/billing/overview#how-is-compute-metered). Storage pricing is based on compressed bytes, and backups are billed separately. [ClickPipes](/integrations/clickpipes) is [metered separately](/cloud/reference/billing/clickpipes).
+
+Snowflake bills on credits scaled by warehouse size, charges for storage as compressed bytes without Time Travel or Fail-safe overhead, and bills backups as a separate line item rather than bundling them into retention windows. Most Snowflake "serverless compute" features (Snowpipe, Search Optimization, Auto-clustering, materialized view refresh, Cortex) are bundled into service compute on ClickHouse. 
+
+Both charges for public internet egress and cross-region data transfer and offers committed-spend discounts. See [ClickHouse Cloud pricing](/cloud/manage/billing/overview) for current rates, tiers, and commitment options.
 
 ## Storage and tables {#storage-tables}
 
