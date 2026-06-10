@@ -3,11 +3,15 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 
 #include <Common/FieldAccurateComparison.h>
+#include <Common/NaNUtils.h>
 #include <Common/quoteString.h>
 
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <IO/ReadHelpers.h>
+
+#include <limits>
 
 namespace DB
 {
@@ -16,6 +20,52 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+/// Returns true if the float column slice [start, end) contains at least one NaN.
+/// `ColumnVector::getExtremes` deliberately skips NaN when computing min/max (correct for
+/// `SELECT min()/max()` display), so a granule like `[1.0, nan, 3.0]` yields the clean range
+/// `[1.0, 3.0]` with no trace of the NaN. The minmax skip index, however, must reflect that the
+/// granule may contain NaN: in ClickHouse sort order NaN sorts after `+inf`, so the granule's true
+/// upper bound is NaN. Without it, a negated comparison such as `NOT ((val >= 0) AND (val <= 3))`
+/// is wrongly pruned even though NaN rows satisfy it (issue #106948). This detects that case so the
+/// aggregator can widen the stored max to NaN, tripping the existing NaN guard in
+/// `KeyCondition::checkInHyperrectangle`.
+bool columnSliceHasNaN(const IColumn & column, size_t start, size_t end)
+{
+    const IColumn * nested = &column;
+    const NullMap * null_map = nullptr;
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(&column))
+    {
+        nested = &column_nullable->getNestedColumn();
+        null_map = &column_nullable->getNullMapData();
+    }
+
+    auto check = [&](const auto & typed_column) -> bool
+    {
+        const auto & data = typed_column.getData();
+        for (size_t i = start; i < end; ++i)
+        {
+            if (null_map && (*null_map)[i])
+                continue;
+            if (isNaN(data[i]))
+                return true;
+        }
+        return false;
+    };
+
+    if (const auto * col_f64 = typeid_cast<const ColumnFloat64 *>(nested))
+        return check(*col_f64);
+    if (const auto * col_f32 = typeid_cast<const ColumnFloat32 *>(nested))
+        return check(*col_f32);
+    if (const auto * col_bf16 = typeid_cast<const ColumnBFloat16 *>(nested))
+        return check(*col_bf16);
+    return false;
+}
+
 }
 
 
@@ -171,6 +221,13 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
             column_nullable->getExtremesNullLast(field_min, field_max, range_start, range_end);
         else
             column->getExtremes(field_min, field_max, range_start, range_end);
+
+        /// `getExtremes` skips NaN, so a granule that mixes finite floats with NaN (e.g. `[1.0, nan, 3.0]`)
+        /// reports a clean range that hides the NaN. NaN sorts after `+inf` in ClickHouse order, so the
+        /// granule's real upper bound is NaN; record it as the stored max so range analysis cannot prune
+        /// the granule under a negated comparison whose NaN rows actually match (issue #106948).
+        if (columnSliceHasNaN(*column, range_start, range_end))
+            field_max = std::numeric_limits<Float64>::quiet_NaN();
 
         if (hyperrectangle.size() <= i)
         {
