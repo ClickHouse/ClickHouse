@@ -329,11 +329,6 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
 
 const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant)
 {
-<<<<<<< HEAD
-    // related to https://github.com/ClickHouse/ClickHouse/issues/90363
-    if (column.type->getColumnType() == TypeIndex::Set && !column.column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", column.name);
-=======
     if (!column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", name);
 
@@ -341,7 +336,6 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePt
     /// the size is recomputed at execution. Normalize to size 0 here.
     if (!column->empty())
         column = ColumnConst::create(column->getDataColumnPtr(), 0);
->>>>>>> origin/master
 
     Node node;
     node.type = ActionType::COLUMN;
