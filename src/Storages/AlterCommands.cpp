@@ -1472,8 +1472,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets)
 {
     auto columns = metadata.columns;
-    bool has_modify_column_with_data_type = false;
-    bool has_modify_column_add_enum_values = false;
+    std::unordered_set<String> columns_with_full_type_modify;
 
     auto ast_to_str = [](const ASTPtr & query) -> String
     {
@@ -1495,7 +1494,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
             {
                 if (command.add_enum_values)
                 {
-                    if (has_modify_column_with_data_type)
+                    if (columns_with_full_type_modify.contains(command.column_name))
                     {
                         throw Exception(
                             ErrorCodes::NOT_IMPLEMENTED,
@@ -1514,19 +1513,9 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
                             "column created in the same ALTER statement is not supported.",
                             backQuote(command.column_name));
 
-                    has_modify_column_add_enum_values = true;
                 }
                 else if (command.data_type)
-                {
-                    if (has_modify_column_add_enum_values)
-                    {
-                        throw Exception(
-                            ErrorCodes::NOT_IMPLEMENTED,
-                            "Cannot combine `MODIFY COLUMN` with an explicit type and `MODIFY COLUMN ... ADD ENUM VALUES` "
-                            "in a single ALTER query");
-                    }
-                    has_modify_column_with_data_type = true;
-                }
+                    columns_with_full_type_modify.emplace(command.column_name);
             }
 
             if (has_column)

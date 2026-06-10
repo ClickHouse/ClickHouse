@@ -96,6 +96,16 @@ ALTER TABLE enum_modify_then_add
     MODIFY COLUMN x ADD ENUM VALUES('c'); -- { serverError NOT_IMPLEMENTED }
 DROP TABLE enum_modify_then_add;
 
+SELECT '======= MODIFY TYPE THEN ADD ENUM VALUES TO OTHER COLUMN IN ONE STATEMENT ===============';
+CREATE OR REPLACE TABLE enum_modify_then_add_different (x Enum8('a' = 1), y Enum8('aa' = 10)) ENGINE = Memory;
+ALTER TABLE enum_modify_then_add_different
+    MODIFY COLUMN x Enum8('a' = 1, 'b' = 2),
+    MODIFY COLUMN y ADD ENUM VALUES('cc'=20);
+SHOW CREATE TABLE enum_modify_then_add_different;
+INSERT INTO enum_modify_then_add_different VALUES (1, 10), (2, 20);
+SELECT * FROM enum_modify_then_add_different ORDER BY x FORMAT CSV;
+DROP TABLE enum_modify_then_add_different;
+
 CREATE OR REPLACE TABLE enum_add_then_modify (y Int8) ENGINE = Memory;
 ALTER TABLE enum_add_then_modify ADD COLUMN x Enum8('a' = 1), MODIFY COLUMN x ADD ENUM VALUES('b' = 2); -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 DROP TABLE enum_add_then_modify;

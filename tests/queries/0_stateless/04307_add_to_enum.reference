@@ -84,5 +84,9 @@ base
 a
 b
 ======= MODIFY TYPE THEN ADD ENUM VALUES IN ONE STATEMENT ===============
+======= MODIFY TYPE THEN ADD ENUM VALUES TO OTHER COLUMN IN ONE STATEMENT ===============
+CREATE TABLE default.enum_modify_then_add_different\n(\n    `x` Enum8(\'a\' = 1, \'b\' = 2),\n    `y` Enum8(\'aa\' = 10, \'cc\' = 20)\n)\nENGINE = Memory
+"a","aa"
+"b","cc"
 ======= ALTER AST VALIDATION ===============
 ======= ADD ENUM VALUES SYNTAX ERRORS ===============
