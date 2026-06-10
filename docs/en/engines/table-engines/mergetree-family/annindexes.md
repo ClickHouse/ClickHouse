@@ -160,6 +160,8 @@ SET allow_experimental_scann_index = 1;
 ScaNN indexes are created with exactly three arguments — no optional extras:
 
 ```sql
+SET allow_experimental_scann_index = 1;
+
 CREATE TABLE table
 (
   [...],
@@ -167,8 +169,7 @@ CREATE TABLE table
   INDEX index_name vectors TYPE vector_similarity('scann', <distance_function>, <dimensions>) [GRANULARITY N]
 )
 ENGINE = MergeTree
-ORDER BY [...]
-SETTINGS allow_experimental_scann_index = 1;
+ORDER BY [...];
 ```
 
 The supported distance functions for ScaNN are `L2Distance`, `cosineDistance`, and `dotProduct`.
@@ -215,7 +216,7 @@ Further restrictions apply:
 
 A vector generated for use with a typical AI model (e.g. a Large Language Model, [LLMs](https://en.wikipedia.org/wiki/Large_language_model)) consists of hundreds or thousands of floating-point values.
 Thus, a single vector value can have a memory consumption of multiple kilobyte.
-Users who like to estimate the storage required for the underlying vector column in the table, as well as the main memory needed for the vector similarity index, can use below two formula:
+Users who like to estimate the storage required for the underlying vector column in the table, as well as the main memory needed for the vector similarity index, can use the formula below.
 
 Storage consumption of the vector column in the table (uncompressed):
 
@@ -232,7 +233,9 @@ Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
 The vector similarity index must be fully loaded from disk into main memory to perform searches.
 Similarly, the vector index is also constructed fully in memory and then saved to disk.
 
-Memory consumption required to load a vector index:
+**HNSW memory consumption**
+
+Memory consumption required to load an HNSW index:
 
 ```text
 Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
@@ -250,7 +253,32 @@ Memory for in-memory graph (mg) = 1 million * 64 * 2 * 4 = 512 MB
 Memory consumption = 3072 + 512 = 3584 MB
 ```
 
-Above formula does not account for additional memory required by vector similarity indexes to allocate runtime data structures like pre-allocated buffers and caches.
+**ScaNN memory consumption**
+
+The HNSW formula does not apply to ScaNN. A ScaNN index has three main memory components:
+
+```text
+Raw vectors (rv)    = Number of vectors * DimensionPadded * 4   (Float32; DimensionPadded = Dimension rounded up to the next multiple of 8)
+AH hashed data (ah) = Number of vectors * ceil(Dimension / 4)   (2 bits per sub-quantizer per vector, 4 dimensions per sub-quantizer)
+IVF centroids (iv)  = ceil(sqrt(Number of vectors)) * Dimension * 4
+
+Memory consumption: rv + ah + iv
+```
+
+Example for the dbpedia dataset:
+
+```text
+Raw vectors (rv)    = 1 million * 1536 * 4 = 6144 MB
+AH hashed data (ah) = 1 million * ceil(1536 / 4) = 1 million * 384 = 384 MB
+IVF centroids (iv)  = ceil(sqrt(1 million)) * 1536 * 4 = 1000 * 1536 * 4 ≈ 6 MB
+
+Memory consumption ≈ 6534 MB
+```
+
+Note that ScaNN retains full-precision Float32 vectors for exact reranking, which makes its memory footprint larger than HNSW with BFloat16 quantization for the same dataset.
+For the actual size of a built index, query `system.data_skipping_indices` or inspect the log message emitted when the index is loaded.
+
+Above formulas do not account for additional memory required by vector similarity indexes to allocate runtime data structures like pre-allocated buffers and caches.
 
 #### Using a Vector Similarity Index {#using-a-vector-similarity-index}
 
