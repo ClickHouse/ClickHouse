@@ -153,10 +153,10 @@ run_user "$loading_dependents_probe"
 run_user "$loading_dependencies_probe"
 
 ${CLICKHOUSE_CLIENT} <<EOF
-DROP DATABASE IF EXISTS $db2;
-DROP USER IF EXISTS $user;
 DROP DICTIONARY IF EXISTS $db.local_dict;
 DROP DICTIONARY IF EXISTS $db.leaky_dict;
+DROP DATABASE IF EXISTS $db2;
+DROP USER IF EXISTS $user;
 DROP TABLE IF EXISTS $db.dict_src;
 DROP TABLE IF EXISTS $db.dep_view;
 DROP TABLE IF EXISTS $db.secret;
