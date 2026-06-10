@@ -327,9 +327,24 @@ def run_fuzz_job(check_name: str):
             sanitizer_oom = Shell.get_output(
                 f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {server_log}"
             )
-            if sanitizer_oom:
+            # Sanitizer shadow memory is invisible to the server's memory tracker,
+            # so the kernel OOM killer may SIGKILL the server before any limit
+            # fires. It may also kill the watchdog, losing the "terminated by
+            # signal 9" message in the server log. A SIGKILLed server (exit 137)
+            # with no sanitizer report is an OOM, not a bug.
+            has_sanitizer_report = any(WORKSPACE_PATH.glob("sanitizer.log.*"))
+            kernel_oom_kill = (
+                server_died and server_exit_code == 137 and not has_sanitizer_report
+            )
+            if sanitizer_oom or kernel_oom_kill:
                 print("Sanitizer OOM")
-                info.append("WARNING: Sanitizer OOM - test considered passed")
+                if sanitizer_oom:
+                    info.append("WARNING: Sanitizer OOM - test considered passed")
+                else:
+                    info.append(
+                        "WARNING: Server was killed by the kernel OOM killer "
+                        "(sanitizer build) - test considered passed"
+                    )
                 status = Result.Status.OK
                 is_failed = False
         else:
