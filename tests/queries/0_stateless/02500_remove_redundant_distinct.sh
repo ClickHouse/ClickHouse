@@ -179,7 +179,7 @@ FROM
 )"
 run_query "$query"
 
-echo "-- GROUP BY WITH ROLLUP before DISTINCT with on the same columns => remove DISTINCT"
+echo "-- GROUP BY WITH ROLLUP before DISTINCT on the same columns => do _not_ remove DISTINCT (ROLLUP adds a subtotal row with the key defaulted, which may duplicate a real group)"
 query="SELECT DISTINCT a
 FROM
 (
@@ -217,7 +217,7 @@ FROM
 )"
 run_query "$query"
 
-echo "-- GROUP BY WITH CUBE before DISTINCT with on the same columns => remove DISTINCT"
+echo "-- GROUP BY WITH CUBE before DISTINCT on the same columns => do _not_ remove DISTINCT (CUBE adds subtotal rows with keys defaulted, which may duplicate real groups)"
 query="SELECT DISTINCT a
 FROM
 (
@@ -232,6 +232,44 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a WITH CUBE
+    ORDER BY a
+)"
+run_query "$query"
+
+echo "-- GROUP BY GROUPING SETS with overlapping sets before DISTINCT on the same columns => do _not_ remove DISTINCT (each set emits its own row, so the same key value appears more than once)"
+query="SELECT DISTINCT a
+FROM
+(
+    SELECT
+        a,
+        sum(b) AS c
+    FROM
+    (
+        SELECT
+            x.number AS a,
+            y.number AS b
+        FROM numbers(3) AS x, numbers(3, 3) AS y
+    )
+    GROUP BY GROUPING SETS ((a), (a))
+    ORDER BY a
+)"
+run_query "$query"
+
+echo "-- GROUP BY GROUPING SETS with a defaulted-key set before DISTINCT on the same columns => do _not_ remove DISTINCT (the () set emits a row with the key defaulted, which may duplicate a real group)"
+query="SELECT DISTINCT a
+FROM
+(
+    SELECT
+        a,
+        sum(b) AS c
+    FROM
+    (
+        SELECT
+            x.number AS a,
+            y.number AS b
+        FROM numbers(3) AS x, numbers(3, 3) AS y
+    )
+    GROUP BY GROUPING SETS ((a), ())
     ORDER BY a
 )"
 run_query "$query"
