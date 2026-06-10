@@ -382,7 +382,7 @@ void ORCBlockOutputFormat::writeColumn(
         }
         case TypeIndex::Float32:
         {
-            writeNumbers<Float32, orc::DoubleVectorBatch>(orc_column, column, null_bytemap, [](const Float32 & value){ return static_cast<double>(value); });
+            writeNumbers<Float32, orc::DoubleVectorBatch>(orc_column, column, null_bytemap, [](const Float32 & value){ return value; });
             break;
         }
         case TypeIndex::Float64:
@@ -598,7 +598,6 @@ void ORCBlockOutputFormat::prepareWriter()
     writer = orc::createWriter(*schema, &output_stream, options);
 }
 
-void registerOutputFormatORC(FormatFactory & factory);
 void registerOutputFormatORC(FormatFactory & factory)
 {
     factory.registerOutputFormat("ORC", [](
@@ -622,7 +621,6 @@ void registerOutputFormatORC(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
-    void registerOutputFormatORC(FormatFactory &);
     void registerOutputFormatORC(FormatFactory &)
     {
     }

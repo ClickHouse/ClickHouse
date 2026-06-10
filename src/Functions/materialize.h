@@ -10,7 +10,7 @@ namespace DB
 /** materialize(x) - materialize the constant
   */
 template <bool remove_special_representations>
-class FunctionMaterialize final : public IFunction
+class FunctionMaterialize : public IFunction
 {
 public:
     static constexpr auto name = "materialize";

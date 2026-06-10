@@ -17,17 +17,17 @@ struct BackupKeeperSettings
     UInt64 max_retries;
 
     /// Initial backoff timeout for ZooKeeper operations during backup or restore.
-    std::chrono::milliseconds retry_initial_backoff_ms{};
+    std::chrono::milliseconds retry_initial_backoff_ms;
 
     /// Max backoff timeout for ZooKeeper operations during backup or restore.
-    std::chrono::milliseconds retry_max_backoff_ms{};
+    std::chrono::milliseconds retry_max_backoff_ms;
 
     /// If a host during BACKUP ON CLUSTER or RESTORE ON CLUSTER doesn't recreate its 'alive' node in ZooKeeper
     /// for this amount of time then the whole backup or restore is considered as failed.
     /// Should be bigger than any reasonable time for a host to reconnect to ZooKeeper after a failure.
     /// Set to zero to disable (if it's zero and some host crashed then BACKUP ON CLUSTER or RESTORE ON CLUSTER will be waiting
     /// for the crashed host forever until the operation is explicitly cancelled with KILL QUERY).
-    std::chrono::seconds failure_after_host_disconnected_for_seconds{};
+    std::chrono::seconds failure_after_host_disconnected_for_seconds;
 
     /// Maximum number of retries during the initialization of a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
     /// Shouldn't be too big because if the operation is going to fail then it's better if it fails faster.
@@ -38,10 +38,10 @@ struct BackupKeeperSettings
     UInt64 max_retries_while_handling_error;
 
     /// How long the initiator should wait for other host to handle the 'error' node and finish their work.
-    std::chrono::seconds finish_timeout_after_error{};
+    std::chrono::seconds finish_timeout_after_error;
 
     /// How often the "stage" folder in ZooKeeper must be scanned in a background thread to track changes done by other hosts.
-    std::chrono::milliseconds sync_period_ms{};
+    std::chrono::milliseconds sync_period_ms;
 
     /// Number of attempts after getting error ZBADVERSION from ZooKeeper.
     size_t max_attempts_after_bad_version;
