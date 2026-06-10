@@ -101,12 +101,13 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | Feature                         | Version | Affects                | Wire impact |
 |---------------------------------|---------|------------------------|-------------|
 | BLOCK_INFO                      | 51903   | Block                  | Adds the BlockInfo prefix (`is_overflows`, `bucket_number`) to every Block. |
+| CLIENT_INFO                     | 54032   | Query                  | Adds the ClientInfo block to the Query body. |
 | TIMEZONE                        | 54058   | ServerHello            | Adds the `timezone` field to ServerHello. |
 | QUOTA_KEY_IN_CLIENT_INFO        | 54060   | ClientInfo             | Adds the `quota_key` field to ClientInfo. |
 | DISPLAY_NAME                    | 54372   | ServerHello            | Adds the `display_name` field to ServerHello. |
 | VERSION_PATCH                   | 54401   | ServerHello, ClientInfo | Adds the `version_patch` field to both. |
 | SERVER_LOGS                     | 54406   | Log                    | Server emits Log packets when `send_logs_level` is set. |
-| WRITE_CLIENT_INFO               | 54420   | Query, Progress        | Adds the ClientInfo block to Query; adds `wrote_rows` and `wrote_bytes` to Progress. |
+| WRITE_CLIENT_INFO               | 54420   | Progress               | Adds `wrote_rows` and `wrote_bytes` to Progress. (Despite the name, this does **not** gate the ClientInfo block — that is `CLIENT_INFO` (v54032).) |
 | SETTINGS_SERIALIZED_AS_STRINGS  | 54429   | Query                  | Encodes settings as string key-value pairs in the Query body. |
 | INTERSERVER_SECRET              | 54441   | Query                  | Adds the `cluster_secret` field to Query. |
 | OPEN_TELEMETRY                  | 54442   | ClientInfo             | Adds the OpenTelemetry trace context to ClientInfo. |
@@ -466,7 +467,7 @@ Client → Server.
 | # | Field          | Type        | Role         | Condition                                | Description |
 |---|----------------|-------------|--------------|------------------------------------------|-------------|
 | 1 | query_id       | String      | universal    | always                                   | Unique query identifier (UUID) |
-| 2 | client_info    | ClientInfo  | universal    | WRITE_CLIENT_INFO (v54420)               | See [ClientInfo](#clientinfo) |
+| 2 | client_info    | ClientInfo  | universal    | CLIENT_INFO (v54032)                     | See [ClientInfo](#clientinfo) |
 | 3 | settings       | Setting[]   | universal    | SETTINGS_SERIALIZED_AS_STRINGS (v54429)  | See [Setting](#setting). Terminated by empty key. |
 | 3a | external_roles | String     | universal    | INTERSERVER_EXTERNALLY_GRANTED_ROLES (v54472) | Serialized list of externally-granted role names. Empty list = byte `0x00` (VarUInt 0) wrapped in a String envelope (`[VarUInt 1][0x00]` on the wire). External clients always send empty. |
 | 4 | cluster_secret | String      | inter-server | INTERSERVER_SECRET (v54441)              | Cluster auth. External clients send empty string. |
@@ -477,7 +478,7 @@ Client → Server.
 
 ### ClientInfo (embedded in Query) {#clientinfo}
 
-Client → Server, embedded in the Query body (field 2). Gated by `WRITE_CLIENT_INFO` (v54420).
+Client → Server, embedded in the Query body (field 2). Gated by `CLIENT_INFO` (v54032). (Some fields inside ClientInfo are gated by later versions, as noted per-field below.)
 
 | #  | Field                        | Type    | Role         | Condition                              | Description |
 |----|------------------------------|---------|--------------|----------------------------------------|-------------|
@@ -523,10 +524,17 @@ Encoded inline in the Query body's settings list (the [Query](#query) packet, fi
 | # | Field | Type    | Role      | Description |
 |---|-------|---------|-----------|-------------|
 | 1 | key   | String  | universal | Setting name. Empty = end of list. |
-| 2 | flags | VarUInt | universal | Bit flags: `0x01` = Important, `0x02` = Custom, `0x04` = Obsolete |
+| 2 | flags | VarUInt | universal | Metadata bit flags; see below. |
 | 3 | value | String  | universal | Setting value as string |
 
 Fields 2 and 3 are absent when `key` is empty.
+
+The `flags` field packs:
+
+- `0x01` — **Important**: the setting affects query results and must not be silently ignored by older peers.
+- `0x02` — **Custom**: a user-defined custom setting.
+- `0x0c` — a **2-bit tier** field, not an independent flag: `0x00` = Production, `0x04` = Obsolete, `0x08` = Experimental, `0x0c` = Beta. Read all 2 bits (`flags & 0x0c`) — a naive `flags & 0x04` test would misclassify Beta (`0x0c`) as Obsolete.
+- `0x80` — **HotReload** (config reload without restart; defined in the flags enum, encountered mainly for coordination settings).
 
 ### Parameter {#parameter}
 
@@ -691,14 +699,26 @@ Gated by `SSH_AUTHENTICATION` (v54466), and opt-in only. A connection enters the
 | SSHChallenge       | 18 | Server → Client | `String challenge` — the bytes to sign |
 | SSHChallengeResponse | 12 | Client → Server | `String signature` — the SSH-signed challenge |
 
-The flow runs in place of password authentication, after ClientHello:
+The flow runs in place of password authentication, and the challenge-response exchange happens **before** ServerHello — the server defers its Hello reply until authentication succeeds:
 
-1. The client sends ClientHello with the SSH marker prefix.
-2. The server replies with ServerHello as usual.
-3. The client sends `SSHChallengeRequest` (packet 11).
-4. The server replies with `SSHChallenge` carrying random bytes (packet 18).
-5. The client signs the bytes with its SSH private key and sends `SSHChallengeResponse` (packet 12) with the signature.
-6. The server verifies the signature against the user's registered public key, then continues as if password auth had succeeded (or returns an Exception on failure).
+1. The client sends ClientHello with the SSH marker prefix and an empty password.
+2. The client sends `SSHChallengeRequest` (packet 11). The server has **not** sent ServerHello yet — it processes authentication first and blocks here waiting for this packet.
+3. The server replies with `SSHChallenge` carrying random bytes (packet 18).
+4. The client signs the bytes with its SSH private key and sends `SSHChallengeResponse` (packet 12) with the signature.
+5. The server verifies the signature against the user's registered public key. On success it sends `ServerHello` — the same reply as in the password flow — and the handshake continues normally (Addendum, etc.); on failure it returns an `Exception` and terminates the connection.
+
+```text
+Client                              Server
+  |--- ClientHello (SSH marker) ----->|
+  |--- SSHChallengeRequest (11) ----->|    (server has NOT sent ServerHello yet)
+  |<--- SSHChallenge (18) ------------|
+  |--- SSHChallengeResponse (12) ---->|
+  |<--- ServerHello -------------------|    or Exception on failure
+```
+
+:::note
+This is the reverse of the password handshake, where ServerHello immediately follows ClientHello. Under SSH auth, ServerHello is withheld until after the signature is verified, so the SSH challenge-response is interleaved into the handshake before any ServerHello is seen.
+:::
 
 External clients that don't use SSH auth never see packets 11, 12, or 18 — they stay off the wire unless the user explicitly opts in via the username prefix.
 
