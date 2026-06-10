@@ -23,7 +23,6 @@ struct ReadOptions
     bool schema_inference_force_nullable = false;
     bool schema_inference_force_not_nullable = false;
 
-    /// Not implemented.
     /// Use dictionary filter if dictionary page is smaller than this (and all values in the column
     /// chunk are dictionary-encoded). This takes precedence over bloom filter. 0 to disable.
     size_t dictionary_filter_limit_bytes = 0;

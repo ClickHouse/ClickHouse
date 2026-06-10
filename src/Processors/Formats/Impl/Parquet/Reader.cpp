@@ -3,6 +3,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
 #include <Common/FieldAccurateComparison.h>
@@ -408,7 +409,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     if (row_groups.empty())
         return; // all row groups were skipped
 
-    if (options.format.parquet.bloom_filter_push_down && format_filter_info->key_condition)
+    /// prepareBloomFilterCondition computes the query-constant hashes used by both the bloom filter
+    /// and the dictionary filter, so run it if either is enabled.
+    if ((options.format.parquet.bloom_filter_push_down || options.dictionary_filter_limit_bytes != 0)
+        && format_filter_info->key_condition)
         prepareBloomFilterCondition();
 
     if (options.format.parquet.page_filter_push_down && format_filter_info->key_condition)
@@ -430,6 +434,19 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     initializePrefetches();
 }
 
+/// Glue to convert thrift types to equivalent arrow types because arrow felt the need to
+/// duplicate them for some reason. Our parquetTryHashColumn is called from both the
+/// arrow-based reader v0 and this reader v3, so arrow types are the common denominator.
+/// Warning: this requires that we use the same thrift-generated types as arrow; if we
+/// ever switch to thrift-generating our own code from parquet.thrift (e.g. to use a
+/// newer version), this will stop working.
+static parquet::ColumnDescriptor makeColumnDescriptor(const parq::FileMetaData & file_metadata, const Reader::PrimitiveColumnInfo & column_info)
+{
+    const parquet::format::SchemaElement * schema_element = &file_metadata.schema.at(column_info.schema_idx);
+    auto node = parquet::schema::PrimitiveNode::FromParquet(static_cast<const void *>(schema_element));
+    return parquet::ColumnDescriptor(std::move(node), column_info.levels.back().def, column_info.levels.back().rep);
+}
+
 void Reader::prepareBloomFilterCondition()
 {
     /// Index in output block -> arrow column info.
@@ -442,21 +459,17 @@ void Reader::prepareBloomFilterCondition()
         if (!column_info.used_by_key_condition)
             continue;
 
-        /// Check for presence of bloom filter only in first row group, expecting that usually
-        /// either all or none of the row groups have bloom filter for any given column.
+        /// We hash query constants for any column that has either a bloom filter or a usable
+        /// dictionary page, so that the same hashes can later be looked up in whichever of the two
+        /// we end up using. Check only the first row group, expecting that usually either all or
+        /// none of the row groups have a bloom filter / dictionary for any given column.
         const parq::ColumnChunk * column_chunk_meta = row_groups[0].columns[primitive_idx].meta;
-        if (!column_chunk_meta->meta_data.__isset.bloom_filter_offset)
+        bool has_bloom_filter = options.format.parquet.bloom_filter_push_down
+            && column_chunk_meta->meta_data.__isset.bloom_filter_offset;
+        if (!has_bloom_filter && !columnChunkCanUseDictionaryFilter(*column_chunk_meta))
             continue;
 
-        /// Glue to convert thrift types to equivalent arrow types because arrow felt the need to
-        /// duplicate them for some reason. Our parquetTryHashColumn is called from both the
-        /// arrow-based reader v0 and this reader v3, so arrow types are the common denominator.
-        /// Warning: this requires that we use the same thrift-generated types as arrow; if we
-        /// ever switch to thrift-generating our own code from parquet.thrift (e.g. to use a
-        /// newer version), this will stop working.
-        const parquet::format::SchemaElement * schema_element = &file_metadata.schema.at(column_info.schema_idx);
-        auto node = parquet::schema::PrimitiveNode::FromParquet(static_cast<const void *>(schema_element));
-        parquet::ColumnDescriptor desc(std::move(node), column_info.levels.back().def, column_info.levels.back().rep);
+        parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
         bf_eligible_columns[column_info.idx_in_output_block].emplace(primitive_idx, std::move(desc));
         any_column_eligible_for_bf = true;
     }
@@ -532,20 +545,13 @@ void Reader::initializePrefetches()
                 column.dictionary_page_prefetch = prefetcher.registerRange(
                     start, dict_page_length, /*likely_to_be_used=*/ true);
 
-                /// Dictionary filter.
-                if (primitive_columns[column_idx].used_by_key_condition &&
-                    dict_page_length < options.dictionary_filter_limit_bytes &&
-                    column.meta->meta_data.__isset.encoding_stats)
-                {
-                    bool all_pages_are_dictionary_encoded = true;
-                    for (const parq::PageEncodingStats & s : column.meta->meta_data.encoding_stats)
-                        all_pages_are_dictionary_encoded &=
-                            (s.page_type != parq::PageType::DATA_PAGE && s.page_type != parq::PageType::DATA_PAGE_V2) ||
-                            s.encoding == parq::Encoding::PLAIN_DICTIONARY ||
-                            s.encoding == parq::Encoding::RLE_DICTIONARY ||
-                            s.count == 0;
-                    column.use_dictionary_filter = all_pages_are_dictionary_encoded;
-                }
+                /// Dictionary filter. We only enable it if prepareBloomFilterCondition produced query
+                /// hashes for this column (use_bloom_filter), i.e. the condition has an equality/IN on
+                /// a hashable type; otherwise the dictionary lookup, which relies on those hashes,
+                /// couldn't filter anything anyway. This also guarantees that `bloom_filter_condition`
+                /// is non-null whenever any column has use_dictionary_filter set.
+                if (primitive_columns[column_idx].use_bloom_filter)
+                    column.use_dictionary_filter = columnChunkCanUseDictionaryFilter(*column.meta);
             }
 
             /// Bloom filter.
@@ -891,21 +897,93 @@ bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes
     return false;
 }
 
+bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const
+{
+    if (options.dictionary_filter_limit_bytes == 0)
+        return false;
+    if (!column_meta.meta_data.__isset.dictionary_page_offset)
+        return false;
+    /// We assume that the dictionary page is immediately followed by the first data page.
+    size_t dict_page_length = size_t(column_meta.meta_data.data_page_offset) - size_t(column_meta.meta_data.dictionary_page_offset);
+    if (dict_page_length >= options.dictionary_filter_limit_bytes)
+        return false;
+    /// We can only use the dictionary if it holds the complete set of column values, i.e. all data
+    /// pages are dictionary-encoded. Without encoding stats we can't tell, so we don't risk it.
+    if (!column_meta.meta_data.__isset.encoding_stats)
+        return false;
+    for (const parq::PageEncodingStats & s : column_meta.meta_data.encoding_stats)
+    {
+        bool dictionary_encoded =
+            (s.page_type != parq::PageType::DATA_PAGE && s.page_type != parq::PageType::DATA_PAGE_V2) ||
+            s.encoding == parq::Encoding::PLAIN_DICTIONARY ||
+            s.encoding == parq::Encoding::RLE_DICTIONARY ||
+            s.count == 0;
+        if (!dictionary_encoded)
+            return false;
+    }
+    return true;
+}
+
+std::optional<std::unordered_set<UInt64>> Reader::hashDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info) const
+{
+    chassert(column.dictionary.isInitialized());
+    size_t count = column.dictionary.count;
+
+    /// Materialize all dictionary values into a column of the decoded type.
+    auto indexes = ColumnUInt32::create();
+    auto & indexes_data = indexes->getData();
+    indexes_data.resize_exact(count);
+    for (size_t i = 0; i < count; ++i)
+        indexes_data[i] = static_cast<UInt32>(i);
+
+    auto values = column_info.decoded_type->createColumn();
+    values->reserve(count);
+    column.dictionary.index(*indexes, *values);
+
+    /// Hash them the same way query constants are hashed (see prepareBloomFilterCondition).
+    parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
+    auto hashes = parquetTryHashColumn(values.get(), &desc);
+    if (!hashes.has_value())
+        return std::nullopt;
+    return std::unordered_set<UInt64>(hashes->begin(), hashes->end());
+}
+
+bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
+{
+    if (!computed)
+    {
+        value_hashes = reader.hashDictionaryValues(column, column_info);
+        computed = true;
+    }
+    /// If the dictionary values couldn't be hashed, we can't rule out a match.
+    if (!value_hashes.has_value())
+        return true;
+    for (UInt64 h : hashes)
+        if (value_hashes->contains(h))
+            return true;
+    return false;
+}
+
 bool Reader::applyBloomAndDictionaryFilters(RowGroup & row_group)
 {
-    /// TODO [parquet]: Dictionary filter.
-
     KeyCondition::ColumnIndexToBloomFilter filter_map;
     for (size_t i = 0; i < row_group.columns.size(); ++i)
     {
-        if (row_group.columns[i].use_bloom_filter)
+        ColumnChunk & column = row_group.columns[i];
+        /// use_dictionary_filter takes precedence over use_bloom_filter, and the two are never set
+        /// together for the same column chunk (see initializePrefetches).
+        if (column.use_dictionary_filter)
             filter_map.emplace(
                 primitive_columns[i].idx_in_output_block,
-                std::make_unique<BloomFilterLookup>(prefetcher, row_group.columns[i]));
+                std::make_unique<DictionaryLookup>(*this, column, primitive_columns[i]));
+        else if (column.use_bloom_filter)
+            filter_map.emplace(
+                primitive_columns[i].idx_in_output_block,
+                std::make_unique<BloomFilterLookup>(prefetcher, column));
     }
-    /// We use both the min/max statistics and bloom filter. For the case where condition has
-    /// something like `x < 42 OR y = 1337`, where `x < 42` is ruled out by min/max, and `y = 1337`
-    /// is ruled out by bloom filter.
+    /// We use both the min/max statistics and bloom/dictionary filters. For the case where condition
+    /// has something like `x < 42 OR y = 1337`, where `x < 42` is ruled out by min/max, and
+    /// `y = 1337` is ruled out by the filter.
     /// (I'm guessing this hardly ever comes up in practice, but it was easy enough to support.)
     return bloom_filter_condition->checkInHyperrectangle(
         row_group.hyperrectangle, extended_sample_block_data_types, filter_map).can_be_true;

@@ -12,6 +12,7 @@
 
 #include <deque>
 #include <optional>
+#include <unordered_set>
 
 namespace DB
 {
@@ -495,6 +496,16 @@ struct Reader
     /// Returns false if it turned out that `dictionary_page_prefetch` is not actually a dictionary.
     bool decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
 
+    /// Whether the column chunk is eligible for dictionary-based row group filtering: it has a
+    /// dictionary page no larger than `options.dictionary_filter_limit_bytes`, and all of its data
+    /// pages are dictionary-encoded (so the dictionary holds the complete set of column values).
+    bool columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const;
+
+    /// Hash all values of an already-decoded dictionary the same way query constants are hashed for
+    /// bloom filters, so the two can be compared. Returns nullopt if the values can't be hashed (in
+    /// which case the dictionary can't be used for filtering).
+    std::optional<std::unordered_set<UInt64>> hashDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info) const;
+
     /// Returns false if the row group was filtered out and should be skipped.
     bool applyBloomAndDictionaryFilters(RowGroup & row_group);
 
@@ -529,6 +540,24 @@ private:
         ColumnChunk & column;
 
         BloomFilterLookup(Prefetcher & prefetcher_, ColumnChunk & column_) : prefetcher(prefetcher_), column(column_) {}
+
+        bool findAnyHash(const std::vector<uint64_t> & hashes) override;
+    };
+
+    /// Like BloomFilterLookup, but backed by the (already decoded) dictionary page, which holds the
+    /// exact set of values present in the column chunk. Dictionary value hashes are computed lazily
+    /// on the first lookup. If the values can't be hashed, the lookup conservatively reports a match.
+    struct DictionaryLookup : public KeyCondition::BloomFilter
+    {
+        Reader & reader;
+        ColumnChunk & column;
+        const PrimitiveColumnInfo & column_info;
+
+        bool computed = false;
+        std::optional<std::unordered_set<UInt64>> value_hashes;
+
+        DictionaryLookup(Reader & reader_, ColumnChunk & column_, const PrimitiveColumnInfo & column_info_)
+            : reader(reader_), column(column_), column_info(column_info_) {}
 
         bool findAnyHash(const std::vector<uint64_t> & hashes) override;
     };

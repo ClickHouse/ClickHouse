@@ -35,6 +35,8 @@ static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_set
     options.schema_inference_force_nullable = format_settings.schema_inference_make_columns_nullable == 1;
     options.schema_inference_force_not_nullable = format_settings.schema_inference_make_columns_nullable == 0;
 
+    options.dictionary_filter_limit_bytes = format_settings.parquet.dictionary_filter_push_down;
+
     return options;
 }
 
