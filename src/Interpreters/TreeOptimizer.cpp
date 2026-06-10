@@ -23,17 +23,20 @@
 #include <Interpreters/RewriteSumFunctionWithSumAndCountVisitor.h>
 #include <Interpreters/OptimizeDateOrDateTimeConverterWithPreimageVisitor.h>
 
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Storages/IStorage.h>
 
 
@@ -163,6 +166,13 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
             else
             {
                 FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context); /// NOLINT(readability-static-accessed-through-instance)
+
+                if (!function_builder)
+                {
+                    auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
+                    if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
+                        function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(function->name, context);
+                }
 
                 if (!function_builder)
                     function_builder = function_factory.get(function->name, context);
