@@ -107,6 +107,10 @@ public:
 
     ALWAYS_INLINE void update(const char * data, UInt64 size)
     {
+        /// Avoid UB from `data + 8` arithmetic below when `data == nullptr`.
+        if (size == 0)
+            return;
+
         const char * end = data + size;
 
         /// We'll finish to process the remainder of the previous update, if any.
