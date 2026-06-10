@@ -425,6 +425,16 @@ def test_url_wildcard_preserves_failover_options():
     assert result.strip() == "13"
 
 
+def test_url_wildcard_failover_resets_credentials():
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT sum(x) FROM url('http://{user:pass@resolver:8087|resolver:8087}/data/auth_failover/part*.tsv', "
+            "'TSV', 'x UInt64')"
+        )
+    )
+    assert result.strip() == "23"
+
+
 def test_url_wildcard_ignores_failed_failover_option_after_success():
     result = node1.query(
         with_url_wildcard_setting(

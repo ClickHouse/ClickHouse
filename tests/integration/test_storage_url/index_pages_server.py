@@ -38,6 +38,7 @@ DATA_PARTS = {
     "/data/mixed_headers/part1.tsv": "1\n",
     "/data/mixed_headers/part2.tsv": "2\n",
     "/data/redirect_target/part1.tsv": "19\n",
+    "/data/auth_failover/part1.tsv": "23\n",
 }
 
 
@@ -96,6 +97,22 @@ class RequestHandler(BaseHTTPRequestHandler):
         self._record_request("HEAD", path)
         if path.startswith("/data/head_fallback/part"):
             self.send_response(405)
+            self.end_headers()
+            return
+        if path in (
+            "/data/auth_failover/",
+            "/data/auth_failover/part1.tsv",
+        ):
+            if self.headers.get("Authorization"):
+                self.send_response(403)
+            else:
+                self.send_response(200)
+                if path == "/data/auth_failover/part1.tsv":
+                    data = DATA_PARTS[path].encode("utf-8")
+                    self.send_header("Content-Type", "text/plain")
+                    self.send_header("Content-Length", str(len(data)))
+                else:
+                    self.send_header("Content-Type", "text/html")
             self.end_headers()
             return
         if path in DATA_PARTS:
@@ -201,6 +218,14 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         if path == "/data/redirect_target/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/auth_failover/":
+            if self.headers.get("Authorization"):
+                self.send_response(403)
+                self.end_headers()
+                return
             body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
             self._send_html(body)
             return
@@ -338,6 +363,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
         if path in DATA_PARTS:
+            if path.startswith("/data/auth_failover/") and self.headers.get("Authorization"):
+                self.send_response(403)
+                self.end_headers()
+                return
             if path.startswith("/data/headers/") and self.headers.get("X-Test-Header") != "1":
                 self.send_response(403)
                 self.end_headers()
