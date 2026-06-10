@@ -59,15 +59,17 @@ For path glob syntax in the URL path (such as `*`, `{a,b}`, `{N..M}`, and `**`),
 
 ## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
 
-For `url()` and the URL table engine, ClickHouse can expand wildcards by fetching HTTP index pages (HTML or plaintext) and extracting URLs from the response body. This enables patterns like `/**/` when the server exposes directory listings.
+For `url` and the `URL` table engine, ClickHouse can expand wildcards by fetching HTTP index pages (HTML or plaintext) and extracting URLs from the response body. This enables patterns like `/**/` when the server exposes directory listings.
 
 Notes:
 - Relative URLs are resolved against the index page URL.
-- `URL` templates are expanded before fetching index pages, including comma and numeric range shard expansion and `|` failover options.
+- `URL` templates are expanded before fetching index pages, including comma and numeric range shard expansion and `|` failover options outside the path component.
+- `|` failover patterns inside the path component are not supported for HTTP index-page expansion.
 - Wildcard matching is applied to the URL path component.
 - If a listed URL already contains a query string or fragment, it takes precedence over the ones from the source URL. Otherwise, the query string and fragment from the source URL are used.
 - An empty listing is allowed; HTTP errors (e.g. 404) for index pages raise exceptions.
 - The maximum index page size is limited by [max_http_index_page_size](/operations/server-configuration-parameters/settings.md#max_http_index_page_size).
+- The maximum number of directories read during recursive expansion is limited by [url_wildcard_max_directories_to_read](/operations/settings/settings.md#url_wildcard_max_directories_to_read).
 
 Example:
 
