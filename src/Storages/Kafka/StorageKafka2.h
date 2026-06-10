@@ -11,7 +11,6 @@
 #include <Storages/Kafka/KeeperHandlingConsumer.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
-#include <Common/ThreadStatus.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <atomic>
@@ -35,6 +34,7 @@ class Kafka2Source;
 class ReadFromStorageKafka2;
 template <typename TStorageKafka>
 struct KafkaInterceptors;
+class ThreadStatus;
 
 /// Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
 /// or as a basic building block for creating pipelines with a continuous insertion / ETL.

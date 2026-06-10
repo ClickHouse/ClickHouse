@@ -28,6 +28,7 @@
 #include <base/safeExit.h>
 #include <base/Numa.h>
 #include <Common/PoolId.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryWorker.h>
 #include <Common/ClickHouseRevision.h>
@@ -46,6 +47,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Scheduler/IResourceManager.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/getMappedArea.h>
@@ -115,8 +117,11 @@
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Server/CloudPlacementInfo.h>
+#include <Server/DistributedQuery/ExchangeConnections.h>
+#include <Server/DistributedQuery/ExchangeServer.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
+#include <Server/StatelessWorker/StatelessWorkerEndpoint.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
@@ -227,6 +232,7 @@ namespace ServerSetting
     extern const ServerSettingsString default_database;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
+    extern const ServerSettingsBool message_queue_disable_insertion;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
@@ -287,6 +293,9 @@ namespace ServerSetting
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
     extern const ServerSettingsDouble mark_cache_size_ratio;
+    extern const ServerSettingsString unique_key_index_cache_policy;
+    extern const ServerSettingsUInt64 unique_key_index_cache_size_bytes;
+    extern const ServerSettingsDouble unique_key_index_cache_size_ratio;
     extern const ServerSettingsUInt64 max_fetch_partition_thread_pool_size;
     extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_backups_io_thread_pool_free_size;
@@ -331,6 +340,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
+    extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsString mutation_workload;
     extern const ServerSettingsString query_condition_cache_policy;
@@ -488,6 +498,7 @@ namespace ProfileEvents
 
 namespace fs = std::filesystem;
 
+int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;
@@ -546,7 +557,10 @@ enum StartupScriptsExecutionState : CurrentMetrics::Value
 };
 
 
-static std::string getCanonicalPath(std::string && path, const std::string & base = {})
+namespace
+{
+
+std::string getCanonicalPath(std::string && path, const std::string & base = {})
 {
     Poco::trimInPlace(path);
     if (path.empty())
@@ -558,11 +572,13 @@ static std::string getCanonicalPath(std::string && path, const std::string & bas
     return std::move(path);
 }
 
-static Poco::Net::TCPServerParams::Ptr makeServerParams(const ServerSettings & server_settings)
+Poco::Net::TCPServerParams::Ptr makeServerParams(const ServerSettings & server_settings)
 {
     Poco::Net::TCPServerParams::Ptr params = new Poco::Net::TCPServerParams();
     params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
     return params;
+}
+
 }
 
 Poco::Net::SocketAddress Server::socketBindListen(
@@ -585,6 +601,9 @@ Poco::Net::SocketAddress Server::socketBindListen(
 
     return address;
 }
+
+namespace
+{
 
 Strings getListenHosts(const Poco::Util::AbstractConfiguration & config)
 {
@@ -622,6 +641,8 @@ bool getListenTry(const Poco::Util::AbstractConfiguration & config, const Server
             });
     }
     return listen_try;
+}
+
 }
 
 
@@ -761,7 +782,7 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
 }
 
 
-void checkForUsersNotInMainConfig(
+[[maybe_unused]] static void checkForUsersNotInMainConfig(
     const Poco::Util::AbstractConfiguration & config,
     const ServerSettings & server_settings,
     const std::string & config_path,
@@ -798,7 +819,7 @@ String readLine(const String & path)
 int readNumber(const String & path)
 {
     ReadBufferFromFile in(path);
-    int result;
+    int result = {};
     readText(result, in);
     return result;
 }
@@ -1014,6 +1035,9 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
 
 }
 
+namespace
+{
+
 void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings, ContextMutablePtr context, Poco::Logger * log)
 {
     try
@@ -1052,7 +1076,8 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
                 startup_context->setCurrentQueryId("");
 
                 {
-                    auto query_scope = QueryScope::create(startup_context);
+                    auto thread_group = ThreadGroup::createForQuery(startup_context);
+                    ThreadGroupSwitcher switcher(thread_group, /*allow_existing_group=*/ true);
                     executeQuery(condition_read_buffer, condition_write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
                 }
 
@@ -1085,7 +1110,8 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             startup_context->setCurrentQueryId("");
 
-            auto query_scope = QueryScope::create(startup_context);
+            auto thread_group = ThreadGroup::createForQuery(startup_context);
+            ThreadGroupSwitcher switcher(thread_group, /*allow_existing_group=*/ true);
 
             executeQuery(read_buffer, write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
@@ -1116,7 +1142,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
     }
 }
 
-static void initializeAzureSDKLogger(
+void initializeAzureSDKLogger(
     [[ maybe_unused ]] const ServerSettings & server_settings,
     [[ maybe_unused ]] int server_logs_level)
 {
@@ -1155,8 +1181,12 @@ static void initializeAzureSDKLogger(
 #endif
 }
 
+}
+
 #if defined(SANITIZER)
-static std::vector<String> getSanitizerNames()
+namespace
+{
+std::vector<String> getSanitizerNames()
 {
     std::vector<String> names;
 
@@ -1174,6 +1204,7 @@ static std::vector<String> getSanitizerNames()
 #endif
 
     return names;
+}
 }
 #endif
 
@@ -1406,16 +1437,17 @@ try
         PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
 #endif
 
+    /// Under thread sanitizer we use frame-pointer-based unwinding (via abseil) which does not
+    /// call dl_iterate_phdr in the signal handler, so the PHDR cache is not needed.
+#if defined(THREAD_SANITIZER)
+    bool has_trace_collector = config().has("trace_log");
+    LOG_INFO(log, "Query Profiler will use frame-pointer-based stack unwinding under sanitizers.");
+#else
     bool has_trace_collector = hasPHDRCache() && config().has("trace_log");
-
-#if defined(SANITIZER)
-    LOG_INFO(log, "Query Profiler is disabled because it cannot work under sanitizers"
-        " when two different stack unwinding methods will interfere with each other.");
-#endif
-
     if (!hasPHDRCache())
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
             " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
+#endif
 
     // Settings validation for page cache. Ensure that page_cache_max_size is > page_cache_min_size.
     // Otherwise, crash might happen during cache resizing in src/Common/PageCache.cpp::autoResize
@@ -1580,10 +1612,10 @@ try
         /// otherwise they keep running indefinitely and block shutdown.
         global_context->signalKeeperDispatcherShutdown();
 
+        size_t current_connections = 0;
         if (!servers_to_start_before_tables.empty())
         {
             LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
-            size_t current_connections = 0;
             {
                 std::lock_guard lock(servers_lock);
                 for (auto & server : servers_to_start_before_tables)
@@ -1607,7 +1639,7 @@ try
                 LOG_INFO(log, "Closed connections to servers for tables.");
         }
 
-        global_context->shutdownKeeperDispatcher();
+        global_context->shutdownKeeperDispatcher(current_connections == 0);
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
@@ -1854,7 +1886,7 @@ try
 
     /// Try to increase limit on number of open files.
     {
-        rlimit rlim;
+        rlimit rlim{};
         if (getrlimit(RLIMIT_NOFILE, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 
@@ -1877,7 +1909,7 @@ try
 #if defined(RLIMIT_NPROC)
     /// Try to increase limit on number of threads.
     {
-        rlimit rlim;
+        rlimit rlim{};
         if (getrlimit(RLIMIT_NPROC, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 
@@ -2007,6 +2039,82 @@ try
     LOG_DEBUG(log, "Initializing interserver credentials.");
     global_context->updateInterserverCredentials(config());
 
+    std::shared_ptr<StatelessWorkerEndpoint> stateless_worker_endpoint_ptr{nullptr};
+    String stateless_worker_endpoint_name;
+    if (config().getBool("stateless_worker_server.enabled", false))
+    {
+        String stateless_worker_endpoint = config().getString("stateless_worker_server.endpoint", "localhost");
+        stateless_worker_endpoint_ptr = std::make_shared<StatelessWorkerEndpoint>();
+        stateless_worker_endpoint_name = stateless_worker_endpoint_ptr->getId(stateless_worker_endpoint);
+        global_context->getInterserverIOHandler().addEndpoint(stateless_worker_endpoint_name, stateless_worker_endpoint_ptr);
+        LOG_DEBUG(log, "Added stateless worker endpoint '{}'.", stateless_worker_endpoint_name);
+    }
+
+    SCOPE_EXIT({
+        if (stateless_worker_endpoint_ptr)
+        {
+            /// Remove the same endpoint that was registered (the configured name may differ from "localhost").
+            LOG_DEBUG(log, "Shutting down stateless worker endpoint '{}'.", stateless_worker_endpoint_name);
+            global_context->getInterserverIOHandler().removeEndpointIfExists(stateless_worker_endpoint_name);
+
+            stateless_worker_endpoint_ptr->blocker.cancelForever();
+            stateless_worker_endpoint_ptr->shutdown();
+            /// Acquire the lock to wait for all in-flight requests to finish.
+            std::lock_guard lock(stateless_worker_endpoint_ptr->rwlock);
+        }
+        stateless_worker_endpoint_ptr.reset();
+    });
+
+    #ifdef OS_LINUX
+    ExchangeConnectionsPtr exchange_connections_ptr = ExchangeConnections::instance();
+    std::vector<std::shared_ptr<ExchangeServer>> exchange_servers;
+    if (auto streaming_exchange_port = config().getUInt("distributed_query.streaming_exchange_port", 0))
+    {
+        if (streaming_exchange_port > 65535)
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "`distributed_query.streaming_exchange_port` must be in range 1..65535, got {}", streaming_exchange_port);
+
+        /// The exchange handshake is unauthenticated, so the listener is never bound to all interfaces
+        /// implicitly: the streaming exchange is enabled only when explicit listen host(s) are given.
+        Strings exchange_listen_hosts = DB::getMultipleValuesFromConfig(config(), "distributed_query", "streaming_exchange_listen_host");
+        if (exchange_listen_hosts.empty())
+        {
+            LOG_ERROR(log, "`distributed_query.streaming_exchange_port` is set but no "
+                "`distributed_query.streaming_exchange_listen_host` is configured; the streaming exchange "
+                "server is not started. Specify a listen host to enable it.");
+        }
+        else
+        {
+            for (const auto & listen_host : exchange_listen_hosts)
+            {
+                try
+                {
+                    exchange_servers.emplace_back(std::make_shared<ExchangeServer>(listen_host, streaming_exchange_port, exchange_connections_ptr));
+                    exchange_servers.back()->start();
+                }
+                catch (Poco::Exception & e)
+                {
+                    LOG_INFO(log, "Failed to start exchange server on {}:{}: {}",
+                        listen_host, streaming_exchange_port, e.displayText());
+                }
+            }
+            if (exchange_servers.empty())
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to start ExchangeServer on port {}", streaming_exchange_port);
+        }
+    }
+
+    SCOPE_EXIT({
+        for (auto & exchange_server_ptr : exchange_servers)
+        {
+            exchange_server_ptr->stop();
+            exchange_server_ptr.reset();
+        }
+    });
+    #else
+    if (config().getUInt("distributed_query.streaming_exchange_port", 0))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ExchangeServer is not supported on non-linux platform");
+    #endif
+
     /// Set up caches.
 
     JemallocCacheArena::setEnabled(server_settings[ServerSetting::use_separate_cache_arena]);
@@ -2032,6 +2140,16 @@ try
         LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
+
+    String unique_key_index_cache_policy_name = server_settings[ServerSetting::unique_key_index_cache_policy];
+    size_t unique_key_index_cache_size = server_settings[ServerSetting::unique_key_index_cache_size_bytes];
+    double unique_key_index_cache_size_ratio = server_settings[ServerSetting::unique_key_index_cache_size_ratio];
+    if (unique_key_index_cache_size > max_cache_size)
+    {
+        unique_key_index_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered UNIQUE KEY index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(unique_key_index_cache_size));
+    }
+    global_context->setUniqueKeyIndexCache(unique_key_index_cache_policy_name, unique_key_index_cache_size, unique_key_index_cache_size_ratio);
 
     String primary_index_cache_policy = server_settings[ServerSetting::primary_index_cache_policy];
     size_t primary_index_cache_size = server_settings[ServerSetting::primary_index_cache_size];
@@ -2289,6 +2407,9 @@ try
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
+            CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
+                new_server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
+
             size_t merges_mutations_memory_usage_soft_limit = new_server_settings[ServerSetting::merges_mutations_memory_usage_soft_limit];
 
             const double merges_mutations_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio];
@@ -2356,9 +2477,15 @@ try
             global_context->setUsersToIgnoreEarlyMemoryLimitCheck(new_server_settings[ServerSetting::users_to_ignore_early_memory_limit_check]);
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
 
-            global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
+            global_context->setMutationsUseAnalyzerOverride(
+                config().has("use_analyzer_for_mutations")
+                    ? std::make_optional(config().getBool("use_analyzer_for_mutations"))
+                    : std::nullopt);
 
-            global_context->setOSCPUOverloadSettings(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection], new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]);
+            global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
+            global_context->setMessageQueueDisableInsertion(new_server_settings[ServerSetting::message_queue_disable_insertion]);
+
+            global_context->setOSCPUOverloadSettings(static_cast<double>(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection]), static_cast<double>(new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]));
 
             size_t remote_read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
             size_t remote_write_bandwidth = new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server];
@@ -2397,10 +2524,6 @@ try
 
             if (config().has("keeper_server"))
             {
-#if USE_NURAFT
-                if (config().getBool("keeper_server.standalone_keeper", false))
-                    KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
-#endif
                 global_context->updateKeeperConfiguration(config());
             }
 
@@ -2412,7 +2535,7 @@ try
             {
                 const auto & new_pool_size = new_server_settings[ServerSetting::background_pool_size];
                 const auto & new_ratio = new_server_settings[ServerSetting::background_merges_mutations_concurrency_ratio];
-                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(static_cast<double>(new_pool_size) * new_ratio));
+                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(static_cast<double>(new_pool_size) * static_cast<double>(new_ratio)));
                 global_context->getMergeMutateExecutor()->updateSchedulingPolicy(new_server_settings[ServerSetting::background_merges_mutations_scheduling_policy].toString());
             }
 
@@ -2519,6 +2642,9 @@ try
                     std::lock_guard lock(servers_lock);
                     updateServers(config(), new_server_settings, server_pool, *async_metrics, servers, servers_to_start_before_tables);
                 }
+
+                if (config().has("startup_scripts"))
+                    loadStartupScripts(config(), new_server_settings, global_context, log);
             }
 
             global_context->updateStorageConfiguration(config());
@@ -2530,6 +2656,7 @@ try
 
                 global_context->updateUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateMarkCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateUniqueKeyIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updatePrimaryIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexMarkCacheConfiguration(config(), max_cache_size_in_bytes);
@@ -2596,7 +2723,7 @@ try
 
             /// Update core dump size limit.
             {
-                rlimit rlim;
+                rlimit rlim{};
                 if (getrlimit(RLIMIT_CORE, &rlim) == 0)
                 {
                     rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
@@ -2972,7 +3099,11 @@ try
         buildLoggers(config(), logger());
         initializeAzureSDKLogger(server_settings, logger().getLevel());
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
-        attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
+        bool has_keeper_server = false;
+#if USE_NURAFT
+        has_keeper_server = global_context->tryGetKeeperDispatcher() != nullptr;
+#endif
+        attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper, has_keeper_server);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
         /// Firstly remove partially dropped databases, to avoid race with Materialized...SyncThread,
@@ -3482,7 +3613,7 @@ void Server::createServers(
 
     for (const auto & listen_host : listen_hosts)
     {
-        const char * port_name;
+        const char * port_name = nullptr;
 
         if (server_type.shouldStart(ServerType::Type::HTTP))
         {
@@ -3769,7 +3900,7 @@ void Server::createInterserverServers(
     /// Now iterate over interserver_listen_hosts
     for (const auto & interserver_listen_host : interserver_listen_hosts)
     {
-        const char * port_name;
+        const char * port_name = nullptr;
 
         if (server_type.shouldStart(ServerType::Type::INTERSERVER_HTTP))
         {

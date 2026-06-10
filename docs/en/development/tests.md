@@ -205,7 +205,7 @@ List of available tags:
 | `no-release` | Disables tests in Release builds ||
 | `no-darwin` | Disables test on macOS (Darwin) | Test relies on Linux-specific features such as distributed queries, `procfs`, or HTTP server |
 
-The following options are also supported: `no-stress`, `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-backward-compatibility-check`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
+The following options are also supported: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-backward-compatibility-check`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
 
 In addition to above settings, you can use `USE_*` flags from `system.build_options` to define usage of particular ClickHouse features.
 For example, if your test uses a MySQL table, you should add a tag `use-mysql`.
@@ -553,9 +553,6 @@ Configuration is in `uncrustify.cfg` in the sources root.
 It is less tested than `clang-format`.
 
 `CLion` has its own code formatter that has to be tuned for our code style.
-
-We also use `codespell` to find typos in code.
-It is automated as well.
 
 ## Test coverage {#test-coverage}
 

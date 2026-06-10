@@ -2,7 +2,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
-#include <Common/ConcurrentBoundedQueue.h>
+#include <Common/ThreadStatus.h>
 #include <Core/Block.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>

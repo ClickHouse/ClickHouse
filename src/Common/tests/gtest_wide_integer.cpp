@@ -199,7 +199,7 @@ GTEST_TEST(WideInteger, FromDouble)
     /// (a prototype of a function that we may need)
 
     double f = -123.456;
-    UInt64 u;
+    UInt64 u = {};
     memcpy(&u, &f, sizeof(f));
 
     bool is_negative = u >> 63;
