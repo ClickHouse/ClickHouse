@@ -657,10 +657,12 @@ Composite types wrap one or more inner types and share a common wire model: **mu
 They share three structural properties:
 
 - **Fixed shape per schema.** The structure is determined entirely by the type string at decode time. `Array(UInt32)` always has the same stream layout, block to block.
-- **No version prefix.** The stream layout is stable across ClickHouse releases.
-- **No cross-block state.** Each block is fully self-describing.
+- **No version prefix of their own.** The composite wrapper itself adds no version byte; its framing (offsets, null-map, element streams) is stable across ClickHouse releases. This applies to the *wrapper* only — see the prefix-phase note below for inner versioned types.
+- **No cross-block state of their own.** The wrapper's framing is fully self-describing per block; any cross-block-state concern comes from an inner versioned type, not the wrapper.
 
 Composites are recursive — an inner type may itself be a composite.
+
+**Prefix phase before the data streams.** Reading a column is two phases, in this order: a **state-prefix phase** and then the **data-stream phase**. A composite wrapper has no prefix bytes of its own, but it *delegates* the prefix phase to its inner serialization before writing any of its own data streams: `SerializationArray::serializeBinaryBulkStatePrefix` calls `nested->serializeBinaryBulkStatePrefix` before the array offsets are written, and `Tuple`, `Map`, and `Nested` do the same through their element serializations. So when a composite wraps a [versioned/stateful type](#versioned-types) (`LowCardinality`, `Variant`, `Dynamic`, `JSON`), that inner type's version/state prefix is emitted *first*, ahead of the wrapper's offsets and element payload. For example, `Array(LowCardinality(String))` is laid out as `[LowCardinality state prefix]` → `[array offsets]` → `[flattened LowCardinality element payload]`, not offsets-first. A decoder that reads offsets before running the inner prefix phase will desynchronize on any composite containing `LowCardinality`, `Variant`, `Dynamic`, or `JSON`. When every inner type is a plain leaf or another non-versioned composite, the prefix phase emits no bytes and the offsets-first description below applies verbatim.
 
 #### Nullable(T) {#nullable}
 
