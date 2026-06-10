@@ -121,6 +121,13 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         }
     }
 
+    /// Apply the creating query's session/profile settings onto the storage context, so a setting given in
+    /// the CREATE statement (for example `s3_allow_server_credentials_in_user_queries`) reaches the S3 client
+    /// built in the storage constructor. Mirrors registerStorageObjectStorage; `args.getContext()` alone is
+    /// the global context and would not carry the override.
+    ContextMutablePtr context_copy = Context::createCopy(args.getContext());
+    context_copy->setSettings(args.getLocalContext()->getSettingsCopy());
+
     return std::make_shared<StorageObjectStorageQueue>(
         std::move(queue_settings),
         std::move(configuration),
@@ -128,7 +135,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         args.columns,
         args.constraints,
         args.comment,
-        args.getContext(),
+        context_copy,
         format_settings,
         args.storage_def,
         args.mode,
