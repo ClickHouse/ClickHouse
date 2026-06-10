@@ -111,6 +111,7 @@
 #include <Server/TCPServer.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/ThreadStackSize.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecEncrypted.h>
@@ -1499,7 +1500,7 @@ try
         /* minCapacity */3,
         /* maxCapacity */server_settings[ServerSetting::max_connections],
         /* idleTime */60,
-        /* stackSize */POCO_THREAD_STACK_SIZE,
+        /* stackSize */DEFAULT_THREAD_STACK_SIZE ? static_cast<int>(DEFAULT_THREAD_STACK_SIZE) : POCO_THREAD_STACK_SIZE,
         server_settings[ServerSetting::global_profiler_real_time_period_ns],
         server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
 
