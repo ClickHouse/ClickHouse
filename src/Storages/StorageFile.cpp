@@ -43,7 +43,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #if USE_PARQUET
-#include <boost/algorithm/string/predicate.hpp>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #endif
