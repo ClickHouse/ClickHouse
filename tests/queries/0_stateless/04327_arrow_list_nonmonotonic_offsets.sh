@@ -70,6 +70,10 @@
 #   length with no bitmap, which a nullable Tuple() wrapper would turn into a length-sized null
 #   map.  The struct branch rejects a non-empty fields-less struct chunk that has no bitmap, and
 #   readByteMapFromArrowColumn validates the bitmap before allocating for the null_count>0 case.
+#
+# Class L: JSON reader reserved column memory before validating the offsets buffer:
+#   Binary / LargeBinary with JSON logical type and a 1-row file whose RecordBatch and FieldNode
+#   length are forged to 2^30.  The reader must validate the offsets buffer before reserve().
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -459,6 +463,38 @@ assert len(pos) >= 2
 for p in pos:
     d[p:p+8] = struct.pack('<q', HUGE)
 open(f'{out}/empty_struct_huge_nullcount.arrow', 'wb').write(d)
+
+# Class L: JSON reader (Binary/LargeBinary with JSON logical type) reserved column memory from
+# arrow_column->length() before validating the offsets buffer.  A 1-row file whose RecordBatch
+# and FieldNode length are forged to 2^30 must be rejected as INCORRECT_DATA before reserve().
+def write_json_binary(binary_type):
+    field = pa.field('x', binary_type, metadata={b'PARQUET:logical_type': b'JSON'})
+    sch = pa.schema([field])
+    buf = io.BytesIO()
+    with ipc.new_file(buf, sch) as w:
+        w.write_table(pa.Table.from_arrays([pa.array([b'{"a":1}'], type=binary_type)], schema=sch))
+    return bytearray(buf.getvalue())
+
+def forge_one_row_to_huge(data, new_length):
+    positions = [i for i in range(0, len(data) - 7, 8) if struct.unpack_from('<q', data, i)[0] == 1]
+    for a in range(len(positions)):
+        for b in range(a + 1, len(positions)):
+            cand = bytearray(data)
+            for p in (positions[a], positions[b]):
+                cand[p:p+8] = struct.pack('<q', new_length)
+            try:
+                with ipc.open_file(pa.py_buffer(bytes(cand))) as reader:
+                    t = reader.read_all()
+                if t.num_rows == new_length and len(t.column('x').chunks[0]) == new_length:
+                    return cand
+            except Exception:
+                pass
+    raise RuntimeError("could not forge RecordBatch + FieldNode length")
+
+open(f'{out}/binary_json_huge_length.arrow', 'wb').write(
+    forge_one_row_to_huge(write_json_binary(pa.binary()), 1 << 30))
+open(f'{out}/largebinary_json_huge_length.arrow', 'wb').write(
+    forge_one_row_to_huge(write_json_binary(pa.large_binary()), 1 << 30))
 PYEOF
 
 check_incorrect_data() {
@@ -564,3 +600,9 @@ check_incorrect_data fixedlist_empty_struct_huge_child \
 
 check_incorrect_data empty_struct_huge_nullcount \
     $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/empty_struct_huge_nullcount.arrow', Arrow)"
+
+check_incorrect_data binary_json_huge_length \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/binary_json_huge_length.arrow', Arrow) FORMAT Null SETTINGS allow_experimental_json_type=1"
+
+check_incorrect_data largebinary_json_huge_length \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/largebinary_json_huge_length.arrow', Arrow) FORMAT Null SETTINGS allow_experimental_json_type=1"

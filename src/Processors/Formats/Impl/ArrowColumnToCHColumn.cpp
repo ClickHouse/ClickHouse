@@ -642,6 +642,12 @@ static ColumnWithTypeAndName readColumnWithJSONData(
     auto internal_column = internal_type->createColumn();
     auto & column_object = assert_cast<ColumnObject &>(*internal_column);
 
+    /// Validate every chunk's offsets buffer before reserving column memory, so a forged
+    /// (or buffer-inconsistent) declared length is rejected as INCORRECT_DATA rather than a
+    /// huge reserve(). The String/Binary reader validates in its first pass for the same reason.
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+        checkBinaryOffsetsBuffer(dynamic_cast<const ArrowArray &>(*(arrow_column->chunk(chunk_i))), column_name);
+
     column_object.reserve(arrow_column->length());
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
