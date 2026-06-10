@@ -1224,10 +1224,11 @@ static void applyQueryConstructionSettings(
     if (order_expr.empty() && !sort_expr.empty())
         order_expr = convertSortToOrderBy(sort_expr);
 
-    /// Only a `SELECT` / `UNION` can be wrapped as a derived table. For any other query kind, or a
-    /// query with `INTO OUTFILE` (which cannot live inside a subquery), leave the AST unchanged.
+    /// Only a `SELECT` / `UNION` can be wrapped as a derived table. For any other query kind, leave
+    /// the AST unchanged. `INTO OUTFILE` and the other output options cannot live inside a subquery,
+    /// so they are popped up to the outer query below and shape the final (wrapped) result.
     auto * base_select = ast->as<ASTSelectWithUnionQuery>();
-    if (!base_select || base_select->out_file)
+    if (!base_select)
         return;
 
     auto parse_component = [&](IParser & parser, const String & text, const char * what) -> ASTPtr
@@ -1236,12 +1237,26 @@ static void applyQueryConstructionSettings(
             fmt::format("query construction ({})", what), max_query_size, max_parser_depth, max_parser_backtracks);
     };
 
-    /// `FORMAT` and `SETTINGS` are top-level-only; detach from the base and re-attach to the outer
-    /// query (the base `SETTINGS` were already applied to the context above).
+    /// `INTO OUTFILE`, `FORMAT`, `SETTINGS` and the `INTO OUTFILE` compression options are
+    /// top-level-only output options; detach them from the base and re-attach them to the outer
+    /// query, so they shape the final (wrapped) result. The base `SETTINGS` were already applied
+    /// to the context above.
+    ASTPtr base_out_file = base_select->out_file;
     ASTPtr base_format = base_select->format_ast;
     ASTPtr base_settings = base_select->settings_ast;
+    ASTPtr base_compression = base_select->compression;
+    ASTPtr base_compression_level = base_select->compression_level;
+    const bool base_outfile_with_stdout = base_select->isIntoOutfileWithStdout();
+    const bool base_outfile_append = base_select->isOutfileAppend();
+    const bool base_outfile_truncate = base_select->isOutfileTruncate();
+    base_select->reset(base_select->out_file);
     base_select->reset(base_select->format_ast);
     base_select->reset(base_select->settings_ast);
+    base_select->reset(base_select->compression);
+    base_select->reset(base_select->compression_level);
+    base_select->setIsIntoOutfileWithStdout(false);
+    base_select->setIsOutfileAppend(false);
+    base_select->setIsOutfileTruncate(false);
 
     /// `limit` / `offset` / `page` are consumed here (materialized as the outer query's `LIMIT`/
     /// `OFFSET` below). Strip them from every `SETTINGS` clause carried by the base query so the
@@ -1324,10 +1339,19 @@ static void applyQueryConstructionSettings(
     outer_union->list_of_selects = make_intrusive<ASTExpressionList>();
     outer_union->list_of_selects->children.push_back(std::move(outer_select));
     outer_union->children.push_back(outer_union->list_of_selects);
+    if (base_out_file)
+        outer_union->set(outer_union->out_file, base_out_file);
     if (base_format)
         outer_union->set(outer_union->format_ast, base_format);
     if (base_settings)
         outer_union->set(outer_union->settings_ast, base_settings);
+    if (base_compression)
+        outer_union->set(outer_union->compression, base_compression);
+    if (base_compression_level)
+        outer_union->set(outer_union->compression_level, base_compression_level);
+    outer_union->setIsIntoOutfileWithStdout(base_outfile_with_stdout);
+    outer_union->setIsOutfileAppend(base_outfile_append);
+    outer_union->setIsOutfileTruncate(base_outfile_truncate);
 
     ast = std::move(outer_union);
 
