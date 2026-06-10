@@ -2,7 +2,7 @@
 # Tags: no-fasttest
 # Regression tests for OOB reads in Arrow List/LargeList/FixedSizeList/Struct/Map:
 #
-# Class A — non-monotonic offsets (uint64 underflow):
+# Class A: non-monotonic offsets (uint64 underflow):
 #   Arrow offsets [0,64,65,64] for List(UInt8) with inner_size=64.
 #   Row 1 starts at inner[64] (one byte past the allocation); row 2's uint64
 #   underflow wraps last_offset back to 64 == inner_size, bypassing the
@@ -10,14 +10,14 @@
 #   SELECT arrayElement(arr,2) triggers an ASan abort on unpatched builds.
 #   Applies to LargeList (int64 offsets) identically.
 #
-# Class B — empty child with non-zero offsets:
+# Class B: empty child with non-zero offsets:
 #   FixedSizeList<int32>[7] and List<int32> with 3 parent rows whose child
 #   FieldNode.length is patched to 0.  The declared last offset (21) exceeds
 #   the empty child allocation; ColumnArray's constructor skips the consistency
 #   check when data->empty(), silently producing a column with all offsets past
 #   the inner allocation.  SELECT * triggers an ASan abort on unpatched builds.
 #
-# Class C — Struct/Tuple field-length mismatch:
+# Class C: Struct/Tuple field-length mismatch:
 #   arrow::StructArray::field() silently Slice-clamps a child whose FieldNode.length
 #   is shorter than the parent struct's length, so independently-read fields can have
 #   different row counts.  ColumnTuple on unpatched code never validates this, letting
@@ -26,37 +26,43 @@
 #   Case C2: Map<int32,int32> with 1 row / 5 entries, value FieldNode.length patched 5→3.
 #   SELECT * triggers an ASan abort on unpatched builds for both.
 #
-# Class D — decreasing offsets that reach Flatten():
+# Class D: decreasing offsets that reach Flatten():
 #   List<int32> with offsets patched to [64,0,6].  arrow::ListArray::Flatten() slices
 #   the values array from offset[0]=64 to offset[2]=6 before the offsets reader's
 #   monotonicity check runs, failing deep inside Arrow's ArrayData::Slice (STD_EXCEPTION)
 #   on code that validates monotonicity too late.  The pre-Flatten check rejects it as
 #   INCORRECT_DATA.
 #
-# Class E — truncated child validity bitmap after Flatten/Slice:
+# Class E: truncated child validity bitmap after Flatten/Slice:
 #   Flatten()/StructArray::field() yield a child slice with kUnknownNullCount, so
 #   arrow::ChunkedArray's constructor scans the child bitmap via null_count().  A truncated
 #   bitmap must be validated (without calling null_count) before that scan.
 #   Case E1: List(Nullable(int32)), child bitmap shrunk 9→1 byte.
 #   Case E2: Struct<a,Nullable(b)>, field b sliced and its bitmap shrunk 9→1 byte.
 #
-# Class F — FixedSizeList child shorter than length*stride:
+# Class F: FixedSizeList child shorter than length*stride:
 #   FixedSizeList<int32>[7] with 3 rows; child FieldNode.length patched 21→10.  The
 #   pre-Flatten stride/size check rejects it before Arrow's ArrayData::Slice fails.
 #
-# Class G — nested child FieldNode.length = -1:
+# Class G: nested child FieldNode.length = -1:
 #   Struct / List / LargeList / FixedSizeList whose child node length is patched to -1.
 #   StructArray::field()/Flatten() would slice a negative-length array; rejected first.
 #
-# Class H — monotonic offsets pointing past values.length:
+# Class H: monotonic offsets pointing past values.length:
 #   List / LargeList whose empty-list offsets are patched [0,0]→[1,1]; offsets are
 #   non-negative and monotonic but exceed values.length (0).  Rejected before Flatten.
 #
-# Class I — top-level declared length inconsistent with buffers:
+# Class I: top-level declared length inconsistent with buffers:
 #   Fixed-width columns (Int32, Bool, Decimal) and an empty Struct whose RecordBatch /
 #   FieldNode length is patched negative or to 2^62, plus a LargeList that derives a 2^62
 #   flattened child length from 64-bit offsets over a one-element child.  Each must be
 #   rejected as INCORRECT_DATA before the column reserve, not as CANNOT_ALLOCATE_MEMORY.
+#
+# Class J: sliced Struct whose child field is too short for the struct slice range:
+#   List / LargeList / Map sliced so the struct entries start at offset 1 (entries length 2)
+#   while a struct child field length is 0.  StructArray::field() would slice child[1:2] out
+#   of a 0-length field; the struct branch must reject struct.offset + struct.length >
+#   child.length before reaching Arrow's ArrayData::Slice.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -94,7 +100,7 @@ assert idx >= 0 and idx % 4 == 0, f"could not find last offset int32=66 (file={l
 d[idx:idx+4] = malicious
 open(f'{out}/list_nonmonotonic.arrow', 'wb').write(d)
 
-# Case 2: LargeList(UInt8), int64 offsets — same OOB via 64-bit underflow.
+# Case 2: LargeList(UInt8), int64 offsets, same OOB via 64-bit underflow.
 arr64 = pa.array([[0xAA]*64, [0xBB], [0xCC]], type=pa.large_list(pa.uint8()))
 d64 = write_arrow(arr64)
 valid_last64 = struct.pack('<q', 66)
@@ -176,7 +182,7 @@ assert idx_decr >= 0, "could not find List offsets [0,4,6] in decreasing-offset 
 d_decr[idx_decr:idx_decr+12] = struct.pack('<3i', 64, 0, 6)
 open(f'{out}/list_decreasing_offset.arrow', 'wb').write(d_decr)
 
-# Class E — truncated child validity bitmap after Flatten/Slice.
+# Class E: truncated child validity bitmap after Flatten/Slice.
 # Arrow's Flatten()/StructArray::field() produce a child slice with kUnknownNullCount;
 # arrow::ChunkedArray's constructor then sums chunk->null_count(), which scans the
 # child validity bitmap.  A truncated bitmap is read out of bounds there, before any
@@ -242,7 +248,7 @@ d_e2[idx_e2+32:idx_e2+40] = struct.pack('<q', 70)  # force field b slice
 assert shrink_buffer_len(d_e2, 9, 1), "no field b bitmap buffer (length 9) found in struct-bitmap file"
 open(f'{out}/struct_child_bitmap.arrow', 'wb').write(d_e2)
 
-# Class F — FixedSizeList<int32>[7] with a non-empty child shorter than length*stride.
+# Class F: FixedSizeList<int32>[7] with a non-empty child shorter than length*stride.
 # 3 parent rows need 21 child values; child FieldNode.length is patched 21→10.  Flatten()
 # would slice values[0,21] out of a 10-element child; the pre-Flatten stride/size check
 # rejects it as INCORRECT_DATA instead of failing inside Arrow's ArrayData::Slice.
@@ -252,7 +258,7 @@ n = patch_all_int64(d_f, 21, 10)
 assert n >= 1, "no int64=21 found in FSL-short-child file"
 open(f'{out}/fsl_short_child.arrow', 'wb').write(d_f)
 
-# Class G — nested child FieldNode.length = -1.  Reaches Arrow's ArrayData::Slice (via
+# Class G: nested child FieldNode.length = -1.  Reaches Arrow's ArrayData::Slice (via
 # StructArray::field() or Flatten()) with a negative array length unless rejected first.
 def patch_fieldnode_length(data, pattern_qs, q_index, value):
     pat = struct.pack('<' + 'q'*len(pattern_qs), *pattern_qs)
@@ -278,7 +284,7 @@ g_fsl = pa.array([[42]], type=pa.list_(pa.int32(), 1))
 open(f'{out}/fixedlist_child_neg_length.arrow', 'wb').write(
     patch_fieldnode_length(write_arrow(g_fsl, name='x'), [1,0,1,0], 2, -1))
 
-# Class H — monotonic, non-negative List/LargeList offsets that point past values.length.
+# Class H: monotonic, non-negative List/LargeList offsets that point past values.length.
 # An empty list's offsets [0,0] are patched to [1,1]; values.length stays 0, so Flatten()
 # would slice values[1,1] out of a 0-length array.  Verified via pyarrow round-trip.
 def patch_offsets_past_values(arr, packed):
@@ -303,7 +309,7 @@ open(f'{out}/list_offset_past_values.arrow', 'wb').write(
 open(f'{out}/largelist_offset_past_values.arrow', 'wb').write(
     patch_offsets_past_values(pa.array([[]], type=pa.large_list(pa.int32())), struct.pack('<2q', 1, 1)))
 
-# Class I — top-level declared length inconsistent with buffers (negative, or huge).
+# Class I: top-level declared length inconsistent with buffers (negative, or huge).
 # Patch every aligned int64 equal to the 5-row count (RecordBatch.length and FieldNode.length;
 # the data values avoid 5).  Readers must reject via the non-negative entry check / per-reader
 # buffer validation rather than reserve() throwing CANNOT_ALLOCATE_MEMORY.
@@ -333,6 +339,42 @@ ob = ll.find(struct.pack('<2q', 0, 1))
 assert ob >= 0, "LargeList offset buffer [0,1] not found"
 ll[ob:ob+16] = struct.pack('<2q', 0, HUGE)  # offsets -> [0, 2^62]
 open(f'{out}/largelist_huge_child_length.arrow', 'wb').write(ll)
+
+# Class J: a sliced Struct whose child field is too short for the struct slice range.
+# The parent list/map slices the struct entries at offset 1 (offsets [1,2], entries length 2),
+# while a struct child field length is 0.  StructArray::field() then slices child[1:2] out of a
+# 0-length field; the struct branch must reject this (struct.offset + struct.length > child.length)
+# before reaching Arrow's ArrayData::Slice.
+def patch_struct_slice(arr, name, pattern_qs, struct_len_idx, child_len_idx, off_fmt):
+    data = bytearray(write_arrow(arr, name=name))
+    pat = struct.pack('<' + 'q'*len(pattern_qs), *pattern_qs)
+    idx = data.find(pat)
+    assert idx >= 0, f"FieldNode pattern {pattern_qs} not found"
+    data[idx + 8*struct_len_idx : idx + 8*(struct_len_idx+1)] = struct.pack('<q', 2)  # struct entries length -> 2
+    data[idx + 8*child_len_idx : idx + 8*(child_len_idx+1)] = struct.pack('<q', 0)    # child field length -> 0
+    old = struct.pack(off_fmt, 0, 1)
+    new = struct.pack(off_fmt, 1, 2)
+    pos = 0
+    while True:
+        oi = data.find(old, pos)
+        assert oi >= 0, "list offsets [0,1] not found"
+        cand = bytearray(data)
+        cand[oi:oi+len(old)] = new
+        try:
+            with ipc.open_file(pa.py_buffer(bytes(cand))) as reader:
+                a = reader.read_all().column(name).chunks[0]
+            if a.offsets.to_pylist() == [1, 2]:
+                return cand
+        except Exception:
+            pass
+        pos = oi + 1
+
+open(f'{out}/list_struct_offset_child_zero.arrow', 'wb').write(
+    patch_struct_slice(pa.array([[{'a': 20}]], type=pa.list_(pa.struct([('a', pa.int32())]))), 'x', [1,0,1,0,1,0], 2, 4, '<2i'))
+open(f'{out}/largelist_struct_offset_child_zero.arrow', 'wb').write(
+    patch_struct_slice(pa.array([[{'a': 20}]], type=pa.large_list(pa.struct([('a', pa.int32())]))), 'x', [1,0,1,0,1,0], 2, 4, '<2q'))
+open(f'{out}/map_offset_key_zero.arrow', 'wb').write(
+    patch_struct_slice(pa.array([[(1, 10)]], type=pa.map_(pa.int32(), pa.int32())), 'm', [1,0,1,0,1,0,1,0], 2, 4, '<2i'))
 PYEOF
 
 check_incorrect_data() {
@@ -414,3 +456,12 @@ check_incorrect_data empty_struct_neg_length \
 
 check_incorrect_data largelist_huge_child_length \
     $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/largelist_huge_child_length.arrow', Arrow)"
+
+check_incorrect_data list_struct_offset_child_zero \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/list_struct_offset_child_zero.arrow', Arrow)"
+
+check_incorrect_data largelist_struct_offset_child_zero \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/largelist_struct_offset_child_zero.arrow', Arrow)"
+
+check_incorrect_data map_offset_key_zero \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/map_offset_key_zero.arrow', Arrow)"

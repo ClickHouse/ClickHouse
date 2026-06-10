@@ -115,7 +115,7 @@ namespace
 /// Validate that the validity bitmap (buffers[0]) covers all declared rows.
 /// We deliberately do NOT gate on null_count(): for an array produced by Arrow's
 /// Slice/Flatten the null count is kUnknownNullCount, and calling null_count()
-/// triggers a CountSetBits scan over buffers[0] across [offset, offset+length) —
+/// triggers a CountSetBits scan over buffers[0] across [offset, offset+length) , 
 /// which reads out of bounds when the bitmap is truncated, the very thing we are
 /// trying to validate.  Instead we validate the buffer size whenever a bitmap is
 /// present (a present-but-undersized bitmap is always malformed), and skip when it
@@ -1195,7 +1195,7 @@ static ColumnPtr readOffsetsFromArrowListColumn(const std::shared_ptr<arrow::Chu
     {
         auto & list_chunk = dynamic_cast<ArrowListArray &>(*(arrow_column->chunk(chunk_i)));
         auto arrow_offsets_array = list_chunk.offsets();
-        /// The offsets array is a numeric Int32/Int64 array — validate its buffer before Value() calls.
+        /// The offsets array is a numeric Int32/Int64 array, validate its buffer before Value() calls.
         using OffsetArray = typename ArrowOffsetArray<ArrowListArray>::type;
         const auto & arrow_offsets = checkedCast<OffsetArray>(*arrow_offsets_array, column_name);
 
@@ -1975,14 +1975,21 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 auto & struct_chunk = assert_cast<arrow::StructArray &>(*(arrow_column->chunk(chunk_i)));
                 for (int i = 0; i < arrow_struct_type->num_fields(); ++i)
                 {
-                    /// field() Slice-clamps a child whose length differs from the struct; a negative
-                    /// child length would fail inside Arrow's ArrayData::Slice, so reject it first.
+                    /// field() slices child[struct.offset : struct.offset + struct.length] (the
+                    /// struct may be sliced, e.g. when nested in a list).  A child shorter than that
+                    /// range, including the negative-length case, would fail inside Arrow's
+                    /// ArrayData::Slice, so validate the range here first.  struct.offset/length are
+                    /// already known non-negative (checked at readColumnFromArrowColumn entry).
                     const auto & child_data = struct_chunk.data()->child_data[i];
-                    if (unlikely(child_data->length < 0))
+                    if (unlikely(
+                            child_data->length < 0
+                            || struct_chunk.offset() > child_data->length
+                            || struct_chunk.length() > child_data->length - struct_chunk.offset()))
                         throw Exception(
                             ErrorCodes::INCORRECT_DATA,
-                            "Arrow Struct field {} has negative length {} for column '{}'",
-                            i, child_data->length, column_name);
+                            "Arrow Struct field {} (length {}) is too small for the struct slice "
+                            "[offset {}, +{}) for column '{}'",
+                            i, child_data->length, struct_chunk.offset(), struct_chunk.length(), column_name);
                     auto field_chunk = struct_chunk.field(i);
                     /// field() Slice-clamps children, producing kUnknownNullCount; validate the
                     /// child bitmap before arrow::ChunkedArray's constructor (below) scans it.
@@ -2067,7 +2074,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             /// fields' FieldNode.length without triggering an Arrow-level error.  Without
             /// this check, ColumnTuple would hold fields of unequal size, and any reader
             /// that accesses a short field past its allocation triggers an OOB heap read.
-            /// Note: this also covers the Map case — Map entries are read through this
+            /// Note: this also covers the Map case, Map entries are read through this
             /// STRUCT branch, so mismatched key vs. value lengths are caught here.
             if (!tuple_elements.empty())
             {
