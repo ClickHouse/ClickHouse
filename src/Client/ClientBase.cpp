@@ -138,6 +138,7 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 output_format_pretty_max_rows;
     extern const SettingsUInt64 output_format_pretty_max_value_width;
+    extern const SettingsString output_format_pretty_grid_charset;
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool implicit_select;
@@ -834,6 +835,18 @@ try
         auto format_settings = getFormatSettings(client_context);
         format_settings.is_writing_to_terminal = stdout_is_a_tty;
 
+        /// If the result is written to a terminal that does not support UTF-8 (e.g. with LANG=C),
+        /// fall back to ASCII for the Pretty formats. Otherwise Unicode box-drawing characters
+        /// would corrupt the terminal. Respect an explicit choice of the charset by the user, and
+        /// do not change the output when it goes only into a file (the file should keep UTF-8).
+        if (stdout_is_a_tty
+            && !select_only_into_file
+            && !client_context->getSettingsRef()[Setting::output_format_pretty_grid_charset].changed
+            && !terminalSupportsUTF8())
+        {
+            format_settings.pretty.charset = FormatSettings::Pretty::Charset::ASCII;
+        }
+
         /// We need to disable output format squashing semantics for streaming queries
         /// because otherwise data may not be disaplayed forever.
         if (parsed_query && hasStreamingTableExpression(*parsed_query))
@@ -994,10 +1007,6 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
             default_output_format = *format_from_file_name;
         else
             default_output_format = "TSV";
-
-        std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdout_fd);
-        if (file_name)
-            default_output_compression_method = chooseCompressionMethod(*file_name, "");
     }
     else if (is_interactive)
     {
@@ -1006,6 +1015,17 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
     else
     {
         default_output_format = "TSV";
+    }
+
+    /// Detect output compression independently of format selection.
+    /// Even when the user specifies --output-format or --format explicitly,
+    /// stdout may still be redirected to a compressed file (e.g., output.gz).
+    if (default_output_compression_method == CompressionMethod::None
+        && isFileDescriptorSuitableForInput(stdout_fd))
+    {
+        std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdout_fd);
+        if (file_name)
+            default_output_compression_method = chooseCompressionMethod(*file_name, "");
     }
 
     if (getClientConfiguration().has("input-format"))
@@ -1032,7 +1052,13 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
             default_input_format = *format_from_file_name;
         else
             default_input_format = "auto";
+    }
 
+    /// Detect input compression independently of format selection.
+    /// Even when the user specifies --input-format or --format explicitly,
+    /// stdin may still be redirected from a compressed file (e.g., input.gz).
+    if (default_input_compression_method == CompressionMethod::None)
+    {
         std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdin_fd);
         if (file_name)
             default_input_compression_method = chooseCompressionMethod(*file_name, "");
@@ -1459,6 +1485,15 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 /// Also checks if query execution should be cancelled.
 void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel)
 {
+    /// The connection may already be torn down — e.g. `sendQuery` failed to
+    /// write the query to a server that died mid-transfer and called
+    /// `disconnect()`, after which `processOrdinaryQuery` calls us in a
+    /// best-effort attempt to drain remaining data. With the receive side
+    /// gone there is nothing to poll for; bail out so we don't call
+    /// `connection->poll()` (and friends) on a disconnected connection.
+    if (!connection->isConnected())
+        return;
+
     // TODO: get the poll_interval from commandline.
     const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
     constexpr size_t default_poll_interval = 1000000; /// in microseconds
@@ -2685,6 +2720,16 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
             while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                 ++token_iterator;
             this_query_begin = token_iterator->end;
+
+            /// Mirror the per-query reset at the top of `processParsedSingleQuery` so the skip
+            /// matches the state a successful query would leave behind. Otherwise stale
+            /// exceptions from a prior statement (executed under `ignore_error`) survive and
+            /// `Client::main` returns their code as the process exit, even though the loop
+            /// elected to skip past the failing query and continue.
+            have_error = false;
+            error_code = 0;
+            client_exception.reset();
+            server_exception.reset();
 
             return MultiQueryProcessingStage::CONTINUE_PARSING;
         }
