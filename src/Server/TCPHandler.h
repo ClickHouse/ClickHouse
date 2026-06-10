@@ -272,7 +272,7 @@ private:
 
     void runImpl();
 
-    void extractConnectionSettingsFromContext(const ContextPtr & context);
+    void extractConnectionSettingsFromContext(const Context & context);
 
     std::unique_ptr<Session> makeSession();
 

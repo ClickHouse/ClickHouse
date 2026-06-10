@@ -10,6 +10,7 @@
 #include <Common/SharedMutex.h>
 #include <Common/SharedMutexHelper.h>
 #include <Common/StopToken.h>
+#include <Common/SettingsChanges.h>
 #include <Core/UUID.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
@@ -369,6 +370,34 @@ protected:
     String current_database;
     bool can_use_query_result_cache = false;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
+
+    /// Auth-server settings, persisted on the session context so `RESET SESSION`
+    /// can replay them without re-authenticating. Empty on non-session contexts.
+    SettingsChanges settings_from_auth_server;
+
+    /// `current_database` right after the handshake, captured via
+    /// `rememberDatabaseAtSessionStart`. The first candidate `RESET SESSION`
+    /// restores the database to.
+    std::optional<String> database_at_session_start;
+
+    /// The authenticated user (and `ClientInfo` names) captured at session start,
+    /// before any `EXECUTE AS` can repoint `user_id`. `RESET SESSION` resets to
+    /// this baseline so a pooled connection can't be returned still impersonating.
+    /// Captured via `rememberAuthenticatedUser`.
+    std::optional<UUID> authenticated_user_id;
+    String authenticated_current_user_name;
+    String authenticated_initial_user_name;
+    /// Externally-granted roles (LDAP / interserver) passed to `setUser` at login.
+    /// Part of the post-auth baseline, so `RESET SESSION` re-applies them.
+    std::vector<UUID> authenticated_external_roles;
+
+    /// Hooks fired at the end of `resetToUserDefaults` for handlers to drop
+    /// session-scoped state `Context` doesn't own (e.g. TCP socket timeouts).
+    /// Keyed by owner pointer so a handler re-registering replaces its entry.
+    /// The closure takes `Context &` rather than capturing a `shared_ptr` back
+    /// to us, which would be a reference cycle keeping the `Context` alive.
+    using SessionResetCallback = std::function<void(Context &)>;
+    std::vector<std::pair<const void *, SessionResetCallback>> session_reset_callbacks;
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;  /// Callback for tracking progress of query execution.
@@ -855,6 +884,35 @@ public:
     /// WARNING: This function doesn't check the password!
     void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {});
     UserPtr getUser() const;
+
+    /// Settings produced by the authentication server (e.g. LDAP) at auth time.
+    /// Stored on the session context so `RESET SESSION` can replay them without re-authenticating.
+    void setSettingsFromAuthServer(const SettingsChanges & settings_changes);
+
+    /// Lock in the current `current_database` as the session-start database, so
+    /// `RESET SESSION` restores it rather than the profile default. Called by a
+    /// protocol handler once it has applied handshake-level state (e.g. a Hello
+    /// packet's default_database).
+    void rememberDatabaseAtSessionStart();
+
+    /// Snapshot the current `user_id` / `ClientInfo` names as the
+    /// authenticated-user baseline for `RESET SESSION`. Called by `Session` once,
+    /// right after `setUser`, before any `EXECUTE AS` can repoint the user.
+    void rememberAuthenticatedUser();
+
+    /// Restore the session context to its post-authentication state: re-derive
+    /// profiles/roles from access control, restore the session-start database,
+    /// replay auth-server settings, and drop temporary tables, query parameters,
+    /// and scalars. Preserves user identity, client info, and the negotiated
+    /// output format.
+    void resetToUserDefaults();
+
+    /// Register a hook run at the end of `resetToUserDefaults` for a handler to
+    /// drop session-scoped state `Context` doesn't own (e.g. socket timeouts).
+    /// `owner` (a stable pointer, typically the handler's `this`) dedups: re-
+    /// registering with the same `owner` replaces the closure. Invoked outside
+    /// `Context::mutex`; the closure must not re-enter `resetToUserDefaults`.
+    void setSessionResetCallback(const void * owner, SessionResetCallback callback);
 
     std::optional<UUID> getUserID() const;
     String getUserName() const;

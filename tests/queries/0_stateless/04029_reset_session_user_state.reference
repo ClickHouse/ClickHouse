@@ -1,0 +1,5 @@
+roles at session start:	['reset_session_role_a_DB']
+roles after SET ROLE:	['reset_session_role_b_DB']
+roles after RESET SESSION:	['reset_session_role_a_DB']
+roles after SET ROLE NONE:	[]
+roles after second RESET SESSION:	['reset_session_role_a_DB']

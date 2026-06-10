@@ -29,6 +29,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
+#include <Parsers/ASTResetSessionQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/parseQuery.h>
@@ -1723,8 +1724,11 @@ static BlockIO executeQueryImpl(
 
             if (!get_result_from_query_result_cache())
             {
-                /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
-                if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !(out_ast && out_ast->as<ASTTransactionControl>()))
+                /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots.
+                /// `RESET SESSION` is excluded: it rejects active transactions itself, and must be able to clear an inherited
+                /// `implicit_transaction = 1` — wrapping it would make that (and clean-session idempotency) unreachable.
+                if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction]
+                    && !(out_ast && (out_ast->as<ASTTransactionControl>() || out_ast->as<ASTResetSessionQuery>())))
                 {
                     try
                     {
@@ -1752,7 +1756,10 @@ static BlockIO executeQueryImpl(
                 const auto & query_settings = context->getSettingsRef();
                 if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
                 {
-                    if (!interpreter->supportsTransactions())
+                    /// `RESET SESSION` is exempt: it rejects active transactions
+                    /// itself with the specific `INVALID_TRANSACTION` code, which the
+                    /// generic `NOT_IMPLEMENTED` here would otherwise pre-empt.
+                    if (!interpreter->supportsTransactions() && !(out_ast && out_ast->as<ASTResetSessionQuery>()))
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", out_ast->getID());
 
                     if (query_settings[Setting::apply_mutations_on_fly])
@@ -1970,7 +1977,12 @@ static BlockIO executeQueryImpl(
                 }
                 else if (auto txn = context->getCurrentTransaction())
                 {
-                    txn->onException();
+                    /// `RESET SESSION` rejects an active transaction without
+                    /// mutating it, so it must not trip the rollback/cancel hook —
+                    /// that would poison the caller's transaction before they can
+                    /// COMMIT/ROLLBACK.
+                    if (!(out_ast && out_ast->as<ASTResetSessionQuery>()))
+                        txn->onException();
                 }
 
                 /// If a query with internal query fails, only add one error to the quota.
@@ -1996,7 +2008,11 @@ static BlockIO executeQueryImpl(
         }
         else if (auto txn = context->getCurrentTransaction())
         {
-            txn->onException();
+            /// See the matching note in `exception_callback`: `RESET SESSION`
+            /// rejects an active transaction without mutating it, so it must not
+            /// poison that transaction via the rollback/cancel hook.
+            if (!(out_ast && out_ast->as<ASTResetSessionQuery>()))
+                txn->onException();
         }
 
         logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal);

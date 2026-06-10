@@ -778,6 +778,10 @@ try
     if (!table_name.empty())
         client_context->setSetting("implicit_table_at_top_level", table_name);
 
+    /// Snapshot the `RESET SESSION` baseline after `implicit_table_at_top_level`
+    /// is applied (snapshotting inside `initClientContext` would miss it).
+    snapshotConnectionBaseline();
+
     connect();
 
     if (!table_name.empty())

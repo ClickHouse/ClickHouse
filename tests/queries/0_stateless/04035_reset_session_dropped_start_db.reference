@@ -1,0 +1,2 @@
+connection-start db is A:	1
+after drop + reset, fall back to user default B:	1

@@ -424,6 +424,7 @@ namespace ErrorCodes
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
+    extern const int INVALID_TRANSACTION;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FUNCTION;
     extern const int SUPPORT_IS_DISABLED;
@@ -1939,19 +1940,35 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
+namespace
+{
+    /// Lookup-only bundle: given a user_id, read the user record and derive the
+    /// roles / profiles state both `setUser` and `resetToUserDefaults` need
+    /// before applying. Both `AccessControl::read<User>()` and its friends here
+    /// may perform IO, so this must be called WITHOUT holding `Context::mutex`.
+    struct UserDerivedDefaults
+    {
+        UserPtr user;
+        std::vector<UUID> default_roles;
+        std::shared_ptr<const EnabledRolesInfo> enabled_roles;
+        std::shared_ptr<const SettingsProfilesInfo> enabled_profiles;
+    };
+
+    UserDerivedDefaults deriveUserDefaults(AccessControl & access_control, const UUID & user_id)
+    {
+        auto user = access_control.read<User>(user_id);
+        auto default_roles = user->granted_roles.findGranted(user->default_roles);
+        auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
+        auto enabled_profiles = access_control.getEnabledSettingsInfo(
+            user_id, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
+        return {std::move(user), std::move(default_roles), std::move(enabled_roles), std::move(enabled_profiles)};
+    }
+}
+
 void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_)
 {
-    /// Prepare lists of user's profiles, constraints, settings, roles.
-    /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
-    /// so Context::getLocalLock() and Context::getGlobalLock() must be unlocked while we're doing this.
-
-    auto & access_control = getAccessControl();
-    auto user = access_control.read<User>(user_id_);
-
-    auto default_roles = user->granted_roles.findGranted(user->default_roles);
-    auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
-    auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
-    const auto & database = user->default_database;
+    auto defaults = deriveUserDefaults(getAccessControl(), user_id_);
+    const auto & database = defaults.user->default_database;
 
     /// Apply user's profiles, constraints, settings, roles.
     std::lock_guard lock(mutex);
@@ -1960,14 +1977,267 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
 
     /// A profile can specify a value and a readonly constraint for same setting at the same time,
     /// so we shouldn't check constraints here.
-    setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
+    setCurrentProfilesWithLock(*defaults.enabled_profiles, /* check_constraints= */ false, lock);
 
-    setCurrentRolesWithLock(default_roles, lock);
+    setCurrentRolesWithLock(defaults.default_roles, lock);
     setExternalRolesWithLock(external_roles_, lock);
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
         setCurrentDatabaseWithLock(database, lock);
+}
+
+void Context::setSettingsFromAuthServer(const SettingsChanges & settings_changes)
+{
+    std::lock_guard lock(mutex);
+    settings_from_auth_server = settings_changes;
+}
+
+void Context::rememberDatabaseAtSessionStart()
+{
+    std::lock_guard lock(mutex);
+    database_at_session_start = current_database;
+}
+
+void Context::rememberAuthenticatedUser()
+{
+    std::lock_guard lock(mutex);
+    authenticated_user_id = user_id;
+    authenticated_current_user_name = client_info.current_user;
+    authenticated_initial_user_name = client_info.initial_user;
+    authenticated_external_roles = external_roles ? *external_roles : std::vector<UUID>{};
+}
+
+void Context::resetToUserDefaults()
+{
+    /// Reset to the authenticated-user baseline, not the current `user_id`: an
+    /// in-session `EXECUTE AS` repoints `user_id` at the impersonation target,
+    /// so re-deriving from it would leave the reset session still impersonating.
+    /// `authenticated_user_id` is pinned at session creation; fall back to
+    /// `user_id` for contexts that never went through `Session` (clickhouse-local).
+    /// Read under the shared lock, as with the other racy fields here.
+    std::optional<UUID> snapshot_user_id;
+    String snapshot_current_user_name;
+    String snapshot_initial_user_name;
+    bool is_session_context = false;
+    bool inside_transaction = false;
+    {
+        SharedLockGuard lock(mutex);
+        snapshot_user_id = authenticated_user_id.has_value() ? authenticated_user_id : user_id;
+        snapshot_current_user_name = authenticated_user_id.has_value() ? authenticated_current_user_name : client_info.current_user;
+        snapshot_initial_user_name = authenticated_user_id.has_value() ? authenticated_initial_user_name : client_info.initial_user;
+        is_session_context = (session_context.lock().get() == this);
+        inside_transaction = static_cast<bool>(merge_tree_transaction);
+    }
+
+    if (!snapshot_user_id)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "resetToUserDefaults() called on a context without a user");
+
+    /// Must run on the session context: on a query-context copy the
+    /// `settings_from_auth_server` / `database_at_session_start` fields are
+    /// empty, so the reset would silently misbehave.
+    if (!is_session_context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RESET SESSION must be executed against the session context");
+
+    /// Refuse to reset inside an active transaction: rolling it back would lose
+    /// work silently, and leaving it would leak a snapshot and uncommitted writes
+    /// to the next pool borrower. The caller must COMMIT or ROLLBACK first.
+    if (inside_transaction)
+        throw Exception(ErrorCodes::INVALID_TRANSACTION,
+            "RESET SESSION is not allowed inside an active transaction. "
+            "COMMIT or ROLLBACK first.");
+
+    /// Re-derive from access control outside the lock (this does IO). Shared
+    /// with `setUser` to keep reset and login in lock-step.
+    auto defaults = deriveUserDefaults(getAccessControl(), *snapshot_user_id);
+    const String user_default_database = defaults.user->default_database;
+
+    /// Resolve the target database eagerly (before the lock). Fallback chain,
+    /// first existing wins: connection-start db (`rememberDatabaseAtSessionStart`)
+    /// → user `DEFAULT DATABASE` → global current db (what `setUser` leaves for
+    /// users without a default) → empty. Probing the catalog lets a dropped
+    /// database fall through instead of breaking the reset.
+    auto database_exists = [](const String & db) -> bool
+    {
+        if (db.empty())
+            return false;
+        try
+        {
+            DatabaseCatalog::instance().assertDatabaseExists(db);
+            return true;
+        }
+        catch (const Exception & e)
+        {
+            /// Dropped database: fall through to the next candidate. Anything
+            /// else is unexpected — let it propagate.
+            if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
+                throw;
+            return false;
+        }
+    };
+
+    String target_database;
+    if (database_at_session_start.has_value() && database_exists(*database_at_session_start))
+        target_database = *database_at_session_start;
+    else if (database_exists(user_default_database))
+        target_database = user_default_database;
+    else
+    {
+        const String global_default_database = getGlobalContext()->getCurrentDatabase();
+        if (database_exists(global_default_database))
+            target_database = global_default_database;
+        /// else: empty.
+    }
+
+    /// Snapshot under the shared lock against a concurrent setSettingsFromAuthServer.
+    SettingsChanges auth_settings_snapshot;
+    {
+        SharedLockGuard lock(mutex);
+        auth_settings_snapshot = settings_from_auth_server;
+    }
+
+    /// Build the base post-reset settings locally (global defaults + user
+    /// profile), then swap them in under the lock — mirroring session creation:
+    /// start from the global context's current settings (so admin edits to
+    /// server defaults apply), then layer the user's profile + quirks + clamp,
+    /// chaining constraints onto the global ones as `setCurrentProfilesWithLock`
+    /// does at login. The local-build/atomic-swap shape is why this doesn't reuse
+    /// the live apply machinery; the lambda shares the quirks-and-clamp tail to
+    /// avoid drift.
+    ///
+    /// Auth-server settings are NOT folded in here: a `profile` entry must go
+    /// through `setCurrentProfileWithLock` (which mutates live profile/constraint
+    /// state), so they're replayed under the lock after the swap, via the same
+    /// calls login uses (see below).
+    const auto apply_and_clamp = [this](Settings & s, const SettingsChanges & changes)
+    {
+        s.applyChanges(changes);
+        applySettingsQuirks(s);
+        if (auto type = getApplicationType();
+            type == ApplicationType::LOCAL || type == ApplicationType::SERVER)
+            doSettingsSanityCheckClamp(s, getLogger("SettingsSanity"));
+    };
+
+    Settings new_settings = getGlobalContext()->getSettingsCopy();
+    apply_and_clamp(new_settings, defaults.enabled_profiles->settings);
+
+    auto new_profiles_state = defaults.enabled_profiles->getConstraintsAndProfileIDs(
+        getGlobalContext()->getSettingsConstraintsAndCurrentProfiles());
+
+    /// Swap these out under the lock and let their destructors run after it:
+    /// `TemporaryTableHolder::~` takes DatabaseCatalog/DatabaseMemory locks (a
+    /// lock-ordering hazard under our mutex), and `BackupsInMemoryHolder` (the
+    /// `BACKUP ... TO Memory(...)` payloads) can be large. Clearing the latter
+    /// is also what stops a post-reset `RESTORE FROM Memory(...)`.
+    TemporaryTablesMapping tables_to_drop;
+    Scalars scalars_to_drop;
+    Scalars special_scalars_to_drop;
+    std::shared_ptr<BackupsInMemoryHolder> backups_to_drop;
+
+    std::vector<std::pair<const void *, SessionResetCallback>> callbacks_snapshot;
+    {
+        std::lock_guard lock(mutex);
+
+        /// Swap in the new base settings + profile state, then replay auth-server
+        /// settings on top — the only step here that can throw (e.g. an auth
+        /// response named a `profile` that has since been dropped). Do it before
+        /// touching user / roles / database / session collections, and roll the
+        /// settings + profiles back on failure, so a failed reset leaves the live
+        /// session exactly as it was rather than half-reset. The replay mirrors
+        /// `Session::makeSessionContext`: check then apply via the Context-level
+        /// path so a `profile` entry routes through `setCurrentProfileWithLock`
+        /// rather than being mis-stored as a plain setting. It does not depend on
+        /// the restored user/roles below (profiles resolve from access control by
+        /// name/id), so the reorder is safe.
+        Settings prev_settings = *settings;
+        auto prev_profiles = settings_constraints_and_current_profiles;
+        /// `Settings` has no move assignment, so these are copies regardless.
+        *settings = new_settings;
+        settings_constraints_and_current_profiles = std::move(new_profiles_state);
+        try
+        {
+            checkSettingsConstraintsWithLock(auth_settings_snapshot, SettingSource::QUERY);
+            applySettingsChangesWithLock(auth_settings_snapshot, lock);
+        }
+        catch (...)
+        {
+            *settings = prev_settings;
+            settings_constraints_and_current_profiles = std::move(prev_profiles);
+            throw;
+        }
+
+        /// Restore the authenticated user (undoing any `EXECUTE AS`) and mirror
+        /// the ClientInfo names so `currentUser()` / `initialUser()` report it.
+        setUserIDWithLock(*snapshot_user_id, lock);
+        client_info.current_user = snapshot_current_user_name;
+        client_info.initial_user = snapshot_initial_user_name;
+
+        setCurrentRolesWithLock(defaults.default_roles, lock);
+        /// Re-apply the externally-granted roles (LDAP / interserver) installed by
+        /// `setUser` at login, so the reset session keeps the same privileges a
+        /// fresh session for this authentication would have.
+        external_roles.reset();
+        setExternalRolesWithLock(authenticated_external_roles, lock);
+        need_recalculate_access = true;
+
+        current_database = target_database;
+
+        tables_to_drop.swap(external_tables_mapping);
+        scalars_to_drop.swap(scalars);
+        special_scalars_to_drop.swap(special_scalars);
+        backups_to_drop.swap(backups_in_memory);
+        query_parameters.clear();
+
+        /// Snapshot under the lock so the loop below sees a stable set if a
+        /// concurrent `setSessionResetCallback` races.
+        callbacks_snapshot = session_reset_callbacks;
+    }
+    /// The swapped-out collections' destructors run here, outside the lock.
+
+    /// Bake the recalculated access into the session context now, mirroring what
+    /// `Session::makeSessionContext` does after `setUser`. Query contexts are
+    /// built with `Context::createCopy`, whose copy constructor copies `access`
+    /// and `current_roles` but NOT `external_roles`; if the session were left
+    /// with `need_recalculate_access`, the next query context would recompute its
+    /// access from the copied state and drop the externally-granted roles
+    /// re-applied above. Computing it here (outside the lock — `getAccess` takes
+    /// its own) caches the correct access so copies inherit it.
+    getAccess();
+
+    /// Fire handler hooks outside the lock (callbacks take their own locks).
+    /// Run every callback even if one throws — otherwise a broken hook leaves
+    /// another handler's state dirty — but still rethrow afterwards so a
+    /// partially-reset connection isn't returned to a pool as "clean".
+    std::exception_ptr first_callback_exception;
+    for (auto & [_, callback] : callbacks_snapshot)
+    {
+        try
+        {
+            callback(*this);
+        }
+        catch (...)
+        {
+            tryLogCurrentException("Context::resetToUserDefaults");
+            if (!first_callback_exception)
+                first_callback_exception = std::current_exception();
+        }
+    }
+    if (first_callback_exception)
+        std::rethrow_exception(first_callback_exception);
+}
+
+void Context::setSessionResetCallback(const void * owner, SessionResetCallback callback)
+{
+    std::lock_guard lock(mutex);
+    for (auto & entry : session_reset_callbacks)
+    {
+        if (entry.first == owner)
+        {
+            entry.second = std::move(callback);
+            return;
+        }
+    }
+    session_reset_callbacks.emplace_back(owner, std::move(callback));
 }
 
 std::shared_ptr<const User> Context::getUser() const

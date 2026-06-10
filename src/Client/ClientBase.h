@@ -270,6 +270,11 @@ private:
     void startKeystrokeInterceptorIfExists();
     void stopKeystrokeInterceptorIfExists();
 
+    /// Execute a query and collect all rows as one newline-separated string.
+    /// `std::nullopt` means the probe failed (network error, server `Exception`),
+    /// as opposed to a successful query that returned an empty string.
+    std::optional<std::string> tryExecuteQueryForSingleString(const std::string & query);
+
     /// Execute a query and collect all results as a single string (rows separated by newlines)
     /// Returns empty string on exception
     std::string executeQueryForSingleString(const std::string & query);
@@ -312,6 +317,14 @@ protected:
     /// Initializes the client context.
     void initClientContext(ContextMutablePtr context);
 
+    /// Snapshot the connect-time `default_database` / `Settings` /
+    /// `query_parameters` as the baseline `RESET SESSION` restores to.
+    /// Subclasses call this once startup mutations have settled (later than
+    /// `initClientContext`: `Client::main` runs `processConfig`/`adjustSettings`
+    /// and `LocalServer` sets `implicit_table_at_top_level` afterwards).
+    /// One-shot — later calls (e.g. on reconnect) are no-ops.
+    void snapshotConnectionBaseline();
+
     void setDefaultFormatsAndCompressionFromConfiguration();
 
     void initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option);
@@ -327,6 +340,11 @@ protected:
     ContextMutablePtr client_context;
 
     String default_database;
+    /// Connect-time baseline captured by `snapshotConnectionBaseline` and
+    /// restored by `RESET SESSION`; `connect_snapshot_taken` guards the
+    /// one-shot capture against reconnects.
+    bool connect_snapshot_taken = false;
+    std::optional<String> default_database_at_connect;
     String query_id;
     Int32 suggestion_limit{};
     bool enable_highlight = true;
@@ -385,6 +403,14 @@ protected:
     /// Settings specified via command line args
     std::unique_ptr<Settings> cmd_settings;
     std::unique_ptr<MergeTreeSettings> cmd_merge_tree_settings;
+
+    /// Client settings after command-line overrides but before any in-session
+    /// `SET`. `RESET SESSION` restores to this, so e.g. `--max_threads 4` is kept.
+    std::unique_ptr<Settings> settings_at_connect;
+
+    /// Startup `--param_*` values; `RESET SESSION` restores `query_parameters` to
+    /// these (in-session `SET param_*` changes are dropped, as on the server).
+    std::optional<NameToNameMap> query_parameters_at_connect;
 
     ServerConnectionPtr connection;
     ConnectionParameters connection_parameters;

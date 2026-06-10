@@ -1,0 +1,4 @@
+database at session start:	1
+database after USE:	system
+database after RESET picks up new default:	1
+database after RESET is not the start default:	1

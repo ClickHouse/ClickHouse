@@ -216,6 +216,10 @@ try
     initClientContext(session->sessionContext());
     /// Note, QueryScope will be initialized in the LocalConnection
 
+    /// Snapshot the `RESET SESSION` baseline (embedded mode has no post-
+    /// `initClientContext` settings mutations).
+    snapshotConnectionBaseline();
+
     if (is_interactive)
     {
         clearTerminal();

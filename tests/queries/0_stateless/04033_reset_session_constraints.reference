@@ -1,0 +1,5 @@
+A: pre-reset changed:	1
+A: post-reset changed:	0
+A: post-reset constrained value:	2
+B: pre-tighten value:	8
+B: post-tighten max-allowed:	2

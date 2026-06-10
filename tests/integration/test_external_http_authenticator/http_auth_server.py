@@ -9,6 +9,10 @@ USER_RESPONSES = {
     "test_user_2": {},
     "test_user_3": "",
     "test_user_4": "not json string",
+    # Auth response that selects a settings profile. The `profile` entry must be
+    # routed through the profile machinery (not stored as a plain setting) both
+    # at login and on RESET SESSION.
+    "test_user_5": {"settings": {"profile": "'reset_auth_profile'"}},
 }
 
 

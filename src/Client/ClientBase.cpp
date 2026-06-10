@@ -9,6 +9,7 @@
 #include <Client/TestTags.h>
 #include <Core/SortDescription.h>
 #include <Core/UUID.h>
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/sortBlock.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -50,6 +51,7 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTResetSessionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -974,6 +976,22 @@ void ClientBase::initClientContext(ContextMutablePtr context)
     client_context->setQueryKindInitial();
     client_context->setQueryKind(query_kind);
     client_context->setQueryParameters(query_parameters);
+}
+
+void ClientBase::snapshotConnectionBaseline()
+{
+    /// Snapshot the connect-time database / settings / query parameters for
+    /// `RESET SESSION` to restore. Subclasses call this once their startup
+    /// mutations are applied — later than `initClientContext`, since
+    /// `Client::main` runs `processConfig` + `adjustSettings` and `LocalServer`
+    /// sets `implicit_table_at_top_level` afterwards. One-shot: a reconnect must
+    /// not overwrite the snapshot with post-`SET` state.
+    if (connect_snapshot_taken)
+        return;
+    default_database_at_connect = default_database;
+    settings_at_connect = std::make_unique<Settings>(client_context->getSettingsCopy());
+    query_parameters_at_connect = query_parameters;
+    connect_snapshot_taken = true;
 }
 
 bool ClientBase::isFileDescriptorSuitableForInput(int fd)
@@ -2600,6 +2618,41 @@ void ClientBase::processParsedSingleQuery(
             /// If the connection initiates the reconnection, it uses its variable.
             connection->setDefaultDatabase(new_database);
         }
+        if (parsed_query->as<ASTResetSessionQuery>())
+        {
+            /// Mirror the server's reset on the client so we don't re-send stale
+            /// state next query. Query parameters and settings are restored to
+            /// the connect-time snapshot (which includes command-line overrides);
+            /// the server holds the profile values.
+            query_parameters = query_parameters_at_connect.value_or(NameToNameMap{});
+            client_context->setQueryParameters(query_parameters);
+            client_context->setSettings(settings_at_connect ? *settings_at_connect : Settings());
+            if (connection)
+            {
+                /// The server's database fallback chain may not land on the
+                /// connect-time db, so probe for the actual value rather than
+                /// assuming — otherwise the client diverges and a later reconnect
+                /// could send a now-`UNKNOWN_DATABASE` name.
+                ///
+                /// Clear the override first: `LocalConnection` forces its
+                /// `current_database` (from a prior `USE`) onto every query, which
+                /// would make the probe echo the dirty db instead of the reset
+                /// baseline. Harmless for the native `Connection` (it only sends
+                /// the database in the handshake).
+                connection->setDefaultDatabase("");
+
+                /// `nullopt` = probe failed (use the fallback); an empty string
+                /// is a real answer (the chain fell through to no database) and
+                /// must be trusted, not treated as failure.
+                auto probed = tryExecuteQueryForSingleString("SELECT currentDatabase()");
+                if (probed.has_value())
+                    default_database = *probed;
+                else if (default_database_at_connect.has_value())
+                    default_database = *default_database_at_connect;
+                getClientConfiguration().setString("database", default_database);
+                connection->setDefaultDatabase(default_database);
+            }
+        }
     }
 
     /// Always print last block (if it was not printed already)
@@ -3383,6 +3436,94 @@ void ClientBase::stopKeystrokeInterceptorIfExists()
     }
 }
 
+std::optional<std::string> ClientBase::tryExecuteQueryForSingleString(const std::string & query)
+{
+    if (!connection)
+        return std::nullopt;
+
+    try
+    {
+        std::string result;
+
+        /// Send with an initial-query `ClientInfo`: a null `client_info` makes
+        /// `Connection::sendQuery` write `query_kind = NO_QUERY`, which the native
+        /// `TCPHandler` rejects (`INCORRECT_DATA`) and then closes the connection.
+        /// Same pattern as `Suggest::load`.
+        ClientInfo client_info;
+        if (client_context)
+            client_info = client_context->getClientInfo();
+        if (client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)
+            client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+
+        connection->sendQuery(
+            connection_parameters.timeouts,
+            query,
+            {},  /// query_parameters
+            "",  /// query_id
+            QueryProcessingStage::Complete,
+            nullptr,  /// settings
+            &client_info,
+            false,    /// with_pending_data
+            {},       /// external_roles
+            {}        /// external_data
+        );
+
+        /// `std::nullopt` is reserved for "probe failed" (here and in the catch);
+        /// an empty `result` after a clean `EndOfStream` is a successful empty
+        /// answer and must stay distinguishable from failure.
+        while (true)
+        {
+            Packet packet = connection->receivePacket();
+            switch (packet.type)
+            {
+                case Protocol::Server::Data:
+                    if (!packet.block.empty() && packet.block.rows() > 0)
+                    {
+                        /// Convert block to string representation
+                        /// For schema queries, we expect single column results
+                        const auto & column = packet.block.getByPosition(0).column;
+                        for (size_t i = 0; i < column->size(); ++i)
+                        {
+                            if (!result.empty())
+                                result += "\n";
+                            result.append(column->getDataAt(i));
+                        }
+                    }
+                    break;
+
+                case Protocol::Server::EndOfStream:
+                    return result;
+
+                case Protocol::Server::Exception:
+                    return std::nullopt;
+
+                case Protocol::Server::Progress:
+                case Protocol::Server::ProfileInfo:
+                case Protocol::Server::Log:
+                case Protocol::Server::ProfileEvents:
+                case Protocol::Server::TimezoneUpdate:
+                    /// Ignore these packet types
+                    break;
+
+                default:
+                    /// Ignore unknown packet types
+                    break;
+            }
+        }
+    }
+    catch (const std::exception &)
+    {
+        return std::nullopt;
+    }
+}
+
+std::string ClientBase::executeQueryForSingleString(const std::string & query)
+{
+    /// Collapse failure to "" for callers (e.g. the AI schema fetcher) that
+    /// don't distinguish it; others call `tryExecuteQueryForSingleString`.
+    return tryExecuteQueryForSingleString(query).value_or("");
+}
+
 #if USE_CLIENT_AI
 void ClientBase::initAIProvider()
 {
@@ -3414,77 +3555,6 @@ void ClientBase::initAIProvider()
     {
         auto logger = getLogger("ClientBase");
         LOG_DEBUG(logger, "Failed to initialize AI SQL generator: {}", e.what());
-    }
-}
-
-std::string ClientBase::executeQueryForSingleString(const std::string & query)
-{
-    if (!connection)
-        return "";
-
-    try
-    {
-        std::string result;
-
-        /// Send the query
-        connection->sendQuery(
-            connection_parameters.timeouts,
-            query,
-            {},  /// query_parameters
-            "",  /// query_id
-            QueryProcessingStage::Complete,
-            nullptr,  /// settings
-            nullptr,  /// client_info
-            false,    /// with_pending_data
-            {},       /// external_roles
-            {}        /// external_data
-        );
-
-        /// Receive and process results
-        while (true)
-        {
-            Packet packet = connection->receivePacket();
-            switch (packet.type)
-            {
-                case Protocol::Server::Data:
-                    if (!packet.block.empty() && packet.block.rows() > 0)
-                    {
-                        /// Convert block to string representation
-                        /// For schema queries, we expect single column results
-                        const auto & column = packet.block.getByPosition(0).column;
-                        for (size_t i = 0; i < column->size(); ++i)
-                        {
-                            if (!result.empty())
-                                result += "\n";
-                            result.append(column->getDataAt(i));
-                        }
-                    }
-                    break;
-
-                case Protocol::Server::EndOfStream:
-                    return result;
-
-                case Protocol::Server::Exception:
-                    /// Return empty string on exception
-                    return "";
-
-                case Protocol::Server::Progress:
-                case Protocol::Server::ProfileInfo:
-                case Protocol::Server::Log:
-                case Protocol::Server::ProfileEvents:
-                case Protocol::Server::TimezoneUpdate:
-                    /// Ignore these packet types
-                    break;
-
-                default:
-                    /// Ignore unknown packet types
-                    break;
-            }
-        }
-    }
-    catch (const std::exception &)
-    {
-        return "";
     }
 }
 

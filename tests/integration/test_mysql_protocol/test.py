@@ -720,6 +720,36 @@ def test_python_client(started_cluster):
     cursor.execute("DROP DATABASE x")
 
 
+def test_reset_session_is_noop_over_mysql(started_cluster):
+    """`RESET SESSION` is intentionally a no-op over the MySQL wire protocol:
+    the handler keeps protocol-local state (the handshake database, prepared
+    statements) outside the session context, so a reset would move the session
+    off its post-handshake baseline. Verify the statement completes and leaves
+    session state set with `SET` untouched.
+    """
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+
+    cursor = client.cursor(pymysql.cursors.DictCursor)
+
+    cursor.execute("SET max_threads = 7")
+    cursor.execute("SELECT getSetting('max_threads') AS v")
+    assert cursor.fetchall() == [{"v": 7}]
+
+    cursor.execute("RESET SESSION")
+
+    # No-op over MySQL: the setting must NOT have been reset.
+    cursor.execute("SELECT getSetting('max_threads') AS v")
+    assert cursor.fetchall() == [{"v": 7}]
+
+    client.close()
+
+
 def test_golang_client(started_cluster, golang_container):
     with open(os.path.join(SCRIPT_DIR, "golang.reference"), "rb") as fp:
         reference = fp.read()

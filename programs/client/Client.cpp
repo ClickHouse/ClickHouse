@@ -364,6 +364,11 @@ try
     processConfig();
     adjustSettings(client_context);
 
+    /// Snapshot the `RESET SESSION` baseline after `processConfig` /
+    /// `adjustSettings` (which run after `processOptions` already called
+    /// `initClientContext` and still mutate settings).
+    snapshotConnectionBaseline();
+
     initTTYBuffer(
         toProgressOption(config().getString("progress", "default")), toProgressOption(config().getString("progress-table", "default")));
     initKeystrokeInterceptor();

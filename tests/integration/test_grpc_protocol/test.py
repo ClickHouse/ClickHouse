@@ -439,6 +439,15 @@ def test_no_session():
     assert "There is no session" in e.display_text
 
 
+def test_reset_session_without_session_id():
+    # gRPC without `session_id` builds a query context straight from the
+    # global context, so there is no session-scoped state to reset.
+    # `RESET SESSION` must treat that as a no-op, not throw
+    # `THERE_IS_NO_SESSION`, so a client that issues `RESET SESSION` between
+    # otherwise-stateless gRPC calls keeps working.
+    assert query("RESET SESSION") == ""
+
+
 def test_input_function():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
     query(

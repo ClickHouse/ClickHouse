@@ -348,7 +348,7 @@ void TCPHandler::runImpl()
 {
     DB::setThreadName(ThreadName::TCP_HANDLER);
 
-    extractConnectionSettingsFromContext(server.context());
+    extractConnectionSettingsFromContext(*server.context());
 
     socket().setReceiveTimeout(receive_timeout);
     socket().setSendTimeout(send_timeout);
@@ -438,11 +438,28 @@ void TCPHandler::runImpl()
         {
             /// If session created, then settings in session context has been updated.
             /// So it's better to update the connection settings for flexibility.
-            extractConnectionSettingsFromContext(session->sessionContext());
+            extractConnectionSettingsFromContext(*session->sessionContext());
 
             /// When connecting, the default database could be specified.
+            /// Only then lock it in as the session-start value for `RESET SESSION`
+            /// to restore. If the handshake sent no database, leave it unset so the
+            /// reset re-reads the user's `DEFAULT DATABASE` from access control
+            /// (picking up an in-session `ALTER USER ... DEFAULT DATABASE`) rather
+            /// than pinning a stale copy of it.
             if (!default_database.empty())
+            {
                 session->sessionContext()->setCurrentDatabase(default_database);
+                session->sessionContext()->rememberDatabaseAtSessionStart();
+            }
+
+            /// Refresh the connection-level setting cache (send/receive/idle
+            /// timeouts, etc.) after `RESET SESSION` re-derives the settings.
+            /// The handler outlives the session, so capturing `this` is safe.
+            session->sessionContext()->setSessionResetCallback(this,
+                [this](Context & session_context)
+                {
+                    extractConnectionSettingsFromContext(session_context);
+                });
         }
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.
@@ -595,7 +612,7 @@ void TCPHandler::runImpl()
 
             /// If query received, then settings in query_context has been updated.
             /// So it's better to update the connection settings for flexibility.
-            extractConnectionSettingsFromContext(query_state->query_context);
+            extractConnectionSettingsFromContext(*query_state->query_context);
 
             /// Sync timeouts on client and server during current query to avoid dangling queries on server.
             /// It should be reset at the end of query.
@@ -1101,9 +1118,9 @@ void TCPHandler::logQueryDuration(QueryState & state)
 }
 
 
-void TCPHandler::extractConnectionSettingsFromContext(const ContextPtr & context)
+void TCPHandler::extractConnectionSettingsFromContext(const Context & context)
 {
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = context.getSettingsRef();
     send_exception_with_stack_trace = settings[Setting::calculate_text_stack_trace];
     send_timeout = settings[Setting::send_timeout];
     receive_timeout = settings[Setting::receive_timeout];
