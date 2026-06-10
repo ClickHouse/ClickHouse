@@ -421,7 +421,7 @@ Wire-compatible with `UInt32`: a Unix timestamp in seconds, 4 bytes little-endia
 `DateTime('UTC')` value `2024-03-15 14:30:00 UTC` (timestamp `1710513000`):
 
 ```text
-A8 84 F4 65              UInt32 LE = 1710513000
+68 5B F4 65              UInt32 LE = 1710513000
 ```
 
 #### DateTime64(scale[, timezone]) {#datetime64}
