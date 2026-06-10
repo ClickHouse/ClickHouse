@@ -14,6 +14,12 @@ SET max_threads=0;
 -- `max_block_size` to its default to keep the estimate stable against randomization.
 SET max_block_size=65409;
 
+-- The aggregation-state size estimate is recorded per bucket after the conversion to
+-- a two-level hash table, so forcing the conversion from the very first block (the test
+-- randomization sets these thresholds as low as 1) shifts the estimate well away from the
+-- expected values calibrated under the default thresholds. Pin them to the defaults.
+SET group_by_two_level_threshold=100000, group_by_two_level_threshold_bytes=50000000;
+
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
 
 -- Unsupported at the moment, refer to comments in `RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes`
