@@ -10,7 +10,13 @@ def _readonly_copies_guard():
     # another repo (declared in ci/jobs/scripts/docs/readonly_copies.json). This
     # is aggregator-only -- the consuming repos are the source of truth, so this
     # is deliberately not part of the shared DEFAULT_CHECKS.
-    return check_readonly_copies(Info().get_changed_files() or [])
+    changed_files = Info().get_changed_files()
+    if changed_files is None:
+        # Fail close: without the changed-file list we cannot prove the PR does
+        # not touch read-only copies, so do not report success.
+        print("Error: the changed-file list is unavailable, cannot run the check.")
+        return False
+    return check_readonly_copies(changed_files)
 
 
 if __name__ == "__main__":
