@@ -1345,7 +1345,12 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
                 std::vector<String> paths;
                 paths.reserve(new_batch.size());
                 for (const auto & object_info : new_batch)
-                    paths.push_back(getUniqueStoragePathIdentifier(*configuration, *object_info, false));
+                {
+                    auto path = getUniqueStoragePathIdentifier(*configuration, *object_info, false);
+                    if (match_web_paths_only)
+                        path = getPathComponentForGlobMatching(path);
+                    paths.push_back(path);
+                }
 
                 VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_expr, virtual_columns, hive_columns, local_context);
             }

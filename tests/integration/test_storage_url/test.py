@@ -383,6 +383,16 @@ def test_url_wildcard_preserves_index_entry_query():
     assert result.strip() == "6"
 
 
+def test_url_wildcard_file_filter_uses_visible_file_name():
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT _file, sum(x) FROM url('http://resolver:8087/data/query_override/part*.tsv?x=1', 'TSV', 'x UInt64') "
+            "WHERE _file = 'part1.tsv' GROUP BY _file"
+        )
+    )
+    assert result == "part1.tsv\t6\n"
+
+
 def test_url_wildcard_preserves_query_for_directory_listing():
     result = node1.query(
         with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/query_directory/**/part*.tsv', 'TSV', 'x UInt64')")
