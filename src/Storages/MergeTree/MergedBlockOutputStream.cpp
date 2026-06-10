@@ -8,7 +8,6 @@
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>
 
 namespace DB
@@ -145,19 +144,11 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
 {
     writer.finish(sync);
 
-    /// Finalize all files first (writes any pending bytes to the OS),
-    /// then sync them in parallel — fsync of independent files can run concurrently
-    /// and is a major contributor to part finalization latency when many small files are involved.
     for (auto & file : written_files)
-        file->finalize();
-
-    if (sync)
     {
-        std::vector<WriteBufferFromFileBase *> files_to_sync;
-        files_to_sync.reserve(written_files.size());
-        for (auto & file : written_files)
-            files_to_sync.push_back(file.get());
-        parallelSyncFiles(files_to_sync);
+        file->finalize();
+        if (sync)
+            file->sync();
     }
 
     for (const auto & file_name : files_to_remove_after_finish)
@@ -337,12 +328,13 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
             }
 
-            const auto & source_parts = new_part->getSourcePartsSet();
-            if (!source_parts.empty())
+            /// Every patch part must have `source_parts.dat` on disk: `loadSourcePartsSet`
+            /// throws `CORRUPTED_DATA` otherwise, including for empty covering parts.
+            if (new_part->info.isPatch())
             {
                 write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)
                 {
-                    source_parts.writeBinary(buffer);
+                    new_part->getSourcePartsSet().writeBinary(buffer);
                 });
             }
         }

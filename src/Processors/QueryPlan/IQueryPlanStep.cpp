@@ -58,7 +58,7 @@ bool IQueryPlanStep::canRemoveColumnsFromOutput() const
 
 bool IQueryPlanStep::hasCorrelatedExpressions() const
 {
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check {} plan step for correlated expressions", getName());
 }
 
 const SharedHeader & IQueryPlanStep::getOutputHeader() const

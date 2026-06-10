@@ -28,7 +28,6 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <Functions/exists.h>
 #include <Columns/validateColumnType.h>
 #include <Interpreters/Context.h>
@@ -234,18 +233,9 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
     auto array_function_node = std::make_shared<FunctionNode>("array");
     auto array_arguments_list = std::make_shared<ListNode>();
 
-    /// Use the supertype of the LHS and all tuple elements, to support cases like
-    /// `toUInt8(232) IN (1000, number)`. If no supertype exists, keep the old
-    /// behaviour and let per-element CAST handle (or reject) the mismatch
-    DataTypes arg_types;
-    arg_types.reserve(tuple_args.size() + 1);
-    arg_types.push_back(in_first_argument->getResultType());
-    for (const auto & arg : tuple_args)
-        arg_types.push_back(arg->getResultType());
+    DataTypePtr common_type;
 
-    DataTypePtr common_type = tryGetLeastSupertype(arg_types);
-    if (!common_type)
-        common_type = in_first_argument->getResultType();
+    common_type = in_first_argument->getResultType();
 
     bool has_null = std::any_of(tuple_args.begin(), tuple_args.end(),
         [](const auto & arg) { return isNullConstant(arg); });
@@ -1205,13 +1195,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         AggregateFunctionProperties properties;
         auto aggregate_function
-            = AggregateFunctionFactory::instance().get(
-                aggregate_function_name,
-                action,
-                argument_types,
-                parameters,
-                properties,
-                AggregateFunctionStateVariant::Window);
+            = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, parameters, properties);
 
         function_node.resolveAsWindowFunction(std::move(aggregate_function));
 

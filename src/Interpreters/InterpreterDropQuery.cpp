@@ -124,20 +124,18 @@ void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDr
     if (uuid_to_wait == UUIDHelpers::Nil)
         return;
 
-    QueryStatusPtr query_status = context_->getProcessListElementSafe();
-    auto throw_if_cancelled = [&]()
-    {
-        if (query_status)
-            query_status->throwIfKilled();
-    };
-
     if (query.kind == ASTDropQuery::Kind::Drop)
     {
-        DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait, throw_if_cancelled);
+        QueryStatusPtr query_status = context_->getProcessListElementSafe();
+        DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait, [&]()
+        {
+            if (query_status)
+                query_status->throwIfKilled();
+        });
     }
     else if (query.kind == ASTDropQuery::Kind::Detach)
     {
-        db->waitDetachedTableNotInUse(uuid_to_wait, throw_if_cancelled);
+        db->waitDetachedTableNotInUse(uuid_to_wait);
     }
 }
 
@@ -200,7 +198,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 "Table {} is not a Dictionary",
                 table_id.getNameForLogs());
 
-        bool secondary_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        bool secondary_query = getContext()->isDDLOrOnClusterInternal();
 
         /// Don't ignore DROP for refreshable materialized views: TRUNCATE doesn't stop
         /// the periodic refresh task, so the orphaned view would keep refreshing indefinitely,
@@ -522,12 +520,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
                     auto table_ptr = iterator->table();
-
-                    /// Skip tables that don't support truncation (e.g. views)
-                    /// when doing TRUNCATE ALL TABLES.
-                    if (truncate && query.has_tables && !table_ptr->supportsTruncate())
-                        continue;
-
                     StorageID storage_id = table_ptr->getStorageID();
                     tables_to_drop.push_back({storage_id, table_ptr->isDictionary()});
                     /// If the database doesn't support table UUIDs, we might call
@@ -671,11 +663,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         for (auto it = database->getTablesIterator(table_context); it->isValid(); it->next())
         {
             const auto & table_ptr = it->table();
-
-            /// Skip tables that don't support truncation (e.g. views).
-            if (!table_ptr->supportsTruncate())
-                continue;
-
             const auto & storage_id = table_ptr->getStorageID();
             const auto & tname = storage_id.table_name;
 
@@ -759,13 +746,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     if (!drop && !truncate && query.sync)
     {
         /// Avoid "some tables are still in use" when sync mode is enabled
-        QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
         for (const auto & table_uuid : uuids_to_wait)
-            database->waitDetachedTableNotInUse(table_uuid, [&]()
-            {
-                if (query_status)
-                    query_status->throwIfKilled();
-            });
+            database->waitDetachedTableNotInUse(table_uuid);
     }
 
     /// Allow tests to pause here: all tables have been processed but the database has not yet
@@ -874,7 +856,7 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
 
         if (ignore_sync_setting)
             drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
-        drop_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        drop_context->setDDLOrOnClusterInternal(true);
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// For Replicated database
