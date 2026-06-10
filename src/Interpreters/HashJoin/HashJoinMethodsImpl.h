@@ -94,6 +94,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
     const ColumnsInfo * stored_columns_info,
+    UInt32 stored_block_no,
     const ScatteredBlock::Selector & selector,
     ConstNullMapPtr null_map,
     const JoinCommon::JoinMask & join_mask,
@@ -115,11 +116,11 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
         if (selector.isContinuousRange()) \
             insertFromBlockImplTypeCase< \
                 typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-                join, *maps.TYPE, key_columns, key_sizes, stored_columns_info, selector.getRange(), null_map, join_mask, pool, is_inserted, all_values_unique); \
+                join, *maps.TYPE, key_columns, key_sizes, stored_columns_info, stored_block_no, selector.getRange(), null_map, join_mask, pool, is_inserted, all_values_unique); \
         else \
             insertFromBlockImplTypeCase< \
                 typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-                join, *maps.TYPE, key_columns, key_sizes, stored_columns_info, selector.getIndexes(), null_map, join_mask, pool, is_inserted, all_values_unique); \
+                join, *maps.TYPE, key_columns, key_sizes, stored_columns_info, stored_block_no, selector.getIndexes(), null_map, join_mask, pool, is_inserted, all_values_unique); \
         break;
 
             APPLY_FOR_JOIN_VARIANTS(M)
@@ -251,6 +252,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
     const ColumnsInfo * stored_columns_info,
+    UInt32 stored_block_no,
     const Selector & selector,
     ConstNullMapPtr null_map,
     const JoinCommon::JoinMask & join_mask,
@@ -258,7 +260,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
     bool & is_inserted,
     bool & all_values_unique)
 {
-    [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename HashMap::mapped_type, RowRef>;
+    [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename HashMap::mapped_type, BuildRef>;
     constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
 
     const IColumn * asof_column [[maybe_unused]] = nullptr;
@@ -309,9 +311,9 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
         if constexpr (is_asof_join)
             Inserter<HashMap, KeyGetter>::insertAsof(join, map, key_getter, stored_columns_info, ind, pool, *asof_column);
         else if constexpr (mapped_one)
-            is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(join, map, key_getter, stored_columns_info, ind, pool);
+            is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(join, map, key_getter, stored_block_no, ind, pool);
         else
-            all_values_unique &= Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_columns_info, ind, pool);
+            all_values_unique &= Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_block_no, ind, pool);
     }
 }
 
@@ -468,6 +470,17 @@ void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unuse
     }
 }
 
+/// Encoded ref word of the key's first row: the "any row of the key" semantics used by
+/// ANY/RightAny/Semi matches on both MapsOne (BuildRef) and MapsAll (BuildRefList) cells.
+template <typename Mapped>
+ALWAYS_INLINE UInt64 firstRefWord(const Mapped & mapped)
+{
+    if constexpr (std::is_same_v<std::decay_t<Mapped>, BuildRefList>)
+        return mapped.firstWord();
+    else
+        return mapped.word();
+}
+
 template <
     JoinKind KIND,
     JoinStrictness STRICTNESS,
@@ -497,8 +510,10 @@ void processMatch(
         if (row_ref && row_ref->columns_info)
         {
             setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
+            /// ASOF join never uses flags (MapGetter<*, Asof>::flagged is false), so both
+            /// calls below are compile-time no-ops; the block_no of an asof row is not tracked.
             if constexpr (flag_per_row)
-                used_flags.template setUsed<join_features.need_flags, flag_per_row>(&row_ref->columns_info->columns, row_ref->row_num, 0);
+                used_flags.template setUsed<join_features.need_flags, flag_per_row>(/*block_no=*/ 0, row_ref->row_num, 0);
             else
                 used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
 
@@ -533,7 +548,7 @@ void processMatch(
         if (used_once)
         {
             setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
-            added_columns.appendFromBlock(&mapped, join_features.add_missing);
+            added_columns.appendFromBlock(firstRefWord(mapped), join_features.add_missing);
         }
     }
     else if constexpr (join_features.is_any_join && join_features.full)
@@ -549,7 +564,7 @@ void processMatch(
     {
         setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
         used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
-        added_columns.appendFromBlock(&mapped, join_features.add_missing);
+        added_columns.appendFromBlock(firstRefWord(mapped), join_features.add_missing);
     }
 }
 
@@ -820,7 +835,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchJo
 template <typename AddedColumns, typename Selector>
 static ColumnPtr buildAdditionalFilter(
     const Selector & selector,
-    const PODArray<const RowRef *> & selected_rows,
+    const PODArray<UInt64> & selected_rows,
     const IColumn::Offsets & row_replicate_offset,
     const AddedColumns & added_columns)
 {
@@ -862,9 +877,10 @@ static ColumnPtr buildAdditionalFilter(
                 required_columns.emplace_back(nullptr, req_col.type, req_col.name);
 
                 auto col = req_col.type->createColumn();
-                for (const auto & selected_row : selected_rows)
+                for (const UInt64 selected_row : selected_rows)
                 {
-                    const auto [src_col, row_pos] = getBlockColumnAndRow(selected_row, rhs_pos_it->second);
+                    const auto * columns_info = added_columns.lazy_output.stored_columns[refWordBlockNo(selected_row)];
+                    const auto [src_col, row_pos] = getBlockColumnAndRow(columns_info, refWordRowNo(selected_row), rhs_pos_it->second);
                     col->insertFrom(*src_col, row_pos);
                 }
                 required_columns[pos].column = std::move(col);
@@ -963,14 +979,14 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
     class PreSelectedRows
     {
     public:
-        explicit PreSelectedRows(PODArray<const RowRef *> & container_) : container(container_) {}
-        void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { container.push_back(row_ref); }
+        explicit PreSelectedRows(PODArray<UInt64> & container_) : container(container_) {}
+        void appendFromBlock(UInt64 ref_word, bool /* has_default */) { container.push_back(ref_word); }
         static constexpr bool isLazy() { return false; }
 
-        PODArray<const RowRef *> & container;
+        PODArray<UInt64> & container;
     };
 
-    PODArray<const RowRef *> selected_rows;
+    PODArray<UInt64> selected_rows;
     selected_rows.reserve(left_block_rows);
     std::vector<FindResult> find_results;
     find_results.reserve(left_block_rows);
@@ -1071,6 +1087,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                 {
                     if (filter_flags[replicated_row])
                     {
+                        const UInt64 selected_ref = *selected_right_row_it;
                         if constexpr (join_features.is_semi_join || join_features.is_any_join)
                         {
                             /// For LEFT/INNER SEMI/ANY JOIN, we need to add only first appeared row from left,
@@ -1080,24 +1097,24 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                                 {
                                     // For inner join, we need mark each right row'flag, because we only use each right row once.
                                     auto used_once = used_flags.template setUsedOnce<join_features.need_flags, true>(
-                                        &(*selected_right_row_it)->columns_info->columns, (*selected_right_row_it)->row_num, 0);
+                                        refWordBlockNo(selected_ref), refWordRowNo(selected_ref), 0);
                                     if (used_once)
                                     {
                                         any_matched = true;
                                         total_added_rows += 1;
-                                        added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
+                                        added_columns.appendFromBlock(selected_ref, join_features.add_missing);
                                     }
                                 }
                             }
                             else
                             {
                                 auto used_once = used_flags.template setUsedOnce<join_features.need_flags, true>(
-                                    &(*selected_right_row_it)->columns_info->columns, (*selected_right_row_it)->row_num, 0);
+                                    refWordBlockNo(selected_ref), refWordRowNo(selected_ref), 0);
                                 if (used_once)
                                 {
                                     any_matched = true;
                                     total_added_rows += 1;
-                                    added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
+                                    added_columns.appendFromBlock(selected_ref, join_features.add_missing);
                                 }
                             }
                         }
@@ -1105,14 +1122,14 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                         {
                             any_matched = true;
                             if constexpr (join_features.right && join_features.need_flags)
-                                used_flags.template setUsed<true, true>(&(*selected_right_row_it)->columns_info->columns, (*selected_right_row_it)->row_num, 0);
+                                used_flags.template setUsed<true, true>(refWordBlockNo(selected_ref), refWordRowNo(selected_ref), 0);
                         }
                         else
                         {
                             any_matched = true;
                             total_added_rows += 1;
-                            added_columns.appendFromBlock(*selected_right_row_it, join_features.add_missing);
-                            used_flags.template setUsed<join_features.need_flags, true>(&(*selected_right_row_it)->columns_info->columns, (*selected_right_row_it)->row_num, 0);
+                            added_columns.appendFromBlock(selected_ref, join_features.add_missing);
+                            used_flags.template setUsed<join_features.need_flags, true>(refWordBlockNo(selected_ref), refWordRowNo(selected_ref), 0);
                         }
                     }
 

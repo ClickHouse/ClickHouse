@@ -764,7 +764,8 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
 
         doDebugAsserts();
         data->columns.emplace_back(ColumnsInfo(block_to_save.getColumns()), std::move(selector));
-        const auto * stored_columns = &data->columns.back();
+        auto * stored_columns = &data->columns.back();
+        stored_columns->block_no = data->stored_columns_index->add(&stored_columns->columns_info);
         size_t data_allocated_bytes = stored_columns->allocatedBytes();
         data->allocated_size += data_allocated_bytes;
         doDebugAsserts();
@@ -843,6 +844,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             key_columns,
                             key_sizes[onexpr_idx],
                             &stored_columns->columns_info,
+                            stored_columns->block_no,
                             stored_columns->selector,
                             null_map,
                             join_mask_col,
@@ -851,7 +853,8 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             all_values_unique);
 
                         if (flag_per_row)
-                            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(&stored_columns->columns_info.columns, stored_columns->selector);
+                            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(
+                                stored_columns->block_no, stored_columns->columns_info.columns.at(0)->size(), stored_columns->selector);
                     });
             }
 
@@ -875,6 +878,9 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
                 data->allocated_size -= data_allocated_bytes;
                 data->rows_to_join -= rows;
+                /// Nothing was inserted, so no refs to this block exist; null the index entry
+                /// so that a stale ref fails loudly instead of reading freed memory.
+                data->stored_columns_index->clearEntry(stored_columns->block_no);
                 data->columns.pop_back();
                 doDebugAsserts();
             }
@@ -1413,10 +1419,14 @@ void HashJoin::updateNonJoinedRowsStatus()
 template <typename Mapped>
 struct CollectorNonJoined
 {
-    static void collect(const Mapped & mapped, VectorWithMemoryTracking<const ColumnsInfo *> & columns_infos, VectorWithMemoryTracking<UInt32> & row_numbers)
+    static void collect(
+        const Mapped & mapped,
+        const ColumnsInfo * const * stored_columns,
+        VectorWithMemoryTracking<const ColumnsInfo *> & columns_infos,
+        VectorWithMemoryTracking<UInt32> & row_numbers)
     {
         constexpr bool mapped_asof = std::is_same_v<Mapped, AsofRowRefs>;
-        [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<Mapped, RowRef>;
+        [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<Mapped, BuildRef>;
 
         if constexpr (mapped_asof)
         {
@@ -1424,15 +1434,16 @@ struct CollectorNonJoined
         }
         else if constexpr (mapped_one)
         {
-            columns_infos.push_back(mapped.columns_info);
-            row_numbers.push_back(mapped.row_num);
+            columns_infos.push_back(stored_columns[mapped.blockNo()]);
+            row_numbers.push_back(mapped.rowNo());
         }
         else
         {
             for (auto it = mapped.begin(); it.ok(); ++it)
             {
-                columns_infos.push_back(it->columns_info);
-                row_numbers.push_back(it->row_num);
+                const UInt64 ref_word = *it;
+                columns_infos.push_back(stored_columns[refWordBlockNo(ref_word)]);
+                row_numbers.push_back(refWordRowNo(ref_word));
             }
         }
     }
@@ -1600,7 +1611,7 @@ private:
 
                 for (size_t row = 0; row < rows; ++row)
                 {
-                    if (!parent.isUsed(&mapped_block.columns_info.columns, row))
+                    if (!parent.isUsed(mapped_block.block_no, row))
                     {
                         many_columns.push_back(&mapped_block.columns_info);
                         row_nums.push_back(static_cast<UInt32>(row));
@@ -1641,13 +1652,14 @@ private:
                 if (!skipToNextOwnedBucket())
                     return row_nums.size();
 
+                const ColumnsInfo * const * stored_columns = parent.data->stored_columns_index->blocksData();
                 while (it != end && row_nums.size() < max_block_size)
                 {
                     size_t offset = map.offsetInternal(it.getPtr());
                     if (!parent.isUsed(offset))
                     {
                         const Mapped & mapped = it->getMapped();
-                        CollectorNonJoined<Mapped>::collect(mapped, many_columns, row_nums);
+                        CollectorNonJoined<Mapped>::collect(mapped, stored_columns, many_columns, row_nums);
                     }
 
                     ++it;
@@ -1660,6 +1672,7 @@ private:
             else
             {
                 /// Single-level hash tables - no bucket filtering
+                const ColumnsInfo * const * stored_columns = parent.data->stored_columns_index->blocksData();
                 for (; it != end; ++it)
                 {
                     size_t offset = map.offsetInternal(it.getPtr());
@@ -1667,7 +1680,7 @@ private:
                         continue;
 
                     const Mapped & mapped = it->getMapped();
-                    CollectorNonJoined<Mapped>::collect(mapped, many_columns, row_nums);
+                    CollectorNonJoined<Mapped>::collect(mapped, stored_columns, many_columns, row_nums);
 
                     if (row_nums.size() >= max_block_size)
                     {
@@ -1909,9 +1922,9 @@ bool HashJoin::isUsed(size_t off) const
     return used_flags->getUsedSafe(off);
 }
 
-bool HashJoin::isUsed(const Columns * columns_ptr, size_t row_idx) const
+bool HashJoin::isUsed(UInt32 block_no, size_t row_idx) const
 {
-    return used_flags->getUsedSafe(columns_ptr, row_idx);
+    return used_flags->getUsedSafe(block_no, row_idx);
 }
 
 bool HashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const
@@ -1936,45 +1949,63 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Only left or inner join table can be reranged.");
     else
     {
-        auto merge_rows_into_one_block = [&](ScatteredColumnsList & columns_list, RowRefList & rows_ref)
+        const ColumnsInfo * const * stored_columns = data->stored_columns_index->blocksData();
+
+        auto merge_rows_into_one_block = [&](ScatteredColumnsList & columns_list, BuildRefList & rows_ref)
         {
             auto it = rows_ref.begin();
             if (!it.ok())
                 return;
 
+            const ColumnsInfo * head_columns_info = stored_columns[refWordBlockNo(*it)];
+
             if (columns_list.empty() || columns_list.back().columns_info.columns.at(0)->size() >= DEFAULT_BLOCK_SIZE)
             {
                 Columns columns;
-                columns.reserve(it->columns_info->columns.size());
-                for (const auto & col : (*it)->columns_info->columns)
+                columns.reserve(head_columns_info->columns.size());
+                for (const auto & col : head_columns_info->columns)
                     columns.push_back(col->cloneEmpty());
                 columns_list.emplace_back(ColumnsInfo(std::move(columns)), ScatteredBlock::Selector());
+                columns_list.back().block_no = data->stored_columns_index->add(&columns_list.back().columns_info);
+                /// The index storage might have been reallocated by the append.
+                stored_columns = data->stored_columns_index->blocksData();
             }
 
-            auto & columns_info = columns_list.back().columns_info;
+            auto & merged = columns_list.back();
+            auto & columns_info = merged.columns_info;
             size_t start_row = columns_info.columns.at(0)->size();
             for (; it.ok(); ++it)
             {
+                const UInt64 ref_word = *it;
+                const ColumnsInfo * src_columns_info = stored_columns[refWordBlockNo(ref_word)];
+                const size_t src_row = refWordRowNo(ref_word);
                 for (size_t i = 0; i < columns_info.columns.size(); ++i)
                 {
                     auto & col = columns_info.columns[i]->assumeMutableRef();
                     /// Check if we insert into non replicated column from a replicated column.
-                    if (!columns_info.replicated_columns[i] && it->columns_info->replicated_columns[i])
+                    if (!columns_info.replicated_columns[i] && src_columns_info->replicated_columns[i])
                     {
-                        const auto * src_replicated_column = it->columns_info->replicated_columns[i];
-                        col.insertFrom(*src_replicated_column->getNestedColumn(), src_replicated_column->getIndexes().getIndexAt(it->row_num));
+                        const auto * src_replicated_column = src_columns_info->replicated_columns[i];
+                        col.insertFrom(*src_replicated_column->getNestedColumn(), src_replicated_column->getIndexes().getIndexAt(src_row));
                     }
                     else
                     {
-                        col.insertFrom(*(it->columns_info->columns[i]), it->row_num);
+                        col.insertFrom(*(src_columns_info->columns[i]), src_row);
                     }
                 }
             }
             size_t new_rows = columns_info.columns.at(0)->size();
             if (new_rows > start_row)
             {
-                RowRefList new_rows_ref(&columns_info, start_row, new_rows - start_row);
-                rows_ref = std::move(new_rows_ref);
+                const size_t merged_rows = new_rows - start_row;
+                if (merged_rows == 1)
+                    rows_ref = BuildRefList(merged.block_no, start_row);
+                else
+                {
+                    BuildRefList range_ref;
+                    range_ref.setRange(BuildRef(merged.block_no, start_row).word(), merged_rows, data->pool);
+                    rows_ref = range_ref;
+                }
             }
         };
 
@@ -1984,7 +2015,7 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
             {
 #define M(TYPE) \
     case Type::TYPE: { \
-        rows_map.TYPE->forEachMapped([&](RowRefList & rows_ref) { merge_rows_into_one_block(columns, rows_ref); }); \
+        rows_map.TYPE->forEachMapped([&](BuildRefList & rows_ref) { merge_rows_into_one_block(columns, rows_ref); }); \
         break; \
     }
                 APPLY_FOR_JOIN_VARIANTS(M)
@@ -1997,6 +2028,10 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         visit_rows_map(sorted_columns, map);
         doDebugAsserts();
         data->columns.swap(sorted_columns);
+        /// The replaced blocks are destroyed below; null their index entries so that any stale
+        /// ref fails loudly instead of reading freed memory. All live cells were rewritten above.
+        for (const auto & old_columns : sorted_columns)
+            data->stored_columns_index->clearEntry(old_columns.block_no);
         size_t new_blocks_allocated_size = 0;
         for (auto & columns : data->columns)
         {

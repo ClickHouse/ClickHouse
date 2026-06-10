@@ -19,7 +19,9 @@ template<>
 class KnownRowsHolder<true>
 {
 public:
-    using Type = PairNoInit<const Columns *, DB::RowRef::SizeT>;
+    /// The encoded BuildRef word (the SINGLETON_FLAG bit is always set, so equality of
+    /// words is equality of (block_no, row_no) pairs).
+    using Type = UInt64;
 
 private:
     static const size_t MAX_LINEAR = 16; // threshold to switch from Array to Set
@@ -83,10 +85,6 @@ public:
     }
 };
 
-template <typename Mapped, bool need_offset = false>
-using FindResultImpl = ColumnsHashing::columns_hashing_impl::FindResultImpl<Mapped, true>;
-
-
 template <typename Map, bool add_missing, bool flag_per_row, typename AddedColumns>
 void addFoundRowAll(
     const typename Map::mapped_type & mapped,
@@ -100,31 +98,42 @@ void addFoundRowAll(
 
     if constexpr (flag_per_row)
     {
-        using Pair = typename KnownRowsHolder<flag_per_row>::Type;
-        std::vector<Pair> new_known_rows_ptr;
+        std::vector<UInt64> new_known_rows;
 
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            if (!known_rows.isKnown(makePairNoInit(&it->columns_info->columns, it->row_num)))
+            const UInt64 ref_word = *it;
+            if (!known_rows.isKnown(ref_word))
             {
-                added.appendFromBlock(*it, false);
+                added.appendFromBlock(ref_word, false);
                 ++current_offset;
-                new_known_rows_ptr.emplace_back(&it->columns_info->columns, it->row_num);
+                new_known_rows.push_back(ref_word);
 
                 if (used_flags)
                 {
                     used_flags->JoinStuff::JoinUsedFlags::setUsedOnce<true, flag_per_row>(
-                        FindResultImpl<const RowRef, false>(*it, true, 0));
+                        refWordBlockNo(ref_word), refWordRowNo(ref_word), 0);
                 }
             }
         }
 
-        known_rows.add(std::cbegin(new_known_rows_ptr), std::cend(new_known_rows_ptr));
+        known_rows.add(std::cbegin(new_known_rows), std::cend(new_known_rows));
     }
     else if constexpr (AddedColumns::isLazy())
     {
-        added.appendFromBlock(&mapped, false);
-        current_offset += mapped.rows;
+        /// The singleton fast path: most keys of a typical ALL JOIN are unique, and for them
+        /// the cell value itself is the ref - no extra memory access at all.
+        if (mapped.isSingleton())
+        {
+            added.appendFromBlock(mapped.word, false);
+            ++current_offset;
+        }
+        else
+        {
+            const auto * blob = mapped.asBlob();
+            added.appendFromBlock(blob, false);
+            current_offset += blob->rows;
+        }
     }
     else
     {

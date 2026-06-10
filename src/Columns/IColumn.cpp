@@ -556,39 +556,60 @@ void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets
     }
 }
 
-/// Fills column values from RowRefList
+/// Fills column values from encoded join row refs
 /// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
 template <bool row_refs_are_ranges, typename ColumnType>
-static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, const size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end)
+static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, const size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const ColumnsInfo * const * stored_columns)
 {
     for (const UInt64 * row_ref = row_refs_begin; row_ref != row_refs_end; ++row_ref)
     {
         if (*row_ref)
         {
-            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(*row_ref);
+            BuildRefList ref_list;
+            ref_list.word = *row_ref;
             if constexpr (row_refs_are_ranges)
             {
-                row_ref_list->assertIsRange();
-                if (const auto * source_replicated = row_ref_list->columns_info->replicated_columns[source_column_index_in_block])
+                UInt64 start_word = 0;
+                size_t rows = 0;
+                if (ref_list.isSingleton())
+                {
+                    /// The rerange optimization stores single-row keys as plain inline refs.
+                    start_word = ref_list.word;
+                    rows = 1;
+                }
+                else
+                {
+                    const auto * blob = ref_list.asBlob();
+                    blob->assertIsRange();
+                    start_word = blob->head;
+                    rows = blob->rows;
+                }
+
+                const ColumnsInfo * columns_info = stored_columns[refWordBlockNo(start_word)];
+                const size_t start_row = refWordRowNo(start_word);
+                if (const auto * source_replicated = columns_info->replicated_columns[source_column_index_in_block])
                 {
                     const auto & source_nested_column = source_replicated->getNestedColumn();
                     const auto & source_indexes = source_replicated->getIndexes();
-                    for (size_t i = row_ref_list->row_num; i != row_ref_list->row_num + row_ref_list->rows; ++i)
+                    for (size_t i = start_row; i != start_row + rows; ++i)
                         col->insertFrom(*source_nested_column, source_indexes.getIndexAt(i));
                 }
                 else
                 {
-                    col->insertRangeFrom(*row_ref_list->columns_info->columns[source_column_index_in_block], row_ref_list->row_num, row_ref_list->rows);
+                    col->insertRangeFrom(*columns_info->columns[source_column_index_in_block], start_row, rows);
                 }
             }
             else
             {
-                for (auto it = row_ref_list->begin(); it.ok(); ++it)
+                for (auto it = ref_list.begin(); it.ok(); ++it)
                 {
-                    if (const auto * source_replicated = it->columns_info->replicated_columns[source_column_index_in_block])
-                        col->insertFrom(*source_replicated->getNestedColumn(), source_replicated->getIndexes().getIndexAt(it->row_num));
+                    const UInt64 ref_word = *it;
+                    const ColumnsInfo * columns_info = stored_columns[refWordBlockNo(ref_word)];
+                    const size_t row_num = refWordRowNo(ref_word);
+                    if (const auto * source_replicated = columns_info->replicated_columns[source_column_index_in_block])
+                        col->insertFrom(*source_replicated->getNestedColumn(), source_replicated->getIndexes().getIndexAt(row_num));
                     else
-                        col->insertFrom(*it->columns_info->columns[source_column_index_in_block], it->row_num);
+                        col->insertFrom(*columns_info->columns[source_column_index_in_block], row_num);
                 }
             }
         }
@@ -597,24 +618,24 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
     }
 }
 
-/// Fills column values from RowRefsList
-void IColumn::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges)
+/// Fills column values from encoded join row refs
+void IColumn::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges, const ColumnsInfo * const * stored_columns)
 {
     if (row_refs_are_ranges)
-        fillColumnFromRowRefs<true>(this, type, source_column_index_in_block, row_refs_begin, row_refs_end);
+        fillColumnFromRowRefs<true>(this, type, source_column_index_in_block, row_refs_begin, row_refs_end, stored_columns);
     else
-        fillColumnFromRowRefs<false>(this, type, source_column_index_in_block, row_refs_begin, row_refs_end);
+        fillColumnFromRowRefs<false>(this, type, source_column_index_in_block, row_refs_begin, row_refs_end, stored_columns);
 }
 
-/// Fills column values from RowRefsList
+/// Fills column values from encoded join row refs
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges)
+void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges, const ColumnsInfo * const * stored_columns)
 {
     auto & self = static_cast<Derived &>(*this);
     if (row_refs_are_ranges)
-        fillColumnFromRowRefs<true>(&self, type, source_column_index_in_block, row_refs_begin, row_refs_end);
+        fillColumnFromRowRefs<true>(&self, type, source_column_index_in_block, row_refs_begin, row_refs_end, stored_columns);
     else
-        fillColumnFromRowRefs<false>(&self, type, source_column_index_in_block, row_refs_begin, row_refs_end);
+        fillColumnFromRowRefs<false>(&self, type, source_column_index_in_block, row_refs_begin, row_refs_end, stored_columns);
 }
 
 /// Fills column values from list of blocks and row numbers

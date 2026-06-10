@@ -226,6 +226,22 @@ ColumnsInfo::ColumnsInfo(Columns && columns_) : columns(std::move(columns_))
     rebuildReplicatedColumns();
 }
 
+UInt32 StoredColumnsIndex::add(const ColumnsInfo * columns_info)
+{
+    std::lock_guard guard(mutex);
+    if (blocks.size() > BuildRef::BLOCK_NO_MASK)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many stored blocks in HashJoin: {}", blocks.size());
+    blocks.push_back(columns_info);
+    return static_cast<UInt32>(blocks.size() - 1);
+}
+
+void StoredColumnsIndex::clearEntry(UInt32 block_no)
+{
+    std::lock_guard guard(mutex);
+    chassert(block_no < blocks.size());
+    blocks[block_no] = nullptr;
+}
+
 void ColumnsInfo::rebuildReplicatedColumns()
 {
     replicated_columns.resize(columns.size());

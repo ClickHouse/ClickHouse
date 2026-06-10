@@ -42,8 +42,16 @@ struct JoinOnKeyColumns
 
 struct LazyOutput
 {
+    /// Entries share the encoding of the join hash map cell values (see BuildRef in RowRefs.h):
+    ///   0 - default row; bit 63 set - inline encoded BuildRef; otherwise - BuildRefList::Blob *.
+    /// Exception: for ASOF joins (`row_refs_are_pointers`) non-zero entries are `const RowRef *`.
     PaddedPODArray<UInt64> row_refs;
-    size_t row_count = 0;   /// Total number of rows in all RowRef-s and RowRefList-s
+    size_t row_count = 0;   /// Total number of rows in all refs and ref lists
+
+    /// Resolves BuildRef::block_no at emit time; points into the join's StoredColumnsIndex,
+    /// which is immutable once the build phase is finished.
+    const ColumnsInfo * const * stored_columns = nullptr;
+    bool row_refs_are_pointers = false;
 
     std::vector<size_t> right_indexes;
     NamesAndTypes type_name;
@@ -58,16 +66,24 @@ struct LazyOutput
 
     void reserve(size_t size) { row_refs.reserve(size); }
 
-    void addRowRef(const RowRef * row_ref)
+    void addRef(UInt64 ref_word)
     {
-        row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref));
+        chassert(refWordIsInline(ref_word));
+        row_refs.emplace_back(ref_word);
         ++row_count;
     }
 
-    void addRowRefList(const RowRefList * row_ref_list)
+    void addBlob(const BuildRefList::Blob * blob)
     {
-        row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref_list));
-        row_count += row_ref_list->rows;
+        row_refs.emplace_back(reinterpret_cast<UInt64>(blob));
+        row_count += blob->rows;
+    }
+
+    void addAsofRowRef(const RowRef * row_ref)
+    {
+        chassert(row_refs_are_pointers);
+        row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref));
+        ++row_count;
     }
 
     void addDefault()
@@ -89,8 +105,8 @@ struct LazyOutput
 
     void buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
-    /** Build output from the blocks that extract from `RowRef` or `RowRefList`, to avoid block cache miss which may cause performance slow down.
-     *  And This problem would happen it we directly build output from `RowRef` or `RowRefList`.
+    /** Build output from the blocks that extract from the encoded refs, to avoid block cache miss which may cause performance slow down.
+     *  And This problem would happen it we directly build output from the encoded refs.
      */
     template<bool from_row_list>
     void buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
@@ -145,6 +161,8 @@ public:
         lazy_output.output_by_row_list_threshold = join.getTableJoin().outputByRowListPerkeyRowsThreshold();
         lazy_output.join_data_sorted = join.getJoinedData()->sorted;
         lazy_output.join_data_avg_perkey_rows = join.getJoinedData()->avgPerKeyRows();
+        lazy_output.stored_columns = join.getJoinedData()->stored_columns_index->blocksData();
+        lazy_output.row_refs_are_pointers = is_asof_join;
 
         for (const auto & src_column : block_with_columns_to_add)
         {
@@ -186,24 +204,28 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), lazy_output.type_name[i].type, lazy_output.type_name[i].name);
     }
 
-    void appendFromBlock(const RowRefList * row_ref_list, bool)
+    void appendFromBlock(const BuildRefList::Blob * blob, bool)
     {
         if constexpr (lazy)
         {
 #ifndef NDEBUG
-            checkColumns(row_ref_list->columns_info->columns);
+            checkColumns(lazy_output.stored_columns[refWordBlockNo(blob->head)]->columns);
 #endif
             if (has_columns_to_add)
             {
-                lazy_output.addRowRefList(row_ref_list);
+                lazy_output.addBlob(blob);
             }
         }
         else
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "AddedColumns are not implemented for RowRefList in non-lazy mode");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "AddedColumns are not implemented for BuildRefList in non-lazy mode");
         }
     }
 
+    /// Encoded BuildRef word: the common case for all non-ASOF joins.
+    void appendFromBlock(UInt64 ref_word, bool has_default);
+
+    /// ASOF join only: a pointer into the sorted lookup vector storage.
     void appendFromBlock(const RowRef * row_ref, bool has_default);
 
     void appendDefaultRow()
@@ -269,6 +291,9 @@ public:
 
 private:
 
+    /// Materializes one right-table row into the output columns (non-lazy mode and joinGet).
+    void appendFromBlockImpl(const ColumnsInfo * columns_info, size_t row_num);
+
     void checkColumns(const Columns & to_check)
     {
         for (size_t j = 0; j < lazy_output.right_indexes.size(); ++j)
@@ -320,5 +345,6 @@ private:
 };
 
 std::pair<const IColumn *, size_t> getBlockColumnAndRow(const RowRef * row_ref, size_t column_index);
+std::pair<const IColumn *, size_t> getBlockColumnAndRow(const ColumnsInfo * columns_info, size_t row_num, size_t column_index);
 
 }

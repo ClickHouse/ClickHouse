@@ -703,9 +703,10 @@ public:
         return getPtr();
     }
 
-    /// Fills column values from RowRefList
-    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges);
+    /// Fills column values from encoded join row refs (see BuildRef / BuildRefList in Interpreters/RowRefs.h).
+    /// `stored_columns` resolves BuildRef::block_no to the stored block's ColumnsInfo.
+    /// If row_refs_are_ranges is true, then each entry represents >= 1 consecutive rows of one block
+    virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges, const ColumnsInfo * const * stored_columns);
 
     /// Fills column values from list of blocks and row numbers
     /// A nullptr in the list is interpreted as a default value
@@ -980,9 +981,9 @@ private:
     /// Devirtualize updateAt.
     void updateInplaceFrom(const IColumn::Patch & patch) override;
 
-    /// Fills column values from RowRefList
-    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges) override;
+    /// Fills column values from encoded join row refs
+    /// If row_refs_are_ranges is true, then each entry represents >= 1 consecutive rows of one block
+    void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges, const ColumnsInfo * const * stored_columns) override;
 
     /// Fills column values from list of columns and row numbers
     /// A nullptr in the list is interpreted as a default value

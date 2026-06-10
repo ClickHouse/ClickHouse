@@ -224,6 +224,13 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                 });
         }
         pool->wait();
+
+        /// Share one StoredColumnsIndex across all slots so that BuildRef::block_no is globally
+        /// unique: cells built by any slot end up in the shared two-level map after the build
+        /// phase, and per-row used flags are merged into a common structure keyed by block_no.
+        auto shared_index = getData(hash_joins[0])->stored_columns_index;
+        for (size_t i = 1; i < slots; ++i)
+            getData(hash_joins[i])->stored_columns_index = shared_index;
     }
     catch (...)
     {
