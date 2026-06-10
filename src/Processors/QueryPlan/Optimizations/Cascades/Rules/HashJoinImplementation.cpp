@@ -91,14 +91,16 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
         }
     }
 
-    /// Broadcast replicates the right side to all nodes.  For RIGHT and FULL joins
-    /// the right side produces unmatched output rows — each node would emit them
-    /// independently, causing duplicates.  JoinCommutativity can turn RIGHT Semi/Anti/Any
-    /// into LEFT (making broadcast safe), but not RIGHT ALL or FULL.
+    /// Broadcast replicates the right side, so it is only safe when every output row is
+    /// driven by the partitioned left side: RIGHT and FULL emit unmatched right-side rows
+    /// on every node, and PASTE pairs rows by position. JoinCommutativity can turn
+    /// RIGHT Semi/Anti/Any into LEFT, but not RIGHT ALL or FULL.
     const auto join_kind = join_step->getJoinOperator().kind;
     const bool broadcast_unsafe
-        = join_kind == JoinKind::Right
-        || join_kind == JoinKind::Full;
+        = !(join_kind == JoinKind::Inner
+            || join_kind == JoinKind::Left
+            || join_kind == JoinKind::Cross
+            || join_kind == JoinKind::Comma);
 
     /// Enumerate distributed strategies at each candidate node count.
     for (size_t candidate_node_count : candidate_node_counts)

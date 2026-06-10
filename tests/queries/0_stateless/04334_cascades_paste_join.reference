@@ -1,0 +1,4 @@
+-- 1. PASTE JOIN: pairs rows by position, count = min(sides)
+1000
+-- 2. Baseline without Cascades
+1000
