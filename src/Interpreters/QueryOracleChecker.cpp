@@ -81,7 +81,8 @@ const std::unordered_set<String> non_deterministic_functions = {
     /// plans, not data.
     "viewExplain",
     "file", "url", "s3", "hdfs", "input",
-    "numbers", "zeros", "generateRandom",
+    "numbers", "numbers_mt", "zeros", "zeros_mt", "generateRandom",
+    "generate_series", "generateSeries",
     "randomPrintableASCII", "randomString", "randomFixedString",
     "fuzzQuery",
     "materialize",
@@ -493,6 +494,12 @@ const std::unordered_set<String> truncating_settings = {
     /// FINAL may keep stale row versions whose newer version lives in a
     /// pruned granule — documented behaviour, not comparable across rewrites.
     "use_skip_indexes_if_final", "use_skip_indexes_if_final_exact_mode",
+    /// Changes aggregate semantics asymmetrically across oracle rewrites:
+    /// `count()` over zero input rows becomes NULL while NoREC's `countIf`
+    /// aggregates every row and returns 0. Pinned off in `makeOracleContext`
+    /// for session leakage, but an inline `SETTINGS` clause survives in the
+    /// clones and overrides the pin, so gate it here too.
+    "aggregate_functions_null_for_empty",
 };
 
 bool hasTruncatingInlineSettings(const ASTPtr & ast)
@@ -1108,6 +1115,12 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
         if (!select_aliases.empty() && referencesAnyAlias(select.where(), select_aliases))
             return false;
     }
+
+    /// The rewrite also drops the WITH clause; an alias defined there can be
+    /// referenced by the predicate even invisibly (through `*` expansion), so
+    /// any WITH disqualifies the rewrite.
+    if (select.with())
+        return false;
 
     ASTPtr predicate = select.where()->clone();
 
