@@ -386,6 +386,10 @@ public:
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 
+    /// `OrFill` forwards `getOwnNullAdapter` to the nested function (see below),
+    /// so it may claim the payload-preserving property of the nested function.
+    bool preservesNullablePayloadForIf() const override { return nested_function->preservesNullablePayloadForIf(); }
+
     /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns true,
     /// which changed the default null adapter for Tuple-returning functions:
     ///   - single-arg: from `<false, false>` to `<true, true>` (flag byte added to serialization).

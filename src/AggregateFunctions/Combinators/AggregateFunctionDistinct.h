@@ -373,6 +373,10 @@ public:
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 
+    /// `Distinct` forwards `getOwnNullAdapter` to the nested function (see below),
+    /// so it may claim the payload-preserving property of the nested function.
+    bool preservesNullablePayloadForIf() const override { return nested_func->preservesNullablePayloadForIf(); }
+
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function,
         const DataTypes & arguments,

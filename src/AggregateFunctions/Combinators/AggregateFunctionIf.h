@@ -256,6 +256,11 @@ public:
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 
+    /// `If` handles payload-preserving nested functions in its own `getOwnNullAdapter`
+    /// (it wraps the nested adapter into `AggregateFunctionIfRespectNulls`), so it may
+    /// claim the payload-preserving property of the nested function.
+    bool preservesNullablePayloadForIf() const override { return nested_func->preservesNullablePayloadForIf(); }
+
     UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
     {
         return {num_arguments - 1};

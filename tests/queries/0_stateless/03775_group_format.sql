@@ -33,6 +33,16 @@ set optimize_rewrite_aggregate_function_with_if = 1;
 select groupFormat('JSONEachRow')(if(number = 0, NULL, number)) from numbers(2);
 set optimize_rewrite_aggregate_function_with_if = 0;
 
+-- A combinator that does not forward `getOwnNullAdapter` (e.g. `ArgMin`) must not
+-- inherit the payload-preserving property: the `If` adapter falls back to the usual
+-- `NULL`-skipping behavior, and the result must be consistent with and without the
+-- f(if(cond, NULL, x)) -> fIf(x, not(cond)) rewrite.
+select groupFormatArgMinIf('JSONEachRow')(if(number = 0, NULL, number), number, toUInt8(1)) from numbers(3);
+set optimize_rewrite_aggregate_function_with_if = 1;
+select groupFormatArgMin('JSONEachRow')(if(number = 0, NULL, number), number) from numbers(3);
+set optimize_rewrite_aggregate_function_with_if = 0;
+select groupFormatArgMin('JSONEachRow')(if(number = 0, NULL, number), number) from numbers(3);
+
 -- Multi-arg nullable: both nullable and non-nullable columns mixed.
 select groupFormat('JSONEachRow')(if(number = 0, NULL, number), toString(number)) from numbers(3);
 
