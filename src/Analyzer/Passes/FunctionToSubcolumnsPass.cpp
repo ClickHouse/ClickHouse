@@ -214,6 +214,19 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
+/// Forward declaration: the chained transformer also handles the single-key case.
+void optimizeJSONArrayElementChain(
+    QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx,
+    std::vector<FunctionNode *> & intermediate_functions);
+
+/// Thin wrapper for the single-level registration in node_transformers.
+/// Delegates to the chained transformer with empty intermediates.
+void optimizeFunctionArrayElementForJSON(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+{
+    std::vector<FunctionNode *> empty;
+    optimizeJSONArrayElementChain(node, function_node, ctx, empty);
+}
+
 std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeTuple & data_type_tuple)
 {
     const auto & names = data_type_tuple.getElementNames();
@@ -505,6 +518,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     {
         {TypeIndex::Map, "arrayElement"}, optimizeFunctionArrayElementForMap,
     },
+    {
+        {TypeIndex::Object, "arrayElement"}, optimizeFunctionArrayElementForJSON,
+    },
 };
 
 /// Transformers that can be safely applied even when the column is used in
@@ -641,10 +657,89 @@ void optimizeJSONArrayElement(
         node = buildCastFunction(node, original_result_type, ctx.context);
 }
 
+/// Optimizes:
+///   arrayElement(... arrayElement(arrayElement(ColumnNode(Object), 'key1'), 'key2') ..., 'keyN')
+/// to:
+///   ColumnNode("col.@`key1`.key2...keyN", Dynamic)
+///
+/// intermediate_functions contains the chain from outermost to innermost,
+/// e.g. [arrayElement_inner_1, ..., arrayElement_innermost].
+void optimizeJSONArrayElementChain(
+    QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx,
+    std::vector<FunctionNode *> & intermediate_functions)
+{
+    /// Handles both single json['key'] and chained json['key1']['key2']['key3'].
+    /// When called from the single-level wrapper, intermediate_functions is empty.
+
+    /// Collect keys: outermost first.
+    std::vector<String> keys;
+
+    /// Outermost function: function_node itself.
+    {
+        auto & args = function_node.getArguments().getNodes();
+        if (args.size() != 2)
+            return;
+        const auto * constant = args[1]->as<ConstantNode>();
+        if (!constant || constant->getValue().getType() != Field::Types::String)
+            return;
+        keys.push_back(constant->getValue().safeGet<String>());
+    }
+
+    /// All intermediates must be arrayElement with constant string 2nd arg.
+    for (auto * inner_func : intermediate_functions)
+    {
+        if (inner_func->getFunctionName() != "arrayElement")
+            return;
+        auto & args = inner_func->getArguments().getNodes();
+        if (args.size() != 2)
+            return;
+        const auto * constant = args[1]->as<ConstantNode>();
+        if (!constant || constant->getValue().getType() != Field::Types::String)
+            return;
+        keys.push_back(constant->getValue().safeGet<String>());
+    }
+
+    /// Reverse to get inner-to-outer order (the JSON path).
+    std::reverse(keys.begin(), keys.end());
+
+    /// Build subcolumn name: @`key1`.key2.key3...
+    /// First element is back-quoted (required by tryGetPrefixedSubcolumn);
+    /// subsequent elements are plain dot-separated path components.
+    const auto & data_type_object = assert_cast<const DataTypeObject &>(*ctx.column.type);
+
+    String subcolumn_name = DataTypeObject::getCombinedSubcolumnName(keys[0]);
+    for (size_t i = 1; i < keys.size(); ++i)
+        subcolumn_name += "." + keys[i];
+
+    String full_name = ctx.column.name + "." + subcolumn_name;
+
+    if (!canOptimizeToSubcolumn(ctx.column_source, full_name, false))
+        return;
+
+    /// For a single key, use the actual subcolumn type (may be a typed path, not Dynamic).
+    /// For chained access, the execution goes through Dynamic dispatch, so the type is Dynamic.
+    DataTypePtr subcolumn_type;
+    if (keys.size() == 1)
+        subcolumn_type = data_type_object.getSubcolumnType(subcolumn_name);
+    else
+        subcolumn_type = data_type_object.getDynamicType();
+
+    auto original_result_type = function_node.getResultType();
+    NameAndTypePair column{full_name, subcolumn_type};
+    node = std::make_shared<ColumnNode>(column, ctx.column_source);
+
+    /// Cast back to the original type if it changed.
+    if (!original_result_type->equals(*node->getResultType()))
+        node = buildCastFunction(node, original_result_type, ctx.context);
+}
+
 std::map<std::pair<TypeIndex, String>, ChainedNodeToSubcolumnTransformer> chained_node_transformers =
 {
     {
         {TypeIndex::Dynamic, "tupleElement"}, optimizeJSONArrayElement,
+    },
+    {
+        {TypeIndex::Object, "arrayElement"}, optimizeJSONArrayElementChain,
     },
 };
 
@@ -820,20 +915,24 @@ public:
             return;
         }
 
+        /// Skip nodes that are inner parts of an already-matched chained pattern.
+        /// Without this, inner functions in multi-level chains like
+        /// tupleElement(tupleElement(arrayElement(col, N), 'b'), 'c')
+        /// or arrayElement(arrayElement(json, 'a'), 'b')
+        /// would also match node_transformers / chained_node_transformers and
+        /// double-count optimized_identifiers_count for the underlying column.
+        /// This check must be before the single-level match, because the inner
+        /// node may also match a single-level transformer (e.g. arrayElement on
+        /// Object), which would return early and skip this check otherwise.
+        if (chained_pattern_inner_nodes.contains(node.get()))
+            return;
+
         auto [function_node, first_argument_node, table_node] = getTypedNodesForOptimization(node, getContext());
         if (function_node && first_argument_node && table_node)
         {
             enterImpl(*function_node, *first_argument_node, *table_node);
             return;
         }
-
-        /// Skip nodes that are inner parts of an already-matched chained pattern.
-        /// Without this, inner tupleElements in multi-level chains like
-        /// tupleElement(tupleElement(arrayElement(col, N), 'b'), 'c')
-        /// would also match chained_node_transformers and double-count
-        /// optimized_identifiers_count for the underlying column.
-        if (chained_pattern_inner_nodes.contains(node.get()))
-            return;
 
         /// Chained match (e.g. tupleElement over Dynamic through arrayElement).
         auto [chain_func, chain_col, chain_table, intermediates] = getTypedNodesForChainedOptimization(node, getContext());

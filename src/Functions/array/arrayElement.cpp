@@ -3,6 +3,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/ColumnNumbers.h>
@@ -10,6 +11,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -66,6 +68,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
@@ -161,6 +164,10 @@ private:
      *  However, optimizations are possible.
      */
     ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+
+    /** For a JSON (Object) column, extract the combined subcolumn for the given key.
+      */
+    ColumnPtr executeJSON(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
     using Offsets = ColumnArray::Offsets;
 
@@ -2047,6 +2054,42 @@ bool FunctionArrayElement<mode>::matchKeyToIndexNumber(
 }
 
 template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeJSON(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
+{
+    const auto * key_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+    if (!key_column)
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Second argument of function {} for JSON type must be a constant String, got {}",
+            getName(), arguments[1].column->getName());
+
+    String key = key_column->getValue<String>();
+
+    /// Form the combined subcolumn name: @`key`
+    auto subcolumn_name = DataTypeObject::getCombinedSubcolumnName(key);
+
+    /// Use the generic IDataType subcolumn API.
+    /// This calls DataTypeObject::getDynamicSubcolumnData internally,
+    /// handling typed paths, literal+sub-object merging, etc.
+    const auto & object_type = arguments[0].type;
+    ColumnPtr col = arguments[0].column;
+
+    /// Unwrap ColumnConst - getSubcolumn works on the inner column.
+    bool is_const = checkAndGetColumnConst<ColumnObject>(col.get()) != nullptr;
+    if (is_const)
+        col = assert_cast<const ColumnConst &>(*col).getDataColumnPtr();
+
+    auto result_column = object_type->getSubcolumn(subcolumn_name, col);
+
+    /// Re-wrap in ColumnConst if the input was const.
+    if (is_const)
+        result_column = ColumnConst::create(std::move(result_column), input_rows_count);
+
+    return result_column;
+}
+
+template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeMap(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
@@ -2141,9 +2184,45 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
 }
 
 template <ArrayElementExceptionMode mode>
+DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+{
+    if (const auto * object_type = checkAndGetDataType<DataTypeObject>(arguments[0].type.get()))
+    {
+        const auto * key_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+        if (!key_col)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument of function {} with JSON type must be a constant String",
+                getName());
+
+        auto key = key_col->getValue<String>();
+
+        /// Form combined subcolumn name: @`key`
+        auto combined_name = DataTypeObject::getCombinedSubcolumnName(key);
+
+        /// getSubcolumnType resolves through getDynamicSubcolumnData:
+        /// - typed path "a UInt32" -> returns UInt32
+        /// - non-typed path -> returns Dynamic
+        return object_type->getSubcolumnType(combined_name);
+    }
+
+    /// Fall through to existing DataTypes-only logic for Array/Map.
+    DataTypes data_types(arguments.size());
+    for (size_t i = 0; i < arguments.size(); ++i)
+        data_types[i] = arguments[i].type;
+    return getReturnTypeImpl(data_types);
+}
+
+template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    const auto * col_object = checkAndGetColumn<ColumnObject>(arguments[0].column.get());
+    const auto * col_const_object = checkAndGetColumnConst<ColumnObject>(arguments[0].column.get());
+
+    if (col_object || col_const_object)
+        return executeJSON(arguments, result_type, input_rows_count);
+
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
 

@@ -1,0 +1,112 @@
+single_key
+1
+2
+3
+hello
+world
+\N
+nested_key
+10
+20
+\N
+[1,2,3]
+[4,5,6]
+\N
+missing_key
+\N
+\N
+\N
+\N
+\N
+\N
+typed_paths
+1	UInt32
+2	UInt32
+hello	String
+world	String
+dynamic_path
+{"d":10}	Dynamic
+\N	Dynamic
+10	Dynamic
+\N	Dynamic
+typed_path_type_optimized
+1	UInt32
+2	UInt32
+typed_path_type_no_optimization
+1	UInt32
+2	UInt32
+dotted_typed_path_chained
+10	Dynamic
+20	Dynamic
+dotted_typed_path_dot_notation
+10	UInt32
+20	UInt32
+dotted_dynamic_path_chained
+hello	Dynamic
+\N	Dynamic
+explain_optimized_single
+QUERY id: 0
+  PROJECTION COLUMNS
+    arrayElement(json, \'a\') Dynamic
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: json.@`a`, result_type: Dynamic, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test_json
+  SETTINGS optimize_functions_to_subcolumns=1
+explain_optimized_chain
+QUERY id: 0
+  PROJECTION COLUMNS
+    arrayElement(arrayElement(json, \'c\'), \'d\') Dynamic
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: json.@`c`.d, result_type: Dynamic, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test_json
+  SETTINGS optimize_functions_to_subcolumns=1
+explain_no_optimization
+QUERY id: 0
+  PROJECTION COLUMNS
+    arrayElement(json, \'a\') Dynamic
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: arrayElement, function_type: ordinary, result_type: Dynamic
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            COLUMN id: 4, column_name: json, result_type: JSON, source_id: 5
+            CONSTANT id: 6, constant_value: \'a\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: default.test_json
+  SETTINGS optimize_functions_to_subcolumns=0
+explain_typed_path_optimized
+QUERY id: 0
+  PROJECTION COLUMNS
+    arrayElement(json, \'a\') UInt32
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: json.@`a`, result_type: UInt32, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test_json_typed
+  SETTINGS optimize_functions_to_subcolumns=1
+explain_dotted_typed_chain
+QUERY id: 0
+  PROJECTION COLUMNS
+    arrayElement(arrayElement(json, \'c\'), \'d\') Dynamic
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: json.@`c`.d, result_type: Dynamic, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test_json_dotted
+  SETTINGS optimize_functions_to_subcolumns=1
+equivalence_single
+1	1	1
+10	10	1
+equivalence_nested
+2	2	1
+20	20	1
+empty_json
+\N
+where_clause
+1
+multi_json
+1	2

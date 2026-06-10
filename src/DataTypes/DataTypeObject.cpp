@@ -55,6 +55,11 @@ namespace ErrorCodes
     extern const int CANNOT_COMPILE_REGEXP;
 }
 
+String DataTypeObject::getCombinedSubcolumnName(const String & key)
+{
+    return String(1, COMBINED_SUBCOLUMN_PREFIX) + backQuote(key);
+}
+
 DataTypeObject::DataTypeObject(
     const SchemaFormat & schema_format_,
     std::unordered_map<String, DataTypePtr> typed_paths_,
