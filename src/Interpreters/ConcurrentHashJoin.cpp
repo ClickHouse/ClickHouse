@@ -962,20 +962,18 @@ void ConcurrentHashJoin::finalizeRowStoreStatus()
     for (const auto & hash_join : hash_joins)
     {
         auto & data = *getData(hash_join);
-        if (!data.columns.empty())
+        if (!data.columns.empty()
+            && (data.row_store_state != HashJoin::RowStoreState::Enabled || hash_join->data->rightTableCanBeReranged()))
         {
-            if (data.row_store_state != HashJoin::RowStoreState::Enabled || hash_join->data->rightTableCanBeReranged())
-            {
-                disable_row_store();
-                return;
-            }
-
-            /// Collect column replicated flags from each hash join.
-            const auto & src_flags = getData(hash_join)->column_replicated_flags;
-            chassert(column_replicated_flags.size() == src_flags.size());
-            for (size_t j = 0; j < column_replicated_flags.size(); ++j)
-                column_replicated_flags[j] = column_replicated_flags[j] || src_flags[j];
+            disable_row_store();
+            return;
         }
+
+        /// Collect column replicated flags from each hash join.
+        const auto & src_flags = data.column_replicated_flags;
+        chassert(column_replicated_flags.size() == src_flags.size());
+        for (size_t j = 0; j < column_replicated_flags.size(); ++j)
+            column_replicated_flags[j] = column_replicated_flags[j] || src_flags[j];
     }
 
     /// Count the rows of hash join payload. Can differ from rows_to_join because of the Selector for ASOF join.
