@@ -152,7 +152,12 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     /// Strategy B: Shuffle — input pre-distributed by group keys, each node aggregates its
     /// own partition of keys and produces a final result independently.
     /// Not applicable for global aggregations (e.g. COUNT(*)) that have no group keys.
-    if (!agg_step->getParams().keys.empty())
+    /// Not applicable for GROUPING SETS: `params.keys` is the union of all sets' keys,
+    /// so shuffling by the union splits the rows of one grouping-set group across nodes.
+    /// Not applicable with an overflow row: each node would emit its own overflow row.
+    if (!agg_step->getParams().keys.empty()
+        && !agg_step->isGroupingSets()
+        && !agg_step->getParams().overflow_row)
     {
         for (size_t candidate_node_count : candidate_node_counts)
         {
@@ -254,6 +259,8 @@ bool TwoPhaseAggregationTransformation::checkPattern(GroupExpressionPtr expressi
     return agg_step != nullptr &&
         expression->strategy == nullptr &&
         agg_step->getFinal() &&
+        !agg_step->isGroupingSets() &&           /// distributed merging of grouping-set states is not supported
+        !agg_step->getParams().overflow_row &&
         !agg_step->getParams().only_merge;       /// don't split a merge step that's already from a prior split
 }
 
