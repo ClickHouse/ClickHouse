@@ -933,7 +933,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotTTLRoundTrip)
     auto responses = storage.processRequest(create_request, session_id, zxid);
     ASSERT_EQ(responses[0].response->error, Error::ZOK);
 
-    ASSERT_TRUE(storage.ttl_paths.contains("/ttl_node"));
+    ASSERT_TRUE(storage.containsTTLPath("/ttl_node"));
 
     DB::KeeperStorageSnapshot<Storage> snapshot(&storage, zxid, nullptr, DB::SnapshotVersion::V8);
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
@@ -943,7 +943,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotTTLRoundTrip)
     auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
     const auto & restored = deser_result.storage;
 
-    EXPECT_TRUE(restored->ttl_paths.contains("/ttl_node"));
+    EXPECT_TRUE(restored->containsTTLPath("/ttl_node"));
 
     auto node_it = restored->container.find("/ttl_node");
     ASSERT_NE(node_it, restored->container.end());

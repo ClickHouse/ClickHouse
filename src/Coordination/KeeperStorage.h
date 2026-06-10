@@ -548,7 +548,7 @@ public:
         String,
         StringHashForHeterogeneousLookup,
         StringHashForHeterogeneousLookup::transparent_key_equal>
-        ttl_paths;
+        ttl_paths TSA_GUARDED_BY(storage_mutex);
 
     struct UncommittedState
     {
@@ -644,12 +644,12 @@ public:
         const Coordination::Stat & stat,
         Coordination::ACLs node_acls,
         bool update_digest,
-        std::optional<int64_t> ttl);
+        std::optional<int64_t> ttl) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     // Remove node in the storage
     // Returns false if it failed to remove the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
-    bool removeNode(const std::string & path, int32_t version, bool update_digest);
+    bool removeNode(const std::string & path, int32_t version, bool update_digest) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     bool checkACL(std::string_view path, int32_t permissions, int64_t session_id, bool is_local, bool should_lock_storage);
 
@@ -711,6 +711,8 @@ public:
     uint64_t getArenaDataSize() const;
 
     std::vector<std::pair<std::string, Int32>> collectExpiredTTLPaths(int64_t now_ms, size_t batch_size) const;
+
+    bool containsTTLPath(const std::string & path) const;
 
     void updateStats();
 

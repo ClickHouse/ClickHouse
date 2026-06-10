@@ -23,6 +23,7 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/Stopwatch.h>
 
 namespace ProfileEvents
@@ -321,14 +322,17 @@ namespace
 template<typename Storage>
 void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Storage> & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context)
 {
-    if (!snapshot.storage->ttl_paths.empty() && snapshot.version < SnapshotVersion::V8)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot serialize snapshot with version {}: storage contains {} TTL node(s), which require snapshot "
-            "version {} or higher. Bump write_snapshot_version after every replica has been upgraded.",
-            static_cast<uint8_t>(snapshot.version),
-            snapshot.storage->ttl_paths.size(),
-            static_cast<uint8_t>(SnapshotVersion::V8));
+    {
+        SharedLockGuard storage_lock(snapshot.storage->storage_mutex);
+        if (!snapshot.storage->ttl_paths.empty() && snapshot.version < SnapshotVersion::V8)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot serialize snapshot with version {}: storage contains {} TTL node(s), which require snapshot "
+                "version {} or higher. Bump write_snapshot_version after every replica has been upgraded.",
+                static_cast<uint8_t>(snapshot.version),
+                snapshot.storage->ttl_paths.size(),
+                static_cast<uint8_t>(SnapshotVersion::V8));
+    }
 
     writeBinary(static_cast<uint8_t>(snapshot.version), out);
     serializeSnapshotMetadata(snapshot.snapshot_meta, out);

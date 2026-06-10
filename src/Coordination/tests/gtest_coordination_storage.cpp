@@ -1879,7 +1879,7 @@ TYPED_TEST(CoordinationTest, TestTTLNodeExpiry)
     auto responses = storage.processRequest(create_request, session_id, zxid);
     ASSERT_EQ(responses[0].response->error, Error::ZOK);
 
-    ASSERT_TRUE(storage.ttl_paths.contains("/ttl_node"));
+    ASSERT_TRUE(storage.containsTTLPath("/ttl_node"));
     {
         auto node_it = storage.container.find("/ttl_node");
         ASSERT_NE(node_it, storage.container.end());
@@ -1901,7 +1901,7 @@ TYPED_TEST(CoordinationTest, TestTTLNodeExpiry)
     auto remove_responses = storage.processRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, zxid);
     ASSERT_EQ(remove_responses[0].response->error, Error::ZOK);
 
-    EXPECT_FALSE(storage.ttl_paths.contains("/ttl_node"));
+    EXPECT_FALSE(storage.containsTTLPath("/ttl_node"));
     EXPECT_EQ(storage.container.find("/ttl_node"), storage.container.end());
     EXPECT_TRUE(storage.collectExpiredTTLPaths(ttl_ms + 1, 1000000).empty());
 }
@@ -2011,7 +2011,7 @@ TYPED_TEST(CoordinationTest, TestTTLGCVersionCheckPreventsStaleRemoval)
     EXPECT_TRUE(remove_responses.empty() || remove_responses[0].response->error == Error::ZOK);
 
     EXPECT_NE(storage.container.find("/ttl_node"), storage.container.end());
-    EXPECT_TRUE(storage.ttl_paths.contains("/ttl_node"));
+    EXPECT_TRUE(storage.containsTTLPath("/ttl_node"));
 }
 
 TYPED_TEST(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
@@ -2083,7 +2083,7 @@ TYPED_TEST(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
     ASSERT_NE(node_after_it, storage.container.end());
     EXPECT_FALSE(node_after_it->value.stats.isTTL());
     EXPECT_EQ(std::string{node_after_it->value.getData()}, "fresh");
-    EXPECT_FALSE(storage.ttl_paths.contains("/ttl_node"));
+    EXPECT_FALSE(storage.containsTTLPath("/ttl_node"));
 }
 
 /// A no-op TryRemove from the TTL GC (the node was recreated and is no longer TTL-eligible)

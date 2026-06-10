@@ -22,6 +22,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 
 #include <Coordination/CoordinationSettings.h>
@@ -1434,7 +1435,7 @@ bool KeeperStorage<Container>::createNode(
     const Coordination::Stat & stat,
     Coordination::ACLs node_acls,
     bool update_digest,
-    std::optional<int64_t> ttl)
+    std::optional<int64_t> ttl) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     auto parent_path = Coordination::parentNodePath(path);
     auto node_it = container.find(parent_path);
@@ -1495,7 +1496,7 @@ bool KeeperStorage<Container>::createNode(
 };
 
 template<typename Container>
-bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t version, bool update_digest)
+bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t version, bool update_digest) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     auto node_it = container.find(path);
     if (node_it == container.end())
@@ -4508,7 +4509,7 @@ std::vector<std::pair<std::string, Int32>> KeeperStorage<Container>::collectExpi
 {
     /// `ttl_paths` and `container` are mutated by commit under exclusive
     /// `storage_mutex`. Take it shared to read them consistently.
-    std::shared_lock storage_lock(storage_mutex);
+    SharedLockGuard storage_lock(storage_mutex);
 
     std::vector<String> expired_nodes;
     std::unordered_map<String, Int32> versions;
@@ -4533,6 +4534,13 @@ std::vector<std::pair<std::string, Int32>> KeeperStorage<Container>::collectExpi
     for (auto & path : expired_nodes)
         result.emplace_back(std::move(path), versions.at(path));
     return result;
+}
+
+template<typename Container>
+bool KeeperStorage<Container>::containsTTLPath(const std::string & path) const
+{
+    SharedLockGuard storage_lock(storage_mutex);
+    return ttl_paths.contains(path);
 }
 
 template<typename Container>
@@ -4722,7 +4730,11 @@ void KeeperStorage<Container>::updateStats()
     stats.session_with_ephemeral_nodes_count.store(getSessionWithEphemeralNodesCount(), std::memory_order_relaxed);
     stats.total_emphemeral_nodes_count.store(getTotalEphemeralNodesCount(), std::memory_order_relaxed);
     stats.last_zxid.store(getZXID(), std::memory_order_relaxed);
-    CurrentMetrics::set(CurrentMetrics::KeeperTTLNodes, ttl_paths.size());
+
+    {
+        SharedLockGuard storage_lock(storage_mutex);
+        CurrentMetrics::set(CurrentMetrics::KeeperTTLNodes, ttl_paths.size());
+    }
 }
 
 const KeeperStorageStats & KeeperStorageBase::getStorageStats() const
