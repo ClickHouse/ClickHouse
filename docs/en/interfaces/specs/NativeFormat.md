@@ -188,7 +188,7 @@ flowchart TD
     F -->|fixed-width| FW["read bytes_per_value × num_rows<br/>(no per-row framing)"]
     F -->|variable-length| VL["read per-value length prefixes"]
     F -->|composite| CO["read each sub-stream;<br/>recurse on the inner types"]
-    F -->|versioned| VE["read state prefix (version) once,<br/>then the per-block payload"]
+    F -->|versioned| VE["read state prefix (version)<br/>at the start of each non-empty block,<br/>then that block's payload"]
 ```
 
 #### kind_stack and sparse encoding {#kind-stack-and-sparse-encoding}
@@ -982,7 +982,7 @@ It is distinct from the protocol version:
 
 Most versioned types write the version as a little-endian UInt64 immediately before any other state-prefix data; a few use VarUInt or UInt8. A decoder reads the version first and rejects unknown values — a higher version implies a newer sender format the decoder does not understand, and mis-parsing it corrupts every subsequent byte.
 
-The state prefix is emitted **once per column per query**, immediately before the first block whose row count is greater than zero. Header blocks (rows = 0) and empty blocks emit nothing, and every later data block carries only its payload — the prefix is never repeated. A decoder must therefore track, per column, whether it has already consumed the prefix:
+The state prefix is emitted at the start of **every block whose row count is greater than zero**, immediately before that block's payload. The Native writer and reader do **not** keep serialization state across blocks: `NativeWriter::writeData` creates a fresh serialize state and calls `serializeBinaryBulkStatePrefix` for each non-empty column block it writes, and `NativeReader::readData` creates a fresh deserialize state and calls `deserializeBinaryBulkStatePrefix` for each non-empty block it reads (both skip the call entirely when `rows == 0`). Header blocks (rows = 0) and empty blocks therefore emit nothing, and a decoder must read the state prefix again at the start of each non-empty block. A decoder that reads the prefix only once and treats later blocks as payload-only will read the next block's prefix as data and desynchronize:
 
 ```mermaid
 sequenceDiagram
@@ -991,9 +991,9 @@ sequenceDiagram
     S->>C: Header block (num_rows = 0)
     Note right of C: no state prefix
     S->>C: First block with rows > 0
-    Note right of C: read state prefix once,<br/>then block payload
+    Note right of C: read state prefix,<br/>then block payload
     S->>C: Next block with rows > 0
-    Note right of C: block payload only<br/>(prefix already consumed)
+    Note right of C: read state prefix again,<br/>then block payload
     S->>C: Empty block (end marker)
     Note right of C: no state prefix
 ```
@@ -1034,9 +1034,8 @@ The simplest versioned type. It replaces a column of `N` inner values with a sma
 Type string: `LowCardinality(InnerType)`. Examples: `LowCardinality(String)`, `LowCardinality(FixedString(4))`, `LowCardinality(Nullable(String))`.
 
 ```text
-[8 bytes:  Int64 LE state prefix = 1]               ← once per column per query
-                                                      only emitted before the first block with rows > 0
 [per block with rows > 0]:
+  [8 bytes:  Int64 LE state prefix = 1]             ← repeated at the start of every non-empty block
   [8 bytes:  UInt64 LE metadata]                    ← key type code (low byte) + flag bits
   [8 bytes:  UInt64 LE dict_size]                   ← number of dict entries (incl. placeholder slot)
   [N bytes:  dict values]                           ← inner type's encoding for dict_size values
@@ -1059,7 +1058,7 @@ For a typical query response with a single data block per column, the metadata i
 
 The dict values are `dict_size` values encoded using the inner type T. The dictionary reserves leading slots for special values: a non-nullable column reserves one (`dict[0]` holds the inner type's default value, e.g. `""` for `String`), and real distinct values start at `dict[1]`. For `LowCardinality(Nullable(T))` the dict is still encoded as plain T (no null-map stream), but **two** slots are reserved: `dict[0]` is the NULL marker and `dict[1]` is the inner type's default value (e.g. `""` for `String`); real distinct values start at `dict[2]`. A NULL row's key points at `dict[0]`, and that slot is written on the wire as the inner type's default bytes. The keys are indices into the dict, with `keys.len()` equal to the block's row count; each index is `1 << key_type_code` bytes (1, 2, 4, or 8), and logical row `N` is reconstructed as `dict[keys[N]]`.
 
-The state prefix is read once per column per query, before the first block whose row count is greater than zero — header blocks (rows = 0) and empty blocks emit nothing. Within a block, `keys_count` equals the row count, `dict_size` equals the number of values in the dict stream, and each key fits in `1 << key_type_code` bytes.
+The state prefix is read at the start of every block whose row count is greater than zero — header blocks (rows = 0) and empty blocks emit nothing. Within a block, `keys_count` equals the row count, `dict_size` equals the number of values in the dict stream, and each key fits in `1 << key_type_code` bytes.
 
 :::note
 The dictionary can grow **across blocks** within a single query response: a later block may set `NeedUpdateDictionary` and append entries that earlier-block keys do not reference, but that later keys do. A decoder that discards the dictionary after each block cannot decode a multi-block `LowCardinality` column — the dictionary state must persist for the lifetime of the column within the response.
@@ -1109,7 +1108,7 @@ Type string: `JSON`.
   [N bytes: String column encoding for num_rows JSON text values]
 ```
 
-The state prefix value is `1` (`JSONStringSerializationVersion`); other values (`0`, `3`, `4`) indicate FLATTENED / V3 formats. It is read once per column per query, before the first block with rows > 0, and the values stream is a standard [String](#string-type) column for `num_rows` rows.
+The state prefix value is `1` (`JSONStringSerializationVersion`); other values (`0`, `3`, `4`) indicate FLATTENED / V3 formats. It is read at the start of every block with rows > 0, and the values stream is a standard [String](#string-type) column for `num_rows` rows.
 
 `JSON` value `'{"a":1}'` (one row):
 
@@ -1129,11 +1128,10 @@ Type string: `Variant(T1, T2, ...)`. The server canonicalizes the order (variant
 The state prefix carries a `UInt64 LE` discriminators mode: `0` = BASIC (every row's discriminator written literally), `1` = COMPACT (run-length granule encoding). The server uses BASIC over the native protocol by default (`use_compact_variant_discriminators_serialization = false`); only BASIC is specified here.
 
 ```text
-[8 bytes:  UInt64 LE discriminators mode = 0]      ← state prefix, once per column per query
-                                                     only emitted before the first block with rows > 0;
+[per block with rows > 0]:
+  [8 bytes:  UInt64 LE discriminators mode = 0]    ← state prefix, repeated at the start of every non-empty block;
                                                      followed by each variant element's own state prefix
                                                      (empty for leaf types)
-[per block with rows > 0]:
   [num_rows bytes: UInt8 discriminators]           ← one global discriminator per row; 255 = NULL
   [for each variant type i, in declared order]:
     [values for the rows whose discriminator == i] ← dense encoding in type i; count = #rows selecting i
@@ -1141,7 +1139,7 @@ The state prefix carries a `UInt64 LE` discriminators mode: `0` = BASIC (every r
 
 To reconstruct, walk the discriminators left to right while keeping a per-type running counter. Row `r` with discriminator `d` (≠ 255) takes the value at index `counter[d]` from variant type `d`'s value run, then `counter[d]` is incremented. Rows with discriminator `255` are NULL and consume no value from any run, so the sum of the per-type counters equals the number of non-NULL rows.
 
-The state prefix (the mode `UInt64`) is read once per column per query, before the first block with rows > 0; header and empty blocks emit nothing. Each non-NULL discriminator is less than the number of variant types, and variant type `i` is decoded for exactly `count[i]` rows.
+The state prefix (the mode `UInt64`) is read at the start of every block with rows > 0; header and empty blocks emit nothing. Each non-NULL discriminator is less than the number of variant types, and variant type `i` is decoded for exactly `count[i]` rows.
 
 :::note
 Variant elements that are themselves stateful (`LowCardinality`, `Variant`, `Dynamic`, `JSON`) emit their own state prefix in the per-element state-prefix phase, after the mode `UInt64`. Leaf types and the plain composites (`Array`, `Tuple`, `Map` of leaf types) have empty state prefixes and compose freely.
@@ -1188,12 +1186,11 @@ Type string: `Dynamic` or `Dynamic(max_types=N)`. The `max_types` parameter boun
 `Dynamic` has several encodings (`V1=1`, `V2=2`, `FLATTENED=3`, `V3=4`). Over the native protocol the server emits **V2 by default**, which carries per-variant statistics. The simpler **FLATTENED (version 3)** encoding is selected by sending the query setting `output_format_native_use_flattened_dynamic_and_json_serialization = 1`:
 
 ```text
-[8 bytes:  UInt64 LE version = 3]                  ← state prefix, once per column per query
-                                                     only emitted before the first block with rows > 0
-[VarUInt num_types]                                ← number of runtime types
-[num_types × String]                               ← type names, in wire order
-[per type: its own state prefix]                   ← empty for leaf types; + indexes-type prefix (empty, integer)
 [per block with rows > 0]:
+  [8 bytes:  UInt64 LE version = 3]                ← state prefix, repeated at the start of every non-empty block
+  [VarUInt num_types]                              ← number of runtime types
+  [num_types × String]                             ← type names, in wire order
+  [per type: its own state prefix]                 ← empty for leaf types; + indexes-type prefix (empty, integer)
   [num_rows × discriminator]                       ← width by num_types (UInt8 if ≤ 255, else UInt16/32/64);
                                                      NULL discriminator = num_types (one past the last type)
   [for each type i, in wire order]:
@@ -1202,7 +1199,7 @@ Type string: `Dynamic` or `Dynamic(max_types=N)`. The `max_types` parameter boun
 
 The discriminator width is the smallest unsigned integer that can index `num_types` types plus the NULL slot — `UInt8` for `num_types ≤ 255`, then `UInt16`, `UInt32`, `UInt64` (matching `getSmallestIndexesType(num_types + 1)`). NULL is the discriminator value `num_types` itself, which differs from `Variant`, where NULL is the fixed value `255`. Reconstruction is the same dense walk as `Variant`: keep a per-type counter, and row `r` with discriminator `d` (≠ `num_types`) takes value `counter[d]` from type `d`'s run.
 
-The state prefix (version + type list) is read once per column per query, before the first block with rows > 0; header and empty blocks emit nothing.
+The state prefix (version + type list) is read at the start of every block with rows > 0; header and empty blocks emit nothing.
 
 :::note
 Runtime types whose serialization is stateful (`LowCardinality`, `Variant`, `Dynamic`, `JSON`) carry nested state prefixes after the type-name list.
@@ -1234,17 +1231,19 @@ There are two kinds of path:
 In FLATTENED mode there is **no shared-data column** (that overflow store belongs to the non-flat V2/V3 Object encodings). Every path is a full column of `num_rows` values.
 
 ```text
-[8 bytes:  UInt64 LE version = 3]                  ← state prefix, once per column per query
-[VarUInt num_dynamic_paths]
-[num_dynamic_paths × String]                       ← dynamic path names, in wire order
-[per typed path: its column's state prefix]        ← empty for leaf types
-[per dynamic path: a Dynamic state prefix]         ← version + type list (see Dynamic)
 [per block with rows > 0]:
+  -- prefix phase (repeated at the start of every non-empty block):
+  [8 bytes:  UInt64 LE version = 3]                ← state prefix
+  [VarUInt num_dynamic_paths]
+  [num_dynamic_paths × String]                     ← dynamic path names, in wire order
+  [per typed path: its column's state prefix]      ← empty for leaf types
+  [per dynamic path: a Dynamic state prefix]       ← version + type list (see Dynamic)
+  -- data phase:
   [for each typed path:   its column's data]       ← num_rows values in the declared type
   [for each dynamic path: its Dynamic data]        ← num_rows values (discriminators + runs)
 ```
 
-Note the two-phase shape: **all** path state prefixes come first, then **all** path data. A dynamic path's `Dynamic` prefix (in the prefix phase) is therefore separated from its data (in the data phase). The state prefix is read once per column per query, before the first block with rows > 0, and every path column (typed or dynamic) holds exactly `num_rows` values. Row `r`'s object is assembled by reading each path's value at index `r`; a dynamic path whose `Dynamic` discriminator is NULL for that row contributes no key.
+Note the two-phase shape: **all** path state prefixes come first, then **all** path data. A dynamic path's `Dynamic` prefix (in the prefix phase) is therefore separated from its data (in the data phase). The state prefix is read at the start of every block with rows > 0, and every path column (typed or dynamic) holds exactly `num_rows` values. Row `r`'s object is assembled by reading each path's value at index `r`; a dynamic path whose `Dynamic` discriminator is NULL for that row contributes no key.
 
 `JSON` value `{"a": 1, "b": "hi"}` (one row, both paths dynamic):
 
@@ -1353,6 +1352,6 @@ With compression on, the server may also route columns through the parallel bloc
 
 **Serialization version** — a per-type on-wire version number that versioned types use to declare which variant of the encoding follows. Distinct from the protocol version. See [serialization version: concept](#serialization-version-concept).
 
-**State prefix** — the bytes preceding the per-block payload of a versioned type. Carries the serialization version and (for LowCardinality) one-time-per-column metadata. Emitted once per column per query, before the first block with rows > 0.
+**State prefix** — the bytes preceding the per-block payload of a versioned type. Carries the serialization version and (for LowCardinality) per-block dictionary metadata. Emitted at the start of every block with rows > 0; not retained across blocks.
 
 **Stream** — a contiguous run of bytes within a column body, encoding one logical sub-component (a null-map, an offsets array, a values stream). Multi-stream types concatenate two or more streams per column.
