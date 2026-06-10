@@ -304,6 +304,16 @@ def main():
             f"rm -f {temp_dir}/etc/clickhouse-server/config.d/secure_ports.xml",
             update_path_ch_config,
         ]
+        if platform.system() == "Darwin":
+            # Disable JIT (the embedded LLVM compiler) on macOS for now. JIT-compiled
+            # expressions allocate large objects on the stack, and macOS's smaller
+            # default stack turns this into a stack overflow that surfaces as a SIGILL
+            # ("Illegal instruction"). See
+            # https://github.com/ClickHouse/ClickHouse/pull/102645 and
+            # https://github.com/ClickHouse/ClickHouse/pull/105921.
+            commands.append(
+                f"cp ./tests/config/users.d/no_jit.xml {temp_dir}/etc/clickhouse-server/users.d/"
+            )
         results.append(
             Result.from_commands_run(
                 name="Install ClickHouse Config",
