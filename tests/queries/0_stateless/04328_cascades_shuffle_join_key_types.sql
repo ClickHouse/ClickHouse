@@ -30,5 +30,10 @@ SELECT '-- 2. Baseline without Cascades';
 SELECT count(), sum(l.v + r.v) FROM t_keys32 AS l JOIN t_keys64 AS r ON l.k = r.k
 SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 
+-- The merge join is not currently electable for mismatched-type keys (the rule skips
+-- them fail-close), so this guards against a future cost-model change, not a live path.
+SELECT '-- 3. Merge-join-friendly shape (sorted small tables): types still must not split buckets';
+SELECT count(), sum(l.v + r.v) FROM (SELECT * FROM t_keys32 WHERE k < -40000) AS l JOIN t_keys64 AS r ON l.k = r.k;
+
 DROP TABLE t_keys32;
 DROP TABLE t_keys64;

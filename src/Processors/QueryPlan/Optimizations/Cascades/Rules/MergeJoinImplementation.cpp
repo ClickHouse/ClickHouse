@@ -59,6 +59,9 @@ std::vector<GroupExpressionPtr> MergeJoinImplementation::applyImpl(GroupExpressi
     chassert(expression->inputs.size() == 2);
 
     /// Extract equi-join key pairs (same pattern as HashJoinImplementation).
+    /// Keys with different types on the two sides are skipped: the merge requires both
+    /// sides sorted consistently with the comparison after the implicit cast, and the
+    /// shuffle variant would also hash the sides into different buckets.
     struct JoinKeyPair { String left; String right; };
     std::vector<JoinKeyPair> equi_keys;
     for (const auto & predicate : join_step->getJoinOperator().expression)
@@ -69,6 +72,8 @@ std::vector<GroupExpressionPtr> MergeJoinImplementation::applyImpl(GroupExpressi
         if (left_node.fromRight() && right_node.fromLeft())
             std::swap(left_node, right_node);
         else if (!left_node.fromLeft() || !right_node.fromRight())
+            continue;
+        if (!left_node.getType()->equals(*right_node.getType()))
             continue;
         equi_keys.push_back({left_node.getColumnName(), right_node.getColumnName()});
     }

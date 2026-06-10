@@ -2,3 +2,5 @@
 100000	14999850000
 -- 2. Baseline without Cascades
 100000	14999850000
+-- 3. Merge-join-friendly shape (sorted small tables): types still must not split buckets
+10000	149985000
