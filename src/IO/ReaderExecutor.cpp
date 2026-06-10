@@ -1865,7 +1865,7 @@ VectorWithMemoryTracking<ByteRange> ReaderExecutor::serveCacheTiersCollectingMis
                 /// `put` into below and pinned by the caller; the deferred LRU-bump
                 /// of any read hit must land after those `put`s.
                 if (!status.miss_ranges.empty() || any_hit_done)
-                    write_plan.handles.push_back(std::move(handle));
+                    write_plan.addOwned(std::move(handle));
 
                 piece_file_start += pr.size;
             }
@@ -2114,7 +2114,7 @@ void ReaderExecutor::flushWritePlan(WritePlan & write_plan, const Rope & result,
     /// Write the fetched bytes back into every tier that missed. `result` is
     /// disjoint by construction, so each slice has at most one node per byte (it
     /// may be short at EOF). Hit-only handles have no misses and are skipped.
-    for (auto & handle : write_plan.handles)
+    for (auto * handle : write_plan.flush)
     {
         auto status = handle->status();
         for (const auto & miss : status.miss_ranges)
@@ -2132,6 +2132,23 @@ void ReaderExecutor::flushWritePlan(WritePlan & write_plan, const Rope & result,
                 static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
         }
     }
+}
+
+ICacheHandle * ReaderExecutor::ensureWriteHandle(HandleEntry & ph)
+{
+    if (!ph.write_handle && !ph.missing.empty())
+    {
+        size_t span_lo = ph.missing.front().offset;
+        size_t span_hi = ph.missing.front().end();
+        for (const auto & m : ph.missing)
+        {
+            span_lo = std::min(span_lo, m.offset);
+            span_hi = std::max(span_hi, m.end());
+        }
+        ph.write_handle = ph.provider->lookup(
+            ph.object, ph.object_file_offset, ByteRange{span_lo, span_hi - span_lo});
+    }
+    return ph.write_handle.get();
 }
 
 void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Rope & bytes, Stats & out_stats)
@@ -2160,25 +2177,13 @@ void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Ro
             if (ph.provider != cache.get() || ph.missing.empty())
                 continue;
 
-            /// Acquire the tier-piece's writable handle once - over the span of its
-            /// recorded gaps - and reuse it for every promotion in this plan, so no
-            /// per-serve `lookup` runs. Put through the handle's own fresh miss
-            /// ranges (the `put` contract), which also drops any sub-range another
-            /// reader downloaded since the plan was built.
-            if (!ph.write_handle)
-            {
-                size_t span_lo = ph.missing.front().offset;
-                size_t span_hi = ph.missing.front().end();
-                for (const auto & m : ph.missing)
-                {
-                    span_lo = std::min(span_lo, m.offset);
-                    span_hi = std::max(span_hi, m.end());
-                }
-                ph.write_handle = ph.provider->lookup(
-                    ph.object, ph.object_file_offset, ByteRange{span_lo, span_hi - span_lo});
-            }
+            /// The plan's writable handle for this tier-piece, opened once and reused
+            /// for every promotion (and the backfill) in this plan. Put through its own
+            /// fresh miss ranges (the `put` contract), which also drops any sub-range
+            /// another reader downloaded since the plan was built.
+            ICacheHandle * write_handle = ensureWriteHandle(ph);
 
-            for (const auto & miss : ph.write_handle->status().miss_ranges)
+            for (const auto & miss : write_handle->status().miss_ranges)
             {
                 const size_t lo = std::max(miss.offset, range.offset);
                 const size_t hi = std::min(miss.end(), range.end());
@@ -2190,7 +2195,7 @@ void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Ro
                     continue;
                 out_stats.add(Stats::CachePopulateRequests);
                 StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-                out_stats.add(Stats::BytesPromoted, ph.write_handle->put(sub, std::move(slice)));
+                out_stats.add(Stats::BytesPromoted, write_handle->put(sub, std::move(slice)));
                 HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
                     static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
             }

@@ -220,6 +220,10 @@ private:
     struct ReadPlanGeometry;
     struct ReadPlanHandles;
 
+    /// One (tier, object-piece) plan entry (defined below). Forward-declared so
+    /// `ensureWriteHandle` can take it.
+    struct HandleEntry;
+
     /// Foreground assembler for `physical_window`: resident bytes from the plan, the
     /// rest from the source, then the cache backfill + the Strategy-A pin. Reached by
     /// `initDecryption` (header) and the two synchronous gap reads in `readNextWindow` -
@@ -320,6 +324,12 @@ private:
     /// the fastest tier, or the faster tiers are in read-only/bypass mode). `bytes`
     /// carries file-level (physical) node offsets, the same space as `range`.
     void maybePromote(CacheTier from_tier, ByteRange range, const Rope & bytes, Stats & out_stats);
+
+    /// Open (once, then reuse for the plan's life) `ph`'s writable handle over the span
+    /// of its recorded gaps - the cache segment the backfill and `maybePromote` both
+    /// `put` through, so neither runs a per-serve `lookup`. Returns null when `ph`
+    /// records no gap (nothing to write).
+    ICacheHandle * ensureWriteHandle(HandleEntry & ph);
 
     /// Query cache residency ONCE over `[physical_start, physical_start +
     /// plan_look_ahead_window)` (clamped to the file end / read extent) via the
@@ -637,22 +647,33 @@ private:
     std::shared_ptr<const ReadPlanGeometry> read_geometry;
     ReadPlanHandles read_handles;
 
-    /// The write side of one physical window: the cache populate-handles produced
-    /// while discovering gaps (`backfillBytes`), then pinned and `put` into
+    /// The write side of one physical window: the cache populate-handles `put` into
     /// by `readPhysicalWindow`/`flushWritePlan`. A per-window local, held to the end
-    /// of the read so the deferred LRU-bump in `~ICacheHandle` lands after the
-    /// writes. The seam where lower->upper promotion and a dedicated async write
-    /// pool will attach.
+    /// of the read so the deferred LRU-bump in `~ICacheHandle` lands after the writes.
+    /// Holds page-cache handles itself (`owned`, per-window), and borrows the
+    /// plan-owned disk segment handle (held across the plan) via `addBorrowed` so it
+    /// outlives the window. `flush` lists every handle to `put`/pin, owned or borrowed.
     struct WritePlan
     {
-        VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> handles;
+        VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> owned;
+        VectorWithMemoryTracking<ICacheHandle *> flush;
+
+        /// Take ownership of a per-window handle (e.g. a page-cache lookup).
+        void addOwned(std::unique_ptr<ICacheHandle> handle)
+        {
+            flush.push_back(handle.get());
+            owned.push_back(std::move(handle));
+        }
+        /// Borrow a handle owned elsewhere (the plan's held disk segment), to `put`
+        /// into / pin without taking ownership.
+        void addBorrowed(ICacheHandle * handle) { flush.push_back(handle); }
 
         /// Pin the partial segment under `frontier` from the first handle that has
         /// one, so a mid-read eviction can't drop the segment the live connection
         /// streams into. Empty when nothing is partial there.
         ICacheHandle::CacheSegmentPin pinFrontier(size_t frontier) const
         {
-            for (const auto & handle : handles)
+            for (auto * handle : flush)
                 if (auto pin = handle->pinSegmentAt(frontier))
                     return pin;
             return {};
