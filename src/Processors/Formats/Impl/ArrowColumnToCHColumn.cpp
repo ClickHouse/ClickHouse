@@ -1134,12 +1134,23 @@ static ColumnPtr readOffsetsFromArrowListColumn(const std::shared_ptr<arrow::Chu
          * `offsets.back()`. More info can be found in https://lists.apache.org/thread/rrwfb9zo2dc58dhd9rblf20xd7wmy7jm,
          * https://github.com/ClickHouse/ClickHouse/pull/43297 and https://github.com/ClickHouse/ClickHouse/pull/54370
          * */
-        uint64_t previous_offset = arrow_offsets.Value(0);
+        int64_t previous_offset = arrow_offsets.Value(0);
+        if (unlikely(previous_offset < 0))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow List offsets contain a negative value for column '{}': offset[0]={}",
+                column_name, previous_offset);
 
         for (int64_t i = 1; i < arrow_offsets.length(); ++i)
         {
-            auto offset = arrow_offsets.Value(i);
-            uint64_t elements = offset - previous_offset;
+            int64_t offset = arrow_offsets.Value(i);
+            if (unlikely(offset < previous_offset))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow List offsets are not monotonically non-decreasing for column '{}': "
+                    "offset[{}]={} < offset[{}]={}",
+                    column_name, i, offset, i - 1, previous_offset);
+            uint64_t elements = static_cast<uint64_t>(offset - previous_offset);
             previous_offset = offset;
             offsets_data.emplace_back(offsets_data.back() + elements);
         }
