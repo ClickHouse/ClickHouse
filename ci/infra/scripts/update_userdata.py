@@ -22,19 +22,21 @@ instance found under a config it uses that config's `region` and
 
 Instances are reconciled one at a time so the whole fleet is never stopped at
 once. Only the instance ids you pass are touched; with no `--instance` every
-live instance of every config is scanned. `--dry-run` prints the update plan
-without changing anything.
+live instance of every config is scanned. By default the script only reports
+the plan and prints a diff for the first mismatched instance - pass `--update`
+to actually stop, install, and start.
 
 Examples:
 
-    update_userdata.py --instance i-0123456789abcdef0
-    update_userdata.py --instance i-0123456789abcdef0 i-0fedcba9876543210
-    update_userdata.py                 # scan and reconcile the whole fleet
-    update_userdata.py --dry-run       # show what would change
+    update_userdata.py                                  # report the fleet plan + diff
+    update_userdata.py --instance i-0123456789abcdef0   # report one instance
+    update_userdata.py --update                         # apply to the whole fleet
+    update_userdata.py --instance i-0123456789abcdef0 --update
 """
 
 import argparse
 import base64
+import difflib
 import importlib.util
 import os
 import sys
@@ -67,16 +69,15 @@ def load_ec2_configs():
     return {config.name: config for config in module.CLOUD.ec2_instances}
 
 
-def user_data_matches(ec2, instance_id, user_data) -> bool:
-    """Return True if the instance's live `user_data` already equals `user_data`."""
+def get_live_user_data(ec2, instance_id) -> str:
+    """Return the instance's current `user_data`, decoded to text."""
     resp = ec2.describe_instance_attribute(
         InstanceId=instance_id, Attribute="userData"
     )
     encoded = (resp.get("UserData") or {}).get("Value") or ""
     if isinstance(encoded, bytes):
         encoded = encoded.decode("ascii")
-    current = base64.b64decode(encoded).decode("utf-8") if encoded else ""
-    return current == user_data
+    return base64.b64decode(encoded).decode("utf-8") if encoded else ""
 
 
 def install_user_data(ec2, instance_id, state, user_data):
@@ -203,24 +204,44 @@ def start_instances(ec2, instance_ids):
     ec2.get_waiter("instance_running").wait(InstanceIds=started)
 
 
-def reconcile_instance(ec2, instance_id, state, user_data, start, dry_run=False):
+def reconcile_instance(ec2, instance_id, state, user_data, update, show_diff):
     """Reconcile one instance: skip when the live user_data already matches,
-    otherwise stop, reinstall, and (when `start`) start it again.
+    otherwise (when `update`) stop, reinstall, and start it again.
 
-    With `dry_run`, only print whether the instance would be updated; make no
-    changes.
+    Without `update`, make no changes - only report. When `show_diff` and the
+    user_data differs, print a unified diff of live vs configured first. Returns
+    True if a diff was printed, so the caller can show it only for the first
+    mismatch.
     """
-    if user_data_matches(ec2, instance_id, user_data):
+    live = get_live_user_data(ec2, instance_id)
+    if live == user_data:
         print(f"{instance_id}: user_data already up to date - skip")
-        return
+        return False
 
-    if dry_run:
-        print(f"{instance_id}: user_data differs - would update (state={state})")
-        return
+    printed = False
+    if show_diff:
+        print(f"{instance_id}: user_data differs (state={state}):")
+        sys.stdout.writelines(
+            difflib.unified_diff(
+                live.splitlines(keepends=True),
+                user_data.splitlines(keepends=True),
+                fromfile=f"{instance_id} (live)",
+                tofile="configured",
+            )
+        )
+        if not live.endswith("\n") or not user_data.endswith("\n"):
+            print()  # keep the next log line on its own row
+        printed = True
+
+    if not update:
+        print(
+            f"{instance_id}: would update (state={state}) - pass --update to apply"
+        )
+        return printed
 
     install_user_data(ec2, instance_id, state, user_data)
-    if start:
-        start_instances(ec2, [instance_id])
+    start_instances(ec2, [instance_id])
+    return printed
 
 
 def load_user_data(config):
@@ -241,7 +262,7 @@ def load_user_data(config):
     return user_data
 
 
-def reconcile_instances(configs, requested_ids, dry_run=False):
+def reconcile_instances(configs, requested_ids, update=False):
     """Reconcile instances, sourcing each one's `region` and `user_data_file`
     from the `ci/infra/cloud.py` config that owns it.
 
@@ -251,10 +272,11 @@ def reconcile_instances(configs, requested_ids, dry_run=False):
 
     Each config's live instances are discovered with praktika's own tag-based
     lookup (`_find_existing_instances`), so the standalone update matches what
-    praktika `deploy` would launch. With `dry_run`, print the update plan
-    without changing anything.
+    praktika `deploy` would launch. Without `update`, report the plan and print
+    a diff for the first mismatched instance without changing anything.
     """
     pending = None if requested_ids is None else set(requested_ids)
+    diff_printed = False
     for config in configs.values():
         if pending is not None and not pending:
             break
@@ -275,8 +297,15 @@ def reconcile_instances(configs, requested_ids, dry_run=False):
         for inst in matched:
             instance_id = inst.get("InstanceId")
             state = (inst.get("State") or {}).get("Name")
-            reconcile_instance(
-                ec2, instance_id, state, user_data, start=True, dry_run=dry_run
+            # Show the diff only for the first mismatched instance - the
+            # configured user_data is the same for every instance of a config.
+            diff_printed |= reconcile_instance(
+                ec2,
+                instance_id,
+                state,
+                user_data,
+                update=update,
+                show_diff=not diff_printed,
             )
             if pending is not None:
                 pending.discard(instance_id)
@@ -309,19 +338,19 @@ def main():
         ),
     )
     parser.add_argument(
-        "--dry-run",
+        "--update",
         action="store_true",
         help=(
-            "Report which instances would be updated (live user_data differs "
-            "from the configured file) without stopping, updating, or starting "
-            "anything."
+            "Actually perform the update (stop, install user_data, start). "
+            "Without it the script only reports the plan and prints a diff for "
+            "the first mismatched instance, making no changes."
         ),
     )
     args = parser.parse_args()
 
-    if args.dry_run:
-        print("dry run - update plan only, no changes will be made")
-    reconcile_instances(configs, args.instance, dry_run=args.dry_run)
+    if not args.update:
+        print("report only - pass --update to apply changes")
+    reconcile_instances(configs, args.instance, update=args.update)
 
 
 if __name__ == "__main__":
