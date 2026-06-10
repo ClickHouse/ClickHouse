@@ -101,3 +101,42 @@ FROM
     (SELECT tuple(v, 1) AS k FROM format(TSV, 'v LowCardinality(Nullable(String))', 'a\nc')) AS t2
     USING (k)
 ORDER BY k;
+
+-- LEFT ANTI JOIN: the runtime filter must not drop rows that the join keeps. A nested NULL key
+-- (Variant/Dynamic NULL, or nested Nullable/LowCardinality(Nullable)) compares null-safely in the
+-- join, so a nested-NULL key present on both sides DOES match and the anti-join drops it - exactly
+-- what the exclusion runtime filter (transform_null_in) does. Each case asserts the rows with
+-- runtime filters off equal the rows with them on. 1 = consistent.
+-- '\\N' is a TSV NULL marker; the literal needs the doubled backslash so the SQL lexer passes '\N'.
+
+-- Tuple(Variant): one distinct value on the right (the "equals" path), NULL on both sides.
+SELECT
+    (SELECT arraySort(groupArray(toString(k))) FROM (SELECT tuple(v, 1) AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N\ntrue')) AS t1 LEFT ANTI JOIN (SELECT tuple(v, 1) AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 0)
+  = (SELECT arraySort(groupArray(toString(k))) FROM (SELECT tuple(v, 1) AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N\ntrue')) AS t1 LEFT ANTI JOIN (SELECT tuple(v, 1) AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 1);
+
+-- Tuple(Variant): several distinct values on the right (the set path with negative lookup), NULL on both sides.
+SELECT
+    (SELECT arraySort(groupArray(toString(k))) FROM (SELECT tuple(v, 1) AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N\ntrue\nfalse\nstr')) AS t1 LEFT ANTI JOIN (SELECT tuple(v, 1) AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N\ntrue')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 0)
+  = (SELECT arraySort(groupArray(toString(k))) FROM (SELECT tuple(v, 1) AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N\ntrue\nfalse\nstr')) AS t1 LEFT ANTI JOIN (SELECT tuple(v, 1) AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N\ntrue')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 1);
+
+-- Array(Variant), NULL on both sides.
+SELECT
+    (SELECT arraySort(groupArray(toString(k))) FROM (SELECT [v] AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N\ntrue\nstr')) AS t1 LEFT ANTI JOIN (SELECT [v] AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 0)
+  = (SELECT arraySort(groupArray(toString(k))) FROM (SELECT [v] AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N\ntrue\nstr')) AS t1 LEFT ANTI JOIN (SELECT [v] AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 1);
+
+-- Map(String, Variant), NULL on both sides.
+SELECT
+    (SELECT arraySort(groupArray(toString(k))) FROM (SELECT map('a', v) AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N\ntrue\nstr')) AS t1 LEFT ANTI JOIN (SELECT map('a', v) AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 0)
+  = (SELECT arraySort(groupArray(toString(k))) FROM (SELECT map('a', v) AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N\ntrue\nstr')) AS t1 LEFT ANTI JOIN (SELECT map('a', v) AS k FROM format(TSV, 'v Variant(String, Bool)', '\\N')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 1);
+
+SET allow_dynamic_type_in_join_keys = 1;
+
+-- Tuple(Dynamic): set path with negative lookup, NULL on both sides.
+SELECT
+    (SELECT arraySort(groupArray(toString(k))) FROM (SELECT tuple(v, 1) AS k FROM format(TSV, 'v Dynamic', '\\N\ntrue\nfalse\nstr')) AS t1 LEFT ANTI JOIN (SELECT tuple(v, 1) AS k FROM format(TSV, 'v Dynamic', '\\N\ntrue')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 0)
+  = (SELECT arraySort(groupArray(toString(k))) FROM (SELECT tuple(v, 1) AS k FROM format(TSV, 'v Dynamic', '\\N\ntrue\nfalse\nstr')) AS t1 LEFT ANTI JOIN (SELECT tuple(v, 1) AS k FROM format(TSV, 'v Dynamic', '\\N\ntrue')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 1);
+
+-- Tuple(LowCardinality(Nullable)): set path with negative lookup, NULL on both sides.
+SELECT
+    (SELECT arraySort(groupArray(toString(k))) FROM (SELECT tuple(v, 1) AS k FROM format(TSV, 'v LowCardinality(Nullable(String))', '\\N\na\nb\nc')) AS t1 LEFT ANTI JOIN (SELECT tuple(v, 1) AS k FROM format(TSV, 'v LowCardinality(Nullable(String))', '\\N\na')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 0)
+  = (SELECT arraySort(groupArray(toString(k))) FROM (SELECT tuple(v, 1) AS k FROM format(TSV, 'v LowCardinality(Nullable(String))', '\\N\na\nb\nc')) AS t1 LEFT ANTI JOIN (SELECT tuple(v, 1) AS k FROM format(TSV, 'v LowCardinality(Nullable(String))', '\\N\na')) AS t2 USING (k) SETTINGS enable_join_runtime_filters = 1);
