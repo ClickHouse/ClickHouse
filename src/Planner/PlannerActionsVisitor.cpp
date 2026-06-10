@@ -82,10 +82,10 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
         buffer << "_CAST(";
 
     /// When the constant was folded from _CAST on a secondary server and the
-    /// inner argument is a "simple" constant (its natural field type matches its
-    /// stored type, so it wouldn't get its own _CAST wrapping), we use the first
-    /// argument's type for the inner annotation. This matches how the initiator
-    /// names the _CAST FunctionNode recursively from its arguments.
+    /// inner argument is a "simple" constant (not Nullable/Array/Tuple, so it
+    /// wouldn't get its own _CAST wrapping), we use the first argument's type
+    /// for the inner annotation. This matches how the initiator names the _CAST
+    /// FunctionNode recursively from its arguments.
     /// We must NOT do this when the first arg itself would need cast wrapping
     /// (e.g., NULL with type Nullable(Nothing)), because in that case the _CAST
     /// was added during AST serialization and the initiator used getResultType.
@@ -98,17 +98,9 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
         {
             if (const auto * first_arg_const = cast_args[0]->as<ConstantNode>())
             {
-                try
-                {
-                    auto first_arg_field_type = applyVisitor(FieldToDataType(), first_arg_const->getValue());
-                    if (!ConstantNode::requiresCastCall(first_arg_field_type, first_arg_const->getResultType()))
-                        inner_type = first_arg_const->getResultType();
-                }
-                catch (...)
-                {
-                    /// Ok: FieldToDataType may throw for complex types (e.g., mixed-type arrays).
-                    /// Fall back to using getResultType() which is the safe default.
-                }
+                auto first_arg_type = first_arg_const->getResultType();
+                if (!ConstantNode::requiresCastCall(first_arg_type, first_arg_type))
+                    inner_type = first_arg_type;
             }
         }
     }
