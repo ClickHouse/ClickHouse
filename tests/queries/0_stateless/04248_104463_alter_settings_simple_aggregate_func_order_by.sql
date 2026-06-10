@@ -76,8 +76,20 @@ ALTER TABLE t_104463_amt MODIFY COMMENT 'mixed reset comment', RESET SETTING mer
 ALTER TABLE t_104463_mt  MODIFY COLUMN value COMMENT 'modcol-only';
 ALTER TABLE t_104463_amt MODIFY COLUMN value COMMENT 'modcol-only';
 
-ALTER TABLE t_104463_mt  MODIFY COLUMN value SimpleAggregateFunction(sum, UInt64) COMMENT 'modcol-after-key', MODIFY SETTING merge_with_ttl_timeout = 30;
-ALTER TABLE t_104463_amt MODIFY COLUMN value SimpleAggregateFunction(sum, UInt64) COMMENT 'modcol-after-key', MODIFY SETTING merge_with_ttl_timeout = 30;
+-- Placement modifiers (`FIRST` / `AFTER`) move the column physically but leave
+-- the ORDER BY expression and the resolved key types unchanged, so the gate
+-- skips `verifySortingKey`. `value` is itself the suspicious key column, so on a
+-- build that re-validates unconditionally these still raise
+-- DATA_TYPE_CANNOT_BE_USED_IN_KEY; the type-based gate accepts them.
+ALTER TABLE t_104463_mt  MODIFY COLUMN value SimpleAggregateFunction(sum, UInt64) COMMENT 'modcol-first' FIRST;
+ALTER TABLE t_104463_amt MODIFY COLUMN value SimpleAggregateFunction(sum, UInt64) COMMENT 'modcol-first' FIRST;
+
+ALTER TABLE t_104463_mt  MODIFY COLUMN value SimpleAggregateFunction(sum, UInt64) COMMENT 'modcol-after-key' AFTER key;
+ALTER TABLE t_104463_amt MODIFY COLUMN value SimpleAggregateFunction(sum, UInt64) COMMENT 'modcol-after-key' AFTER key;
+
+-- Re-stating the (unchanged) column type alongside a table `MODIFY SETTING`.
+ALTER TABLE t_104463_mt  MODIFY COLUMN value SimpleAggregateFunction(sum, UInt64) COMMENT 'modcol-mixed-setting', MODIFY SETTING merge_with_ttl_timeout = 30;
+ALTER TABLE t_104463_amt MODIFY COLUMN value SimpleAggregateFunction(sum, UInt64) COMMENT 'modcol-mixed-setting', MODIFY SETTING merge_with_ttl_timeout = 30;
 
 ALTER TABLE t_104463_mt  MODIFY COLUMN value CODEC(ZSTD);
 ALTER TABLE t_104463_amt MODIFY COLUMN value CODEC(ZSTD);
