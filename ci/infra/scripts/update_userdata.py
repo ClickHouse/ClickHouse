@@ -8,30 +8,31 @@ Mac instance puts its host into a multi-hour scrub (host state `pending`), so
 `available` again.
 
 This script encapsulates that whole user_data update workflow so it lives apart
-from the praktika `deploy` path. You pass the EC2 instance ids to touch via
-`--instance`; the `EC2Instance.Config` entries in `ci/infra/cloud.py` are the
-source of truth for everything else. The script discovers each config's live
-instances (matching praktika's own tag-based lookup), and for every requested
-instance found under a config it uses that config's `region` and
-`user_data_file` to:
+from the praktika `deploy` path. It runs in two phases:
 
-  1. Compare the live `user_data` with the configured file; skip the instance
-     when it already matches.
-  2. Otherwise stop the instance, install the new `user_data`, and start it
-     again, blocking on the Dedicated Host scrub.
+  1. `build_plan` reads the live state (read-only) and produces a `Plan`. For
+     every instance it decides one action: `update` (live user_data differs -
+     stop, install, start), `start` (user_data is current but the instance is
+     stopped), or `none`.
+  2. `Plan.apply` carries the plan out, one instance at a time, blocking on the
+     Dedicated Host scrub.
 
-Instances are reconciled one at a time so the whole fleet is never stopped at
-once. Only the instance ids you pass are touched; with no `--instance` every
-live instance of every config is scanned. By default the script only reports
-the plan and prints a diff for the first mismatched instance - pass `--update`
-to actually stop, install, and start.
+The plan is always printed. By default that is all that happens - pass
+`--apply` to execute it.
+
+The `EC2Instance.Config` entries in `ci/infra/cloud.py` are the source of truth:
+each config supplies the `region` and `user_data_file`, and its live instances
+are discovered with praktika's own tag-based lookup. You pass the EC2 instance
+ids to touch via `--instance`; with no `--instance` every live instance of every
+config is scanned. Comments are ignored when matching user_data, so a
+comment-only edit plans no update.
 
 Examples:
 
-    update_userdata.py                                  # report the fleet plan + diff
-    update_userdata.py --instance i-0123456789abcdef0   # report one instance
-    update_userdata.py --update                         # apply to the whole fleet
-    update_userdata.py --instance i-0123456789abcdef0 --update
+    update_userdata.py                                  # print the fleet plan
+    update_userdata.py --instance i-0123456789abcdef0   # plan one instance
+    update_userdata.py --apply                          # apply to the whole fleet
+    update_userdata.py --instance i-0123456789abcdef0 --apply
 """
 
 import argparse
@@ -41,6 +42,8 @@ import importlib.util
 import os
 import sys
 import time
+from dataclasses import dataclass
+from typing import List
 
 import boto3
 from botocore.exceptions import ClientError
@@ -220,47 +223,90 @@ def start_instances(ec2, instance_ids):
     ec2.get_waiter("instance_running").wait(InstanceIds=started)
 
 
-def reconcile_instance(ec2, instance_id, state, user_data, update, show_diff):
-    """Reconcile one instance: skip when the live user_data already matches,
-    otherwise (when `update`) stop, reinstall, and start it again.
+# Plan item actions.
+UPDATE = "update"  # live user_data differs - stop, install, start
+START = "start"  # user_data current but instance stopped - just start
+NONE = "none"  # running and current - nothing to do
 
-    Without `update`, make no changes - only report. When `show_diff` and the
-    user_data differs, print a unified diff of live vs configured first. Returns
-    True if a diff was printed, so the caller can show it only for the first
-    mismatch.
 
-    Comments are ignored when matching (see `strip_comments`), so a comment-only
-    edit does not trigger a fleet-wide stop/start.
+@dataclass
+class PlanItem:
+    """One planned action for one instance, self-contained enough to `apply`.
+
+    `build_plan` fills these in read-only; `apply` carries a single item out.
     """
-    live = get_live_user_data(ec2, instance_id)
-    if strip_comments(live) == strip_comments(user_data):
-        print(f"{instance_id}: user_data already up to date - skip")
-        return False
 
-    printed = False
-    if show_diff:
-        print(f"{instance_id}: user_data differs (state={state}):")
-        sys.stdout.writelines(
-            difflib.unified_diff(
-                live.splitlines(keepends=True),
-                user_data.splitlines(keepends=True),
-                fromfile=f"{instance_id} (live)",
-                tofile="configured",
+    config: str
+    region: str
+    instance_id: str
+    state: str
+    action: str
+    user_data: str  # configured content, installed on UPDATE
+    live: str  # live content, for the diff on UPDATE
+
+    def describe(self, show_diff):
+        """Print this item's plan line. On an UPDATE, when `show_diff`, print a
+        unified diff of live vs configured first; return True if it did, so the
+        caller shows the diff only for the first mismatch.
+        """
+        if self.action == NONE:
+            print(f"  {self.instance_id}: up to date, {self.state} - no action")
+            return False
+        if self.action == START:
+            print(f"  {self.instance_id}: up to date but {self.state} - start")
+            return False
+
+        printed = False
+        if show_diff:
+            print(f"  {self.instance_id}: user_data diff (live -> configured):")
+            sys.stdout.writelines(
+                difflib.unified_diff(
+                    self.live.splitlines(keepends=True),
+                    self.user_data.splitlines(keepends=True),
+                    fromfile=f"{self.instance_id} (live)",
+                    tofile="configured",
+                )
             )
-        )
-        if not live.endswith("\n") or not user_data.endswith("\n"):
-            print()  # keep the next log line on its own row
-        printed = True
-
-    if not update:
+            if not self.live.endswith("\n") or not self.user_data.endswith("\n"):
+                print()  # keep the next log line on its own row
+            printed = True
         print(
-            f"{instance_id}: would update (state={state}) - pass --update to apply"
+            f"  {self.instance_id}: user_data differs ({self.state}) - "
+            f"stop, install, start"
         )
         return printed
 
-    install_user_data(ec2, instance_id, state, user_data)
-    start_instances(ec2, [instance_id])
-    return printed
+    def apply(self):
+        """Carry out this item: update (stop, install, start) or start a stopped
+        instance, blocking on the Dedicated Host scrub. A NONE item is a no-op.
+        """
+        if self.action == NONE:
+            return
+        ec2 = boto3.client("ec2", region_name=self.region)
+        if self.action == UPDATE:
+            install_user_data(ec2, self.instance_id, self.state, self.user_data)
+            start_instances(ec2, [self.instance_id])
+        elif self.action == START:
+            if self.state == "stopping":
+                # `start_instances` needs a fully stopped instance.
+                ec2.get_waiter("instance_stopped").wait(
+                    InstanceIds=[self.instance_id],
+                    WaiterConfig={"Delay": 30, "MaxAttempts": 80},
+                )
+            start_instances(ec2, [self.instance_id])
+
+
+def print_plan(plan):
+    """Print every item in `plan`, grouped by config, with a diff for the first
+    instance that needs an update.
+    """
+    diff_shown = False
+    current_config = None
+    for item in plan:
+        if item.config != current_config:
+            current_config = item.config
+            print(f"[{item.config}] region={item.region}")
+        diff_shown = item.describe(show_diff=not diff_shown) or diff_shown
 
 
 def load_user_data(config):
@@ -273,29 +319,24 @@ def load_user_data(config):
     if not os.path.isabs(user_data_file):
         user_data_file = os.path.join(REPO_ROOT, user_data_file)
     with open(user_data_file, "r") as f:
-        user_data = f.read()
-    print(
-        f"[{config.name}] region={config.region}, user_data='{user_data_file}' "
-        f"({len(user_data)} bytes)"
-    )
-    return user_data
+        return f.read()
 
 
-def reconcile_instances(configs, requested_ids, update=False):
-    """Reconcile instances, sourcing each one's `region` and `user_data_file`
-    from the `ci/infra/cloud.py` config that owns it.
+def build_plan(configs, requested_ids) -> List[PlanItem]:
+    """Read live state (read-only) and return the list of `PlanItem`s.
 
-    With `requested_ids` set, only those ids are touched and an id that belongs
-    to no config is an error. With `requested_ids` None, every live instance of
-    every config is scanned and reconciled.
+    Each one's `region` and `user_data_file` come from the `ci/infra/cloud.py`
+    config that owns it. With `requested_ids` set, only those ids are planned
+    and an id that belongs to no config is an error. With `requested_ids` None,
+    every live instance of every config is planned.
 
     Each config's live instances are discovered with praktika's own tag-based
-    lookup (`_find_existing_instances`), so the standalone update matches what
-    praktika `deploy` would launch. Without `update`, report the plan and print
-    a diff for the first mismatched instance without changing anything.
+    lookup (`_find_existing_instances`), so the plan matches what praktika
+    `deploy` would launch. Comments are ignored when matching user_data (see
+    `strip_comments`), so a comment-only edit plans no update.
     """
     pending = None if requested_ids is None else set(requested_ids)
-    diff_printed = False
+    plan: List[PlanItem] = []
     for config in configs.values():
         if pending is not None and not pending:
             break
@@ -316,15 +357,23 @@ def reconcile_instances(configs, requested_ids, update=False):
         for inst in matched:
             instance_id = inst.get("InstanceId")
             state = (inst.get("State") or {}).get("Name")
-            # Show the diff only for the first mismatched instance - the
-            # configured user_data is the same for every instance of a config.
-            diff_printed |= reconcile_instance(
-                ec2,
-                instance_id,
-                state,
-                user_data,
-                update=update,
-                show_diff=not diff_printed,
+            live = get_live_user_data(ec2, instance_id)
+            if strip_comments(live) != strip_comments(user_data):
+                action = UPDATE
+            elif state in ("stopped", "stopping"):
+                action = START
+            else:
+                action = NONE
+            plan.append(
+                PlanItem(
+                    config=config.name,
+                    region=config.region,
+                    instance_id=instance_id,
+                    state=state,
+                    action=action,
+                    user_data=user_data,
+                    live=live,
+                )
             )
             if pending is not None:
                 pending.discard(instance_id)
@@ -334,6 +383,7 @@ def reconcile_instances(configs, requested_ids, update=False):
             f"instance(s) {sorted(pending)} not found under any EC2Instance "
             f"config in ci/infra/cloud.py"
         )
+    return plan
 
 
 def main():
@@ -348,28 +398,36 @@ def main():
         nargs="+",
         metavar="INSTANCE_ID",
         help=(
-            "EC2 instance ids to reconcile (e.g. i-0123456789abcdef0). Each id "
-            "is matched to its ci/infra/cloud.py config to source the region "
-            "and user_data file, then the instance is stopped, has the "
-            "configured user_data installed, and is started again. Other "
-            "instances are left untouched. When omitted, every live instance of "
-            "every config is scanned and reconciled."
+            "EC2 instance ids to plan (e.g. i-0123456789abcdef0). Each id is "
+            "matched to its ci/infra/cloud.py config to source the region and "
+            "user_data file. When omitted, every live instance of every config "
+            "is planned."
         ),
     )
     parser.add_argument(
-        "--update",
+        "--apply",
         action="store_true",
         help=(
-            "Actually perform the update (stop, install user_data, start). "
-            "Without it the script only reports the plan and prints a diff for "
-            "the first mismatched instance, making no changes."
+            "Execute the plan (stop/install/start updates, start stopped "
+            "instances). Without it the plan is only printed, making no changes."
         ),
     )
     args = parser.parse_args()
 
-    if not args.update:
-        print("report only - pass --update to apply changes")
-    reconcile_instances(configs, args.instance, update=args.update)
+    plan = build_plan(configs, args.instance)
+    print_plan(plan)
+
+    changes = [item for item in plan if item.action != NONE]
+    if not changes:
+        print("nothing to do")
+        return
+    if not args.apply:
+        print(f"{len(changes)} change(s) planned - pass --apply to execute")
+        return
+
+    print(f"applying {len(changes)} change(s)...")
+    for item in changes:
+        item.apply()
 
 
 if __name__ == "__main__":
