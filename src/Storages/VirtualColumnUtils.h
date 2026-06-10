@@ -109,13 +109,17 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
 /// Extracts constant values expected for `_path` input from the query filter DAG.
 std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit);
 
+/// `file_names`, if provided, must be parallel to `paths` and supplies the `_file` value for each path.
+/// Otherwise `_file` is derived from the path as the substring after the last '/'. It is needed when
+/// the user-visible `_file` differs from the path suffix, e.g. web paths with a query/fragment part.
 ColumnPtr getFilterByPathAndFileIndexes(
     const std::vector<String> & paths,
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
     const ContextPtr & context,
-    const std::optional<FormatSettings> & format_settings = std::nullopt);
+    const std::optional<FormatSettings> & format_settings = std::nullopt,
+    const std::vector<String> * file_names = nullptr);
 
 template <typename T>
 void filterByPathOrFile(
@@ -125,9 +129,10 @@ void filterByPathOrFile(
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
     const ContextPtr & context,
-    const std::optional<FormatSettings> & format_settings = std::nullopt)
+    const std::optional<FormatSettings> & format_settings = std::nullopt,
+    const std::vector<String> * file_names = nullptr)
 {
-    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context, format_settings);
+    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context, format_settings, file_names);
     const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
     if (indexes.size() == sources.size())
         return;
