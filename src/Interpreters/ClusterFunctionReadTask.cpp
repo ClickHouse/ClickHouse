@@ -9,6 +9,9 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/ActionsDAG.h>
+/// Concrete definitions of the types held by `unique_ptr` in
+/// `ClusterFunctionReadTaskResponse`. The header only forward-declares them.
+#include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Formats/FormatFactory.h>
@@ -26,18 +29,51 @@ namespace Setting
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
 }
 
+ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse() = default;
+ClusterFunctionReadTaskResponse::~ClusterFunctionReadTaskResponse() = default;
+ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ClusterFunctionReadTaskResponse && other) noexcept = default;
+ClusterFunctionReadTaskResponse & ClusterFunctionReadTaskResponse::operator=(ClusterFunctionReadTaskResponse && other) noexcept = default;
+
+ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & other)
+    : path(other.path)
+    , file_bucket_info(other.file_bucket_info)
+    , data_lake_metadata(other.data_lake_metadata
+        ? std::make_unique<DataLakeObjectMetadata>(*other.data_lake_metadata)
+        : nullptr)
+    , iceberg_info(other.iceberg_info
+        ? std::make_unique<Iceberg::IcebergObjectSerializableInfo>(*other.iceberg_info)
+        : nullptr)
+{
+}
+
+ClusterFunctionReadTaskResponse & ClusterFunctionReadTaskResponse::operator=(const ClusterFunctionReadTaskResponse & other)
+{
+    if (this == &other)
+        return *this;
+    path = other.path;
+    file_bucket_info = other.file_bucket_info;
+    data_lake_metadata = other.data_lake_metadata
+        ? std::make_unique<DataLakeObjectMetadata>(*other.data_lake_metadata)
+        : nullptr;
+    iceberg_info = other.iceberg_info
+        ? std::make_unique<Iceberg::IcebergObjectSerializableInfo>(*other.iceberg_info)
+        : nullptr;
+    return *this;
+}
+
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context)
 {
     if (!object)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`object` cannot be null");
 
     if (object->data_lake_metadata.has_value())
-        data_lake_metadata = object->data_lake_metadata.value();
+        data_lake_metadata = std::make_unique<DataLakeObjectMetadata>(*object->data_lake_metadata);
 
 #if USE_AVRO
     if (std::dynamic_pointer_cast<IcebergDataObjectInfo>(object))
     {
-        iceberg_info = dynamic_cast<IcebergDataObjectInfo &>(*object).info;
+        iceberg_info = std::make_unique<Iceberg::IcebergObjectSerializableInfo>(
+            dynamic_cast<IcebergDataObjectInfo &>(*object).info);
     }
 #endif
 
@@ -58,11 +94,11 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
 
     ObjectInfoPtr object;
 
-    if (iceberg_info.has_value())
+    if (iceberg_info)
     {
 #if USE_AVRO
         auto iceberg_object = std::make_shared<IcebergDataObjectInfo>(RelativePathWithMetadata{path});
-        iceberg_object->info = iceberg_info.value();
+        iceberg_object->info = *iceberg_info;
         object = iceberg_object;
 #else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg support is disabled");
@@ -72,7 +108,10 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     {
         object = std::make_shared<ObjectInfo>(path);
     }
-    object->data_lake_metadata = data_lake_metadata;
+    if (data_lake_metadata)
+        object->data_lake_metadata = *data_lake_metadata;
+    else
+        object->data_lake_metadata.reset();
     object->file_bucket_info = file_bucket_info;
 
     return object;
@@ -88,15 +127,15 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA)
     {
         SerializedSetsRegistry registry;
-        if (data_lake_metadata.schema_transform)
-            data_lake_metadata.schema_transform->serialize(out, registry);
+        if (data_lake_metadata && data_lake_metadata->schema_transform)
+            data_lake_metadata->schema_transform->serialize(out, registry);
         else
             ActionsDAG().serialize(out, registry);
 
         if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_EXCLUDED_ROWS)
         {
-            if (data_lake_metadata.excluded_rows)
-                data_lake_metadata.excluded_rows->write(out);
+            if (data_lake_metadata && data_lake_metadata->excluded_rows)
+                data_lake_metadata->excluded_rows->write(out);
             else
                 DataLakeObjectMetadata::ExcludedRows().write(out);
         }
@@ -119,7 +158,7 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA)
     {
-        if (iceberg_info.has_value())
+        if (iceberg_info)
         {
             writeVarUInt(1, out);
             iceberg_info->serializeForClusterFunctionProtocol(out, protocol_version);
@@ -153,12 +192,16 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
 
         if (!path.empty() && !transform->getInputs().empty())
         {
-            data_lake_metadata.schema_transform = std::move(transform);
+            if (!data_lake_metadata)
+                data_lake_metadata = std::make_unique<DataLakeObjectMetadata>();
+            data_lake_metadata->schema_transform = std::move(transform);
         }
         if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_EXCLUDED_ROWS)
         {
-            data_lake_metadata.excluded_rows = std::make_shared<DataLakeObjectMetadata::ExcludedRows>();
-            data_lake_metadata.excluded_rows->read(in);
+            if (!data_lake_metadata)
+                data_lake_metadata = std::make_unique<DataLakeObjectMetadata>();
+            data_lake_metadata->excluded_rows = std::make_shared<DataLakeObjectMetadata::ExcludedRows>();
+            data_lake_metadata->excluded_rows->read(in);
         }
     }
 
@@ -178,7 +221,7 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
         readVarUInt(has_iceberg_metadata, in);
         if (has_iceberg_metadata)
         {
-            iceberg_info = Iceberg::IcebergObjectSerializableInfo{};
+            iceberg_info = std::make_unique<Iceberg::IcebergObjectSerializableInfo>();
             iceberg_info->deserializeForClusterFunctionProtocol(in, protocol_version);
         }
     }

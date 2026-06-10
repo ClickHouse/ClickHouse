@@ -9,18 +9,24 @@
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/KeyDescription.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/TTLDescription.h>
 
 #include <Common/MultiVersion.h>
 
+#include <memory>
+
 namespace DB
 {
 
 class ClientInfo;
 class ASTSQLSecurity;
+/// Forward-declared so this header does not need to pull in
+/// `Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h` (which transitively
+/// drags in Iceberg/DeltaLake/Paimon concrete state types). The opaque holder is defined
+/// in `Storages/ObjectStorage/DataLakes/DataLakeTableState.{h,cpp}`.
+class DataLakeTableState;
 
 /// Common metadata for all storages. Contains all possible parts of CREATE
 /// query from all storages, but only some subset used.
@@ -83,16 +89,21 @@ struct StorageInMemoryMetadata
     /// (zero-initialization is important)
     int32_t metadata_version = 0;
 
-    ///  Current state of a datalake table.
-    std::optional<DataLakeTableStateSnapshot> datalake_table_state;
+    /// Current state of a datalake table.
+    ///
+    /// Held by `unique_ptr` to an opaque holder so this header does not need to know
+    /// about the underlying variant alternatives (Iceberg / DeltaLake / Paimon). Use
+    /// `setDataLakeTableState` to set, or check `datalake_table_state != nullptr`.
+    std::unique_ptr<DataLakeTableState> datalake_table_state;
 
-    StorageInMemoryMetadata() = default;
+    StorageInMemoryMetadata();
+    ~StorageInMemoryMetadata();
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
 
-    StorageInMemoryMetadata(StorageInMemoryMetadata && other) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
-    StorageInMemoryMetadata & operator=(StorageInMemoryMetadata && other) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+    StorageInMemoryMetadata(StorageInMemoryMetadata && other) noexcept;
+    StorageInMemoryMetadata & operator=(StorageInMemoryMetadata && other) noexcept;
 
     /// NOTE: Thread unsafe part. You should not modify same StorageInMemoryMetadata
     /// structure from different threads. It should be used as MultiVersion
@@ -142,7 +153,14 @@ struct StorageInMemoryMetadata
     /// Sets SQL security for the storage.
     void setSQLSecurity(const ASTSQLSecurity & sql_security);
 
-    void setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_);
+    /// Set the data-lake state from a fully-typed variant. This is a template so the
+    /// header does not need the variant alternatives to be complete; the body is in the
+    /// `.cpp` and forwards to `DataLakeTableState::fromSnapshot`.
+    template <typename Snapshot>
+    void setDataLakeTableState(Snapshot && snapshot);
+
+    /// Take ownership of an already-built data-lake state holder. Pass `nullptr` to clear.
+    void setDataLakeTableState(std::unique_ptr<DataLakeTableState> state);
     UUID getDefinerID(ContextPtr context) const;
 
     /// Returns a copy of the context with the correct user from SQL security options.

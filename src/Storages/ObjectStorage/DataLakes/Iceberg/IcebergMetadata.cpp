@@ -68,6 +68,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/RemoveOrphanFilesExecute.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeTableState.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
@@ -152,10 +153,11 @@ namespace
 {
 Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(StorageMetadataPtr storage_metadata)
 {
-    if (!storage_metadata || !storage_metadata->datalake_table_state.has_value())
+    if (!storage_metadata || !storage_metadata->datalake_table_state)
         return nullptr;
-    chassert(std::holds_alternative<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
-    return std::make_shared<TableStateSnapshot>(std::get<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
+    const auto * state = storage_metadata->datalake_table_state->tryGet<TableStateSnapshot>();
+    chassert(state != nullptr);
+    return std::make_shared<TableStateSnapshot>(*state);
 }
 }
 

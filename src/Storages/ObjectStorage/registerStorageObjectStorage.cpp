@@ -8,7 +8,10 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/HudiConfiguration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>

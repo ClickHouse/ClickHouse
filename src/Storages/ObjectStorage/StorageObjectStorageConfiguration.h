@@ -6,19 +6,27 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Interpreters/StorageID.h>
-#include <Databases/DataLake/ICatalog.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
 #include <Storages/StorageFactory.h>
-#include <Formats/FormatFilterInfo.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <optional>
-#include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
+#include <Formats/FormatFilterInfo.h>
+/// `DataLakeTableStateSnapshot` is a `std::variant<...>` type alias used by value in
+/// `getTableStateSnapshot` / `buildStorageMetadataFromState` below. A `using` alias
+/// cannot be forward-declared and `std::optional<variant<...>>` requires the alternatives
+/// to be complete. Until Phase 3 of the header-firewall introduces an opaque wrapper, we
+/// must keep this include here.
+#include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
+#include <optional>
+
+namespace DataLake
+{
+class ICatalog;
+class IStorageCredentials;
+}
 
 namespace DB
 {
@@ -27,7 +35,12 @@ class StorageObjectStorage;
 class NamedCollection;
 class SinkToStorage;
 class IDataLakeMetadata;
+struct DataLakeStorageSettings;
+struct FormatParserSharedResources;
+using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 struct IObjectIterator;
+struct ObjectInfo;
+using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
 

@@ -5,6 +5,7 @@
 
 #if USE_AVRO
 
+#include <Poco/JSON/Object.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 
 #include <Columns/IColumn.h>

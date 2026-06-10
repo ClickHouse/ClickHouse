@@ -3,6 +3,10 @@
 
 #if USE_AWS_S3
 
+/// Explicit include for `DataLake::IStorageCredentials`, previously pulled in
+/// transitively through `diskSettings.h`.
+#include <Databases/DataLake/StorageCredentials.h>
+
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>

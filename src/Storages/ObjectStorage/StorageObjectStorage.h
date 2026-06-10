@@ -9,19 +9,24 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
-#include <Databases/DataLake/ICatalog.h>
 #include <Storages/MutationCommands.h>
 
 #include <memory>
 
 #include <Storages/IPartitionStrategy.h>
+
+namespace DataLake
+{
+class ICatalog;
+}
+
 namespace DB
 {
+
+class IDataLakeMetadata;
 
 namespace ErrorCodes
 {

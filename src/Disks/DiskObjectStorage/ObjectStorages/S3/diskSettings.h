@@ -9,8 +9,12 @@
 #include <IO/S3Settings.h>
 
 #include <IO/S3/Client.h>
-#include <Databases/DataLake/StorageCredentials.h>
 #include <Interpreters/StorageID.h>
+
+namespace DataLake
+{
+class IStorageCredentials;
+}
 
 namespace DB
 {

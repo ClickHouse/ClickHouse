@@ -10,6 +10,11 @@
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/Common.h>
+/// Now included in the .cpp; the header forward-declares these data-lake types.
+#include <Databases/DataLake/ICatalog.h>
+#include <Databases/DataLake/StorageCredentials.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
 #include <boost/algorithm/string/replace.hpp>
 

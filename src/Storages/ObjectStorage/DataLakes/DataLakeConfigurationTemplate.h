@@ -4,19 +4,23 @@
 
 #include <IO/WriteBuffer.h>
 #include <IO/VarInt.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+
+/// `DataLakeConfigurationTemplate.h` holds only the `DataLakeConfiguration<Base, Meta>`
+/// class template. Per-format typedef instantiations (e.g. `StorageS3IcebergConfiguration`)
+/// live in `Iceberg/IcebergConfiguration.h`, `DeltaLakeConfiguration.h`,
+/// `Paimon/PaimonConfiguration.h`, `HudiConfiguration.h` respectively.
+///
+/// Callers that need a specific instantiation should include the per-format header, not
+/// this template directly. The template references `DeltaLakeMetadata` via a single
+/// `dynamic_cast` for `getDeltaLakePartitionColumns` (a known temporary crutch), so the
+/// DeltaLake metadata headers are still pulled in here. Removing that crutch is tracked
+/// as part of Option C/D of the storage / data-lake separation work.
 
 #include <Storages/IStorage.h>
-#include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/HDFS/Configuration.h>
-#include <Storages/ObjectStorage/Local/Configuration.h>
-#include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
@@ -43,6 +47,15 @@
 
 namespace DB
 {
+
+/// Forward-declaration is enough for `std::is_same_v<DataLakeMetadata, IcebergMetadata>`
+/// in `supportsPrewhere()` below; we don't need the full definition. The Iceberg headers
+/// are not included here to keep per-format isolation \u2014 callers that instantiate
+/// `DataLakeConfiguration<Base, IcebergMetadata>` must include `Iceberg/IcebergMetadata.h`
+/// themselves (via `Iceberg/IcebergConfiguration.h`).
+#if USE_AVRO
+class IcebergMetadata;
+#endif
 
 namespace ErrorCodes
 {
@@ -437,40 +450,10 @@ private:
 };
 
 
-#if USE_AVRO
-#    if USE_AWS_S3
-using StorageS3IcebergConfiguration = DataLakeConfiguration<StorageS3Configuration, IcebergMetadata>;
-using StorageS3PaimonConfiguration = DataLakeConfiguration<StorageS3Configuration, PaimonMetadata>;
-#endif
+/// Per-format typedefs live in their respective headers:
+///   * `Iceberg/IcebergConfiguration.h`
+///   * `DeltaLakeConfiguration.h`
+///   * `Paimon/PaimonConfiguration.h`
+///   * `HudiConfiguration.h`
 
-#if USE_AZURE_BLOB_STORAGE
-using StorageAzureIcebergConfiguration = DataLakeConfiguration<StorageAzureConfiguration, IcebergMetadata>;
-using StorageAzurePaimonConfiguration = DataLakeConfiguration<StorageAzureConfiguration, PaimonMetadata>;
-#endif
-
-#if USE_HDFS
-using StorageHDFSIcebergConfiguration = DataLakeConfiguration<StorageHDFSConfiguration, IcebergMetadata>;
-using StorageHDFSPaimonConfiguration = DataLakeConfiguration<StorageHDFSConfiguration, PaimonMetadata>;
-#endif
-
-using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfiguration, IcebergMetadata>;
-using StorageLocalPaimonConfiguration = DataLakeConfiguration<StorageLocalConfiguration, PaimonMetadata>;
-#endif
-
-#if USE_PARQUET
-#if USE_AWS_S3
-using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadata>;
-#endif
-
-#if USE_AZURE_BLOB_STORAGE
-using StorageAzureDeltaLakeConfiguration = DataLakeConfiguration<StorageAzureConfiguration, DeltaLakeMetadata>;
-#endif
-
-using StorageLocalDeltaLakeConfiguration = DataLakeConfiguration<StorageLocalConfiguration, DeltaLakeMetadata>;
-
-#endif
-
-#if USE_AWS_S3
-using StorageS3HudiConfiguration = DataLakeConfiguration<StorageS3Configuration, HudiMetadata>;
-#endif
 }

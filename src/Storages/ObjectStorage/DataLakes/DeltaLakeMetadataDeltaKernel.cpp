@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeTableState.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
@@ -99,14 +100,14 @@ namespace
 
 std::optional<size_t> extractDeltaLakeSnapshotVersionFromMetadata(StorageMetadataPtr storage_metadata)
 {
-    if (!storage_metadata || !storage_metadata->datalake_table_state.has_value())
+    if (!storage_metadata || !storage_metadata->datalake_table_state)
         return std::nullopt;
 
-    if (!std::holds_alternative<DeltaLake::TableStateSnapshot>(storage_metadata->datalake_table_state.value()))
+    const auto * state = storage_metadata->datalake_table_state->tryGet<DeltaLake::TableStateSnapshot>();
+    if (!state)
         return std::nullopt;
 
-    const auto & state = std::get<DeltaLake::TableStateSnapshot>(storage_metadata->datalake_table_state.value());
-    return state.version;
+    return state->version;
 }
 
 }
