@@ -270,6 +270,13 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
         if (isOracleUnsafeFunctionName(func->name))
             return true;
 
+        /// Experimental `timeSeries*ToGrid` aggregates bucket points onto a
+        /// parameterized grid; the result depends on grid parameters and
+        /// point ordering, so the metamorphic State/Merge and DQP rewrites
+        /// legitimately diverge. Whole family gated by prefix (it is growing).
+        if (func->name.starts_with("timeSeries") || stripped.starts_with("timeSeries"))
+            return true;
+
         /// Comparator-based array sorts are not stable on ties: with a
         /// non-injective lambda key (e.g. `arrayReverseSort(x -> 0, arr)`) the
         /// relative order of tied elements is implementation-defined and can
