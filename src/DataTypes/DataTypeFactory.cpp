@@ -28,11 +28,28 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
+}
+
+template <typename FieldType>
+static typename DataTypeEnum<FieldType>::Values checkAndBuildEnumValues(
+    const std::vector<std::pair<String, Int64>> & values, const char * type_name)
+{
+    typename DataTypeEnum<FieldType>::Values enum_values;
+    enum_values.reserve(values.size());
+    for (const auto & [name, value] : values)
+    {
+        if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value {} for element '{}' exceeds range of {}",
+                value, name, type_name);
+        enum_values.emplace_back(name, static_cast<FieldType>(value));
+    }
+    return enum_values;
 }
 
 /// Helper to create Enum data type from ASTEnumDataType values
@@ -55,21 +72,8 @@ static DataTypePtr createEnumFromValues(const String & type_name, const std::vec
     }
 
     if (use_enum16)
-    {
-        DataTypeEnum16::Values enum_values;
-        enum_values.reserve(values.size());
-        for (const auto & [name, value] : values)
-            enum_values.emplace_back(name, static_cast<Int16>(value));
-        return std::make_shared<DataTypeEnum16>(enum_values);
-    }
-    else
-    {
-        DataTypeEnum8::Values enum_values;
-        enum_values.reserve(values.size());
-        for (const auto & [name, value] : values)
-            enum_values.emplace_back(name, static_cast<Int8>(value));
-        return std::make_shared<DataTypeEnum8>(enum_values);
-    }
+        return std::make_shared<DataTypeEnum16>(checkAndBuildEnumValues<Int16>(values, "Enum16"));
+    return std::make_shared<DataTypeEnum8>(checkAndBuildEnumValues<Int8>(values, "Enum8"));
 }
 
 /// Helper to create Tuple data type from ASTTupleDataType
