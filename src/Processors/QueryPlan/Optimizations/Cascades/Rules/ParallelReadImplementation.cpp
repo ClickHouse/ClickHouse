@@ -184,7 +184,9 @@ bool SortedReadImplementation::checkPattern(GroupExpressionPtr expression, const
 
     auto [prefix_size, direction] = matchSortingToKey(
         required_properties.sorting, read_step->getStorageMetadata()->getSortingKey());
-    return prefix_size > 0 && direction != 0;
+    /// Claim the sorting only on a full match: a prefix-sorted read with the stripped
+    /// SortingStep never re-enforced would return wrongly ordered rows.
+    return prefix_size == required_properties.sorting.size() && direction != 0;
 }
 
 std::vector<GroupExpressionPtr> SortedReadImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
