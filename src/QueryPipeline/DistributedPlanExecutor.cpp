@@ -42,7 +42,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/executeQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
@@ -650,7 +649,9 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     }
 
-    ASTPtr ast_stub = make_intrusive<ASTSelectQuery>(); /// FIXME: this is only used to populate query_kind
+    /// No AST: this fragment is built from a serialized query plan, not parsed. The query-log
+    /// helpers below treat a null AST as QueryKind::Select, which is correct here.
+    const ASTPtr no_ast;
     UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
 
     auto query_log_elem = logQueryStart(
@@ -658,7 +659,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         context,
         /*query_for_logging*/ task.task_id,
         query_plan_hash,
-        ast_stub, pipeline,
+        no_ast, pipeline,
         /*interpreter*/ nullptr,
         /*internal*/ false,
         /*database*/ "",
@@ -688,12 +689,12 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
             executor.setCancelCallback(is_cancelled, 100);
         executor.execute();
 
-        logQueryFinish(query_log_elem, context, ast_stub, std::move(pipeline), false,
+        logQueryFinish(query_log_elem, context, no_ast, std::move(pipeline), false,
             query_span, QueryResultCacheUsage::None, false);
     }
     catch (...)
     {
-        logQueryException(query_log_elem, context, execute_task_watch, ast_stub, query_span, false, true);
+        logQueryException(query_log_elem, context, execute_task_watch, no_ast, query_span, false, true);
         throw;
     }
 }
