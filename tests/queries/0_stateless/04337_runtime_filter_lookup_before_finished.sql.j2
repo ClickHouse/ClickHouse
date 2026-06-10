@@ -1,0 +1,46 @@
+-- Regression test for the LOGICAL_ERROR "Trying to lookup values in runtime filter before
+-- building it was finished" (server abort in debug/sanitizer builds).
+--
+-- A JOIN runtime filter is built on the right (build) side by N parallel streams; it only
+-- becomes "finished" after the last stream merges. With join_overflow_mode='break' and a tiny
+-- max_bytes_in_join the join stops reading the build side early, so the probe (left) side can
+-- call IRuntimeFilter::find() while the filter is still unfinished. The query result is
+-- intentionally not checked: join_overflow_mode='break' makes it non-deterministic, and the
+-- point of the test is that find() must not throw. The race is probabilistic, so the query is
+-- repeated; without the fix at least one repetition aborts the server with very high probability.
+
+DROP TABLE IF EXISTS rf_probe;
+DROP TABLE IF EXISTS rf_build;
+
+CREATE TABLE rf_probe (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 128;
+CREATE TABLE rf_build (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 128;
+
+-- Stop merges so the build side keeps several parts -> several parallel build streams (the
+-- filter has more than one stream to merge, which is what opens the unfinished window).
+SYSTEM STOP MERGES rf_probe;
+SYSTEM STOP MERGES rf_build;
+
+INSERT INTO rf_probe SELECT number FROM numbers(200000);
+INSERT INTO rf_probe SELECT number FROM numbers(200000);
+
+{% for p in range(8) -%}
+INSERT INTO rf_build SELECT number + {{ p * 25000 }} FROM numbers(25000);
+{% endfor %}
+
+SET enable_analyzer = 1;
+SET enable_join_runtime_filters = 1;
+SET enable_parallel_replicas = 0;
+SET join_algorithm = 'hash';
+SET join_overflow_mode = 'break';
+SET max_bytes_in_join = 1;
+SET max_threads = 16;
+SET max_block_size = 8192;
+
+{% for i in range(30) -%}
+SELECT count() FROM rf_probe AS l JOIN rf_build AS r ON l.k = r.k FORMAT Null;
+{% endfor %}
+
+SELECT 'ok';
+
+DROP TABLE rf_probe;
+DROP TABLE rf_build;
