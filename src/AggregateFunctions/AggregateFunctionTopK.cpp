@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Columns/ColumnTuple.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -623,6 +624,7 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
 
 }
 
+void registerAggregateFunctionTopK(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTopK(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };

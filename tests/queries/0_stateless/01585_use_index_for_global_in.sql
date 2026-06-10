@@ -1,6 +1,7 @@
 -- Tags: global
 
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
+SET use_statistics = 0; -- auto_statistics_types causes extra rows to be read
 
 drop table if exists xp;
 drop table if exists xp_d;
@@ -14,12 +15,12 @@ set max_rows_to_read = 4; -- 2 from numbers, 2 from tables
 select * from xp where i in (select * from numbers(2));
 
 -- For Global IN-s now we can execute subquery twice with automatic parallel replicas :(
-select * from xp where i global in (select * from numbers(2)) SETTINGS automatic_parallel_replicas_mode=0;
+select * from xp where i global in (select * from numbers(2)) SETTINGS automatic_parallel_replicas_mode=0, enable_parallel_replicas=0;
 
 select * from xp_d where i in (select * from numbers(2));
 
 set max_rows_to_read = 6; -- 2 from numbers, 2 from GLOBAL temp table (pushed from numbers), 2 from local xp
-select * from xp_d where i global in (select * from numbers(2)) SETTINGS automatic_parallel_replicas_mode=0;
+select * from xp_d where i global in (select * from numbers(2)) SETTINGS automatic_parallel_replicas_mode=0, enable_parallel_replicas=0;
 
 drop table if exists xp;
 drop table if exists xp_d;

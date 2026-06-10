@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     RangesInDataParts && parts_,
     MutationsSnapshotPtr mutations_snapshot_,
@@ -114,7 +115,7 @@ static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & co
     {
         auto all_columns_sizes = part.getColumnSizes();
 
-        for (const auto & [_, size] : all_columns_sizes)
+        for (const auto & [_, size] : *all_columns_sizes)
         {
             if (size.data_compressed && (!data_compressed_size || size.data_compressed < data_compressed_size))
                 data_compressed_size = size.data_compressed;
@@ -212,7 +213,7 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
     read_task_info.read_hints = part_with_ranges.read_hints;
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
-        .withVirtuals()
+        .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
         .withSubcolumns();
 
     LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, read_task_info.alter_conversions);

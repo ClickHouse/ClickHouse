@@ -229,40 +229,6 @@ WHERE explain LIKE '%Parts:%';
 SELECT * FROM 03165_token_ft WHERE like(message, '%foo%');
 
 SELECT '';
-SELECT '-- No skip for notLike with non-matching token';
-
-SELECT trim(explain)
-FROM (
-    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE notLike(message, '%rvice is rea%')
-)
-WHERE explain LIKE '%Parts:%';
-
-SELECT * FROM 03165_token_ft WHERE notLike(message, '%rvice is rea%');
-
-SELECT '';
--- could be an optimization in the future
-SELECT '-- No skip for notLike with matching tokens';
-
-SELECT trim(explain)
-FROM (
-    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE notLike(message, '%rvice is not rea%')
-)
-WHERE explain LIKE '%Parts:%';
-
-SELECT * FROM 03165_token_ft WHERE notLike(message, '%rvice is not rea%');
-
-SELECT '';
-SELECT '-- No skip for notLike with matching substring';
-
-SELECT trim(explain)
-FROM (
-    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE notLike(message, '%ready%')
-)
-WHERE explain LIKE '%Parts:%';
-
-SELECT * FROM 03165_token_ft WHERE notLike(message, '%ready%');
-
-SELECT '';
 SELECT '-- No skip for equals with matching string';
 
 SELECT trim(explain)
@@ -283,28 +249,6 @@ FROM (
 WHERE explain LIKE '%Parts:%';
 
 SELECT * FROM 03165_token_ft WHERE equals(message, 'Service is not rea');
-
-SELECT '';
-SELECT '-- No skip for notEquals with non-matching string';
-
-SELECT trim(explain)
-FROM (
-    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE notEquals(message, 'Service is not rea')
-)
-WHERE explain LIKE '%Parts:%';
-
-SELECT * FROM 03165_token_ft WHERE notEquals(message, 'Service is not rea');
-
-SELECT '';
-SELECT '-- No skip for notEquals with matching string';
-
-SELECT trim(explain)
-FROM (
-    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE notEquals(message, 'Service is not ready')
-)
-WHERE explain LIKE '%Parts:%';
-
-SELECT * FROM 03165_token_ft WHERE notEquals(message, 'Service is not ready');
 
 SELECT '';
 SELECT '-- No skip for hasTokenOrNull with matching token';

@@ -103,7 +103,7 @@ def test_kill_query(started_cluster):
 
     # Verify that query was successfully cancelled in ClickHouse server
     result = node1.query(
-        "SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+        f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
     )
     assert int(result.strip()) == 0
 

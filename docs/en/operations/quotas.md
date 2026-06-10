@@ -108,7 +108,9 @@ Here are the amounts that can be restricted:
 
 `execution_time` – The total query execution time, in seconds (wall time).
 
-`failed_sequential_authentications` - The total number of sequential authentication errors. 
+`failed_sequential_authentications` - The total number of sequential authentication errors.
+
+`queries_per_normalized_hash` – The maximum number of executions of any single normalized query. Normalized queries are queries with literals replaced by placeholders, so `SELECT 1` and `SELECT 2` are considered the same normalized query. This limit is tracked per distinct normalized query pattern independently.
 
 If the limit is exceeded for at least one time interval, an exception is thrown with a text about which restriction was exceeded, for which interval, and when the new interval begins (when queries can be sent again).
 
@@ -125,9 +127,28 @@ Quotas can use the "quota key" feature to report on resources for multiple keys 
 
         You can also write <keyed_by_ip />, so the IP address is used as the quota key.
         (But keep in mind that users can change the IPv6 address fairly easily.)
+
+        Instead of <keyed_by_ip /> you can use <keyed_by_forwarded_ip />, so the address
+        from the X-Forwarded-For header is used as the quota key.
+
+        For both <keyed_by_ip /> and <keyed_by_forwarded_ip /> you can additionally specify
+        <ipv4_prefix_bits> and <ipv6_prefix_bits> to group clients by subnet instead of by a
+        single address: the IP address is masked to the given prefix length before being used
+        as the quota key. For example, <ipv4_prefix_bits>24</ipv4_prefix_bits> shares one bucket
+        across a /24 IPv4 subnet, and <ipv6_prefix_bits>64</ipv6_prefix_bits> across a /64 IPv6
+        subnet. These elements can only be used together with <keyed_by_ip /> or
+        <keyed_by_forwarded_ip />.
     -->
     <keyed />
 ```
+
+When using the DDL syntax, you can also key quotas by normalized query hash, so that each distinct query pattern gets its own independent quota bucket:
+
+```sql
+CREATE QUOTA my_quota KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO my_user;
+```
+
+In this example, the user can execute up to 100 instances of each distinct normalized query per hour. `SELECT number FROM numbers(1)` and `SELECT number FROM numbers(2)` share the same bucket (because they have the same normalized form), but `SELECT number, number FROM numbers(1)` uses a separate bucket.
 
 The quota is assigned to users in the 'users' section of the config. See the section "Access rights".
 

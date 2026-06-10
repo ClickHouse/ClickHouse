@@ -1,6 +1,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Core/Settings.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/ExpressionActions.h>
 
 #include <DataTypes/DataTypeTuple.h>
@@ -9,6 +10,8 @@
 #include <Columns/IColumn.h>
 #include <Core/TypeId.h>
 
+#include <Interpreters/Context.h>
+
 namespace DB
 {
 
@@ -16,6 +19,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+}
+
+namespace Setting
+{
+    extern const SettingsBool use_query_condition_cache;
 }
 
 void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
@@ -60,6 +68,13 @@ FormatFilterInfo::FormatFilterInfo(
     , prewhere_info(std::move(prewhere_info_))
     , column_mapper(column_mapper_)
 {
+    bool use_query_condition_cache = context_->getSettingsRef()[Setting::use_query_condition_cache];
+    if (use_query_condition_cache && filter_actions_dag)
+    {
+        const auto & outputs = filter_actions_dag->getOutputs();
+        if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs[0]))
+            condition_hash = filter_actions_dag->getHash();
+    }
 }
 
 FormatFilterInfo::FormatFilterInfo() = default;
@@ -70,6 +85,23 @@ bool FormatFilterInfo::hasFilter() const
     return filter_actions_dag != nullptr;
 }
 
+Block FormatFilterInfo::buildKeyConditionInputs(
+    Block base,
+    const PrewhereInfoPtr & prewhere_info,
+    const FilterDAGInfoPtr & row_level_filter)
+{
+    auto add_required = [&](const ActionsDAG & dag)
+    {
+        for (const auto & col : dag.getRequiredColumns())
+            if (!base.has(col.name))
+                base.insert({col.type->createColumn(), col.type, col.name});
+    };
+    if (row_level_filter)
+        add_required(row_level_filter->actions);
+    if (prewhere_info)
+        add_required(prewhere_info->prewhere_actions);
+    return base;
+}
 
 void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
 {
@@ -89,26 +121,12 @@ void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
                 if (!ctx)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
 
-                if (prewhere_info || row_level_filter)
-                {
-                    auto add_columns = [&](const ActionsDAG & dag)
-                    {
-                        for (const auto & col : dag.getRequiredColumns())
-                        {
-                            if (!keys.has(col.name) && !additional_columns.has(col.name))
-                                additional_columns.insert({col.type->createColumn(), col.type, col.name});
-                        }
-                    };
+                Block all_inputs = buildKeyConditionInputs(keys, prewhere_info, row_level_filter);
+                for (const auto & col : all_inputs)
+                    if (!keys.has(col.name))
+                        additional_columns.insert(col);
 
-                    if (row_level_filter)
-                        add_columns(row_level_filter->actions);
-                    if (prewhere_info)
-                        add_columns(prewhere_info->prewhere_actions);
-                }
-
-                ColumnsWithTypeAndName columns = keys.getColumnsWithTypeAndName();
-                for (const auto & col : additional_columns)
-                    columns.push_back(col);
+                ColumnsWithTypeAndName columns = all_inputs.getColumnsWithTypeAndName();
                 Names names;
                 names.reserve(columns.size());
                 for (const auto & col : columns)

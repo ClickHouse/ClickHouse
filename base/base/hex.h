@@ -268,7 +268,7 @@ namespace impl
         static TUInt unhex(const char * data)
         {
             constexpr auto num_bytes = sizeof(TUInt);
-            TUInt res;
+            TUInt res{};
             if constexpr (num_bytes <= 4)
             {
                 const auto * src = reinterpret_cast<const uint8_t *>(data);

@@ -187,6 +187,8 @@ public:
         format_settings = settings;
     }
 
+    UInt64 getParallelReplicasProtocolVersion() const { return server_parallel_replicas_protocol_version; }
+
 private:
     String host;
     UInt16 port;
@@ -343,6 +345,8 @@ private:
     void initBlockInput();
     void initBlockLogsInput();
     void initBlockProfileEventsInput();
+
+    void ensureConnected() const;
 
     [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected, TimeoutSetter * timeout_setter = nullptr);
 };

@@ -12,7 +12,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 /// The following optimization applies: when a new chunk of data comes in, we firstly execute the expression_ only on the first and the last row -
 /// if it evaluates to true on both rows then the whole chunk is immediately passed to further steps.
 /// Otherwise, we apply the expression_ to all rows.
-class FilterSortedStreamByRange : public ISimpleTransform
+class FilterSortedStreamByRange final : public ISimpleTransform
 {
 public:
     FilterSortedStreamByRange(
