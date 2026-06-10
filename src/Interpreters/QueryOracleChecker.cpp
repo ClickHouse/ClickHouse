@@ -500,6 +500,9 @@ const std::unordered_set<String> truncating_settings = {
     /// for session leakage, but an inline `SETTINGS` clause survives in the
     /// clones and overrides the pin, so gate it here too.
     "aggregate_functions_null_for_empty",
+    /// Appends an extremes block (blank separator + min/max rows) to every
+    /// result; the oracle's row collection would count those as data rows.
+    "extremes",
 };
 
 bool hasTruncatingInlineSettings(const ASTPtr & ast)
@@ -838,6 +841,9 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     /// use_skip_indexes_if_final_exact_mode = 0` would make oracle
     /// sub-queries keep stale FINAL row versions (see `truncating_settings`).
     oracle_context->setSetting("use_skip_indexes_if_final_exact_mode", Field(true));
+    /// A session-leaked `SET extremes = 1` would append extremes blocks to
+    /// every oracle sub-query result (counted as data rows).
+    oracle_context->setSetting("extremes", Field(false));
     /// Cap result size so oracle sub-queries (especially TLP's UNION ALL of three
     /// partitions) cannot allocate unbounded memory. We use `result_overflow_mode=throw`
     /// — `break` would silently truncate the result before the cap fires, and the
