@@ -32,7 +32,9 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_QUERY;
+    extern const int NO_COMMON_TYPE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
 }
@@ -826,10 +828,16 @@ static bool mapElementDefaultCanMatchConstant(
         /// NULL (e.g. comparing with a Nullable default) means "may match" -> keep the granule.
         return result_field.isNull() || result_field.safeGet<UInt64>() != 0;
     }
-    catch (...)
+    catch (const Exception & e)
     {
-        /// If the comparison cannot be performed, be conservative and do not prune.
-        return true;
+        /// Only tolerate the type-mismatch case (the default and the constant are not comparable):
+        /// be conservative and do not prune. Resource limits, query cancellation, allocation
+        /// failures, and internal errors must not be swallowed here, otherwise a query that should
+        /// fail would silently continue with the index disabled. The predicate was already accepted
+        /// by the query analyzer, so any other failure is unexpected and must propagate.
+        if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT || e.code() == ErrorCodes::NO_COMMON_TYPE)
+            return true;
+        throw;
     }
 }
 
