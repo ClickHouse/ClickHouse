@@ -133,23 +133,32 @@ MergeTreeIndexGranuleVectorSimilarityScann::~MergeTreeIndexGranuleVectorSimilari
 
 size_t MergeTreeIndexGranuleVectorSimilarityScann::memoryUsageBytes() const
 {
-    size_t total = vectors.size() * sizeof(float);
-    total += serialized_partitioner_proto.size();
-    total += serialized_codebook_proto.size();
-    total += hashed_data.size(); /// uint8_t
-    for (const auto & token : datapoints_by_token)
-        total += token.size() * sizeof(uint32_t);
+    size_t total = 0;
 
-    /// When the live searcher is present, it holds a separate copy of the dataset
-    /// (built in buildIndex/buildIndexFromSerialized) plus an internal hashed dataset.
-    /// Include both to avoid underestimating the cache weight.
+    /// After buildIndexFromSerialized, vectors and hashed_data are moved into the
+    /// searcher's dataset/hashed_dataset. Count only whichever side actually holds the data.
     if (searcher && searcher->inner)
     {
         if (const auto * ds = searcher->inner->dataset())
             total += ds->MemoryUsageExcludingDocids();
+        else
+            total += vectors.size() * sizeof(float);
+
         if (const auto * hds = searcher->inner->hashed_dataset())
             total += hds->MemoryUsageExcludingDocids();
+        else
+            total += hashed_data.size();
     }
+    else
+    {
+        total += vectors.size() * sizeof(float);
+        total += hashed_data.size();
+    }
+
+    total += serialized_partitioner_proto.size();
+    total += serialized_codebook_proto.size();
+    for (const auto & token : datapoints_by_token)
+        total += token.size() * sizeof(uint32_t);
 
     return total;
 }
@@ -159,7 +168,18 @@ void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & o
     writeIntBinary(FILE_FORMAT_VERSION, ostr); /// 1
     writeIntBinary(static_cast<UInt64>(num_vectors), ostr);
     writeIntBinary(static_cast<UInt64>(padded_dim), ostr);
-    ostr.write(reinterpret_cast<const char *>(vectors.data()), vectors.size() * sizeof(float));
+    if (!vectors.empty())
+    {
+        ostr.write(reinterpret_cast<const char *>(vectors.data()), vectors.size() * sizeof(float));
+    }
+    else
+    {
+        /// vectors was moved into the searcher's dataset by buildIndexFromSerialized.
+        chassert(searcher && searcher->inner && searcher->inner->dataset());
+        const auto * ds = static_cast<const research_scann::DenseDataset<float> *>(searcher->inner->dataset());
+        auto span = ds->data();
+        ostr.write(reinterpret_cast<const char *>(span.data()), span.size() * sizeof(float));
+    }
 
     /// Pre-trained ScaNN artifacts (all zero-length when index was not built).
 
@@ -169,11 +189,32 @@ void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & o
     writeIntBinary(static_cast<UInt64>(serialized_codebook_proto.size()), ostr);
     ostr.write(serialized_codebook_proto.data(), serialized_codebook_proto.size());
 
-    const size_t hashed_rows = (hashed_dim > 0) ? (hashed_data.size() / hashed_dim) : 0;
+    const size_t hashed_rows = [&]() -> size_t
+    {
+        if (hashed_dim == 0)
+            return 0;
+        if (!hashed_data.empty())
+            return hashed_data.size() / hashed_dim;
+        /// hashed_data was moved into the searcher's hashed_dataset by buildIndexFromSerialized.
+        if (searcher && searcher->inner && searcher->inner->hashed_dataset())
+            return searcher->inner->hashed_dataset()->size();
+        return 0;
+    }();
     writeIntBinary(static_cast<UInt64>(hashed_rows), ostr);
     writeIntBinary(static_cast<UInt64>(hashed_dim), ostr);
     if (hashed_rows > 0)
-        ostr.write(reinterpret_cast<const char *>(hashed_data.data()), hashed_data.size());
+    {
+        if (!hashed_data.empty())
+        {
+            ostr.write(reinterpret_cast<const char *>(hashed_data.data()), hashed_data.size());
+        }
+        else
+        {
+            chassert(searcher && searcher->inner && searcher->inner->hashed_dataset());
+            auto span = searcher->inner->hashed_dataset()->data();
+            ostr.write(reinterpret_cast<const char *>(span.data()), span.size());
+        }
+    }
 
     writeIntBinary(static_cast<UInt64>(datapoints_by_token.size()), ostr);
     for (const auto & token_dps : datapoints_by_token)
@@ -422,7 +463,7 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
     {
         const size_t hashed_rows = hashed_data.size() / hashed_dim;
         opts.hashed_dataset = std::make_shared<research_scann::DenseDataset<uint8_t>>(
-            std::vector<uint8_t>(hashed_data), hashed_rows);
+            std::move(hashed_data), hashed_rows);
     }
 
     if (!datapoints_by_token.empty())
@@ -465,9 +506,10 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
             "ScaNN index restore failed: could not parse ScaNN config string");
 
     /// The float dataset is required for the exact-reordering step.
-    /// vectors[] already contains (potentially normalized) floats from deserialization.
+    /// Move vectors[] into the dataset to avoid holding a duplicate copy in memory;
+    /// serializeBinary reads the data back from the searcher's dataset when vectors is empty.
     auto dataset = std::make_shared<research_scann::DenseDataset<float>>(
-        std::vector<float>(vectors), num_vectors);
+        std::move(vectors), num_vectors);
 
     try
     {
