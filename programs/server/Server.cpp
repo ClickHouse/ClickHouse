@@ -2041,7 +2041,10 @@ try
     if (config().getBool("stateless_worker_server.enabled", false))
     {
         String stateless_worker_endpoint = config().getString("stateless_worker_server.endpoint", "localhost");
-        stateless_worker_endpoint_ptr = std::make_shared<StatelessWorkerEndpoint>();
+        stateless_worker_endpoint_ptr = std::make_shared<StatelessWorkerEndpoint>(
+            config().getUInt64("stateless_worker_server.max_threads", 1000),
+            config().getUInt64("stateless_worker_server.max_free_threads", 0),
+            config().getUInt64("stateless_worker_server.queue_size", 3000));
         stateless_worker_endpoint_name = stateless_worker_endpoint_ptr->getId(stateless_worker_endpoint);
         global_context->getInterserverIOHandler().addEndpoint(stateless_worker_endpoint_name, stateless_worker_endpoint_ptr);
         LOG_DEBUG(log, "Added stateless worker endpoint '{}'.", stateless_worker_endpoint_name);
