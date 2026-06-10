@@ -107,6 +107,13 @@ private:
     static void * run(void * arg)
     {
         std::unique_ptr<std::function<void()>> closure(static_cast<std::function<void()> *>(arg));
+        /// Deliberately no try/catch, to match `std::thread`. Its thread entry point
+        /// `__thread_proxy` invokes the function the same way, without catching: see
+        /// `__thread_proxy` / `__thread_execute` in
+        /// contrib/llvm-project/libcxx/include/__thread/thread.h. An exception that escapes the
+        /// thread function finds no handler, so the Itanium ABI calls `std::terminate` (during the
+        /// phase-1 search, before unwinding into the C pthread frames) - exactly `std::thread`'s
+        /// contract for an uncaught exception.
         (*closure)();
         return nullptr;
     }
