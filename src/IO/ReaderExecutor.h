@@ -320,6 +320,13 @@ private:
     /// leaves the planned span.
     void planResidencyWindow(size_t physical_start);
 
+    /// TRIM phase of the plan: the look-ahead span starting at physical `physical_start`,
+    /// clamped to the physical file end (when known) and the advertised read extent.
+    /// Empty (`size == 0`) when the start already sits at/past a bound - the caller then
+    /// publishes an empty plan. The single place the plan is bounded, so every range it
+    /// later holds is one the reader will actually consume.
+    ByteRange boundedPlanSpan(size_t physical_start) const;
+
     /// Read from source into the pre-allocated `blocks`. Reuses the open connection if it
     /// continues; otherwise opens a kept-live connection when `keep_live` (a wide leased
     /// plan), else a one-shot. `keep_live` is decided by the caller, NOT here (the
@@ -402,6 +409,13 @@ private:
     /// `position` reaches the extent (an empty window, recoverable: extending the
     /// extent resumes - the same contract as the legacy `setReadUntilPosition`).
     size_t clampToExtent(size_t win_size) const;
+
+    /// Trim a desired (logical) read size at the current `position` to the file end
+    /// (when known) and the advertised read extent - the per-read analogue of
+    /// `boundedPlanSpan`, so a single window slice never reaches past what the plan
+    /// was bounded to. An unknown-size source has no known file end here (EOF is
+    /// latched by a short read), so only the extent bounds it.
+    size_t boundedReadSize(size_t want) const;
 
     /// Return the live connection to the pool the moment it has been read to its
     /// right bound (the advertised extent, or a one-shot block): it is fully

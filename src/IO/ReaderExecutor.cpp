@@ -483,6 +483,13 @@ size_t ReaderExecutor::clampToExtent(size_t win_size) const
     return std::min(win_size, remaining);
 }
 
+size_t ReaderExecutor::boundedReadSize(size_t want) const
+{
+    if (!offset_map.hasUnknownSize())
+        want = std::min(want, totalSize() - position);
+    return clampToExtent(want);
+}
+
 void ReaderExecutor::releaseLiveConnectionAtBound(ConnState & conn) const
 {
     if (conn.connection && conn.connection->atBound())
@@ -583,7 +590,6 @@ void ReaderExecutor::maybeTriggerPrefetch()
 
     drainAbandonedPrefetches();
 
-    const size_t logical_size = totalSize();
     const size_t position_phys = position + data_start_offset;
 
     /// The live-connection lease is decided per plan in `planResidencyWindow`, not here,
@@ -594,10 +600,7 @@ void ReaderExecutor::maybeTriggerPrefetch()
     /// point query, so this plain `window_size` probe (no pressure-scaled sizing) is
     /// enough to refresh and consult the plan. At the boundary there is nothing to read
     /// ahead - return.
-    size_t probe_size = offset_map.hasUnknownSize()
-        ? window_size
-        : std::min(window_size, logical_size - position);
-    probe_size = clampToExtent(probe_size);
+    const size_t probe_size = boundedReadSize(window_size);
     if (probe_size == 0)
         return;
 
@@ -622,14 +625,9 @@ void ReaderExecutor::maybeTriggerPrefetch()
     if (prefetch_window == 0)
         return;  /// read-ahead suppressed under High/Critical memory pressure
 
-    size_t next_size = offset_map.hasUnknownSize()
-        ? prefetch_window
-        : std::min(prefetch_window, logical_size - position);
-    /// Keep prefetch within the advertised extent: never read ahead past what the
-    /// consumer said it will read.
-    next_size = clampToExtent(next_size);
+    size_t next_size = boundedReadSize(prefetch_window);
     if (next_size == 0)
-        return;  /// at the extent boundary, nothing left to prefetch
+        return;  /// at the file end / extent boundary, nothing left to prefetch
 
     /// Bound the read-ahead to the plan gap `[position, gapEnd)`, mirroring the
     /// synchronous gap read: one pure run per fetch, never straddling a resident run.
@@ -2268,6 +2266,33 @@ void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const Ro
     }
 }
 
+ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
+{
+    size_t want = plan_look_ahead_window;
+
+    /// Clamp to the physical file end when the size is known. An unknown-size source
+    /// plans the full look-ahead and discovers EOF via short reads.
+    if (!offset_map.hasUnknownSize())
+    {
+        const size_t physical_end = offset_map.totalSize();
+        if (physical_start >= physical_end)
+            return ByteRange{physical_start, 0};
+        want = std::min(want, physical_end - physical_start);
+    }
+
+    /// Clamp to the advertised read extent so the plan never pins segments past the
+    /// region the reader will actually consume.
+    if (read_extent_end)
+    {
+        const size_t physical_extent_end = *read_extent_end + data_start_offset;
+        if (physical_start >= physical_extent_end)
+            return ByteRange{physical_start, 0};
+        want = std::min(want, physical_extent_end - physical_start);
+    }
+
+    return ByteRange{physical_start, want};
+}
+
 void ReaderExecutor::planResidencyWindow(size_t physical_start)
 {
     /// Release the PREVIOUS plan's handles FIRST: their `~ICacheHandle` runs the
@@ -2287,39 +2312,14 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
     /// instead of re-querying the global monitor per call.
     geom->pressure_level = memoryPressureMonitor().currentLevel();
 
-    size_t want = plan_look_ahead_window;
-    bool valid = true;
-
-    /// Clamp to the physical file end when the size is known. An unknown-size
-    /// source plans the full look-ahead and discovers EOF via short reads, the
-    /// same way the per-window path does.
-    if (!offset_map.hasUnknownSize())
-    {
-        const size_t physical_end = offset_map.totalSize();
-        if (physical_start >= physical_end)
-            valid = false;
-        else
-            want = std::min(want, physical_end - physical_start);
-    }
-
-    /// Clamp to the advertised read extent so the plan never pins segments past
-    /// the region the reader will actually consume.
-    if (valid && read_extent_end)
-    {
-        const size_t physical_extent_end = *read_extent_end + data_start_offset;
-        if (physical_start >= physical_extent_end)
-            valid = false;
-        else
-            want = std::min(want, physical_extent_end - physical_start);
-    }
-
-    if (!valid || want == 0)
+    /// TRIM: the plan span, bounded to the file end and the read extent. An empty
+    /// span (the start already at/past a bound) publishes an empty plan.
+    const ByteRange plan_range = boundedPlanSpan(physical_start);
+    if (plan_range.size == 0)
     {
         read_geometry = std::move(geom);  /// empty plan; covers()==false
         return;
     }
-
-    const ByteRange plan_range{physical_start, want};
     geom->plan_end = plan_range.end();
     ReadPlanHandles handles;
 
