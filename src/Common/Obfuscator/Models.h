@@ -25,6 +25,7 @@
 #include <Common/assert_cast.h>
 #include <Core/Block.h>
 #include <Common/DateLUT.h>
+#include <limits>
 #include <memory>
 #include <cmath>
 #include <boost/container/flat_map.hpp>
@@ -166,8 +167,14 @@ static Int64 transformSigned(Int64 x, UInt64 seed)
     if (x >= 0)
         return transform(x, seed);
 
-    /// Negate using unsigned arithmetic to obtain the magnitude.
-    /// This is well-defined even for the minimum signed number, while `-x` on a signed integer would be undefined behavior.
+    /// The minimum signed number is the only value in its log2 bucket whose magnitude
+    /// is representable: permuting it within the bucket and negating would wrap the result
+    /// into a positive number, breaking the "keep sign" invariant. Keep it as is.
+    if (x == std::numeric_limits<Int64>::min())
+        return x;
+
+    /// Negate using unsigned arithmetic to obtain the magnitude;
+    /// `-x` on the signed integer would be undefined behavior on the boundary value.
     return -transform(-static_cast<UInt64>(x), seed);
 }
 
