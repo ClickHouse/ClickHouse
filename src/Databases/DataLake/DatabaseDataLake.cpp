@@ -71,6 +71,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
     extern const DatabaseDataLakeSettingsString onelake_client_id;
     extern const DatabaseDataLakeSettingsString onelake_client_secret;
+    extern const DatabaseDataLakeSettingsBool onelake_use_blob_endpoint;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
     extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
     extern const DatabaseDataLakeSettingsString google_project_id;
@@ -631,7 +632,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         azure_configuration->setInitializationAsOneLake(
             rest_catalog->getClientId(),
             rest_catalog->getClientSecret(),
-            rest_catalog->getTenantId()
+            rest_catalog->getTenantId(),
+            settings[DatabaseDataLakeSetting::onelake_use_blob_endpoint].value
         );
 #else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type Azure for Iceberg OneLake catalog");
