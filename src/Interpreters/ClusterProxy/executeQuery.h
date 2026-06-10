@@ -53,6 +53,17 @@ namespace ClusterProxy
 
 class SelectStreamFactory;
 
+/// `database` is an initiator-only setting: it selects the default database for the user's query
+/// (the equivalent of `USE`), and a remote server applies it the same way. But a query sent to a
+/// remote server as part of a distributed query (a `Distributed` fan-out, a cluster table function,
+/// parallel replicas) must resolve an unqualified table against the server's own default database —
+/// set from the cluster config (`default_database` per replica) or from the connection. Forwarding
+/// `database` would make the remote server `USE` the initiator's database first, reading the wrong
+/// same-named table or failing with `UNKNOWN_TABLE` (and would also attribute the secondary queries
+/// to the initiator's database in `system.query_log`). Strip it from every set of settings that is
+/// sent along with such a query.
+void stripDatabaseSetting(Settings & settings);
+
 /// Update settings for Distributed query.
 ///
 /// - Removes different restrictions (like max_concurrent_queries_for_user, max_memory_usage_for_user, etc.)

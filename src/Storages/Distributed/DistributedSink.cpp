@@ -22,6 +22,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -372,7 +373,11 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         }
 
         const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
-        const Settings settings = context->getSettingsCopy();
+        Settings settings = context->getSettingsCopy();
+        /// `database` is an initiator-only setting (see `stripDatabaseSetting`): when `query_ast`
+        /// leaves the remote table unqualified (a `Distributed` table created with an empty database
+        /// argument), the shard must resolve it against its own default database.
+        ClusterProxy::stripDatabaseSetting(settings);
 
         size_t rows = shard_block.rows();
 
@@ -863,7 +868,14 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             WriteBufferFromOwnString header_buf;
             writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, header_buf);
             writeStringBinary(query_string, header_buf);
-            context->getSettingsRef().write(header_buf);
+            {
+                /// `database` is an initiator-only setting (see `stripDatabaseSetting`): the settings
+                /// written here are replayed on the connection to the remote shard, which must
+                /// resolve an unqualified remote table against its own default database.
+                Settings insert_settings = context->getSettingsCopy();
+                ClusterProxy::stripDatabaseSetting(insert_settings);
+                insert_settings.write(header_buf);
+            }
 
             if (OpenTelemetry::CurrentContext().isTraceEnabled())
             {

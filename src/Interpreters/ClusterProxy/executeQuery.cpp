@@ -115,6 +115,17 @@ namespace ErrorCodes
 namespace ClusterProxy
 {
 
+void stripDatabaseSetting(Settings & settings)
+{
+    /// Also reset a `database` that is merely *marked* changed (e.g. explicitly reset to the
+    /// default with `SET database = ''`), so the inter-server packet does not carry it.
+    if (settings[Setting::database].changed || !settings[Setting::database].value.empty())
+    {
+        settings[Setting::database] = "";
+        settings[Setting::database].changed = false;
+    }
+}
+
 static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     bool is_remote_function,
     ContextPtr context,
@@ -269,19 +280,10 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         new_settings[Setting::compression].changed = false;
     }
 
-    /// `database` is an initiator-only setting as well: it selects the default database for the
-    /// user's query (the equivalent of `USE`), and the remote shard applies it the same way. But a
-    /// distributed fan-out relies on the shard's own default database — set from the cluster config
-    /// (`default_database` per replica) or from the connection — to resolve an unqualified remote
-    /// table. `rewriteSelectQuery` may leave the remote table unqualified (e.g. a `Distributed`
-    /// table created with an empty database argument). Forwarding `database` would make the shard
-    /// `USE` the initiator's database before resolving that table, reading the wrong same-named
-    /// table or failing with `UNKNOWN_TABLE`. Strip it so the shard keeps its own default database.
-    if (!settings[Setting::database].value.empty())
-    {
-        new_settings[Setting::database] = "";
-        new_settings[Setting::database].changed = false;
-    }
+    /// `database` is an initiator-only setting as well: `rewriteSelectQuery` may leave the remote
+    /// table unqualified (e.g. a `Distributed` table created with an empty database argument), and
+    /// the shard must resolve it against its own default database.
+    stripDatabaseSetting(new_settings);
 
     /// Setting additional_table_filters may be applied to Distributed table.
     /// In case if query is executed up to WithMergableState on remote shard, it is impossible to filter on initiator.
@@ -638,6 +640,16 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
             logger,
             "Disabling 'parallel_replicas_support_projection'. Currently, it's not supported for queries with parallel replicas over distributed tables");
         context_mutable->setSetting("parallel_replicas_support_projection", Field{false});
+    }
+
+    /// `database` is an initiator-only setting (see `stripDatabaseSetting`): the replicas must keep
+    /// their own default database, and the secondary queries must not be attributed to the
+    /// initiator's database in `system.query_log`.
+    if (settings[Setting::database].changed || !settings[Setting::database].value.empty())
+    {
+        Settings new_settings = context_mutable->getSettingsCopy();
+        stripDatabaseSetting(new_settings);
+        context_mutable->setSettings(new_settings);
     }
 
     return context_mutable;
