@@ -24,6 +24,7 @@
 #include <Storages/StorageMemory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/UniqueLock.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
@@ -99,6 +100,11 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
+}
+
+namespace FailPoints
+{
+    extern const char database_catalog_drop_finally_before_id_erase[];
 }
 
 class DatabaseNameHints : public IHints<>
@@ -1558,6 +1564,10 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
             try
             {
                 dropTableFinally(*table_iterator);
+
+                /// The UUID mapping is gone (dropTableFinally above) but the id is still in
+                /// tables_marked_dropped_ids until the guarded erase below: window for a same-UUID re-drop.
+                FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_before_id_erase);
 
                 TableMarkedAsDropped table_to_delete_without_lock;
                 {
