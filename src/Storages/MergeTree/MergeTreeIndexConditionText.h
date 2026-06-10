@@ -155,6 +155,10 @@ private:
     VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
     VectorWithMemoryTracking<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     VectorWithMemoryTracking<String> stringLikeToTokens(const Field & field) const;
+
+    /// Builds the OR-list of token sets for a `match`-style regexp, folding the required substring
+    /// into every alternative. Returns an empty list when the regexp imposes no token requirement.
+    std::vector<VectorWithMemoryTracking<String>> regexpToTokensForQueries(const String & regexp_string) const;
     std::vector<OptimizedRegularExpression> stringLikeToPatterns(const Field & field, bool case_insensitive = false) const;
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
