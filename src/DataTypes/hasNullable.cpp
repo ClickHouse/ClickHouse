@@ -30,4 +30,26 @@ bool hasNullable(const DataTypePtr & type)
     return false;
 }
 
+bool hasVariantOrDynamic(const DataTypePtr & type)
+{
+    WhichDataType which(type);
+    if (which.isVariant() || which.isDynamic())
+        return true;
+
+    if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+        return hasVariantOrDynamic(type_array->getNestedType());
+    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (const auto & subtype : type_tuple->getElements())
+        {
+            if (hasVariantOrDynamic(subtype))
+                return true;
+        }
+        return false;
+    }
+    if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(type.get()))
+        return hasVariantOrDynamic(type_map->getKeyType()) || hasVariantOrDynamic(type_map->getValueType());
+    return false;
+}
+
 }
