@@ -272,8 +272,7 @@ void fillDataWithPolicies(MutableColumns & res_columns, const ContextPtr & conte
 void fillDataWithDictionaries(MutableColumns & res_columns, const ContextPtr & context)
 {
     const auto & access = context->getAccess();
-    if (access->isGranted(AccessType::SHOW_DICTIONARIES))
-        return;
+    const bool need_to_check_access_for_dictionaries = !access->isGranted(AccessType::SHOW_DICTIONARIES);
 
     const auto & external_dictionaries = context->getExternalDictionariesLoader();
     for (const auto & load_result : external_dictionaries.getLoadResults())
@@ -289,7 +288,7 @@ void fillDataWithDictionaries(MutableColumns & res_columns, const ContextPtr & c
             dict_id.table_name = load_result.name;
 
         String db_or_tag = dict_id.database_name.empty() ? IDictionary::NO_DATABASE_TAG : dict_id.database_name;
-        if (!access->isGranted(AccessType::SHOW_DICTIONARIES, db_or_tag, dict_id.table_name))
+        if (need_to_check_access_for_dictionaries && !access->isGranted(AccessType::SHOW_DICTIONARIES, db_or_tag, dict_id.table_name))
             continue;
         res_columns[0]->insert(dict_id.table_name);
         res_columns[1]->insert(DICTIONARY_CONTEXT);
