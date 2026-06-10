@@ -6,6 +6,9 @@ SET max_rows_to_group_by = 0;
 
 CREATE TABLE test(id UInt64, data String) ENGINE=MergeTree() ORDER BY id SETTINGS index_granularity=10000;
 
+-- Temporary fix: keep the part set stable, a merge could replace the parts pinned in the distributed plan.
+SYSTEM STOP MERGES test;
+
 INSERT INTO test SELECT number, '' FROM numbers(10000000);
 
 -- Joining on a.id%1 so that only one bucket is not empty
