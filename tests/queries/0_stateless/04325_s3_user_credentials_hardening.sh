@@ -33,6 +33,7 @@ NC_GCP_OAUTH_CASE="s3_gcp_oauth_case_${DB}"
 NC_NOCREDS="s3_nocreds_${DB}"
 NC_NOSIGN_ROLE="s3_nosign_role_${DB}"
 NC_GCP_ADC="s3_gcp_adc_${DB}"
+NC_GCP_ADC_ROLE="s3_gcp_adc_role_${DB}"
 
 TABLE="s3_hardening_${DB}"
 DISK="s3_hardening_disk_${DB}"
@@ -58,6 +59,7 @@ cleanup() {
         DROP NAMED COLLECTION IF EXISTS ${NC_NOCREDS};
         DROP NAMED COLLECTION IF EXISTS ${NC_NOSIGN_ROLE};
         DROP NAMED COLLECTION IF EXISTS ${NC_GCP_ADC};
+        DROP NAMED COLLECTION IF EXISTS ${NC_GCP_ADC_ROLE};
     " > /dev/null
 }
 
@@ -434,6 +436,25 @@ if echo "${gcp_adc_out}" | grep -q "ACCESS_DENIED"; then
     echo "gcp_oauth_adc: fail (${gcp_adc_out//$'\n'/ })"
 else
     echo "gcp_oauth_adc: pass"
+fi
+
+# `gcp_oauth` authenticates with a bearer token, not an STS assume-role, so a stray `role_arn` alongside an
+# explicit ADC triple must not trigger an STS call: the request behaves like the plain explicit-ADC case
+# (it fails minting the token from the bogus triple) rather than being rejected with ACCESS_DENIED.
+$CLICKHOUSE_CLIENT -m -q "
+    CREATE NAMED COLLECTION ${NC_GCP_ADC_ROLE} AS
+        url = 'http://localhost:11111/test/${DB}.tsv',
+        http_client = 'gcp_oauth',
+        google_adc_client_id = 'id',
+        google_adc_client_secret = 'secret',
+        google_adc_refresh_token = 'token',
+        role_arn = '${ROLE_ARN}';
+"
+gcp_adc_role_out="$($CLICKHOUSE_CLIENT -q "SELECT * FROM s3(${NC_GCP_ADC_ROLE}, format = 'TSV', structure = 'x UInt8')" 2>&1)"
+if echo "${gcp_adc_role_out}" | grep -q "ACCESS_DENIED"; then
+    echo "gcp_oauth_adc_role: fail (${gcp_adc_role_out//$'\n'/ })"
+else
+    echo "gcp_oauth_adc_role: pass"
 fi
 
 # An explicit anonymous dynamic S3 disk (`use_environment_credentials = 0`, no keys, no role): it asks for no

@@ -1389,10 +1389,12 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
             = std::make_shared<S3CredentialsProviderChain>(configuration, credentials, credentials_configuration);
     }
 
-    /// `no_sign_request` means anonymous access, which is mutually exclusive with assuming a role; skip the
-    /// STS assume-role wrapper so a stray `role_arn` alongside NOSIGN does not trigger credential resolution
+    /// `no_sign_request` means anonymous access, and `gcp_oauth` authenticates with a bearer token at the
+    /// HTTP layer (its provider here is anonymous); both are mutually exclusive with assuming a role. Skip the
+    /// STS assume-role wrapper so a stray `role_arn` alongside either does not trigger credential resolution
     /// on top of the anonymous provider.
-    if (!credentials_configuration.no_sign_request && !credentials_configuration.role_arn.empty())
+    if (!credentials_configuration.no_sign_request && !boost::iequals(configuration.http_client, "gcp_oauth")
+        && !credentials_configuration.role_arn.empty())
     {
         credentials_provider = AwsAuthSTSAssumeRoleCredentialsProvider::create(
             credentials_configuration.role_arn,
