@@ -81,7 +81,20 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
     if (requires_cast_call)
         buffer << "_CAST(";
 
-    buffer << name << "_" << constant_node.getResultType()->getName();
+    /// When the constant was folded from _CAST on a secondary server, we must use
+    /// the pre-cast type (the source _CAST function's first argument type) for the
+    /// inner type annotation. This ensures the column name matches what the initiator
+    /// produces when naming the _CAST FunctionNode recursively from its arguments.
+    DataTypePtr inner_type = constant_node.getResultType();
+    if (requires_cast_call && constant_node.receivedFromInitiatorServer())
+    {
+        const auto * cast_function = constant_node.getSourceExpression()->as<FunctionNode>();
+        const auto & cast_args = cast_function->getArguments().getNodes();
+        if (!cast_args.empty())
+            inner_type = cast_args[0]->getResultType();
+    }
+
+    buffer << name << "_" << inner_type->getName();
 
     if (requires_cast_call)
     {
