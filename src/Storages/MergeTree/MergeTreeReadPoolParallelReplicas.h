@@ -22,7 +22,8 @@ public:
         const Names & column_names_,
         const PoolSettings & settings_,
         const MergeTreeReadTask::BlockSizeParams & params_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        MergeTreeIndexBuildContextPtr index_build_context_ = {});
 
     ~MergeTreeReadPoolParallelReplicas() override = default;
 

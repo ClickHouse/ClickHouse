@@ -8,6 +8,9 @@
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Processors/Chunk.h>
 
+#include <mutex>
+#include <unordered_map>
+
 namespace DB
 {
 
@@ -91,7 +94,20 @@ struct MergeTreeIndexBuildContext
         MergeTreeIndexReadResultPoolPtr index_reader_pool_,
         PartRemainingMarks part_remaining_marks_);
 
+    /// Returns true if skip or projection indexes leave at least one granule to read in the part.
+    /// Builds the index read result on first call and caches the answer per part.
+    bool partHasSelectedGranules(
+        size_t part_index_in_query,
+        const StorageMetadataPtr & metadata,
+        const NameSet & all_updated_columns) const;
+
     MergeTreeIndexReadResultPtr getPreparedIndexReadResult(const MergeTreeReadTask & task) const;
+
+private:
+    void markPartFullySkipped(size_t part_index_in_query) const;
+
+    mutable std::unordered_map<size_t, bool> part_selection_cache;
+    mutable std::mutex part_selection_cache_mutex;
 };
 
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;

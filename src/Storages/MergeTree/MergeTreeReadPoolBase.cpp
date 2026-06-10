@@ -40,7 +40,8 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     const Names & column_names_,
     const PoolSettings & pool_settings_,
     const MergeTreeReadTask::BlockSizeParams & block_size_params_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    MergeTreeIndexBuildContextPtr index_build_context_)
     : WithContext(context_)
     , storage_snapshot(storage_snapshot_)
     , parts_ranges(std::move(parts_))
@@ -59,6 +60,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
+    , index_build_context(std::move(index_build_context_))
     , profile_callback([this](ReadBufferFromFileBase::ProfileInfo info_) { profileFeedback(info_); })
 {
     fillPerPartInfos(context_->getSettingsRef());
@@ -335,6 +337,17 @@ std::vector<size_t> MergeTreeReadPoolBase::getPerPartSumMarks() const
     return per_part_sum_marks;
 }
 
+bool MergeTreeReadPoolBase::shouldSkipPartRead(const MergeTreeReadTaskInfo & read_info) const
+{
+    if (!index_build_context)
+        return false;
+
+    return !index_build_context->partHasSelectedGranules(
+        read_info.part_index_in_query,
+        storage_snapshot->metadata,
+        read_info.alter_conversions->getAllUpdatedColumns());
+}
+
 MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     MergeTreeReadTaskInfoPtr read_info,
     MergeTreeReadTask::Readers task_readers,
@@ -387,7 +400,12 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     auto extras = getExtras();
     MergeTreeReadTask::Readers task_readers;
 
-    if (!previous_task)
+    if (shouldSkipPartRead(*read_info))
+        return createTask(read_info, std::move(task_readers), MarkRanges{}, {}, updater);
+
+    const bool can_reuse_previous_readers = previous_task && previous_task->hasReaders();
+
+    if (!can_reuse_previous_readers)
     {
         task_readers = MergeTreeReadTask::createReaders(read_info, extras, ranges, patches_ranges);
     }

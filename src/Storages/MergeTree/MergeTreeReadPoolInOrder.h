@@ -24,7 +24,8 @@ public:
         const PoolSettings & settings_,
         const MergeTreeReadTask::BlockSizeParams & params_,
         const ContextPtr & context_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+        MergeTreeIndexBuildContextPtr index_build_context_ = {});
 
     String getName() const override { return "ReadPoolInOrder"; }
     bool preservesOrderOfRanges() const override { return true; }

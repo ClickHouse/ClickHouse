@@ -44,15 +44,6 @@ namespace FailPoints
     extern const char prefetched_reader_pool_failpoint[];
 }
 
-bool MergeTreePrefetchedReadPool::TaskHolder::operator<(const TaskHolder & other) const
-{
-    chassert(task->priority >= 0);
-    chassert(other.task->priority >= 0);
-    /// With default std::priority_queue, top() returns largest element.
-    /// So closest to 0 will be on top with this comparator.
-    return task->priority > other.task->priority; /// Less is better.
-}
-
 MergeTreePrefetchedReadPool::ThreadTask::ThreadTask(InfoPtr read_info_, MarkRanges ranges_, std::vector<MarkRanges> patches_ranges_, Priority priority_)
     : read_info(std::move(read_info_))
     , ranges(std::move(ranges_))
@@ -118,7 +109,8 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     const PoolSettings & settings_,
     const MergeTreeReadTask::BlockSizeParams & params_,
     const ContextPtr & context_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+    MergeTreeIndexBuildContextPtr index_build_context_)
     : MergeTreeReadPoolBase(
           std::move(parts_),
           std::move(mutations_snapshot_),
@@ -132,7 +124,8 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
           column_names_,
           settings_,
           params_,
-          context_)
+          context_,
+          std::move(index_build_context_))
     , updater(std::move(updater_))
     , prefetch_threadpool(getContext()->getPrefetchThreadpool())
     , log(getLogger(
@@ -168,39 +161,18 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
     if (task.isValidReadersFuture())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Task already has a reader");
 
+    if (shouldSkipPartRead(*task.read_info))
+        return;
+
     auto extras = getExtras();
     auto readers = MergeTreeReadTask::createReaders(task.read_info, extras, task.ranges, task.patches_ranges);
     task.readers_future = std::make_unique<PrefetchedReaders>(prefetch_threadpool, std::move(readers), task.priority, *this);
 }
 
-void MergeTreePrefetchedReadPool::startPrefetches()
+void MergeTreePrefetchedReadPool::preparePrefetchedReadersIfNeeded(ThreadTask & task)
 {
-    OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::startPrefetches");
-
-    if (prefetch_queue.empty())
-        return;
-
-    [[maybe_unused]] TaskHolder prev;
-    [[maybe_unused]] const Priority highest_priority{reader_settings.read_settings.priority.value + 1};
-    /// Due to the difference in `estimated_memory_usage_for_single_prefetch` for different parts (column sizes might be different), it might happen that for the given thread, task number N won't fit in the prefetch memory limit, but the next task will.
-    /// So the top of the queue may have a priority higher than `highest_priority`.
-    chassert(prefetch_queue.top().task->priority >= highest_priority);
-
-    while (!prefetch_queue.empty())
-    {
-        const auto & top = prefetch_queue.top();
-        createPrefetchedReadersForTask(*top.task);
-#ifndef NDEBUG
-        if (prev.task)
-        {
-            chassert(top.task->priority >= highest_priority);
-            if (prev.thread_id == top.thread_id)
-                chassert(prev.task->priority < top.task->priority);
-        }
-        prev = top;
-#endif
-        prefetch_queue.pop();
-    }
+    if (task.allow_prefetch && !task.isValidReadersFuture())
+        createPrefetchedReadersForTask(task);
 }
 
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
@@ -211,12 +183,6 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
 
     if (per_thread_tasks.empty())
         return nullptr;
-
-    if (!started_prefetches)
-    {
-        started_prefetches = true;
-        startPrefetches();
-    }
 
     auto it = per_thread_tasks.find(task_idx);
     if (it == per_thread_tasks.end())
@@ -231,6 +197,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, Merge
     if (thread_tasks.empty())
         per_thread_tasks.erase(it);
 
+    preparePrefetchedReadersIfNeeded(*thread_task);
     return createTask(*thread_task, previous_task);
 }
 
@@ -256,7 +223,14 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
 
         auto task_it = std::find_if(
             thread_tasks.begin(), thread_tasks.end(),
-            [](const auto & task) { return task->isValidReadersFuture(); });
+            [this](const auto & task)
+            {
+                if (!task->allow_prefetch)
+                    return false;
+
+                preparePrefetchedReadersIfNeeded(*task);
+                return task->isValidReadersFuture();
+            });
 
         if (task_it == thread_tasks.end())
         {
@@ -283,7 +257,14 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
 
         auto task_it = std::find_if(
             thread_tasks.begin(), thread_tasks.end(),
-            [](const auto & task) { return task->isValidReadersFuture(); });
+            [this](const auto & task)
+            {
+                if (!task->allow_prefetch)
+                    return false;
+
+                preparePrefetchedReadersIfNeeded(*task);
+                return task->isValidReadersFuture();
+            });
 
         chassert(task_it != thread_tasks.end());
         auto thread_task = std::move(*task_it);
@@ -292,6 +273,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
         if (thread_tasks.empty())
             per_thread_tasks.erase(prefetched_tasks_to_steal);
 
+        preparePrefetchedReadersIfNeeded(*thread_task);
         return createTask(*thread_task, previous_task);
     }
 
@@ -323,6 +305,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
         if (current_thread_tasks.empty())
             per_thread_tasks.erase(thread);
 
+        preparePrefetchedReadersIfNeeded(*thread_task);
         return createTask(*thread_task, previous_task);
     }
 
@@ -331,6 +314,9 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
 
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::createTask(ThreadTask & task, MergeTreeReadTask * previous_task)
 {
+    if (shouldSkipPartRead(*task.read_info))
+        return MergeTreeReadPoolBase::createTask(task.read_info, MergeTreeReadTask::Readers{}, MarkRanges{}, {}, updater);
+
     if (task.isValidReadersFuture())
         return MergeTreeReadPoolBase::createTask(task.read_info, task.readers_future->get(), task.ranges, task.patches_ranges, updater);
     else
@@ -563,9 +549,7 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
             const auto & read_info = per_part_infos[part_idx];
             auto patch_ranges = ranges_in_patch_parts.getRanges(read_info->data_part, read_info->patch_parts, ranges_to_get_from_part);
             auto thread_task = std::make_unique<ThreadTask>(read_info, ranges_to_get_from_part, std::move(patch_ranges), priority);
-
-            if (allow_prefetch)
-                prefetch_queue.emplace(TaskHolder{thread_task.get(), i});
+            thread_task->allow_prefetch = allow_prefetch;
 
             per_thread_tasks[i].push_back(std::move(thread_task));
 

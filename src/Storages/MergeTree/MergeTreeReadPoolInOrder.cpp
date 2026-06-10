@@ -25,7 +25,8 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
     const PoolSettings & settings_,
     const MergeTreeReadTask::BlockSizeParams & params_,
     const ContextPtr & context_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+    MergeTreeIndexBuildContextPtr index_build_context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
         std::move(mutations_snapshot_),
@@ -39,7 +40,8 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
         column_names_,
         settings_,
         params_,
-        context_)
+        context_,
+        std::move(index_build_context_))
     , has_hard_limit_below_one_block(has_hard_limit_below_one_block_)
     , has_soft_limit_below_one_block(has_soft_limit_below_one_block_)
     , read_type(read_type_)

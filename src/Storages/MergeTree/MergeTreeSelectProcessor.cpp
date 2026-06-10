@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
-
 #include <Columns/ColumnLazy.h>
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeArray.h>
@@ -116,6 +115,57 @@ MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
     , part_remaining_marks(std::move(part_remaining_marks_))
 {
     chassert(index_reader_pool);
+}
+
+bool MergeTreeIndexBuildContext::partHasSelectedGranules(
+    size_t part_index_in_query,
+    const StorageMetadataPtr & metadata,
+    const NameSet & all_updated_columns) const
+{
+    {
+        std::lock_guard lock(part_selection_cache_mutex);
+        if (auto it = part_selection_cache.find(part_index_in_query); it != part_selection_cache.end())
+            return it->second;
+    }
+
+    const auto & part_ranges = read_ranges.at(part_index_in_query);
+    auto projection_it = projection_read_ranges.find(part_index_in_query);
+    static const RangesInDataParts empty_projection_ranges;
+    const auto & projection_parts_ranges = projection_it != projection_read_ranges.end() ? projection_it->second : empty_projection_ranges;
+
+    auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(
+        part_ranges, projection_parts_ranges, metadata, all_updated_columns);
+
+    bool has_selected_granules = true;
+
+    if (index_read_result)
+    {
+        if (index_read_result->skip_index_read_result)
+        {
+            const auto & granules = index_read_result->skip_index_read_result->granules_selected;
+            has_selected_granules = std::any_of(granules.begin(), granules.end(), [](bool selected) { return selected; });
+        }
+
+        if (has_selected_granules && index_read_result->projection_index_read_result)
+            has_selected_granules = !index_read_result->projection_index_read_result->empty();
+    }
+
+    if (!has_selected_granules)
+        markPartFullySkipped(part_index_in_query);
+
+    {
+        std::lock_guard lock(part_selection_cache_mutex);
+        part_selection_cache[part_index_in_query] = has_selected_granules;
+    }
+
+    return has_selected_granules;
+}
+
+void MergeTreeIndexBuildContext::markPartFullySkipped(size_t part_index_in_query) const
+{
+    const auto & part_ranges = read_ranges.at(part_index_in_query);
+    part_remaining_marks.at(part_index_in_query).value.store(0, std::memory_order_relaxed);
+    index_reader_pool->clear(part_ranges.data_part);
 }
 
 MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTask & task) const

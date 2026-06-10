@@ -519,7 +519,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         required_columns,
         pool_settings,
         block_size,
-        context);
+        context,
+        index_build_context);
 
     Pipes pipes;
 
@@ -609,7 +610,8 @@ Pipe ReadFromMergeTree::readFromPool(
             pool_settings,
             block_size,
             context,
-            dataflow_cache_updater);
+            dataflow_cache_updater,
+            index_build_context);
     }
     else
     {
@@ -627,7 +629,8 @@ Pipe ReadFromMergeTree::readFromPool(
             pool_settings,
             block_size,
             context,
-            dataflow_cache_updater);
+            dataflow_cache_updater,
+            index_build_context);
     }
 
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
@@ -714,7 +717,8 @@ Pipe ReadFromMergeTree::readInOrder(
             required_columns,
             pool_settings,
             block_size,
-            context);
+            context,
+            index_build_context);
     }
     else
     {
@@ -735,7 +739,8 @@ Pipe ReadFromMergeTree::readInOrder(
             pool_settings,
             block_size,
             context,
-            dataflow_cache_updater);
+            dataflow_cache_updater,
+            index_build_context);
     }
 
     /// If parallel replicas enabled, set total rows in progress here only on initiator with local plan

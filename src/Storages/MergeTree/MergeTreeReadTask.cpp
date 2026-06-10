@@ -296,6 +296,9 @@ void MergeTreeReadTask::initializeReadersChain(
     if (readers_chain.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Range readers chain is already initialized");
 
+    if (!readers.main)
+        return;
+
     PrewhereExprInfo all_prewhere_actions;
 
     if (index_build_context || lazy_materializing_rows)
@@ -387,6 +390,9 @@ UInt64 MergeTreeReadTask::estimateNumRows() const
 MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeReadTask::read");
+    if (!readers.main)
+        return {};
+
     if (size_predictor)
         size_predictor->startBlock();
 

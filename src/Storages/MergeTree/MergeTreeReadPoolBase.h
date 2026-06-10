@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 
 namespace DB
 {
@@ -44,7 +45,8 @@ public:
         const Names & column_names_,
         const PoolSettings & settings_,
         const MergeTreeReadTask::BlockSizeParams & params_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        MergeTreeIndexBuildContextPtr index_build_context_ = {});
 
     /// Simplified c'tor for MergeTreeReadPoolProjectionIndex
     MergeTreeReadPoolBase(
@@ -61,6 +63,8 @@ public:
     Block getHeader() const override { return header; }
 
 protected:
+    bool shouldSkipPartRead(const MergeTreeReadTaskInfo & read_info) const;
+
     /// Initialized in constructor
     const StorageSnapshotPtr storage_snapshot;
     const RangesInDataParts parts_ranges;
@@ -110,6 +114,7 @@ protected:
     RangesInPatchParts ranges_in_patch_parts;
     std::vector<bool> is_part_on_remote_disk;
 
+    MergeTreeIndexBuildContextPtr index_build_context;
     ReadBufferFromFileBase::ProfileCallback profile_callback;
 };
 

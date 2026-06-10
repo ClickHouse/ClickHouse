@@ -3,7 +3,6 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/ThreadPool_fwd.h>
 #include <IO/AsyncReadCounters.h>
-#include <boost/heap/priority_queue.hpp>
 #include <queue>
 
 namespace DB
@@ -34,7 +33,8 @@ public:
         const PoolSettings & settings_,
         const MergeTreeReadTask::BlockSizeParams & params_,
         const ContextPtr & context_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+        MergeTreeIndexBuildContextPtr index_build_context_ = {});
 
     String getName() const override { return "PrefetchedReadPool"; }
     bool preservesOrderOfRanges() const override { return false; }
@@ -95,14 +95,8 @@ private:
         MarkRanges ranges;
         std::vector<MarkRanges> patches_ranges;
         Priority priority;
+        bool allow_prefetch = false;
         std::unique_ptr<PrefetchedReaders> readers_future;
-    };
-
-    struct TaskHolder
-    {
-        ThreadTask * task = nullptr;
-        size_t thread_id = 0;
-        bool operator<(const TaskHolder & other) const;
     };
 
     using ThreadTaskPtr = std::unique_ptr<ThreadTask>;
@@ -113,9 +107,10 @@ private:
     void fillPerPartStatistics();
     void fillPerThreadTasks(size_t threads, size_t sum_marks);
 
-    void startPrefetches();
     void createPrefetchedReadersForTask(ThreadTask & task);
     std::function<void()> createPrefetchedTask(IMergeTreeReader * reader, Priority priority);
+
+    void preparePrefetchedReadersIfNeeded(ThreadTask & task);
 
     MergeTreeReadTaskPtr stealTask(size_t thread, MergeTreeReadTask * previous_task);
     MergeTreeReadTaskPtr createTask(ThreadTask & thread_task, MergeTreeReadTask * previous_task);
@@ -129,8 +124,6 @@ private:
 
     PartStatistics per_part_statistics;
     TasksPerThread per_thread_tasks;
-    std::priority_queue<TaskHolder> prefetch_queue; /// the smallest on top
-    bool started_prefetches = false;
     LoggerPtr log;
 
     /// A struct which allows to track max number of tasks which were in the

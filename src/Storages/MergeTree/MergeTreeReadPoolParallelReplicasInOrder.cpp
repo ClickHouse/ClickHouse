@@ -37,7 +37,8 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     const Names & column_names_,
     const PoolSettings & settings_,
     const MergeTreeReadTask::BlockSizeParams & params_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    MergeTreeIndexBuildContextPtr index_build_context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
         std::move(mutations_snapshot_),
@@ -51,7 +52,8 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
         column_names_,
         settings_,
         params_,
-        context_)
+        context_,
+        std::move(index_build_context_))
     , extension(std::move(extension_))
     , mode(mode_)
     , has_hard_limit_below_one_block(has_hard_limit_below_one_block_)

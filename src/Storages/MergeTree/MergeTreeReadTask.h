@@ -202,6 +202,7 @@ public:
 
     const MergeTreeReadTaskInfo & getInfo() const { return *info; }
     const MergeTreeReadersChain & getReadersChain() const { return readers_chain; }
+    bool hasReaders() const { return readers.main != nullptr; }
     const IMergeTreeReader & getMainReader() const { return *readers.main; }
 
     void addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_);
