@@ -202,7 +202,7 @@ namespace
 
 String MergeTreePartition::getID(const MergeTreeData & storage) const
 {
-    return getID(storage.getInMemoryMetadataPtr(storage.getContext(), false)->getPartitionKey().sample_block);
+    return getID(storage.getInMemoryMetadataPtr()->getPartitionKey().sample_block);
 }
 
 /// NOTE: This ID is used to create part names which are then persisted in ZK and as directory names on the file system.
@@ -470,6 +470,14 @@ void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Bl
 NamesAndTypesList MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
 {
     auto adjusted_partition_key = adjustPartitionKey(metadata_snapshot, context);
+    /// Materialize subcolumns that the partition key expression needs.
+    /// The block may contain only parent columns (e.g. a Tuple or JSON column),
+    /// while the expression requires individual subcolumns as separate inputs.
+    for (const auto & required_column : adjusted_partition_key.expression->getRequiredColumns())
+    {
+        if (!block.has(required_column))
+            block.insert(block.getSubcolumnByName(required_column));
+    }
     adjusted_partition_key.expression->execute(block);
     return adjusted_partition_key.sample_block.getNamesAndTypesList();
 }
@@ -486,7 +494,7 @@ KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr &
     /// calculated according to previous version - `moduloLegacy`.
     if (KeyDescription::moduloToModuloLegacyRecursive(ast_copy))
     {
-        auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, metadata_snapshot->virtuals, context);
+        auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, context);
         return adjusted_partition_key;
     }
 

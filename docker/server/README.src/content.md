@@ -48,7 +48,7 @@ docker run -it --rm --network=container:some-clickhouse-server --entrypoint clic
 docker exec -it some-clickhouse-server clickhouse-client
 ```
 
-More information about the [ClickHouse client](https://clickhouse.com/docs/interfaces/client/).
+More information about the [ClickHouse client](https://clickhouse.com/docs/interfaces/cli/).
 
 ### connect to it using curl
 
