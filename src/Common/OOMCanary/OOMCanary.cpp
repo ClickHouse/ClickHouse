@@ -64,6 +64,26 @@ std::optional<std::string> getCgroupMemoryEventsPath()
     return std::nullopt;
 }
 
+/// With cgroup v2 `memory.oom.group = 1` the kernel kills every process in the
+/// cgroup as a single unit on a memcg OOM, so the server dies together with
+/// the canary and the OOM response can never run — the canary cannot protect
+/// the server in this mode. The flag can also change at runtime, so this is a
+/// startup diagnostic rather than a guarantee: warn instead of refusing to start.
+void warnIfCgroupGroupOOMKill(LoggerPtr log)
+{
+    auto cgroup_path = getCgroupsV2PathContainingFile("memory.oom.group");
+    if (!cgroup_path)
+        return;
+
+    std::ifstream f(std::filesystem::path(*cgroup_path) / "memory.oom.group");
+    int oom_group = 0;
+    if (f.is_open() && (f >> oom_group) && oom_group == 1)
+        LOG_WARNING(log,
+            "cgroup v2 `memory.oom.group` is enabled for this cgroup: on a cgroup OOM the kernel "
+            "kills the whole cgroup as one unit, including the server, so the OOM canary cannot "
+            "shed memory pressure in this mode");
+}
+
 /// Block until `pid` is reaped, retrying on EINTR. Returns the exit status.
 int reapChild(pid_t pid)
 {
@@ -204,6 +224,8 @@ void OOMCanary::monitorThread()
 try
 {
     LOG_INFO(log, "OOM canary monitor thread started");
+
+    warnIfCgroupGroupOOMKill(log);
 
     Epoll epoll;
     epoll.add(shutdown_fd.fd, EPOLLIN);

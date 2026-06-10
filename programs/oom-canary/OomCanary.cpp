@@ -105,7 +105,10 @@ void writeStderr(std::string_view message)
     /// Best effort: keep pages resident so RSS stays predictable for the OOM
     /// killer's heuristic. Requires CAP_IPC_LOCK or sufficient RLIMIT_MEMLOCK;
     /// if unavailable, the pages remain allocated but become swap candidates.
-    ::mlock(mem, size_bytes);
+    if (::mlock(mem, size_bytes) != 0)
+        writeStderr(fmt::format("OOM canary child: mlock of {} bytes failed: errno={}; "
+            "the memory stays allocated and touched but is not locked and may be swapped out\n",
+            size_bytes, errno));
 
     for (;;)
         ::pause();

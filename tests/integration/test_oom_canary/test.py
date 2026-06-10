@@ -114,6 +114,11 @@ def test_failpoint_confirmed_oom():
     wait_for_relaunch(node, canary)
     assert crash_log_oom_count(node) > crash_log_oom_count_before
 
+    # The merge-cancellation step of the OOM response: a cancelled merge is
+    # rescheduled by the background executor, so there is no stable end state
+    # to assert on; instead check that the response reached MergeList::cancelAll.
+    node.wait_for_log_line("Cancelled all running merges")
+
     slow_query_thread.join(timeout=10)
     assert slow_query_error is not None and "QUERY_WAS_CANCELLED" in str(slow_query_error), slow_query_error
 
