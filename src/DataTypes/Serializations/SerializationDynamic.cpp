@@ -119,7 +119,7 @@ DataTypePtr detectNarrowedTypeFromStatistics(
         return nullptr;
 
     /// Look for exactly one variant with count > 0 that is not the SharedVariant placeholder.
-    const String shared_variant_name = ColumnDynamic::getSharedVariantTypeName();
+    const String & shared_variant_name = ColumnDynamic::getSharedVariantTypeName();
     std::optional<size_t> single_non_empty_index;
     for (size_t i = 0; i != variant_names.size(); ++i)
     {
