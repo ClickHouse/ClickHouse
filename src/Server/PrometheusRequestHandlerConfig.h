@@ -23,6 +23,9 @@ struct PrometheusRequestHandlerConfig
 
         /// Handles Prometheus Query API endpoints (/api/v1/query, /api/v1/query_range, etc.)
         QueryAPI,
+
+        /// Handles all Prometheus "/api/v1" protocols including RemoteWrite, RemoteRead, QueryAPI.
+        APIv1,
     };
 
     Type type = Type::ExposeMetrics;

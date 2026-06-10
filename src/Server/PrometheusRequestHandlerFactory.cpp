@@ -67,6 +67,16 @@ namespace
         }
     }
 
+    /// Parses the optional <user> element and stores it as credentials in the connection config.
+    void parseUserFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, PrometheusRequestHandlerConfig & res)
+    {
+        if (config.has(config_prefix + ".user"))
+        {
+            AlwaysAllowCredentials credentials(config.getString(config_prefix + ".user"));
+            res.connection_config.credentials.emplace(credentials);
+        }
+    }
+
     /// Parses a configuration like this:
     /// <!-- <type>remote_write</type> (Implied, not actually parsed) -->
     /// <table>db.time_series_table_name</table>
@@ -88,11 +98,7 @@ namespace
         res.type = PrometheusRequestHandlerConfig::Type::RemoteRead;
         parseTableNameFromConfig(config, config_prefix, res);
         parseCommonConfig(config, res);
-        if (config.has(config_prefix + ".user"))
-        {
-            AlwaysAllowCredentials credentials(config.getString(config_prefix + ".user"));
-            res.connection_config.credentials.emplace(credentials);
-        }
+        parseUserFromConfig(config, config_prefix, res);
         return res;
     }
 
@@ -105,11 +111,20 @@ namespace
         res.type = PrometheusRequestHandlerConfig::Type::QueryAPI;
         parseTableNameFromConfig(config, config_prefix, res);
         parseCommonConfig(config, res);
-        if (config.has(config_prefix + ".user"))
-        {
-            AlwaysAllowCredentials credentials(config.getString(config_prefix + ".user"));
-            res.connection_config.credentials.emplace(credentials);
-        }
+        parseUserFromConfig(config, config_prefix, res);
+        return res;
+    }
+
+    /// Parses a configuration like this:
+    /// <!-- <type>api_v1</type> (Implied, not actually parsed) -->
+    /// <table>db.time_series_table_name</table>
+    PrometheusRequestHandlerConfig parseAPIv1Config(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    {
+        PrometheusRequestHandlerConfig res;
+        res.type = PrometheusRequestHandlerConfig::Type::APIv1;
+        res.time_series_table_name = parseTableNameFromConfig(config, config_prefix);
+        parseCommonConfig(config, res);
+        parseUserFromConfig(config, config_prefix, res);
         return res;
     }
 
@@ -132,6 +147,8 @@ namespace
             return PrometheusRequestHandlerConfig::Type::RemoteRead;
         if (type == "query_api")
             return PrometheusRequestHandlerConfig::Type::QueryAPI;
+        if (type == "api_v1")
+            return PrometheusRequestHandlerConfig::Type::APIv1;
 
         throw Exception(
             ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown type {} is specified in the configuration for a prometheus protocol", full_type);
@@ -159,6 +176,8 @@ namespace
                 return parseRemoteReadConfig(config, config_prefix);
             case PrometheusRequestHandlerConfig::Type::QueryAPI:
                 return parseQueryAPIConfig(config, config_prefix);
+            case PrometheusRequestHandlerConfig::Type::APIv1:
+                return parseAPIv1Config(config, config_prefix);
         }
         UNREACHABLE();
     }

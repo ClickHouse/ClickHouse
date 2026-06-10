@@ -10,6 +10,7 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include "config.h"
@@ -291,7 +292,8 @@ public:
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
         LOG_INFO(log(), "Handling remote write request from {}", request.get("User-Agent", ""));
-        chassert(config().type == PrometheusRequestHandlerConfig::Type::RemoteWrite);
+        chassert(config().type == PrometheusRequestHandlerConfig::Type::RemoteWrite
+            || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
 
     void handlingRequestWithContext([[maybe_unused]] HTTPServerRequest & request, [[maybe_unused]] HTTPServerResponse & response) override
@@ -337,7 +339,8 @@ public:
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
         LOG_INFO(log(), "Handling remote read request from {}", request.get("User-Agent", ""));
-        chassert(config().type == PrometheusRequestHandlerConfig::Type::RemoteRead);
+        chassert(config().type == PrometheusRequestHandlerConfig::Type::RemoteRead
+            || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
 
     void handlingRequestWithContext([[maybe_unused]] HTTPServerRequest & request, [[maybe_unused]] HTTPServerResponse & response) override
@@ -402,7 +405,8 @@ public:
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
         LOG_INFO(log(), "Handling Prometheus Query API request from {}", request.get("User-Agent", ""));
-        chassert(config().type == PrometheusRequestHandlerConfig::Type::QueryAPI);
+        chassert(config().type == PrometheusRequestHandlerConfig::Type::QueryAPI
+            || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
 
     bool isSettingLikeParameter(const String & name) override
@@ -557,6 +561,64 @@ public:
 };
 
 
+/// Handles all Prometheus "/api/v1" protocols, dispatching each request to the
+/// RemoteWrite, RemoteRead, or Query API implementation based on its path.
+class PrometheusRequestHandler::APIv1Impl : public Impl
+{
+public:
+    explicit APIv1Impl(PrometheusRequestHandler & parent)
+        : Impl(parent)
+        , remote_write_impl(parent)
+        , remote_read_impl(parent)
+        , query_api_impl(parent)
+    {
+    }
+
+    void beforeHandlingRequest(HTTPServerRequest & request) override
+    {
+        chassert(config().type == PrometheusRequestHandlerConfig::Type::APIv1);
+        current_impl = &getImpl(request);
+        current_impl->beforeHandlingRequest(request);
+    }
+
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
+    {
+        /// `current_impl` was selected in beforeHandlingRequest().
+        /// Forward the whole request to it so its own authentication, context setup,
+        /// and endpoint dispatch run exactly as for a dedicated single-protocol handler.
+        current_impl->handleRequest(request, response);
+    }
+
+    void onException() override
+    {
+        if (current_impl)
+            current_impl->onException();
+    }
+
+private:
+    /// Selects the implementation for a request based on its path.
+    Impl & getImpl(const HTTPServerRequest & request)
+    {
+        /// Get the decoded URL path (without the query string).
+        const String path = Poco::URI(request.getURI()).getPath();
+
+        if (path.ends_with("/api/v1/write"))
+            return remote_write_impl;
+        if (path.ends_with("/api/v1/read"))
+            return remote_read_impl;
+
+        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values)
+        /// are served by the Query API implementation, which itself returns 404 for unknown paths.
+        return query_api_impl;
+    }
+
+    RemoteWriteImpl remote_write_impl;
+    RemoteReadImpl remote_read_impl;
+    QueryAPIImpl query_api_impl;
+    Impl * current_impl = nullptr;
+};
+
+
 PrometheusRequestHandler::PrometheusRequestHandler(
     IServer & server_,
     const PrometheusRequestHandlerConfig & config_,
@@ -597,6 +659,11 @@ void PrometheusRequestHandler::createImpl()
         case PrometheusRequestHandlerConfig::Type::QueryAPI:
         {
             impl = std::make_unique<QueryAPIImpl>(*this);
+            return;
+        }
+        case PrometheusRequestHandlerConfig::Type::APIv1:
+        {
+            impl = std::make_unique<APIv1Impl>(*this);
             return;
         }
     }
