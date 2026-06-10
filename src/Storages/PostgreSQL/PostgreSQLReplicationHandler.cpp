@@ -307,6 +307,13 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 {
     postgres::Connection replication_connection(connection_info, /* replication */true);
     pqxx::nontransaction tx(replication_connection.getRef());
+
+    /// Disable idle transaction timeouts for the snapshot holder connection.
+    /// This connection must remain idle while data is synchronized through
+    /// a separate PostgreSQL connection. If PostgreSQL terminates this
+    /// session due to idle_in_transaction_session_timeout, the exported
+    /// snapshot becomes invalid.
+    tx.exec("SET idle_in_transaction_session_timeout = 0");
     createPublicationIfNeeded(tx);
 
     /// List of nested tables (table_name -> nested_storage), which is passed to replication consumer.
