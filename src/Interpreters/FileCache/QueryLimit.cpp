@@ -3,7 +3,6 @@
 #include <Interpreters/FileCache/QueryLimit.h>
 #include <IO/ReadSettings.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 
 namespace DB
 {

@@ -64,7 +64,7 @@ namespace ErrorCodes
  * To stop the execution, a fake Chunk is added (ProcessingUnitType = FINALIZE) and finalize()
  * function is blocked until the Collector thread is done.
 */
-class ParallelFormattingOutputFormat final : public IOutputFormat
+class ParallelFormattingOutputFormat : public IOutputFormat
 {
 public:
     /// Used to recreate formatter on every new data piece.

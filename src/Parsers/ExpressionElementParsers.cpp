@@ -457,7 +457,6 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     ParserKeyword s_uuid(Keyword::UUID);
     UUID uuid = UUIDHelpers::Nil;
-    bool has_uuid_clause = false;
 
     if (table_name_with_optional_uuid)
     {
@@ -471,13 +470,11 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             if (!uuid_p.parse(pos, ast_uuid, expected))
                 return false;
             uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
-            has_uuid_clause = true;
         }
 
         if (parts.size() == 1) node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
         else node = make_intrusive<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
         node->as<ASTTableIdentifier>()->uuid = uuid;
-        node->as<ASTTableIdentifier>()->has_uuid = has_uuid_clause;
     }
     else
         node = make_intrusive<ASTIdentifier>(std::move(parts), false, std::move(params));

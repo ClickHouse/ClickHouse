@@ -30,7 +30,6 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>

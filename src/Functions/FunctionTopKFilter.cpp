@@ -19,7 +19,7 @@ extern const int LOGICAL_ERROR;
 extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
-class FunctionTopKFilter final : public IFunction
+class FunctionTopKFilter : public IFunction
 {
 public:
     static constexpr auto name = "__topKFilter";

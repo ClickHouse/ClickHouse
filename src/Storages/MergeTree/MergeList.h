@@ -4,6 +4,7 @@
 #include <Core/Field.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadStatus.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
@@ -59,9 +60,6 @@ using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
 
 struct MergeListElement;
 using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
-
-class ThreadGroup;
-using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
 struct Settings;
 

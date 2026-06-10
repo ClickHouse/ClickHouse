@@ -72,7 +72,6 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IPv6ToBinary.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
@@ -2913,7 +2912,7 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
 #endif
 
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
-class FunctionConvert final : public IFunction
+class FunctionConvert : public IFunction
 {
 public:
     using Monotonic = MonotonicityImpl;
@@ -3427,7 +3426,7 @@ private:
 template <typename ToDataType, typename Name,
     ConvertFromStringExceptionMode exception_mode,
     ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Basic>
-class FunctionConvertFromString final : public IFunction
+class FunctionConvertFromString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -3894,22 +3893,23 @@ struct ToDateMonotonicity
 
             return {.is_monotonic = true, .is_always_monotonic = true};
         }
-        constexpr UInt64 max_day_num = std::is_same_v<T, DataTypeDate32> ? DATE_LUT_MAX_EXTEND_DAY_NUM - 1 : DATE_LUT_MAX_DAY_NUM;
-
-        if (((left.getType() == Field::Types::UInt64 || left.isNull()) && (right.getType() == Field::Types::UInt64 || right.isNull())
-             && ((left.isNull() || left.safeGet<UInt64>() <= max_day_num) && (right.isNull() || right.safeGet<UInt64>() > max_day_num)))
+        else if (
+            ((left.getType() == Field::Types::UInt64 || left.isNull()) && (right.getType() == Field::Types::UInt64 || right.isNull())
+             && ((left.isNull() || left.safeGet<UInt64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<UInt64>() > DATE_LUT_MAX_DAY_NUM)))
             || ((left.getType() == Field::Types::Int64 || left.isNull()) && (right.getType() == Field::Types::Int64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Int64>() <= static_cast<Int64>(max_day_num)) && (right.isNull() || right.safeGet<Int64>() > static_cast<Int64>(max_day_num))))
+                && ((left.isNull() || left.safeGet<Int64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<Int64>() > DATE_LUT_MAX_DAY_NUM)))
             || ((
                 (left.getType() == Field::Types::Float64 || left.isNull())
                 && (right.getType() == Field::Types::Float64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Float64>() <= static_cast<Float64>(max_day_num)) && (right.isNull() || right.safeGet<Float64>() > static_cast<Float64>(max_day_num)))))
+                && ((left.isNull() || left.safeGet<Float64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<Float64>() > DATE_LUT_MAX_DAY_NUM))))
             || !isNativeNumber(type))
         {
             return {};
         }
-
-        return {.is_monotonic = true, .is_always_monotonic = true};
+        else
+        {
+            return {.is_monotonic = true, .is_always_monotonic = true};
+        }
     }
 };
 
@@ -4401,7 +4401,7 @@ using FunctionParseDateTime64BestEffortUSOrNull = FunctionConvertFromString<
     DataTypeDateTime64, NameParseDateTime64BestEffortUSOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffortUS>;
 
 
-class ExecutableFunctionCast final : public IExecutableFunction
+class ExecutableFunctionCast : public IExecutableFunction
 {
 public:
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
@@ -4543,7 +4543,7 @@ private:
 
     WrapperType createStringWrapper(const DataTypePtr & from_type) const;
 
-    WrapperType createFixedStringWrapper(const DataTypePtr & from_type, size_t N, bool requested_result_is_nullable) const;
+    WrapperType createFixedStringWrapper(const DataTypePtr & from_type, size_t N) const;
 
 
     WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind) const;
@@ -4556,7 +4556,7 @@ private:
 
     WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const;
 
-    using ElementWrappers = VectorWithMemoryTracking<WrapperType>;
+    using ElementWrappers = std::vector<WrapperType>;
 
     ElementWrappers getElementWrappers(const DataTypes & from_element_types, const DataTypes & to_element_types) const;
 

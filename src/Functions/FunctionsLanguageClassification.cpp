@@ -108,7 +108,7 @@ struct FunctionDetectLanguageImpl
     }
 };
 
-class FunctionDetectLanguageMixed final : public IFunction
+class FunctionDetectLanguageMixed : public IFunction
 {
 public:
     static constexpr auto name = "detectLanguageMixed";

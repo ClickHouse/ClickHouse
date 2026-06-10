@@ -12,7 +12,6 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDeduplication.h>
@@ -1024,8 +1023,6 @@ Chunk ObjectStorageQueueSource::generate()
     return chunk;
 }
 
-void ObjectStorageQueueSource::onFinish() { parser_shared_resources->finishStream(); }
-
 Chunk ObjectStorageQueueSource::generateImpl()
 {
     while (true)
@@ -1121,7 +1118,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
             const auto context = getContext();
             reader = StorageObjectStorageSource::createReader(
                 processor_id,
-                storage_id,
                 file_iterator,
                 configuration,
                 object_storage,
@@ -1280,7 +1276,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     read_from_format_info.hive_partition_columns_to_read_from_file_path,
-                    path);
+                    path,
+                    format_settings,
+                    getContext());
             }
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -1292,7 +1290,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     .size = object_metadata->size_bytes,
                     .last_modified = object_metadata->last_modified,
                 },
-                getContext());
+                getContext(),
+                format_settings);
 
             return chunk;
         }

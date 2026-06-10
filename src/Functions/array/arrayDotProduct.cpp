@@ -135,7 +135,7 @@ struct DotProduct
 /// The implementation is modeled after the implementation of distance functions arrayL1Distance, arrayL2Distance, etc.
 /// The main difference is that arrayDotProduct() interferes the result type differently.
 template <typename Kernel>
-class FunctionArrayScalarProduct final : public IFunction
+class FunctionArrayScalarProduct : public IFunction
 {
 public:
     static constexpr auto name = Kernel::name;

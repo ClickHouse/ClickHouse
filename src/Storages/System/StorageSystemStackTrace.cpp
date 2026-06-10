@@ -377,7 +377,7 @@ ThreadIdToName getFilteredThreadNames(
 /// We must wait for every thread one by one sequentially,
 ///  because there is a limit on number of queued signals in OS and otherwise signals may get lost.
 /// Also, non-RT signals are not delivered if previous signal is handled right now (by default; but we use RT signals).
-class StackTraceSource final : public ISource
+class StackTraceSource : public ISource
 {
 public:
     StackTraceSource(

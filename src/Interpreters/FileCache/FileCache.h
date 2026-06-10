@@ -1,15 +1,13 @@
 #pragma once
 
-#include <array>
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <shared_mutex>
 #include <unordered_map>
 #include <boost/functional/hash.hpp>
 
 #include <Common/callOnce.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 #include <Common/StatusFile.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/FileSegment.h>
@@ -61,10 +59,7 @@ struct FileCacheReserveStat
     };
 
     Stat total_stat;
-    std::array<Stat, magic_enum::enum_count<FileSegmentKind>()> stat_by_kind{};
-
-    Stat & getStatByKind(FileSegmentKind kind) { return stat_by_kind[static_cast<uint8_t>(kind)]; }
-    const Stat & getStatByKind(FileSegmentKind kind) const { return stat_by_kind[static_cast<uint8_t>(kind)]; }
+    std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
 
     enum class State
     {
@@ -79,8 +74,8 @@ struct FileCacheReserveStat
     FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
     {
         total_stat += other.total_stat;
-        for (size_t i = 0; i < stat_by_kind.size(); ++i)
-            stat_by_kind[i] += other.stat_by_kind[i];
+        for (const auto & [name, stat_] : other.stat_by_kind)
+            stat_by_kind[name] += stat_;
         return *this;
     }
 };
@@ -259,10 +254,9 @@ private:
     UInt64 load_metadata_threads;
     const bool load_metadata_asynchronously;
     std::atomic<bool> stop_loading_metadata = false;
-    std::unique_ptr<ThreadFromGlobalPool> load_metadata_main_thread;
+    ThreadFromGlobalPool load_metadata_main_thread;
     const bool write_cache_per_user_directory;
     const bool allow_dynamic_cache_resize;
-    const size_t dynamic_resize_lock_wait_ms;
 
     BackgroundSchedulePoolTaskHolder keep_up_free_space_ratio_task;
     const double keep_current_size_to_max_ratio;
@@ -284,7 +278,7 @@ private:
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
     std::atomic<bool> shutdown = false;
-    std::shared_timed_mutex dynamic_resize_lock;
+    std::atomic<bool> cache_is_being_resized = false;
 
     std::atomic<size_t> cache_reserve_active_threads = 0;
 

@@ -7,6 +7,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -17,7 +18,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class FunctionArrayJaccardIndex final : public IFunction
+class FunctionArrayJaccardIndex : public IFunction
 {
 private:
     using ResultType = Float64;
@@ -74,10 +75,7 @@ public:
     static constexpr auto name = "arrayJaccardIndex";
     String getName() const override { return name; }
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayJaccardIndex>(context_); }
-    explicit FunctionArrayJaccardIndex(ContextPtr context_)
-        : array_intersect(FunctionFactory::instance().get("arrayIntersect", context_))
-    {
-    }
+    explicit FunctionArrayJaccardIndex(ContextPtr context_) : context(context_) {}
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -110,7 +108,7 @@ public:
         const auto & [left_array, left_is_const] = cast_to_array(arguments[0]);
         const auto & [right_array, right_is_const] = cast_to_array(arguments[1]);
 
-        auto intersect_array = array_intersect->build(arguments);
+        auto intersect_array = FunctionFactory::instance().get("arrayIntersect", context)->build(arguments);
 
         ColumnWithTypeAndName intersect_column;
         intersect_column.type = intersect_array->getResultType();
@@ -148,7 +146,7 @@ public:
     }
 
 private:
-    FunctionOverloadResolverPtr array_intersect;
+    ContextPtr context;
 };
 
 REGISTER_FUNCTION(ArrayJaccardIndex)
