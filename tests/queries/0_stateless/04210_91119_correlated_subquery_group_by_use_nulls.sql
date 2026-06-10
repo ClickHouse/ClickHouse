@@ -89,6 +89,20 @@ FROM (SELECT toNullable(1::Bool)) t0(c0)
 GROUP BY c0 WITH ROLLUP
 ORDER BY c0 NULLS LAST;
 
+-- Aggregate over a correlated String key: exercises the ColumnNullable -> ColumnString wrapper
+-- rather than the numeric ColumnVector path.
+SELECT '-- min over correlated String ---';
+SELECT (SELECT min(c0))
+FROM (SELECT 'a'::String) t0(c0)
+GROUP BY c0 WITH ROLLUP
+ORDER BY c0 NULLS LAST;
+
+SELECT '-- minOrDefault over correlated String with GROUPING SETS ---';
+SELECT (SELECT minOrDefault(c0))
+FROM (SELECT 'a'::String) t0(c0)
+GROUP BY GROUPING SETS ((c0), ())
+ORDER BY c0 NULLS LAST;
+
 -- Sanity check: a non-correlated subquery in the same context must NOT have its inner
 -- column wrapped as Nullable just because the outer query has `group_by_use_nulls + ROLLUP`.
 -- The two `c0` columns happen to share a name; the inner one resolves to its own table

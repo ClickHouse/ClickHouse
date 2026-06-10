@@ -37,6 +37,11 @@ true
 -- Nullable source ---
 true
 \N
+-- min over correlated String ---
+a
+\N
+-- minOrDefault over correlated String with GROUPING SETS ---
+a
 -- non-correlated subquery ---
 inner
 inner
