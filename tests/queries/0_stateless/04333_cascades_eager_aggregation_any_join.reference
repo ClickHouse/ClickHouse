@@ -1,0 +1,4 @@
+-- 1. ANY INNER JOIN + sum: at most one match per left row
+100	100
+-- 2. Baseline without Cascades
+100	100

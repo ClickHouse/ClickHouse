@@ -304,6 +304,11 @@ static std::vector<JoinCandidate> collectJoinCandidates(GroupId start_group_id, 
                 /// joins, pre-aggregation changes which rows are preserved.
                 if (join_step->getJoinOperator().kind != JoinKind::Inner)
                     continue;
+                /// Only strictness ALL preserves the duplication argument: ANY/SEMI
+                /// keep at most one match per row, but a pushed-down partial aggregate
+                /// folds all matching rows into the state, inflating sums and counts.
+                if (join_step->getJoinOperator().strictness != JoinStrictness::All)
+                    continue;
                 if (!hasOnlyEquiPredicates(*join_step))
                     continue;
 
@@ -519,6 +524,8 @@ bool EagerAggregation::checkPattern(GroupExpressionPtr expression, const Express
             if (const auto * join_step = typeid_cast<const JoinStepLogical *>(child_expr->getQueryPlanStep()))
             {
                 if (join_step->getJoinOperator().kind != JoinKind::Inner)
+                    continue;
+                if (join_step->getJoinOperator().strictness != JoinStrictness::All)
                     continue;
                 if (!hasOnlyEquiPredicates(*join_step))
                     continue;
