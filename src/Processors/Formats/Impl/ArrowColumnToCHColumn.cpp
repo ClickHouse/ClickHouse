@@ -751,7 +751,7 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(const std::sh
                         "Arrow BinaryArray data buffer too small for column '{}': "
                         "row {} has offset {} but buffer is {} bytes",
                         column_name, value_i, chunk.value_offset(value_i), data_buf_size);
-                integer_column.insertData(chunk.Value(value_i).data(), chunk.Value(value_i).size());
+                integer_column.insertData(chunk.Value(value_i).data(), sizeof(ValueType));
             }
         }
     }
@@ -1369,7 +1369,7 @@ static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(const std::shared_ptr<
                         "Arrow BinaryArray data buffer too small for column '{}': "
                         "row {} has offset {} but buffer is {} bytes",
                         column_name, value_i, chunk.value_offset(value_i), data_buf_size);
-                ipv6_column.insertData(chunk.Value(value_i).data(), chunk.Value(value_i).size());
+                ipv6_column.insertData(chunk.Value(value_i).data(), sizeof(IPv6));
             }
         }
     }
