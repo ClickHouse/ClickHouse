@@ -123,31 +123,17 @@ static bool isInNames(const std::string & column_name, const Names & names)
     return is_in_partition_key != names.end();
 }
 
-/// Like isInNames, but also checks ancestor prefixes for flattened tuple sub-columns.
+/// Like isInNames, but also matches a flattened tuple sub-column when one of its true tuple
+/// ancestors is in `names`. `flatten_ancestors[flattened_index]` holds the ancestor paths of
+/// the flattened column, as produced by `Nested::flattenTupleRecursive`.
 static bool isColumnOrAncestorInNames(
-    const String & column_name, const Names & names, const NameSet & original_columns, bool allow_tuple_element_aggregation)
+    size_t flattened_index, const Block & header_flatten, const std::vector<Strings> & flatten_ancestors, const Names & names)
 {
-    if (isInNames(column_name, names))
+    if (isInNames(header_flatten.safeGetByPosition(flattened_index).name, names))
         return true;
-
-    /// Ancestor prefix lookup is only needed for flattened sub-columns produced by
-    /// `flattenTupleRecursive`. Skip it when the feature is disabled or when the column
-    /// exists in the original (un-flattened) header.
-    if (!allow_tuple_element_aggregation || original_columns.contains(column_name))
-        return false;
-
-    /// Walk up the hierarchy by stripping the last dot-separated component each time.
-    /// For "a.b.c.d" we check "a.b.c", then "a.b", then "a".
-    std::string_view prefix = column_name;
-    while (true)
-    {
-        auto pos = prefix.find_last_of('.');
-        if (pos == std::string_view::npos || pos == 0)
-            break;
-        prefix = prefix.substr(0, pos);
-        if (isInNames(std::string(prefix), names))
+    for (const auto & ancestor : flatten_ancestors[flattened_index])
+        if (isInNames(ancestor, names))
             return true;
-    }
     return false;
 }
 
