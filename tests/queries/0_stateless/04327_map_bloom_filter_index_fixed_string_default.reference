@@ -11,3 +11,18 @@ Absent key compared with integer default 0 via different integer type
 2
 Absent key compared with non-default integer is still pruned
 0
+mapValues: present key matched by FixedString constant is not over-pruned
+1
+1
+mapValues: String constant still uses the index
+1
+mapValues: present key with non-matching FixedString constant returns nothing
+0
+mapValues: two distinct stored values both matching one FixedString constant are both kept
+2
+2
+mapValues over FixedString index: same-width FixedString constant still uses the index
+1
+mapValues over FixedString index: different-width FixedString constant is not over-pruned
+1
+1

@@ -1019,6 +1019,15 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             {
                 position = map_info->values_index_position;
                 const_value = value_field;
+
+                /// String/FixedString equality ignores trailing NUL padding, so a single hash of the
+                /// constant cannot soundly match every stored value when the constant and indexed
+                /// value types differ. Skip the index (scan) to avoid pruning a matching granule.
+                const auto values_index_value_type
+                    = BloomFilter::getPrimitiveType(header.getByPosition(position).type);
+                if ((isStringOrFixedString(values_index_value_type) || isStringOrFixedString(value_type))
+                    && !value_type->equals(*values_index_value_type))
+                    return false;
             }
             else
             {
