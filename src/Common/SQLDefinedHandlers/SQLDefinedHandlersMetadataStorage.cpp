@@ -384,20 +384,26 @@ SQLDefinedHandlersMetadataStorage::SQLDefinedHandlersMetadataStorage(std::shared
 {
 }
 
-std::vector<std::string> SQLDefinedHandlersMetadataStorage::listHandlers() const
+static std::vector<std::string> handlerNamesFromPaths(const std::vector<std::string> & paths)
 {
-    Int32 ignored_version = 0;
-    return listHandlers(ignored_version);
-}
-
-std::vector<std::string> SQLDefinedHandlersMetadataStorage::listHandlers(Int32 & version) const
-{
-    auto paths = storage->list(version);
     std::vector<std::string> handlers;
     handlers.reserve(paths.size());
     for (const auto & path : paths)
         handlers.push_back(unescapeForFileName(fs::path(path).stem()));
     return handlers;
+}
+
+std::vector<std::string> SQLDefinedHandlersMetadataStorage::listHandlers() const
+{
+    /// Use the unversioned `list`, which for Keeper storage arms the background update watch. This is the
+    /// path taken by the normal reload (`getAll`); the versioned overload below must not be routed here, or
+    /// the watch would never be installed and the update thread would spin in a tight reload loop.
+    return handlerNamesFromPaths(storage->list());
+}
+
+std::vector<std::string> SQLDefinedHandlersMetadataStorage::listHandlers(Int32 & version) const
+{
+    return handlerNamesFromPaths(storage->list(version));
 }
 
 SQLDefinedHandlerPtr SQLDefinedHandlersMetadataStorage::readHandler(const std::string & handler_name) const
@@ -414,14 +420,20 @@ SQLDefinedHandlerPtr SQLDefinedHandlersMetadataStorage::readHandler(const std::s
 
 SQLDefinedHandlers SQLDefinedHandlersMetadataStorage::getAll() const
 {
-    Int32 ignored_version = 0;
-    return getAll(ignored_version);
+    /// The normal reload path: list via the watch-arming `listHandlers()` (see the note there).
+    return readHandlers(listHandlers());
 }
 
 SQLDefinedHandlers SQLDefinedHandlersMetadataStorage::getAll(Int32 & version) const
 {
+    /// The replicated read-check-write path: list at a known root version without touching the watch.
+    return readHandlers(listHandlers(version));
+}
+
+SQLDefinedHandlers SQLDefinedHandlersMetadataStorage::readHandlers(const std::vector<std::string> & handler_names) const
+{
     SQLDefinedHandlers result;
-    for (const auto & handler_name : listHandlers(version))
+    for (const auto & handler_name : handler_names)
     {
         if (result.contains(handler_name))
             throw Exception(ErrorCodes::HANDLER_ALREADY_EXISTS, "Found duplicate handler `{}`", handler_name);

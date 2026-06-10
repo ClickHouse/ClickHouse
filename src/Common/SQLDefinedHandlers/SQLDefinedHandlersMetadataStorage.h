@@ -58,6 +58,7 @@ private:
 
     std::vector<std::string> listHandlers() const;
     std::vector<std::string> listHandlers(Int32 & version) const;
+    SQLDefinedHandlers readHandlers(const std::vector<std::string> & handler_names) const;
     SQLDefinedHandlerPtr readHandler(const std::string & handler_name) const;
 };
 
