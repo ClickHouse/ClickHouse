@@ -585,10 +585,19 @@ static std::vector<std::pair<ObjectStoragePtr, String>> getOldFiles(
 {
     std::vector<std::pair<ObjectStoragePtr, String>> result;
 
+    /// Base-storage keys already scheduled for removal, to dedupe referenced files against the listings.
+    std::unordered_set<String> base_storage_keys;
+
     for (auto && file : listFiles(*object_storage, persistent_table_components.table_path, "metadata", ""))
+    {
+        base_storage_keys.insert(file);
         result.emplace_back(object_storage, std::move(file));
+    }
     for (auto && file : listFiles(*object_storage, persistent_table_components.table_path, "data", ""))
+    {
+        base_storage_keys.insert(file);
         result.emplace_back(object_storage, std::move(file));
+    }
 
     for (const auto & raw_path : plan.referenced_file_paths)
     {
@@ -600,7 +609,10 @@ static std::vector<std::pair<ObjectStoragePtr, String>> getOldFiles(
             context,
             persistent_table_components.path_resolver);
 
-        if (storage_to_use.get() != object_storage.get())
+        /// Secondary-storage files are never in the listings above; base-storage files can also be
+        /// referenced outside the table `metadata`/`data` prefixes (e.g. a same-bucket external path)
+        /// and must be removed too.
+        if (storage_to_use.get() != object_storage.get() || base_storage_keys.insert(key_in_storage).second)
             result.emplace_back(std::move(storage_to_use), std::move(key_in_storage));
     }
 

@@ -4,6 +4,8 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotFilesTraversal.h>
 
+#include <functional>
+
 #include <Poco/JSON/Object.h>
 
 #include <Common/logger_useful.h>
@@ -12,6 +14,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 namespace DB::Iceberg
 {
@@ -61,11 +64,12 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
 namespace
 {
 
+using InsertReachableFn = std::function<void(const IcebergPathFromMetadata &)>;
+
 void collectStatisticsPaths(
     const Poco::JSON::Object::Ptr & metadata,
     const char * field_name,
-    const IcebergPathResolver & resolver,
-    std::unordered_set<String> & out)
+    const InsertReachableFn & insert_reachable)
 {
     if (!metadata->has(field_name))
         return;
@@ -78,7 +82,7 @@ void collectStatisticsPaths(
         if (entry->has(f_statistics_path))
         {
             String stat_path = entry->getValue<String>(f_statistics_path);
-            out.insert(resolver.resolve(IcebergPathFromMetadata::deserialize(stat_path)));
+            insert_reachable(IcebergPathFromMetadata::deserialize(stat_path));
         }
     }
 }
@@ -90,12 +94,14 @@ void collectMetadataRootFiles(
     const String & metadata_path,
     const Poco::JSON::Object::Ptr & metadata,
     const IcebergPathResolver & resolver,
+    const InsertReachableFn & insert_reachable,
     std::unordered_set<String> & out)
 {
     out.insert(metadata_path);
 
-    auto version_hint = IcebergPathFromMetadata::deserialize(fmt::format("{}metadata/version-hint.text", resolver.getTableLocation()));
-    out.insert(resolver.resolve(version_hint));
+    /// `getTableLocation` has no trailing '/' (unlike `FileNamesGenerator`, which appends one).
+    auto version_hint = IcebergPathFromMetadata::deserialize(fmt::format("{}/metadata/version-hint.text", resolver.getTableLocation()));
+    insert_reachable(version_hint);
 
     if (metadata->has(f_metadata_log))
     {
@@ -108,14 +114,14 @@ void collectMetadataRootFiles(
                 if (entry->has(f_metadata_file))
                 {
                     String mf_path = entry->getValue<String>(f_metadata_file);
-                    out.insert(resolver.resolve(IcebergPathFromMetadata::deserialize(mf_path)));
+                    insert_reachable(IcebergPathFromMetadata::deserialize(mf_path));
                 }
             }
         }
     }
 
-    collectStatisticsPaths(metadata, f_statistics, resolver, out);
-    collectStatisticsPaths(metadata, f_partition_statistics, resolver, out);
+    collectStatisticsPaths(metadata, f_statistics, insert_reachable);
+    collectStatisticsPaths(metadata, f_partition_statistics, insert_reachable);
 }
 
 }
@@ -153,9 +159,22 @@ ReachableFilesResult collectReachableFiles(
     std::unordered_set<String> reachable;
     const auto & resolver = persistent_table_components.path_resolver;
 
+    /// `reachable` is matched against the base `object_storage` listing, so it must contain only
+    /// base-storage keys. Resolve each reference to its (storage, key) identity and skip files that
+    /// live on a secondary storage: collapsing an external URI (e.g. `s3a://other_bucket/...`) into
+    /// a base key would wrongly mark an unrelated base-storage object with the same key as reachable.
+    auto insert_if_base_storage = [&](const IcebergPathFromMetadata & path)
+    {
+        auto [storage, key] = resolveObjectStorageForPath(
+            persistent_table_components.table_location, path.serialize(), object_storage, secondary_storages, context, resolver);
+        if (storage.get() == object_storage.get())
+            reachable.insert(std::move(key));
+    };
+
     collectMetadataRootFiles(
         metadata_path, metadata,
         resolver,
+        insert_if_base_storage,
         reachable);
 
     if (!metadata->has(f_snapshots))
@@ -177,11 +196,11 @@ ReachableFilesResult collectReachableFiles(
         snapshots, object_storage, persistent_table_components, context, log, current_schema_id, secondary_storages);
 
     for (const auto & path : snapshot_files.manifest_list_paths)
-        reachable.insert(resolver.resolve(path));
+        insert_if_base_storage(path);
     for (const auto & path : snapshot_files.manifest_paths)
-        reachable.insert(resolver.resolve(path));
+        insert_if_base_storage(path);
     for (const auto & path : snapshot_files.data_file_paths)
-        reachable.insert(resolver.resolve(path));
+        insert_if_base_storage(path);
 
     LOG_INFO(log, "Collected {} reachable files from metadata graph", reachable.size());
     return {std::move(reachable), version};

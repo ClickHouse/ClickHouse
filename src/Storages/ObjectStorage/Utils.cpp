@@ -1,5 +1,6 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Common/SipHash.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Macros.h>
 #include <Core/UUID.h>
@@ -124,7 +125,8 @@ std::pair<ObjectStoragePtr, std::string> getOrCreateStorageAndKey(
     const std::string & storage_type,
     SecondaryStorages & secondary_storages,
     const ContextPtr & context,
-    std::function<void(Poco::Util::MapConfiguration &, const std::string &)> configure_fn)
+    std::function<void(Poco::Util::MapConfiguration &, const std::string &)> configure_fn,
+    const std::string & supersedes_prefix = {})
 {
     std::lock_guard lock(secondary_storages.mutex);
     if (auto it = secondary_storages.storages.find(cache_key); it != secondary_storages.storages.end())
@@ -139,6 +141,12 @@ std::pair<ObjectStoragePtr, std::string> getOrCreateStorageAndKey(
 
     /// Create under lock to avoid duplicate creation and wasted work
     ObjectStoragePtr storage = ObjectStorageFactory::instance().create(cache_key, *cfg, config_prefix, context, /*skip_access_check*/ true);
+
+    /// Drop entries this one supersedes (same endpoint/bucket, older credential generation), so the
+    /// cache holds at most one storage per logical target instead of growing once per rotation. In-flight
+    /// readers keep their own `shared_ptr`, so an evicted storage stays alive until they are done with it.
+    if (!supersedes_prefix.empty())
+        std::erase_if(secondary_storages.storages, [&](const auto & entry) { return entry.first.starts_with(supersedes_prefix); });
 
     secondary_storages.storages.emplace(cache_key, storage);
     return {storage, key_to_use};
@@ -716,11 +724,55 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
         /// by `sameEndpoint`, but a bucket in the host (virtual-hosted style) would break the match.
         const std::string service_endpoint = (endpoint_explicit && !s3_uri.endpoint.empty()) ? s3_uri.endpoint : endpoint_to_use;
 
-        /// Include credential-propagation flag in the cache key: `configure_fn` runs only on miss,
-        /// so different per-query values of `object_storage_propagate_credentials_to_other_storages` must not share an entry.
         const bool propagate_creds = context->getSettingsRef()[Setting::object_storage_propagate_credentials_to_other_storages];
-        const std::string storage_cache_key = "s3://" + s3_uri.bucket + "@" + endpoint_to_use
+
+        /// Copy credentials from the base storage when the endpoint is the same or
+        /// `object_storage_propagate_credentials_to_other_storages` is enabled. Capture the current
+        /// generation once here (rather than inside `configure_fn`, which runs only on a cache miss):
+        /// the base `S3ObjectStorage` can rotate catalog-vended/temporary credentials between queries,
+        /// and different users may issue queries against the same table, so the captured generation is
+        /// folded into the cache key below to keep them from being reused once they no longer apply.
+        String access_key_id;
+        String secret_access_key;
+        String session_token;
+        String region;
+        if (base_storage->getType() == ObjectStorageType::S3
+            && (propagate_creds || sameEndpoint(base_storage->getDescription(), service_endpoint)))
+        {
+            if (auto s3_storage = std::dynamic_pointer_cast<S3ObjectStorage>(base_storage))
+            {
+                if (auto s3_client = s3_storage->tryGetS3StorageClient())
+                {
+                    const auto credentials = s3_client->getCredentials();
+                    access_key_id = credentials.GetAWSAccessKeyId();
+                    secret_access_key = credentials.GetAWSSecretKey();
+                    session_token = credentials.GetSessionToken();
+                    region = s3_client->getRegion();
+                }
+            }
+        }
+
+        /// `configure_fn` runs only on a cache miss, so every input that shapes the created storage must
+        /// be part of the cache key. Include the credential-propagation flag and, when credentials are
+        /// propagated, a fingerprint of that generation: when the base storage rotates its (temporary)
+        /// credentials or a different user queries the table, the fingerprint changes and a fresh secondary
+        /// storage is built, instead of a cache hit silently reusing an expired or foreign token.
+        std::string storage_cache_key = "s3://" + s3_uri.bucket + "@" + endpoint_to_use
             + "#propagate=" + (propagate_creds ? "1" : "0");
+
+        /// When credentials are propagated, the older generations of the same target become unreachable
+        /// once the fingerprint changes; pass their common prefix so they are evicted instead of leaking.
+        std::string supersedes_prefix;
+        if (!access_key_id.empty() || !session_token.empty())
+        {
+            supersedes_prefix = storage_cache_key + "#cred=";
+
+            SipHash creds_hash;
+            creds_hash.update(access_key_id);
+            creds_hash.update(secret_access_key);
+            creds_hash.update(session_token);
+            storage_cache_key = supersedes_prefix + std::to_string(creds_hash.get64());
+        }
 
         return getOrCreateStorageAndKey(
             storage_cache_key,
@@ -732,34 +784,17 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
             {
                 cfg.setString(config_prefix + ".endpoint", endpoint_to_use);
 
-                /// Copy credentials from base storage when the endpoint is the same or
-                /// `object_storage_propagate_credentials_to_other_storages` is enabled.
-                if (base_storage->getType() == ObjectStorageType::S3
-                    && (context->getSettingsRef()[Setting::object_storage_propagate_credentials_to_other_storages]
-                        || sameEndpoint(base_storage->getDescription(), service_endpoint)))
-                {
-                    if (auto s3_storage = std::dynamic_pointer_cast<S3ObjectStorage>(base_storage))
-                    {
-                        if (auto s3_client = s3_storage->tryGetS3StorageClient())
-                        {
-                            const auto credentials = s3_client->getCredentials();
-                            const String & access_key_id = credentials.GetAWSAccessKeyId();
-                            const String & secret_access_key = credentials.GetAWSSecretKey();
-                            const String & session_token = credentials.GetSessionToken();
-                            const String & region = s3_client->getRegion();
-
-                            if (!access_key_id.empty())
-                                cfg.setString(config_prefix + ".access_key_id", access_key_id);
-                            if (!secret_access_key.empty())
-                                cfg.setString(config_prefix + ".secret_access_key", secret_access_key);
-                            if (!session_token.empty())
-                                cfg.setString(config_prefix + ".session_token", session_token);
-                            if (!region.empty())
-                                cfg.setString(config_prefix + ".region", region);
-                        }
-                    }
-                }
-            });
+                /// Apply the credentials captured above (the exact generation the cache key fingerprints).
+                if (!access_key_id.empty())
+                    cfg.setString(config_prefix + ".access_key_id", access_key_id);
+                if (!secret_access_key.empty())
+                    cfg.setString(config_prefix + ".secret_access_key", secret_access_key);
+                if (!session_token.empty())
+                    cfg.setString(config_prefix + ".session_token", session_token);
+                if (!region.empty())
+                    cfg.setString(config_prefix + ".region", region);
+            },
+            supersedes_prefix);
     }
     #endif
 
@@ -903,6 +938,11 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
                                 cfg.setString(config_prefix + ".storage_account_url", endpoint.storage_account_url);
                             if (account_name.empty() && !endpoint.account_name.empty())
                                 cfg.setString(config_prefix + ".account_name", endpoint.account_name);
+                            /// The accounts are the same (checked above), so the base shared key authenticates
+                            /// this container too. Without it `getAuthMethod` would silently fall back to
+                            /// managed identity for the secondary storage.
+                            if (!endpoint.account_key.empty())
+                                cfg.setString(config_prefix + ".account_key", endpoint.account_key);
                         }
                     }
                 }
