@@ -619,7 +619,7 @@ SHOW TABLES FROM postgres_db;
 │ table1 │
 └────────┘
 
-SELECT * FROM postgresql_db.postgres_table;
+SELECT * FROM postgres_db.postgres_table;
 ```
 
 ## Dynamically adding new tables to replication {#dynamically-adding-table-to-replication}
