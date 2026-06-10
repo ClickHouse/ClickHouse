@@ -249,7 +249,7 @@ public:
 
     bool hasEqualValues() const override { return true; }
 
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
+    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
 
     void gather(ColumnGathererStream &) override;
 
@@ -310,8 +310,7 @@ public:
     }
 
     bool isNullable() const override { return isColumnNullable(*data); }
-    /// Delegate to `data->onlyNull` so that e.g. `Const(Nullable(Nothing))` reports itself as only-null.
-    bool onlyNull() const override { return data->isNullAt(0) || data->onlyNull(); }
+    bool onlyNull() const override { return data->isNullAt(0); }
     bool isNumeric() const override { return data->isNumeric(); }
     bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }
     bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }

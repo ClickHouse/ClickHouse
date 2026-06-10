@@ -22,7 +22,6 @@ class NATSHandler
 
 public:
     explicit NATSHandler(LoggerPtr log_);
-    ~NATSHandler();
 
     /// Loop for background thread worker.
     void runLoop();
@@ -50,7 +49,7 @@ private:
     std::mutex tasks_mutex;
     std::queue<Task> tasks;
 
-    uv_async_t execute_tasks_scheduler{};
+    uv_async_t execute_tasks_scheduler;
 };
 
 }
