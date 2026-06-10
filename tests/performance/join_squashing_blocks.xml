@@ -3,7 +3,7 @@
     <max_threads>8</max_threads>
   </settings>
 
-  <create_query>create table ttt (x UInt64) engine = MergeTree order by tuple();</create_query>
+  <create_query>create table ttt (x UInt64) engine = MergeTree order by tuple() SETTINGS optimize_row_order_if_no_order_by = 0;</create_query>
 
   <fill_query>insert into ttt select zero from zeros(300000000);</fill_query>
 

@@ -2,7 +2,7 @@
 
     <create_query>
         create table if not exists whitespaces
-        engine = MergeTree() partition by tuple() order by tuple()
+        engine = MergeTree() partition by tuple() order by tuple() SETTINGS optimize_row_order_if_no_order_by = 0
         as
             with 32 - log2(intHash32(number)) + 1 as num_spaces,
                 repeat(' ', toUInt32(num_spaces)) as spaces
