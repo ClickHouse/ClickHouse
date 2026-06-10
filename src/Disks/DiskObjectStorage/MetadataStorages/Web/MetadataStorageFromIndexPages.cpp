@@ -498,7 +498,11 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
 
                 result.reserve(result.size() + entries.size());
                 for (auto & entry : entries)
-                    result.emplace_back(std::make_shared<RelativePathWithMetadata>(std::move(entry), shard_index));
+                {
+                    auto relative_path = std::make_shared<RelativePathWithMetadata>(std::move(entry), shard_index);
+                    relative_path->derive_file_name_from_url_path = true;
+                    result.emplace_back(std::move(relative_path));
+                }
 
                 has_listed_directory = true;
                 has_listed_shard = true;

@@ -281,6 +281,16 @@ TEST(RendezvousHashing, DoesNotDeduplicateSamePathFromDifferentReadSources)
     ASSERT_EQ(actual, (std::set<size_t>{0, 1}));
 }
 
+TEST(RelativePathWithMetadata, FileNameKeepsObjectKeyByDefault)
+{
+    RelativePathWithMetadata object_path("dir/part?.parquet#fragment");
+    ASSERT_EQ(object_path.getFileName(), "part?.parquet#fragment");
+
+    RelativePathWithMetadata web_path("dir/part.tsv.gz?download=1#fragment");
+    web_path.derive_file_name_from_url_path = true;
+    ASSERT_EQ(web_path.getFileName(), "part.tsv.gz");
+}
+
 TEST(ClusterFunctionReadTaskResponse, PreservesReadSourceIndex)
 {
     ClusterFunctionReadTaskResponse response;

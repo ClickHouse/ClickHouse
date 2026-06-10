@@ -118,6 +118,7 @@ struct RelativePathWithMetadata
 {
     String relative_path;
     std::optional<size_t> read_source_index;
+    bool derive_file_name_from_url_path = false;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
 
@@ -140,14 +141,15 @@ struct RelativePathWithMetadata
 
     std::string getFileName() const
     {
-        /// `relative_path` may carry a URL query/fragment for web index listings (e.g.
+        if (!derive_file_name_from_url_path)
+            return std::filesystem::path(relative_path).filename();
+
+        /// Web index listings can carry a URL query/fragment in `relative_path` (for example,
         /// "data.tsv.gz?download=1"). They are not part of the file name and would defeat
-        /// extension-based format/compression detection, so strip them here, consistent with how
-        /// direct `url()` reads use `Poco::URI::getPath()`. For other object storages the path never
-        /// contains '?'/'#', so this is a no-op.
+        /// extension-based format/compression detection, so strip them only for web paths, consistent
+        /// with how direct `url` reads use the URL path component.
         const auto pos = relative_path.find_first_of("?#");
-        const std::string path_without_query
-            = pos == std::string::npos ? relative_path : relative_path.substr(0, pos);
+        const std::string path_without_query = pos == std::string::npos ? relative_path : relative_path.substr(0, pos);
         return std::filesystem::path(path_without_query).filename();
     }
     std::string getPath() const { return relative_path; }
