@@ -7,9 +7,11 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include <base/scope_guard.h>
 #include <Common/SharedMutex.h>
-#include <Common/filesystemHelpers.h>
+#include <Common/StopToken.h>
 #include <Common/escapeForFileName.h>
+#include <Common/filesystemHelpers.h>
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -203,24 +205,24 @@ public:
     /// processing data before all MV dependencies are registered.
     std::vector<StorageID> getReadyDependentViews(const StorageID & source_table_id, const ContextPtr & query_context) const;
 
-    /// If table has UUID, addUUIDMapping(...) must be called when table attached to some database
-    /// removeUUIDMapping(...) must be called when it detached,
-    /// and removeUUIDMappingFinally(...) must be called when table is dropped and its data removed from disk.
-    /// Such tables can be accessed by persistent UUID instead of database and table name.
+    /// Use to add a mapping, table state will depend on the following conditions:
+    /// has: <no mapping> + args: nullptr, nullptr => has: mapping, detached
+    /// has: mapping, detached + args: non nullptr, non nullptr => promote, has: mapping, attached
+    /// otherwise: invalid
     void addUUIDMapping(const UUID & uuid, const DatabasePtr & database, const StoragePtr & table);
+    void addUUIDMapping(const UUID & uuid);
+    /// Use to detach the table
     void removeUUIDMapping(const UUID & uuid);
+    /// Use to actually drop table by erasing its UUID from the map
     void removeUUIDMappingFinally(const UUID & uuid);
     /// For moving table between databases
     void updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
-    /// This method adds empty mapping (with database and storage equal to nullptr).
-    /// It's required to "lock" some UUIDs and protect us from collision.
-    /// Collisions of random 122-bit integers are very unlikely to happen,
-    /// but we allow to explicitly specify UUID in CREATE query (in particular for testing).
-    /// If some UUID was already added and we are trying to add it again,
-    /// this method will throw an exception.
-    void addUUIDMapping(const UUID & uuid);
-
+    /// Check is mapping is present, regardless of its state
     bool hasUUIDMapping(const UUID & uuid);
+    using UUIDReservation = scope_guard;
+    /// Reserve UUID in a state that cannot be promoted by `addUUIDMapping`.
+    /// Destructor restores previous state unless the reservation is released.
+    UUIDReservation reserveUUID(const UUID & uuid);
 
     static String getPathForUUID(const UUID & uuid);
 
@@ -296,9 +298,21 @@ private:
 
     void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
 
+    enum class UUIDMappingState
+    {
+        Detached,
+        Attached,
+        Reserved
+    };
+    struct UUIDMapping
+    {
+        UUIDMappingState state;
+        DatabasePtr database;
+        StoragePtr table;
+    };
     struct UUIDToStorageMapPart
     {
-        std::unordered_map<UUID, DatabaseAndTable> map TSA_GUARDED_BY(mutex);
+        std::unordered_map<UUID, UUIDMapping> map TSA_GUARDED_BY(mutex);
         mutable std::mutex mutex;
     };
 

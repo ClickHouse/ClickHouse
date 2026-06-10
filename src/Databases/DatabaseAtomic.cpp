@@ -262,19 +262,12 @@ void DatabaseAtomic::dropDetachedTable(
 
     QueryStatusPtr query_status = local_context->getProcessListElementSafe();
 
-    /// A table dropped with DROP DETACHED TABLE was detached but never dropped, so it still
-    /// has its UUID mapping. A table recovered after a crash (loadMarkedAsDroppedTables) has
-    /// no mapping yet. Add the mapping only when it is missing to avoid a collision.
-    if (!DatabaseCatalog::instance().hasUUIDMapping(create_query->uuid))
-    {
-        DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
-    }
+    auto reservation = DatabaseCatalog::instance().reserveUUID(create_query->uuid);
 
     waitDetachedTableNotInUse(
         create_query->uuid,
         [&]()
         {
-            DatabaseCatalog::instance().removeUUIDMapping(create_query->uuid);
             if (query_status)
                 query_status->throwIfKilled();
         });
@@ -299,6 +292,10 @@ void DatabaseAtomic::dropDetachedTable(
         table_name_to_path.erase(table_name);
         snapshot_detached_tables.erase(table_name);
     }
+
+    /// UUID reservation must survive until `dropTableFinally` calls `removeUUIDMappingFinally`.
+    /// Before this point, `reservation` destructor restores previous state on exceptions/cancellation.
+    static_cast<void>(reservation.release());
 
     LOG_TRACE(log, "Table {} ready for remove.", table_name);
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, table_metadata_path_drop, sync);
