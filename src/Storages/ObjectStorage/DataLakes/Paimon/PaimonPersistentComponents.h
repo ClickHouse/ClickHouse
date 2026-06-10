@@ -74,7 +74,18 @@ struct PaimonPersistentComponents
     {
     }
 
+    /// Whether this table is bound to the global metadata cache.
+    /// Reflects the session-level use_paimon_metadata_files_cache decision latched at create time.
+    /// Used for lifecycle operations (e.g. DROP TABLE invalidation) that must run as long as the
+    /// table ever bound to the cache, regardless of the current server-level capacity.
     bool hasMetadataCache() const { return metadata_cache != nullptr; }
+
+    /// Whether the metadata cache is actually usable right now.
+    /// The server-level capacity (paimon_metadata_files_cache_size) is a runtime setting that can
+    /// be changed via SYSTEM RELOAD CONFIG, so it is evaluated dynamically rather than latched at
+    /// create time.  Read paths must use this predicate so that a zero-capacity cache neither
+    /// disables the filesystem cache nor records cache misses for entries that can never be kept.
+    bool isMetadataCacheActive() const { return metadata_cache != nullptr && metadata_cache->maxSizeInBytes() > 0; }
 
     bool hasStreamState() const { return stream_state != nullptr && incremental_read_enabled; }
 };
