@@ -9,6 +9,7 @@
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionDriverUtils.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectsBackup.h>
@@ -349,10 +350,28 @@ void UserDefinedSQLFunctionFactory::reloadDriverBasedFunctions(
         const String escaped_name = escapeForFileName(name);
         const bool config_present = std::filesystem::exists(dynamic_dir + escaped_name + ".xml")
             || std::filesystem::exists(dynamic_dir + escaped_name + ".yaml");
+
+        /// The generated config alone is not enough: it references the function's working
+        /// directory, so a missing or invalid `.workdir` sidecar (or a missing directory it
+        /// points to) also means the dynamic state has to be recreated.
+        bool working_dir_present = false;
         if (config_present)
+        {
+            try
+            {
+                const String working_dir = UserDefinedExecutableFunctionDriverUtils::readDriverWorkingDirectory(current_context, name);
+                working_dir_present = !working_dir.empty() && std::filesystem::is_directory(working_dir);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("while reading the working directory of driver-based function {}", backQuote(name)));
+            }
+        }
+
+        if (config_present && working_dir_present)
             continue;
 
-        LOG_INFO(log, "Recreating driver-based function '{}' - dynamic configuration is missing", name);
+        LOG_INFO(log, "Recreating driver-based function '{}' - dynamic {} is missing", name, config_present ? "working directory" : "configuration");
 
         try
         {
