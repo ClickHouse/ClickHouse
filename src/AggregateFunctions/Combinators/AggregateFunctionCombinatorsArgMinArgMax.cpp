@@ -17,10 +17,16 @@ namespace
 struct AggregateFunctionCombinatorArgMinArgMaxData
 {
 private:
-    SingleValueDataBaseMemoryBlock v_data;
+    /// Raw storage populated by `generateSingleValueFromType` via placement construction in the
+    /// `DataTypePtr` constructor. Default-initializing with `{}` would zero the whole block on every
+    /// aggregate-state creation (hot for high-cardinality `GROUP BY`); skip it deliberately.
+    SingleValueDataBaseMemoryBlock v_data; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
 public:
-    explicit AggregateFunctionCombinatorArgMinArgMaxData(const DataTypePtr & value_type) { generateSingleValueFromType(value_type, v_data); }
+    explicit AggregateFunctionCombinatorArgMinArgMaxData(const DataTypePtr & value_type) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    {
+        generateSingleValueFromType(value_type, v_data);
+    }
 
     ~AggregateFunctionCombinatorArgMinArgMaxData() { data().~SingleValueDataBase(); }
 
@@ -67,13 +73,18 @@ public:
                 arguments[key_col]->getName(),
                 getName());
 
-        if (isDynamic(arguments[key_col]) || isVariant(arguments[key_col]))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of aggregate function {} because the column of that type can contain values with different "
-                "data types. Consider using typed subcolumns or cast column to a specific data type",
-                arguments[key_col]->getName(),
-                getName());
+        auto check_not_dynamic_or_variant = [&](const IDataType & type)
+        {
+            if (isDynamic(type) || isVariant(type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
+                    "different data types. Consider using typed subcolumns or cast column to a specific data type",
+                    arguments[key_col]->getName(),
+                    getName());
+        };
+        check_not_dynamic_or_variant(*arguments[key_col]);
+        arguments[key_col]->forEachChild(check_not_dynamic_or_variant);
     }
 
     String getName() const override
@@ -247,6 +258,7 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<CombinatorArgMinArgMax<true>>());

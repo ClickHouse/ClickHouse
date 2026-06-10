@@ -1,5 +1,7 @@
 #include <cerrno>
 #include <ctime>
+#include <algorithm>
+#include <limits>
 #include <optional>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -10,6 +12,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <Common/filesystemHelpers.h>
+#include <poll.h>
 #include <sys/stat.h>
 #include <Interpreters/Context.h>
 
@@ -99,7 +102,7 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
 
         if (profile_callback)
         {
-            ProfileInfo info;
+            ProfileInfo info{};
             info.bytes_requested = to_read;
             info.bytes_read = res;
             info.nanoseconds = watch.elapsed();
@@ -148,11 +151,39 @@ void ReadBufferFromFileDescriptor::prefetch(Priority)
 #endif
 }
 
+bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
+{
+    if (hasPendingData())
+        return true;
+
+    pollfd poll_fd{};
+    poll_fd.fd = fd;
+    poll_fd.events = POLLIN | POLLPRI;
+
+    const auto timeout_milliseconds = static_cast<int>(
+        std::min<size_t>((timeout_microseconds + 999) / 1000, static_cast<size_t>(std::numeric_limits<int>::max())));
+
+    int result = 0;
+    do
+    {
+        result = ::poll(&poll_fd, 1, timeout_milliseconds);
+    } while (result < 0 && errno == EINTR);
+
+    if (result < 0)
+    {
+        ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+        ErrnoException::throwFromPath(
+            ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, getFileName(), "Cannot poll file {}", getFileName());
+    }
+
+    return result > 0;
+}
+
 
 /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
 off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 {
-    size_t new_pos;
+    size_t new_pos = 0;
     if (whence == SEEK_SET)
     {
         chassert(offset >= 0);
@@ -264,7 +295,7 @@ std::optional<size_t> ReadBufferFromFileDescriptor::tryGetFileSize()
 
 bool ReadBufferFromFileDescriptor::checkIfActuallySeekable()
 {
-    struct stat stat;
+    struct stat stat{};
     auto res = ::fstat(fd, &stat);
     return res == 0 && S_ISREG(stat.st_mode);
 }
