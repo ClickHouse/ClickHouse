@@ -51,7 +51,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(NativeUInt, NativeUInt, NativeUInt, NativeUInt, Float, const String) -> "
+        return "(UInt, UInt, UInt, UInt, Float, const String) -> "
                "Tuple(z_statistic Float64, p_value Float64, "
                "confidence_interval_low Float64, confidence_interval_high Float64)";
     }

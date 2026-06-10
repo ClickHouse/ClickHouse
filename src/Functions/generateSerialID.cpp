@@ -79,7 +79,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(String, [const NativeUInt]) -> UInt64";
+        return "(String, [const UInt]) -> UInt64";
     }
 
     /// Increments the counter and returns the old counter.
