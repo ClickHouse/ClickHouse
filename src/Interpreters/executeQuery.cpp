@@ -1322,6 +1322,14 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
 
             /// If DETACH succeeded but ATTACH failed, try to re-attach the table
             /// to avoid leaving it in a detached state.
+            /// Decide recovery from the actual post-exception state, not only from the `detached`
+            /// flag: `DETACH TABLE ... SYNC` first removes the table from the database and only
+            /// then waits for the detached table to become unused, so an exception from that wait
+            /// (e.g. when the query is killed) leaves the table detached while `detached` is still
+            /// `false`.
+            if (!detached)
+                detached = !catalog.isTableExist(table_id, context);
+
             if (detached)
             {
                 try
