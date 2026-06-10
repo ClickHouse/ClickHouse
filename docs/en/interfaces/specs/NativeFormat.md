@@ -1183,7 +1183,17 @@ A column whose value type is discovered at runtime: each row holds a value of on
 
 Type string: `Dynamic` or `Dynamic(max_types=N)`. The `max_types` parameter bounds how many distinct types the column tracks but does not affect the wire format below.
 
-`Dynamic` has several encodings (`V1=1`, `V2=2`, `FLATTENED=3`, `V3=4`). Over the native protocol the server emits **V2 by default**, which carries per-variant statistics. The simpler **FLATTENED (version 3)** encoding is selected by sending the query setting `output_format_native_use_flattened_dynamic_and_json_serialization = 1`:
+`Dynamic` has four encodings — `V1 = 1`, `V2 = 2`, `FLATTENED = 3`, `V3 = 4`. Which one the server emits depends on the channel and on the query settings:
+
+- Over `clickhouse-client` and HTTP `FORMAT Native` the writer's revision is `0` (unless raised with `client_protocol_version`), so the default is **V1**.
+- Over the native TCP protocol at its negotiated revision the default is **V2**, which additionally carries per-variant statistics.
+- The query setting `output_format_native_use_flattened_dynamic_and_json_serialization = 1` overrides both and emits **FLATTENED (version 3)** regardless of revision.
+
+:::note Scope
+This page specifies only the **`FLATTENED`** layout. The non-flat `V1`/`V2`/`V3` binary layouts are the internal/on-disk representation (binary-encoded type lists, per-variant statistics) and are **not** specified here. A client that wants to decode `Dynamic` using this page must request `FLATTENED` by setting `output_format_native_use_flattened_dynamic_and_json_serialization = 1`; the layout below assumes that setting. Because the version byte heads the prefix, a decoder can detect the actual encoding it received and reject `V1`/`V2`/`V3` if it only implements `FLATTENED`.
+:::
+
+The **FLATTENED (version 3)** layout selected by that setting:
 
 ```text
 [per block with rows > 0]:
@@ -1260,7 +1270,7 @@ Note the two-phase shape: **all** path state prefixes come first, then **all** p
 
 #### JSON non-flat (V2/V3) {#json-non-flat}
 
-The non-flattened `Object` encodings (V2/V3) are used by MergeTree on-disk storage, and are emitted over the protocol when the flattened flag is off. They carry a shared-data column and per-variant statistics, and are not specified on this page.
+The non-flattened `Object` encodings (`V1`/`V2`/`V3`) are used by MergeTree on-disk storage and are what the server emits over the wire when the flattened flag is off — `V1` over `clickhouse-client` / HTTP `FORMAT Native` (revision `0`), `V2` over the native TCP protocol. They carry a shared-data column and per-variant statistics, and are **not** specified on this page. To decode a `JSON` column with this page, a client must select one of the documented tiers: set `output_format_native_write_json_as_string = 1` for the [String fallback](#json-tier-1-string-fallback), or `output_format_native_use_flattened_dynamic_and_json_serialization = 1` (with `output_format_native_write_json_as_string = 0`) for the [FLATTENED Object](#json-tier-2-flattened-object) layout.
 
 ## Compression frame {#compression-frame}
 
