@@ -537,7 +537,9 @@ if not args.use_existing_tables:
                     continue
                 # Word-boundary aware match.
                 if text[i : i + klen].upper() == keyword_upper:
-                    before_ok = i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")
+                    before_ok = i == 0 or not (
+                        text[i - 1].isalnum() or text[i - 1] == "_"
+                    )
                     after = text[i + klen] if i + klen < n else ""
                     after_ok = not (after.isalnum() or after == "_")
                     if before_ok and after_ok:
@@ -617,8 +619,10 @@ if not args.use_existing_tables:
                     query[i - 1].isalnum() or query[i - 1] == "_"
                 )
                 after_idx = i + name_len
-                if before_ok and after_idx < n and not (
-                    query[after_idx].isalnum() or query[after_idx] == "_"
+                if (
+                    before_ok
+                    and after_idx < n
+                    and not (query[after_idx].isalnum() or query[after_idx] == "_")
                 ):
                     j = after_idx
                     while j < n and query[j] in " \t\r\n":
@@ -718,21 +722,59 @@ if not args.use_existing_tables:
                 i += 1
 
         stripped = query[:cut_start] + query[i:]
-        # Defensive cleanup of a leading `, ` that the structural cut above
-        # may have missed in unusual whitespace/comment shapes.
-        stripped = re.sub(r"\bSETTINGS\s*,\s*", "SETTINGS ", stripped, flags=re.IGNORECASE)
+
+        # The cleanup below is anchored at the known position of the
+        # `SETTINGS` keyword (which is unchanged by the cut, as the cut
+        # starts after it) instead of a global regex over the whole query:
+        # the query may legitimately contain `SETTINGS` or commas inside
+        # string literals (e.g. in a column `COMMENT`), which a global
+        # regex would corrupt.
+        def skip_whitespace_and_comments(text, pos):
+            length = len(text)
+            while pos < length:
+                c = text[pos]
+                next_c = text[pos + 1] if pos + 1 < length else ""
+                if c in " \t\r\n":
+                    pos += 1
+                elif (c == "-" and next_c == "-") or c == "#":
+                    while pos < length and text[pos] != "\n":
+                        pos += 1
+                elif c == "/" and next_c == "*":
+                    pos += 2
+                    while pos < length:
+                        if (
+                            text[pos] == "*"
+                            and pos + 1 < length
+                            and text[pos + 1] == "/"
+                        ):
+                            pos += 2
+                            break
+                        pos += 1
+                else:
+                    break
+            return pos
+
+        after_keyword = settings_pos + len("SETTINGS")
+
+        # Drop a stray leading `,` that the structural cut above may have
+        # missed in unusual whitespace/comment shapes.
+        rest = skip_whitespace_and_comments(stripped, after_keyword)
+        if rest < len(stripped) and stripped[rest] == ",":
+            stripped = stripped[:rest] + stripped[rest + 1 :]
+
         # Drop an empty SETTINGS clause (the only setting was the dropped one),
         # along with any whitespace that preceded the SETTINGS keyword. The
         # clause is considered empty when only whitespace or comments remain
         # between `SETTINGS` and the terminating `;`/end, so a comment that
         # sat between `SETTINGS` and the removed first setting is dropped too
         # instead of being left as a stray `SETTINGS /*...*/ ;`.
-        stripped = re.sub(
-            r"\s*\bSETTINGS\b(?:\s|/\*.*?\*/|--[^\n]*|#[^\n]*)*(;|$)",
-            r"\1",
-            stripped,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
+        rest = skip_whitespace_and_comments(stripped, after_keyword)
+        if rest >= len(stripped) or stripped[rest] == ";":
+            lead = settings_pos
+            while lead > 0 and stripped[lead - 1] in " \t\r\n":
+                lead -= 1
+            stripped = stripped[:lead] + stripped[rest:]
+
         return stripped
 
     # Settings allowed to be silently stripped from a CREATE TABLE on an
@@ -778,7 +820,9 @@ if not args.use_existing_tables:
                         if m:
                             unknown_setting = m.group(1)
                             if unknown_setting in strippable_unknown_settings:
-                                new_query = strip_setting_from_query(current_query, unknown_setting)
+                                new_query = strip_setting_from_query(
+                                    current_query, unknown_setting
+                                )
                                 if new_query != current_query:
                                     print(
                                         f"warning\t{index}\tstripped unknown setting "
