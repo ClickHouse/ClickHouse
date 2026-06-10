@@ -470,6 +470,31 @@ def test_url_engine_wildcard_limit_uses_query_setting():
         node1.query(f"DROP TABLE IF EXISTS {table_name}")
 
 
+def test_url_engine_wildcard_redirect_uses_query_setting():
+    table_name = "url_wildcard_redirect"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+    try:
+        node1.query(
+            f"CREATE TABLE {table_name} (x UInt64) "
+            "ENGINE = URL('http://resolver:8087/data/redirect/part*.tsv', 'TSV')",
+            settings={"allow_experimental_url_wildcard_from_index_pages": 1},
+        )
+
+        error = node1.query_and_get_error(
+            f"SELECT sum(x) FROM {table_name} "
+            "SETTINGS allow_experimental_url_wildcard_from_index_pages=1, max_http_get_redirects=0"
+        )
+        assert "Too many redirects while trying to access" in error
+
+        result = node1.query(
+            f"SELECT sum(x) FROM {table_name} "
+            "SETTINGS allow_experimental_url_wildcard_from_index_pages=1, max_http_get_redirects=1"
+        )
+        assert result.strip() == "19"
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+
 def test_url_wildcard_is_experimental():
     error = node1.query_and_get_error(
         "SELECT sum(x) FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64')"

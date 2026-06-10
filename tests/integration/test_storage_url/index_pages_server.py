@@ -37,6 +37,7 @@ DATA_PARTS = {
     "/data/headers/2025/part2.tsv": "8\n",
     "/data/mixed_headers/part1.tsv": "1\n",
     "/data/mixed_headers/part2.tsv": "2\n",
+    "/data/redirect_target/part1.tsv": "19\n",
 }
 
 
@@ -135,6 +136,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             "/data/headers/",
             "/data/headers/2025/",
             "/data/mixed_headers/",
+            "/data/redirect/",
+            "/data/redirect_target/",
         ):
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
@@ -190,6 +193,15 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/data/mixed_headers/":
             body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/redirect/":
+            self.send_response(302)
+            self.send_header("Location", "/data/redirect_target/")
+            self.end_headers()
+            return
+        if path == "/data/redirect_target/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
             self._send_html(body)
             return
         if path == "/data/order/":

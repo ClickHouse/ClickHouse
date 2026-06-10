@@ -91,7 +91,7 @@ WebObjectStorage::WebObjectStorage(
     ContextPtr context_,
     HTTPHeaderEntries headers_,
     size_t max_directories_to_read_)
-    : WithContext(context_->getGlobalContext())
+    : WithContext(context_)
     , url_shards(std::move(url_shards_))
     , headers(std::move(headers_))
     , max_directories_to_read(max_directories_to_read_)
@@ -104,6 +104,17 @@ WebObjectStorage::WebObjectStorage(
         if (url_shard.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least one URL option is required for each URL shard");
     }
+}
+
+ContextPtr WebObjectStorage::getRequestContext() const
+{
+    if (CurrentThread::isInitialized())
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            return query_context;
+    }
+
+    return getContext();
 }
 
 bool WebObjectStorage::exists(const StoredObject & object) const
@@ -218,7 +229,7 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     /// connectivity probe in that case.
     return std::make_unique<ReadBufferFromWebServer>(
         std::move(urls),
-        getContext(),
+        getRequestContext(),
         object.bytes_size,
         read_settings,
         use_external_buffer,
@@ -292,12 +303,13 @@ ObjectMetadata WebObjectStorage::getObjectMetadata(const RelativePathWithMetadat
 
 std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const RelativePathWithMetadata & path, bool) const
 {
-    const auto & settings = getContext()->getSettingsRef();
+    const auto request_context = getRequestContext();
+    const auto & settings = request_context->getSettingsRef();
     const bool enable_url_encoding = settings[Setting::enable_url_encoding];
     const auto max_redirects = settings[Setting::max_http_get_redirects];
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(
         settings,
-        getContext()->getServerSettings());
+        request_context->getServerSettings());
 
     auto get_metadata_from_uri = [&](const Poco::URI & uri) -> std::optional<ObjectMetadata>
     {
@@ -311,11 +323,11 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
             return BuilderRWBufferFromHTTP(uri)
                 .withConnectionGroup(HTTPConnectionGroupType::DISK)
                 .withMethod(method)
-                .withSettings(getContext()->getReadSettings())
+                .withSettings(request_context->getReadSettings())
                 .withTimeouts(timeouts)
                 .withRedirects(max_redirects)
                 .withEnableUrlEncoding(enable_url_encoding)
-                .withHostFilter(&getContext()->getRemoteHostFilter())
+                .withHostFilter(&request_context->getRemoteHostFilter())
                 .withSkipNotFound(true)
                 .withDelayInit(false)
                 .withHeaders(headers)

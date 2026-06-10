@@ -307,7 +307,8 @@ std::vector<std::string> MetadataStorageFromIndexPages::makeListingURLs(const st
 
 std::string MetadataStorageFromIndexPages::readIndexPage(const std::string & url) const
 {
-    const auto & settings = object_storage.getContext()->getSettingsRef();
+    const auto request_context = object_storage.getRequestContext();
+    const auto & settings = request_context->getSettingsRef();
     const bool enable_url_encoding = settings[Setting::enable_url_encoding];
 
     /// Carry the same HTTP request semantics as direct `url()` reads: honor `enable_url_encoding`,
@@ -319,21 +320,21 @@ std::string MetadataStorageFromIndexPages::readIndexPage(const std::string & url
 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(
         settings,
-        object_storage.getContext()->getServerSettings());
+        request_context->getServerSettings());
 
     auto buf = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::DISK)
-                   .withSettings(object_storage.getContext()->getReadSettings())
+                   .withSettings(request_context->getReadSettings())
                    .withTimeouts(timeouts)
                    .withRedirects(settings[Setting::max_http_get_redirects])
                    .withEnableUrlEncoding(enable_url_encoding)
-                   .withHostFilter(&object_storage.getContext()->getRemoteHostFilter())
+                   .withHostFilter(&request_context->getRemoteHostFilter())
                    .withHeaders(object_storage.getHeaders())
                    .create(credentials);
 
     std::string body;
     WriteBufferFromString out(body);
-    const auto limit = object_storage.getContext()->getServerSettings()[ServerSetting::max_http_index_page_size];
+    const auto limit = request_context->getServerSettings()[ServerSetting::max_http_index_page_size];
     copyDataMaxBytes(*buf, out, limit);
     out.finalize();
     return body;
