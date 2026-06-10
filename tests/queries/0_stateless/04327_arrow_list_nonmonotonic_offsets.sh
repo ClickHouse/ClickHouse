@@ -74,6 +74,11 @@
 # Class L: JSON reader reserved column memory before validating the offsets buffer:
 #   Binary / LargeBinary with JSON logical type and a 1-row file whose RecordBatch and FieldNode
 #   length are forged to 2^30.  The reader must validate the offsets buffer before reserve().
+#
+# Class M: unknown FieldNode.null_count (-1) with a forged-huge length and a 1-byte bitmap:
+#   Building the arrow Table computes the unknown null_count by scanning the validity bitmap over
+#   the declared length (heap OOB read).  The record-batch bitmap validation must reject it as
+#   INCORRECT_DATA before the table is built.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -495,6 +500,36 @@ open(f'{out}/binary_json_huge_length.arrow', 'wb').write(
     forge_one_row_to_huge(write_json_binary(pa.binary()), 1 << 30))
 open(f'{out}/largebinary_json_huge_length.arrow', 'wb').write(
     forge_one_row_to_huge(write_json_binary(pa.large_binary()), 1 << 30))
+
+# Class M: unknown FieldNode.null_count (-1) over a forged-huge declared length with a 1-byte
+# validity bitmap.  Building the arrow Table computes the unknown null_count by scanning the
+# bitmap over the declared length (heap OOB read in CountSetBits).  The record-batch bitmap
+# validation rejects it as INCORRECT_DATA before the table is built.
+def forge_unknown_nullcount(arr, declared_length):
+    data = write_arrow(arr, name='x')
+    ones = [i for i in range(0, len(data) - 7, 8) if struct.unpack_from('<q', data, i)[0] == 1]
+    for a in range(len(ones)):
+        for b in range(a + 1, len(ones)):
+            for nc in ones:
+                if nc in (ones[a], ones[b]):
+                    continue
+                cand = bytearray(data)
+                cand[ones[a]:ones[a]+8] = struct.pack('<q', declared_length)
+                cand[ones[b]:ones[b]+8] = struct.pack('<q', declared_length)
+                cand[nc:nc+8] = struct.pack('<q', -1)
+                try:
+                    with ipc.open_file(pa.py_buffer(bytes(cand))) as reader:
+                        t = reader.read_all()  # does not touch null_count
+                    if t.num_rows == declared_length and len(t.column('x').chunks[0]) == declared_length:
+                        return cand
+                except Exception:
+                    pass
+    raise RuntimeError("could not forge RecordBatch/FieldNode length + null_count markers")
+
+open(f'{out}/int32_unknown_nullcount.arrow', 'wb').write(
+    forge_unknown_nullcount(pa.array([None], type=pa.int32()), 1000))
+open(f'{out}/list_unknown_nullcount.arrow', 'wb').write(
+    forge_unknown_nullcount(pa.array([None], type=pa.list_(pa.int32())), 1000))
 PYEOF
 
 check_incorrect_data() {
@@ -606,3 +641,9 @@ check_incorrect_data binary_json_huge_length \
 
 check_incorrect_data largebinary_json_huge_length \
     $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/largebinary_json_huge_length.arrow', Arrow) FORMAT Null SETTINGS allow_experimental_json_type=1"
+
+check_incorrect_data int32_unknown_nullcount \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/int32_unknown_nullcount.arrow', Arrow)"
+
+check_incorrect_data list_unknown_nullcount \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/list_unknown_nullcount.arrow', Arrow)"

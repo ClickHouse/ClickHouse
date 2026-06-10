@@ -329,6 +329,35 @@ const arrow::BooleanArray & checkedCastBool(const arrow::Array & array, const St
     return typed;
 }
 
+/// Recursively validate that every validity bitmap (buffers[0]) in an array and its children /
+/// dictionary covers the declared rows, WITHOUT computing null_count.  Must run before any Arrow
+/// operation that computes an unknown null_count (kUnknownNullCount = -1) by scanning the bitmap
+/// over the declared length, which reads out of bounds when the bitmap is truncated.
+void checkArrayDataValidityBitmaps(const arrow::ArrayData & data, const String & column_name)
+{
+    if (unlikely(data.length < 0 || data.offset < 0))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow array has negative length or offset for column '{}': length={}, offset={}",
+            column_name, data.length, data.offset);
+    if (!data.buffers.empty() && data.buffers[0])
+    {
+        const size_t buffer_size = static_cast<size_t>(data.buffers[0]->size());
+        const size_t count = static_cast<size_t>(data.offset) + static_cast<size_t>(data.length);
+        const size_t required = count / 8 + (count % 8 != 0 ? 1 : 0);
+        if (unlikely(buffer_size < required))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow validity bitmap too small for column '{}': {} bytes available, {} required",
+                column_name, buffer_size, required);
+    }
+    for (const auto & child : data.child_data)
+        if (child)
+            checkArrayDataValidityBitmaps(*child, column_name);
+    if (data.dictionary)
+        checkArrayDataValidityBitmaps(*data.dictionary, column_name);
+}
+
 /// Validate every chunk with `validate` before the caller reserves column memory based on
 /// arrow_column->length().  Without this, an inflated or buffer-inconsistent declared length
 /// makes reserve() throw CANNOT_ALLOCATE_MEMORY instead of a clean INCORRECT_DATA from the
@@ -2275,19 +2304,17 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
     const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet)
 {
-    /// Reject malformed chunk lengths/offsets up front, before any reader reserves column
-    /// memory based on arrow_column->length(): a negative length wraps to a huge size_t and
-    /// an absurd length makes reserve() throw CANNOT_ALLOCATE_MEMORY instead of INCORRECT_DATA.
+    /// Validate each chunk up front, before anything reads the declared length:
+    ///   - checkValidityBitmap rejects a negative length/offset and a validity bitmap (buffers[0])
+    ///     too small for the declared rows.  It is scan-free (never calls null_count), so it must
+    ///     run before the arrow_column->null_count() below: Arrow computes an unknown null_count
+    ///     (kUnknownNullCount = -1) by scanning buffers[0] over the declared length, which reads
+    ///     out of bounds when the bitmap is truncated.
+    ///   - rejecting a negative length here also stops a reader reserving a huge column from a
+    ///     wrapped-to-huge size_t length.
     /// This runs for every nested level too, since the function recurses for nested types.
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
-    {
-        const auto & chunk = *arrow_column->chunk(chunk_i);
-        if (unlikely(chunk.length() < 0 || chunk.offset() < 0))
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Arrow array has negative length or offset for column '{}': length={}, offset={}",
-                column_name, chunk.length(), chunk.offset());
-    }
+        checkValidityBitmap(*arrow_column->chunk(chunk_i), column_name);
 
     bool type_hint_not_nullable_capable = type_hint && !removeNullable(type_hint)->canBeInsideNullable();
     bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
@@ -2514,6 +2541,13 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     , parquet_columns_to_clickhouse(parquet_columns_to_clickhouse_)
     , clickhouse_columns_to_parquet(clickhouse_columns_to_parquet_)
 {
+}
+
+void ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(const arrow::RecordBatch & batch)
+{
+    const auto & schema = *batch.schema();
+    for (int i = 0, num_columns = batch.num_columns(); i < num_columns; ++i)
+        checkArrayDataValidityBitmaps(*batch.column(i)->data(), schema.field(i)->name());
 }
 
 Chunk ArrowColumnToCHColumn::arrowTableToCHChunk(
