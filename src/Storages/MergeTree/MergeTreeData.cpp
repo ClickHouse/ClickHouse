@@ -1761,40 +1761,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
     }
 
     if (allow_tuple_element_aggregation)
-    {
-        /// Reject Nullable Tuple columns: tuple elements are flattened and aggregated
-        /// independently.
-        for (const auto & column : columns)
-        {
-            if (containsNullableFlattenableTuple(column.type))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Column '{}' has type '{}' which contains a Nullable Tuple. When setting "
-                    "'allow_tuple_element_aggregation' is enabled, Nullable Tuple columns are not "
-                    "supported because tuple elements are flattened and aggregated independently.",
-                    column.name,
-                    column.type->getName());
-        }
-
-        /// Reject plain Tuple columns in sorting key: flattening changes column names used for ordering.
-        const auto & sorting_key = metadata.getSortingKey();
-        for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
-        {
-            const auto & type = sorting_key.data_types[i];
-            if (Nested::tryGetFlattenableTuple(type))
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Sorting key column '{}' has Tuple type '{}'. When "
-                    "setting 'allow_tuple_element_aggregation' is enabled, "
-                    "plain Tuple columns cannot be used as sorting key because flattening "
-                    "would change the column names used for ordering. "
-                    "Consider extracting individual fields as separate sorting key columns.",
-                    sorting_key.column_names[i],
-                    type->getName());
-            }
-        }
-    }
+        checkTupleElementAggregationConstraints(metadata);
 
     /// TODO Checks for Graphite mode.
 }
@@ -4491,6 +4458,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
+
+
+    if (merging_params.allow_tuple_element_aggregation)
+        checkTupleElementAggregationConstraints(new_metadata);
 
     /// UNIQUE KEY tables must remain on a local-only storage policy. Mirror the
     /// CREATE-time check from registerStorageMergeTree.cpp here so ALTER ...
