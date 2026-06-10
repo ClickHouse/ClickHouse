@@ -4,3 +4,9 @@
 1	0.4226
 2	0.1835
 3	0
+SELECT L2DistanceTransposed(__table1.`vec.1`, __table1.`vec.2`, __table1.`vec.3`, _CAST(3, \'Nullable(UInt8)\'), _CAST([0, 1, 2], \'Array(Float32)\')) AS `L2DistanceTransposed(vec, [0, 1, 2], toNullable(3))`
+FROM default.qbit_test AS __table1
+SETTINGS optimize_qbit_distance_function_reads = 1
+SELECT L2DistanceTransposed(__table1.vec, if(__table1.id > 0, _CAST([0, 1, 2], \'Array(UInt8)\'), _CAST(NULL, \'Nullable(Nothing)\')), 3) AS `L2DistanceTransposed(vec, if(greater(id, 0), [0, 1, 2], NULL), 3)`
+FROM default.qbit_test AS __table1
+SETTINGS optimize_qbit_distance_function_reads = 1

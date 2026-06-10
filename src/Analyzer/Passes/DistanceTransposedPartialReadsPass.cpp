@@ -77,12 +77,13 @@ public:
         if (!column_in_table || !column_in_table->type->equals(*column_name_type.type))
             return;
 
-        /// If the function result type is Nullable, skip the optimization.
-        /// This happens when an argument is a NULL constant or otherwise Nullable
-        /// (e.g. an `if(cond, NULL, value)` reference vector from the fuzzer).
-        /// The rewrite casts the reference vector to a non-nullable `Array(...)`
-        /// type, which would strip the nullability and change the result type.
-        if (function_node->getResultType()->isNullable())
+        /// The rewrite casts the reference vector to a non-nullable `Array(element_type)`,
+        /// which strips any nullability it carries and would change the function result type.
+        /// Precision nullability is handled separately (on the dimension constant below), so
+        /// only the reference vector's own nullability blocks the optimization here.
+        const auto & ref_vec_type = ref_vec_node->getResultType();
+        if (ref_vec_type->isNullable() || ref_vec_type->isLowCardinalityNullable() || isVariant(ref_vec_type)
+            || isDynamic(ref_vec_type))
             return;
 
         /// Apply the optimization
