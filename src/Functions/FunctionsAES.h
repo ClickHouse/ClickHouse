@@ -417,8 +417,17 @@ private:
                     /// Context was already initialized with cipher+key+IV before the loop.
                     /// Just reset the IV to start a fresh encryption for this row,
                     /// without repeating cipher setup or key schedule.
-                    if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr, nullptr,
-                            reinterpret_cast<const unsigned char *>(iv_value.data())) != 1)
+                    ///
+                    /// When the IV is absent or empty, `iv_value.data()` is null. OpenSSL keeps
+                    /// the previous (already advanced) working IV when a null IV is passed on
+                    /// re-init, instead of restoring the initial all-zero IV that the per-row
+                    /// full initialization (the branch below) produces. To stay equivalent we
+                    /// pass an explicit zero IV in that case.
+                    static constexpr unsigned char zero_iv[EVP_MAX_IV_LENGTH] = {};
+                    const auto * iv_ptr = iv_value.empty()
+                        ? zero_iv
+                        : reinterpret_cast<const unsigned char *>(iv_value.data());
+                    if (EVP_EncryptInit_ex(evp_ctx, nullptr, nullptr, nullptr, iv_ptr) != 1)
                         onError("EVP_EncryptInit_ex");
                 }
                 else
@@ -772,8 +781,17 @@ private:
                     /// Context was already initialized with cipher+key+IV before the loop.
                     /// Just reset the IV to start a fresh decryption for this row,
                     /// without repeating cipher setup or key schedule.
-                    if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr, nullptr,
-                            reinterpret_cast<const unsigned char *>(iv_value.data())) != 1)
+                    ///
+                    /// When the IV is absent or empty, `iv_value.data()` is null. OpenSSL keeps
+                    /// the previous (already advanced) working IV when a null IV is passed on
+                    /// re-init, instead of restoring the initial all-zero IV that the per-row
+                    /// full initialization (the branch below) produces. To stay equivalent we
+                    /// pass an explicit zero IV in that case.
+                    static constexpr unsigned char zero_iv[EVP_MAX_IV_LENGTH] = {};
+                    const auto * iv_ptr = iv_value.empty()
+                        ? zero_iv
+                        : reinterpret_cast<const unsigned char *>(iv_value.data());
+                    if (EVP_DecryptInit_ex(evp_ctx, nullptr, nullptr, nullptr, iv_ptr) != 1)
                         onError("EVP_DecryptInit_ex");
                 }
                 else
