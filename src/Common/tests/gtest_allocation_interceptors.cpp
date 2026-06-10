@@ -2,9 +2,26 @@
 
 #include <gtest/gtest.h>
 
-#include <Common/MemoryTracker.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
+#include <base/scope_guard.h>
 #include <limits>
+
+namespace DB::ErrorCodes
+{
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace ProfileEvents
+{
+    extern const Event GlobalMemoryLimitExceeded;
+    extern const Event QueryMemoryLimitExceeded;
+}
 
 using namespace DB;
 
@@ -144,6 +161,163 @@ TEST(AllocationInterceptors, MallocZeroFreeDoesNotCauseNegativeDrift)
 
     EXPECT_GE(CurrentThread::get().memory_tracker.get() - before_thread, -64 * 1024);
     EXPECT_GE(total_memory_tracker.get() - before_global, -64 * 1024);
+}
+
+namespace
+{
+
+/// Restores the global hard limit and the operator-new throw threshold on scope exit.
+struct MemoryLimitGuard
+{
+    Int64 prev_hard_limit;
+    /// Threshold setter takes UInt64; cache nothing — restore to 0 (default = disabled).
+    MemoryLimitGuard()
+        : prev_hard_limit(total_memory_tracker.getHardLimit())
+    {
+    }
+    ~MemoryLimitGuard()
+    {
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(0);
+        total_memory_tracker.setHardLimit(prev_hard_limit);
+    }
+};
+
+/// Set hard limit just above the current amount so the next big allocation overshoots.
+void clampHardLimitJustAboveCurrent()
+{
+    MainThreadStatus::getInstance();
+    CurrentThread::flushUntrackedMemory();
+    total_memory_tracker.setHardLimit(total_memory_tracker.get() + 1024);
+}
+
+}
+
+TEST(AllocationInterceptors, MinAllocSizeToThrowDisabledDoesNotRefuseLargeNew)
+{
+    MemoryLimitGuard guard;
+
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(0);
+    clampHardLimitJustAboveCurrent();
+
+    char * ptr = new char[allocation_size];
+    useMisterPointer(ptr);
+    *ptr = 'a';
+    delete[] ptr;
+}
+
+TEST(AllocationInterceptors, MinAllocSizeToThrowRefusesLargeNewPastLimit)
+{
+    MemoryLimitGuard guard;
+
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1ULL << 20);
+    clampHardLimitJustAboveCurrent();
+
+    EXPECT_THROW({
+        char * ptr = new char[allocation_size];
+        useMisterPointer(ptr);
+    }, DB::Exception);
+}
+
+TEST(AllocationInterceptors, MinAllocSizeToThrowDoesNotAffectExplicitAllocPath)
+{
+    MemoryLimitGuard guard;
+
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1ULL << 30);
+    clampHardLimitJustAboveCurrent();
+
+    EXPECT_THROW({
+        std::ignore = CurrentMemoryTracker::alloc(allocation_size);
+    }, DB::Exception);
+}
+
+TEST(AllocationInterceptors, GlobalMemoryLimitExceededOnlyIncrementsForGlobalTracker)
+{
+    MainThreadStatus::getInstance();
+
+    MemoryLimitGuard limit_guard;
+    auto & thread_tracker = CurrentThread::get().memory_tracker;
+    MemoryTracker query_tracker(&total_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor=*/ false);
+    MemoryTracker * prev_parent = thread_tracker.getParent();
+    Int64 prev_hard_limit = thread_tracker.getHardLimit();
+    const auto reset_test_counters = [&]
+    {
+        total_memory_tracker.resetCounters();
+        thread_tracker.resetCounters();
+        query_tracker.resetCounters();
+        CurrentThread::getProfileEvents().resetCounters();
+    };
+
+    CurrentThread::flushUntrackedMemory();
+
+    SCOPE_EXIT({
+        CurrentThread::flushUntrackedMemory();
+        reset_test_counters();
+        thread_tracker.setHardLimit(prev_hard_limit);
+        thread_tracker.setParent(prev_parent);
+    });
+
+    thread_tracker.setParent(&query_tracker);
+
+    reset_test_counters();
+
+    query_tracker.setHardLimit(query_tracker.get() + 1024);
+    EXPECT_THROW({
+        std::ignore = CurrentMemoryTracker::alloc(allocation_size);
+    }, DB::Exception);
+    EXPECT_EQ(1, CurrentThread::getProfileEvents()[ProfileEvents::QueryMemoryLimitExceeded]);
+    EXPECT_EQ(0, CurrentThread::getProfileEvents()[ProfileEvents::GlobalMemoryLimitExceeded]);
+
+    reset_test_counters();
+
+    total_memory_tracker.setHardLimit(total_memory_tracker.get() + 1024);
+    EXPECT_THROW({
+        std::ignore = CurrentMemoryTracker::alloc(allocation_size);
+    }, DB::Exception);
+    EXPECT_EQ(1, CurrentThread::getProfileEvents()[ProfileEvents::QueryMemoryLimitExceeded]);
+    EXPECT_EQ(1, CurrentThread::getProfileEvents()[ProfileEvents::GlobalMemoryLimitExceeded]);
+}
+
+TEST(AllocationInterceptors, MinAllocSizeToThrowDoesNotAffectMalloc)
+{
+    MemoryLimitGuard guard;
+
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1ULL << 20);
+    clampHardLimitJustAboveCurrent();
+
+    void * ptr = malloc(allocation_size);
+    useMisterPointer(ptr);
+    EXPECT_NE(ptr, nullptr);
+    *reinterpret_cast<char *>(ptr) = 'a';
+    free(ptr);
+}
+
+TEST(AllocationInterceptors, MinAllocSizeToThrowDoesNotAffectNoThrowNew)
+{
+    MemoryLimitGuard guard;
+
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1ULL << 20);
+    clampHardLimitJustAboveCurrent();
+
+    char * ptr = new (std::nothrow) char[allocation_size];
+    EXPECT_NE(ptr, nullptr);
+    useMisterPointer(ptr);
+    if (ptr)
+        *ptr = 'a';
+    delete[] ptr;
+}
+
+TEST(AllocationInterceptors, MinAllocSizeToThrowRespectsLockMemoryExceptionInThread)
+{
+    MemoryLimitGuard guard;
+
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1ULL << 20);
+    clampHardLimitJustAboveCurrent();
+
+    LockMemoryExceptionInThread block(VariableContext::Global);
+    char * ptr = new char[allocation_size];
+    useMisterPointer(ptr);
+    *ptr = 'a';
+    delete[] ptr;
 }
 
 /// NOLINTEND

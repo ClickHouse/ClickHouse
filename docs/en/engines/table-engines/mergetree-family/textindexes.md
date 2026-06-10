@@ -212,7 +212,8 @@ Examples:
 
 Using non-deterministic functions is disallowed.
 
-Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) use the preprocessor to first transform the search term before tokenizing it.
+Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens), [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), and [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase) use the preprocessor to first transform the search term before tokenizing it.
+Note that because the preprocessor is only applied on the text index path, results from these functions may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 
 For example,
 
@@ -411,6 +412,34 @@ The spaces left and right of `support` make sure that the term can be extracted 
 Fortunately, there is a special case where ClickHouse can leverage the inverted index to speed up LIKE queries significantly.
 
 See the [LIKE/ILIKE performance tuning section](#like-ilike-queries-perf) for details.
+
+#### `multiSearchAny` and `multiMatchAny` {#functions-example-multisearchany-multimatchany}
+
+[multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny) and its UTF-8 variant [multiSearchAnyUTF8](/sql-reference/functions/string-search-functions.md/#multiSearchAnyUTF8) test whether any of several literal substrings occurs in the haystack, and [multiMatchAny](/sql-reference/functions/string-search-functions.md/#multiMatchAny) tests whether any of several regular expressions matches.
+These functions use the text index under the same conditions as `LIKE` and `match` (see above): ClickHouse must be able to extract complete tokens from each needle, and the list of needles must be constant.
+A granule is read if any needle may be present in it.
+
+For `multiMatchAny`, if a single pattern cannot be reduced to a token requirement (for example `.*`, which matches any document), the text index cannot be used and the query falls back to a full scan.
+
+As with `LIKE` and `match`, substring and regular-expression search work best with the `ngrams` and `sparseGrams` tokenizers.
+These tokenizers index overlapping character n-grams, so a needle is decomposed into n-grams that are present in the index wherever the needle occurs as a substring, regardless of whether it starts or ends in the middle of a word.
+A needle can therefore be used as-is, as long as it is at least as long as the n-gram size.
+
+Example for the text index with `ngrams` tokenizer:
+
+```sql
+SELECT count() FROM table WHERE multiSearchAny(comment, ['clickhouse', 'support']);
+```
+
+The `splitByNonAlpha` tokenizer, in contrast, only indexes complete tokens (whole words).
+Because a needle may begin or end in the middle of a word, ClickHouse drops the leading and trailing tokens of each needle, so the index can prune granules only using complete tokens.
+To make substring and regular-expression search use the index with `splitByNonAlpha`, surround each needle with separator characters (such as spaces) so that it forms one or more complete tokens.
+
+Example for the text index with `splitByNonAlpha` tokenizer:
+
+```sql
+SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' support ']);
+```
 
 #### `startsWith` and `endsWith` {#functions-example-startswith-endswith}
 

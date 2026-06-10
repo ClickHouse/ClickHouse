@@ -2,6 +2,7 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
@@ -44,6 +45,7 @@
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/StreamCopier.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/FailPoint.h>
 
 
@@ -53,6 +55,11 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsBool allow_experimental_geo_types_in_iceberg;
 }
 
 namespace DB::FailPoints
@@ -122,6 +129,22 @@ String encodeNamespaceForURI(const String & namespace_name)
     }
     return encoded;
 }
+
+std::unordered_set<std::string> getAllowedBigLakeMetadataServiceHosts(
+    const Poco::Util::AbstractConfiguration & config)
+{
+    static constexpr auto SECTION = "iceberg_biglake_metadata_service_hosts";
+    std::unordered_set<std::string> allowed;
+    if (!config.has(SECTION))
+        return allowed;
+
+    std::vector<std::string> keys;
+    config.keys(SECTION, keys);
+    for (const auto & key : keys)
+        allowed.insert(config.getString(std::string(SECTION) + "." + key));
+    return allowed;
+}
+
 
 }
 
@@ -328,6 +351,7 @@ AccessToken RestCatalog::retrieveAccessToken() const
     }
 
     const auto & context = getContext();
+    context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
     auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
 
@@ -461,6 +485,23 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
     /// https://cloud.google.com/compute/docs/metadata/overview
     static constexpr auto DEFAULT_REQUEST_TOKEN_PATH = "/computeMetadata/v1/instance/service-accounts";
 
+    const auto & context = getContext();
+
+    const auto allowed_metadata_hosts = getAllowedBigLakeMetadataServiceHosts(context->getConfigRef());
+    if (allowed_metadata_hosts.empty())
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "BigLake metadata service requests are disabled. To enable, configure "
+            "<iceberg_biglake_metadata_service_hosts> in server config with the allowed metadata "
+            "hosts (typically `metadata.google.internal` and `169.254.169.254`).");
+
+    if (!allowed_metadata_hosts.contains(google_metadata_service))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "google_metadata_service host `{}` is not in the server-side allow-list "
+            "<iceberg_biglake_metadata_service_hosts>",
+            google_metadata_service);
+
     Poco::URI url;
     url.setScheme("http");
     url.setHost(google_metadata_service);
@@ -471,7 +512,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 
     LOG_DEBUG(log, "Requesting Google Cloud access token from metadata service: {}", url.toString());
 
-    const auto & context = getContext();
+    context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
     auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
 
@@ -1028,8 +1069,9 @@ bool RestCatalog::getTableMetadataImpl(
 
     if (result.requiresSchema())
     {
-        // int format_version = metadata_object->getValue<int>("format-version");
-        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor();
+        const bool allow_geo_parser
+            = getContext()->getSettingsRef()[DB::Setting::allow_experimental_geo_types_in_iceberg].value;
+        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(allow_geo_parser);
         auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
         auto schema = schema_processor.getClickhouseTableSchemaById(id);
         result.setSchema(*schema);
@@ -1155,6 +1197,10 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
     request_body->set("stage-create", false);
     Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
+
+    if (metadata_content->has("format-version"))
+        properties->set("format-version", std::to_string(metadata_content->getValue<int>("format-version")));
+
     request_body->set("properties", properties);
 
     try
@@ -1226,8 +1272,71 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     {
         sendRequest(endpoint, request_body);
     }
-    catch (const DB::HTTPException &)
+    catch (const DB::HTTPException & ex)
     {
+        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
+        return false;
+    }
+    return true;
+}
+
+bool RestCatalog::updateSchema(
+    const String & namespace_name,
+    const String & table_name,
+    const String & /*new_metadata_path*/,
+    Poco::JSON::Object::Ptr new_schema,
+    Int32 previous_schema_id) const
+{
+    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
+
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    {
+        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
+        identifier->set("name", table_name);
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        namespaces->add(namespace_name);
+        identifier->set("namespace", namespaces);
+
+        request_body->set("identifier", identifier);
+    }
+
+    {
+        Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
+        requirement->set("type", "assert-current-schema-id");
+        requirement->set("current-schema-id", previous_schema_id);
+
+        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
+        requirements->add(requirement);
+        request_body->set("requirements", requirements);
+    }
+
+    {
+        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
+
+        {
+            Poco::JSON::Object::Ptr add_schema = new Poco::JSON::Object;
+            add_schema->set("action", "add-schema");
+            add_schema->set("schema", new_schema);
+            updates->add(add_schema);
+        }
+
+        {
+            Poco::JSON::Object::Ptr set_current_schema = new Poco::JSON::Object;
+            set_current_schema->set("action", "set-current-schema");
+            set_current_schema->set("schema-id", -1);
+            updates->add(set_current_schema);
+        }
+
+        request_body->set("updates", updates);
+    }
+
+    try
+    {
+        sendRequest(endpoint, request_body);
+    }
+    catch (const DB::HTTPException & ex)
+    {
+        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
         return false;
     }
     return true;
