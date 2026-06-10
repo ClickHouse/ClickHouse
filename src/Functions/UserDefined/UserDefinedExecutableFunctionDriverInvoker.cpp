@@ -1,17 +1,26 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionDriverInvoker.h>
 
+#include <Common/CurrentMetrics.h>
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
+#include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <IO/copyData.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
 #include <cerrno>
-#include <future>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric UDFDriverInvokerThreads;
+    extern const Metric UDFDriverInvokerThreadsActive;
+    extern const Metric UDFDriverInvokerThreadsScheduled;
+}
 
 namespace DB
 {
@@ -139,17 +148,25 @@ namespace
 
     CommandResult writeAndWait(ShellCommand & process, const String & source_code)
     {
+        CommandResult result;
+
         /// All three pipes must be serviced concurrently: a driver that prints
         /// enough on stderr while waiting for stdin would otherwise deadlock if
         /// we wrote stdin synchronously before draining stdout/stderr.
-        auto stdout_future = std::async(std::launch::async, [&process] { return readPipeToString(process.out); });
-        auto stderr_future = std::async(std::launch::async, [&process] { return readPipeToString(process.err); });
-        auto stdin_future = std::async(std::launch::async, [&process, &source_code] { return writeStdinSafely(process.in, source_code); });
+        /// stdout/stderr are drained in pool threads while stdin is written in this thread.
+        ThreadPool pool(
+            CurrentMetrics::UDFDriverInvokerThreads,
+            CurrentMetrics::UDFDriverInvokerThreadsActive,
+            CurrentMetrics::UDFDriverInvokerThreadsScheduled,
+            /*max_threads=*/ 2);
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::UDF_DRIVER);
 
-        CommandResult result;
-        result.stdout_output = stdout_future.get();
-        result.stderr_output = stderr_future.get();
-        result.write_exception = stdin_future.get();
+        runner.enqueueAndKeepTrack([&process, &result] { result.stdout_output = readPipeToString(process.out); });
+        runner.enqueueAndKeepTrack([&process, &result] { result.stderr_output = readPipeToString(process.err); });
+
+        result.write_exception = writeStdinSafely(process.in, source_code);
+        runner.waitForAllToFinishAndRethrowFirstError();
+
         try
         {
             result.retcode = process.tryWait();
@@ -199,34 +216,18 @@ String UserDefinedExecutableFunctionDriverInvoker::runCreateCommand(
 
     /// The driver exited cleanly but we could not deliver the function body to it.
     if (result.write_exception)
-    {
-        try
-        {
-            std::rethrow_exception(result.write_exception);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format(
-                "while writing function body to driver '{}' create_command for function '{}'. Stderr: {}",
-                driver.name, function_name, result.stderr_output));
-            throw;
-        }
-    }
+        throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
+            "Failed while writing function body to driver '{}' create_command for function '{}': {}. Stderr: {}",
+            driver.name, function_name,
+            getExceptionMessage(result.write_exception, /*with_stacktrace=*/ false),
+            result.stderr_output);
 
     if (result.wait_exception)
-    {
-        try
-        {
-            std::rethrow_exception(result.wait_exception);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format(
-                "while waiting for driver '{}' create_command for function '{}'. Stderr: {}",
-                driver.name, function_name, result.stderr_output));
-            throw;
-        }
-    }
+        throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
+            "Failed while waiting for driver '{}' create_command for function '{}': {}. Stderr: {}",
+            driver.name, function_name,
+            getExceptionMessage(result.wait_exception, /*with_stacktrace=*/ false),
+            result.stderr_output);
 
     if (result.stdout_output.empty())
         throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,

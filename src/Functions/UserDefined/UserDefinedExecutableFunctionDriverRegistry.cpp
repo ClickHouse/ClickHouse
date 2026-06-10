@@ -5,7 +5,10 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <fmt/ranges.h>
+
 #include <filesystem>
+#include <ranges>
 
 
 namespace DB
@@ -34,29 +37,20 @@ UserDefinedExecutableFunctionDriverPtr UserDefinedExecutableFunctionDriverRegist
 
 UserDefinedExecutableFunctionDriverPtr UserDefinedExecutableFunctionDriverRegistry::get(const String & driver_name) const
 {
-    std::lock_guard lock(mutex);
-    auto it = drivers.find(driver_name);
-    if (it != drivers.end())
-        return it->second;
+    if (auto driver = tryGet(driver_name))
+        return driver;
 
+    std::lock_guard lock(mutex);
     if (drivers.empty())
         throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
             "Executable user-defined function driver '{}' is not registered. No executable UDF drivers are configured. "
             "Add driver definitions with the `<user_defined_executable_function_drivers_config>` server configuration key",
             driver_name);
 
-    String registered_names;
-    for (const auto & [name, _] : drivers)
-    {
-        if (!registered_names.empty())
-            registered_names += ", ";
-        registered_names += name;
-    }
-
     throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
         "Executable user-defined function driver '{}' is not registered. Registered drivers: {}",
         driver_name,
-        registered_names);
+        fmt::join(std::views::keys(drivers), ", "));
 }
 
 std::vector<String> UserDefinedExecutableFunctionDriverRegistry::getAllRegisteredNames() const // STYLE_CHECK_ALLOW_STD_CONTAINERS
