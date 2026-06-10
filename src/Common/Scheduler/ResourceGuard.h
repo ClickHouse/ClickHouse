@@ -146,7 +146,8 @@ public:
         {
             if (state == Enqueued)
                 // `enqueue()` threw before the request entered the scheduler (e.g. the queue is being
-                // destructed). The request was never linked into a queue, so just restore the state.
+                // destructed). The request was never linked into a queue and `enqueueRequestUsingBudget`
+                // has rolled back its budget transaction, so just restore the state.
                 state = Finished;
             else if (state == Dequeued)
                 // `wait()` threw: the request was failed by the scheduler. Finish it as the destructor would;
