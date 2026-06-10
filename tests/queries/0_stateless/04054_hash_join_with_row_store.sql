@@ -51,7 +51,7 @@ SETTINGS max_bytes_for_hash_join_row_store = 55, log_comment = 'rs_04054_filtere
 
 SYSTEM FLUSH LOGS query_log, text_log;
 
-SELECT extract(t.message, 'Initialized Row store with [0-9]+ columns: (.*)\\.')
+SELECT extract(t.message, 'Initialized Row store with ([0-9]+) columns')
 FROM system.text_log t
 INNER JOIN system.query_log q ON t.query_id = q.query_id
 WHERE q.log_comment = 'rs_04054_filtered'
