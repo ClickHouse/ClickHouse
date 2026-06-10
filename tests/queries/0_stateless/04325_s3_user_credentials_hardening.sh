@@ -32,6 +32,7 @@ NC_GCP_OAUTH_NOSIGN="s3_gcp_oauth_nosign_${DB}"
 NC_GCP_OAUTH_CASE="s3_gcp_oauth_case_${DB}"
 NC_NOCREDS="s3_nocreds_${DB}"
 NC_NOSIGN_ROLE="s3_nosign_role_${DB}"
+NC_GCP_ADC="s3_gcp_adc_${DB}"
 
 TABLE="s3_hardening_${DB}"
 DISK="s3_hardening_disk_${DB}"
@@ -56,6 +57,7 @@ cleanup() {
         DROP NAMED COLLECTION IF EXISTS ${NC_GCP_OAUTH_CASE};
         DROP NAMED COLLECTION IF EXISTS ${NC_NOCREDS};
         DROP NAMED COLLECTION IF EXISTS ${NC_NOSIGN_ROLE};
+        DROP NAMED COLLECTION IF EXISTS ${NC_GCP_ADC};
     " > /dev/null
 }
 
@@ -416,3 +418,36 @@ if echo "${backup_nocreds_out}" | grep -q "ACCESS_DENIED"; then
 else
     echo "backup_url_only: pass"
 fi
+
+# `gcp_oauth` with a complete explicit Google ADC triple is a user-supplied credential, so it must be
+# allowed (it then fails minting the token from the bogus triple, but is not rejected with ACCESS_DENIED).
+$CLICKHOUSE_CLIENT -m -q "
+    CREATE NAMED COLLECTION ${NC_GCP_ADC} AS
+        url = 'http://localhost:11111/test/${DB}.tsv',
+        http_client = 'gcp_oauth',
+        google_adc_client_id = 'id',
+        google_adc_client_secret = 'secret',
+        google_adc_refresh_token = 'token';
+"
+gcp_adc_out="$($CLICKHOUSE_CLIENT -q "SELECT * FROM s3(${NC_GCP_ADC}, format = 'TSV', structure = 'x UInt8')" 2>&1)"
+if echo "${gcp_adc_out}" | grep -q "ACCESS_DENIED"; then
+    echo "gcp_oauth_adc: fail (${gcp_adc_out//$'\n'/ })"
+else
+    echo "gcp_oauth_adc: pass"
+fi
+
+# An explicit anonymous dynamic S3 disk (`use_environment_credentials = 0`, no keys, no role): it asks for no
+# server-managed credential, so it must be allowed (unsigned). It then fails contacting S3, not ACCESS_DENIED.
+disk_anon_out="$($CLICKHOUSE_CLIENT -q "
+    CREATE TABLE ${TABLE}_anon (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(
+        name = '${DISK}_anon',
+        type = s3,
+        endpoint = 'http://localhost:11111/test/${DB}_anon/',
+        use_environment_credentials = 0)" 2>&1)"
+if echo "${disk_anon_out}" | grep -q "ACCESS_DENIED"; then
+    echo "disk_anonymous: fail (${disk_anon_out//$'\n'/ })"
+else
+    echo "disk_anonymous: pass"
+fi
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${TABLE}_anon SYNC" > /dev/null 2>&1

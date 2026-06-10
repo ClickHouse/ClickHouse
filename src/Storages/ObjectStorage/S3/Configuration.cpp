@@ -115,6 +115,9 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "metadata_service", /// For GCP
     "service_account", /// For GCP
     "request_token_path", /// For GCP
+    "google_adc_client_id", /// For GCP (explicit Application Default Credentials triple)
+    "google_adc_client_secret", /// For GCP
+    "google_adc_refresh_token", /// For GCP
 };
 
 String StorageS3Configuration::getDataSourceDescription() const
@@ -259,6 +262,12 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->auth_settings[S3AuthSetting::service_account] = collection.getOrDefault<String>("service_account", "");
     s3_settings->auth_settings[S3AuthSetting::metadata_service] = collection.getOrDefault<String>("metadata_service", "");
     s3_settings->auth_settings[S3AuthSetting::request_token_path] = collection.getOrDefault<String>("request_token_path", "");
+    /// Explicit Google Application Default Credentials triple: with `http_client = gcp_oauth` it is a
+    /// user-supplied credential, so the restriction allows it instead of minting a token from the server's
+    /// GCP metadata service.
+    s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = collection.getOrDefault<String>("google_adc_client_id", "");
+    s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = collection.getOrDefault<String>("google_adc_client_secret", "");
+    s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = collection.getOrDefault<String>("google_adc_refresh_token", "");
 
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));

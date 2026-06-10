@@ -71,6 +71,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     bool has_google_adc_client_id = false;
     bool has_google_adc_client_secret = false;
     bool has_google_adc_refresh_token = false;
+    bool use_environment_credentials_off = false;
+    bool has_role_arn = false;
 
     /// `from_env`/`from_zk` substitute the value from a server-side source (an environment variable or a
     /// ZooKeeper node), so for credential/auth/type fields the literal placeholder must not be treated as a
@@ -139,6 +141,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             has_google_adc_client_secret = !value_str.empty() && !indirect;
         else if (key == "google_adc_refresh_token")
             has_google_adc_refresh_token = !value_str.empty() && !indirect;
+        else if (key == "use_environment_credentials")
+            use_environment_credentials_off = !indirect && (value_str == "0" || boost::iequals(value_str, "false"));
+        else if (key == "role_arn")
+            has_role_arn = !value_str.empty() && !indirect;
 
         if (key == "include")
         {
@@ -191,19 +197,24 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         const bool has_explicit_gcp_adc
             = has_google_adc_client_id && has_google_adc_client_secret && has_google_adc_refresh_token;
 
-        /// `gcp_oauth` authenticates with a bearer token rather than S3 keys: it needs a complete explicit
-        /// ADC triple, otherwise the token comes from the server's GCP metadata service. Any other S3 disk
-        /// needs a complete explicit key pair or NOSIGN. Substitutions on the type or credential/auth fields
-        /// and `include` are rejected outright, since the resolved value could be a server-managed credential.
+        /// An explicit anonymous form is allowed: an explicit key pair, `no_sign_request`, or an explicit
+        /// `use_environment_credentials = 0` with no `role_arn` (the request then goes unsigned, the same as
+        /// any other user query that asks for no server-managed credentials). `gcp_oauth` authenticates with a
+        /// bearer token rather than S3 keys, so it needs a complete explicit ADC triple, otherwise the token
+        /// comes from the server's GCP metadata service. Everything else (no credentials with the default
+        /// `use_environment_credentials = 1`, a `role_arn` without explicit keys, substitutions on the type or
+        /// credential/auth fields, or `include`) could resolve a server-managed credential and is refused.
+        const bool allowed_anonymous = use_environment_credentials_off && !has_role_arn;
         const bool denied = type_is_indirect || has_include || has_indirect_auth_field
-            || (wants_gcp_oauth ? !has_explicit_gcp_adc : (!has_explicit_credentials && !has_no_sign_request));
+            || (wants_gcp_oauth ? !has_explicit_gcp_adc
+                                : (!has_explicit_credentials && !has_no_sign_request && !allowed_anonymous));
         if (denied)
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
                 "A dynamic S3 disk created from user SQL must provide a complete explicit "
-                "`access_key_id`/`secret_access_key` pair or `no_sign_request` (or, for "
-                "`http_client = gcp_oauth`, a complete explicit Google ADC triple), with literal values and "
-                "no `include`. It may not fall back to the server's own credentials. Enable the setting "
+                "`access_key_id`/`secret_access_key` pair, `no_sign_request`, or `use_environment_credentials = 0` "
+                "(or, for `http_client = gcp_oauth`, a complete explicit Google ADC triple), with literal values "
+                "and no `include`. It may not fall back to the server's own credentials. Enable the setting "
                 "`s3_allow_server_credentials_in_user_queries` to allow it.");
     }
 
