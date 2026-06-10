@@ -35,6 +35,8 @@
       "Bash(gh api:*)"
     ],
     "allow": [
+      "Bash(mkdir -p tmp/investigate:*)",
+      "Bash(command -v:*)",
       "Bash(node .claude/tools/fetch_ci_report.js:*)",
       "Bash(python3 .claude/tools/fetch_perf_report.py:*)",
       "Bash(python3 .claude/tools/analyze-assembly.py:*)",
@@ -59,6 +61,8 @@
       "Bash(git show:*)",
       "Bash(git status)",
       "Bash(git diff:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git cat-file:*)",
       "WebFetch(domain:play.clickhouse.com)",
       "WebFetch(domain:s3.amazonaws.com)",
       "WebFetch(domain:github.com)"

@@ -71,12 +71,17 @@ the step-4 download) and rely on the issue body's failure output plus step 3 (do
 missing `node` as a fatal error):
 
 ```bash
-command -v node >/dev/null || echo "node not available — skipping fetch_ci_report.js, using step 3"
-node .claude/tools/fetch_ci_report.js "$0" --failed --cidb > tmp/investigate/failed.txt 2>&1
+if command -v node >/dev/null; then
+  node .claude/tools/fetch_ci_report.js "$0" --failed --cidb > tmp/investigate/failed.txt 2>&1
+else
+  echo "node not available — skipping fetch_ci_report.js, using step 3"
+fi
 ```
 
-This pulls the failed tests **and their output** straight from the praktika `result_*.json`
-(no copy-paste) and prints a CIDB link per failed test. Read `tmp/investigate/failed.txt`.
+When the `node` branch ran, this pulls the failed tests **and their output** straight from the
+praktika `result_*.json` (no copy-paste) and prints a CIDB link per failed test; read
+`tmp/investigate/failed.txt`. When `node` was absent, `failed.txt` does not exist — skip reading
+it and rely on the issue body's failure output plus step 3.
 
 - If `$0` is a PR URL with many reports and the noise is high, narrow with `--report <n>`
   after listing reports (run the tool with no `--failed` to see the index).
@@ -141,6 +146,7 @@ FROM checks
 WHERE check_start_time >= now() - INTERVAL 90 DAY
   AND test_name IN ( '<test1>', '<test2>', ... )
   AND (pull_request_number = 0 OR base_ref IN ('master',''))
+  AND pull_request_number != <investigated PR>
 GROUP BY test_name
 ORDER BY fail_7d DESC
 FORMAT TabSeparatedWithNames
@@ -149,6 +155,14 @@ FORMAT TabSeparatedWithNames
 
 The `pull_request_number = 0 OR base_ref IN ('master','')` filter restricts to master commits
 and PRs targeting master, dropping fork-PR noise.
+
+**Exclude the PR you are investigating** (`AND pull_request_number != <PR>`, the number from
+step 1). Its own failing checks carry `base_ref='master'`, so without this clause they satisfy
+the filter above and inflate `fail_<window>d` — a real regression that fails *only* in this PR
+would then read as `fail_<window>d >= 1` and be misclassified `FLAKY`, skipping root-cause
+analysis. The remaining rows (true master + *other* PRs) are exactly the independent signal the
+flaky verdict needs. When investigating master directly or an issue with no associated PR, there
+is no PR to exclude — drop the clause.
 
 **Never `GROUP BY` over or filter with `LIKE` on `test_context_raw`** — that column holds the
 full test output and a 90-day scan over it times out (60 s limit). The aggregate query above is
@@ -165,6 +179,7 @@ WHERE check_start_time >= now() - INTERVAL 90 DAY
   AND test_name = '<test>'
   AND test_status IN ('FAIL','ERROR')
   AND (pull_request_number = 0 OR base_ref IN ('master',''))
+  AND pull_request_number != <investigated PR>
 ORDER BY day DESC
 FORMAT TabSeparatedWithNames
 "
