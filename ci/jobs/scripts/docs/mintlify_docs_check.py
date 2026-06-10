@@ -88,6 +88,26 @@ def replace(src, dest):
     shutil.copytree(src, dest)
 
 
+def resolve_replace_dest(docs_root, dest):
+    # `replace` wipes its destination with rmtree, so a DEST that escapes the
+    # cloned docs tree (absolute, `..`, or a symlink pointing out) would delete
+    # an unrelated directory on the host. Resolve it against the docs root and
+    # refuse anything that lands outside, including the docs root itself.
+    if not dest or os.path.isabs(dest):
+        raise ValueError(
+            f"--replace destination must be a relative path inside the docs "
+            f"root: '{dest}'"
+        )
+    root = os.path.realpath(docs_root)
+    resolved = os.path.realpath(os.path.join(root, dest))
+    if not resolved.startswith(root + os.sep):
+        raise ValueError(
+            f"--replace destination '{dest}' resolves to '{resolved}', "
+            f"outside the docs root '{root}'"
+        )
+    return resolved
+
+
 def run_check(docs_root, name, command):
     # Checks run from the docs root. A command may reach a sibling CI script via
     # the docs root (e.g. ../ci/jobs/scripts/docs/foo.py); that path resolves
@@ -126,7 +146,7 @@ def main(argv=None):
         parts = spec.split(":")
         if len(parts) != 2:
             raise ValueError(f"Invalid --replace '{spec}'. Expected SRC:DEST.")
-        replace(parts[0], os.path.join(docs_root, parts[1]))
+        replace(parts[0], resolve_replace_dest(docs_root, parts[1]))
 
     results = [(name, run_check(docs_root, name, command))
                for name, command in DEFAULT_CHECKS]
