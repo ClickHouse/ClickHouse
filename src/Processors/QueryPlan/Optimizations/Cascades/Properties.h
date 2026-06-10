@@ -63,8 +63,13 @@ struct ExpressionPropertiesHash
         boost::hash_combine(h, props.distribution.is_replicated);
         boost::hash_combine(h, props.sort_limit);
         for (const auto & col_set : props.distribution.columns)
+        {
+            /// Equal sets must hash equally regardless of insertion order.
+            size_t set_hash = 0;
             for (const auto & name : col_set)
-                boost::hash_combine(h, name);
+                set_hash += std::hash<String>()(name);
+            boost::hash_combine(h, set_hash);
+        }
         for (const auto & type_name : props.distribution.hash_type_names)
             boost::hash_combine(h, type_name);
         for (const auto & col : props.sorting)
