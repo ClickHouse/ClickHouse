@@ -55,11 +55,16 @@ constexpr Int32 OOM_CANARY_SIGNAL_CODE = SI_KERNEL;
 
 std::optional<std::string> getCgroupMemoryEventsPath()
 {
-    if (auto cgroup_path = getCgroupsV2PathContainingFile("memory.events"))
-        return (std::filesystem::path(*cgroup_path) / "memory.events").string();
+    /// `memory.events.local`, not `memory.events`: since Linux 5.2 the latter
+    /// aggregates events from descendant cgroups, so an OOM kill in a child
+    /// cgroup would be indistinguishable from canary evidence. The local file
+    /// exists on every kernel the canary supports (it already requires
+    /// Linux >= 5.3 for `pidfd_open`).
+    if (auto cgroup_path = getCgroupsV2PathContainingFile("memory.events.local"))
+        return (std::filesystem::path(*cgroup_path) / "memory.events.local").string();
 
     LOG_WARNING(getLogger("OOMCanary"),
-        "Cannot observe cgroup v2 `memory.events`; OOM canary will relaunch after `SIGKILL`, "
+        "Cannot observe cgroup v2 `memory.events.local`; OOM canary will relaunch after `SIGKILL`, "
         "but will not run the OOM response without cgroup-local OOM evidence");
     return std::nullopt;
 }
@@ -187,10 +192,10 @@ pid_t OOMCanary::spawnCanary(size_t size_bytes)
 
 std::optional<OOMCanary::OOMKillCounter> OOMCanary::readOOMKillCounter()
 {
-    /// `memory.events` is monotonic for the current cgroup and is the only
-    /// signal we use for OOM response. Host-wide counters such as
-    /// `/proc/vmstat:oom_kill` are intentionally ignored because another
-    /// workload on the same host can advance them.
+    /// `memory.events.local` is monotonic for the current cgroup and is the
+    /// only signal we use for OOM response. Broader counters — hierarchical
+    /// `memory.events` or host-wide `/proc/vmstat:oom_kill` — are intentionally
+    /// ignored because unrelated processes can advance them.
     static const std::optional<std::string> path = getCgroupMemoryEventsPath();
     if (!path)
         return std::nullopt;

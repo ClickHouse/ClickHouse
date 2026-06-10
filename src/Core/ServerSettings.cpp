@@ -1509,8 +1509,8 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     Experimental. Enable the OOM canary: a sacrificial child process that attracts the Linux OOM killer
     before the main ClickHouse server process, giving the server a chance to shed load.
     Requires Linux >= 5.3 (for `pidfd_open`); the canary is disabled at startup on older kernels.
-    The OOM response requires cgroup v2 `memory.events` OOM-kill evidence and may run global query
-    cancellation, merge cancellation, and `system.crash_log` writes.
+    The OOM response requires cgroup v2 `memory.events.local` OOM-kill evidence and may run global
+    query cancellation, merge cancellation, and `system.crash_log` writes.
     The canary cannot protect the server when cgroup v2 `memory.oom.group` is enabled for the
     server's cgroup: the kernel then kills the whole cgroup as one unit, including the server,
     so the OOM response never runs. A warning is logged at startup in this mode.
@@ -1527,8 +1527,8 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     When true, the OOM canary is automatically relaunched after the canary process dies for any
     reason other than a permanent setup failure or server shutdown — including OOM kills, other
     signals, and transient exits — subject to `oom_canary_max_rapid_relaunches` and the backoff
-    settings. The OOM response sequence itself runs only when cgroup v2 `memory.events` provides
-    OOM-kill evidence.
+    settings. The OOM response sequence itself runs only when cgroup v2 `memory.events.local`
+    provides OOM-kill evidence.
     )", 0) \
     DECLARE(UInt64, oom_canary_max_rapid_relaunches, 10, R"(
     Maximum number of consecutive rapid OOM canary relaunches before automatic relaunch is disabled

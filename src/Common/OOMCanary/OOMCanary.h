@@ -78,10 +78,10 @@ private:
 
     using OOMKillCounter = StrongTypedef<uint64_t, struct OOMKillCounterTag>;
 
-    /// Read the cgroup v2 `memory.events:oom_kill` counter. This is deliberately
-    /// cgroup-local; a global host counter can be advanced by unrelated processes
-    /// and would make manual canary kills look like OOM events. Returns nullopt
-    /// when the path is unset or the read fails.
+    /// Read the cgroup v2 `memory.events.local:oom_kill` counter. This is
+    /// deliberately cgroup-local; hierarchical or host-wide counters can be
+    /// advanced by unrelated processes and would make manual canary kills look
+    /// like OOM events. Returns nullopt when the path is unset or the read fails.
     static std::optional<OOMKillCounter> readOOMKillCounter();
 
     static bool oomKilled(std::optional<OOMKillCounter> before, std::optional<OOMKillCounter> after);
