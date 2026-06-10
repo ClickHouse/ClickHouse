@@ -1,5 +1,7 @@
 -- Tags: shard, long
 SET max_rows_to_read = '55M';
+-- Bound this query's memory so it is not the OvercommitTracker victim under shared-runner pressure.
+SET max_threads = 4;
 
 DROP TABLE IF EXISTS group_uniq_arr_str;
 CREATE TABLE group_uniq_arr_str ENGINE = Memory AS
