@@ -240,7 +240,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
         if (i >= hyperrectangle.size())
             break;
 
-        if (!column_type->isNullable() && (hyperrectangle[i].left.isNull() || hyperrectangle[i].right.isNull()))
+        if (!isNullableOrLowCardinalityNullable(column_type) && (hyperrectangle[i].left.isNull() || hyperrectangle[i].right.isNull()))
             break;
 
         String file_name = "minmax_" + getFileColumnName(column_name, storage_settings, part_storage) + ".idx";
