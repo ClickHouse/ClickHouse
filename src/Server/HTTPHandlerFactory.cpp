@@ -177,11 +177,7 @@ static inline auto createHandlersFactoryFromConfig(
             {
                 main_handler_factory->addHandler(createPredefinedHandlerFactory(server, config, prefix + "." + key, common_headers_override));
             }
-            else if (handler_type == "prometheus"
-                || handler_type == "expose_metrics"
-                || handler_type == "remote_write"
-                || handler_type == "remote_read"
-                || handler_type == "query_api")
+            else if (handler_type.starts_with("prometheus"))
             {
                 main_handler_factory->addHandler(
                     createPrometheusHandlerFactoryForHTTPRule(server, config, prefix + "." + key, async_metrics, common_headers_override));

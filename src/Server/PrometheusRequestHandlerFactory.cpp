@@ -113,6 +113,30 @@ namespace
         return res;
     }
 
+    /// Parses the protocol type specified in the <type> element of a handler's configuration.
+    PrometheusRequestHandlerConfig::Type parseHandlerType(std::string_view full_type)
+    {
+        /// Strip a "prometheus_" prefix from the type (e.g. "prometheus_remote_write" -> "remote_write").
+        /// "prometheus" alone is an alias for "expose_metrics".
+        std::string_view type = full_type;
+        if (type == "prometheus")
+            type = "expose_metrics";
+        else if (type.starts_with("prometheus_"))
+            type = type.substr(strlen("prometheus_"));
+
+        if (type == "expose_metrics")
+            return PrometheusRequestHandlerConfig::Type::ExposeMetrics;
+        if (type == "remote_write")
+            return PrometheusRequestHandlerConfig::Type::RemoteWrite;
+        if (type == "remote_read")
+            return PrometheusRequestHandlerConfig::Type::RemoteRead;
+        if (type == "query_api")
+            return PrometheusRequestHandlerConfig::Type::QueryAPI;
+
+        throw Exception(
+            ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown type {} is specified in the configuration for a prometheus protocol", full_type);
+    }
+
     /// Parses a configuration like this:
     /// <type>expose_metrics</type>
     /// <metrics>true</metrics>
@@ -124,18 +148,19 @@ namespace
     /// <table>db.time_series_table_name</table>
     PrometheusRequestHandlerConfig parseHandlerConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
     {
-        String type = config.getString(config_prefix + ".type");
-
-        if (type == "prometheus" || type == "expose_metrics")
-            return parseExposeMetricsConfig(config, config_prefix);
-        if (type == "remote_write")
-            return parseRemoteWriteConfig(config, config_prefix);
-        if (type == "remote_read")
-            return parseRemoteReadConfig(config, config_prefix);
-        if (type == "query_api")
-            return parseQueryAPIConfig(config, config_prefix);
-        throw Exception(
-            ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown type {} is specified in the configuration for a prometheus protocol", type);
+        auto type = parseHandlerType(config.getString(config_prefix + ".type"));
+        switch (type)
+        {
+            case PrometheusRequestHandlerConfig::Type::ExposeMetrics:
+                return parseExposeMetricsConfig(config, config_prefix);
+            case PrometheusRequestHandlerConfig::Type::RemoteWrite:
+                return parseRemoteWriteConfig(config, config_prefix);
+            case PrometheusRequestHandlerConfig::Type::RemoteRead:
+                return parseRemoteReadConfig(config, config_prefix);
+            case PrometheusRequestHandlerConfig::Type::QueryAPI:
+                return parseQueryAPIConfig(config, config_prefix);
+        }
+        UNREACHABLE();
     }
 
     /// Returns true if the protocol represented by a passed config can be handled.
