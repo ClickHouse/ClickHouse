@@ -7,6 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+
 # Immutability.
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_alter_table (\`n\` Tuple(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE test_alter_table MODIFY SETTING allow_tuple_element_aggregation = 1;" 2>&1 | grep -m 1 -o -F 'READONLY_SETTING'
