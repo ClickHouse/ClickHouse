@@ -74,15 +74,18 @@ void IRuntimeFilter::finishInsert()
     if (filters_to_merge != 0)
         return;
 
-    inserts_are_finished = true;
-
+    /// Finalize before publishing readiness, so a concurrent find() never sees a half-built filter.
     finishInsertImpl();
+
+    inserts_are_finished = true;
 }
 
 ColumnPtr IRuntimeFilter::find(const ColumnWithTypeAndName & values) const
 {
+    /// Best-effort pre-filter: if the build side is not finished yet (probe started early), pass
+    /// all rows through. Correctness comes from the JOIN itself, so passing rows is always safe.
     if (!inserts_are_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before building it was finished");
+        return DataTypeUInt8().createColumnConst(values.column->size(), true);
 
     const size_t rows_in_block = values.column->size();
     if (shouldSkip(rows_in_block))
