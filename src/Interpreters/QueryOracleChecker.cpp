@@ -8,6 +8,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -468,6 +469,41 @@ bool referencesAnyAlias(const ASTPtr & ast, const std::unordered_set<String> & a
     return false;
 }
 
+/// Settings that cap how much a query reads/produces, plus their overflow
+/// modes. With `*_overflow_mode = 'break'` they silently truncate results,
+/// and the truncation is asymmetric between oracle rewrites — e.g. a trivial
+/// `count()` reads no rows at all while the TLP partitions read and get cut
+/// at `max_rows_to_read`. A query carrying any of these inline (top level or
+/// in a subquery) cannot be compared; session-level leakage from a seed's
+/// `SET` is neutralized in `makeOracleContext`.
+const std::unordered_set<String> truncating_settings = {
+    "max_rows_to_read", "max_bytes_to_read", "read_overflow_mode",
+    "max_rows_to_read_leaf", "max_bytes_to_read_leaf", "read_overflow_mode_leaf",
+    "max_rows_to_group_by", "group_by_overflow_mode",
+    "max_rows_to_sort", "max_bytes_to_sort", "sort_overflow_mode",
+    "max_result_rows", "max_result_bytes", "result_overflow_mode",
+    "max_rows_in_distinct", "max_bytes_in_distinct", "distinct_overflow_mode",
+    "max_rows_to_transfer", "max_bytes_to_transfer", "transfer_overflow_mode",
+    "max_rows_in_join", "max_bytes_in_join", "join_overflow_mode",
+    "max_rows_in_set", "max_bytes_in_set", "set_overflow_mode",
+    "max_execution_time", "max_execution_time_leaf", "timeout_overflow_mode", "timeout_overflow_mode_leaf",
+    "max_estimated_execution_time",
+};
+
+bool hasTruncatingInlineSettings(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * set_query = ast->as<ASTSetQuery>())
+        for (const auto & change : set_query->changes)
+            if (truncating_settings.contains(change.name))
+                return true;
+    for (const auto & child : ast->children)
+        if (hasTruncatingInlineSettings(child))
+            return true;
+    return false;
+}
+
 /// True if `clause` defines an alias that is referenced anywhere else in the
 /// SELECT. ClickHouse aliases are visible query-wide, so an oracle rewrite
 /// that removes or replaces such a clause (TLP's reference query drops WHERE
@@ -749,6 +785,26 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     /// becomes NULL while `countIf` still aggregates every row and returns 0.
     /// Pin it off so both sides of every comparison use standard semantics.
     oracle_context->setSetting("aggregate_functions_null_for_empty", Field(false));
+    /// Neutralize session-leaked read/result caps (a seed's `SET
+    /// max_rows_to_read = N, read_overflow_mode = 'break'` would truncate
+    /// oracle sub-queries asymmetrically — see `truncating_settings`).
+    /// `max_result_rows`/`max_result_bytes`/`result_overflow_mode` and
+    /// `max_execution_time` are pinned above/below to the oracle's own caps,
+    /// which throw rather than truncate.
+    for (const auto * cap : {"max_rows_to_read", "max_bytes_to_read",
+                             "max_rows_to_read_leaf", "max_bytes_to_read_leaf",
+                             "max_rows_to_group_by", "max_rows_to_sort", "max_bytes_to_sort",
+                             "max_rows_in_distinct", "max_bytes_in_distinct",
+                             "max_rows_to_transfer", "max_bytes_to_transfer",
+                             "max_rows_in_join", "max_bytes_in_join",
+                             "max_rows_in_set", "max_bytes_in_set"})
+        oracle_context->setSetting(cap, Field(UInt64(0)));
+    for (const auto * mode : {"read_overflow_mode", "read_overflow_mode_leaf",
+                              "group_by_overflow_mode", "sort_overflow_mode",
+                              "distinct_overflow_mode", "transfer_overflow_mode",
+                              "join_overflow_mode", "set_overflow_mode",
+                              "timeout_overflow_mode"})
+        oracle_context->setSetting(mode, String("throw"));
     /// Cap result size so oracle sub-queries (especially TLP's UNION ALL of three
     /// partitions) cannot allocate unbounded memory. We use `result_overflow_mode=throw`
     /// — `break` would silently truncate the result before the cap fires, and the
@@ -1998,6 +2054,12 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (!select)
     {
         LOG_TRACE(logger, "Oracle skip: not a simple SELECT");
+        return false;
+    }
+
+    if (hasTruncatingInlineSettings(query_ast))
+    {
+        LOG_TRACE(logger, "Oracle skip: query carries truncating settings (read/result caps)");
         return false;
     }
 
