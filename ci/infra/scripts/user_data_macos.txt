@@ -2,15 +2,18 @@
 # Bootstrap script for macOS GitHub Actions runners.
 # Bootstraps Homebrew + Python, then hands off to the runner-init script
 # fetched from S3 for the rest of provisioning (CloudWatch agent,
-# actions-runner install, etc.). `deploy` reconciles user_data on every run, so
-# changes to this file stop the instance, install the new user_data, and start
-# it again.
+# actions-runner install, etc.). After changing this file, push it to the
+# running fleet with `ci/infra/scripts/update_userdata.py`, which stops each
+# instance, installs the new user_data, and starts it again.
 
 set -xeuo pipefail
 trap reboot EXIT
 
 USER=ec2-user
-export HOME="${HOME:-/Users/$USER}"
+# Pin HOME to the target user. In the EC2 user_data context this script runs as
+# root, where HOME may be /var/root; the venv created below (and the runner-init
+# handoff that runs `$HOME/venv/bin/python`) must resolve under /Users/$USER.
+export HOME="/Users/$USER"
 cd "$HOME"
 
 # Install Homebrew if not already installed
@@ -27,10 +30,13 @@ else
   sudo -u "$USER" -i brew update
 fi
 
-# Install Python. `brew update` above (or a fresh Homebrew install) means this
-# resolves to the latest formula, so a separate `brew upgrade` is unnecessary.
+# Install Python, then upgrade it: `brew install` is a no-op on an already
+# installed (even outdated) python@3, so a separate `brew upgrade` is needed for
+# interpreter bumps to propagate on existing hosts. `brew upgrade` is a no-op
+# when python@3 is already current (e.g. right after a fresh install).
 echo "Installing python@3..."
 sudo -u "$USER" -i brew install python@3
+sudo -u "$USER" -i brew upgrade python@3
 
 # Install / upgrade boto3 — the only third-party dependency of runner-init.py.
 # `--upgrade` keeps it at the latest version on re-runs triggered by a

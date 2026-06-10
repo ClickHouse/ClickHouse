@@ -87,13 +87,18 @@ def get_live_user_data(ec2, instance_id) -> str:
 
 
 def strip_comments(text) -> str:
-    """Drop full-line `#` comments so the match ignores comment-only edits.
+    """Drop every line whose first non-blank character is `#` so the match
+    ignores comment-only edits. The shebang (`#!`) is kept - it is functional.
 
     Comments do not affect the booted runner, and pushing a comment-only change
     would cycle the whole Mac fleet through multi-hour Dedicated Host scrubs for
-    nothing. The shebang (`#!`) is kept - it is functional. Only lines whose
-    first non-blank character is `#` are dropped, so a `#` inside a string or
-    heredoc is left untouched.
+    nothing.
+
+    This is a line-level strip, not a shell parser: a `#`-leading line inside a
+    heredoc or quoted string would also be dropped, which would wrongly equate
+    two functionally different scripts. That is acceptable here because the
+    `user_data` bootstrap is a flat script with no such lines; do not reuse this
+    on arbitrary scripts without revisiting that assumption.
     """
     return "\n".join(
         line
