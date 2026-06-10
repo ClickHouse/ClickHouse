@@ -18,16 +18,14 @@ Expression (Project names)
             JoinLogical (Shuffle HashJoin )
               ShuffleExchange
                 JoinLogical (Broadcast HashJoin )
-                  JoinLogical (Shuffle HashJoin  swapped)
-                    Expression (Change column names to column identifiers)
+                  JoinLogical (Broadcast HashJoin )
+                    JoinLogical (Shuffle HashJoin )
                       ShuffleExchange
-                        ReadFromMergeTree (ParallelRead default.supplier)
-                    ShuffleExchange
-                      JoinLogical (Broadcast HashJoin  swapped)
-                        Expression (Change column names to column identifiers)
-                          ReadFromMergeTree (ParallelRead default.partsupp)
-                        BroadcastExchange
-                          JoinLogical (Local HashJoin )
+                        JoinLogical (Shuffle HashJoin  swapped)
+                          Expression (Change column names to column identifiers)
+                            ShuffleExchange
+                              ReadFromMergeTree (ParallelRead default.partsupp)
+                          ScatterExchange
                             Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
                               Aggregating
                                 Expression ((Before GROUP BY + ))
@@ -42,10 +40,13 @@ Expression (Project names)
                                           ReadFromMergeTree (default.nation)
                                         Expression (((WHERE + Renaming correlated columns to equivalent expressions in subquery) + Change column names to column identifiers))
                                           ReadFromMergeTree (default.region)
-                            Expression ((WHERE + Change column names to column identifiers))
-                              ReadFromMergeTree (default.part)
-                  Expression (Change column names to column identifiers)
-                    ReadFromMergeTree (ReplicatedRead default.nation)
+                      Expression (Change column names to column identifiers)
+                        ShuffleExchange
+                          ReadFromMergeTree (ParallelRead default.supplier)
+                    Expression (Change column names to column identifiers)
+                      ReadFromMergeTree (ReplicatedRead default.nation)
+                  Expression ((WHERE + Change column names to column identifiers))
+                    ReadFromMergeTree (ReplicatedRead default.part)
               Expression ((WHERE + Change column names to column identifiers))
                 ShuffleExchange
                   ReadFromMergeTree (ParallelRead default.region)
@@ -94,28 +95,28 @@ Expression (Project names)
         GatherExchange
           Aggregating
             Expression ((Before GROUP BY + ))
-              JoinLogical (Shuffle HashJoin )
-                ShuffleExchange
-                  JoinLogical (Broadcast HashJoin  swapped)
+              JoinLogical (Broadcast HashJoin )
+                JoinLogical (Shuffle HashJoin  swapped)
+                  Expression (Change column names to column identifiers)
+                    ShuffleExchange
+                      ReadFromMergeTree (ParallelRead default.lineitem)
+                  ShuffleExchange
                     JoinLogical (Shuffle HashJoin  swapped)
-                      Expression (Change column names to column identifiers)
-                        ShuffleExchange
-                          ReadFromMergeTree (ParallelRead default.lineitem)
                       Expression ((WHERE + Change column names to column identifiers))
                         ShuffleExchange
                           ReadFromMergeTree (ParallelRead default.orders)
-                    BroadcastExchange
-                      JoinLogical (Local HashJoin  swapped)
-                        Expression (Change column names to column identifiers)
-                          ReadFromMergeTree (default.supplier)
-                        JoinLogical (Local HashJoin )
+                      ShuffleExchange
+                        JoinLogical (Broadcast HashJoin  swapped)
                           Expression (Change column names to column identifiers)
-                            ReadFromMergeTree (default.nation)
-                          Expression ((WHERE + Change column names to column identifiers))
-                            ReadFromMergeTree (default.region)
+                            ReadFromMergeTree (ParallelRead default.customer)
+                          BroadcastExchange
+                            JoinLogical (Local HashJoin )
+                              Expression (Change column names to column identifiers)
+                                ReadFromMergeTree (default.nation)
+                              Expression ((WHERE + Change column names to column identifiers))
+                                ReadFromMergeTree (default.region)
                 Expression (Change column names to column identifiers)
-                  ShuffleExchange
-                    ReadFromMergeTree (ParallelRead default.customer)
+                  ReadFromMergeTree (ReplicatedRead default.supplier)
 -- Q06
 Expression ((Project names + Projection))
   MergingAggregated

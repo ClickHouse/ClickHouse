@@ -3,8 +3,8 @@ Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
       Aggregating
-        Expression (((Before GROUP BY + WHERE) + Discarding unused columns))
-          JoinLogical (Broadcast HashJoin )
+        Expression ((Before GROUP BY + WHERE))
+          JoinLogical (Broadcast HashJoin  swapped)
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ParallelRead default.test_orders)
             Expression (Create result for always true EXISTS expression)
