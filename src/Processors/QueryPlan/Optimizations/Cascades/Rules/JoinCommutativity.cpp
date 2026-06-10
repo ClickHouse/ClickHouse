@@ -34,6 +34,11 @@ bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const Expres
     if (join.kind == JoinKind::Inner && join.strictness == JoinStrictness::Any)
         return false;
 
+    /// ASOF is not commutative: the closest matching value is resolved per left
+    /// row, so swapping sides changes the result.
+    if (join.strictness == JoinStrictness::Asof)
+        return false;
+
     return
         join.kind == JoinKind::Inner ||
         join.kind == JoinKind::Cross ||
