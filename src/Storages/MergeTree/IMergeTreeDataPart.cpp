@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionFactory.h>
@@ -275,10 +276,17 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAnd
         FieldRef min_value;
         FieldRef max_value;
         const ColumnWithTypeAndName & column = block.getColumnOrSubcolumnByName(column_name);
-        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.column.get()))
-            column_nullable->getExtremesNullLast(min_value, max_value, 0, column.column->size());
+        ColumnPtr column_ptr = column.column;
+
+        /// `LowCardinality(Nullable)` must go through `getExtremesNullLast` as well: `ColumnLowCardinality::getExtremes`
+        /// ignores NULLs, and a range without NULL_LAST would let the index prune parts that contain NULL.
+        if (const auto * column_lc = typeid_cast<const ColumnLowCardinality *>(column_ptr.get()); column_lc && column_lc->nestedIsNullable())
+            column_ptr = column_lc->convertToFullColumn();
+
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column_ptr.get()))
+            column_nullable->getExtremesNullLast(min_value, max_value, 0, column_ptr->size());
         else
-            column.column->getExtremes(min_value, max_value, 0, column.column->size());
+            column_ptr->getExtremes(min_value, max_value, 0, column_ptr->size());
 
         if (!initialized)
             hyperrectangle.emplace_back(min_value, true, max_value, true);
