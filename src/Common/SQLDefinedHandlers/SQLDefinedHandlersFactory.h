@@ -70,6 +70,7 @@ private:
     /// version, so two replicas cannot concurrently commit overlapping handlers under different names.
     void createReplicated(const ASTCreateHandlerQuery & query, const SQLDefinedHandlerPtr & handler, std::lock_guard<std::mutex> & lock);
     void updateReplicated(const ASTCreateHandlerQuery & alter_query, std::lock_guard<std::mutex> & lock);
+    void removeReplicated(const ASTDropHandlerQuery & query, std::lock_guard<std::mutex> & lock);
 
     void updateFunc();
 };

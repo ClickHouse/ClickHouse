@@ -266,3 +266,47 @@ def test_concurrent_overlapping_create_is_serialized(started_cluster):
             )
 
         cleanup()
+
+
+def test_drop_resolves_against_persistent_state(started_cluster):
+    # On Keeper-backed storage the existence of a handler for a DROP must be resolved against the persistent
+    # store, not the local in-memory snapshot (which may be stale on a replica that has not yet reloaded a
+    # handler created elsewhere). A plain DROP of a handler that exists nowhere is an error; IF EXISTS is a
+    # no-op; and a DROP issued on the replica that did not create the handler still succeeds.
+    for n in (replica1, replica2):
+        n.query("DROP HANDLER IF EXISTS drop_persist_h")
+        n.query_with_retry(
+            "SELECT count() FROM system.handlers WHERE name = 'drop_persist_h'",
+            check_callback=lambda res: res.strip() == "0",
+            retry_count=30,
+            sleep_time=0.5,
+        )
+
+    # Plain DROP of a handler that exists in neither the cache nor Keeper is an error.
+    assert "HANDLER_DOESNT_EXIST" in replica2.query_and_get_error(
+        "DROP HANDLER drop_persist_h"
+    )
+    # IF EXISTS of a missing handler is a silent no-op.
+    replica2.query("DROP HANDLER IF EXISTS drop_persist_h")
+
+    # Create on one replica, wait for it to converge on the other, then drop it from the replica that did
+    # not create it: the drop is resolved against the persistent store, where the handler exists.
+    replica1.query(
+        "CREATE HANDLER drop_persist_h URL '/drop_persist' AS SELECT 1 FORMAT TSV"
+    )
+    replica2.query_with_retry(
+        "SELECT count() FROM system.handlers WHERE name = 'drop_persist_h'",
+        check_callback=lambda res: res.strip() == "1",
+        retry_count=30,
+        sleep_time=0.5,
+    )
+    replica2.query("DROP HANDLER drop_persist_h")
+
+    # The drop is replicated back to the creator.
+    for n in (replica1, replica2):
+        n.query_with_retry(
+            "SELECT count() FROM system.handlers WHERE name = 'drop_persist_h'",
+            check_callback=lambda res: res.strip() == "0",
+            retry_count=30,
+            sleep_time=0.5,
+        )

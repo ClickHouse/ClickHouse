@@ -233,6 +233,12 @@ void SQLDefinedHandlersFactory::removeFromSQL(const ASTDropHandlerQuery & query)
     std::lock_guard lock(mutex);
     loadIfNot(lock);
 
+    if (metadata_storage->isReplicated())
+    {
+        removeReplicated(query, lock);
+        return;
+    }
+
     if (!loaded_handlers.contains(query.handler_name))
     {
         if (query.if_exists)
@@ -240,10 +246,23 @@ void SQLDefinedHandlersFactory::removeFromSQL(const ASTDropHandlerQuery & query)
         throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Cannot drop handler `{}`, because it doesn't exist", query.handler_name);
     }
 
-    /// Use removeIfExists so that a concurrent removal on another replica (Keeper storage) does not
-    /// turn this into a hard error: the local snapshot above already enforced the IF EXISTS contract.
-    metadata_storage->removeIfExists(query.handler_name);
+    metadata_storage->remove(query.handler_name);
     loaded_handlers.erase(query.handler_name);
+    rebuildSnapshot(lock);
+}
+
+void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & query, std::lock_guard<std::mutex> & lock)
+{
+    /// Resolve existence against the persistent store rather than the local snapshot, which may be stale
+    /// on a replica that has not yet reloaded a handler created on another replica. `removeIfExists`
+    /// returns whether a znode was actually removed: for a plain `DROP` a missing handler is an error,
+    /// for `DROP IF EXISTS` it is a no-op. Either way the version-bumping removal is the source of truth.
+    bool removed = metadata_storage->removeIfExists(query.handler_name);
+    if (!removed && !query.if_exists)
+        throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Cannot drop handler `{}`, because it doesn't exist", query.handler_name);
+
+    /// Rebuild the local snapshot from the now-current persistent state; this also re-arms the update watch.
+    loaded_handlers = metadata_storage->getAll();
     rebuildSnapshot(lock);
 }
 
