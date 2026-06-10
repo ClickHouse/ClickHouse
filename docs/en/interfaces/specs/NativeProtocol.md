@@ -737,16 +737,28 @@ Gated by `SSH_AUTHENTICATION` (v54466), and opt-in only. A connection enters the
 | Packet | Code | Direction | Body |
 |--------|------|-----------|------|
 | SSHChallengeRequest | 11 | Client → Server | (no body) |
-| SSHChallenge       | 18 | Server → Client | `String challenge` — the bytes to sign |
-| SSHChallengeResponse | 12 | Client → Server | `String signature` — the SSH-signed challenge |
+| SSHChallenge       | 18 | Server → Client | `String challenge` — random bytes; one component of the string that gets signed (see below) |
+| SSHChallengeResponse | 12 | Client → Server | `String signature` — SSH signature over the concatenation defined below, **not** over the raw challenge |
 
 The flow runs in place of password authentication, and the challenge-response exchange happens **before** ServerHello — the server defers its Hello reply until authentication succeeds:
 
 1. The client sends ClientHello with the SSH marker prefix and an empty password.
 2. The client sends `SSHChallengeRequest` (packet 11). The server has **not** sent ServerHello yet — it processes authentication first and blocks here waiting for this packet.
 3. The server replies with `SSHChallenge` carrying random bytes (packet 18).
-4. The client signs the bytes with its SSH private key and sends `SSHChallengeResponse` (packet 12) with the signature.
-5. The server verifies the signature against the user's registered public key. On success it sends `ServerHello` — the same reply as in the password flow — and the handshake continues normally (Addendum, etc.); on failure it returns an `Exception` and terminates the connection.
+4. The client builds the string to sign and signs **that**, not the raw challenge, then sends `SSHChallengeResponse` (packet 12) with the signature. The signed message is the byte-wise concatenation, with no separators, of four parts in this exact order:
+
+   ```text
+   to_sign = decimal(protocol_version) + default_database + user + challenge
+   ```
+
+   | Part | Source |
+   |------|--------|
+   | `decimal(protocol_version)` | The client's protocol version as a **decimal ASCII string** (e.g. `"54466"`), produced by `std::to_string` — not a VarUInt or fixed-width integer. The server validates using the same protocol version it received in `ClientHello`. |
+   | `default_database` | The `database` field from `ClientHello` (empty string if none). |
+   | `user` | The real user name **with the `" SSH KEY AUTHENTICATION "` marker prefix stripped** — the same name the server recovers after stripping the prefix. |
+   | `challenge` | The raw `challenge` bytes from the `SSHChallenge` packet. |
+
+5. The server verifies the signature against the user's registered public key, reconstructing the same `decimal(protocol_version) + default_database + user + challenge` string. On success it sends `ServerHello` — the same reply as in the password flow — and the handshake continues normally (Addendum, etc.); on failure it returns an `Exception` and terminates the connection. A client that signs only the raw challenge bytes will fail authentication.
 
 ```mermaid
 sequenceDiagram
@@ -758,7 +770,7 @@ sequenceDiagram
     C->>S: SSHChallengeRequest (11)
     Note over C,S: Server has NOT sent ServerHello yet —<br/>it authenticates first and blocks here
     S->>C: SSHChallenge (18) — random bytes to sign
-    C->>S: SSHChallengeResponse (12) — signed challenge
+    C->>S: SSHChallengeResponse (12) — signature over version+db+user+challenge
     alt signature verifies
         S->>C: ServerHello — handshake continues normally
     else verification fails
