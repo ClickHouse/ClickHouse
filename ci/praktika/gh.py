@@ -324,8 +324,7 @@ class GH:
                     rex = re.compile(
                         f"{re.escape(start_tag)}.*{re.escape(end_tag)}", re.DOTALL
                     )
-                    replacement = f"{start_tag}\n{tag_body}\n{end_tag}"
-                    body, _ = rex.subn(lambda _: replacement, body)
+                    body, _ = rex.subn(f"{start_tag}\n{tag_body}\n{end_tag}", body)
                     if verbose:
                         print(
                             f"Updated existing comment [{id_to_update}] tag [{tag}] with [{tag_body}], new [{body}]"
@@ -621,29 +620,23 @@ class GH:
                 os.unlink(temp_file_path)
         return None
 
-    _STATUS_TO_GH = {
-        Result.Status.OK: Result.GHStatus.SUCCESS,
-        Result.Status.FAIL: Result.GHStatus.FAILURE,
-        Result.Status.ERROR: Result.GHStatus.ERROR,
-        Result.Status.SKIPPED: Result.GHStatus.SUCCESS,
-        Result.Status.PENDING: Result.GHStatus.PENDING,
-        Result.Status.RUNNING: Result.GHStatus.PENDING,
-        Result.Status.DROPPED: Result.GHStatus.ERROR,
-        Result.Status.UNKNOWN: Result.GHStatus.FAILURE,
-        Result.Status.XFAIL: Result.GHStatus.SUCCESS,
-        Result.Status.XPASS: Result.GHStatus.FAILURE,
-    }
-
     @classmethod
     def convert_to_gh_status(cls, status):
-        """Map Result.Status value to GitHub commit status API string."""
-        gh = cls._STATUS_TO_GH.get(status)
-        if gh is not None:
-            return gh
-        # Already a GH status string — pass through for idempotency
-        _GH_VALUES = set(cls._STATUS_TO_GH.values())
-        assert status in _GH_VALUES, f"Invalid status [{status}] for GH commit status"
-        return status
+        if status in (
+            Result.Status.PENDING,
+            Result.Status.SUCCESS,
+            Result.Status.FAILED,
+            Result.Status.ERROR,
+        ):
+            return status
+        if status in Result.Status.RUNNING:
+            return Result.Status.PENDING
+        elif status in Result.Status.DROPPED:
+            return Result.Status.ERROR
+        else:
+            assert (
+                False
+            ), f"Invalid status [{status}] to be set as GH commit status.state"
 
     @classmethod
     def print_log_in_group(cls, group_name: str, lines: Union[str, List[str]]):
@@ -674,7 +667,6 @@ class GH:
         )
         info: str = ""
         comment: str = ""
-        extra_links: List[tuple] = dataclasses.field(default_factory=list)
 
         @classmethod
         def from_result(cls, result: Result, sha=""):
@@ -688,36 +680,22 @@ class GH:
                     else:
                         yield from flatten_results(r.results)
 
-            def extract_label_links_md(res: Result) -> str:
-                """Render labels with links as markdown ``[name](link)`` chips.
-                Reads the unified ``ext['labels']`` and falls back to legacy
-                ``ext['hlabels']`` for results stored before the unification.
-                """
+            def extract_hlabels_info(res: Result) -> str:
                 try:
-                    if not (hasattr(res, "ext") and isinstance(res.ext, dict)):
-                        return ""
+                    hlabels = (
+                        res.ext.get("hlabels", [])
+                        if hasattr(res, "ext") and isinstance(res.ext, dict)
+                        else []
+                    )
                     links = []
-                    for item in res.ext.get("labels", []) or []:
-                        if isinstance(item, dict) and item.get("name") and item.get("link"):
-                            links.append(f"[{item['name']}]({item['link']})")
-                    for item in res.ext.get("hlabels", []) or []:
+                    for item in hlabels:
                         if isinstance(item, (list, tuple)) and len(item) >= 2:
                             text, href = item[0], item[1]
-                            if text and href:
-                                links.append(f"[{text}]({href})")
+                        if text and href:
+                            links.append(f"[{text}]({href})")
                     return ", ".join(links)
                 except Exception:
                     return ""
-
-            def has_label_links(res: Result) -> bool:
-                if not (hasattr(res, "ext") and isinstance(res.ext, dict)):
-                    return False
-                if any(
-                    isinstance(it, dict) and it.get("link")
-                    for it in res.ext.get("labels", []) or []
-                ):
-                    return True
-                return bool(res.ext.get("hlabels"))
 
             summary = cls(
                 name=result.name,
@@ -726,14 +704,14 @@ class GH:
                 start_time=result.start_time,
                 duration=result.duration,
                 failed_results=[],
-                info=extract_label_links_md(result),
+                info=extract_hlabels_info(result),
                 comment=result.ext.get("comment", ""),
             )
 
             # Filter and sort failed/error subresults by priority
-            # Priority: FAIL (0) > ERROR (1) > others (2)
+            # Priority: FAILED (0) > ERROR (1) > others (2)
             def get_status_priority(r):
-                if r.status == Result.Status.FAIL:
+                if r.status == Result.Status.FAILED:
                     return 0
                 elif r.status == Result.Status.ERROR:
                     return 1
@@ -749,14 +727,14 @@ class GH:
                 failed_result = cls(
                     name=sub_result.name,
                     status=sub_result.status,
-                    info=extract_label_links_md(sub_result),
+                    info=extract_hlabels_info(sub_result),
                     comment=sub_result.ext.get("comment", ""),
                 )
                 failed_result.failed_results = [
                     cls(
                         name=r.name,
                         status=r.status,
-                        info=extract_label_links_md(r),
+                        info=extract_hlabels_info(r),
                         comment=r.ext.get("comment", ""),
                     )
                     for r in flatten_results(sub_result.results)
@@ -776,31 +754,22 @@ class GH:
                 remaining = len(summary.failed_results) - MAX_JOBS_PER_SUMMARY
                 summary.failed_results = summary.failed_results[:MAX_JOBS_PER_SUMMARY]
                 print(f"NOTE: {remaining} more jobs not shown in PR comment")
-            # Collect links from jobs that have labels with links (e.g. keeper-stress Grafana links).
-            # Include regardless of success/failure so Grafana links always appear when keeper-stress runs.
-            for job_result in getattr(result, "results", []) or []:
-                if has_label_links(job_result):
-                    links_md = extract_label_links_md(job_result)
-                    if links_md:
-                        summary.extra_links.append((job_result.name, links_md))
             return summary
 
         def to_markdown(self, pr_number=0, sha="", workflow_name="", branch=""):
             def escape_pipes(text):
-                """Escape special markdown characters for table cells"""
-                return str(text).replace("|", "\\|").replace("#", "\\#")
+                """Escape pipe characters for markdown tables"""
+                return str(text).replace("|", "\\|")
 
-            if self.status == Result.Status.OK:
+            if self.status == Result.Status.SUCCESS:
                 symbol = "✅"  # Green check mark
-            elif self.status == Result.Status.FAIL:
+            elif self.status == Result.Status.FAILED:
                 symbol = "❌"  # Red cross mark
             else:
                 symbol = "⏳"  # Hourglass (in progress)
 
             body = f"**Summary:** {symbol}\n"
-            if self.extra_links:
-                for job_name, links_md in self.extra_links:
-                    body += f"**{job_name}:** {links_md}\n"
+
             if self.failed_results:
                 if len(self.failed_results) > 15:
                     body += (
@@ -835,10 +804,11 @@ class GH:
                         for sub_failed_result in failed_result.failed_results:
                             body += "|{}|{}|{}|{}|{}|\n".format(
                                 "",
+                                # Logical erros might have | that break comment formatting
                                 escape_pipes(sub_failed_result.name),
                                 sub_failed_result.status,
-                                escape_pipes(sub_failed_result.info or ""),
-                                escape_pipes(sub_failed_result.comment or ""),
+                                sub_failed_result.info or "",
+                                sub_failed_result.comment or "",
                             )
             return body
 

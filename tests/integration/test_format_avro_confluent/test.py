@@ -10,7 +10,11 @@ from confluent_kafka.avro.cached_schema_registry_client import (
 )
 from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
+
+# Skip on ARM due to Confluent/Kafka
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 
 @pytest.fixture(scope="module")
@@ -79,6 +83,47 @@ def test_select(started_cluster):
         ["1"],
         ["2"],
     ]
+
+
+def test_select_skip_symbolic(started_cluster):
+    # type: (ClickHouseCluster) -> None
+
+    reg_url = "http://localhost:{}".format(started_cluster.schema_registry_port)
+    schema_registry_client = CachedSchemaRegistryClient({"url": reg_url})
+    serializer = MessageSerializer(schema_registry_client)
+
+    schema = avro.schema.make_avsc_object(
+        {
+            "name": "Node",
+            "type": "record",
+            "fields": [
+                {"name": "value", "type": "long"},
+                {"name": "next", "type": ["null", "Node"]},
+            ],
+        }
+    )
+
+    record = {"value": 0, "next": {"value": 1, "next": {"value": 2, "next": None}}}
+    data = serializer.encode_record_with_schema(
+        "test_subject_skip_symbolic", schema, record
+    )
+
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    schema_registry_url = "http://{}:{}".format(
+        started_cluster.schema_registry_host, started_cluster.schema_registry_port
+    )
+    settings = {"format_avro_schema_registry_url": schema_registry_url}
+    run_query(
+        instance,
+        "create table avro_data_skip_symbolic(value Int64) engine = Memory()",
+    )
+    run_query(
+        instance,
+        "insert into avro_data_skip_symbolic format AvroConfluent",
+        data,
+        settings,
+    )
+    assert run_query(instance, "select value from avro_data_skip_symbolic").strip() == "0"
 
 
 def test_select_auth(started_cluster):

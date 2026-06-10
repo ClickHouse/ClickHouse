@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 -- Test for apply_row_policy_after_final setting with ReplacingMergeTree, https://github.com/ClickHouse/ClickHouse/issues/90986
 
 DROP TABLE IF EXISTS tab;
