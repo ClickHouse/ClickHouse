@@ -517,10 +517,10 @@ size_t ColumnArray::capacity() const
     return getOffsets().capacity();
 }
 
-void ColumnArray::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnArray::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
     size_t new_size = size();
-    VectorWithMemoryTracking<ColumnPtr> source_data_columns;
+    Columns source_data_columns;
     source_data_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
@@ -1655,9 +1655,9 @@ size_t ColumnArray::getNumberOfDimensions() const
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
 }
 
-void ColumnArray::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnArray::chooseDynamicStructureForMerge(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
+    Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
@@ -1670,25 +1670,12 @@ void ColumnArray::takeExactDynamicStructureFrom(const IColumn & source)
     data->takeExactDynamicStructureFrom(assert_cast<const ColumnArray &>(source).getData());
 }
 
-void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnArray::takeOrCalculateStatisticsFrom(const Columns & source_columns)
 {
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
+    Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-    {
-        if (!source_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
-
-        const auto * array_column = typeid_cast<const ColumnArray *>(source_column.get());
-        if (!array_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Array, but {}", source_column->getName());
-
-        nested_source_columns.push_back(array_column->getDataPtr());
-    }
-
-    if (!data)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data column is invalid");
-
+        nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
     data->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 

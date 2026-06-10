@@ -19,6 +19,7 @@
 
 #if USE_AVRO && USE_PARQUET
 
+#include <Access/Common/HTTPAuthenticationScheme.h>
 #include <Core/Settings.h>
 
 #include <Databases/DatabaseFactory.h>
@@ -58,7 +59,6 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString auth_header;
     extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
-    extern const DatabaseDataLakeSettingsS3UriStyle storage_uri_style;
     extern const DatabaseDataLakeSettingsString oauth_server_uri;
     extern const DatabaseDataLakeSettingsBool oauth_server_use_request_body;
     extern const DatabaseDataLakeSettingsBool vended_credentials;
@@ -80,7 +80,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString google_adc_refresh_token;
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
-    extern const DatabaseDataLakeSettingsBool force_add_bucket;
+    extern const DatabaseDataLakeSettingsBool polaris_style_paths;
 }
 
 namespace Setting
@@ -155,11 +155,11 @@ void DatabaseDataLake::validateSettings()
 
 std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 {
-    if (catalog_impl)
-        return catalog_impl;
-
     if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
+
+    if (catalog_impl)
+        return catalog_impl;
 
     auto catalog_parameters = DataLake::CatalogSettings{
         .storage_endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value,
@@ -294,7 +294,6 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
             break;
         }
     }
-
     return catalog_impl;
 }
 
@@ -477,7 +476,7 @@ std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMe
     auto endpoint_from_settings = settings[DatabaseDataLakeSetting::storage_endpoint].value;
     if (endpoint_from_settings.empty())
         return table_metadata.getLocation();
-    return table_metadata.getLocationWithEndpoint(endpoint_from_settings, settings[DatabaseDataLakeSetting::storage_uri_style]);
+    return table_metadata.getLocationWithEndpoint(endpoint_from_settings);
 }
 
 bool DatabaseDataLake::empty() const
@@ -500,8 +499,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
-    if (settings[DatabaseDataLakeSetting::force_add_bucket])
-        table_metadata.withForceAddBucket();
+    if (settings[DatabaseDataLakeSetting::polaris_style_paths])
+        table_metadata.withPolarisStyleAbfssPaths();
 
     /// This is added to test that lightweight queries like 'SHOW TABLES' dont end up fetching the table
     fiu_do_on(FailPoints::lightweight_show_tables,
@@ -667,12 +666,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    const auto catalog_uuid = table_metadata.getTableUUID();
-    const UUID table_uuid = catalog_uuid ? parseFromString<UUID>(*catalog_uuid) : UUIDHelpers::Nil;
-
     if (can_use_parallel_replicas && !is_secondary_query)
     {
-        auto storage_id = StorageID(getDatabaseName(), name, table_uuid);
+        auto storage_id = StorageID(getDatabaseName(), name);
         auto storage_cluster = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
             configuration,
@@ -696,9 +692,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
-        configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name, table_uuid))),
+        configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name))),
         context_copy,
-        StorageID(getDatabaseName(), name, table_uuid),
+        StorageID(getDatabaseName(), name),
         /* columns */columns,
         /* constraints */ConstraintsDescription{},
         /* comment */"",
@@ -860,17 +856,6 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
     return create_query;
 }
 
-void DatabaseDataLake::checkDatabase() const
-{
-    auto catalog = getCatalog();
-    /// This function checks if we can access catalog and get tables list.
-    /// We do not check if there are tables in catalog, because even if catalog is empty, it still can be valid and working.
-    std::ignore = catalog->empty();
-
-
-    LOG_TEST(log, "Database '{}' is OK", getDatabaseName());
-}
-
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
     ContextPtr /* context_ */,
@@ -878,8 +863,8 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
-    if (settings[DatabaseDataLakeSetting::force_add_bucket])
-        table_metadata.withForceAddBucket();
+    if (settings[DatabaseDataLakeSetting::polaris_style_paths])
+        table_metadata.withPolarisStyleAbfssPaths();
 
     const auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
@@ -1088,14 +1073,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             std::move(engine_for_tables),
             args.uuid);
     };
-    /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
-    /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
-    /// for runtime-dependent or composite source checks exist.
-    factory.registerDatabase("DataLakeCatalog", create_fn, {
-        .supports_arguments = true,
-        .supports_settings = true,
-        .is_external = true,
-    });
+    factory.registerDatabase("DataLakeCatalog", create_fn, { .supports_arguments = true, .supports_settings = true });
 }
 
 }
