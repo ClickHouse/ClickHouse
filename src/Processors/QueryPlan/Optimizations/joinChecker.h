@@ -121,12 +121,17 @@ EnumeratorCheckerWithCosts<Tdptable, Toptimizer, Tuint>::accept(const Tuint S, c
     if (!dptab.map().contains(S) || plan_cost < dptab[S].cost)
     {
         dptab.insert(S, S1, S2);
-        dptab[S].left = S1;
-        dptab[S].right = S2;
-        dptab[S].cost = plan_cost;
-        dptab[S].sel = selectivity;
-        dptab[S].estimated_rows = computeCardinality(S1, S2, selectivity);
-        dptab[S].edges = edge;
+
+        /// Cache the entry reference: insert() guarantees S is present, and
+        /// computeCardinality only reads the S1/S2 entries, so the reference
+        /// stays valid (unordered_map preserves references across rehashing).
+        auto & entry = dptab[S];
+        entry.left = S1;
+        entry.right = S2;
+        entry.cost = plan_cost;
+        entry.sel = selectivity;
+        entry.estimated_rows = computeCardinality(S1, S2, selectivity);
+        entry.edges = edge;
     }
 }
 }
