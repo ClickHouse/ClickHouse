@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- no-parallel: Creates the global SQL UDF `eval`, which is not isolated by the test database.
+
 DROP FUNCTION IF EXISTS eval;
 
 CREATE FUNCTION eval AS x -> x + 1;
