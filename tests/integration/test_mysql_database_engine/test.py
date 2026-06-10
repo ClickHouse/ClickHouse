@@ -1042,6 +1042,45 @@ def test_restart_server(started_cluster):
         assert "test_table" in clickhouse_node.query("SHOW TABLES FROM test_restart")
 
 
+def test_restart_server_with_unreachable_mysql(started_cluster):
+    # A MySQL database engine pointing at an unreachable host must not block server startup.
+    with contextlib.closing(
+        MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_unreachable_mysql")
+        # Create while reachable so the engine attaches and persists its metadata. Long
+        # connect_timeout * tries (~90s) guarantees that, without the fix, a connect during
+        # startup overruns the 60s start window and the server fails to start.
+        clickhouse_node.query(
+            f"CREATE DATABASE test_unreachable_mysql ENGINE = MySQL('mysql80:3306', 'does_not_exist', 'root', '{mysql_pass}') "
+            "SETTINGS connect_timeout = 30, connection_max_tries = 3"
+        )
+        assert "test_unreachable_mysql" in clickhouse_node.query("SHOW DATABASES")
+
+        with PartitionManager() as pm:
+            # DROP (not reject) silently black-holes packets, so a connect hangs until timeout
+            # instead of failing fast. This reproduces the real CI condition (TEST-NET host).
+            pm.partition_instances(clickhouse_node, mysql_node, action="DROP")
+
+            start = time.time()
+            # With the fix startup does not connect, so this returns quickly. Without the fix
+            # startup blocks on the unreachable host past the 60s window and this raises.
+            clickhouse_node.restart_clickhouse()
+            elapsed = time.time() - start
+
+            assert clickhouse_node.query("SELECT 1").strip() == "1"
+            # Database object is still attached (tables are fetched lazily, not at startup).
+            assert "test_unreachable_mysql" in clickhouse_node.query("SHOW DATABASES")
+            # Startup must not have spent the connect timeout budget on the unreachable host.
+            assert elapsed < 60, f"server restart took {elapsed:.1f}s, startup blocked on unreachable MySQL host"
+
+        clickhouse_node.query("DROP DATABASE test_unreachable_mysql")
+
+
 def test_memory_leak(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(

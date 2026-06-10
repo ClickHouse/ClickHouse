@@ -96,25 +96,26 @@ DatabaseMySQL::DatabaseMySQL(
     , mysql_pool(std::move(pool)) /// NOLINT
     , db_uuid(uuid)
 {
-    try
+    /// Do not connect to MySQL on attach (server startup / ATTACH DATABASE): an unreachable
+    /// host would block startup metadata loading. Tables are fetched lazily on first access.
+    if (!attach)
     {
-        /// Test that the database is working fine; it will also fetch tables.
-        empty(); // NOLINT(bugprone-standalone-empty)
-    }
-    catch (...)
-    {
-        if (attach)
+        try
         {
-            tryLogCurrentException("DatabaseMySQL");
+            /// Test that the database is working fine; it will also fetch tables.
+            empty(); // NOLINT(bugprone-standalone-empty)
         }
+        catch (...)
+        {
 #if CLICKHOUSE_CLOUD
-        else if (SharedDatabaseCatalog::initialized() && !SharedDatabaseCatalog::isInitialQuery(context_))
-        {
-            tryLogCurrentException("DatabaseMySQL");
-        }
-#endif
-        else
+            if (SharedDatabaseCatalog::initialized() && !SharedDatabaseCatalog::isInitialQuery(context_))
+                tryLogCurrentException("DatabaseMySQL");
+            else
+                throw;
+#else
             throw;
+#endif
+        }
     }
 
     persistent = !context_->getClientInfo().is_shared_catalog_internal;
