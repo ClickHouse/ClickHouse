@@ -551,6 +551,17 @@ size_t MergeTreeReaderWide::readRows(
                     res_columns[pos] = nullptr;
             }
 
+            /// The query-wide estimate gate can disable cache writes while reads
+            /// are already in flight: the estimate is accumulated per part as read
+            /// pools build their tasks, and another pool of the same query may
+            /// exceed the budget after this reader armed its deferred write.
+            /// Consult the shared flag before writing so the estimate budget
+            /// applies to the whole query.
+            if (cache_write_pending
+                && settings.columns_cache_writes_disabled
+                && settings.columns_cache_writes_disabled->load(std::memory_order_relaxed))
+                cache_write_pending = false;
+
             /// Check if deferred cache write should execute.
             /// We cache only when the full task range has been read (all continuation reads are done).
             if (cache_write_pending && read_rows > 0)

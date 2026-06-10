@@ -57,19 +57,19 @@ static size_t estimateSelectedColumnsSize(const RangesInDataPart & part, const N
     return static_cast<size_t>(static_cast<double>(full_size) * fraction);
 }
 
-/// Compute the columns cache write policy for a pool from the parts/columns to be read.
+/// Compute the columns cache write policy for a pool.
 /// Two budgets, both enforced per query (shared via ColumnsCacheWriteBudget across all
 /// of the query's read pools, not per pool):
 ///   - estimate budget: if the total compressed bytes the query is expected to fetch
 ///     exceeds it, disable cache writes for the rest of the query, so a single large
-///     scan does not displace useful data from the cache.
+///     scan does not displace useful data from the cache. The estimate itself is
+///     accumulated per part in fillPerPartInfos, after the full set of read columns
+///     is known; readers observe the result through the shared writes-disabled flag.
 ///   - runtime budget: a query-scoped atomic counter; once it reaches the budget,
 ///     further writes for the query are skipped.
 /// Either value of 0 means "use half of the server-level columns_cache_size".
 static MergeTreeReaderSettings adjustReaderSettingsForColumnsCacheWrites(
     MergeTreeReaderSettings settings,
-    const RangesInDataParts & parts,
-    const Names & columns,
     const ContextPtr & context,
     const ColumnsCachePtr & columns_cache,
     bool use_columns_cache)
@@ -98,44 +98,25 @@ static MergeTreeReaderSettings adjustReaderSettingsForColumnsCacheWrites(
         return settings;
     }
 
-    /// Don't apply the estimate gate when the caller passed no columns (e.g. some
-    /// projection paths build the column list later). getSizeOfColumns falls back
-    /// to the whole-part size in that case, which would falsely trip the gate.
-    if (budget && !columns.empty())
-    {
-        size_t estimate_budget = query_settings[Setting::columns_cache_max_estimated_compressed_bytes_to_write_to_cache];
-        if (estimate_budget == 0)
-            estimate_budget = cache_size / 2;
-
-        size_t pool_estimated_bytes = 0;
-        for (const auto & part : parts)
-            pool_estimated_bytes += estimateSelectedColumnsSize(part, columns, query_settings);
-
-        /// Accumulate into the query-wide total and compare against the budget, so
-        /// the gate enforces a true per-query budget across all pools.
-        const size_t query_total
-            = budget->estimated_bytes.fetch_add(pool_estimated_bytes, std::memory_order_relaxed) + pool_estimated_bytes;
-        if (query_total > estimate_budget)
-        {
-            budget->writes_disabled.store(true, std::memory_order_relaxed);
-            settings.enable_columns_cache_writes = false;
-            return settings;
-        }
-    }
-
     size_t runtime_budget = query_settings[Setting::columns_cache_max_bytes_to_write_to_cache];
     if (runtime_budget == 0)
         runtime_budget = cache_size / 2;
 
     settings.columns_cache_max_bytes_to_write_to_cache = runtime_budget;
-    /// Point the reader at the query-scoped counter (aliasing shared_ptr) so the
-    /// runtime budget is shared across all of the query's pools rather than reset
-    /// to zero per pool.
+    /// Point the reader at the query-scoped counter and writes-disabled flag
+    /// (aliasing shared_ptrs) so the budgets are shared across all of the query's
+    /// pools rather than reset to zero per pool.
     if (budget)
+    {
         settings.columns_cache_bytes_written_so_far
             = std::shared_ptr<std::atomic<size_t>>(budget, &budget->bytes_written);
+        settings.columns_cache_writes_disabled
+            = std::shared_ptr<std::atomic<bool>>(budget, &budget->writes_disabled);
+    }
     else
+    {
         settings.columns_cache_bytes_written_so_far = std::make_shared<std::atomic<size_t>>(0);
+    }
     return settings;
 }
 
@@ -165,8 +146,6 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , actions_settings(actions_settings_)
     , reader_settings(adjustReaderSettingsForColumnsCacheWrites(
           reader_settings_,
-          parts_ranges,
-          column_names_,
           context_,
           pool_settings_.use_columns_cache ? context_->getGlobalContext()->getColumnsCache() : nullptr,
           pool_settings_.use_columns_cache))
@@ -418,6 +397,44 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
     return read_task_info;
 }
 
+void MergeTreeReadPoolBase::accountColumnsCacheWriteEstimate(
+    const RangesInDataPart & part_with_ranges, const MergeTreeReadTaskInfo & read_task_info, const Settings & settings) const
+{
+    if (!reader_settings.enable_columns_cache_writes || !owned_columns_cache)
+        return;
+
+    const auto budget = getContext()->getColumnsCacheWriteBudget();
+    if (!budget || budget->writes_disabled.load(std::memory_order_relaxed))
+        return;
+
+    /// The full set of columns the readers of this part will read: result columns
+    /// plus columns required for defaults, prewhere and mutation steps, and patch
+    /// parts. Estimating from the pool's result columns alone would let a query
+    /// that reads a small result column set but heavy prewhere/mutation columns
+    /// pass the gate while writing much more data than estimated.
+    const auto all_read_columns = read_task_info.task_columns.getAllColumnNames();
+
+    /// Don't apply the estimate gate when there are no columns (e.g. some
+    /// projection paths build the column list later). getSizeOfColumns falls back
+    /// to the whole-part size in that case, which would falsely trip the gate.
+    if (all_read_columns.empty())
+        return;
+
+    size_t estimate_budget = settings[Setting::columns_cache_max_estimated_compressed_bytes_to_write_to_cache];
+    if (estimate_budget == 0)
+        estimate_budget = owned_columns_cache->maxSizeInBytes() / 2;
+
+    const size_t part_estimated_bytes = estimateSelectedColumnsSize(part_with_ranges, all_read_columns, settings);
+
+    /// Accumulate into the query-wide total and compare against the budget, so
+    /// the gate enforces a true per-query budget across all pools. Readers
+    /// observe the flag through MergeTreeReaderSettings::columns_cache_writes_disabled.
+    const size_t query_total
+        = budget->estimated_bytes.fetch_add(part_estimated_bytes, std::memory_order_relaxed) + part_estimated_bytes;
+    if (query_total > estimate_budget)
+        budget->writes_disabled.store(true, std::memory_order_relaxed);
+}
+
 void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 {
     per_part_infos.reserve(parts_ranges.size());
@@ -429,6 +446,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         assertSortedAndNonIntersecting(part_with_ranges.ranges);
 #endif
         MergeTreeReadTaskInfo read_task_info = buildReadTaskInfo(part_with_ranges, settings);
+        accountColumnsCacheWriteEstimate(part_with_ranges, read_task_info, settings);
         if (!read_task_info.patch_parts.empty())
             ranges_in_patch_parts.addPart(part_with_ranges.data_part, read_task_info.patch_parts, part_with_ranges.ranges);
         is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());

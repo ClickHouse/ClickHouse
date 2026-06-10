@@ -85,6 +85,14 @@ protected:
 
     MergeTreeReadTaskInfo buildReadTaskInfo(const RangesInDataPart & part_with_ranges, const Settings & settings) const;
 
+    /// Accumulate the compressed bytes this part contributes to the query-wide
+    /// columns cache write estimate, and disable further cache writes for the
+    /// query once the estimate budget is exceeded. Called per part after the
+    /// read task info is built, so the estimate covers all columns the readers
+    /// will actually read (result, prewhere, mutation and patch-part columns).
+    void accountColumnsCacheWriteEstimate(
+        const RangesInDataPart & part_with_ranges, const MergeTreeReadTaskInfo & read_task_info, const Settings & settings) const;
+
     void fillPerPartInfos(const Settings & settings);
     std::vector<size_t> getPerPartSumMarks() const;
 
