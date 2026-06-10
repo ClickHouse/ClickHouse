@@ -22,4 +22,12 @@ CREATE TABLE t_leaf_collision_nested (k UInt32, n Tuple(a Tuple(b UInt32)), `n.a
 ENGINE = SummingMergeTree ORDER BY k
 SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
 
+-- Two leaves can also collide inside a single Tuple column: a nested element `a.b` and a sibling
+-- element literally named `a.b` both flatten to `n.a.b`. When the feature is enabled this is
+-- rejected at CREATE so the ambiguous flattened header never reaches a merge.
+DROP TABLE IF EXISTS t_intra_tuple_collision;
+CREATE TABLE t_intra_tuple_collision (k UInt32, n Tuple(a Tuple(b UInt32), `a.b` UInt32))
+ENGINE = SummingMergeTree ORDER BY k
+SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+
 SELECT 'tuple leaf vs physical column name collision is rejected at CREATE';
