@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -27,23 +28,33 @@ StatisticsUniq::~StatisticsUniq()
 
 void StatisticsUniq::build(const ColumnPtr & column)
 {
-    const IColumn * raw_column_ptr = nullptr;
+    ColumnPtr unwrapped;
 
     /// For sparse and low cardinality columns an extra default
     /// value may be added. That is ok since the uniq count is an estimation.
     if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(column.get()))
     {
-        raw_column_ptr = &column_sparse->getValuesColumn();
+        unwrapped = column_sparse->getValuesColumn().getPtr();
     }
     else if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
     {
-        raw_column_ptr = column_low_cardinality->getDictionary().getNestedColumn().get();
+        unwrapped = column_low_cardinality->getDictionary().getNestedColumn();
     }
     else
     {
-        raw_column_ptr = column.get();
+        unwrapped = column;
     }
 
+    /// `collector` is the Null combinator (`getNestedFunction() != nullptr`) iff the declared type
+    /// was Nullable. The runtime column may have the opposite nullability, so reconcile it before
+    /// `addBatchSinglePlace`, which otherwise mis-casts to/from ColumnNullable.
+    const bool collector_expects_nullable = collector->getNestedFunction() != nullptr;
+    if (collector_expects_nullable && !isColumnNullable(*unwrapped))
+        unwrapped = makeNullable(unwrapped);
+    else if (!collector_expects_nullable && isColumnNullable(*unwrapped))
+        unwrapped = assert_cast<const ColumnNullable &>(*unwrapped).getNestedColumnPtr();
+
+    const IColumn * raw_column_ptr = unwrapped.get();
     collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &(raw_column_ptr), nullptr);
 }
 

@@ -400,3 +400,46 @@ TEST(Statistics, LikeSelectivity)
     UInt64 notilike_direct_rows = estimate("a not ilike '%pattern%'");
     EXPECT_EQ(notilike_direct_rows, 9000u);
 }
+
+/// STID 3524-3a4b: uniq statistics declared on a Nullable type, then `build()` fed a non-nullable
+/// column (and the reverse). A pending MODIFY COLUMN mutation or an asymmetric merge feeds the
+/// post-change column into statistics still declared on the pre-change type. Before the fix
+/// `StatisticsUniq::build` mis-cast the column inside `AggregateFunctionNullUnary` and aborted.
+TEST(Statistics, UniqNullabilityMismatch)
+{
+    tryRegisterAggregateFunctions();
+
+    /// Collector declared Nullable, fed a plain (non-nullable) column.
+    {
+        auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+        auto stats = createTestStats({StatisticsType::Uniq}, nullable_type);
+
+        MutableColumnPtr plain = DataTypeInt32().createColumn();
+        for (Int32 i = 0; i < 100; ++i)
+            plain->insert(i);
+
+        stats->build(std::move(plain));
+        EXPECT_EQ(stats->estimateCardinality(), 100u);
+    }
+
+    /// Collector declared non-nullable, fed a Nullable column (reverse direction).
+    {
+        auto plain_type = std::make_shared<DataTypeInt32>();
+        auto stats = createTestStats({StatisticsType::Uniq}, plain_type);
+
+        auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+        MutableColumnPtr col = nullable_type->createColumn();
+        auto * nullable_col = assert_cast<ColumnNullable *>(col.get());
+        for (Int32 i = 0; i < 100; ++i)
+        {
+            if (i % 7 == 0)
+                nullable_col->insertDefault(); /// NULL
+            else
+                nullable_col->insert(i);
+        }
+
+        stats->build(std::move(col));
+        /// 100 rows, every 7th is NULL → 86 distinct non-null values (i = 0,7,14,... excluded).
+        EXPECT_EQ(stats->estimateCardinality(), 86u);
+    }
+}
