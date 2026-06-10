@@ -106,6 +106,8 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
                 }
                 catch (...)
                 {
+                    /// Ok: FieldToDataType may throw for complex types (e.g., mixed-type arrays).
+                    /// Fall back to using getResultType() which is the safe default.
                 }
             }
         }
