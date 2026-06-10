@@ -1,0 +1,13 @@
+Absent key compared with FixedString default (matches String default at runtime)
+2
+2
+2
+Present key with FixedString constant still uses the index
+1
+Absent key with non-default FixedString constant is still pruned
+0
+Absent key compared with integer default 0 via different integer type
+2
+2
+Absent key compared with non-default integer is still pruned
+0
