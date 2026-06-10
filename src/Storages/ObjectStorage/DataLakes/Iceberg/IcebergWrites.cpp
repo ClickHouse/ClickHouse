@@ -475,9 +475,7 @@ void generateManifestFile(
                 auto partition_time_type = getTimeTypeOrNull(partition_types[i]);
                 if (!partition_values[i].isNull() && partition_time_type)
                 {
-                    partition_record.field(partition_columns[i]) =
-                        avro::GenericDatum(getTimeValueInMicroseconds(partition_values[i], partition_types[i]));
-                    continue;
+                    return avro::GenericDatum(getTimeValueInMicroseconds(partition_values[i], partition_types[i]));
                 }
 
                 switch (partition_values[i].getType())
