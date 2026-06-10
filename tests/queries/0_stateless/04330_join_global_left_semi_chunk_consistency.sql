@@ -1,5 +1,6 @@
--- Tags: no-random-settings
--- ^ keep max_joined_block_size_rows small to force the join-output block split.
+-- Tags: no-random-settings, no-old-analyzer
+-- no-random-settings: keep max_joined_block_size_rows small to force the join-output block split.
+-- no-old-analyzer: the mixed equi + inequality JOIN ON is only supported by the new analyzer.
 
 SELECT count()
 FROM
