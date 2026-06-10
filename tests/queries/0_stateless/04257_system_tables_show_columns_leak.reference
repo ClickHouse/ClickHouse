@@ -21,3 +21,8 @@ secret
 1	1
 1	0	0
 0	0
+--- cross-db materialized view target filter ---
+mv_cross	1	1
+mv_local	1	1
+mv_cross	0	0
+mv_local	1	1

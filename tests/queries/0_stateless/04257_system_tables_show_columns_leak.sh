@@ -152,11 +152,35 @@ ${CLICKHOUSE_CLIENT} --query "$loading_dependencies_probe"
 run_user "$loading_dependents_probe"
 run_user "$loading_dependencies_probe"
 
+echo "--- cross-db materialized view target filter ---"
+# target_database/target_table expose the TO table's name and must be filtered
+# by SHOW TABLES on the target, same as the dependency arrays.
+${CLICKHOUSE_CLIENT} <<EOF
+CREATE TABLE $db2.mv_target (x UInt32) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE $db.local_target (x UInt32) ENGINE = MergeTree ORDER BY x;
+CREATE MATERIALIZED VIEW $db.mv_cross TO $db2.mv_target AS SELECT x FROM $db.secret;
+CREATE MATERIALIZED VIEW $db.mv_local TO $db.local_target AS SELECT x FROM $db.secret;
+EOF
+
+target_probe="
+SELECT name, target_database != '', target_table != ''
+FROM system.tables WHERE database = '$db' AND name IN ('mv_cross', 'mv_local')
+ORDER BY name"
+
+# Unfiltered view (sanity): both targets visible.
+${CLICKHOUSE_CLIENT} --query "$target_probe"
+
+# User with SHOW TABLES on $db.* only: cross-db target hidden, same-db target kept.
+run_user "$target_probe"
+
 ${CLICKHOUSE_CLIENT} <<EOF
 DROP DICTIONARY IF EXISTS $db.local_dict;
 DROP DICTIONARY IF EXISTS $db.leaky_dict;
+DROP TABLE IF EXISTS $db.mv_cross;
+DROP TABLE IF EXISTS $db.mv_local;
 DROP DATABASE IF EXISTS $db2;
 DROP USER IF EXISTS $user;
+DROP TABLE IF EXISTS $db.local_target;
 DROP TABLE IF EXISTS $db.dict_src;
 DROP TABLE IF EXISTS $db.dep_view;
 DROP TABLE IF EXISTS $db.secret;

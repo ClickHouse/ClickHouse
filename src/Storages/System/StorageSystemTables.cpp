@@ -959,8 +959,11 @@ protected:
                     if (auto * mv = table ? dynamic_cast<StorageMaterializedView *>(table.get()) : nullptr)
                     {
                         const auto target_id = mv->getTargetTableId();
-                        target_database = target_id.database_name;
-                        target_table = target_id.table_name;
+                        if (is_dependency_visible(target_id))
+                        {
+                            target_database = target_id.database_name;
+                            target_table = target_id.table_name;
+                        }
                     }
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(target_database);
