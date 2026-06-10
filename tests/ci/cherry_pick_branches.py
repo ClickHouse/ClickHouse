@@ -67,14 +67,22 @@ def select_backport_branches(
     *,
     general_backport_labels: Set[str],
     force_backport_label: str,
+    explicit_branches: Sequence[str] = (),
 ) -> Tuple[List[str], List[str]]:
     """
     Decide which release branches a PR should be backported to.
 
-    Returns `(branches, skipped)`, both in `release_branches` order:
-    - `branches`: release branches the PR should be backported to.
+    Returns `(branches, skipped)`:
+    - `branches`: release branches the PR should be backported to, ordered by
+      version (oldest first).
     - `skipped`: rolling-out branches that were excluded, so the caller can
       close any stale cherry-pick / backport PRs for them.
+
+    `explicit_branches` are branches explicitly named by a `vX.Y-must-backport`
+    label that exist in the repository but are not necessarily active (have no
+    open `release` PR). They are always backported to, so a fix can reach an
+    end-of-life release line on request. The caller resolves which named
+    branches actually exist (this module stays free of GitHub access).
 
     Rules:
     - `force_backport_label` -> all release branches, ignoring `rolling_out`.
@@ -84,6 +92,7 @@ def select_backport_branches(
     - otherwise (version-specific labels only) -> the floor release and every
       newer active release branch. `rolling_out` does not apply here: an explicit
       version request always proceeds.
+    In every case the explicitly named existing branches are added to the result.
     """
     labels = set(pr_labels)
     floor = backport_floor(pr_labels)
@@ -95,30 +104,35 @@ def select_backport_branches(
         for branch in release_branches
         if floor is not None and branch_version(branch) >= floor
     }
+    explicit = set(explicit_branches)
+
+    def ordered(branches: Set[str]) -> List[str]:
+        return sorted(branches, key=branch_version)
 
     if force_backport_label in labels:
-        return list(release_branches), []
+        return ordered(set(release_branches) | explicit), []
 
     if labels & general_backport_labels:
-        branches = [
+        selected = {
             branch
             for branch in release_branches
             if branch not in rolling_out or branch in covered_by_floor
-        ]
+        }
         skipped = [
             branch
             for branch in release_branches
             if branch in rolling_out and branch not in covered_by_floor
         ]
-        return branches, skipped
+        return ordered(selected | explicit), skipped
 
     # Version-specific labels only. `covered_by_floor` is the floor release and
-    # every newer active branch. It is normally non-empty -- the search that
-    # feeds this function only selects PRs whose floor is not newer than the
-    # newest active release -- but it may be empty if a PR carries only a label
-    # newer than every active release; the caller skips such PRs gracefully.
-    assert floor is not None, (
+    # every newer active branch; together with the explicitly named existing
+    # branches it is normally non-empty -- the search that feeds this function
+    # only selects PRs whose floor is not newer than the newest active release.
+    # It may still be empty if a PR carries only a label newer than every active
+    # release whose branch does not exist; the caller skips such PRs gracefully.
+    assert floor is not None or explicit, (
         "select_backport_branches called without a general backport label and "
         f"without a version-specific label; labels: {sorted(labels)}"
     )
-    return [branch for branch in release_branches if branch in covered_by_floor], []
+    return ordered(covered_by_floor | explicit), []

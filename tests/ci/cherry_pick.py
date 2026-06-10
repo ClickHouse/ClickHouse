@@ -34,7 +34,7 @@ import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from subprocess import CalledProcessError
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Tuple
 
 from github.GithubException import GithubException
 
@@ -799,6 +799,57 @@ class BackportPRs:
             )
             open_pr.edit(state="closed")
 
+    def _release_branch_name(self, version: Tuple[int, int]) -> str:
+        """
+        Build a release branch name in this repository's convention from a
+        version tuple, e.g. `(26, 2)` -> `release/26.2` (private fork) or `26.2`
+        (public repo). The convention is inferred from the active release
+        branches so it matches whatever the repo uses.
+        """
+        prefix = (
+            "release/"
+            if any(branch.startswith("release/") for branch in self.release_branches)
+            else ""
+        )
+        return f"{prefix}{version[0]}.{version[1]}"
+
+    def _branch_exists(self, branch: str) -> bool:
+        """Whether `branch` exists in the repository (a single GitHub lookup)."""
+        try:
+            self.repo.get_branch(branch)
+            return True
+        except GithubException as e:
+            if e.status == 404:
+                return False
+            raise
+
+    def _explicit_named_branches(self, pr_labels: List[str]) -> List[str]:
+        """
+        Release branches explicitly named by a `vX.Y-must-backport` label on the
+        PR that are not active (have no open `release` PR) but still exist in the
+        repository. Such branches are backported to as well, so a fix can reach
+        an end-of-life release line on request. Active branches are handled by
+        the floor fan-out in `select_backport_branches`, so they are skipped here.
+        """
+        active_versions = {branch_version(branch) for branch in self.release_branches}
+        named = []  # type: List[str]
+        for label in pr_labels:
+            version = label_version(label)
+            if version is None or version in active_versions:
+                continue
+            branch = self._release_branch_name(version)
+            if branch in named:
+                continue
+            if self._branch_exists(branch):
+                named.append(branch)
+            else:
+                logging.info(
+                    "PR carries %r but branch %s does not exist, skipping it",
+                    label,
+                    branch,
+                )
+        return named
+
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
 
@@ -808,6 +859,9 @@ class BackportPRs:
         # the PR is backported to that release and every newer active release
         # branch; the lowest such label wins. `skipped` are rolling-out branches
         # excluded for a general backport that no version-specific label covers.
+        # `explicit_branches` are non-active branches explicitly named by a
+        # version label that still exist in the repo, so a fix can be backported
+        # to an end-of-life release line on request.
         rolling_out = set(self._rolling_out_branches())
         branch_names, skipped = select_backport_branches(
             pr_labels,
@@ -816,6 +870,7 @@ class BackportPRs:
             general_backport_labels={Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_FORCE}
             | Labels.AUTO_BACKPORT,
             force_backport_label=Labels.MUST_BACKPORT_FORCE,
+            explicit_branches=self._explicit_named_branches(pr_labels),
         )
 
         if skipped:
@@ -972,6 +1027,21 @@ class CherryPickPRs:
             # The release branch is opened, so we can continue
             return True
         release_name = cpp.head.ref.split("/", maxsplit=1)[1].rsplit("/", maxsplit=1)[0]
+        # A version-specific label on the original PR explicitly targets this
+        # release line, so keep the cherry-pick even though the line is
+        # end-of-life (no open `release` PR). This mirrors the explicit-branch
+        # selection in `BackportPRs._explicit_named_branches`.
+        explicit_label = f"v{release_name.replace('release/', '')}-must-backport"
+        original_pr = self.gh.get_pull_cached(self.repo, original_pr_number)
+        if explicit_label in {label.name for label in original_pr.labels}:
+            logging.info(
+                "Cherry-pick PR %s kept: PR #%s explicitly targets `%s` (`%s`)",
+                cpp.html_url,
+                original_pr_number,
+                release_name,
+                explicit_label,
+            )
+            return True
         logging.info(
             "An opened release PR `%s` for cherry-pick PR %s is not found, going to close it",
             release_name,

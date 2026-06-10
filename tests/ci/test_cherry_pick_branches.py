@@ -31,13 +31,14 @@ RB = ["release/25.12", "release/26.1", "release/26.2", "release/26.3"]
 RB_PUBLIC = ["25.12", "26.1", "26.2", "26.3"]
 
 
-def select(pr_labels, release_branches, rolling_out=None):
+def select(pr_labels, release_branches, rolling_out=None, explicit_branches=()):
     return select_backport_branches(
         pr_labels,
         release_branches,
         set(rolling_out or []),
         general_backport_labels=GENERAL_BACKPORT_LABELS,
         force_backport_label=MUST_BACKPORT_FORCE,
+        explicit_branches=explicit_branches,
     )
 
 
@@ -155,6 +156,67 @@ class TestSelectVersionSpecific(unittest.TestCase):
     def test_no_backport_label_raises(self):
         with self.assertRaises(AssertionError):
             select(["pr-feature"], RB)
+
+
+class TestExplicitNamedBranches(unittest.TestCase):
+    # The #106466 scenario: the named release 26.2 is end-of-life (not in the
+    # active set) but its branch still exists. The caller resolves that and
+    # passes it as an explicit branch, so it is backported to in addition to the
+    # floor fan-out over the newer active releases.
+    ACTIVE = ["25.8", "26.3", "26.4", "26.5"]
+
+    def test_eol_named_branch_added_to_floor_fanout(self):
+        branches, skipped = select(
+            ["v26.2-must-backport"], self.ACTIVE, explicit_branches=["26.2"]
+        )
+        # Ordered by version: the explicit EOL branch sorts in among the active.
+        self.assertEqual(branches, ["26.2", "26.3", "26.4", "26.5"])
+        self.assertEqual(skipped, [])
+
+    def test_eol_branch_below_active_set(self):
+        # Only the explicitly named existing branch is older than every active
+        # release; the floor (24.3) fans out to all active and 24.3 is added.
+        branches, _ = select(
+            ["v24.3-must-backport"], self.ACTIVE, explicit_branches=["24.3"]
+        )
+        self.assertEqual(branches, ["24.3", "25.8", "26.3", "26.4", "26.5"])
+
+    def test_explicit_branch_with_general_label(self):
+        branches, skipped = select(
+            ["pr-must-backport", "v26.2-must-backport"],
+            self.ACTIVE,
+            explicit_branches=["26.2"],
+        )
+        self.assertEqual(branches, ["25.8", "26.2", "26.3", "26.4", "26.5"])
+        self.assertEqual(skipped, [])
+
+    def test_explicit_branch_with_force_label(self):
+        branches, _ = select(
+            ["pr-must-backport-force", "v26.2-must-backport"],
+            self.ACTIVE,
+            explicit_branches=["26.2"],
+        )
+        self.assertEqual(branches, ["25.8", "26.2", "26.3", "26.4", "26.5"])
+
+    def test_no_duplicate_when_explicit_also_active(self):
+        # Defensive: even if an active branch is passed as explicit, it appears
+        # once. (The caller filters active versions out, so this is belt-and-braces.)
+        branches, _ = select(
+            ["v26.3-must-backport"], self.ACTIVE, explicit_branches=["26.3"]
+        )
+        self.assertEqual(branches, ["26.3", "26.4", "26.5"])
+
+    def test_only_eol_named_branch_no_newer_active(self):
+        # Floor newer than every active release, but the named branch exists:
+        # back-port only to it (the fan-out is empty).
+        branches, _ = select(
+            ["v26.6-must-backport"], ["25.8", "26.3"], explicit_branches=["26.6"]
+        )
+        self.assertEqual(branches, ["26.6"])
+
+    def test_no_explicit_branches_is_unchanged(self):
+        branches, _ = select(["v26.3-must-backport"], self.ACTIVE)
+        self.assertEqual(branches, ["26.3", "26.4", "26.5"])
 
 
 class TestSelectGeneral(unittest.TestCase):

@@ -66,6 +66,8 @@ A version-specific label sets the *oldest* release the PR must reach: it is back
 
 The named release does not have to be active itself. A label for an end-of-life release (one with no open release PR) still pulls the fix forward into every active release after it, so upgrading from that release never silently loses the fix. For example, `v25.12-must-backport` on a PR keeps backporting to `26.1`, `26.2`, … even after `25.12` itself has reached end-of-life.
 
+In addition, the **named release itself is backported to whenever its branch still exists in the repository**, even when that release is no longer active — so a fix can be delivered to an end-of-life release line on request. So `v25.12-must-backport` backports to `25.12` (if the `25.12` branch is still present) plus every newer active release. Only when the named branch has been deleted is it skipped. The newer-release fan-out is still limited to *active* releases; an inactive label does not resurrect every old branch between it and the active set.
+
 ## Implementation {#implementation}
 
 ### Overview {#overview}
@@ -86,7 +88,7 @@ Labels on the original PR control whether and where backporting happens.
 | `pr-must-backport` | Backport to all active release branches (skipping branches marked `rolling-out`) |
 | `pr-must-backport-force` | Backport to all active release branches, ignoring `rolling-out` restrictions |
 | `pr-critical-bugfix` | Triggers `pr-must-backport` automatically (via `AUTO_BACKPORT` in `pr_labels_and_category.py`) |
-| `v{VER}-must-backport` (e.g. `v25.3-must-backport`) | Backport to that release branch **and every newer active release branch** — the version marks the *oldest* release the PR must reach, even when the named release is itself end-of-life. With several such labels, the lowest version wins. Overrides the `rolling-out` skip for those branches |
+| `v{VER}-must-backport` (e.g. `v25.3-must-backport`) | Backport to that release branch (whenever its branch still exists, even when end-of-life) **and to every newer active release branch** — the version marks the *oldest* release the PR must reach. With several such labels, the lowest version wins. Overrides the `rolling-out` skip for those branches |
 | `pr-backports-created` | Set by the bot when all required backport PRs have been created; cleared if a cherry-pick PR is reopened |
 | `pr-cherrypick` | Applied to cherry-pick PRs created by the bot |
 | `pr-backport` | Applied to backport PRs created by the bot |
@@ -162,7 +164,7 @@ Before starting any work on a PR, `ReleaseBranch.pre_check` runs `git merge-base
 
 The `CherryPickPRs` class runs at the start of each hourly execution and handles two scenarios:
 
-- **Orphaned cherry-pick PRs**: If a cherry-pick PR's release branch no longer has an open release PR (i.e. the release is closed), the cherry-pick PR is closed automatically.
+- **Orphaned cherry-pick PRs**: If a cherry-pick PR's release branch no longer has an open release PR (i.e. the release is closed), the cherry-pick PR is closed automatically — **unless** the original PR still carries the matching `v{VER}-must-backport` label, which explicitly targets that release line and keeps the cherry-pick open even after the release is end-of-life.
 - **Reopened cherry-pick PRs**: If an original PR already has `pr-backports-created` but a cherry-pick PR for it is still open, the `pr-backports-created` label is removed from the original PR so it can be reprocessed.
 
 For cherry-pick PRs waiting for manual conflict resolution:
