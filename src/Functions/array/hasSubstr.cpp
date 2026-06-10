@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class FunctionArrayHasSubstr : public FunctionArrayHasAllAny
+class FunctionArrayHasSubstr final : public FunctionArrayHasAllAny
 {
 public:
     static constexpr auto name = "hasSubstr";

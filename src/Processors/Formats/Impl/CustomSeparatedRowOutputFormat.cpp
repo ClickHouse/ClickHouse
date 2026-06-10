@@ -80,6 +80,7 @@ void CustomSeparatedRowOutputFormat::writeField(const IColumn & column, const IS
     serializeFieldByEscapingRule(column, serialization, out, row_num, escaping_rule, format_settings);
 }
 
+void registerOutputFormatCustomSeparated(FormatFactory & factory);
 void registerOutputFormatCustomSeparated(FormatFactory & factory)
 {
     auto register_func = [&](const String & format_name, bool with_names, bool with_types)

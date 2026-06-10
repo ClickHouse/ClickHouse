@@ -6,8 +6,6 @@ title: 'LIMIT Clause'
 doc_type: 'reference'
 ---
 
-# LIMIT clause
-
 The `LIMIT` clause controls how many rows are returned from your query results.
 
 ## Basic syntax {#basic-syntax}
