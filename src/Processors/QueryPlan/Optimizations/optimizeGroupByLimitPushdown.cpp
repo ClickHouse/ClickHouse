@@ -16,12 +16,6 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
     if (!aggregating_step)
         return nullptr;
 
-    /// The optimization cannot be applied for non-final aggregation (e.g. distributed queries
-    /// or parallel replicas) because each shard/replica would independently keep only its top-N
-    /// keys and the merge step would produce wrong results.
-    if (!aggregating_step->getFinal())
-        return nullptr;
-
     if (aggregating_step->isGroupingSets())
         return nullptr;
 
@@ -69,11 +63,15 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
 ///
 /// Conditions:
 ///   - Pattern 1: ORDER BY columns are a prefix of GROUP BY keys
-///   - Final aggregation (not distributed partial)
 ///   - No GROUPING SETS
 ///   - No overflow row (WITH TOTALS)
 ///   - Not LIMIT WITH TIES
 ///   - Not exact_rows_before_limit mode (always_read_till_end)
+///
+/// Note on partial aggregation: as documented in `validateAggregatingStep`,
+/// the optimization is inherently safe for Pattern 1 even if the matched
+/// `AggregatingStep` is partial (`final = false`), but no plan tree
+/// currently exposes such a pair to this optimizer.
 size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     if (!settings.enable_group_by_top_k_optimization)
@@ -140,6 +138,7 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
         nulls_directions.reserve(sort_description.size());
         collators.reserve(sort_description.size());
 
+        bool has_collator = false;
         for (size_t i = 0; i < sort_description.size(); ++i)
         {
             if (sort_description[i].column_name != params.keys[i])
@@ -148,7 +147,17 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
             directions.push_back(sort_description[i].direction);
             nulls_directions.push_back(sort_description[i].nulls_direction);
             collators.push_back(sort_description[i].collator ? sort_description[i].collator.get() : nullptr);
+            if (sort_description[i].collator)
+                has_collator = true;
         }
+
+        /// Skip when partial aggregation will be shipped across the wire: collators
+        /// are not serialized through `AggregatingStep::serialize`, so we can't
+        /// faithfully reproduce the heap's ordering on a follower.  This keeps the
+        /// serialization path simple - the collator case is rare enough that
+        /// foregoing the pushdown is preferable to plumbing collators across nodes.
+        if (has_collator && !aggregating_step->getFinal())
+            return 0;
 
         size_t num_key_columns = sort_description.size();
         aggregating_step->applyLimitPushdown(limit, std::move(directions), std::move(nulls_directions), std::move(collators), num_key_columns);

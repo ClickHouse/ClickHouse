@@ -10,6 +10,13 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ConvertingActions.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -24,6 +31,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool enable_group_by_top_k_optimization;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
 }
 
@@ -108,6 +116,176 @@ static std::vector<QueryPlan::Node *> findReadingStepsUnderUnion(QueryPlan::Node
     return {};
 }
 
+/// Recursively look for an `AggregatingStep` in the plan.
+static AggregatingStep * findAggregatingStep(QueryPlan::Node * node)
+{
+    if (!node)
+        return nullptr;
+    if (auto * step = typeid_cast<AggregatingStep *>(node->step.get()))
+        return step;
+    for (auto * child : node->children)
+    {
+        if (auto * found = findAggregatingStep(child))
+            return found;
+    }
+    return nullptr;
+}
+
+/// Find the inner `ASTSelectQuery` in a `query_ast`, unwrapping
+/// `ASTSelectWithUnionQuery` if present.  Returns nullptr on anything else.
+static const ASTSelectQuery * findInnerSelect(const ASTPtr & query_ast)
+{
+    if (auto * select = query_ast->as<ASTSelectQuery>())
+        return select;
+    if (auto * with_union = query_ast->as<ASTSelectWithUnionQuery>())
+    {
+        if (with_union->list_of_selects && !with_union->list_of_selects->children.empty())
+            return with_union->list_of_selects->children.front()->as<ASTSelectQuery>();
+    }
+    return nullptr;
+}
+
+/// Apply the GROUP BY top-K pushdown to the partial `AggregatingStep` inside
+/// the remote plan, mirroring the validation performed by
+/// `tryOptimizeGroupByLimitPushdown` but against the AST (since the remote
+/// plan, built at stage `WithMergeableState`, has no LimitStep / SortingStep
+/// to drive the existing optimization).
+///
+/// Only Pattern 1 (ORDER BY = leading prefix of GROUP BY, simple identifiers,
+/// no collators, no LIMIT WITH TIES, no WITH TOTALS/ROLLUP/CUBE) is handled
+/// here.  Pattern 2 (no ORDER BY) is intentionally skipped because the
+/// coordinator's `LimitStep` has no ordering with which to discard tuples
+/// with corrupted partial state - extending it requires either a sort before
+/// the final limit or a heap-aware merging step.
+/// Evaluate `node` to a constant `UInt64`.  Handles the `_CAST(N, 'UInt64')`
+/// wrapper that the planner injects around LIMIT literals.  Returns
+/// nullopt when the expression isn't constant or doesn't fit a `UInt64`.
+static std::optional<UInt64> evalConstantUInt64(const ASTPtr & node, const ContextPtr & context)
+{
+    if (!node)
+        return std::nullopt;
+    if (const auto * lit = node->as<ASTLiteral>())
+    {
+        if (lit->value.getType() != Field::Types::UInt64)
+            return std::nullopt;
+        return lit->value.safeGet<UInt64>();
+    }
+    auto evaluated = tryEvaluateConstantExpression(node, context);
+    if (!evaluated)
+        return std::nullopt;
+    const Field & value = evaluated->first;
+    if (value.getType() != Field::Types::UInt64)
+        return std::nullopt;
+    return value.safeGet<UInt64>();
+}
+
+static void tryPushDownTopKToPartialAggregation(QueryPlan & remote_plan, const ASTPtr & query_ast, const ContextPtr & context)
+{
+    const auto * select = findInnerSelect(query_ast);
+    if (!select)
+        return;
+
+    /// Disqualifiers that match `validateAggregatingStep` /
+    /// `tryOptimizeGroupByLimitPushdown` on the coordinator side.
+    if (select->group_by_with_totals || select->group_by_with_rollup
+        || select->group_by_with_cube || select->group_by_with_grouping_sets)
+        return;
+    if (select->limit_with_ties)
+        return;
+    if (select->limitBy() || select->limitByOffset())
+        return;
+
+    auto limit_opt = evalConstantUInt64(select->limitLength(), context);
+    if (!limit_opt || *limit_opt == 0)
+        return;
+    UInt64 limit = *limit_opt;
+    if (select->limitOffset())
+    {
+        auto offset_opt = evalConstantUInt64(select->limitOffset(), context);
+        if (!offset_opt)
+            return;
+        const UInt64 offset = *offset_opt;
+        if (offset > std::numeric_limits<UInt64>::max() - limit)
+            return;
+        limit += offset;
+    }
+
+    auto order_by_list = select->orderBy();
+    auto group_by_list = select->groupBy();
+    if (!order_by_list || !group_by_list)
+        return;
+    if (order_by_list->children.empty() || group_by_list->children.empty())
+        return;
+    if (order_by_list->children.size() > group_by_list->children.size())
+        return;
+
+    auto * agg_step = findAggregatingStep(remote_plan.getRootNode());
+    if (!agg_step)
+        return;
+    if (agg_step->getFinal())
+        return;
+    if (agg_step->isGroupingSets())
+        return;
+    const auto & params = agg_step->getParams();
+    if (params.overflow_row || params.max_rows_to_group_by > 0 || params.keys.empty())
+        return;
+    if (order_by_list->children.size() > params.keys.size())
+        return;
+
+    std::vector<int> directions;
+    std::vector<int> nulls_directions;
+    std::vector<const Collator *> collators;
+    directions.reserve(order_by_list->children.size());
+    nulls_directions.reserve(order_by_list->children.size());
+    collators.reserve(order_by_list->children.size());
+
+    /// The analyzer rewrites GROUP BY/ORDER BY identifiers into qualified
+    /// names like `__table1.k`, so `params.keys` may not match the bare
+    /// identifier from the AST.  Accept either an exact match or a "trailing
+    /// segment" match (`<qualified>.endsWith("." + ident)`).  This covers the
+    /// simple-identifier Pattern 1 cases without us having to plumb the
+    /// QueryNode all the way down here.
+    auto matches_key = [](std::string_view key, std::string_view ident_name) {
+        if (key == ident_name)
+            return true;
+        if (key.size() > ident_name.size() + 1
+            && key.ends_with(ident_name)
+            && key[key.size() - ident_name.size() - 1] == '.')
+            return true;
+        return false;
+    };
+
+    for (size_t i = 0; i < order_by_list->children.size(); ++i)
+    {
+        const auto * ob = order_by_list->children[i]->as<ASTOrderByElement>();
+        if (!ob)
+            return;
+        if (ob->with_fill)
+            return;
+        /// Skip when a collator is in play: AggregatingStep::serialize does not
+        /// round-trip collators, so we cannot reproduce the heap's ordering on
+        /// the follower.  See `optimizeGroupByLimitPushdown.cpp`.
+        if (ob->getCollation())
+            return;
+
+        if (ob->children.empty())
+            return;
+        const auto * ident = ob->children.front()->as<ASTIdentifier>();
+        if (!ident)
+            return;
+        if (!matches_key(params.keys[i], ident->name()))
+            return;
+
+        directions.push_back(ob->direction);
+        nulls_directions.push_back(ob->nulls_direction ? ob->nulls_direction : ob->direction);
+        collators.push_back(nullptr);
+    }
+
+    const size_t num_key_columns = order_by_list->children.size();
+    agg_step->applyLimitPushdown(
+        limit, std::move(directions), std::move(nulls_directions), std::move(collators), num_key_columns);
+}
+
 std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     const ASTPtr & query_ast,
     const Block & header,
@@ -138,6 +316,14 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     auto * node = findReadingStep<ReadFromTableStep>(query_plan->getRootNode());
     if (node)
         typeid_cast<ReadFromTableStep*>(node->step.get())->useParallelReplicas() = true;
+
+    /// If the user enabled the top-K heap optimization on the initiator, try
+    /// to push it down to the partial aggregation that this remote plan
+    /// represents.  The check covers the same conditions as the coordinator's
+    /// `tryOptimizeGroupByLimitPushdown`; it intentionally skips collator and
+    /// composite-expression cases that we do not yet serialize.
+    if (new_context->getSettingsRef()[Setting::enable_group_by_top_k_optimization])
+        tryPushDownTopKToPartialAggregation(*query_plan, query_ast, new_context);
 
     return query_plan;
 }
