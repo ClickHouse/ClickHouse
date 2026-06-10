@@ -1,6 +1,11 @@
 #include <memory>
 #include <mutex>
+#include <unordered_map>
+#include <chrono>
+#include <thread>
+#include <cstdlib>
 #include <Common/OSThreadNiceValue.h>
+#include <Common/StackTrace.h>
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
 
@@ -98,6 +103,96 @@ void configureMemoryTrackerFromSettings(bool has_trace_collector, MemoryTracker 
     memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
 }
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+namespace
+{
+/// Borrowed-ThreadGroup lifetime checker (debug/sanitizer only; deterministic, no race needed).
+///
+/// A borrowed child group (`createForMaterializedView` / `createForFlushAsyncInsertQueue`) holds RAW
+/// pointers into its PARENT group's `memory_tracker` and `performance_counters`. The invariant is that
+/// such a child — and anything pinning it — MUST NOT outlive its parent group, otherwise a later attach
+/// walks a freed parent tracker chain (`MemoryTracker::setParent`) -> use-after-free.
+///
+/// This registry records child->parent at child creation; when ANY group is destroyed it flags every
+/// still-live borrowed child that names it as parent. That catches the invariant violation at the exact
+/// moment of the premature free — for THIS code path and any other — without waiting for the racy UAF
+/// read to land. Run any suite under it to enumerate every site where a borrowed child outlives its parent.
+struct BorrowedGroupRegistry
+{
+    std::mutex mutex;
+    std::unordered_map<const ThreadGroup *, const ThreadGroup *> child_to_parent;
+    std::unordered_map<const ThreadGroup *, StackTrace> child_create_stack;
+};
+
+BorrowedGroupRegistry & borrowedGroupRegistry()
+{
+    static BorrowedGroupRegistry registry;
+    return registry;
+}
+
+void registerBorrowedGroup(const ThreadGroup * child, const ThreadGroup * parent)
+{
+    auto & r = borrowedGroupRegistry();
+    std::lock_guard lock(r.mutex);
+    r.child_to_parent[child] = parent;
+    r.child_create_stack.emplace(child, StackTrace());
+}
+
+void checkAndUnregisterOnDestroy(const ThreadGroup * group)
+{
+    auto & r = borrowedGroupRegistry();
+    std::lock_guard lock(r.mutex);
+    r.child_to_parent.erase(group);
+    r.child_create_stack.erase(group);
+    for (const auto & [child, parent] : r.child_to_parent)
+    {
+        if (parent != group)
+            continue;
+        const auto it = r.child_create_stack.find(child);
+        LOG_ERROR(
+            getLogger("BorrowedThreadGroupChecker"),
+            "BORROWED THREADGROUP INVARIANT VIOLATION: ThreadGroup {} is being destroyed while borrowed child {} still references it "
+            "as parent — its raw memory_tracker/performance_counters pointers now dangle. The borrowed child was created at:\n{}",
+            static_cast<const void *>(group),
+            static_cast<const void *>(child),
+            it != r.child_create_stack.end() ? it->second.toString() : String("<no stack captured>"));
+    }
+}
+
+/// Borrowed-ThreadGroup traverse-sleep amplifier (debug/sanitizer only; ON by default). When a thread is
+/// about to attach a BORROWED child and walk its raw parent chain in setParent, sleep first — widening the
+/// read-vs-free window so that a concurrent free of the parent (dedup-writer rotate/shutdown) lands inside
+/// it and the subsequent walk reliably reads freed memory -> ASan catches the actual UAF. Only amplifies an
+/// orphaning that is already happening; does not create it. Override the delay with
+/// CH_BORROWED_THREADGROUP_TRAVERSE_SLEEP_MS (set to 0 to disable).
+void maybeBorrowedGroupAttachSleep(const ThreadGroup * group)
+{
+    static const UInt64 sleep_ms = []() -> UInt64
+    {
+        const char * v = std::getenv("CH_BORROWED_THREADGROUP_TRAVERSE_SLEEP_MS"); // NOLINT(concurrency-mt-unsafe)
+        return v ? static_cast<UInt64>(std::strtoull(v, nullptr, 10)) : 50;
+    }();
+    if (!sleep_ms)
+        return;
+    bool is_borrowed;
+    {
+        auto & r = borrowedGroupRegistry();
+        std::lock_guard lock(r.mutex);
+        is_borrowed = r.child_to_parent.contains(group);
+    }
+    if (is_borrowed)
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+}
+}
+#endif
+
+ThreadGroup::~ThreadGroup()
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    checkAndUnregisterOnDestroy(this);
+#endif
+}
+
 ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_)
     : master_thread_id(CurrentThread::get().thread_id)
     , query_context(query_context_)
@@ -127,6 +222,9 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
     , shared_data(parent->getSharedData())
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    registerBorrowedGroup(this, parent.get());
+#endif
 }
 
 // c-tor for method createForFlushAsyncInsertQueue
@@ -140,6 +238,9 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
     , performance_counters(VariableContext::Process, &parent->performance_counters)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    registerBorrowedGroup(this, parent.get());
+#endif
     shared_data.query_is_canceled_predicate = [this] () -> bool {
         if (auto context_locked = query_context.lock())
         {
@@ -353,6 +454,12 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
     /// Attach or init current thread to thread group and copy useful information from it
     thread_group = thread_group_;
     thread_group->linkThread(thread_id);
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// Borrowed-ThreadGroup amplifier (ON by default): widen the window before walking a borrowed child's
+    /// raw parent chain below, so a concurrent free of the parent lands inside it.
+    maybeBorrowedGroupAttachSleep(thread_group.get());
+#endif
 
     performance_counters.setParent(&thread_group->performance_counters);
     memory_tracker.setParent(&thread_group->memory_tracker);

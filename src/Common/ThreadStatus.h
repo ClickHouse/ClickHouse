@@ -72,6 +72,7 @@ public:
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
     explicit ThreadGroup(ThreadGroupPtr parent);
     ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
+    ~ThreadGroup(); /// Borrowed-ThreadGroup lifetime checker (debug/sanitizer only); trivial in release.
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
