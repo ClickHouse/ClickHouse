@@ -1,4 +1,0 @@
-OK (fuzzer 3-tuple over zeros() CTE)
-OK (fuzzer single-column over primes() CTE)
-OK (fuzzer settings + primes() CTE)
-OK (explicit correlated IN subquery)

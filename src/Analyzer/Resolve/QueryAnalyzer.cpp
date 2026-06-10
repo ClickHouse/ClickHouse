@@ -3112,6 +3112,15 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 resolveUnion(mat_subquery, mat_subquery_scope);
 
                             ctes_in_resolve_process.erase(resolved_identifier_node);
+
+                            const bool mat_subquery_is_correlated = mat_subquery->as<QueryNode>()
+                                ? mat_subquery->as<QueryNode>()->isCorrelated()
+                                : mat_subquery->as<UnionNode>()->isCorrelated();
+                            if (mat_subquery_is_correlated)
+                                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                                    "Materialized CTE '{}' cannot be correlated. In scope {}",
+                                    materialized_cte_ptr->cte_name,
+                                    scope.scope_node->formatASTForErrorMessage());
                         }
 
                         /// Create temp table only if no other clone has done it yet.
