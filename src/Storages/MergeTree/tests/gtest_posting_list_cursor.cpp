@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
@@ -18,6 +19,8 @@
 #include <IO/VarInt.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/SingleDiskVolume.h>
+
+#include <absl/container/flat_hash_set.h>
 
 #include <IO/WriteBufferFromString.h>
 
@@ -64,10 +67,15 @@ TokenPostingsInfo makeMaterializedSingleBlockInfo(const std::vector<uint32_t> & 
     return info;
 }
 
-/// Helper: create a PostingListCursor for an embedded posting list.
+/// Helper: create a PostingListCursor for an embedded posting list by flattening the embedded
+/// Roaring bitmap into a shared sorted array — mirroring how callers feed already-decoded postings
+/// to the shared-array cursor.
 PostingListCursorPtr makeEmbeddedCursor(const TokenPostingsInfo & info)
 {
-    return std::make_shared<PostingListCursor>(info);
+    auto flat = std::make_shared<PaddedPODArray<UInt32>>(info.cardinality);
+    if (info.embedded_postings)
+        info.embedded_postings->toUint32Array(flat->data());
+    return std::make_shared<PostingListCursor>(FlatPostingsPtr(std::move(flat)));
 }
 
 /// Helper: generate a sequence of doc IDs: {start, start+step, start+2*step, ...}
@@ -114,6 +122,27 @@ std::vector<uint32_t> linearOrToDocIds(PostingListCursorPtr cursor, size_t row_o
     return result;
 }
 
+/// Helper: resolve tokens to a deduped cursor vector via `postings`.
+std::vector<PostingListCursorPtr> resolveTokenCursors(
+    const PostingListCursorMap & postings,
+    const VectorWithMemoryTracking<String> & tokens)
+{
+    std::vector<PostingListCursorPtr> cursors;
+    cursors.reserve(tokens.size());
+
+    absl::flat_hash_set<const PostingListCursor *> seen;
+    seen.reserve(tokens.size());
+
+    for (const auto & token : tokens)
+    {
+        auto it = postings.find(token);
+        if (it != postings.end() && seen.insert(it->second.get()).second)
+            cursors.push_back(it->second);
+    }
+
+    return cursors;
+}
+
 /// Helper: perform intersection using lazyIntersectPostingLists and return doc IDs.
 std::vector<uint32_t> intersectAndCollect(
     PostingListCursorMap & postings,
@@ -125,7 +154,8 @@ std::vector<uint32_t> intersectAndCollect(
 {
     float effective_threshold = brute_force ? 0.0f : density_threshold;
     auto col = ColumnUInt8::create(num_rows, UInt8(0));
-    lazyIntersectPostingLists(*col, postings, tokens, 0, row_offset, num_rows, effective_threshold);
+    auto cursors = resolveTokenCursors(postings, tokens);
+    lazyIntersectPostingLists(*col, cursors, 0, row_offset, num_rows, effective_threshold);
     const auto & data = col->getData();
     std::vector<uint32_t> result;
     for (size_t i = 0; i < num_rows; ++i)
@@ -142,7 +172,8 @@ std::vector<uint32_t> unionAndCollect(
     size_t num_rows)
 {
     auto col = ColumnUInt8::create(num_rows, UInt8(0));
-    lazyUnionPostingLists(*col, postings, tokens, 0, row_offset, num_rows);
+    auto cursors = resolveTokenCursors(postings, tokens);
+    lazyUnionPostingLists(*col, cursors, 0, row_offset, num_rows);
     const auto & data = col->getData();
     std::vector<uint32_t> result;
     for (size_t i = 0; i < num_rows; ++i)
@@ -163,6 +194,8 @@ struct MultiBlockTestData
     mutable std::shared_ptr<SingleDiskVolume> volume;
     mutable std::shared_ptr<DataPartStorageOnDiskFull> storage_holder;
     mutable std::unique_ptr<MergeTreeReaderStreamSingleColumnWholePart> stream;
+    /// Fresh per-test segment cache (compressed cursors require one).
+    mutable std::shared_ptr<TextIndexPostingsCache> cache;
 };
 
 /// Build a multi-segment TokenPostingsInfo and data buffer for testing.
@@ -248,7 +281,10 @@ PostingListCursorPtr makeMultiBlockCursor(const MultiBlockTestData & data)
     /// before the cursor calls advanceToMark.
     data.stream->getDataBuffer();
 
-    return std::make_shared<PostingListCursor>(*data.stream, data.info);
+    if (!data.cache)
+        data.cache = std::make_shared<TextIndexPostingsCache>("SLRU", 1ULL << 30, 0, 0.5);
+
+    return std::make_shared<PostingListCursor>(*data.stream, data.info, data.cache.get());
 }
 
 } // anonymous namespace
@@ -302,7 +338,7 @@ TEST(PostingListCursorTest, LargeEmbeddedCursor)
 
 TEST(PostingListCursorTest, OversizedEmbeddedCursorExceedsBlockSize)
 {
-    constexpr uint32_t count = 500; // > MAX_EMBEDDED_POSTING_LIST_ROWS and > BLOCK_SIZE
+    constexpr uint32_t count = 500; // > BLOCK_SIZE, so the posting list spans multiple packed blocks
     auto docs = generateRange(1, count, 3);
     auto info = makeEmbeddedInfo(docs);
     auto cursor = makeEmbeddedCursor(info);
@@ -360,7 +396,7 @@ TEST(PostingListCursorTest, EmbeddedCursorsOverSameInfoAreIndependent)
 {
     auto info = makeEmbeddedInfo({10, 20, 30, 40});
 
-    auto cursor1 = std::make_shared<PostingListCursor>(info);
+    auto cursor1 = makeEmbeddedCursor(info);
     cursor1->advance(30);
     ASSERT_TRUE(cursor1->valid());
     EXPECT_EQ(cursor1->value(), 30U);
@@ -368,7 +404,7 @@ TEST(PostingListCursorTest, EmbeddedCursorsOverSameInfoAreIndependent)
     ASSERT_TRUE(cursor1->valid());
     EXPECT_EQ(cursor1->value(), 40U);
 
-    auto cursor2 = std::make_shared<PostingListCursor>(info);
+    auto cursor2 = makeEmbeddedCursor(info);
     cursor2->advance(10);
     ASSERT_TRUE(cursor2->valid());
     EXPECT_EQ(cursor2->value(), 10U);
@@ -441,7 +477,7 @@ TEST(PostingListCursorTest, MultiBlockCursorsOverSameStreamAreIndependent)
     ASSERT_TRUE(cursor1->valid());
     EXPECT_EQ(cursor1->value(), 422u);
 
-    auto cursor2 = std::make_shared<PostingListCursor>(*data.stream, data.info);
+    auto cursor2 = std::make_shared<PostingListCursor>(*data.stream, data.info, data.cache.get());
     cursor2->advance(100);
     ASSERT_TRUE(cursor2->valid());
     EXPECT_EQ(cursor2->value(), 100u);
@@ -3652,14 +3688,12 @@ TEST(PostingListCursorTest, LazyUnionRowOffsetAboveUInt32MaxThrows)
 {
     auto info_a = makeEmbeddedInfo({1, 2, 3});
     auto info_b = makeEmbeddedInfo({3, 4, 5});
-    PostingListCursorMap postings;
-    postings.emplace("a", makeEmbeddedCursor(info_a));
-    postings.emplace("b", makeEmbeddedCursor(info_b));
+    std::vector<PostingListCursorPtr> cursors{makeEmbeddedCursor(info_a), makeEmbeddedCursor(info_b)};
 
     const size_t huge_offset = static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1;
     auto col = ColumnUInt8::create(64, UInt8(0));
     EXPECT_THROW(
-        lazyUnionPostingLists(*col, postings, {"a", "b"}, 0, huge_offset, 64),
+        lazyUnionPostingLists(*col, cursors, 0, huge_offset, 64),
         Exception);
 }
 
@@ -3667,9 +3701,7 @@ TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
 {
     auto info_a = makeEmbeddedInfo({1, 2, 3});
     auto info_b = makeEmbeddedInfo({2, 3, 4});
-    PostingListCursorMap postings;
-    postings.emplace("a", makeEmbeddedCursor(info_a));
-    postings.emplace("b", makeEmbeddedCursor(info_b));
+    std::vector<PostingListCursorPtr> cursors{makeEmbeddedCursor(info_a), makeEmbeddedCursor(info_b)};
 
     const size_t huge_offset = static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1;
 
@@ -3677,7 +3709,7 @@ TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
     {
         auto col = ColumnUInt8::create(64, UInt8(0));
         EXPECT_THROW(
-            lazyIntersectPostingLists(*col, postings, {"a", "b"}, 0, huge_offset, 64, /*density_threshold=*/1.0f),
+            lazyIntersectPostingLists(*col, cursors, 0, huge_offset, 64, /*density_threshold=*/1.0f),
             Exception);
     }
 
@@ -3685,7 +3717,7 @@ TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
     {
         auto col = ColumnUInt8::create(64, UInt8(0));
         EXPECT_THROW(
-            lazyIntersectPostingLists(*col, postings, {"a", "b"}, 0, huge_offset, 64, /*density_threshold=*/0.0f),
+            lazyIntersectPostingLists(*col, cursors, 0, huge_offset, 64, /*density_threshold=*/0.0f),
             Exception);
     }
 }
@@ -3735,15 +3767,13 @@ TEST(PostingListCursorTest, LazyIntersectIncludesRowAtUInt32Max)
     /// dense-memset path and exercise `findRowRangeEnd`.
     auto info_a = makeEmbeddedInfo({m - 3, m});
     auto info_b = makeEmbeddedInfo({m - 2, m});
-    PostingListCursorMap postings;
-    postings.emplace("a", makeEmbeddedCursor(info_a));
-    postings.emplace("b", makeEmbeddedCursor(info_b));
 
     // Brute-force path (forced via density_threshold = 0). This is the path that goes
     // through `linearOr` + `linearAnd` and was affected by the off-by-one.
     {
+        std::vector<PostingListCursorPtr> cursors{makeEmbeddedCursor(info_a), makeEmbeddedCursor(info_b)};
         auto col = ColumnUInt8::create(4, UInt8(0));
-        lazyIntersectPostingLists(*col, postings, {"a", "b"}, 0, static_cast<size_t>(m) - 3, 4, /*density_threshold=*/0.0f);
+        lazyIntersectPostingLists(*col, cursors, 0, static_cast<size_t>(m) - 3, 4, /*density_threshold=*/0.0f);
         const auto & data = col->getData();
         EXPECT_EQ(data[0], 0u);  // m - 3: only in a
         EXPECT_EQ(data[1], 0u);  // m - 2: only in b
@@ -3754,8 +3784,9 @@ TEST(PostingListCursorTest, LazyIntersectIncludesRowAtUInt32Max)
     // Leapfrog path (density_threshold = 1.0). Uses direct size_t arithmetic so the bug
     // didn't manifest here; included for completeness as a regression guard.
     {
+        std::vector<PostingListCursorPtr> cursors{makeEmbeddedCursor(info_a), makeEmbeddedCursor(info_b)};
         auto col = ColumnUInt8::create(4, UInt8(0));
-        lazyIntersectPostingLists(*col, postings, {"a", "b"}, 0, static_cast<size_t>(m) - 3, 4, /*density_threshold=*/1.0f);
+        lazyIntersectPostingLists(*col, cursors, 0, static_cast<size_t>(m) - 3, 4, /*density_threshold=*/1.0f);
         const auto & data = col->getData();
         EXPECT_EQ(data[0], 0u);
         EXPECT_EQ(data[1], 0u);

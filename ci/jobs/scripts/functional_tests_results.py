@@ -16,10 +16,12 @@ NOT_FAILED_SIGN = "[ NOT_FAILED "
 HUNG_SIGN = "Found hung queries in processlist"
 DATABASE_SIGN = "Database: "
 
-# Pick up `STOP_TESTING_EXIT_CODE` straight from `tests/clickhouse-test` so
+# Pick up the runner exit codes straight from `tests/clickhouse-test` so
 # the contract has a single source of truth.
 _clickhouse_test = Path(__file__).resolve().parents[3] / "tests" / "clickhouse-test"
-STOP_TESTING_EXIT_CODE = runpy.run_path(str(_clickhouse_test))["STOP_TESTING_EXIT_CODE"]
+_clickhouse_test_globals = runpy.run_path(str(_clickhouse_test))
+STOP_TESTING_EXIT_CODE = _clickhouse_test_globals["STOP_TESTING_EXIT_CODE"]
+GLOBAL_TIME_LIMIT_EXIT_CODE = _clickhouse_test_globals["GLOBAL_TIME_LIMIT_EXIT_CODE"]
 
 # Exit codes that mean the run was aborted mid-flight, so per-test results
 # (if any) are incomplete and we cannot trust which test "caused" the
@@ -236,6 +238,21 @@ class FTResultsProcessor:
                 # Single test failed - sequential run, this test is the culprit.
                 failed_results[0].status = Result.Status.ERROR
             test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
+        elif runner_exit_code == GLOBAL_TIME_LIMIT_EXIT_CODE:
+            # The run stopped gracefully because the global time limit was
+            # reached. This is the *expected* stop condition for the flaky and
+            # targeted checks, which rerun the selected tests until the time
+            # budget is exhausted - not a failure. Real test failures and hung
+            # queries are still reported through the branches above (they set
+            # `state` to FAIL regardless), so here we only add an informational
+            # leaf and leave `state` as computed from the parsed results.
+            test_results.append(
+                Result(
+                    "Global time limit reached",
+                    Result.Status.OK,
+                    info="Stopped after reaching the time budget - the expected stop condition for this check.",
+                )
+            )
         elif not s.success_finish:
             state = Result.Status.ERROR
             info = "The test runner was terminated unexpectedly"
@@ -251,7 +268,9 @@ class FTResultsProcessor:
         # nothing to blame. The synthetic leaf is added only when the parser
         # found nothing - otherwise the real failure already explains the result
         # and a duplicate entry is just noise.
-        if runner_exit_code is not None and runner_exit_code != 0:
+        # `GLOBAL_TIME_LIMIT_EXIT_CODE` is excluded: it is a graceful, expected
+        # stop (handled above), not a failure, even though it is non-zero.
+        if runner_exit_code not in (None, 0, GLOBAL_TIME_LIMIT_EXIT_CODE):
             if state == Result.Status.OK:
                 state = Result.Status.FAIL
                 test_results.append(

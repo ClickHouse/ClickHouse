@@ -301,6 +301,14 @@ bool StorageMerge::isRemote() const
     return first_remote_table != nullptr;
 }
 
+bool StorageMerge::hasChildTable(std::function<bool(const StoragePtr &)> predicate) const
+{
+    return traverseTablesUntil([&predicate](const StoragePtr & table)
+    {
+        return table && predicate(table);
+    }) != nullptr;
+}
+
 bool StorageMerge::supportsPrewhere() const
 {
     return traverseTablesUntil([](const auto & table) { return !table->supportsPrewhere(); }) == nullptr;
