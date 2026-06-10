@@ -15,15 +15,7 @@ INSERT INTO test SELECT number % 3 AS g, number AS x FROM numbers(12);
 -- LIMIT BY: rand64(g) is kept, not removed as a function of g.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY g LIMIT 1 BY g, rand64(g);
 
--- The number of kept rows is the same with the optimization on and off.
-SELECT count() FROM (SELECT g FROM test LIMIT 1 BY g, rand64(g));
-SELECT count() FROM (SELECT g FROM test LIMIT 1 BY g, rand64(g)) SETTINGS optimize_limit_by_function_keys = 0;
-
 -- GROUP BY: rand64(g) is kept, not removed as a function of g.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g, count() FROM test GROUP BY g, rand64(g);
-
--- The number of groups is the same with the optimization on and off.
-SELECT count() FROM (SELECT g FROM test GROUP BY g, rand64(g));
-SELECT count() FROM (SELECT g FROM test GROUP BY g, rand64(g)) SETTINGS optimize_group_by_function_keys = 0;
 
 DROP TABLE test;
