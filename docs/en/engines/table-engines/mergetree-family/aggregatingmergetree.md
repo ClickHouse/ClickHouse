@@ -215,14 +215,14 @@ INSERT INTO agg_tuples VALUES (2, (50, 3));
 
 OPTIMIZE TABLE agg_tuples FINAL;
 
-SELECT * FROM agg_tuples ORDER BY key;
+SELECT key, metrics.total_visits, metrics.unique_users FROM agg_tuples ORDER BY key;
 ```
 
 ```text
-┌─key─┬─metrics───┐
-│   1 │ (300, 8)  │
-│   2 │ (50, 3)   │
-└─────┴───────────┘
+┌─key─┬─metrics.total_visits─┬─metrics.unique_users─┐
+│   1 │                  300 │                    8 │
+│   2 │                   50 │                    3 │
+└─────┴──────────────────────┴──────────────────────┘
 ```
 
 `total_visits` is aggregated with `sum` (100 + 200 = 300), while `unique_users` is aggregated with `max` (max(5, 8) = 8).

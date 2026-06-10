@@ -165,11 +165,11 @@ SETTINGS allow_tuple_element_aggregation = 1;
 INSERT INTO coalescing_tuples VALUES (1, (100, NULL, (NULL)));
 INSERT INTO coalescing_tuples VALUES (1, (NULL, 'hello', (42)));
 
-SELECT * FROM coalescing_tuples FINAL;
+SELECT key, data.value_a, data.value_b, data.nested.value_c FROM coalescing_tuples FINAL;
 ```
 
 ```text
-┌─key─┬─data──────────────────┐
-│   1 │ (100, 'hello', (42))  │
-└─────┴───────────────────────┘
+┌─key─┬─data.value_a─┬─data.value_b─┬─data.nested.value_c─┐
+│   1 │          100 │ hello        │                  42 │
+└─────┴──────────────┴──────────────┴─────────────────────┘
 ```

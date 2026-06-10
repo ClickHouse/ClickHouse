@@ -224,13 +224,13 @@ INSERT INTO summing_tuples VALUES (1, (200, 20, (3)));
 
 OPTIMIZE TABLE summing_tuples FINAL;
 
-SELECT * FROM summing_tuples;
+SELECT key, metrics.impressions, metrics.clicks, metrics.nested.conversions FROM summing_tuples;
 ```
 
 ```text
-┌─key─┬─metrics─────────┐
-│   1 │ (300, 30, (4))  │
-└─────┴─────────────────┘
+┌─key─┬─metrics.impressions─┬─metrics.clicks─┬─metrics.nested.conversions─┐
+│   1 │                 300 │             30 │                          4 │
+└─────┴─────────────────────┴────────────────┴────────────────────────────┘
 ```
 
 ## Related content {#related-content}
