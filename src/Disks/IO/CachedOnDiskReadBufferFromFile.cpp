@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int UNKNOWN_FILE_SIZE;
     extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
@@ -265,6 +266,19 @@ namespace
 
 using ReadType = CachedOnDiskReadBufferFromFile::ReadType;
 using ReadInfo = CachedOnDiskReadBufferFromFile::ReadInfo;
+
+/// Format the remote object's last modification time for diagnostics, alongside its size: a recent
+/// timestamp confirms the object was overwritten between listing and reading. Returns "None" when the
+/// metadata is unavailable (e.g. a non-remote buffer).
+String formatRemoteFileLastModified(const std::optional<RemoteFileMetadata> & metadata)
+{
+    if (!metadata.has_value())
+        return "None";
+
+    WriteBufferFromOwnString out;
+    writeDateTimeText(metadata->last_modification_time, out);
+    return fmt::format("{} (unix time {})", out.str(), metadata->last_modification_time);
+}
 
 std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     const FileSegment & file_segment,
@@ -808,16 +822,66 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
             if (!state.bytes_to_predownload || !has_more_data)
             {
                 if (state.bytes_to_predownload)
+                {
+                    /// We failed to predownload all the bytes that were needed, so this downloader
+                    /// will not continue. Release the segment (transition it to
+                    /// PARTIALLY_DOWNLOADED_NO_CONTINUATION) before throwing, so that other readers
+                    /// waiting on this segment can take over instead of waiting for a download that
+                    /// will never finish. This mirrors the EOF handling in readFromFileSegment.
+                    if (file_segment.isDownloader())
+                        file_segment.setDownloadFinishedWithoutContinuation();
+
+                    /// The remote object may have been overwritten with shorter content
+                    /// between listing and reading. Check the actual remote file metadata (size and
+                    /// last modification time, fetched in a single request) to distinguish that from
+                    /// a genuine logic error.
+                    const auto remote_metadata = state.buf->getRemoteFileMetadata();
+                    /// The object size known at buffer creation time (from listing). Logged alongside
+                    /// the actual size so a truncation is immediately visible in diagnostics.
+                    const auto expected_object_size = state.buf->tryGetFileSize();
+                    if (remote_metadata.has_value()
+                        && remote_metadata->size == file_segment.getCurrentWriteOffset())
+                    {
+                        /// We reached the real end of the (now shorter) object while
+                        /// predownloading, before reaching the bytes the reader actually
+                        /// needs: those lie beyond the truncated object, because
+                        /// offset == current_write_offset + bytes_to_predownload > remote_metadata->size.
+                        ///
+                        /// There is no valid data to return for `offset`. We must NOT treat
+                        /// this as EOF (return a short/zero read): the caller would then
+                        /// consume buffer bytes that were never written -- a
+                        /// use-of-uninitialized-value under MSan, and silent garbage in
+                        /// release. Fail with a regular CANNOT_READ_ALL_DATA instead of a
+                        /// LOGICAL_ERROR: it does not alert as a server bug and is retryable
+                        /// while the object is being concurrently replaced.
+                        throw Exception(
+                            ErrorCodes::CANNOT_READ_ALL_DATA,
+                            "Remote object was truncated between listing and reading: "
+                            "actual object size {}, expected object size {}, last modified {}, "
+                            "but need to read until offset {}. Current file segment: {}",
+                            remote_metadata->size,
+                            expected_object_size ? std::to_string(*expected_object_size) : "None",
+                            formatRemoteFileLastModified(remote_metadata),
+                            offset,
+                            file_segment.getInfoForLog());
+                    }
+
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Failed to predownload remaining {} bytes. Current file segment: {}, "
-                        "current download offset: {}, expected: {}, eof: {}, internal buffer size: {}",
+                        "current download offset: {}, expected: {}, eof: {}, "
+                        "internal buffer size: {}, remote object size: {}, "
+                        "expected object size: {}, remote object last modified: {}",
                         state.bytes_to_predownload,
                         file_segment.range().toString(),
                         file_segment.getCurrentWriteOffset(),
                         offset,
                         state.buf->eof(),
-                        state.buf->internalBuffer().size());
+                        state.buf->internalBuffer().size(),
+                        remote_metadata ? std::to_string(remote_metadata->size) : "None",
+                        expected_object_size ? std::to_string(*expected_object_size) : "None",
+                        formatRemoteFileLastModified(remote_metadata));
+                }
 
                 chassert(!state.buf->hasPendingData());
                 auto result = state.buf->hasPendingData();
@@ -1388,12 +1452,12 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         else
             download_finished_time = "None";
 
-        std::optional<size_t> object_size;
+        std::optional<RemoteFileMetadata> remote_metadata;
         std::optional<size_t> impl_read_until_position;
         std::optional<std::string> impl_read_stop_reason;
         if (state.read_type != ReadType::CACHED)
         {
-            object_size = state.buf->getRemoteFileSize();
+            remote_metadata = state.buf->getRemoteFileMetadata();
 
 #if USE_AWS_S3
             if (const auto * s3_buf = dynamic_cast<const ReadBufferFromS3 *>(state.buf.get()))
@@ -1404,21 +1468,26 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
 #endif
         }
 
-        if (object_size.has_value() && *object_size == offset)
+        if (remote_metadata.has_value() && remote_metadata->size == offset)
         {
             /// The remote object is smaller than file_size_ indicated, e.g. the object was
-            /// overwritten with shorter content between listing and reading.
-            /// Treat this as a legitimate EOF rather than a logic error.
-            LOG_WARNING(
-                log,
-                "Remote object is smaller than expected: read {} bytes but expected to read until position {}. "
-                "Actual object size: {}, expected size: {}, stop reason: {}. Treating as EOF.",
-                offset, info.read_until_position, *object_size, file_size_,
-                impl_read_stop_reason ? *impl_read_stop_reason : "None");
+            /// overwritten with shorter content between listing and reading. This downloader
+            /// will not continue: release the segment so other readers waiting on it can take
+            /// over, then fail with a regular CANNOT_READ_ALL_DATA -- retryable while the object
+            /// is being concurrently replaced, and (unlike a LOGICAL_ERROR) it does not alert as a
+            /// server bug. The predownloadForFileSegment and readBigAt paths fail the same way.
             if (file_segment.isDownloader())
                 file_segment.setDownloadFinishedWithoutContinuation();
-            info.read_until_position = offset;
-            return 0;
+            throw Exception(
+                ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Remote object was truncated between listing and reading: "
+                "read until offset {} but expected to read until position {}. "
+                "Actual object size {}, expected object size {}, last modified {}, stop reason: {}. "
+                "Current file segment: {}",
+                offset, info.read_until_position, remote_metadata->size, file_size_,
+                formatRemoteFileLastModified(remote_metadata),
+                impl_read_stop_reason ? *impl_read_stop_reason : "None",
+                file_segment.getInfoForLog());
         }
 
         throw Exception(
@@ -1427,6 +1496,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             "file offset: {}, "
             "read bytes: {}, "
             "object size: {}, "
+            "object last modified: {}, "
             "expected object size: {}, "
             "reading until: {}, "
             "read type: {}, "
@@ -1444,7 +1514,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             "current file segment: {}",
             offset + size,
             size,
-            object_size ? std::to_string(*object_size) : "None",
+            remote_metadata ? std::to_string(remote_metadata->size) : "None",
+            formatRemoteFileLastModified(remote_metadata),
             file_size_,
             info.read_until_position,
             toString(state.read_type),
@@ -1601,6 +1672,9 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
 
         if (!size)
         {
+            /// A truncated remote object (overwritten with shorter content between listing and
+            /// reading) is handled in readFromFileSegment, which throws CANNOT_READ_ALL_DATA before
+            /// returning here. Reaching this point with a zero-sized read is therefore unexpected.
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot read all data. Offset: {} (initial offset: {}), read bytes {}/{}",
