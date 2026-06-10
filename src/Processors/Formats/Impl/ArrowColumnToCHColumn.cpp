@@ -113,9 +113,15 @@ namespace
 {
 
 /// Validate that the validity bitmap (buffers[0]) covers all declared rows.
-/// Must be called before any IsNull() / IsValid() loop when null_count() > 0.
-/// When null_count() == 0 Arrow omits the bitmap entirely (buffers[0] == nullptr),
-/// so we only check when there actually are nulls to read.
+/// We deliberately do NOT gate on null_count(): for an array produced by Arrow's
+/// Slice/Flatten the null count is kUnknownNullCount, and calling null_count()
+/// triggers a CountSetBits scan over buffers[0] across [offset, offset+length) —
+/// which reads out of bounds when the bitmap is truncated, the very thing we are
+/// trying to validate.  Instead we validate the buffer size whenever a bitmap is
+/// present (a present-but-undersized bitmap is always malformed), and skip when it
+/// is absent (Arrow reports null_count == 0 for a missing bitmap without scanning).
+/// This must run before any null_count()/IsNull()/IsValid() call, including the
+/// implicit null_count() in arrow::ChunkedArray's constructor.
 void checkValidityBitmap(const arrow::Array & chunk, const String & column_name)
 {
     if (unlikely(chunk.length() < 0 || chunk.offset() < 0))
@@ -123,10 +129,10 @@ void checkValidityBitmap(const arrow::Array & chunk, const String & column_name)
             ErrorCodes::INCORRECT_DATA,
             "Arrow array has negative length or offset for column '{}': length={}, offset={}",
             column_name, chunk.length(), chunk.offset());
-    if (chunk.null_count() == 0)
-        return;
     const auto & buffer = chunk.data()->buffers[0];
-    const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
+    if (!buffer)
+        return;
+    const size_t buffer_size = static_cast<size_t>(buffer->size());
     const size_t count = static_cast<size_t>(chunk.offset()) + static_cast<size_t>(chunk.length());
     const size_t required = count / 8 + (count % 8 != 0 ? 1 : 0);
     if (unlikely(buffer_size < required))
@@ -523,6 +529,10 @@ static ColumnWithTypeAndName readColumnWithViewData(const std::shared_ptr<arrow:
     {
         const auto & arrow_view_chunk = checkedCastView<ArrowView>(*arrow_chunk, column_name);
         const int64_t chunk_length = arrow_view_chunk.length();
+        /// An empty chunk in a multi-batch stream can leave buffers[1] null; skip it before
+        /// forming a pointer into the view-struct buffer.
+        if (chunk_length == 0)
+            continue;
         const auto * view_structs = reinterpret_cast<const arrow::BinaryViewType::c_type *>(
             arrow_view_chunk.data()->buffers[1]->data()) + arrow_view_chunk.offset();
 
@@ -833,7 +843,11 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
         }
         else
         {
-            const auto * raw_data = reinterpret_cast<const Int32 *>(chunk.data()->buffers[1]->data()) + chunk.offset();
+            /// getValidatedBuffer returns nullptr for an empty chunk (Arrow may leave buffers[1]
+            /// null when length == 0); skip it instead of dereferencing a null data buffer.
+            if (chunk.length() == 0)
+                continue;
+            const auto * raw_data = getValidatedBuffer<Int32>(chunk, column_name);
             column_data.insert_assume_reserved(raw_data, raw_data + chunk.length());
         }
     }
@@ -1347,6 +1361,34 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(const std::shar
             const auto & arrow_offsets = checkedCast<OffsetArray>(*arrow_offsets_array, column_name);
             checkListOffsetsMonotonic(arrow_offsets, column_name);
         }
+        else
+        {
+            /// FixedSizeList has no offsets array: Flatten() slices the values array over
+            /// [offset*stride, (offset+length)*stride].  Validate the fixed stride is
+            /// non-negative and the slice stays within the values array before Flatten()
+            /// reaches Arrow's ArrayData::Slice (which would otherwise fail with STD_EXCEPTION).
+            const int64_t stride = list_chunk.value_length();
+            if (unlikely(stride < 0))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow FixedSizeList has negative list size {} for column '{}'",
+                    stride, column_name);
+            const size_t count = static_cast<size_t>(list_chunk.offset()) + static_cast<size_t>(list_chunk.length());
+            size_t required = 0;
+            if (unlikely(__builtin_mul_overflow(count, static_cast<size_t>(stride), &required)))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow FixedSizeList size overflow for column '{}': {} rows × stride {}",
+                    column_name, count, stride);
+            const auto & values = list_chunk.values();
+            const size_t values_len = values ? static_cast<size_t>(values->length()) : 0;
+            if (unlikely(required > values_len))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow FixedSizeList values array too small for column '{}': "
+                    "need {} elements but values array has {}",
+                    column_name, required, values_len);
+        }
 
         /*
          * It seems like arrow::ListArray::values() (nested column data) might or might not be shared across chunks.
@@ -1358,7 +1400,12 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(const std::shar
         auto flatten_result = list_chunk.Flatten();
         if (flatten_result.ok())
         {
-            array_vector.emplace_back(flatten_result.ValueOrDie());
+            /// Flatten slices the values array, producing a child with kUnknownNullCount.
+            /// Validate its validity bitmap now, before arrow::ChunkedArray's constructor
+            /// (below) sums chunk->null_count() and scans a possibly-truncated bitmap.
+            const auto & flattened = flatten_result.ValueOrDie();
+            checkValidityBitmap(*flattened, column_name);
+            array_vector.emplace_back(flattened);
         }
         else
         {
@@ -1866,7 +1913,13 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             {
                 auto & struct_chunk = assert_cast<arrow::StructArray &>(*(arrow_column->chunk(chunk_i)));
                 for (int i = 0; i < arrow_struct_type->num_fields(); ++i)
-                    nested_arrow_columns[i].emplace_back(struct_chunk.field(i));
+                {
+                    auto field_chunk = struct_chunk.field(i);
+                    /// field() Slice-clamps children, producing kUnknownNullCount; validate the
+                    /// child bitmap before arrow::ChunkedArray's constructor (below) scans it.
+                    checkValidityBitmap(*field_chunk, column_name);
+                    nested_arrow_columns[i].emplace_back(std::move(field_chunk));
+                }
             }
 
             Columns tuple_elements;

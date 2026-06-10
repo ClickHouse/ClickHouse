@@ -32,6 +32,17 @@
 #   monotonicity check runs, failing deep inside Arrow's ArrayData::Slice (STD_EXCEPTION)
 #   on code that validates monotonicity too late.  The pre-Flatten check rejects it as
 #   INCORRECT_DATA.
+#
+# Class E — truncated child validity bitmap after Flatten/Slice:
+#   Flatten()/StructArray::field() yield a child slice with kUnknownNullCount, so
+#   arrow::ChunkedArray's constructor scans the child bitmap via null_count().  A truncated
+#   bitmap must be validated (without calling null_count) before that scan.
+#   Case E1: List(Nullable(int32)), child bitmap shrunk 9→1 byte.
+#   Case E2: Struct<a,Nullable(b)>, field b sliced and its bitmap shrunk 9→1 byte.
+#
+# Class F — FixedSizeList child shorter than length*stride:
+#   FixedSizeList<int32>[7] with 3 rows; child FieldNode.length patched 21→10.  The
+#   pre-Flatten stride/size check rejects it before Arrow's ArrayData::Slice fails.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -150,6 +161,82 @@ idx_decr = d_decr.find(needle_decr)
 assert idx_decr >= 0, "could not find List offsets [0,4,6] in decreasing-offset file"
 d_decr[idx_decr:idx_decr+12] = struct.pack('<3i', 64, 0, 6)
 open(f'{out}/list_decreasing_offset.arrow', 'wb').write(d_decr)
+
+# Class E — truncated child validity bitmap after Flatten/Slice.
+# Arrow's Flatten()/StructArray::field() produce a child slice with kUnknownNullCount;
+# arrow::ChunkedArray's constructor then sums chunk->null_count(), which scans the
+# child validity bitmap.  A truncated bitmap is read out of bounds there, before any
+# later validation.  The bitmap must be validated (without calling null_count) first.
+#
+# Case E1: List(Nullable(int32)).  Child has 65 rows (9-byte bitmap); list offsets [1,65]
+# make Flatten return a sliced nullable child.  The child bitmap buffer length is shrunk 9→1.
+def shrink_buffer_len(data, old_len, new_len):
+    """Shrink the first buffer-length field equal to old_len (a Buffer in the IPC
+    metadata is {offset:int64, length:int64}, so the length is preceded by a valid offset)."""
+    needle = struct.pack('<q', old_len)
+    pos = 0
+    while True:
+        idx = data.find(needle, pos)
+        if idx < 0:
+            return False
+        if idx >= 8:
+            prev = struct.unpack_from('<q', data, idx - 8)[0]
+            if 0 <= prev <= len(data):
+                data[idx:idx+8] = struct.pack('<q', new_len)
+                return True
+        pos = idx + 1
+
+# 129 child values: list offsets [1,129] make Flatten return a sliced nullable child whose
+# 16-byte validity bitmap buffer we shrink to 1 byte.  We try each plausible buffer-length
+# entry and verify (via pyarrow round-trip) that the child bitmap actually became 1 byte,
+# because buffer alignment padding makes the length value ambiguous to locate by bytes alone.
+child_e = pa.array([None if i % 7 == 0 else i for i in range(129)], type=pa.int32())
+arr_e1 = pa.ListArray.from_arrays(pa.array([1, 129], type=pa.int32()), child_e)
+base_e1 = bytearray(write_arrow(arr_e1, name='x'))
+d_e1 = None
+target = struct.pack('<q', 16)
+pos = 0
+while True:
+    idx = base_e1.find(target, pos)
+    if idx < 0:
+        break
+    if idx >= 8 and 0 <= struct.unpack_from('<q', base_e1, idx - 8)[0] <= len(base_e1):
+        cand = bytearray(base_e1)
+        cand[idx:idx+8] = struct.pack('<q', 1)
+        with ipc.open_file(pa.py_buffer(bytes(cand))) as reader:
+            chunk0 = reader.read_all().column('x').chunks[0]
+        bm = chunk0.values.buffers()[0]
+        if bm is not None and bm.size == 1:
+            d_e1 = cand
+            break
+    pos = idx + 1
+assert d_e1 is not None, "could not locate child bitmap buffer in list-child-bitmap file"
+open(f'{out}/list_child_bitmap.arrow', 'wb').write(d_e1)
+
+# Case E2: Struct<a:int32, b:Nullable(int32)> with 65 rows.  Field b's FieldNode.length is
+# patched 65→70 so StructArray::field() Slice-clamps it (kUnknownNullCount), and b's 9-byte
+# validity bitmap buffer is shrunk to 1 byte.
+a_e = pa.array(list(range(65)), type=pa.int32())
+b_e = pa.array([None if i % 7 == 0 else i for i in range(65)], type=pa.int32())
+arr_e2 = pa.StructArray.from_arrays([a_e, b_e], names=['a', 'b'])
+d_e2 = bytearray(write_arrow(arr_e2, name='s'))
+bnc = sum(1 for i in range(65) if i % 7 == 0)
+pat_e2 = struct.pack('<6q', 65,0, 65,0, 65,bnc)
+idx_e2 = d_e2.find(pat_e2)
+assert idx_e2 >= 0, "could not find Struct FieldNode pattern in struct-bitmap file"
+d_e2[idx_e2+32:idx_e2+40] = struct.pack('<q', 70)  # force field b slice
+assert shrink_buffer_len(d_e2, 9, 1), "no field b bitmap buffer (length 9) found in struct-bitmap file"
+open(f'{out}/struct_child_bitmap.arrow', 'wb').write(d_e2)
+
+# Class F — FixedSizeList<int32>[7] with a non-empty child shorter than length*stride.
+# 3 parent rows need 21 child values; child FieldNode.length is patched 21→10.  Flatten()
+# would slice values[0,21] out of a 10-element child; the pre-Flatten stride/size check
+# rejects it as INCORRECT_DATA instead of failing inside Arrow's ArrayData::Slice.
+arr_f = pa.array([[i]*7 for i in range(3)], type=pa.list_(pa.int32(), 7))
+d_f = bytearray(write_arrow(arr_f, name='x'))
+n = patch_all_int64(d_f, 21, 10)
+assert n >= 1, "no int64=21 found in FSL-short-child file"
+open(f'{out}/fsl_short_child.arrow', 'wb').write(d_f)
 PYEOF
 
 check_incorrect_data() {
@@ -186,3 +273,12 @@ check_incorrect_data map_value_short \
 
 check_incorrect_data list_decreasing_offset \
     $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/list_decreasing_offset.arrow', Arrow)"
+
+check_incorrect_data list_child_bitmap \
+    $CLICKHOUSE_LOCAL --query "SELECT sum(length(x)) FROM file('${TMP_DIR}/list_child_bitmap.arrow', Arrow)"
+
+check_incorrect_data struct_child_bitmap \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/struct_child_bitmap.arrow', Arrow)"
+
+check_incorrect_data fsl_short_child \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/fsl_short_child.arrow', Arrow)"
