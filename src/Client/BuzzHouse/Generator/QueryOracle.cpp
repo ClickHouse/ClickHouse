@@ -178,8 +178,8 @@ void QueryOracle::backupRestoreSteps(
 
 /// Correctness query oracle
 /// WHERE_ONLY:       SELECT count() FROM T WHERE pred = TRUE
-/// HAVING_ONLY:      SELECT ifNull(SUM(cnt),0) FROM (SELECT count() AS cnt FROM T GROUP BY g HAVING pred(g)) sub
-/// WHERE_AND_HAVING: SELECT ifNull(SUM(cnt),0) FROM (SELECT count() AS cnt FROM T WHERE pred1 = TRUE GROUP BY g HAVING pred2(g)) sub
+/// HAVING_ONLY:      SELECT ifNull(SUM(cnt),0) FROM (SELECT count() AS cnt FROM T GROUP BY g HAVING pred(g) = TRUE) sub
+/// WHERE_AND_HAVING: SELECT ifNull(SUM(cnt),0) FROM (SELECT count() AS cnt FROM T WHERE pred1 = TRUE GROUP BY g HAVING pred2(g) = TRUE) sub
 void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1)
 {
     TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
@@ -253,11 +253,20 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
         /// GROUP BY without auto-generated HAVING (allow_settings=false disables it)
         gen.generateGroupBy(rg, 1, true, false, inner_ssc);
 
-        /// HAVING predicate restricted to GROUP BY key columns
+        /// HAVING predicate restricted to GROUP BY key columns. Wrapped as
+        /// `pred = TRUE` like the WHERE path: the second query SUMs this whole
+        /// expression, and a bare predicate would be summed as its raw value
+        /// (e.g. `HAVING number` keeps every non-zero group, while
+        /// `sum(number)` adds the numbers themselves instead of counting).
         const auto & gcols = gen.levels[gen.current_level].gcols;
         if (!gcols.empty())
         {
-            gen.addWhereFilter(rg, gcols, inner_ssc->mutable_groupby()->mutable_having_expr()->mutable_expr()->mutable_expr());
+            BinaryExpr * hexpr
+                = inner_ssc->mutable_groupby()->mutable_having_expr()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
+            hexpr->set_op(BinaryOperator::BINOP_EQ);
+            hexpr->mutable_rhs()->mutable_lit_val()->mutable_special_val()->set_val(
+                SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
+            gen.addWhereFilter(rg, gcols, hexpr->mutable_lhs());
         }
 
         /// Inner result: count() AS cnt
@@ -299,9 +308,9 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
-/// WHERE_ONLY:       SELECT ifNull(SUM(pred), 0) FROM T
-/// HAVING_ONLY:      SELECT ifNull(SUM(having_pred), 0) FROM T
-/// WHERE_AND_HAVING: SELECT ifNull(SUM(having_pred), 0) FROM T WHERE where_pred
+/// WHERE_ONLY:       SELECT ifNull(SUM(pred = TRUE), 0) FROM T
+/// HAVING_ONLY:      SELECT ifNull(SUM(having_pred = TRUE), 0) FROM T
+/// WHERE_AND_HAVING: SELECT ifNull(SUM(having_pred = TRUE), 0) FROM T WHERE where_pred = TRUE
 void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2)
 {
     TopSelect * ts = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
