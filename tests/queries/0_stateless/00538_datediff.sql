@@ -74,3 +74,9 @@ SELECT dateDiff('second', toDateTime('2014-10-26 00:00:00', 'UTC'), toDateTime('
 SELECT 'Additional test';
 
 SELECT number = dateDiff('month', now() - INTERVAL number MONTH, now()) FROM system.numbers LIMIT 10;
+
+-- Regression: UBSan signed integer overflow in DateDiffImpl::calculate with extreme DateTime64 values (fuzzer input).
+-- Constant path:
+SELECT dateDiff('second', reinterpret(toInt64(9223372036854775807), 'DateTime64(0)'), reinterpret(toInt64(-1356997800), 'DateTime64(0)'));
+-- Vector path:
+SELECT dateDiff('second', materialize(reinterpret(toInt64(9223372036854775807), 'DateTime64(0)')), materialize(reinterpret(toInt64(-1356997800), 'DateTime64(0)')));
