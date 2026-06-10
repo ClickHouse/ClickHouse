@@ -13,14 +13,12 @@ The tables below map each Snowflake concept to its ClickHouse equivalent. For fu
 
 | Snowflake | ClickHouse | Notes |
 |---|---|---|
-| Organization | [Organization](/cloud/security/console-roles#organization-roles) | Root node of the hierarchy in both. |
-| Account | [Warehouse](/cloud/reference/warehouses) | Each service scales compute independently; storage is shared at the warehouse level. Tier and billing are set at the organization level, not per warehouse. |
-| Database | [Database](/sql-reference/statements/create/database) | Logical container for tables. Snowflake uses a Database → Schema → Table hierarchy; ClickHouse flattens this to Database → Table. See [Schemas](#schemas) below. |
+| Account | [Organization](/cloud/security/console-roles#organization-roles) | Snowflake's identity, security, and billing boundary. A Snowflake org groups multiple accounts, with no equivalent tier above. |
+| Virtual warehouse | Service | Compute (replicas) plus storage, equivalent to a Snowflake warehouse and the database it queries combined. |
+| Database | [Database](/sql-reference/statements/create/database) | A namespace for tables and views. Snowflake's Database → Schema → Table flattens to Database → Table; see [Schemas](#schemas) below. |
 
 :::note[Warehouse terminology]
-A **ClickHouse warehouse** is a grouping of services that share
-storage and scale compute independently, not a compute cluster as
-in Snowflake.
+A [**ClickHouse warehouse**](/cloud/reference/warehouses) is a grouping of services that share storage and scale compute independently, not a compute cluster as in Snowflake.
 :::
 
 ## Schemas {#schemas}
@@ -31,8 +29,8 @@ A Snowflake schema serves multiple roles and has no single equivalent in ClickHo
 |---|---|---|
 | Namespace partitioning — letting objects with the same name coexist (`analytics.users` vs `marketing.users`) | One [database](/sql-reference/statements/create/database) per Snowflake schema, or fold the schema name into the database (`analytics.public.events` → `analytics_public.events`) | Object references move from three-level (`DB.SCHEMA.TABLE`) to two-level (`DB.TABLE`). |
 | Logical grouping by domain or processing stage (`analytics.raw`, `analytics.staging`, `analytics.marts`) | Separate databases or a consistent naming convention | — |
-| Permission boundary | [SQL grants](/sql-reference/statements/grant) at the database, table, or column level | Database-wide grants cover the schema-level grant footprint; per-table grants are also available for finer-grained control. |
-| Future grants | Database wildcards (`GRANT … ON db.* TO role`) apply to current and future tables | Can't scope future grants to a subset of tables within a database. |
+| Schema-level grants (`GRANT … ON SCHEMA …`) | [SQL grants](/sql-reference/statements/grant) at the database, table, or column level | A schema-level grant applies to the objects inside it; a database-wide grant (`GRANT … ON db.*`) covers the same footprint, and per-table or per-column grants give finer control. |
+| Future grants | [Wildcard grants](/sql-reference/statements/grant#wildcard-grants): `GRANT … ON db.* TO role`, or a prefix like `db.prefix*` for a subset | A wildcard grant automatically covers tables created later. |
 | Schema `OWNERSHIP` and `MANAGED ACCESS` | — | ClickHouse has no object-ownership model, so grants are always explicit. |
 | Cloning unit (`CREATE SCHEMA … CLONE`) | Per-table [`CREATE TABLE ... CLONE AS`](/sql-reference/statements/create/table#with-a-schema-and-data-cloned-from-another-table), not per-schema; see the [Storage and tables](#storage-tables) section | No single-statement clone of a whole schema or database. Clone each table individually. |
 | Time Travel and replication boundary | Service level — point-in-time recovery via [backups](/cloud/manage/backups/overview); replication via managed replicas, see [Operations and ecosystem](#operations) | No per-schema boundary: recovery and replication are scoped per service. TTL controls data expiry, not point-in-time recovery. See the [Data retention](#storage-tables) row. |
@@ -40,15 +38,15 @@ A Snowflake schema serves multiple roles and has no single equivalent in ClickHo
 
 ## Roles and access control {#roles-access}
 
-ClickHouse Cloud's access layer splits into [console roles](/cloud/security/console-roles) at `console.clickhouse.cloud` (organization-, service-, and SQL-console-scoped) for org admin, billing, and service management; and SQL [roles and grants](/sql-reference/statements/grant) inside each service for database, table, and column access.
+ClickHouse Cloud's access layer splits into [console roles](/cloud/security/console-roles) at `console.clickhouse.cloud` (organization-, service-, and SQL-console-scoped) for org admin, billing, and service management; and SQL [roles and grants](/sql-reference/statements/grant) for database, table, and column access.
 
 | Snowflake | ClickHouse | Notes |
 |---|---|---|
-| Account-level system roles (`ACCOUNTADMIN`, `SYSADMIN`, `SECURITYADMIN`, `USERADMIN`, `PUBLIC`) | [Organization roles](/cloud/security/console-roles#organization-roles) (Admin, Billing, Org API reader, Member) and [service roles](/cloud/security/console-roles#service-roles) (Service admin, Service reader, Service API admin/reader) in the console; SQL roles inside each service | Org-scoped console roles cover billing, org admin, and user management; service-scoped roles cover service config, scaling, and backups. |
-| Custom account roles | [`CREATE ROLE`](/sql-reference/statements/create/role) in SQL | Same pattern: create a role, grant privileges to it, grant the role to users. |
-| Database roles | — | ClickHouse has only one tier of SQL roles, all service-scoped. No equivalent to Snowflake's two-tier account/database role split. For per-user scoped SQL console access, see the callout below. |
+| Account-level system roles (`ACCOUNTADMIN`, `SYSADMIN`, `SECURITYADMIN`, `USERADMIN`, `PUBLIC`) | [Organization roles](/cloud/security/console-roles#organization-roles) (Admin, Billing, Org API reader, Member) and [service roles](/cloud/security/console-roles#service-roles) (Service admin, Service reader, Service API admin/reader) in the console; SQL roles for database access | Org-scoped console roles cover billing, org admin, and user management; service-scoped roles cover service config, scaling, and backups. |
+| Custom account roles | [Custom roles](/cloud/guides/security/manage-custom-roles) in the console | Like a Snowflake account role, a ClickHouse Cloud custom role is unified: one role can combine organization, service, and database permissions, scoped to all or a subset of services. |
+| Database roles | — | No separate database-scoped role tier as in Snowflake's account/database split. A ClickHouse SQL role isn't confined to a single database, and a [custom role](/cloud/guides/security/manage-custom-roles) can combine organization, service, and database permissions in one role. |
 | Role hierarchy (`GRANT ROLE … TO ROLE …`) | [`GRANT role1 TO role2`](/sql-reference/statements/grant) | — |
-| Privilege grants on objects (`GRANT … ON … TO ROLE …`) | [`GRANT … ON db.table TO role`](/sql-reference/statements/grant) | — |
+| Privilege grants on objects (`GRANT … ON … TO ROLE …`) | [`GRANT … ON db.table TO role`](/sql-reference/statements/grant), down to individual columns (`GRANT SELECT(col) ON db.table`) | ClickHouse grants can target the database, table, or column level. |
 | Object ownership and ownership transfer | — | Access in ClickHouse is controlled entirely through explicit grants. Snowflake patterns that rely on owners delegating access need to be rebuilt as explicit role-based grants. |
 | `USE ROLE` | [`SET ROLE`](/sql-reference/statements/set-role) | — |
 
@@ -61,8 +59,8 @@ ClickHouse has no separate database-role tier, but ClickHouse Cloud can still gr
 | Snowflake | ClickHouse | Notes |
 |---|---|---|
 | Virtual warehouse | Service (one or more replicas) | [Basic](/cloud/manage/cloud-tiers#basic) tier services are single-replica; [Scale and Enterprise](/cloud/manage/cloud-tiers#scale) support multi-replica (2+) deployments for higher SLAs. Queries [parallelize](/optimize/query-parallelism) across replicas. |
-| Warehouse size (XS through 6X-Large) | Vertical [autoscaling](/cloud/features/autoscaling/vertical) bounds | Sizing is configured as min/max memory and CPU bounds rather than discrete t-shirt sizes; setting min = max effectively fixes the size. |
-| Multi-cluster warehouse | Manual [horizontal scaling](/cloud/features/autoscaling/horizontal) | ClickHouse scales replica count rather than cluster count. There's no direct equivalent to Snowflake's auto-scaling policies (`Standard`/`Economy`); horizontal replica count is set manually. |
+| Warehouse size (XS through 6X-Large) | Vertical [autoscaling](/cloud/features/autoscaling/vertical) bounds | Sizing is a min/max memory and CPU range the service autoscales within, not a discrete t-shirt size. Setting min equal to max pins the service to one fixed size, the closest equivalent to choosing a Snowflake size. |
+| Multi-cluster warehouse | [Horizontal scaling](/cloud/features/autoscaling/horizontal) (replica count) | ClickHouse scales a service's replica count rather than adding clusters. The scaling model differs from Snowflake's auto-scaling policies (`Standard`/`Economy`); see [automatic scaling](/manage/scaling) for the options available today. |
 | Auto-suspend / auto-resume | Service [idling](/cloud/features/autoscaling/idling) | Compute stops when there's no work, restarts on the next query. |
 | Resource monitors (credit-quota spend caps) | [Workloads](/operations/workload-scheduling) for runtime scheduling; per-query limits (memory, threads, execution time) | ClickHouse workloads cover runtime resource scheduling but not spend caps; there's no primitive that suspends a service on hitting a credit threshold. |
 | Query Acceleration Service | No direct equivalent | ClickHouse has no per-query compute booster; scale the service via [vertical autoscaling](/cloud/features/autoscaling/vertical) if queries are consistently large. |
@@ -77,12 +75,12 @@ Both charges for public internet egress and cross-region data transfer and offer
 
 ## Storage and tables {#storage-tables}
 
-In ClickHouse, a table's behavior is set at creation time: the engine (MergeTree family) determines merge and storage semantics, and `ORDER BY` / `PARTITION BY` / `TTL` clauses configure physical layout and retention. Many Snowflake per-feature settings map to a clause in the ClickHouse `CREATE TABLE` statement. Physical schema design also differs between platforms; see the [migration guide](./02_migration_guide.md) for design tradeoffs.
+In ClickHouse, how a table stores and manages its data is set at creation time: the engine (MergeTree family) determines merge and storage semantics, and `ORDER BY` / `PARTITION BY` / `TTL` clauses configure physical layout and retention. Many Snowflake per-feature settings map to a clause in the ClickHouse `CREATE TABLE` statement. Physical schema design also differs between platforms; see the [migration guide](./02_migration_guide.md) for design tradeoffs.
 
 | Snowflake | ClickHouse | Notes |
 |---|---|---|
 | Permanent table | [MergeTree-family table](/engines/table-engines/mergetree-family/mergetree) | Engine choice determines storage and merge behavior; pick by access pattern ([`MergeTree`](/engines/table-engines/mergetree-family/mergetree) for append-mostly facts, [`ReplacingMergeTree`](/engines/table-engines/mergetree-family/replacingmergetree) for upserts, [`AggregatingMergeTree`](/engines/table-engines/mergetree-family/aggregatingmergetree) for pre-aggregations). |
-| Transient table (no Fail-safe) | MergeTree table | ClickHouse has no Fail-safe tier, so the permanent/transient distinction doesn't apply. |
+| Transient table | — | ClickHouse has no Fail-safe tier, so the permanent/transient distinction doesn't apply. |
 | Temporary table (session-scoped) | [`CREATE TEMPORARY TABLE`](/sql-reference/statements/create/table#temporary-tables) | Session-scoped temporary tables exist in both; semantics are similar. |
 | External table | [`s3`](/sql-reference/table-functions/s3) / [`gcs`](/sql-reference/table-functions/gcs) / [`azureBlobStorage`](/sql-reference/table-functions/azureBlobStorage) table functions for direct file access; [Iceberg engine](/engines/table-engines/integrations/iceberg) for open catalogs | Object storage and open-table formats are read directly through these functions and engines. |
 | Stage (internal / external / user / table) | Object storage referenced directly via [`s3`](/sql-reference/table-functions/s3) / [`gcs`](/sql-reference/table-functions/gcs) / [`azureBlobStorage`](/sql-reference/table-functions/azureBlobStorage) table functions; [ClickPipes](/integrations/clickpipes) for managed staging on load | ClickHouse does not support an intermediary staging step. Read from the bucket directly, or use ClickPipes to coordinate ingest. |
