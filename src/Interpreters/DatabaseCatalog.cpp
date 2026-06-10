@@ -1432,8 +1432,11 @@ void DatabaseCatalog::undropTable(StorageID table_id)
         if (first_async_drop_in_queue == it_dropped_table)
             ++first_async_drop_in_queue;
         tables_marked_dropped.erase(it_dropped_table);
-        [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(dropped_table.table_id.uuid);
-        chassert(removed);
+        /// Erase a single occurrence: the same UUID may be present more than once (CREATE OR REPLACE with a fixed UUID).
+        auto id_it = tables_marked_dropped_ids.find(dropped_table.table_id.uuid);
+        chassert(id_it != tables_marked_dropped_ids.end());
+        if (id_it != tables_marked_dropped_ids.end())
+            tables_marked_dropped_ids.erase(id_it);
         CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
     }
 
@@ -1560,8 +1563,11 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
                 {
                     std::lock_guard lock(tables_marked_dropped_mutex);
 
-                    [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(table_iterator->table_id.uuid);
-                    chassert(removed);
+                    /// Erase a single occurrence: the same UUID may be present more than once (CREATE OR REPLACE with a fixed UUID).
+                    auto id_it = tables_marked_dropped_ids.find(table_iterator->table_id.uuid);
+                    chassert(id_it != tables_marked_dropped_ids.end());
+                    if (id_it != tables_marked_dropped_ids.end())
+                        tables_marked_dropped_ids.erase(id_it);
 
                     table_to_delete_without_lock = std::move(*table_iterator);
 
