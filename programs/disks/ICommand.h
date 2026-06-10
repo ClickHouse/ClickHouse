@@ -126,6 +126,7 @@ DB::CommandPtr makeCommandMove();
 DB::CommandPtr makeCommandRead();
 DB::CommandPtr makeCommandRemove();
 DB::CommandPtr makeCommandWrite();
+DB::CommandPtr makeCommandSed();
 DB::CommandPtr makeCommandMkDir();
 DB::CommandPtr makeCommandSwitchDisk();
 DB::CommandPtr makeCommandGetCurrentDiskAndPath();
