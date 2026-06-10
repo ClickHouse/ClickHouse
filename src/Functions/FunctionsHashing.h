@@ -244,13 +244,28 @@ struct HalfMD5Impl
             uint64_t uint64_data;
         } buf;
 
+        /// The context is created and initialized with the digest once per thread,
+        /// then reset before each use by passing a null `type` to `EVP_DigestInit_ex`,
+        /// which reuses the already fetched digest implementation.
+        ///
+        /// Passing a non-null `type` (e.g. `EVP_md5()`) instead would make OpenSSL
+        /// re-fetch the digest from the provider method store on every call. That
+        /// lookup takes a read lock, and with this function called once per row all
+        /// hashing threads serialize on it: with musl's `pthread_rwlock` on aarch64
+        /// this doubled `cryptographic_hashes` times in CI
+        /// (`__pthread_rwlock_tryrdlock` dominated the profile).
         using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
-        const auto ctx = EVP_MD_CTX_ptr(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+        thread_local EVP_MD_CTX_ptr ctx = []
+        {
+            EVP_MD_CTX_ptr new_ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+            if (!new_ctx)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+            if (EVP_DigestInit_ex(new_ctx.get(), EVP_md5(), nullptr) != 1)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
+            return new_ctx;
+        }();
 
-        if (!ctx)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
-
-        if (EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr) != 1)
+        if (EVP_DigestInit_ex(ctx.get(), nullptr, nullptr) != 1)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
 
         if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
