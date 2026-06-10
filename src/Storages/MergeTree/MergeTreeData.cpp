@@ -103,6 +103,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/Increment.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -333,6 +334,7 @@ namespace ErrorCodes
 {
     extern const int NO_SUCH_DATA_PART;
     extern const int NOT_IMPLEMENTED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
     extern const int DUPLICATE_DATA_PART;
@@ -369,6 +371,11 @@ namespace ErrorCodes
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
+}
+
+namespace FailPoints
+{
+    extern const char mergetree_load_outdated_parts_inject_retryable_exception[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -2781,7 +2788,10 @@ try
     for (auto & load_state : unexpected_data_parts)
     {
         std::lock_guard lock(unexpected_data_parts_mutex);
-        chassert(!load_state.part);
+        /// A previous attempt may have already loaded this part before being interrupted by a
+        /// retryable error and rescheduled; skip the parts that are already done so the retry is idempotent.
+        if (load_state.part)
+            continue;
         if (unexpected_data_parts_loading_canceled)
         {
             runner.waitForAllToFinishAndRethrowFirstError();
@@ -2809,6 +2819,16 @@ try
 }
 catch (...)
 {
+    /// See loadOutdatedDataParts: a transient retryable error is not an inconsistent on-disk state,
+    /// so reschedule the background task instead of terminating the server.
+    if (unexpected_data_parts_loading_task && isRetryableException(std::current_exception()))
+    {
+        LOG_WARNING(log, "Loading of unexpected parts was interrupted by a retryable error, will retry. Exception: {}",
+            getCurrentExceptionMessage(true));
+        unexpected_data_parts_loading_task->scheduleAfter(loading_parts_initial_backoff_ms);
+        return;
+    }
+
     LOG_FATAL(log, "Loading of unexpected parts failed. "
         "Will terminate to avoid undefined behaviour due to inconsistent set of parts. "
         "Exception: {}", getCurrentExceptionMessage(true));
@@ -2879,6 +2899,11 @@ try
         {
             auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
+            fiu_do_on(FailPoints::mergetree_load_outdated_parts_inject_retryable_exception,
+            {
+                throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure while loading outdated part {}", my_part->name);
+            });
+
             auto res = loadDataPartWithRetries(
                 my_part->info, my_part->name, my_part->disk,
                 DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
@@ -2910,6 +2935,18 @@ try
 }
 catch (...)
 {
+    /// A transient retryable error (e.g. MEMORY_LIMIT_EXCEEDED from the memory tracker, or a network
+    /// error) is not a sign of an inconsistent on-disk set of parts, so do not terminate the server for it.
+    /// We can only retry the background task; the synchronous path has no task to reschedule and its caller
+    /// is expected to handle the exception, so it keeps the fail-fast behaviour below.
+    if (is_async && outdated_data_parts_loading_task && isRetryableException(std::current_exception()))
+    {
+        LOG_WARNING(log, "Loading of outdated parts was interrupted by a retryable error, will retry. Exception: {}",
+            getCurrentExceptionMessage(true));
+        outdated_data_parts_loading_task->scheduleAfter(loading_parts_initial_backoff_ms);
+        return;
+    }
+
     LOG_FATAL(log, "Loading of outdated parts failed. "
         "Will terminate to avoid undefined behaviour due to inconsistent set of parts. "
         "Exception: {}", getCurrentExceptionMessage(true));
