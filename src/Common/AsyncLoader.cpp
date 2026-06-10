@@ -917,6 +917,9 @@ void AsyncLoader::spawn(Pool & pool, std::unique_lock<std::mutex> & lock)
 
 void AsyncLoader::worker(Pool & pool)
 {
+    /// Registered before denying allocations: the first registration on a thread allocates.
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
+
     DENY_ALLOCATIONS_IN_SCOPE;
 
     size_t pool_id = &pool - &*pools.begin();
@@ -926,7 +929,6 @@ void AsyncLoader::worker(Pool & pool)
     {
         // This is inside the loop to also reset previous thread names set inside the jobs
         DB::setThreadName(ThreadName::ASYNC_TABLE_LOADER);
-        DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
         {
             std::unique_lock lock{mutex};
