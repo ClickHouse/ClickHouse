@@ -1,8 +1,12 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <gtest/gtest.h>
 #include <Common/Arena.h>
+
+#include <set>
 
 using namespace DB;
 
@@ -412,6 +416,76 @@ TEST(ColumnDynamic, InsertManyFromOverflow3)
     ASSERT_EQ(field, 42.42);
     field = (*column_to)[column_to->size() - 1];
     ASSERT_EQ(field, 42.42);
+}
+
+/// Helper for the regression test below: returns the set of type names that are physically present
+/// in the shared variant of a ColumnDynamic (decoded from the binary-encoded shared variant rows).
+static std::set<String> getTypeNamesInSharedVariant(const ColumnDynamic & column)
+{
+    std::set<String> names;
+    const auto & shared_variant = column.getSharedVariant();
+    for (size_t i = 0; i != shared_variant.size(); ++i)
+    {
+        auto value = shared_variant.getDataAt(i);
+        ReadBufferFromMemory buf(value);
+        names.insert(decodeDataType(buf)->getName());
+    }
+    return names;
+}
+
+/// A type must never be present both as a regular variant and inside the shared variant of the same
+/// ColumnDynamic. doInsertFrom/doInsertManyFrom used to break this when a value coming from the source
+/// shared variant was inserted into a column that still had room for a new regular variant while the
+/// same type was already accumulated in the destination shared variant. The resulting column had the
+/// type in both storages, which later crashed function execution over Dynamic with a row-count
+/// LOGICAL_ERROR in checkFunctionArgumentSizes.
+TEST(ColumnDynamic, InsertFromSharedVariantKeepsInvariant)
+{
+    auto check = [](bool many)
+    {
+        /// src_shared: holds String inside its shared variant (Int8 is the single regular variant,
+        /// String overflowed into shared). Inserting its String row goes through the shared-variant
+        /// branch of (do)insertFrom.
+        auto src_shared = ColumnDynamic::create(1);
+        src_shared->insert(Field(1));
+        src_shared->insert(Field("from_shared"));
+        ASSERT_EQ(getTypeNamesInSharedVariant(*src_shared), (std::set<String>{"String"}));
+        const size_t shared_string_row = src_shared->size() - 1;
+
+        /// src_regular: holds String as a regular variant.
+        auto src_regular = ColumnDynamic::create(10);
+        src_regular->insert(Field("from_regular"));
+        ASSERT_TRUE(src_regular->getVariantInfo().variant_name_to_discriminator.contains("String"));
+
+        /// Build column_to the way the join non-joined-rows gather does: a fresh Dynamic with room,
+        /// filled row by row by insertFrom from sources with different internal layouts. First take the
+        /// String value that lives in src_shared's shared variant (no String regular variant in
+        /// column_to yet, but there is room), then take a String value that is a regular variant in
+        /// src_regular.
+        auto column_to = ColumnDynamic::create(10);
+        if (many)
+        {
+            column_to->insertManyFrom(*src_shared, shared_string_row, 2);
+            column_to->insertManyFrom(*src_regular, 0, 2);
+        }
+        else
+        {
+            column_to->insertFrom(*src_shared, shared_string_row);
+            column_to->insertFrom(*src_regular, 0);
+        }
+
+        /// Invariant: String must not be present both as a regular variant and inside the shared variant.
+        const bool string_is_regular = column_to->getVariantInfo().variant_name_to_discriminator.contains("String");
+        const bool string_in_shared = getTypeNamesInSharedVariant(*column_to).contains("String");
+        ASSERT_FALSE(string_is_regular && string_in_shared);
+
+        /// And every inserted value must read back correctly regardless of which storage holds it.
+        ASSERT_EQ((*column_to)[0], Field("from_shared"));
+        ASSERT_EQ((*column_to)[column_to->size() - 1], Field("from_regular"));
+    };
+
+    check(/*many=*/ false);
+    check(/*many=*/ true);
 }
 
 static void checkInsertRangeFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const UnorderedMapWithMemoryTracking<String, UInt8> & expected_variant_name_to_discriminator)

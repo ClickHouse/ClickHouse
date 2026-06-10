@@ -364,6 +364,10 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
         /// Check if we have this variant and deserialize value into variant from shared variant data.
         if (auto it = variant_info.variant_name_to_discriminator.find(type_name); it != variant_info.variant_name_to_discriminator.end())
             variant_col.deserializeBinaryIntoVariant(it->second, getVariantSerialization(type, type_name), buf, getFormatSettings());
+        /// Try to add it as a regular variant. We must not leave a type both in the shared variant and
+        /// as a regular variant (see deserializeAndInsertFromArena which follows the same logic).
+        else if (addNewVariant(type, type_name))
+            variant_col.deserializeBinaryIntoVariant(variant_info.variant_name_to_discriminator[type_name], getVariantSerialization(type, type_name), buf, getFormatSettings());
         /// Otherwise just insert it into our shared variant.
         else
             variant_col.insertIntoVariantFrom(getSharedVariantDiscriminator(), src_shared_variant, src_offset);
@@ -661,6 +665,15 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
             tmp_column->reserve(1);
             getVariantSerialization(type, type_name)->deserializeBinary(*tmp_column, buf, getFormatSettings());
             variant_col.insertManyIntoVariantFrom(it->second, *tmp_column, 0, length);
+        }
+        /// Try to add it as a regular variant. We must not leave a type both in the shared variant and
+        /// as a regular variant (see deserializeAndInsertFromArena which follows the same logic).
+        else if (addNewVariant(type, type_name))
+        {
+            auto tmp_column = type->createColumn();
+            tmp_column->reserve(1);
+            getVariantSerialization(type, type_name)->deserializeBinary(*tmp_column, buf, getFormatSettings());
+            variant_col.insertManyIntoVariantFrom(variant_info.variant_name_to_discriminator[type_name], *tmp_column, 0, length);
         }
         /// Otherwise just insert it into our shared variant.
         else
