@@ -206,3 +206,68 @@ LLVM_LIBC_FUNCTION(void *, memmove,
 }
 
 } // namespace LIBC_NAMESPACE_DECL
+
+// ============================================================================
+// memmem (NEON-accelerated two-byte filter)
+// ============================================================================
+//
+// Same algorithm as the x86 AVX-512 path in x86_64_mem_functions.cpp, ported
+// to aarch64 NEON. Operates on 16-byte chunks (one Q-reg), uses a
+// `shrn`-based mask trick (per Daniel Lemire's "shuf2" technique) to collapse
+// the 16-byte cmpeq result to a 64-bit mask that we can `ctz` over.
+//
+// Strong symbol — overrides musl's `memmem` in the static link.
+
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+
+// Collapse a uint8x16_t mask (each lane is 0x00 or 0xFF) to a uint64_t where
+// each nibble represents one input byte (Lemire). __builtin_ctzll on the
+// result gives 4 * lane_index of the first set bit.
+[[gnu::always_inline]] static inline uint64_t
+neon_mask_to_u64(uint8x16_t m) noexcept
+{
+    uint8x8_t narrowed = vshrn_n_u16(vreinterpretq_u16_u8(m), 4);
+    return vget_lane_u64(vreinterpret_u64_u8(narrowed), 0);
+}
+
+extern "C" void *memmem(const void *haystack, size_t hlen,
+                        const void *needle, size_t nlen) noexcept
+{
+    if (nlen == 0)
+        return const_cast<void *>(haystack);
+    if (hlen < nlen)
+        return nullptr;
+    const char *h = static_cast<const char *>(haystack);
+    const char *n = static_cast<const char *>(needle);
+    if (nlen == 1)
+        return const_cast<void *>(__builtin_memchr(haystack, n[0], hlen));
+
+    const uint8x16_t first = vdupq_n_u8(static_cast<unsigned char>(n[0]));
+    const uint8x16_t last  = vdupq_n_u8(static_cast<unsigned char>(n[nlen - 1]));
+    const size_t end = hlen - nlen + 1;
+    size_t i = 0;
+    while (i + 16 <= end) {
+        uint8x16_t bf = vld1q_u8(reinterpret_cast<const uint8_t *>(h + i));
+        uint8x16_t bl = vld1q_u8(reinterpret_cast<const uint8_t *>(h + i + nlen - 1));
+        uint8x16_t mask = vandq_u8(vceqq_u8(bf, first), vceqq_u8(bl, last));
+        uint64_t m = neon_mask_to_u64(mask);
+        while (m) {
+            int pos = __builtin_ctzll(m) >> 2; // 4 bits per input byte
+            if (nlen <= 2 || __builtin_memcmp(h + i + pos + 1, n + 1, nlen - 2) == 0)
+                return const_cast<char *>(h + i + pos);
+            m &= m - 1;
+            m &= m - 1;
+            m &= m - 1;
+            m &= m - 1; // clear all 4 bits of this nibble
+        }
+        i += 16;
+    }
+    for (; i < end; ++i) {
+        if (h[i] == n[0] && h[i + nlen - 1] == n[nlen - 1] &&
+            (nlen <= 2 || __builtin_memcmp(h + i + 1, n + 1, nlen - 2) == 0))
+            return const_cast<char *>(h + i);
+    }
+    return nullptr;
+}
+#endif // __ARM_NEON

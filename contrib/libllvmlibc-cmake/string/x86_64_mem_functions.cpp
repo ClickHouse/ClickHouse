@@ -179,17 +179,22 @@ LLVM_LIBC_FUNCTION(void *, memset,
 // ============================================================================
 
 #if defined(__AVX512F__)
-// Aligns DST (not SRC like upstream) to 64 bytes so the ZMM stores in the
-// loop are aligned. Stores benefit from alignment more than loads on modern
-// x86 cores, and 32-byte alignment is no longer "natural" once the unit of
-// work is 64 bytes.
+// Aligns DST (not SRC like upstream) so the ZMM stores in the loop are
+// aligned. Stores benefit from alignment more than loads on modern x86 cores.
+//
+// Alignment SIZE must be the *smaller* of the two (use uint256_t / 32 B)
+// because `align_forward`/`align_backward` consume up to 2*SIZE bytes from
+// `count`. Using uint512_t (64 B) would consume up to 128 B and leave the
+// main loop with count < SIZE — corrupting the trailing bytes via a
+// do-while iteration that runs once even when the loop condition is false.
+// (Same trap we hit on aarch64 — see aarch64_mem_functions.cpp.)
 [[gnu::always_inline]] LIBC_INLINE void
 inline_memmove_follow_up_avx512_x86(Ptr dst, CPtr src, size_t count) {
   if (dst < src) {
-    generic::Memmove<uint512_t>::align_forward<Arg::Dst>(dst, src, count);
+    generic::Memmove<uint256_t>::align_forward<Arg::Dst>(dst, src, count);
     return generic::Memmove<uint512_t>::loop_and_tail_forward(dst, src, count);
   } else {
-    generic::Memmove<uint512_t>::align_backward<Arg::Dst>(dst, src, count);
+    generic::Memmove<uint256_t>::align_backward<Arg::Dst>(dst, src, count);
     return generic::Memmove<uint512_t>::loop_and_tail_backward(dst, src, count);
   }
 }
@@ -227,3 +232,65 @@ LLVM_LIBC_FUNCTION(void *, memmove,
 }
 
 } // namespace LIBC_NAMESPACE_DECL
+
+// ============================================================================
+// memmem (SIMD-accelerated two-byte filter)
+// ============================================================================
+//
+// musl's `twoway_memmem` is the default on this build because of the static
+// link; it does well on long misses but is 3-10× slower than glibc on common
+// ClickHouse workloads (cutURLParameter, position, LIKE '%x%') where the
+// needle is short (5-20 bytes) and frequently *found* in the haystack.
+//
+// We replace it with a "two-byte filter" SIMD scan: broadcast first and last
+// byte of needle across an AVX-512 zmm register, compare both against the
+// haystack in 64-byte strides, AND the masks. Each set bit is a candidate;
+// verify with memcmp of the middle. This beats glibc and musl across the
+// board for needles up to ~64 bytes (see tmp/memmem_bench.cpp), and only
+// loses to musl on the niche case "needle ≥32 bytes, miss in long haystack"
+// where Two-Way's byte-set skip pulls ahead. We accept that.
+//
+// Strong symbol — overrides musl's `memmem` in the static link.
+
+#if defined(__AVX512BW__)
+#include <immintrin.h>
+
+extern "C" void *memmem(const void *haystack, size_t hlen,
+                        const void *needle, size_t nlen) noexcept
+{
+    if (nlen == 0)
+        return const_cast<void *>(haystack);
+    if (hlen < nlen)
+        return nullptr;
+    const char *h = static_cast<const char *>(haystack);
+    const char *n = static_cast<const char *>(needle);
+    if (nlen == 1)
+        return const_cast<void *>(__builtin_memchr(haystack, n[0], hlen));
+
+    const __m512i first = _mm512_set1_epi8(n[0]);
+    const __m512i last  = _mm512_set1_epi8(n[nlen - 1]);
+    const size_t end = hlen - nlen + 1; // last valid start position + 1
+    size_t i = 0;
+    while (i + 64 <= end) {
+        __m512i bf = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(h + i));
+        __m512i bl = _mm512_loadu_si512(reinterpret_cast<const __m512i *>(h + i + nlen - 1));
+        __mmask64 mf = _mm512_cmpeq_epi8_mask(bf, first);
+        __mmask64 ml = _mm512_cmpeq_epi8_mask(bl, last);
+        __mmask64 mask = mf & ml;
+        while (mask) {
+            int pos = __builtin_ctzll(mask);
+            if (nlen <= 2 || __builtin_memcmp(h + i + pos + 1, n + 1, nlen - 2) == 0)
+                return const_cast<char *>(h + i + pos);
+            mask &= mask - 1;
+        }
+        i += 64;
+    }
+    // Tail (< 64 valid positions remain): scalar.
+    for (; i < end; ++i) {
+        if (h[i] == n[0] && h[i + nlen - 1] == n[nlen - 1] &&
+            (nlen <= 2 || __builtin_memcmp(h + i + 1, n + 1, nlen - 2) == 0))
+            return const_cast<char *>(h + i);
+    }
+    return nullptr;
+}
+#endif // __AVX512BW__
