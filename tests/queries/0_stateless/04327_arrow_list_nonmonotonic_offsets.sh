@@ -5,12 +5,13 @@
 # ColumnArray constructor check (data->size() == last_offset) and construct a
 # ColumnArray whose interior offsets point past the inner-column allocation.
 #
-# PoC: List(UInt8) with 8 rows, inner size 32.
-# Arrow offsets (int32): [0, 32, 33, 34, 35, 36, 37, 38, 32]
-# Row 7 has offset 32 < 38, so elements = 32-38 underflows as uint64 to 2^64-6.
-# Cumulative last CH offset = 38 + (2^64-6) = 32 mod 2^64 = 32 = inner size,
-# which would pass the ColumnArray constructor check on unpatched code while
-# rows 1-6 point 1..6 bytes past the inner allocation and row 7 has length 2^64-6.
+# Critical PoC (inner_size=64, no Arrow allocation padding):
+# Arrow offsets (int32): [0, 64, 65, 64]
+#   Row 0: 64 elements (valid, fills the entire 64-byte allocation)
+#   Row 1: starts at inner[64] — one byte past the end → OOB heap read
+#   Row 2: 64-65 underflows to 2^64-1; cumulative = 65+(2^64-1) = 64 mod 2^64
+#           last_offset=64 == inner_size=64 → ColumnArray constructor passes on unpatched code
+# On the unpatched build, SELECT arrayElement(arr, 2) triggers an ASan abort.
 #
 # The same attack applies to LargeList (int64 offsets).
 
@@ -37,24 +38,26 @@ def write_arrow(arr, name='arr'):
     return bytearray(buf.getvalue())
 
 # Case 1: List(UInt8), int32 offsets.
-# Build a valid 8-row array with row sizes [32,1,1,1,1,1,1,1] then patch
-# the last offset from 39 to 32 — making it non-monotonic (32 < 38).
-arr = pa.array([[0xAA]*32] + [[i] for i in range(7)], type=pa.list_(pa.uint8()))
+# Inner size = 64 bytes (Arrow allocates exactly 64, no padding).
+# Valid array has offsets [0,64,65,66]; patch last entry 66→64
+# so offsets become [0,64,65,64]: row 1 starts at inner[64] (OOB),
+# and the uint64 underflow at row 2 wraps last_offset back to 64 == inner_size.
+arr = pa.array([[0xAA]*64, [0xBB], [0xCC]], type=pa.list_(pa.uint8()))
 d = write_arrow(arr)
-valid_last = struct.pack('<i', 39)   # offsets[8] = 32+1+1+1+1+1+1+1 = 39
-malicious   = struct.pack('<i', 32)  # patch to 32 < 38
+valid_last = struct.pack('<i', 66)   # offsets[3] = 64+1+1 = 66
+malicious   = struct.pack('<i', 64)  # patch to 64 < 65
 idx = d.rfind(valid_last)
-assert idx >= 0 and idx % 4 == 0, "could not find last offset int32=39"
+assert idx >= 0 and idx % 4 == 0, f"could not find last offset int32=66 (file={len(d)} bytes)"
 d[idx:idx+4] = malicious
 open(f'{out}/list_nonmonotonic.arrow', 'wb').write(d)
 
-# Case 2: LargeList(UInt8), int64 offsets — same underflow via 64-bit subtraction.
-arr64 = pa.array([[0xAA]*32] + [[i] for i in range(7)], type=pa.large_list(pa.uint8()))
+# Case 2: LargeList(UInt8), int64 offsets — same OOB via 64-bit underflow.
+arr64 = pa.array([[0xAA]*64, [0xBB], [0xCC]], type=pa.large_list(pa.uint8()))
 d64 = write_arrow(arr64)
-valid_last64 = struct.pack('<q', 39)
-malicious64  = struct.pack('<q', 32)
+valid_last64 = struct.pack('<q', 66)
+malicious64  = struct.pack('<q', 64)
 idx64 = d64.rfind(valid_last64)
-assert idx64 >= 0 and idx64 % 8 == 0, "could not find last offset int64=39"
+assert idx64 >= 0 and idx64 % 8 == 0, f"could not find last offset int64=66"
 d64[idx64:idx64+8] = malicious64
 open(f'{out}/largelist_nonmonotonic.arrow', 'wb').write(d64)
 PYEOF
@@ -74,7 +77,7 @@ check_incorrect_data() {
 }
 
 check_incorrect_data list_nonmonotonic \
-    $CLICKHOUSE_LOCAL --query "SELECT length(arr) FROM file('${TMP_DIR}/list_nonmonotonic.arrow', Arrow)"
+    $CLICKHOUSE_LOCAL --query "SELECT arrayElement(arr, 2) FROM file('${TMP_DIR}/list_nonmonotonic.arrow', Arrow)"
 
 check_incorrect_data largelist_nonmonotonic \
-    $CLICKHOUSE_LOCAL --query "SELECT length(arr) FROM file('${TMP_DIR}/largelist_nonmonotonic.arrow', Arrow)"
+    $CLICKHOUSE_LOCAL --query "SELECT arrayElement(arr, 2) FROM file('${TMP_DIR}/largelist_nonmonotonic.arrow', Arrow)"
