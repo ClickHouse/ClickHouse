@@ -257,8 +257,13 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
                 partition_id, convertMergeConstraintsToString(selector.merge_constraints), ranges_in_partition.size());
     }
 
-    if (auto best = getBestPartitionToOptimizeEntire(selector.merge_constraints[0].max_size_bytes, context, settings, partitions_stats, log); !best.empty())
-        partitions_hint.insert(std::move(best));
+    /// A read-only table (the `table_readonly` MergeTree setting) must not run regular merges,
+    /// including forced whole-partition merges (`min_age_to_force_merge_seconds`).
+    if (!selector.readonly)
+    {
+        if (auto best = getBestPartitionToOptimizeEntire(selector.merge_constraints[0].max_size_bytes, context, settings, partitions_stats, log); !best.empty())
+            partitions_hint.insert(std::move(best));
+    }
 
     LOG_TRACE(log,
             "Checked {} partitions, found {} partitions with parts that may be merged: [{}] "
@@ -314,15 +319,20 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         return merge_choices;
     }
 
-    if (auto best = getBestPartitionToOptimizeEntire(selector.merge_constraints[0].max_size_bytes, context, settings, partitions_stats, log); !best.empty())
+    /// A read-only table (the `table_readonly` MergeTree setting) must not run regular merges,
+    /// including forced whole-partition merges (`min_age_to_force_merge_seconds`).
+    if (!selector.readonly)
     {
-        return selectAllPartsToMergeWithinPartition(
-            metadata_snapshot,
-            parts_collector,
-            merge_predicate,
-            /*partition_id=*/best,
-            /*final=*/true,
-            /*optimize_skip_merged_partitions=*/true);
+        if (auto best = getBestPartitionToOptimizeEntire(selector.merge_constraints[0].max_size_bytes, context, settings, partitions_stats, log); !best.empty())
+        {
+            return selectAllPartsToMergeWithinPartition(
+                metadata_snapshot,
+                parts_collector,
+                merge_predicate,
+                /*partition_id=*/best,
+                /*final=*/true,
+                /*optimize_skip_merged_partitions=*/true);
+        }
     }
 
     return std::unexpected(SelectMergeFailure{
