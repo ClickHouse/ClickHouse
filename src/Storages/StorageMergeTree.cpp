@@ -2169,6 +2169,8 @@ struct FutureNewEmptyPart
     MergeTreePartInfo part_info;
     MergeTreePartition partition;
     std::string part_name;
+    /// Metadata of the source part being covered; see `MergeTreeData::createEmptyPart`.
+    StorageMetadataPtr metadata_snapshot;
 
     StorageMergeTree::MutableDataPartPtr data_part;
 };
@@ -2196,6 +2198,7 @@ FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_pa
         new_part.part_info.level += 1;
         new_part.partition = old_part->partition;
         new_part.part_name = old_part->getNewName(new_part.part_info);
+        new_part.metadata_snapshot = old_part->getMetadataSnapshot();
     }
 
     return future_parts;
@@ -2207,7 +2210,7 @@ std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> cr
     std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> data_parts;
     for (auto & part: future_parts)
     {
-        auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(part.part_info, part.partition, part.part_name, txn);
+        auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(part.part_info, part.partition, part.part_name, part.metadata_snapshot, txn);
         data_parts.first.emplace_back(std::move(new_data_part));
         data_parts.second.emplace_back(std::move(tmp_dir_holder));
     }
