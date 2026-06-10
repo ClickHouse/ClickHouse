@@ -521,34 +521,30 @@ void StorageMergeTree::alter(
         }
 
         {
-            changeSettings(new_metadata.settings_changes, table_lock_holder);
-            checkTTLExpressions(new_metadata, old_metadata);
-
-            /// Write the rename `mutation_*.txt` to disk BEFORE committing the durable metadata.
-            /// `prepareMutationEntry` allocates a block number and commits the file, but does NOT
-            /// register the entry in `current_mutations_by_version`. Any throw between here and
-            /// `addPreparedMutationEntry` below unwinds `~MergeTreeMutationEntry`, which removes
-            /// the file because `is_registered == false` (see #80648). Doing this before the
-            /// durable metadata commit guarantees that we never expose a state where the durable
-            /// metadata has the renamed column but the matching rename mutation file is gone:
-            /// either both are present after a successful `alter`, or neither is.
+            /// Settings, the rename `mutation_*.txt`, and the durable metadata commit are
+            /// done in one try so that any pre-commit throw restores the old settings.
+            /// `prepareMutationEntry` writes the file but leaves `is_registered == false`,
+            /// so `~MergeTreeMutationEntry` removes it on unwinding. Writing it before the
+            /// durable commit keeps durable metadata and the mutation file in lockstep. See #80648.
             std::optional<PreparedMutationEntry> prepared;
-            if (!maybe_mutation_commands.empty())
-                prepared.emplace(prepareMutationEntry(maybe_mutation_commands, local_context));
-
-            /// `alterTable` calls `waitDatabaseStarted` which takes `DatabaseAtomic::mutex`;
-            /// holding `currently_processing_in_background_mutex` across it forms a lock-order
-            /// cycle with the scheduler/`RENAME`/`DROP` paths. `validate_new_create_query=false`
-            /// because validation already ran above. See #80648.
             try
             {
+                changeSettings(new_metadata.settings_changes, table_lock_holder);
+                checkTTLExpressions(new_metadata, old_metadata);
+
+                if (!maybe_mutation_commands.empty())
+                    prepared.emplace(prepareMutationEntry(maybe_mutation_commands, local_context));
+
+                /// Not under `currently_processing_in_background_mutex`: `alterTable` takes
+                /// `DatabaseAtomic::mutex`, which would invert lock order with the
+                /// scheduler/`RENAME`/`DROP` paths. Validation already ran above. See #80648.
                 DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/false);
             }
             catch (...)
             {
-                LOG_ERROR(log, "Failed to alter table in database, reverting changes");
+                LOG_ERROR(log, "Failed to commit metadata changes, reverting settings");
                 changeSettings(old_metadata.settings_changes, table_lock_holder);
-                /// `prepared` destructor will remove the orphan `mutation_*.txt`.
+                /// `prepared` destructor removes the orphan `mutation_*.txt` (is_registered == false).
                 throw;
             }
 
@@ -595,29 +591,47 @@ void StorageMergeTree::alter(
             catch (...)
             {
                 LOG_ERROR(log, "In-memory metadata commit failed, rolling back");
-                try
-                {
-                    setProperties(old_metadata, new_metadata, false, local_context);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log, "Failed to revert in-memory metadata; server may be inconsistent until restart");
-                }
 
                 auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
 
-                /// Replicated: durable commit is in ZK and cannot be rolled back, so the
-                /// rename mutation file MUST stay on disk and the entry stays registered;
-                /// `loadMutations` will re-register it on reload to match `new_metadata`.
-                /// Non-replicated: roll durable back to `old_metadata`; unregister the
-                /// rename mutation and remove its file under the lock so `loadMutations`
-                /// cannot replay a rename against rolled-back metadata after restart.
                 if (database->hasReplicationThread())
                 {
+                    /// Durable commit is in ZooKeeper and cannot be rolled back, so converge to
+                    /// the successful-alter state: register the mutation if not yet registered
+                    /// (its file is already durable) and publish `new_metadata`. Reverting to
+                    /// `old_metadata` while the rename mutation stays registered would let a merge
+                    /// run the rename against the old schema and reopen the #80648 data loss.
+                    try
+                    {
+                        if (!mutation_registered && prepared)
+                        {
+                            mutation_version = prepared->version;
+                            addPreparedMutationEntry(std::move(*prepared));
+                            mutation_registered = true;
+                        }
+                        setProperties(new_metadata, old_metadata, false, local_context);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "Failed to bring in-memory metadata in sync with durable metadata; server may be inconsistent until restart");
+                    }
                     background_lock.unlock();
+                    /// Settings stay at `new_metadata` to match the durable commit; do not revert.
                 }
                 else
                 {
+                    /// Roll durable metadata back to `old_metadata`: revert in-memory metadata,
+                    /// then unregister the rename mutation and remove its file under the lock so
+                    /// `loadMutations` cannot replay it against the rolled-back metadata on restart.
+                    try
+                    {
+                        setProperties(old_metadata, new_metadata, false, local_context);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "Failed to revert in-memory metadata; server may be inconsistent until restart");
+                    }
+
                     if (mutation_registered)
                     {
                         auto it = current_mutations_by_version.find(mutation_version);
@@ -646,8 +660,10 @@ void StorageMergeTree::alter(
                     {
                         tryLogCurrentException(log, "Failed to roll back on-disk metadata; server may be inconsistent until restart");
                     }
+
+                    /// Durable metadata is back to `old_metadata`; revert settings to match.
+                    changeSettings(old_metadata.settings_changes, table_lock_holder);
                 }
-                changeSettings(old_metadata.settings_changes, table_lock_holder);
                 throw;
             }
         }
