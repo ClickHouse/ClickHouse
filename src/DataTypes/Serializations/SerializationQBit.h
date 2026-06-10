@@ -4,6 +4,7 @@
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
 #include <Core/Field.h>
+#include <Common/TargetSpecific.h>
 
 namespace DB
 {
@@ -139,5 +140,34 @@ public:
     template <typename T>
     static UntransposeBitPlaneFn<T> resolveUntransposeBitPlane();
 };
+
+/// clang-format can't deal with function definitions inside macros right now.
+// clang-format off
+
+/// Generic kernel that untransposes one bit plane. Defined in the header s.t. it inlines into hot loops.
+DECLARE_DEFAULT_CODE(
+    template <typename T>
+    ALWAYS_INLINE void untransposeBitPlaneImpl(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask)
+    {
+        const size_t bytes_per_fs = stride_len / 8;
+        ssize_t row_base = stride_len - 1;
+
+        for (size_t b = 0; b < bytes_per_fs; ++b, row_base -= 8)
+        {
+            const uint8_t v = src[b];
+
+            /// Fast out on common all-zeros case
+            if (!v)
+                continue;
+
+            for (int i = 0; i < 8; ++i)
+            {
+                /// Mask is 0...0 if current bit is 0, 1...1 if it is 1. Use it to avoid a branch
+                T mask = static_cast<T>(-T((v >> i) & 1));
+                dst[row_base - 7 + i] |= (mask & bit_mask);
+            }
+        }
+    })
+// clang-format on
 
 }

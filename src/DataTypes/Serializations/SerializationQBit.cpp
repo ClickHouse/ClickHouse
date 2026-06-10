@@ -444,31 +444,8 @@ void SerializationQBit::transposeBits(Word src, const size_t row_i, const size_t
 // clang-format off
 
 /// CPU-dispatched kernels for untransposing a bit plane. Selected at runtime by resolveUntransposeBitPlane.
-DECLARE_DEFAULT_CODE(
-    template <typename T>
-    ALWAYS_INLINE inline void untransposeBitPlaneImpl(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask)
-    {
-        const size_t bytes_per_fs = stride_len / 8;
-        ssize_t row_base = stride_len - 1;
-
-        for (size_t b = 0; b < bytes_per_fs; ++b, row_base -= 8)
-        {
-            const uint8_t v = src[b];
-
-            /// Fast out on common all-zeros case
-            if (!v)
-                continue;
-
-            for (int i = 0; i < 8; ++i)
-            {
-                /// Mask is 0...0 if current bit is 0, 1...1 if it is 1. Use it to avoid a branch
-                T mask = static_cast<T>(-T((v >> i) & 1));
-                dst[row_base - 7 + i] |= (mask & bit_mask);
-            }
-        }
-    })
-
-/// Do not inline target specific implementations to avoid code bloat on all targets
+/// The generic kernel lives in SerializationQBit.h so that call sites without a CPU-dispatched alternative can inline it.
+/// Target-specific implementations cannot be inlined as the call keeps AVX-512 instructions behind the runtime CPU check.
 DECLARE_X86_64_V4_SPECIFIC_CODE(
     static void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask)
     {

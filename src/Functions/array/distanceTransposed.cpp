@@ -16,6 +16,7 @@
 
 #include <IO/WriteHelpers.h>
 
+#include <Common/TargetSpecific.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 /// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
@@ -470,7 +471,11 @@ private:
         const simsimd_metric_dense_punned_t simd_kernel = resolveSimdKernel<CalcT>();
 #endif
 
+#if USE_MULTITARGET_CODE
         const auto untranspose_kernel = SerializationQBit::resolveUntransposeBitPlane<Word>();
+#else
+        constexpr auto untranspose_kernel = TargetSpecific::Default::untransposeBitPlaneImpl<Word>;
+#endif
 
         for (size_t base_row = 0; base_row < input_rows_count; base_row += block_size)
         {
