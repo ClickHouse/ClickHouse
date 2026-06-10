@@ -30,6 +30,9 @@ inline constexpr Bitlen BITS_TO_ENCODE_DELTA_CONV_QUANTIZATION = 5;
 inline constexpr Bitlen BITS_TO_ENCODE_DELTA_CONV_N_WEIGHTS = 5;
 inline constexpr Bitlen BITS_TO_ENCODE_DELTA_LOOKBACK_WINDOW_N_LOG = 5;
 inline constexpr Bitlen BITS_TO_ENCODE_DELTA_LOOKBACK_STATE_N_LOG = 4;
+/// The largest lookback window the reference encoder produces (`LOOKBACK_MAX_WINDOW_N_LOG` in
+/// delta/mod.rs); it is chosen independently of the chunk size, so a window may exceed the chunk.
+inline constexpr Bitlen LOOKBACK_MAX_WINDOW_N_LOG = 15;
 inline constexpr Bitlen BITS_TO_ENCODE_N_BINS = 15;
 inline constexpr Bitlen BITS_TO_ENCODE_QUANTIZE_K = 8;
 inline constexpr Bitlen BITS_TO_ENCODE_DICT_LEN = 25;

@@ -300,11 +300,16 @@ inline size_t decodeChunkByType(BitReader & reader, uint8_t type_byte, uint8_t f
         if (de.variant == DeltaEncodingVariant::Conv1 && l_bits >= 64)
             throw PcodecError("pcodec: Conv1 delta encoding is not supported for 64-bit latent types");
 
-        // The lookback window cannot reach further back than the chunk itself. A malformed stream
-        // could otherwise set `window_n_log` up to 32 and drive a multi-gigabyte scratch allocation
-        // in `LatentVarDecoder::initPage` before any value is read.
-        if (de.variant == DeltaEncodingVariant::Lookback && de.lookback.windowN() > n)
-            throw PcodecError("pcodec: lookback window exceeds the chunk size");
+        // A lookback window larger than the chunk is valid: the reference encoder clamps
+        // `window_n_log` to [4, 15] independently of the chunk size (lookbacks reaching before the
+        // start of the page read zeros), e.g. a 834-value chunk gets a 1024-value window. Reject
+        // only windows beyond both the chunk size and the reference encoder's maximum: a malformed
+        // stream could otherwise set `window_n_log` up to 32 and drive a multi-gigabyte scratch
+        // allocation in `LatentVarDecoder::initPage` before any value is read (`n` is already
+        // bounded by the caller's output capacity at this point).
+        if (de.variant == DeltaEncodingVariant::Lookback
+            && de.lookback.windowN() > std::max(n, size_t{1} << LOOKBACK_MAX_WINDOW_N_LOG))
+            throw PcodecError("pcodec: lookback window exceeds both the chunk size and the maximum encoder window");
 
         ChunkMeta meta;
         meta.mode = std::move(mode);
