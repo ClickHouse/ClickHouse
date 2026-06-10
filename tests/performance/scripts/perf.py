@@ -649,10 +649,26 @@ if not args.use_existing_tables:
         if j >= 0 and query[j] == ",":
             cut_start = j
 
+        def is_word_at(text, pos, word):
+            """Case-insensitive word-boundary match of `word` at `pos`."""
+            wlen = len(word)
+            if text[pos : pos + wlen].upper() != word:
+                return False
+            if pos > 0 and (text[pos - 1].isalnum() or text[pos - 1] == "_"):
+                return False
+            end = pos + wlen
+            return end >= len(text) or not (text[end].isalnum() or text[end] == "_")
+
+        # Keywords that can follow the SETTINGS clause at the top level of a
+        # CREATE TABLE (`AS SELECT ...`, `AS other_table`, `COMMENT '...'`,
+        # `EMPTY AS SELECT ...`) and therefore terminate it.
+        trailing_clause_keywords = ("AS", "COMMENT", "EMPTY")
+
         # Scan from the start of the value to find its end at the next
-        # top-level comma or semicolon (or end of query). Mirror the
-        # name-scan state machine so commas inside string/backtick
-        # literals or inside `--`, `#`, `/* */` comments are ignored.
+        # top-level comma or semicolon, a keyword starting a trailing
+        # clause, or end of query. Mirror the name-scan state machine so
+        # commas inside string/backtick literals or inside `--`, `#`,
+        # `/* */` comments are ignored.
         i = value_start
         quote = None
         line_comment = False
@@ -708,6 +724,16 @@ if not args.use_existing_tables:
                 i += 1
                 continue
             if depth == 0 and c in ",;":
+                break
+            if (
+                depth == 0
+                and i > value_start
+                and any(is_word_at(query, i, kw) for kw in trailing_clause_keywords)
+            ):
+                # Leave the whitespace before the keyword in place so the
+                # preceding token is not glued to the trailing clause.
+                while i > value_start and query[i - 1] in " \t\r\n":
+                    i -= 1
                 break
             i += 1
 
@@ -765,15 +791,20 @@ if not args.use_existing_tables:
         # Drop an empty SETTINGS clause (the only setting was the dropped one),
         # along with any whitespace that preceded the SETTINGS keyword. The
         # clause is considered empty when only whitespace or comments remain
-        # between `SETTINGS` and the terminating `;`/end, so a comment that
-        # sat between `SETTINGS` and the removed first setting is dropped too
-        # instead of being left as a stray `SETTINGS /*...*/ ;`.
+        # between `SETTINGS` and the terminating `;`/end/trailing clause, so
+        # a comment that sat between `SETTINGS` and the removed first setting
+        # is dropped too instead of being left as a stray `SETTINGS /*...*/ ;`.
         rest = skip_whitespace_and_comments(stripped, after_keyword)
         if rest >= len(stripped) or stripped[rest] == ";":
             lead = settings_pos
             while lead > 0 and stripped[lead - 1] in " \t\r\n":
                 lead -= 1
             stripped = stripped[:lead] + stripped[rest:]
+        elif any(is_word_at(stripped, rest, kw) for kw in trailing_clause_keywords):
+            # A trailing clause (`AS SELECT ...`, `COMMENT '...'`) follows the
+            # now-empty SETTINGS clause; keep the whitespace before `SETTINGS`
+            # as the separator.
+            stripped = stripped[:settings_pos] + stripped[rest:]
 
         return stripped
 
