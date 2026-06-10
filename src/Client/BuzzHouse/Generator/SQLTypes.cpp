@@ -153,14 +153,10 @@ String IntType::MySQLtypeName(RandomGenerator &, const bool) const
 {
     switch (size)
     {
-        case 8:
-            return fmt::format("TINYINT {}", is_unsigned ? " UNSIGNED" : "");
-        case 16:
-            return fmt::format("SMALLINT {}", is_unsigned ? " UNSIGNED" : "");
-        case 32:
-            return fmt::format("INT {}", is_unsigned ? " UNSIGNED" : "");
-        default:
-            return fmt::format("BIGINT {}", is_unsigned ? " UNSIGNED" : "");
+        case 8: return fmt::format("TINYINT {}", is_unsigned ? " UNSIGNED" : "");
+        case 16: return fmt::format("SMALLINT {}", is_unsigned ? " UNSIGNED" : "");
+        case 32: return fmt::format("INT {}", is_unsigned ? " UNSIGNED" : "");
+        default: return fmt::format("BIGINT {}", is_unsigned ? " UNSIGNED" : "");
     }
 }
 
@@ -169,12 +165,9 @@ String IntType::PostgreSQLtypeName(RandomGenerator &, const bool) const
     switch (size)
     {
         case 8:
-        case 16:
-            return "SMALLINT";
-        case 32:
-            return "INTEGER";
-        default:
-            return "BIGINT";
+        case 16: return "SMALLINT";
+        case 32: return "INTEGER";
+        default: return "BIGINT";
     }
 }
 
@@ -197,74 +190,49 @@ String IntType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &)
         {
             switch (rg.randomInt<uint32_t>(0, 2))
             {
-                case 0:
-                    return "0";
-                case 1:
-                    return "1";
+                case 0: return "0";
+                case 1: return "1";
                 case 2: /// Maximum value per width
                     switch (size)
                     {
-                        case 8:
-                            return "255";
-                        case 16:
-                            return "65535";
-                        case 32:
-                            return "4294967295";
-                        case 64:
-                            return "18446744073709551615";
-                        case 128:
-                            return "340282366920938463463374607431768211455";
-                        default:
-                            return "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+                        case 8: return "255";
+                        case 16: return "65535";
+                        case 32: return "4294967295";
+                        case 64: return "18446744073709551615";
+                        case 128: return "340282366920938463463374607431768211455";
+                        default: return "115792089237316195423570985008687907853269984665640564039457584007913129639935";
                     }
-                default:
-                    UNREACHABLE();
+                default: UNREACHABLE();
             }
         }
         else
         {
             switch (rg.randomInt<uint32_t>(0, 4))
             {
-                case 0:
-                    return "0";
-                case 1:
-                    return "1";
-                case 2:
-                    return "-1";
+                case 0: return "0";
+                case 1: return "1";
+                case 2: return "-1";
                 case 3: /// Minimum (most negative) value per width
                     switch (size)
                     {
-                        case 8:
-                            return "-128";
-                        case 16:
-                            return "-32768";
-                        case 32:
-                            return "-2147483648";
-                        case 64:
-                            return "-9223372036854775808";
-                        case 128:
-                            return "-170141183460469231731687303715884105728";
-                        default:
-                            return "-57896044618658097711785492504343953926634992332820282019728792003956564819968";
+                        case 8: return "-128";
+                        case 16: return "-32768";
+                        case 32: return "-2147483648";
+                        case 64: return "-9223372036854775808";
+                        case 128: return "-170141183460469231731687303715884105728";
+                        default: return "-57896044618658097711785492504343953926634992332820282019728792003956564819968";
                     }
                 case 4: /// Maximum value per width
                     switch (size)
                     {
-                        case 8:
-                            return "127";
-                        case 16:
-                            return "32767";
-                        case 32:
-                            return "2147483647";
-                        case 64:
-                            return "9223372036854775807";
-                        case 128:
-                            return "170141183460469231731687303715884105727";
-                        default:
-                            return "57896044618658097711785492504343953926634992332820282019728792003956564819967";
+                        case 8: return "127";
+                        case 16: return "32767";
+                        case 32: return "2147483647";
+                        case 64: return "9223372036854775807";
+                        case 128: return "170141183460469231731687303715884105727";
+                        default: return "57896044618658097711785492504343953926634992332820282019728792003956564819967";
                     }
-                default:
-                    UNREACHABLE();
+                default: UNREACHABLE();
             }
         }
     }
@@ -273,14 +241,10 @@ String IntType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &)
     {
         switch (size)
         {
-            case 8:
-                return std::to_string(rg.nextRandomUInt8());
-            case 16:
-                return std::to_string(rg.nextRandomUInt16());
-            case 32:
-                return std::to_string(rg.nextRandomUInt32());
-            case 64:
-                return std::to_string(rg.nextRandomUInt64());
+            case 8: return std::to_string(rg.nextRandomUInt8());
+            case 16: return std::to_string(rg.nextRandomUInt16());
+            case 32: return std::to_string(rg.nextRandomUInt32());
+            case 64: return std::to_string(rg.nextRandomUInt64());
             default: {
                 const UHugeInt val(rg.nextRandomUInt64(), rg.nextRandomUInt64());
                 return val.toString();
@@ -291,14 +255,10 @@ String IntType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &)
     {
         switch (size)
         {
-            case 8:
-                return std::to_string(rg.nextRandomInt8());
-            case 16:
-                return std::to_string(rg.nextRandomInt16());
-            case 32:
-                return std::to_string(rg.nextRandomInt32());
-            case 64:
-                return std::to_string(rg.nextRandomInt64());
+            case 8: return std::to_string(rg.nextRandomInt8());
+            case 16: return std::to_string(rg.nextRandomInt16());
+            case 32: return std::to_string(rg.nextRandomInt32());
+            case 64: return std::to_string(rg.nextRandomInt64());
             default: {
                 const HugeInt val(rg.nextRandomInt64(), rg.nextRandomUInt64());
                 return val.toString();
@@ -737,38 +697,17 @@ String EnumType::typeName(const bool escape, const bool simplified) const
             {
                 switch (c)
                 {
-                    case '\'':
-                        ret += "\\'";
-                        break;
-                    case '\\':
-                        ret += "\\\\";
-                        break;
-                    case '\b':
-                        ret += "\\b";
-                        break;
-                    case '\f':
-                        ret += "\\f";
-                        break;
-                    case '\r':
-                        ret += "\\r";
-                        break;
-                    case '\n':
-                        ret += "\\n";
-                        break;
-                    case '\t':
-                        ret += "\\t";
-                        break;
-                    case '\0':
-                        ret += "\\0";
-                        break;
-                    case '\a':
-                        ret += "\\a";
-                        break;
-                    case '\v':
-                        ret += "\\v";
-                        break;
-                    default:
-                        ret += c;
+                    case '\'': ret += "\\'"; break;
+                    case '\\': ret += "\\\\"; break;
+                    case '\b': ret += "\\b"; break;
+                    case '\f': ret += "\\f"; break;
+                    case '\r': ret += "\\r"; break;
+                    case '\n': ret += "\\n"; break;
+                    case '\t': ret += "\\t"; break;
+                    case '\0': ret += "\\0"; break;
+                    case '\a': ret += "\\a"; break;
+                    case '\v': ret += "\\v"; break;
+                    default: ret += c;
                 }
             }
             else
@@ -957,38 +896,17 @@ String JSONType::typeName(const bool escape, const bool simplified) const
         {
             switch (c)
             {
-                case '\'':
-                    ret += "\\'";
-                    break;
-                case '\\':
-                    ret += "\\\\";
-                    break;
-                case '\b':
-                    ret += "\\b";
-                    break;
-                case '\f':
-                    ret += "\\f";
-                    break;
-                case '\r':
-                    ret += "\\r";
-                    break;
-                case '\n':
-                    ret += "\\n";
-                    break;
-                case '\t':
-                    ret += "\\t";
-                    break;
-                case '\0':
-                    ret += "\\0";
-                    break;
-                case '\a':
-                    ret += "\\a";
-                    break;
-                case '\v':
-                    ret += "\\v";
-                    break;
-                default:
-                    ret += c;
+                case '\'': ret += "\\'"; break;
+                case '\\': ret += "\\\\"; break;
+                case '\b': ret += "\\b"; break;
+                case '\f': ret += "\\f"; break;
+                case '\r': ret += "\\r"; break;
+                case '\n': ret += "\\n"; break;
+                case '\t': ret += "\\t"; break;
+                case '\0': ret += "\\0"; break;
+                case '\a': ret += "\\a"; break;
+                case '\v': ret += "\\v"; break;
+                default: ret += c;
             }
         }
         else
@@ -1711,32 +1629,19 @@ std::tuple<std::unique_ptr<SQLType>, Integers> StatementGenerator::randomIntType
     this->ids.clear();
     switch (nopt)
     {
-        case 1:
-            return std::make_tuple(std::make_unique<IntType>(8, true), Integers::UInt8);
-        case 2:
-            return std::make_tuple(std::make_unique<IntType>(16, true), Integers::UInt16);
-        case 3:
-            return std::make_tuple(std::make_unique<IntType>(32, true), Integers::UInt32);
-        case 4:
-            return std::make_tuple(std::make_unique<IntType>(64, true), Integers::UInt64);
-        case 5:
-            return std::make_tuple(std::make_unique<IntType>(128, true), Integers::UInt128);
-        case 6:
-            return std::make_tuple(std::make_unique<IntType>(256, true), Integers::UInt256);
-        case 7:
-            return std::make_tuple(std::make_unique<IntType>(8, false), Integers::Int8);
-        case 8:
-            return std::make_tuple(std::make_unique<IntType>(16, false), Integers::Int16);
-        case 9:
-            return std::make_tuple(std::make_unique<IntType>(32, false), Integers::Int32);
-        case 10:
-            return std::make_tuple(std::make_unique<IntType>(64, false), Integers::Int64);
-        case 11:
-            return std::make_tuple(std::make_unique<IntType>(128, false), Integers::Int128);
-        case 12:
-            return std::make_tuple(std::make_unique<IntType>(256, false), Integers::Int256);
-        default:
-            UNREACHABLE();
+        case 1: return std::make_tuple(std::make_unique<IntType>(8, true), Integers::UInt8);
+        case 2: return std::make_tuple(std::make_unique<IntType>(16, true), Integers::UInt16);
+        case 3: return std::make_tuple(std::make_unique<IntType>(32, true), Integers::UInt32);
+        case 4: return std::make_tuple(std::make_unique<IntType>(64, true), Integers::UInt64);
+        case 5: return std::make_tuple(std::make_unique<IntType>(128, true), Integers::UInt128);
+        case 6: return std::make_tuple(std::make_unique<IntType>(256, true), Integers::UInt256);
+        case 7: return std::make_tuple(std::make_unique<IntType>(8, false), Integers::Int8);
+        case 8: return std::make_tuple(std::make_unique<IntType>(16, false), Integers::Int16);
+        case 9: return std::make_tuple(std::make_unique<IntType>(32, false), Integers::Int32);
+        case 10: return std::make_tuple(std::make_unique<IntType>(64, false), Integers::Int64);
+        case 11: return std::make_tuple(std::make_unique<IntType>(128, false), Integers::Int128);
+        case 12: return std::make_tuple(std::make_unique<IntType>(256, false), Integers::Int256);
+        default: UNREACHABLE();
     }
 }
 
@@ -1835,18 +1740,10 @@ StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint64_t allow
         short_notation = std::optional<DecimalN_DecimalPrecision>(static_cast<DecimalN_DecimalPrecision>(dec_range(rg.generator)));
         switch (short_notation.value())
         {
-            case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
-                precision = std::optional<uint32_t>(9);
-                break;
-            case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
-                precision = std::optional<uint32_t>(18);
-                break;
-            case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
-                precision = std::optional<uint32_t>(38);
-                break;
-            case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
-                precision = std::optional<uint32_t>(76);
-                break;
+            case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32: precision = std::optional<uint32_t>(9); break;
+            case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64: precision = std::optional<uint32_t>(18); break;
+            case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128: precision = std::optional<uint32_t>(38); break;
+            case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256: precision = std::optional<uint32_t>(76); break;
         }
         scale = std::optional<uint32_t>(rg.randomInt<uint32_t>(0, precision.value()));
         if (dec)
@@ -2460,8 +2357,7 @@ String appendDecimal(RandomGenerator & rg, const bool use_func, const uint32_t l
                     ret += '0';
                 ret += '1';
                 break;
-            default:
-                UNREACHABLE();
+            default: UNREACHABLE();
         }
     }
     else
@@ -2550,9 +2446,7 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
 
     switch (imp)
     {
-        case GeoTypes::Point:
-            ret = nextGeoPoint(rg);
-            break;
+        case GeoTypes::Point: ret = nextGeoPoint(rg); break;
         case GeoTypes::Ring:
             /// Closed ring: array of points where first == last
             ret = nextGeoRing(rg, limit);
@@ -2619,8 +2513,7 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
             }
             ret += "]";
             break;
-        case GeoTypes::Geometry:
-            chassert(0);
+        case GeoTypes::Geometry: chassert(0);
     }
     return ret;
 }
@@ -2645,24 +2538,12 @@ static String homogeneousJSONArray(RandomGenerator & rg)
                 ret += std::to_string(numbers(rg.generator));
                 break;
             }
-            case 2:
-                ret += std::to_string(rg.nextRandomInt64());
-                break;
-            case 3:
-                ret += std::to_string(rg.nextRandomUInt64());
-                break;
-            case 4:
-                ret += nextFloatingPoint(rg, true);
-                break;
-            case 5:
-                ret += rg.nextString("\"", false, rg.nextStrlen());
-                break;
-            case 6:
-                ret += rg.nextBool() ? "true" : "false";
-                break;
-            case 7:
-                ret += "null";
-                break;
+            case 2: ret += std::to_string(rg.nextRandomInt64()); break;
+            case 3: ret += std::to_string(rg.nextRandomUInt64()); break;
+            case 4: ret += nextFloatingPoint(rg, true); break;
+            case 5: ret += rg.nextString("\"", false, rg.nextStrlen()); break;
+            case 6: ret += rg.nextBool() ? "true" : "false"; break;
+            case 7: ret += "null"; break;
             case 8:
                 /// Empty string
                 ret += "\"\"";
@@ -2676,8 +2557,7 @@ static String homogeneousJSONArray(RandomGenerator & rg)
                 ret += appendDecimal(rg, false, left, right);
             }
             break;
-            default:
-                UNREACHABLE();
+            default: UNREACHABLE();
         }
     }
     return ret;
@@ -2722,8 +2602,7 @@ String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidt
                     /// Homogeneous array
                     ret += homogeneousJSONArray(rg);
                     break;
-                default:
-                    UNREACHABLE();
+                default: UNREACHABLE();
             }
         }
         else
@@ -2743,15 +2622,9 @@ String strBuildJSONElement(RandomGenerator & rg)
 
     switch (opts(rg.generator))
     {
-        case 1:
-            ret = "false";
-            break;
-        case 2:
-            ret = "true";
-            break;
-        case 3:
-            ret = "null";
-            break;
+        case 1: ret = "false"; break;
+        case 2: ret = "true"; break;
+        case 3: ret = "null"; break;
         case 4:
             /// Large number
             ret = std::to_string(rg.nextRandomInt64());
@@ -2832,8 +2705,7 @@ String strBuildJSONElement(RandomGenerator & rg)
             /// String with escape sequences
             ret = '[' + homogeneousJSONArray(rg) + ']';
             break;
-        default:
-            UNREACHABLE();
+        default: UNREACHABLE();
     }
     return ret;
 }
@@ -2872,8 +2744,7 @@ String strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth)
                     /// Others
                     ret += strBuildJSONElement(rg);
                     break;
-                default:
-                    UNREACHABLE();
+                default: UNREACHABLE();
             }
         }
     }

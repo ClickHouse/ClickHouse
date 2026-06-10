@@ -672,7 +672,7 @@ ORDER BY f.name)sql";
 
     String buf;
     static const std::unordered_set<String> nulls_clause_funcs = {"any", "anyLast", "first_value", "last_value"};
-    static const std::unordered_set<String> common_func_names = {"arrayJoin", "if", "materialize", "toNullable", "toLowCardinality"};
+    static const std::unordered_set<String> common_func_names = {"if", "materialize", "toNullable", "toLowCardinality"};
     static const std::unordered_set<String> two_arg_aggrs
         = {"analysisOfVariance",
            "approx_top_count",
@@ -814,7 +814,6 @@ ORDER BY f.name)sql";
             else
             {
                 CHFunction func(name, lambda_kind, min_args, max_args);
-                /// arrayJoin may not be deterministic
                 if (common_func_names.contains(name))
                     common_funcs.push_back(func);
                 if (is_deterministic)
