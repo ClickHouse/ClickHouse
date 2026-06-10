@@ -17,8 +17,6 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -26,9 +24,6 @@
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/InDepthNodeVisitor.h>
-
-#include <algorithm>
-#include <cmath>
 
 #include <fmt/ranges.h>
 
@@ -38,19 +33,15 @@ namespace DB
 namespace Setting
 {
     extern const SettingsOverflowMode distinct_overflow_mode;
-    extern const SettingsBool exact_rows_before_limit;
-    extern const SettingsDouble limit;
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
-    extern const SettingsDouble offset;
     extern const SettingsBool optimize_distinct_in_order;
 }
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
 }
@@ -67,12 +58,6 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 {
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
     bool require_full_header = ast->hasNonDefaultUnionMode();
-
-    const Settings & settings = context->getSettingsRef();
-    /// `limit` / `offset` settings are `Float` and may be negative or fractional. Any non-zero
-    /// value enables setting-driven LIMIT/OFFSET application below.
-    if (options.subquery_depth == 0 && (settings[Setting::limit] != 0 || settings[Setting::offset] != 0))
-        settings_limit_offset_needed = true;
 
     size_t num_children = ast->list_of_selects->children.size();
     if (!num_children)
@@ -113,92 +98,11 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         }
     }
 
-    if (num_children == 1 && settings_limit_offset_needed && !options.settings_limit_offset_done)
-    {
-        const ASTPtr first_select_ast = ast->list_of_selects->children.at(0);
-        ASTSelectQuery * select_query = dynamic_cast<ASTSelectQuery *>(first_select_ast.get());
-        if (!select_query)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid type in list_of_selects: {}", first_select_ast->getID());
-
-        if (!select_query->withFill() && !select_query->limit_with_ties)
-        {
-            /// `limit` / `offset` are `Float` settings — they may be negative or fractional, in
-            /// which case the value is passed through to SQL `LIMIT`/`OFFSET` and ClickHouse's
-            /// native support for those handles the semantics. For non-negative integers the
-            /// behavior matches the original combining logic (clamp the SQL `LIMIT`/`OFFSET` by
-            /// the setting).
-            const Float64 limit_setting = settings[Setting::limit];
-            const Float64 offset_setting = settings[Setting::offset];
-
-            /// The clamp/fold math below assumes non-negative values. `limit` / `offset` were widened
-            /// to `Float` and may now be negative (e.g. `limit=-1` for tail pagination) or fractional.
-            /// When either setting is negative we cannot meaningfully combine it with an explicit SQL
-            /// `LIMIT`/`OFFSET` (`std::min` would invert the intended cap), so we leave the query's own
-            /// clause untouched and let ClickHouse's native negative/fractional support handle the
-            /// literal — the setting then only takes effect when the query has no such clause.
-            const bool settings_combinable = limit_setting >= 0 && offset_setting >= 0;
-
-            /// Decode a `LIMIT`/`OFFSET` literal as `Float64`. The widened settings allow valid
-            /// fractional/negative SQL literals here, so we must not assume a `UInt64` field.
-            auto literal_to_float = [&](const ASTPtr & literal_ast) -> Float64
-            {
-                const Field & value = evaluateConstantExpressionAsLiteral(literal_ast, context)->as<ASTLiteral &>().value;
-                switch (value.getType())
-                {
-                    case Field::Types::UInt64: return static_cast<Float64>(value.safeGet<UInt64>());
-                    case Field::Types::Int64: return static_cast<Float64>(value.safeGet<Int64>());
-                    case Field::Types::Float64: return value.safeGet<Float64>();
-                    default:
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Expected a numeric LIMIT/OFFSET literal, got {}", value.getTypeName());
-                }
-            };
-
-            const ASTPtr limit_offset_ast = select_query->limitOffset();
-            if (limit_offset_ast)
-            {
-                const Float64 query_offset = literal_to_float(limit_offset_ast);
-                if (settings_combinable && query_offset >= 0)
-                {
-                    ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(Field(offset_setting + query_offset));
-                    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
-                }
-                /// else: keep the query's own OFFSET literal as-is (pass through).
-            }
-            else if (offset_setting != 0)
-            {
-                ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(Field(offset_setting));
-                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
-            }
-
-            const ASTPtr limit_length_ast = select_query->limitLength();
-            if (limit_length_ast)
-            {
-                const Float64 query_limit_length = literal_to_float(limit_length_ast);
-                if (settings_combinable && query_limit_length >= 0)
-                {
-                    Float64 new_limit_length = 0;
-                    if (offset_setting == 0)
-                        new_limit_length = std::min(query_limit_length, limit_setting);
-                    else if (offset_setting < query_limit_length)
-                        new_limit_length = (limit_setting != 0)
-                            ? std::min(limit_setting, query_limit_length - offset_setting)
-                            : (query_limit_length - offset_setting);
-
-                    ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(Field(new_limit_length));
-                    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
-                }
-                /// else: keep the query's own LIMIT literal as-is (pass through).
-            }
-            else if (limit_setting != 0)
-            {
-                ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(Field(limit_setting));
-                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
-            }
-
-            options.settings_limit_offset_done = true;
-        }
-    }
+    /// The `limit` / `offset` settings are applied earlier, in `applyQueryConstructionSettings`
+    /// (`executeQuery`), by wrapping the top-level query as a derived table with an outer
+    /// `LIMIT`/`OFFSET` and clearing the settings on the context. So there is nothing to apply here.
+    /// Subquery-level `SETTINGS limit/offset` (e.g. `view(SELECT … SETTINGS limit = 5)`) is handled
+    /// by the analyzer in `QueryTreeBuilder`.
 
     for (size_t query_num = 0; query_num < num_children; ++query_num)
     {
@@ -405,44 +309,6 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
                 false);
 
             query_plan.addStep(std::move(distinct_step));
-        }
-    }
-
-    if (settings_limit_offset_needed && !options.settings_limit_offset_done)
-    {
-        /// This fallback path is taken when the AST-level injection above is skipped — `WITH FILL`
-        /// / `WITH TIES` queries, and `UNION`/`INTERSECT`/`EXCEPT` queries with more than one child.
-        /// `LimitStep` / `OffsetStep` operate on `size_t`, so they cannot represent the negative or
-        /// fractional values that `limit` / `offset` were widened to. Surface that limitation
-        /// explicitly instead of truncating to `0` and silently changing query semantics.
-        const Float64 limit_setting = settings[Setting::limit];
-        const Float64 offset_setting = settings[Setting::offset];
-        auto check_non_negative_integer = [](Float64 value, const char * name)
-        {
-            if (value < 0 || value != std::trunc(value))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Setting `{}` = {} cannot be applied to this query — it is a UNION or has WITH FILL/WITH TIES, "
-                    "where the SETTINGS-level LIMIT/OFFSET fallback only supports non-negative integers. "
-                    "Use a positive integer setting, or specify `LIMIT`/`OFFSET` directly in the SQL.",
-                    name, value);
-        };
-        check_non_negative_integer(limit_setting, "limit");
-        check_non_negative_integer(offset_setting, "offset");
-        if (limit_setting > 0)
-        {
-            auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentHeader(),
-                static_cast<size_t>(limit_setting),
-                static_cast<size_t>(offset_setting),
-                settings[Setting::exact_rows_before_limit]);
-            limit->setStepDescription("LIMIT OFFSET for SETTINGS");
-            query_plan.addStep(std::move(limit));
-        }
-        else if (offset_setting > 0)
-        {
-            auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), static_cast<size_t>(offset_setting));
-            offset->setStepDescription("OFFSET for SETTINGS");
-            query_plan.addStep(std::move(offset));
         }
     }
 
