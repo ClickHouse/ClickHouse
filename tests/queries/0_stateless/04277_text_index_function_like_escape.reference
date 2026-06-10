@@ -44,3 +44,13 @@ Correctness check: the row containing the literal backslash is returned
 1
 Text index analysis declines the condition: all 3 granules are scanned
 Granules: 3/3
+A map LIKE with an unknown backslash escape is also not pruned by the text index
+Correctness check: the key and the value containing the literal backslash are returned
+1
+2
+Text index analysis declines both conditions: all 3 granules are scanned
+Granules: 3/3
+Granules: 3/3
+A valid map LIKE pattern still uses the text index (decline is targeted, not blanket)
+Granules: 3/3
+Granules: 1/3

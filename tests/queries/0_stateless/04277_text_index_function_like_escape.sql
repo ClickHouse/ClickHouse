@@ -183,3 +183,49 @@ SELECT trimLeft(explain) AS explain FROM (
 ) WHERE explain LIKE '%Granules:%';
 
 DROP TABLE tab;
+
+SELECT 'A map LIKE with an unknown backslash escape is also not pruned by the text index';
+
+-- Same divergence for mapContainsKeyLike / mapContainsValueLike on a text index over mapKeys / mapValues.
+-- A map key/value "foo a\b bar" is indexed by `splitByNonAlpha` as tokens "foo", "a", "b", "bar", but
+-- `nextInStringLike` drops the backslash and asks for the single token "ab", which is absent, so the
+-- granule containing the matching entry would be wrongly pruned. The analyzer declines the map LIKE
+-- condition for unknown backslash escapes and falls back to row-level.
+
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(String, String),
+    INDEX map_keys_idx mapKeys(m) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1,
+    INDEX map_values_idx mapValues(m) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, {'foo a\\b bar':'v1'}), (2, {'k2':'foo a\\b baz'}), (3, {'nothing':'here'});
+
+SELECT 'Correctness check: the key and the value containing the literal backslash are returned';
+
+SELECT id FROM tab WHERE mapContainsKeyLike(m, '% a\\b %') ORDER BY id;
+SELECT id FROM tab WHERE mapContainsValueLike(m, '% a\\b %') ORDER BY id;
+
+SELECT 'Text index analysis declines both conditions: all 3 granules are scanned';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE mapContainsKeyLike(m, '% a\\b %')
+) WHERE explain LIKE '%Granules:%';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE mapContainsValueLike(m, '% a\\b %')
+) WHERE explain LIKE '%Granules:%';
+
+SELECT 'A valid map LIKE pattern still uses the text index (decline is targeted, not blanket)';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE mapContainsKeyLike(m, '% bar %')
+) WHERE explain LIKE '%Granules:%';
+
+DROP TABLE tab;

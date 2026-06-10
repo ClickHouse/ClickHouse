@@ -814,6 +814,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!value_data_type.isStringOrFixedString())
             return false;
 
+        /// Same divergence as the plain `like` branch below: `nextInStringLike` drops the backslash for an
+        /// unknown escape `\c`, so the requested tokens would not match the indexed key/value. Decline and
+        /// let row-level evaluation handle it.
+        if ((function_name == "mapContainsKeyLike" || function_name == "mapContainsValueLike")
+            && value_field.getType() == Field::Types::String
+            && likePatternHasUnknownBackslashEscape(value_field.safeGet<String>()))
+            return false;
+
         auto make_map_function = [&](auto tokens)
         {
             out.function = RPNElement::FUNCTION_EQUALS;
