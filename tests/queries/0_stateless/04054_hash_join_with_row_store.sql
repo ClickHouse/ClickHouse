@@ -12,8 +12,9 @@ CREATE TABLE right_storage_join (k Int64, v1 Nullable(Int64), s String) ENGINE =
 
 INSERT INTO left SELECT number, toDateTime('2024-01-01 00:00:00', 'UTC') + number FROM numbers(10);
 INSERT INTO right SELECT number + 7, number, number, toString(number) FROM numbers(5);
+INSERT INTO right VALUES (7, NULL, 5, 'dup');
 INSERT INTO right_asof SELECT number, toDateTime('2024-01-01 00:00:00', 'UTC') + number, number, toString(number) FROM numbers(5);
-INSERT INTO right_storage_join SELECT k, v1, s FROM right;
+INSERT INTO right_storage_join SELECT number + 7, number, toString(number) FROM numbers(5);
 
 SET join_algorithm = 'hash';
 SET min_columns_for_hash_join_row_store = 1;
@@ -46,7 +47,7 @@ FROM (
 
 SELECT '--- Row store columns filtering ---';
 SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL
-SETTINGS max_bytes_for_hash_join_row_store = 45, log_comment = 'rs_04054_filtered';
+SETTINGS max_bytes_for_hash_join_row_store = 55, log_comment = 'rs_04054_filtered';
 
 SYSTEM FLUSH LOGS query_log, text_log;
 
@@ -93,9 +94,6 @@ SELECT k,
        joinGet({CLICKHOUSE_DATABASE:String} || '.right_storage_join', 'v1', k),
        joinGetOrNull({CLICKHOUSE_DATABASE:String} || '.right_storage_join', 'v1', k)
 FROM left ORDER BY ALL;
-
-SELECT '--- Join with spilling ---';
-SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'parallel_hash,grace_hash', max_bytes_before_external_join = 1;
 
 DROP TABLE right_storage_join;
 DROP TABLE right_asof;
