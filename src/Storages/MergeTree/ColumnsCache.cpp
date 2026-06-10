@@ -191,6 +191,13 @@ bool ColumnsCache::set(const Key & key, const MappedPtr & mapped, UInt64 expecte
             return false;
     }
 
+    /// An entry whose weight exceeds the cache size limit would be evicted by
+    /// Base::set immediately after insertion. Reject it up front, before the
+    /// overlap handling below, so a write that cannot possibly stay resident
+    /// does not erase useful overlapping cached ranges.
+    if (ColumnsCacheWeightFunction{}(*mapped) > Base::maxSizeInBytes())
+        return false;
+
     PartIdentifier part_id{key.table_uuid, key.part_name};
     auto & intervals = interval_index[part_id][key.column_name];
 
@@ -256,6 +263,15 @@ bool ColumnsCache::set(const Key & key, const MappedPtr & mapped, UInt64 expecte
     /// references a key that the cache does not yet contain (which would
     /// cause getIntersecting to classify it as stale and erase it).
     Base::set(key, mapped);
+
+    /// Even after the weight pre-check above, Base::set can evict the entry it
+    /// just inserted (for example, SLRU may not admit an entry larger than its
+    /// probationary segment). Publish the interval only if the entry is actually
+    /// resident, and report failure so the caller does not charge the write
+    /// budget for bytes that did not stay in the cache.
+    if (!Base::contains(key))
+        return false;
+
     intervals[{key.row_begin, key.row_end}] = key;
 
     /// Eviction in `Base` happens via a callback that does not provide the key,

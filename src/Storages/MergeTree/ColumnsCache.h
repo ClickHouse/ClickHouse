@@ -164,9 +164,10 @@ public:
     /// before `lower_bound`. See implementation for details.
     /// Returns true if an entry was actually inserted, false if the call was a
     /// no-op (an existing wider interval already covers this range, so nothing
-    /// was written, or the write was rejected as stale - see below). Callers use
-    /// the return value to avoid charging the per-query write budget for writes
-    /// that never landed in the cache.
+    /// was written; the write was rejected as stale - see below; or the entry
+    /// could not stay resident in the cache, e.g. its weight exceeds the cache
+    /// size limit). Callers use the return value to avoid charging the per-query
+    /// write budget for writes that never landed in the cache.
     ///
     /// `expected_table_generation` is the table invalidation generation the
     /// caller captured (via getTableGeneration) when it started reading the data
