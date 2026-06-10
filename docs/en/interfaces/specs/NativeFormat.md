@@ -199,8 +199,8 @@ The `kind_stack` byte enumerates a non-default per-column serialization, mirrori
 |------|------|---------|------------------------|
 | `0x00` | DEFAULT | Default serialization | Identical to `has_custom = 0` |
 | `0x01` | SPARSE | Sparse serialization (v54465+) | Offset stream + non-default values; see below |
-| `0x02` | DETACHED | Internal storage form (not used over the wire) | — |
-| `0x03` | DETACHED_OVER_SPARSE | Detached over sparse (not used over the wire) | — |
+| `0x02` | DETACHED | Column wrapped in a `ColumnBLOB` by parallel block marshalling (v54478+) | Pre-marshalled blob: `VarUInt size` + that many bytes; see below |
+| `0x03` | DETACHED_OVER_SPARSE | A sparse column wrapped in a `ColumnBLOB` | Same blob payload as `DETACHED`; see below |
 | `0x04` | REPLICATED | Dictionary form for repeated values (v54482+) | Index stream + dense element values; see below |
 | `0x05` | COMBINATION | Multi-kind stack | Followed by VarUInt `count` and `count` further kind bytes |
 
@@ -226,6 +226,8 @@ A decoder reconstructs a dense column of `num_rows` entries by filling every non
 ```
 
 A decoder reconstructs a dense column by selecting `elements[indexes[i]]` for each output row `i`. Composite inner types recurse: the element list is materialized in the inner type, then indexed. Supported inner types include the leaf types, `Nullable(T)`, `Array(T)`, `Tuple(...)`, `Map(K, V)`, `Nested(...)` (each field expanded like an `Array`), and `LowCardinality(T)` (the shared dictionary is kept; only the per-element keys are indexed).
+
+**Detached wire format.** `DETACHED` (`0x02`) and `DETACHED_OVER_SPARSE` (`0x03`) *do* appear over the wire — they are not purely internal. On the TCP path, when compression is enabled and the negotiated revision is at least `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` (v54478), `convertColumnsToBLOBs` wraps each eligible column (non-`const`, non-`Tuple`, in a block with more than one row) in a `ColumnBLOB` that holds the column already marshalled and compressed off the main thread. `ISerialization::getKindStack` then appends `DETACHED` to the wrapped column's stack, and `SerializationDetached::serializeBinaryBulk` writes the column `data` as a `VarUInt` blob size followed by exactly that many blob bytes. If the wrapped column was sparse, its stack is `{DEFAULT, SPARSE, DETACHED}`, which serializes as `DETACHED_OVER_SPARSE`. A client decoding such a column reads the blob length and bytes, then decompresses the blob to recover the inner column payload (see the [`ColumnBLOB` note](#compression-negotiation) under compression).
 
 ### Block variants {#block-variants}
 
