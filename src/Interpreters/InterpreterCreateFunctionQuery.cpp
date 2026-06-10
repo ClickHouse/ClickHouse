@@ -8,6 +8,7 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionDriverInvoker.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionDriverRegistry.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionDriverUtils.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Core/UUID.h>
@@ -20,12 +21,7 @@
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTNameTypePair.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/escapeForFileName.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Access/Common/AccessRightsElement.h>
@@ -54,49 +50,7 @@ namespace ServerSetting
 
 namespace
 {
-    String formatArgsSignature(const ASTPtr & arguments_ast)
-    {
-        if (!arguments_ast)
-            return {};
-
-        WriteBufferFromOwnString out;
-        bool first = true;
-        for (const auto & child : arguments_ast->children)
-        {
-            if (!first)
-                out << ", ";
-            first = false;
-
-            if (const auto * name_type_pair = child->as<ASTNameTypePair>())
-            {
-                out << name_type_pair->name << ' ';
-                IAST::FormatSettings settings(/*one_line=*/true);
-                IAST::FormatState state;
-                IAST::FormatStateStacked frame;
-                name_type_pair->type->format(out, settings, state, frame);
-            }
-            else
-            {
-                IAST::FormatSettings settings(/*one_line=*/true);
-                IAST::FormatState state;
-                IAST::FormatStateStacked frame;
-                child->format(out, settings, state, frame);
-            }
-        }
-        return out.str();
-    }
-
-    String formatReturnType(const ASTPtr & return_type_ast)
-    {
-        if (!return_type_ast)
-            return {};
-        WriteBufferFromOwnString out;
-        IAST::FormatSettings settings(/*one_line=*/true);
-        IAST::FormatState state;
-        IAST::FormatStateStacked frame;
-        return_type_ast->format(out, settings, state, frame);
-        return out.str();
-    }
+    namespace DriverUtils = UserDefinedExecutableFunctionDriverUtils;
 
     std::vector<std::pair<String, String>> formatEngineArguments(
         const ASTCreateFunctionWithDriverQuery & query,
@@ -116,7 +70,7 @@ namespace
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Engine argument '{}' must be a literal", name);
 
-            result.emplace_back(name, applyVisitor(FieldVisitorToString(), literal->value));
+            result.emplace_back(name, DriverUtils::engineArgumentToString(*literal));
             seen[name] = true;
         }
         for (const auto & [name, spec] : driver.engine_arguments)
@@ -137,62 +91,13 @@ namespace
         return ".yaml";
     }
 
-    String driverDynamicConfigPath(const ContextPtr & context, const String & function_name, const String & extension)
-    {
-        String path = context->getDynamicUserDefinedExecutableFunctionsPath();
-        if (path.empty())
-            throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST,
-                "Server setting `dynamic_user_defined_executable_functions_path` is not set");
-        if (!path.ends_with('/'))
-            path.push_back('/');
-        return path + escapeForFileName(function_name) + extension;
-    }
-
-    String driverWorkingDirectoryMetadataPath(const ContextPtr & context, const String & function_name)
-    {
-        return driverDynamicConfigPath(context, function_name, ".workdir");
-    }
-
-    String driverWorkingDirectory(const ContextPtr & context, const String & directory_name)
-    {
-        String path = context->getDynamicUserDefinedExecutableFunctionsPath();
-        if (!path.ends_with('/'))
-            path.push_back('/');
-        return path + directory_name;
-    }
-
-    void validateDriverWorkingDirectoryName(const String & directory_name, const String & function_name)
-    {
-        UUID uuid;
-        if (!tryParseUUID({reinterpret_cast<const UInt8 *>(directory_name.data()), directory_name.size()}, uuid))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Invalid executable UDF driver working directory name '{}' for function '{}'",
-                directory_name, function_name);
-    }
-
-    String readDriverWorkingDirectory(const ContextPtr & context, const String & function_name)
-    {
-        const String metadata_path = driverWorkingDirectoryMetadataPath(context, function_name);
-        if (!std::filesystem::exists(metadata_path))
-            return {};
-
-        String directory_name;
-        ReadBufferFromFile in(metadata_path);
-        readStringUntilEOF(directory_name, in);
-        if (directory_name.empty())
-            return {};
-
-        validateDriverWorkingDirectoryName(directory_name, function_name);
-        return driverWorkingDirectory(context, directory_name);
-    }
-
     String createDriverWorkingDirectory(const ContextPtr & context)
     {
         /// The RFC requires a random UUID directory for the driver-owned state.
         for (size_t attempt = 0; attempt != 100; ++attempt)
         {
             const String directory_name = toString(UUIDHelpers::generateV4());
-            const String path = driverWorkingDirectory(context, directory_name);
+            const String path = DriverUtils::driverWorkingDirectory(context, directory_name);
             if (std::filesystem::create_directory(path))
                 return path;
         }
@@ -221,11 +126,31 @@ namespace
             return replace_if_exists;
         }
 
-        if (throw_if_exists && UserDefinedExecutableFunctionFactory::instance().has(function_name, current_context)) /// NOLINT(readability-static-accessed-through-instance)
-            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined executable function '{}' already exists", function_name);
+        /// An executable function with this name may also exist outside the SQL-object storage:
+        /// defined statically in the server configuration, or left from a driver-created function
+        /// whose SQL metadata was lost. `IF NOT EXISTS` must be a no-op in that case, and
+        /// `OR REPLACE` cannot replace a function defined in the server configuration.
+        if (UserDefinedExecutableFunctionFactory::instance().has(function_name, current_context)) /// NOLINT(readability-static-accessed-through-instance)
+        {
+            if (throw_if_exists)
+                throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined executable function '{}' already exists", function_name);
+            if (!replace_if_exists)
+                return false;
 
-        if (throw_if_exists && UserDefinedWebAssemblyFunctionFactory::instance().has(function_name)) /// NOLINT(readability-static-accessed-through-instance)
-            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined wasm function '{}' already exists", function_name);
+            const bool has_dynamic_config = std::filesystem::exists(DriverUtils::driverDynamicConfigPath(current_context, function_name, ".xml"))
+                || std::filesystem::exists(DriverUtils::driverDynamicConfigPath(current_context, function_name, ".yaml"));
+            if (!has_dynamic_config)
+                throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS,
+                    "User defined executable function '{}' is defined in the server configuration and cannot be replaced", function_name);
+        }
+
+        if (UserDefinedWebAssemblyFunctionFactory::instance().has(function_name)) /// NOLINT(readability-static-accessed-through-instance)
+        {
+            if (throw_if_exists)
+                throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined wasm function '{}' already exists", function_name);
+            if (!replace_if_exists)
+                return false;
+        }
 
         /// This keeps validation of engine arguments and driver availability before any filesystem side effects.
         const auto driver = UserDefinedExecutableFunctionDriverRegistry::instance().get(query.engine_name);
@@ -237,10 +162,10 @@ namespace
     void removeDriverArtifacts(const ContextPtr & context, const String & function_name)
     {
         std::error_code ec;
-        const String working_dir = readDriverWorkingDirectory(context, function_name);
-        std::filesystem::remove(driverDynamicConfigPath(context, function_name, ".xml"), ec);
-        std::filesystem::remove(driverDynamicConfigPath(context, function_name, ".yaml"), ec);
-        std::filesystem::remove(driverWorkingDirectoryMetadataPath(context, function_name), ec);
+        const String working_dir = DriverUtils::readDriverWorkingDirectory(context, function_name);
+        std::filesystem::remove(DriverUtils::driverDynamicConfigPath(context, function_name, ".xml"), ec);
+        std::filesystem::remove(DriverUtils::driverDynamicConfigPath(context, function_name, ".yaml"), ec);
+        std::filesystem::remove(DriverUtils::driverWorkingDirectoryMetadataPath(context, function_name), ec);
         if (!working_dir.empty())
             std::filesystem::remove_all(working_dir, ec);
     }
@@ -265,18 +190,18 @@ namespace
                 "Server setting `dynamic_user_defined_executable_functions_path` is not set");
         std::filesystem::create_directories(dynamic_dir);
 
-        const String args_signature = formatArgsSignature(query.arguments_ast);
-        const String return_type = formatReturnType(query.return_type_ast);
+        const String args_signature = DriverUtils::formatArgsSignature(query.arguments_ast);
+        const String return_type = DriverUtils::formatReturnType(query.return_type_ast);
         const auto engine_argument_values = formatEngineArguments(query, *driver);
 
-        const String xml_existing = driverDynamicConfigPath(current_context, function_name, ".xml");
-        const String yaml_existing = driverDynamicConfigPath(current_context, function_name, ".yaml");
+        const String xml_existing = DriverUtils::driverDynamicConfigPath(current_context, function_name, ".xml");
+        const String yaml_existing = DriverUtils::driverDynamicConfigPath(current_context, function_name, ".yaml");
         const bool config_exists = std::filesystem::exists(xml_existing) || std::filesystem::exists(yaml_existing);
 
         DriverCreateResult result;
         if (!(query.is_attach && config_exists))
         {
-            result.previous_working_dir = readDriverWorkingDirectory(current_context, function_name);
+            result.previous_working_dir = DriverUtils::readDriverWorkingDirectory(current_context, function_name);
             result.working_dir = createDriverWorkingDirectory(current_context);
 
             String generated_config;
@@ -300,9 +225,9 @@ namespace
             }
 
             const String extension = pickExtensionForGeneratedConfig(generated_config);
-            const String final_path = driverDynamicConfigPath(current_context, function_name, extension);
+            const String final_path = DriverUtils::driverDynamicConfigPath(current_context, function_name, extension);
             const String tmp_path = final_path + ".tmp";
-            const String working_dir_metadata_path = driverWorkingDirectoryMetadataPath(current_context, function_name);
+            const String working_dir_metadata_path = DriverUtils::driverWorkingDirectoryMetadataPath(current_context, function_name);
             const String working_dir_metadata_tmp_path = working_dir_metadata_path + ".tmp";
 
             try

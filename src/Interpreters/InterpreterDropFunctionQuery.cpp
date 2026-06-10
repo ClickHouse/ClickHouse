@@ -6,9 +6,9 @@
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionDriverInvoker.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionDriverRegistry.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionDriverUtils.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
-#include <Core/UUID.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -16,14 +16,8 @@
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTNameTypePair.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
-#include <IO/Operators.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromString.h>
 
 #include <filesystem>
 
@@ -33,95 +27,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_QUERY;
 }
 
 namespace
 {
-    String formatArgsSignatureForDrop(const ASTPtr & arguments_ast)
-    {
-        if (!arguments_ast)
-            return {};
-        WriteBufferFromOwnString out;
-        bool first = true;
-        for (const auto & child : arguments_ast->children)
-        {
-            if (!first)
-                out << ", ";
-            first = false;
-
-            if (const auto * name_type_pair = child->as<ASTNameTypePair>())
-            {
-                out << name_type_pair->name << ' ';
-                IAST::FormatSettings settings(/*one_line=*/true);
-                IAST::FormatState state;
-                IAST::FormatStateStacked frame;
-                name_type_pair->type->format(out, settings, state, frame);
-            }
-            else
-            {
-                IAST::FormatSettings settings(/*one_line=*/true);
-                IAST::FormatState state;
-                IAST::FormatStateStacked frame;
-                child->format(out, settings, state, frame);
-            }
-        }
-        return out.str();
-    }
-
-    String formatReturnTypeForDrop(const ASTPtr & return_type_ast)
-    {
-        if (!return_type_ast)
-            return {};
-        WriteBufferFromOwnString out;
-        IAST::FormatSettings settings(/*one_line=*/true);
-        IAST::FormatState state;
-        IAST::FormatStateStacked frame;
-        return_type_ast->format(out, settings, state, frame);
-        return out.str();
-    }
-
-    String driverDynamicConfigPath(const ContextPtr & context, const String & function_name, const String & extension)
-    {
-        String path = context->getDynamicUserDefinedExecutableFunctionsPath();
-        if (!path.ends_with('/'))
-            path.push_back('/');
-        return path + escapeForFileName(function_name) + extension;
-    }
-
-    String driverWorkingDirectoryMetadataPath(const ContextPtr & context, const String & function_name)
-    {
-        return driverDynamicConfigPath(context, function_name, ".workdir");
-    }
-
-    void validateDriverWorkingDirectoryName(const String & directory_name, const String & function_name)
-    {
-        UUID uuid;
-        if (!tryParseUUID({reinterpret_cast<const UInt8 *>(directory_name.data()), directory_name.size()}, uuid))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Invalid executable UDF driver working directory name '{}' for function '{}'",
-                directory_name, function_name);
-    }
-
-    String readDriverWorkingDirectory(const ContextPtr & context, const String & function_name)
-    {
-        const String metadata_path = driverWorkingDirectoryMetadataPath(context, function_name);
-        if (!std::filesystem::exists(metadata_path))
-            return {};
-
-        String directory_name;
-        ReadBufferFromFile in(metadata_path);
-        readStringUntilEOF(directory_name, in);
-        if (directory_name.empty())
-            return {};
-
-        validateDriverWorkingDirectoryName(directory_name, function_name);
-        String dynamic_dir = context->getDynamicUserDefinedExecutableFunctionsPath();
-        if (!dynamic_dir.ends_with('/'))
-            dynamic_dir.push_back('/');
-        return dynamic_dir + directory_name;
-    }
+    namespace DriverUtils = UserDefinedExecutableFunctionDriverUtils;
 
     void handleDriverBasedDrop(
         const ASTCreateFunctionWithDriverQuery & create_query,
@@ -140,7 +51,7 @@ namespace
             dynamic_dir.push_back('/');
 
         const String escaped = escapeForFileName(function_name);
-        const String working_dir = dynamic_dir.empty() ? String() : readDriverWorkingDirectory(current_context, function_name);
+        const String working_dir = dynamic_dir.empty() ? String() : DriverUtils::readDriverWorkingDirectory(current_context, function_name);
 
         if (driver)
         {
@@ -150,15 +61,15 @@ namespace
                 const auto * literal = value_ast->as<ASTLiteral>();
                 if (!literal)
                     continue;
-                engine_argument_values.emplace_back(name, applyVisitor(FieldVisitorToString(), literal->value));
+                engine_argument_values.emplace_back(name, DriverUtils::engineArgumentToString(*literal));
             }
 
             try
             {
                 UserDefinedExecutableFunctionDriverInvoker::runDropCommand(
                     *driver, function_name,
-                    formatReturnTypeForDrop(create_query.return_type_ast),
-                    formatArgsSignatureForDrop(create_query.arguments_ast),
+                    DriverUtils::formatReturnType(create_query.return_type_ast),
+                    DriverUtils::formatArgsSignature(create_query.arguments_ast),
                     working_dir,
                     engine_argument_values);
             }
@@ -170,12 +81,25 @@ namespace
 
         if (!dynamic_dir.empty())
         {
-            std::error_code ec;
-            std::filesystem::remove(dynamic_dir + escaped + ".xml", ec);
-            std::filesystem::remove(dynamic_dir + escaped + ".yaml", ec);
-            std::filesystem::remove(driverWorkingDirectoryMetadataPath(current_context, function_name), ec);
+            LOG_INFO(log, "Removing dynamic config and working directory {} of driver-created function '{}' from {}",
+                working_dir.empty() ? "(none)" : working_dir, function_name, dynamic_dir);
+
+            auto remove_logged = [&](const String & path, bool recursive)
+            {
+                std::error_code ec;
+                if (recursive)
+                    std::filesystem::remove_all(path, ec);
+                else
+                    std::filesystem::remove(path, ec);
+                if (ec)
+                    LOG_WARNING(log, "Cannot remove {}: {}", path, ec.message());
+            };
+
+            remove_logged(dynamic_dir + escaped + ".xml", /*recursive=*/ false);
+            remove_logged(dynamic_dir + escaped + ".yaml", /*recursive=*/ false);
+            remove_logged(DriverUtils::driverWorkingDirectoryMetadataPath(current_context, function_name), /*recursive=*/ false);
             if (!working_dir.empty())
-                std::filesystem::remove_all(working_dir, ec);
+                remove_logged(working_dir, /*recursive=*/ true);
         }
 
         /// Tell the executable UDF loader to drop the function now that its config is gone.
