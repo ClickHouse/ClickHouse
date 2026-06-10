@@ -1,0 +1,68 @@
+serialization without setting
+{"a":42,"b":"hello"}
+{"a":null,"b":null}
+{"a":null,"b":"world"}
+{"a":null,"b":null}
+serialization with setting
+{"a":42,"b":"hello"}
+{}
+{"b":"world"}
+{}
+JSONAllPaths without setting
+['a','b']
+['a','b']
+['a','b']
+['a','b']
+JSONAllPaths with setting
+['a','b']
+[]
+['b']
+[]
+JSONAllPathsWithTypes without setting
+{'a':'Nullable(Int64)','b':'Nullable(String)'}
+{'a':'Nullable(Int64)','b':'Nullable(String)'}
+{'a':'Nullable(Int64)','b':'Nullable(String)'}
+{'a':'Nullable(Int64)','b':'Nullable(String)'}
+JSONAllPathsWithTypes with setting
+{'a':'Nullable(Int64)','b':'Nullable(String)'}
+{}
+{'b':'Nullable(String)'}
+{}
+empty without setting
+0
+0
+0
+0
+empty with setting
+0
+1
+0
+1
+JSONHas without setting
+1	1
+1	1
+1	1
+1	1
+JSONHas with setting
+1	1
+0	0
+0	1
+0	0
+non-nullable typed path with setting
+{"a":0}
+{"a":0}
+non-nullable JSONHas with setting
+1
+1
+mixed typed+dynamic with setting
+{"a":42,"d":100}
+{"d":200}
+{}
+mixed JSONAllPaths with setting
+['a','d']
+['d']
+[]
+mixed empty with setting
+0
+0
+1

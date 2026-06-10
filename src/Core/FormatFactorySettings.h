@@ -592,6 +592,14 @@ Possible values:
 + 0 — Disable (throw error on type mismatch).
 + 1 — Enable (skip field on type mismatch).
 )", 0) \
+    DECLARE(Bool, type_json_skip_null_typed_paths, false, R"(
+When enabled, typed paths in JSON columns that have NULL values are treated as absent, matching the behavior of dynamic paths. This affects JSON serialization output, introspection functions like `JSONAllPaths`, `JSONHas`, `JSONExtractRaw`, and `empty`/`notEmpty` checks.
+
+Possible values:
+
++ 0 — Disable (typed paths are always present, even with NULL values).
++ 1 — Enable (NULL typed paths are treated as absent).
+)", 0) \
     DECLARE(UInt64Auto, max_dynamic_subcolumns_in_json_type_parsing, "auto", R"(
 The maximum number of dynamic subcolumns that can be created in every column during parsing of JSON column.
 It allows to control the number of dynamic subcolumns during parsing regardless of dynamic parameters specified in the data type.
