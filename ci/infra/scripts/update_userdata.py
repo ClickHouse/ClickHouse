@@ -10,12 +10,15 @@ Mac instance puts its host into a multi-hour scrub (host state `pending`), so
 This script encapsulates that whole user_data update workflow so it lives apart
 from the praktika `deploy` path. It runs in two phases:
 
-  1. `build_plan` reads the live state (read-only) and produces a `Plan`. For
-     every instance it decides one action: `update` (live user_data differs -
-     stop, install, start), `start` (user_data is current but the instance is
-     stopped), or `none`.
-  2. `Plan.apply` carries the plan out, one instance at a time, blocking on the
-     Dedicated Host scrub.
+  1. `build_plan` reads the live state (read-only) and produces a list of
+     `PlanItem`s. An instance gets an `update` item when its live user_data
+     differs (stop, install, start) or a `start` item when its user_data is
+     current but it is stopped. A running, up-to-date instance needs no action
+     and is left out of the plan (logged as skipped).
+  2. Applying loops the items, one at a time, blocking on the Dedicated Host
+     scrub. Already-stopped instances are started first, before any update -
+     an update stops its instance and triggers a host scrub that would block
+     those starts.
 
 The plan is always printed. By default that is all that happens - pass
 `--apply` to execute it.
@@ -223,17 +226,18 @@ def start_instances(ec2, instance_ids):
     ec2.get_waiter("instance_running").wait(InstanceIds=started)
 
 
-# Plan item actions.
-UPDATE = "update"  # live user_data differs - stop, install, start
+# Plan item actions. Running instances with current user_data need no action
+# and are not added to the plan at all.
+UPDATE = "update"  # live user_data differs - stop, install, then start
 START = "start"  # user_data current but instance stopped - just start
-NONE = "none"  # running and current - nothing to do
 
 
 @dataclass
 class PlanItem:
     """One planned action for one instance, self-contained enough to `apply`.
 
-    `build_plan` fills these in read-only; `apply` carries a single item out.
+    `build_plan` fills these in read-only; `apply` carries a single item out,
+    waiting out the Dedicated Host scrub as part of the start.
     """
 
     config: str
@@ -249,16 +253,16 @@ class PlanItem:
         unified diff of live vs configured first; return True if it did, so the
         caller shows the diff only for the first mismatch.
         """
-        if self.action == NONE:
-            print(f"  {self.instance_id}: up to date, {self.state} - no action")
-            return False
         if self.action == START:
-            print(f"  {self.instance_id}: up to date but {self.state} - start")
+            print(
+                f"  {self.instance_id} [{self.config}] {self.state}: "
+                f"start (wait for host scrub, then start)"
+            )
             return False
 
         printed = False
         if show_diff:
-            print(f"  {self.instance_id}: user_data diff (live -> configured):")
+            print(f"  {self.instance_id} [{self.config}] user_data diff (live -> configured):")
             sys.stdout.writelines(
                 difflib.unified_diff(
                     self.live.splitlines(keepends=True),
@@ -271,41 +275,34 @@ class PlanItem:
                 print()  # keep the next log line on its own row
             printed = True
         print(
-            f"  {self.instance_id}: user_data differs ({self.state}) - "
-            f"stop, install, start"
+            f"  {self.instance_id} [{self.config}] {self.state}: "
+            f"update (stop, install, wait for host scrub, then start)"
         )
         return printed
 
     def apply(self):
-        """Carry out this item: update (stop, install, start) or start a stopped
-        instance, blocking on the Dedicated Host scrub. A NONE item is a no-op.
+        """Carry out this item. For an UPDATE: stop, install user_data, then
+        start. For a START: just start a stopped instance. Either way the start
+        blocks on the Dedicated Host scrub (see `start_instances`).
         """
-        if self.action == NONE:
-            return
         ec2 = boto3.client("ec2", region_name=self.region)
         if self.action == UPDATE:
             install_user_data(ec2, self.instance_id, self.state, self.user_data)
-            start_instances(ec2, [self.instance_id])
-        elif self.action == START:
-            if self.state == "stopping":
-                # `start_instances` needs a fully stopped instance.
-                ec2.get_waiter("instance_stopped").wait(
-                    InstanceIds=[self.instance_id],
-                    WaiterConfig={"Delay": 30, "MaxAttempts": 80},
-                )
-            start_instances(ec2, [self.instance_id])
+        elif self.action == START and self.state == "stopping":
+            # `start_instances` needs a fully stopped instance.
+            ec2.get_waiter("instance_stopped").wait(
+                InstanceIds=[self.instance_id],
+                WaiterConfig={"Delay": 30, "MaxAttempts": 80},
+            )
+        start_instances(ec2, [self.instance_id])
 
 
 def print_plan(plan):
-    """Print every item in `plan`, grouped by config, with a diff for the first
-    instance that needs an update.
+    """Print every item in `plan`, with a diff for the first instance that needs
+    an update.
     """
     diff_shown = False
-    current_config = None
     for item in plan:
-        if item.config != current_config:
-            current_config = item.config
-            print(f"[{item.config}] region={item.region}")
         diff_shown = item.describe(show_diff=not diff_shown) or diff_shown
 
 
@@ -336,7 +333,8 @@ def build_plan(configs, requested_ids) -> List[PlanItem]:
     `strip_comments`), so a comment-only edit plans no update.
     """
     pending = None if requested_ids is None else set(requested_ids)
-    plan: List[PlanItem] = []
+    starts: List[PlanItem] = []
+    updates: List[PlanItem] = []
     for config in configs.values():
         if pending is not None and not pending:
             break
@@ -358,23 +356,24 @@ def build_plan(configs, requested_ids) -> List[PlanItem]:
             instance_id = inst.get("InstanceId")
             state = (inst.get("State") or {}).get("Name")
             live = get_live_user_data(ec2, instance_id)
-            if strip_comments(live) != strip_comments(user_data):
-                action = UPDATE
-            elif state in ("stopped", "stopping"):
-                action = START
-            else:
-                action = NONE
-            plan.append(
-                PlanItem(
-                    config=config.name,
-                    region=config.region,
-                    instance_id=instance_id,
-                    state=state,
-                    action=action,
-                    user_data=user_data,
-                    live=live,
-                )
+            item = PlanItem(
+                config=config.name,
+                region=config.region,
+                instance_id=instance_id,
+                state=state,
+                action="",
+                user_data=user_data,
+                live=live,
             )
+            if strip_comments(live) != strip_comments(user_data):
+                item.action = UPDATE
+                updates.append(item)
+            elif state in ("stopped", "stopping"):
+                item.action = START
+                starts.append(item)
+            else:
+                # Running with current user_data - nothing to do; not planned.
+                print(f"  {instance_id} [{config.name}] {state}: up to date - skip")
             if pending is not None:
                 pending.discard(instance_id)
 
@@ -383,7 +382,11 @@ def build_plan(configs, requested_ids) -> List[PlanItem]:
             f"instance(s) {sorted(pending)} not found under any EC2Instance "
             f"config in ci/infra/cloud.py"
         )
-    return plan
+
+    # Start already-stopped instances before any update: an update stops its
+    # instance, which puts the Dedicated Host into a multi-hour scrub that would
+    # then block these starts.
+    return starts + updates
 
 
 def main():
@@ -417,16 +420,15 @@ def main():
     plan = build_plan(configs, args.instance)
     print_plan(plan)
 
-    changes = [item for item in plan if item.action != NONE]
-    if not changes:
-        print("nothing to do")
+    if not plan:
+        print("nothing to do - every instance is up to date and running")
         return
     if not args.apply:
-        print(f"{len(changes)} change(s) planned - pass --apply to execute")
+        print(f"{len(plan)} change(s) planned - pass --apply to execute")
         return
 
-    print(f"applying {len(changes)} change(s)...")
-    for item in changes:
+    print(f"applying {len(plan)} change(s)...")
+    for item in plan:
         item.apply()
 
 
