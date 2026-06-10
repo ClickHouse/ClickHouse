@@ -282,8 +282,16 @@ The following operations with [projections](/engines/table-engines/mergetree-fam
 Use the statement below to add a projection description to a tables metadata:
 
 ```sql
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+-- Normal projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+
+-- Aggregate projection (does not support WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 ```
+
+:::note
+A `WHERE` clause is supported only for normal projections. Aggregate projections (projections containing a `GROUP BY` clause) cannot use a `WHERE` clause.
+:::
 
 #### `WITH SETTINGS` Clause {#with-settings}
 

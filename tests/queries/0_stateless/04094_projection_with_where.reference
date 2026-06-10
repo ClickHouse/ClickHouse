@@ -1,24 +1,26 @@
-Test 1: Exact match
+Exact match
 2024-01-01 00:00:00	hello
 2024-01-03 00:00:00	foo
 2024-01-05 00:00:00	baz
-Test 2: Stricter match (AND)
+Stricter match (AND)
 2024-01-03 00:00:00	foo
 2024-01-05 00:00:00	baz
-Test 3: Non-matching (different value)
+Non-matching (different value)
 2024-01-02 00:00:00	world
-Test 4: No WHERE
+No WHERE
 5
-Test 5: Weaker (OR)
+Weaker (OR)
 2024-01-01 00:00:00	hello
 2024-01-02 00:00:00	world
 2024-01-03 00:00:00	foo
 2024-01-05 00:00:00	baz
-Test 6: Projection row count
+Projection row count
 3
-Test 7: Projection with WITH clause
+Projection with WITH clause
 2
-Test 8: Mutation with filtered projection
+Projection with SELECT alias
+2
+Mutation with filtered projection
 2024-01-03 00:00:00	c
 2024-01-04 00:00:00	d
-Test 9: Aggregate projection with WHERE is rejected
+Aggregate projection with WHERE is rejected
