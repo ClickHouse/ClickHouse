@@ -21,6 +21,7 @@
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 
 #include <Coordination/CoordinationSettings.h>
@@ -52,6 +53,11 @@ namespace ProfileEvents
     extern const Event KeeperCheckWatchRequest;
     extern const Event KeeperRemoveWatchRequest;
     extern const Event KeeperAddWatchRequest;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric KeeperTTLNodes;
 }
 
 
@@ -1502,7 +1508,8 @@ bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t vers
     prev_node.shallowCopy(node_it->value);
     acl_map.removeUsage(node_it->value.acl_id);
 
-    ttl_paths.erase(path);
+    if (node_it->value.stats.isTTL())
+        ttl_paths.erase(path);
 
     if constexpr (use_rocksdb)
         container.erase(path);
@@ -4512,9 +4519,11 @@ std::vector<std::pair<std::string, Int32>> KeeperStorage<Container>::collectExpi
         if (node_it == container.end())
             continue;
         const Node & node = node_it->value;
-        versions[ttl_path] = node.stats.version;
         if (node.stats.isTTL() && now_ms >= node.stats.destroyTime())
+        {
             expired_nodes.push_back(ttl_path);
+            versions[ttl_path] = node.stats.version;
+        }
         if (expired_nodes.size() >= batch_size)
             break;
     }
@@ -4713,6 +4722,7 @@ void KeeperStorage<Container>::updateStats()
     stats.session_with_ephemeral_nodes_count.store(getSessionWithEphemeralNodesCount(), std::memory_order_relaxed);
     stats.total_emphemeral_nodes_count.store(getTotalEphemeralNodesCount(), std::memory_order_relaxed);
     stats.last_zxid.store(getZXID(), std::memory_order_relaxed);
+    CurrentMetrics::set(CurrentMetrics::KeeperTTLNodes, ttl_paths.size());
 }
 
 const KeeperStorageStats & KeeperStorageBase::getStorageStats() const
