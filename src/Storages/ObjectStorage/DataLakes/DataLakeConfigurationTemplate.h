@@ -31,16 +31,13 @@
 #include <type_traits>
 
 #include <Common/ErrorCodes.h>
-#include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfigurationHelpers.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Databases/DataLake/DatabaseDataLake.h>
-#include <Core/Settings.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <fmt/ranges.h>
 
@@ -356,22 +353,9 @@ public:
             catalog);
     }
 
-    std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] const StorageID & table_id) const override
+    std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr context, const StorageID & table_id) const override
     {
-#if USE_AVRO && USE_PARQUET
-        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].changed || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Don't use deprecated settings storage_catalog_type and storage_catalog_url");
-        const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
-        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(db_name);
-        if (!database)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Database {} not found", db_name);
-        auto datalake_database = std::dynamic_pointer_cast<DatabaseDataLake>(database);
-        if (!datalake_database)
-            return nullptr;
-        return datalake_database->getCatalog();
-#else
-        return nullptr;
-#endif
+        return tryGetDataLakeCatalog(*settings, context, table_id);
     }
 
     bool optimize(ObjectStoragePtr object_storage, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
@@ -387,12 +371,8 @@ public:
 
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
     {
-        if (!Context::getGlobalContextInstance()->getAllowedDisksForTableEngines().contains(disk_name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} is not allowed for usage in storage engines. The list of allowed disks is defined by `allowed_disks_for_table_engines", disk_name);
-
+        ready_object_storage = resolveAllowedDiskObjectStorage(context, disk_name);
         BaseStorageConfiguration::fromDisk(disk_name, args, context, with_structure);
-        auto disk = context->getDisk(disk_name);
-        ready_object_storage = disk->getObjectStorage();
     }
 
     bool supportsPrewhere() const override
@@ -412,13 +392,7 @@ private:
 
     void assertLocalPathCorrect(ObjectStoragePtr object_storage, ContextPtr local_context)
     {
-        if (object_storage->getType() == ObjectStorageType::Local)
-        {
-            auto user_files_path = local_context->getUserFilesPath();
-            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
-                throw Exception(
-                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
-        }
+        assertLocalDataLakePathInUserFiles(object_storage, local_context, this->getPathForRead().path);
     }
 
     void assertInitialized() const
