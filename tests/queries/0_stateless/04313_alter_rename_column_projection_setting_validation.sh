@@ -77,7 +77,7 @@ $CLICKHOUSE_CLIENT --query="SELECT id, d FROM t_proj_setting_validation ORDER BY
 # ALTER must NOT have entered the post-commit rollback path. Assert the
 # table did not log "may be inconsistent until restart" for this ALTER (it does
 # before the fix). Scope by the ALTER's query_id so the check is deterministic.
-$CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS text_log"
 $CLICKHOUSE_CLIENT --query="
     SELECT count()
     FROM system.text_log

@@ -1657,8 +1657,8 @@ protected:
         ContextPtr local_context) const;
 
     /// Runs the same metadata validation as `setProperties` but without publishing
-    /// `new_metadata`, using this table's `allow_reverse_key`/`allow_nullable_key`. Lets
-    /// `alter()` validate against freshly changed settings before the durable commit.
+    /// `new_metadata`. Lets `alter()` validate against freshly changed settings before
+    /// the durable commit.
     void checkMetadataProperties(
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
