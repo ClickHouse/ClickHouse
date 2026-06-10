@@ -1910,6 +1910,27 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 tuple_names.emplace_back(std::move(column_with_type_and_name.name));
             }
 
+            /// Validate that every field has exactly as many rows as the parent struct
+            /// declares.  arrow::StructArray::field() silently Slices a short child to
+            /// the parent's reported length, so a crafted Arrow file can patch individual
+            /// fields' FieldNode.length without triggering an Arrow-level error.  Without
+            /// this check, ColumnTuple would hold fields of unequal size, and any reader
+            /// that accesses a short field past its allocation triggers an OOB heap read.
+            /// Note: this also covers the Map case — Map entries are read through this
+            /// STRUCT branch, so mismatched key vs. value lengths are caught here.
+            if (!tuple_elements.empty())
+            {
+                const size_t expected_rows = static_cast<size_t>(arrow_column->length());
+                for (size_t i = 0; i < tuple_elements.size(); ++i)
+                {
+                    if (tuple_elements[i]->size() != expected_rows)
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Arrow Struct column '{}': field '{}' has {} rows but parent struct declares {}",
+                            column_name, tuple_names[i], tuple_elements[i]->size(), expected_rows);
+                }
+            }
+
             ColumnPtr tuple_column;
             if (tuple_elements.empty())
                 tuple_column = ColumnTuple::create(arrow_column->length());

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Regression tests for two classes of OOB reads in Arrow List/LargeList/FixedSizeList:
+# Regression tests for OOB reads in Arrow List/LargeList/FixedSizeList/Struct/Map:
 #
 # Class A — non-monotonic offsets (uint64 underflow):
 #   Arrow offsets [0,64,65,64] for List(UInt8) with inner_size=64.
@@ -16,6 +16,15 @@
 #   the empty child allocation; ColumnArray's constructor skips the consistency
 #   check when data->empty(), silently producing a column with all offsets past
 #   the inner allocation.  SELECT * triggers an ASan abort on unpatched builds.
+#
+# Class C — Struct/Tuple field-length mismatch:
+#   arrow::StructArray::field() silently Slice-clamps a child whose FieldNode.length
+#   is shorter than the parent struct's length, so independently-read fields can have
+#   different row counts.  ColumnTuple on unpatched code never validates this, letting
+#   readers access the short field past its allocation.
+#   Case C1: plain Struct<a:int32,b:int32> with 5 rows, field b patched 5→3.
+#   Case C2: Map<int32,int32> with 1 row / 5 entries, value FieldNode.length patched 5→3.
+#   SELECT * triggers an ASan abort on unpatched builds for both.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -96,6 +105,31 @@ d_list = bytearray(write_arrow(arr_list))
 n = patch_all_int64(d_list, 21, 0)
 assert n >= 1, f"no int64=21 found in List file ({len(d_list)} bytes)"
 open(f'{out}/list_empty_child.arrow', 'wb').write(d_list)
+
+# Case C1: Struct<a:int32,b:int32> with 5 rows; field b FieldNode.length patched 5→3.
+# The FieldNode vector for this schema is [struct(5,0), a(5,0), b(5,0)]; b's length
+# is the 5th int64 (byte offset +32 from the start of the vector).
+a_col = pa.array([1,2,3,4,5], type=pa.int32())
+b_col = pa.array([10,20,30,40,50], type=pa.int32())
+arr_struct = pa.StructArray.from_arrays([a_col, b_col], names=['a','b'])
+d_struct = write_arrow(arr_struct, name='s')
+pat_struct = struct.pack('<6q', 5,0, 5,0, 5,0)
+idx_struct = d_struct.find(pat_struct)
+assert idx_struct >= 0, "could not find Struct FieldNode pattern in struct file"
+d_struct[idx_struct+32:idx_struct+40] = struct.pack('<q', 3)
+open(f'{out}/struct_short_b.arrow', 'wb').write(d_struct)
+
+# Case C2: Map<int32,int32> with 1 row / 5 entries; value FieldNode.length patched 5→3.
+# The FieldNode vector is [map(1,0), entries(5,0), key(5,0), value(5,0)]; value's length
+# is the 7th int64 (byte offset +48 from the start of the vector).
+keys = [1,2,3,4,5]; vals = [10,20,30,40,50]
+arr_map = pa.array([list(zip(keys,vals))], type=pa.map_(pa.int32(), pa.int32()))
+d_map = write_arrow(arr_map, name='m')
+pat_map = struct.pack('<8q', 1,0, 5,0, 5,0, 5,0)
+idx_map = d_map.find(pat_map)
+assert idx_map >= 0, "could not find Map FieldNode pattern in map file"
+d_map[idx_map+48:idx_map+56] = struct.pack('<q', 3)
+open(f'{out}/map_value_short.arrow', 'wb').write(d_map)
 PYEOF
 
 check_incorrect_data() {
@@ -123,3 +157,9 @@ check_incorrect_data fsl_empty_child \
 
 check_incorrect_data list_empty_child \
     $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/list_empty_child.arrow', Arrow)"
+
+check_incorrect_data struct_short_b \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/struct_short_b.arrow', Arrow)"
+
+check_incorrect_data map_value_short \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/map_value_short.arrow', Arrow)"
