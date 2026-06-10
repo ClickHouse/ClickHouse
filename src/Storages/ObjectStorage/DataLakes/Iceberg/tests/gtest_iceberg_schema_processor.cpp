@@ -115,7 +115,39 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeUnknownThrows)
 
 #if USE_AVRO
 
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
+#include <Poco/JSON/Stringifier.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <sstream>
+
+static String avroManifestPartitionFieldTypeToJson(DataTypePtr type)
+{
+    std::ostringstream oss;
+    Poco::JSON::Stringifier::stringify(getAvroManifestPartitionFieldType(type), oss);
+    return oss.str();
+}
+
+TEST(IcebergAvroType, TimePartitionFieldType)
+{
+    EXPECT_EQ(
+        avroManifestPartitionFieldTypeToJson(std::make_shared<DataTypeTime>()),
+        R"({"type":"long","logicalType":"time-micros"})");
+    EXPECT_EQ(
+        avroManifestPartitionFieldTypeToJson(std::make_shared<DataTypeTime64>(6)),
+        R"({"type":"long","logicalType":"time-micros"})");
+}
+
+TEST(IcebergAvroType, NullableTimePartitionFieldType)
+{
+    EXPECT_EQ(
+        avroManifestPartitionFieldTypeToJson(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeTime>())),
+        R"(["null",{"type":"long","logicalType":"time-micros"}])");
+    EXPECT_EQ(
+        avroManifestPartitionFieldTypeToJson(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeTime64>(3)>()),
+        R"(["null",{"type":"long","logicalType":"time-micros"}])");
+}
 
 TEST(IcebergTimeValidation, ValidateIcebergTimeOfDayMicroseconds)
 {

@@ -301,16 +301,7 @@ static void extendSchemaForPartitions(
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
         field->set(Iceberg::f_field_id, 1000 + i);
         field->set(Iceberg::f_name, partition_columns[i]);
-        auto logical_type = getAvroLogicalType(partition_types[i]);
-        if (!logical_type.isEmpty())
-        {
-            Poco::JSON::Object::Ptr type_field = new Poco::JSON::Object;
-            type_field->set(Iceberg::f_type, getAvroType(partition_types[i]));
-            type_field->set(Iceberg::f_logicalType, logical_type);
-            field->set(Iceberg::f_type, type_field);
-        }
-        else
-            field->set(Iceberg::f_type, getAvroType(partition_types[i]));
+        field->set(Iceberg::f_type, getAvroManifestPartitionFieldType(partition_types[i]));
         partition_fields->add(field);
     }
 

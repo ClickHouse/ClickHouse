@@ -676,6 +676,31 @@ Poco::Dynamic::Var getAvroLogicalType(DataTypePtr type)
     return Poco::Dynamic::Var();
 }
 
+Poco::Dynamic::Var getAvroManifestPartitionFieldType(DataTypePtr type)
+{
+    DataTypePtr nested_type = type;
+    if (type->isNullable())
+        nested_type = assert_cast<const DataTypeNullable *>(type.get())->getNestedType();
+
+    const auto logical_type = getAvroLogicalType(nested_type);
+    if (logical_type.isEmpty())
+        return getAvroType(type);
+
+    Poco::JSON::Object::Ptr type_with_logical = new Poco::JSON::Object;
+    type_with_logical->set(Iceberg::f_type, getAvroType(nested_type));
+    type_with_logical->set(Iceberg::f_logicalType, logical_type);
+
+    if (type->isNullable())
+    {
+        Poco::JSON::Array::Ptr union_array = new Poco::JSON::Array;
+        union_array->add("null");
+        union_array->add(type_with_logical);
+        return union_array;
+    }
+
+    return type_with_logical;
+}
+
 static Poco::JSON::Object::Ptr getPartitionField(
     ASTPtr partition_by_element,
     const std::unordered_map<String, Int32> & column_name_to_source_id,
