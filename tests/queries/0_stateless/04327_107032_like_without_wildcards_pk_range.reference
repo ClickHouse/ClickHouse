@@ -1,0 +1,19 @@
+LIKE without wildcard uses an exact point range, same as equality
+Condition: (value in [\'example.com\', \'example.com\'])
+Condition: (value in [\'example.com\', \'example.com\'])
+NOT LIKE without wildcard excludes an exact point range, same as inequality
+Condition: (value not in [\'example.com\', \'example.com\'])
+Condition: (value not in [\'example.com\', \'example.com\'])
+An escaped wildcard is a literal, so the pattern is still an exact match
+Condition: (value in [\'example.com%\', \'example.com%\'])
+A pattern with a real wildcard still uses the half-open prefix range
+Condition: (value in [\'example.com\', \'example.con\'))
+Results stay correct: exact LIKE matches equality, NOT LIKE matches inequality
+200000
+200000
+800000
+800000
+Text index is used for a wildcard-free LIKE
+Name: idx
+1
+1

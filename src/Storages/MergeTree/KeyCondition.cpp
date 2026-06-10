@@ -517,9 +517,17 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
+                auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
                 if (prefix.empty())
                     return false;
+
+                /// A pattern without wildcards is equivalent to an equality, so use an exact point range.
+                if (is_exact)
+                {
+                    out.function = RPNElement::FUNCTION_IN_RANGE;
+                    out.range = Range(prefix);
+                    return true;
+                }
 
                 if (!is_perfect)
                     out.relaxed = true;
@@ -541,9 +549,17 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
+                auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
                 if (prefix.empty())
                     return false;
+
+                /// A pattern without wildcards is equivalent to an inequality, so exclude an exact point range.
+                if (is_exact)
+                {
+                    out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+                    out.range = Range(prefix);
+                    return true;
+                }
 
                 chassert(is_perfect);
 
