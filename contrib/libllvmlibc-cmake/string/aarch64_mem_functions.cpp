@@ -1,25 +1,22 @@
-// ClickHouse-side aarch64 implementations of `memcpy`, `memmove`, `memset`.
+// ClickHouse-side aarch64 implementations of `memmove` and `memmem`.
 //
-// Upstream's aarch64 dispatchers (in `src/string/memory_utils/aarch64/`) align
-// SRC and choose blocks/tiers that under-use the cache line. Two changes:
+// `memcpy` and `memset` deliberately do NOT come from this file: musl ships
+// the Arm Optimized Routines assembly for them
+// (`src/string/aarch64/{memcpy,memset}.S`) — the same code glibc builds as
+// `__memcpy_generic` — and it beats LLVM-libc's generic C++ tiers by 10-30%
+// on the small/medium copies that dominate ClickHouse column operations
+// (`position_empty_needle`, `column_array_replicate`, `int_parsing` CI perf
+// regressions). See contrib/musl-cmake/CMakeLists.txt.
 //
-//   * Align DST instead of SRC for the large-copy main loop. Stores benefit
-//     from alignment more than loads on Neoverse / Apple cores (store-buffer
-//     coalescing, no STP cracking). Mirrors musl's `aarch64/memcpy.S` and our
-//     x86 fix.
-//   * Add a 128-byte head-tail tier ahead of the main loop, so copies in the
-//     128–256 B range avoid the loop's startup overhead.
-//
-// Everything is `always_inline` so the public `memcpy` / `memmove` / `memset`
-// entries inline the head-tail tiers and the main-loop alignment block
-// directly — without that, sizes 128–256 B pay a needless function call.
+// musl has no aarch64 assembly for `memmove` (and its C fallback is a byte
+// loop), so memmove is provided here: overlap-safe NEON head-tail tiers up to
+// 128 bytes, a tail call to the AOR `memcpy` for larger disjoint buffers, and
+// a DST-aligned 64-byte-per-iteration NEON loop for genuine overlaps.
 
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
 #include "src/__support/macros/null_check.h"
-#include "src/string/memcpy.h"
 #include "src/string/memmove.h"
-#include "src/string/memset.h"
 #include "src/string/memory_utils/inline_memmove.h" // is_disjoint
 #include "src/string/memory_utils/op_aarch64.h"
 #include "src/string/memory_utils/op_builtin.h"
@@ -28,106 +25,10 @@
 
 #include <stddef.h>
 
+// musl's Arm Optimized Routines assembly (the only aarch64 definition).
+extern "C" void *memcpy(void *__restrict, const void *__restrict, size_t);
+
 namespace LIBC_NAMESPACE_DECL {
-
-// ============================================================================
-// memcpy
-// ============================================================================
-
-// Same small-size tiers as upstream `inline_memcpy_aarch64`. The only change is
-// the main-loop preamble: align `dst` to 32 bytes (Arg::Dst) instead of `src`
-// to 16 (Arg::Src). Stores benefit from alignment more than loads on Neoverse
-// / Apple cores; this matches what musl's hand-written aarch64 memcpy does.
-__attribute__((flatten, always_inline)) LIBC_INLINE void
-ch_inline_memcpy_aarch64(Ptr __restrict dst, CPtr __restrict src,
-                         size_t count) {
-  if (count == 0)
-    return;
-  if (count == 1)
-    return builtin::Memcpy<1>::block(dst, src);
-  if (count == 2)
-    return builtin::Memcpy<2>::block(dst, src);
-  if (count == 3)
-    return builtin::Memcpy<3>::block(dst, src);
-  if (count == 4)
-    return builtin::Memcpy<4>::block(dst, src);
-  if (count < 8)
-    return builtin::Memcpy<4>::head_tail(dst, src, count);
-  if (count < 16)
-    return builtin::Memcpy<8>::head_tail(dst, src, count);
-  if (count < 32)
-    return builtin::Memcpy<16>::head_tail(dst, src, count);
-  if (count < 64)
-    return builtin::Memcpy<32>::head_tail(dst, src, count);
-  if (count < 128)
-    return builtin::Memcpy<64>::head_tail(dst, src, count);
-  // count >= 128: align dst to 32 bytes, then 64-B/iter main loop.
-  builtin::Memcpy<32>::block(dst, src);
-  align_to_next_boundary<32, Arg::Dst>(dst, src, count);
-  return builtin::Memcpy<64>::loop_and_tail(dst, src, count);
-}
-
-LLVM_LIBC_FUNCTION(void *, memcpy,
-                   (void *__restrict dst, const void *__restrict src,
-                    size_t size)) {
-  if (size) {
-    LIBC_CRASH_ON_NULLPTR(dst);
-    LIBC_CRASH_ON_NULLPTR(src);
-  }
-  ch_inline_memcpy_aarch64(reinterpret_cast<Ptr>(dst),
-                           reinterpret_cast<CPtr>(src), size);
-  return dst;
-}
-
-// ============================================================================
-// memset
-// ============================================================================
-
-__attribute__((flatten, always_inline)) LIBC_INLINE void
-ch_inline_memset_aarch64(Ptr dst, uint8_t value, size_t count) {
-  using uint128_t = generic_v128;
-  using uint256_t = generic_v256;
-  using uint512_t = generic_v512;
-  if (count == 0)
-    return;
-  if (count <= 3) {
-    generic::Memset<uint8_t>::block(dst, value);
-    if (count > 1)
-      generic::Memset<uint16_t>::tail(dst, value, count);
-    return;
-  }
-  if (count <= 8)
-    return generic::Memset<uint32_t>::head_tail(dst, value, count);
-  if (count <= 16)
-    return generic::Memset<uint64_t>::head_tail(dst, value, count);
-  if (count <= 32)
-    return generic::Memset<uint128_t>::head_tail(dst, value, count);
-  if (count <= 64)
-    return generic::Memset<uint256_t>::head_tail(dst, value, count);
-  if (count <= 128)
-    return generic::Memset<uint512_t>::head_tail(dst, value, count);
-#if defined(__ARM_NEON)
-  // Use neon `dc zva` for big aligned zero-fills when available.
-  if (count >= 448 && value == 0 && aarch64::neon::hasZva()) {
-    generic::Memset<uint512_t>::block(dst, 0);
-    align_to_next_boundary<64>(dst, count);
-    return aarch64::neon::BzeroCacheLine::loop_and_tail(dst, 0, count);
-  }
-#endif
-  // count > 128: align dst to 32 bytes, then 64-B/iter ZMM-equivalent loop.
-  generic::Memset<uint256_t>::block(dst, value);
-  align_to_next_boundary<32>(dst, count);
-  return generic::Memset<uint512_t>::loop_and_tail(dst, value, count);
-}
-
-LLVM_LIBC_FUNCTION(void *, memset,
-                   (void *dst, int value, size_t count)) {
-  if (count)
-    LIBC_CRASH_ON_NULLPTR(dst);
-  ch_inline_memset_aarch64(reinterpret_cast<Ptr>(dst),
-                           static_cast<uint8_t>(value), count);
-  return dst;
-}
 
 // ============================================================================
 // memmove
@@ -196,12 +97,13 @@ LLVM_LIBC_FUNCTION(void *, memmove,
     generic::Memmove<uint512_t>::head_tail(dst_p, src_p, count);
     return dst;
   }
-  // Disjoint case routes through our (improved) memcpy to pick up the new
-  // dst-aligned main loop.
+  // Disjoint buffers take the plain copy path — a tail call into musl's Arm
+  // Optimized Routines `memcpy` (the only `memcpy` definition on aarch64;
+  // the TU is compiled with -fno-builtin so this is a real call, and memcpy
+  // never calls memmove back).
   if (is_disjoint(dst, src, count))
-    ch_inline_memcpy_aarch64(dst_p, src_p, count);
-  else
-    ch_inline_memmove_follow_up_aarch64(dst_p, src_p, count);
+    return ::memcpy(dst, src, count);
+  ch_inline_memmove_follow_up_aarch64(dst_p, src_p, count);
   return dst;
 }
 

@@ -34,9 +34,9 @@
 // byte-equivalent to upstream.
 #include "x86_64_mem_functions.cpp"
 #elif defined(__aarch64__)
-// aarch64: same idea as x86_64 — align dst (not src) for the large-copy loop,
-// add a 128-byte head-tail tier for 128–256 B copies, route memmove's
-// disjoint fast path through our memcpy.
+// aarch64: `memcpy`/`memset` come from musl's Arm Optimized Routines assembly
+// (see contrib/musl-cmake/CMakeLists.txt) — this file only adds `memmove`
+// (musl has no aarch64 assembly for it) and the NEON `memmem`.
 #include "aarch64_mem_functions.cpp"
 #else
 #include "src/string/memcpy.cpp"

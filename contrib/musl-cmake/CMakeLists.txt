@@ -1763,11 +1763,18 @@ list(REMOVE_ITEM MUSL_SOURCES_BASE
     "${MUSL_SOURCE_DIR}/src/string/memset.c"
 )
 
-# Drop arch-specific mem* assembly for the same reason.
+# Drop the x86_64 mem* assembly for the same reason (it is SSE2-era; the
+# LLVM-libc wrapper dispatches between AVX2 and AVX-512 at runtime and is
+# strictly better).
+#
+# aarch64 is the opposite: `src/string/aarch64/{memcpy,memset}.S` are the Arm
+# Optimized Routines — the same code glibc ships as `__memcpy_generic` — and
+# they beat LLVM-libc's generic C++ tiers by 10-30% on small/medium copies
+# (`position_empty_needle`, `column_array_replicate`, `int_parsing` perf
+# regressions). Keep them; the LLVM-libc aarch64 wrapper deliberately does not
+# define `memcpy`/`memset`, so these strong symbols are the only definitions.
 list(REMOVE_ITEM MUSL_ALL_ASM_SOURCES
     "${MUSL_SOURCE_DIR}/src/string/x86_64/memset.s"
-    "${MUSL_SOURCE_DIR}/src/string/aarch64/memcpy.S"
-    "${MUSL_SOURCE_DIR}/src/string/aarch64/memset.S"
 )
 
 set(MUSL_C_SOURCES
