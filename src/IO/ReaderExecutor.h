@@ -61,8 +61,10 @@ public:
     /// empty when no objects are configured.
     String getFileName() const { return log_file_path; }
 
-    /// Per-instance tally of the inputs to the modeled-cost KPI. Accumulated as the
-    /// executor runs and flushed to ProfileEvents in the destructor. The
+private:
+    /// Per-instance tally of the inputs to the modeled-cost KPI. Mirrors the
+    /// ProfileEvents that `onSourceRead` / `onWork` increment instantly; kept per
+    /// instance only to write the final summary log report in the destructor. The
     /// cache/connection fields stay 0 in this minimal slice (those features are not
     /// implemented yet); they are kept so the KPI formula is complete and lights up
     /// when the corresponding feature PRs add their increment sites.
@@ -75,24 +77,27 @@ public:
         size_t cache_get_requests = 0;       /// 0: no cache tiers yet
         size_t cache_populate_requests = 0;  /// 0: no cache tiers yet
         size_t work_microseconds = 0;        /// total time spent in readNextChunk
+
+        /// Record a source read of `bytes`: update the tally and increment the matching
+        /// ProfileEvents instantly (the modeled cost by its running delta, kept exact).
+        void onSourceRead(size_t bytes);
+        /// Record `microseconds` spent in readNextChunk (tally + ProfileEvents).
+        void onWork(size_t microseconds);
+
+        /// Modeled I/O cost in microseconds: weighted sum with the heuristic S3 weights
+        /// documented at `ProfileEvents::ReaderExecutorModeledCostMicroseconds` (30ms/source
+        /// request, 5ms/incomplete connection, 20ms per MiB from source, 0.1ms/cache put,
+        /// 0.05ms/cache get). A synthetic optimality proxy, not latency.
+        size_t modeledCostMicroseconds() const
+        {
+            return 30000 * source_requests
+                + 5000 * incomplete_connections
+                + 20000 * bytes_from_source / (1024 * 1024)
+                + 100 * cache_populate_requests
+                + 50 * cache_get_requests;
+        }
     };
 
-    const Stats & getStats() const { return stats; }
-
-    /// Modeled I/O cost in microseconds: weighted sum of the `Stats` counters with the
-    /// heuristic S3 weights documented at `ProfileEvents::ReaderExecutorModeledCostMicroseconds`
-    /// (30ms/source request, 5ms/incomplete connection, 20ms per MiB from source,
-    /// 0.1ms/cache put, 0.05ms/cache get). A synthetic optimality proxy, not latency.
-    size_t modeledCostMicroseconds() const
-    {
-        return 30000 * stats.source_requests
-            + 5000 * stats.incomplete_connections
-            + 20000 * stats.bytes_from_source / (1024 * 1024)
-            + 100 * stats.cache_populate_requests
-            + 50 * stats.cache_get_requests;
-    }
-
-private:
     /// At known size, EOF is `position >= totalSize`. At unknown size, a short
     /// source read latches `reached_eof`; a backward `seek` clears it. A
     /// `read_until` bound caps EOF earlier.

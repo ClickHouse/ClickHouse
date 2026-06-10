@@ -13,11 +13,11 @@ namespace ProfileEvents
     extern const Event ReaderExecutorSourceRequests;
     extern const Event ReaderExecutorBytesFromSource;
     extern const Event ReaderExecutorRequestedBytes;
-    extern const Event ReaderExecutorCacheGetRequests;
-    extern const Event ReaderExecutorCachePopulateRequests;
-    extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorWorkMicroseconds;
     extern const Event ReaderExecutorModeledCostMicroseconds;
+    /// ReaderExecutorCacheGetRequests / ReaderExecutorCachePopulateRequests /
+    /// ReaderExecutorIncompleteConnections are declared in ProfileEvents.cpp and read 0
+    /// until the cache and connection-reuse features add their increment sites.
 }
 
 namespace CurrentMetrics
@@ -31,6 +31,28 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
+}
+
+void ReaderExecutor::Stats::onSourceRead(size_t bytes)
+{
+    /// Bump the modeled cost by the running delta so its cumulative value stays exact
+    /// (no per-read integer-division loss in the per-MiB term).
+    const size_t cost_before = modeledCostMicroseconds();
+    source_requests += 1;
+    bytes_from_source += bytes;
+    bytes_requested += bytes;
+
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorSourceRequests, 1);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromSource, bytes);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorRequestedBytes, bytes);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds,
+        modeledCostMicroseconds() - cost_before);
+}
+
+void ReaderExecutor::Stats::onWork(size_t microseconds)
+{
+    work_microseconds += microseconds;
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorWorkMicroseconds, microseconds);
 }
 
 ReaderExecutor::ReaderExecutor(
@@ -49,24 +71,21 @@ ReaderExecutor::ReaderExecutor(
 
 ReaderExecutor::~ReaderExecutor()
 {
-    /// Flush the per-instance tally to the global ProfileEvents once, so the
-    /// numbers attribute to the reading thread/query rather than churning the
-    /// global counters on every chunk. The cache/connection counters are 0 in
-    /// this minimal slice but are emitted so the KPI series exists from day one.
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorSourceRequests, stats.source_requests);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromSource, stats.bytes_from_source);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorRequestedBytes, stats.bytes_requested);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheGetRequests, stats.cache_get_requests);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorCachePopulateRequests, stats.cache_populate_requests);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorIncompleteConnections, stats.incomplete_connections);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorWorkMicroseconds, stats.work_microseconds);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, modeledCostMicroseconds());
+    /// ProfileEvents are incremented instantly in `readNextChunk` so `system.events`
+    /// and the KPI reflect the executor in real time. The per-instance `Stats` mirror
+    /// them only to write this final summary report (a future PR will also turn it
+    /// into a `system.reader_executor_log` row).
+    LOG_DEBUG(log,
+        "Finished: file={}, source_requests={}, bytes_from_source={}, bytes_requested={}, "
+        "work_us={}, modeled_cost_us={}",
+        log_file_path, stats.source_requests, stats.bytes_from_source, stats.bytes_requested,
+        stats.work_microseconds, stats.modeledCostMicroseconds());
 }
 
 ReaderExecutor::Chunk ReaderExecutor::readNextChunk()
 {
     Stopwatch watch;
-    SCOPE_EXIT({ stats.work_microseconds += watch.elapsedMicroseconds(); });
+    SCOPE_EXIT({ stats.onWork(watch.elapsedMicroseconds()); });
 
     if (atEnd())
         return {};
@@ -116,11 +135,9 @@ ReaderExecutor::Chunk ReaderExecutor::readNextChunk()
     const size_t got = buffer->read(block.data(), want);
 
     /// One open+read per chunk in this minimal slice; every chunk is served straight
-    /// from the source, so requested bytes equal source bytes (they diverge once
-    /// caches and over-read coalescing land).
-    stats.source_requests += 1;
-    stats.bytes_from_source += got;
-    stats.bytes_requested += got;
+    /// from the source. `onSourceRead` updates the tally and increments the matching
+    /// ProfileEvents instantly.
+    stats.onSourceRead(got);
 
     if (offset_map.hasUnknownSize())
     {
