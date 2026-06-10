@@ -228,7 +228,7 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
-        return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types, makeStatisticsUnreliable(statistics));
+        return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     void filter(const Filter & filt) override
@@ -246,17 +246,17 @@ public:
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
-        return create(variant_column_ptr->permute(perm, limit), variant_info, max_dynamic_types, global_max_dynamic_types, makeStatisticsUnreliable(statistics));
+        return create(variant_column_ptr->permute(perm, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
     {
-        return create(variant_column_ptr->index(indexes, limit), variant_info, max_dynamic_types, global_max_dynamic_types, makeStatisticsUnreliable(statistics));
+        return create(variant_column_ptr->index(indexes, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override
     {
-        return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types, makeStatisticsUnreliable(statistics));
+        return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override
@@ -264,9 +264,8 @@ public:
         VectorWithMemoryTracking<MutableColumnPtr> scattered_variant_columns = variant_column_ptr->scatter(num_columns, selector);
         VectorWithMemoryTracking<MutableColumnPtr> scattered_columns;
         scattered_columns.reserve(num_columns);
-        auto unreliable_statistics = makeStatisticsUnreliable(statistics);
         for (auto & scattered_variant_column : scattered_variant_columns)
-            scattered_columns.emplace_back(create(std::move(scattered_variant_column), variant_info, max_dynamic_types, global_max_dynamic_types, unreliable_statistics));
+            scattered_columns.emplace_back(create(std::move(scattered_variant_column), variant_info, max_dynamic_types, global_max_dynamic_types, statistics));
 
         return scattered_columns;
     }
@@ -430,20 +429,6 @@ public:
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
     void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
     bool hasStatistics() const override { return true; }
-
-    /// Returns the statistics pointer to propagate after pipeline operations that reshape rows
-    /// (filter, permute, replicate, index, scatter). The output column has a different row set
-    /// than the source, so the source's counts are no longer accurate. Reuse the pointer for
-    /// downstream optimizations that only need approximate counts, but flagged unreliable so that
-    /// optimizations like Dynamic narrowing cannot rely on it.
-    static StatisticsPtr makeStatisticsUnreliable(const StatisticsPtr & source_statistics)
-    {
-        if (!source_statistics || !source_statistics->reliable)
-            return source_statistics;
-        auto copy = std::make_shared<Statistics>(*source_statistics);
-        copy->reliable = false;
-        return copy;
-    }
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getGlobalMaxDynamicTypes() const { return global_max_dynamic_types; }
