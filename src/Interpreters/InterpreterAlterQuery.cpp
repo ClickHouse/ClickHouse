@@ -439,15 +439,12 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
     }
 
-    if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()))
-{
-    if (overlay->isReadOnly())
+    if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
         throw Exception(
             ErrorCodes::TABLE_IS_READ_ONLY,
             "Database {} is an Overlay facade (read-only). "
             "Run ALTER TABLE in an underlying database",
             backQuote(table_id.database_name));
-}
 
 #if CLICKHOUSE_CLOUD
     if (SharedDatabaseCatalog::shouldReplicateQuery(getContext(), query_ptr))
