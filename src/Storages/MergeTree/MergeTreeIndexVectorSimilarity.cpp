@@ -537,6 +537,22 @@ bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
     return false;
 }
 
+std::string MergeTreeIndexConditionVectorSimilarity::rejectionReason() const
+{
+    if (!parameters)
+        return "query is not a vector search query (requires ORDER BY <distance_function>(column, reference_vector) ASC LIMIT N)";
+
+    if (parameters->column != index_column)
+        return fmt::format("query searches column '{}' but index is built on column '{}'", parameters->column, index_column);
+
+    if ((parameters->distance_function == "L2Distance" && metric_kind != unum::usearch::metric_kind_t::l2sq_k)
+        || (parameters->distance_function == "cosineDistance" && metric_kind != unum::usearch::metric_kind_t::cos_k && metric_kind != unum::usearch::metric_kind_t::hamming_k)
+        || (parameters->distance_function == "dotProduct" && metric_kind != unum::usearch::metric_kind_t::ip_k))
+        return fmt::format("query uses distance function '{}' but index was built for a different metric", parameters->distance_function);
+
+    return "";
+}
+
 NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
 {
     if (!parameters)

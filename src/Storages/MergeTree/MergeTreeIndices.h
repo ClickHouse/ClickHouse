@@ -158,6 +158,10 @@ public:
     /// Checks if this index is useful for query.
     virtual bool alwaysUnknownOrTrue() const = 0;
 
+    /// Returns a human-readable reason why the index condition is not useful.
+    /// Only meaningful when alwaysUnknownOrTrue() returns true.
+    virtual std::string rejectionReason() const { return "condition is always unknown or true"; }
+
     using UpdatePartialDisjunctionResultFn = KeyCondition::UpdatePartialDisjunctionResultFn;
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const = 0;
 

@@ -2079,6 +2079,7 @@ void ReadFromMergeTree::buildIndexes(
     }
 
     UsefulSkipIndexes skip_indexes;
+    RejectedSkipIndexes rejected_indexes;
 
     for (const auto & index : all_indexes)
     {
@@ -2105,6 +2106,8 @@ void ReadFromMergeTree::buildIndexes(
 
         if (condition && !condition->alwaysUnknownOrTrue())
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
+        else
+            rejected_indexes.rejected_indices.push_back({index_helper, condition ? condition->rejectionReason() : "no condition could be created from the query predicate"});
 
         auto can_skip_index_be_used_for_top_k_filtering = [top_k_filter_info](const MergeTreeIndexPtr & skip_index)
         {
@@ -2212,6 +2215,7 @@ void ReadFromMergeTree::buildIndexes(
     }
 
     indexes->skip_indexes = std::move(skip_indexes);
+    indexes->rejected_skip_indexes = std::move(rejected_indexes);
 }
 
 void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
@@ -2852,6 +2856,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             .num_parts_after = result.parts_with_ranges.size(),
             .num_granules_after = sum_marks});
     }
+
+    if (indexes)
+        result.rejected_skip_indexes = indexes->rejected_skip_indexes;
 
     result.total_parts = total_parts;
     result.parts_before_pk = parts_before_pk;
@@ -4143,15 +4150,19 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
     const auto & index_stats = result.index_stats;
 
     const std::string & prefix = format_settings.detail_prefix;
-    if (!index_stats.empty())
+
+    bool has_applied_indexes = !index_stats.empty()
+        && !(index_stats.size() == 1 && index_stats.front().type == IndexType::None);
+    bool has_rejected_indexes = !result.rejected_skip_indexes.empty();
+
+    if (!has_applied_indexes && !has_rejected_indexes)
+        return;
+
+    std::string indent(format_settings.base_indent, format_settings.indent_char);
+    format_settings.out << prefix << "Indexes:\n";
+
+    if (has_applied_indexes)
     {
-        /// Do not print anything if no indexes is applied.
-        if (index_stats.size() == 1 && index_stats.front().type == IndexType::None)
-            return;
-
-        std::string indent(format_settings.base_indent, format_settings.indent_char);
-        format_settings.out << prefix << "Indexes:\n";
-
         for (size_t i = 0; i < index_stats.size(); ++i)
         {
             const auto & stat = index_stats[i];
@@ -4206,6 +4217,16 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 
         format_settings.out << prefix << indent << "Ranges: " << result.selected_ranges << '\n';
     }
+
+    for (const auto & rejected : result.rejected_skip_indexes.rejected_indices)
+    {
+        format_settings.out << prefix << indent << "Skip" << '\n';
+        format_settings.out << prefix << indent << indent << "Name: " << rejected.index->index.name << '\n';
+        format_settings.out << prefix << indent << indent << "Description: "
+            << rejected.index->index.type << " GRANULARITY " << rejected.index->index.granularity << '\n';
+        format_settings.out << prefix << indent << indent << "Status: NOT APPLIED" << '\n';
+        format_settings.out << prefix << indent << indent << "Reason: " << rejected.rejection_reason << '\n';
+    }
 }
 
 void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
@@ -4213,14 +4234,17 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
     const auto & result = getAnalysisResult();
     const auto & index_stats = result.index_stats;
 
-    if (!index_stats.empty())
+    bool has_applied_indexes = !index_stats.empty()
+        && !(index_stats.size() == 1 && index_stats.front().type == IndexType::None);
+    bool has_rejected_indexes = !result.rejected_skip_indexes.empty();
+
+    if (!has_applied_indexes && !has_rejected_indexes)
+        return;
+
+    auto indexes_array = std::make_unique<JSONBuilder::JSONArray>();
+
+    if (has_applied_indexes)
     {
-        /// Do not print anything if no indexes is applied.
-        if (index_stats.size() == 1 && index_stats.front().type == IndexType::None)
-            return;
-
-        auto indexes_array = std::make_unique<JSONBuilder::JSONArray>();
-
         for (size_t i = 0; i < index_stats.size(); ++i)
         {
             const auto & stat = index_stats[i];
@@ -4282,9 +4306,21 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
 
             indexes_array->add(std::move(index_map));
         }
-
-        map.add("Indexes", std::move(indexes_array));
     }
+
+    for (const auto & rejected : result.rejected_skip_indexes.rejected_indices)
+    {
+        auto rejected_map = std::make_unique<JSONBuilder::JSONMap>();
+        rejected_map->add("Type", "Skip");
+        rejected_map->add("Name", rejected.index->index.name);
+        rejected_map->add("Description",
+            rejected.index->index.type + " GRANULARITY " + std::to_string(rejected.index->index.granularity));
+        rejected_map->add("Status", "NOT APPLIED");
+        rejected_map->add("Reason", rejected.rejection_reason);
+        indexes_array->add(std::move(rejected_map));
+    }
+
+    map.add("Indexes", std::move(indexes_array));
 }
 
 void ReadFromMergeTree::describeProjections(FormatSettings & format_settings) const

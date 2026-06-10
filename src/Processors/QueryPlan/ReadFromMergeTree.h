@@ -45,6 +45,19 @@ struct UsefulSkipIndexes
     TopKThresholdTrackerPtr threshold_tracker{nullptr};
 };
 
+struct RejectedSkipIndex
+{
+    MergeTreeIndexPtr index;
+    std::string rejection_reason;
+};
+
+struct RejectedSkipIndexes
+{
+    bool empty() const { return rejected_indices.empty(); }
+
+    std::vector<RejectedSkipIndex> rejected_indices;
+};
+
 /// Contains parts each from different projection index
 using ProjectionIndexReadRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
 
@@ -150,6 +163,7 @@ public:
         SplitPartsByRanges split_parts;
         MergeTreeDataSelectSamplingData sampling;
         IndexStats index_stats;
+        RejectedSkipIndexes rejected_skip_indexes;
         ProjectionStats projection_stats;
         Names column_names_to_read;
         ReadType read_type = ReadType::Default;
@@ -171,6 +185,7 @@ public:
             , split_parts(other.split_parts)
             , sampling(other.sampling)
             , index_stats(other.index_stats)
+            , rejected_skip_indexes(other.rejected_skip_indexes)
             , projection_stats(other.projection_stats)
             , column_names_to_read(other.column_names_to_read)
             , read_type(other.read_type)
@@ -191,6 +206,7 @@ public:
             , split_parts(std::move(other.split_parts))
             , sampling(std::move(other.sampling))
             , index_stats(std::move(other.index_stats))
+            , rejected_skip_indexes(std::move(other.rejected_skip_indexes))
             , projection_stats(std::move(other.projection_stats))
             , column_names_to_read(std::move(other.column_names_to_read))
             , read_type(other.read_type)
@@ -286,6 +302,7 @@ public:
         std::optional<KeyCondition> part_offset_condition;
         std::optional<KeyCondition> total_offset_condition;
         UsefulSkipIndexes skip_indexes;
+        RejectedSkipIndexes rejected_skip_indexes;
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;
         bool use_skip_indexes_if_final_exact_mode;
