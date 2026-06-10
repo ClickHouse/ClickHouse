@@ -108,7 +108,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | VERSION_PATCH                   | 54401   | ServerHello, ClientInfo | Adds the `version_patch` field to both. |
 | SERVER_LOGS                     | 54406   | Log                    | Server emits Log packets when `send_logs_level` is set. |
 | WRITE_CLIENT_INFO               | 54420   | Progress               | Adds `wrote_rows` and `wrote_bytes` to Progress. (Despite the name, this does **not** gate the ClientInfo block — that is `CLIENT_INFO` (v54032).) |
-| SETTINGS_SERIALIZED_AS_STRINGS  | 54429   | Query                  | Encodes settings as string key-value pairs in the Query body. |
+| SETTINGS_SERIALIZED_AS_STRINGS  | 54429   | Query (settings encoding) | Changes **how** the always-present settings list is encoded; does **not** gate whether settings are sent. v54429+ writes each setting as `(name, flags, value-as-string)`; older peers write `(name, type-specific-binary-value)` with no flags. See [Setting](#setting). |
 | INTERSERVER_SECRET              | 54441   | Query                  | Adds the `cluster_secret` field to Query. |
 | OPEN_TELEMETRY                  | 54442   | ClientInfo             | Adds the OpenTelemetry trace context to ClientInfo. |
 | DISTRIBUTED_DEPTH               | 54448   | ClientInfo             | Adds the `distributed_depth` field to ClientInfo. |
@@ -501,7 +501,7 @@ Client → Server.
 |---|----------------|-------------|--------------|------------------------------------------|-------------|
 | 1 | query_id       | String      | universal    | always                                   | Unique query identifier (UUID) |
 | 2 | client_info    | ClientInfo  | universal    | CLIENT_INFO (v54032)                     | See [ClientInfo](#clientinfo) |
-| 3 | settings       | Setting[]   | universal    | SETTINGS_SERIALIZED_AS_STRINGS (v54429)  | See [Setting](#setting). Terminated by empty key. |
+| 3 | settings       | Setting[]   | universal    | always                                   | See [Setting](#setting). **Always present** (terminated by an empty key); only the per-setting *encoding* is version-gated — see the encoding note in [Setting](#setting). A client must not omit this field for negotiated versions below `54429`. |
 | 3a | external_roles | String     | universal    | INTERSERVER_EXTERNALLY_GRANTED_ROLES (v54472) | Serialized list of externally-granted role names. Empty list = byte `0x00` (VarUInt 0) wrapped in a String envelope (`[VarUInt 1][0x00]` on the wire). External clients always send empty. |
 | 4 | cluster_secret | String      | inter-server | INTERSERVER_SECRET (v54441)              | Cluster auth. External clients send empty string. |
 | 5 | stage          | VarUInt     | universal    | always                                   | 0 = FetchColumns, 1 = WithMergeableState, 2 = Complete |
@@ -552,7 +552,9 @@ If has_trace == 1:
 
 ### Setting {#setting}
 
-Encoded inline in the Query body's settings list (the [Query](#query) packet, field 3). The list is terminated by a Setting with an empty key — a single `VarUInt 0`, with no flags or value following.
+Encoded inline in the Query body's settings list (the [Query](#query) packet, field 3). The list is **always present**, regardless of negotiated version, and is terminated by a Setting with an empty key — a single `VarUInt 0`, with no flags or value following. Only the per-setting encoding depends on the negotiated version, gated by `SETTINGS_SERIALIZED_AS_STRINGS` (v54429).
+
+**v54429+ (`STRINGS_WITH_FLAGS`)** — each setting is the triple shown here:
 
 | # | Field | Type    | Role      | Description |
 |---|-------|---------|-----------|-------------|
@@ -561,6 +563,8 @@ Encoded inline in the Query body's settings list (the [Query](#query) packet, fi
 | 3 | value | String  | universal | Setting value as string |
 
 Fields 2 and 3 are absent when `key` is empty.
+
+**Pre-54429 (`BINARY`)** — each setting is `[String key][type-specific binary value]`: the `flags` field is **not** written, and the value is encoded in the setting's native binary form (for example a fixed-width integer or a length-prefixed string) rather than as a decimal/text string. The list is still terminated by an empty `key`. A client that targets a negotiated version below `54429` must read and write this binary form, not the triple above. (Custom user-defined settings are the exception: they always carry `flags` and a string value, in both encodings.)
 
 The `flags` field packs:
 
