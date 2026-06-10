@@ -18,8 +18,14 @@ private:
     const WebObjectStorage & object_storage;
     LoggerPtr log;
 
+    struct IndexPage
+    {
+        std::string body;
+        std::string final_url;
+    };
+
     std::vector<std::string> makeListingURLs(const std::string & path, size_t shard_index) const;
-    std::string readIndexPage(const std::string & url) const;
+    IndexPage readIndexPage(const std::string & url) const;
     std::vector<std::string> extractURLs(
         const std::string & page_body,
         const std::string & listing_url,

@@ -1333,7 +1333,9 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
 
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
-                const auto & path_for_matching = match_web_paths_only ? getPathComponentForGlobMatching((*it)->getPath()) : (*it)->getPath();
+                const auto path_for_matching = match_web_paths_only
+                    ? getPathComponentForGlobMatching((*it)->relative_path_with_metadata.getPathForGlobMatching())
+                    : (*it)->getPath();
                 if (!recursive && !re2::RE2::FullMatch(path_for_matching, *matcher))
                     it = new_batch.erase(it);
                 else
@@ -1350,7 +1352,7 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
                 {
                     auto path = getUniqueStoragePathIdentifier(*configuration, *object_info, false);
                     if (match_web_paths_only)
-                        path = getPathComponentForGlobMatching(path);
+                        path = getPathComponentForGlobMatching(object_info->relative_path_with_metadata.getPathForGlobMatching());
                     paths.push_back(path);
                 }
 

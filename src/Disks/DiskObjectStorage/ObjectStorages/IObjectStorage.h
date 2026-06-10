@@ -118,6 +118,7 @@ struct RelativePathWithMetadata
 {
     String relative_path;
     std::optional<size_t> read_source_index;
+    std::optional<String> path_for_glob_matching;
     bool derive_file_name_from_url_path = false;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
@@ -153,6 +154,7 @@ struct RelativePathWithMetadata
         return std::filesystem::path(path_without_query).filename();
     }
     std::string getPath() const { return relative_path; }
+    std::string getPathForGlobMatching() const { return path_for_glob_matching.value_or(relative_path); }
 };
 
 struct ObjectKeyWithMetadata

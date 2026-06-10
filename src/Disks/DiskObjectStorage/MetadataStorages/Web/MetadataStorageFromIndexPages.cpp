@@ -313,7 +313,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::makeListingURLs(const st
     return object_storage.buildURLs(ensureTrailingSlashInPath(stripLeadingSlash(path)), shard_index);
 }
 
-std::string MetadataStorageFromIndexPages::readIndexPage(const std::string & url) const
+MetadataStorageFromIndexPages::IndexPage MetadataStorageFromIndexPages::readIndexPage(const std::string & url) const
 {
     const auto request_context = object_storage.getRequestContext();
     const auto & settings = request_context->getSettingsRef();
@@ -345,7 +345,7 @@ std::string MetadataStorageFromIndexPages::readIndexPage(const std::string & url
     const auto limit = request_context->getServerSettings()[ServerSetting::max_http_index_page_size];
     copyDataMaxBytes(*buf, out, limit);
     out.finalize();
-    return body;
+    return {.body = std::move(body), .final_url = buf->getCurrentURI().toString()};
 }
 
 std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
@@ -496,18 +496,25 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
             const auto & listing_url = listing_urls[i];
             try
             {
-                auto body = readIndexPage(listing_url);
+                auto index_page = readIndexPage(listing_url);
+                const auto final_path_prefix = stripLeadingSlash(getPathPrefixForMatching(index_page.final_url));
                 auto entries = extractURLs(
-                    body,
-                    listing_url,
+                    index_page.body,
+                    index_page.final_url,
                     url_options[i].base_url,
                     url_options[i].base_url + url_options[i].query_fragment,
-                    path_prefix);
+                    final_path_prefix);
 
                 result.reserve(result.size() + entries.size());
                 for (auto & entry : entries)
                 {
                     auto relative_path = std::make_shared<RelativePathWithMetadata>(std::move(entry), shard_index);
+                    if (relative_path->relative_path.starts_with(final_path_prefix))
+                    {
+                        const auto path_for_glob_matching = path_prefix + relative_path->relative_path.substr(final_path_prefix.size());
+                        if (path_for_glob_matching != relative_path->relative_path)
+                            relative_path->path_for_glob_matching = path_for_glob_matching;
+                    }
                     relative_path->derive_file_name_from_url_path = true;
                     result.emplace_back(std::move(relative_path));
                 }

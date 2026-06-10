@@ -45,6 +45,8 @@ public:
     using OutStreamCallback = std::function<void(std::ostream &)>;
     using NextCallback = std::function<void(size_t)>;
 
+    const Poco::URI & getCurrentURI() const { return current_uri; }
+
 private:
     /// Byte range, including right bound [begin, end].
     struct HTTPRange
