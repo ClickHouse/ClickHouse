@@ -206,7 +206,7 @@ bool ReadBufferFromWebServer::nextImpl()
     }
     else
     {
-        if (working_buffer.begin())
+        if (working_buffer.begin() == impl->buffer().begin())
             impl->position() = position();
     }
 
@@ -221,7 +221,7 @@ bool ReadBufferFromWebServer::nextImpl()
         }
         else
         {
-            result = impl->next();
+            result = impl->hasPendingData() || impl->next();
         }
 
         working_buffer = impl->buffer();

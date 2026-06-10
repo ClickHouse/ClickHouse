@@ -47,6 +47,7 @@ DATA_PARTS = {
     "/data/headers/2025/part2.tsv": "8\n",
     "/data/mixed_headers/part1.tsv": "1\n",
     "/data/mixed_headers/part2.tsv": "2\n",
+    "/data/no_content_length_get/subdir/part1.tsv": "29\n",
     "/data/redirect_target/part1.tsv": "19\n",
     "/data/auth_failover/part1.tsv": "23\n",
 }
@@ -185,6 +186,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             "/data/headers/",
             "/data/headers/2025/",
             "/data/mixed_headers/",
+            "/data/no_content_length_get/",
+            "/data/no_content_length_get/subdir/",
             "/data/redirect/",
             "/data/redirect_target/",
             "/data/archive_identity/",
@@ -243,6 +246,14 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/data/mixed_headers/":
             body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/no_content_length_get/":
+            body = "<a href=\"subdir/\">subdir/</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/no_content_length_get/subdir/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
             self._send_html(body)
             return
         if path == "/data/redirect/":
@@ -427,7 +438,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             data = DATA_PARTS[path].encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
-            self.send_header("Content-Length", str(len(data)))
+            if not path.startswith("/data/no_content_length_get/"):
+                self.send_header("Content-Length", str(len(data)))
             if path.startswith("/data/mixed_headers/"):
                 self.send_header("ETag", f"mixed-{path.rsplit('/', 1)[-1]}")
                 self.send_header("X-Source-File", path.rsplit("/", 1)[-1])
