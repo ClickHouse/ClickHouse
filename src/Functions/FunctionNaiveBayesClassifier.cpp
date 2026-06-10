@@ -1,3 +1,5 @@
+#include <mutex>
+#include <optional>
 #include <ranges>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -13,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/ProfileEvents.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -47,23 +50,35 @@ public:
     using TokenNBC = NaiveBayesClassifier<TokenPolicy>;
 
     using Model = std::variant<ByteNBC, CodeNBC, TokenNBC>;
-    using Models = std::unordered_map<String, Model>;
+    using Models = UnorderedMapWithMemoryTracking<String, Model>;
 
-    // context from the FIRST call is used to build the registry.
-    // Later calls ignore their argument — they only return the map.
+    /// Public so `std::optional::emplace` can call it; the singleton is still enforced because
+    /// `registry` is private and only reachable through `instance`.
+    explicit NBModelRegistry(ContextPtr context) { load(context); }
+
+    /// Context from the first successful call is used to build the registry; later calls only return the map.
+    /// A failed `load` rethrows and leaves the registry empty so the next caller can retry once the config is fixed.
+    /// Explicit mutex+optional avoids a TSan race seen when two threads concurrently re-attempt construction
+    /// after the first attempt throws (the C++ runtime's guard-abort edge is not always recognized by TSan).
     static const Models & instance(ContextPtr context)
     {
-        static NBModelRegistry reg(context);
-        return reg.models;
+        std::lock_guard lock(mutex);
+        if (!registry.has_value())
+            registry.emplace(context);
+        return registry->models;
     }
 
 private:
     Models models;
 
-    explicit NBModelRegistry(ContextPtr context) { load(context); }
-
     void load(ContextPtr context);
+
+    static std::mutex mutex;
+    static std::optional<NBModelRegistry> registry;
 };
+
+std::mutex NBModelRegistry::mutex;
+std::optional<NBModelRegistry> NBModelRegistry::registry;
 
 void NBModelRegistry::load(ContextPtr context)
 {

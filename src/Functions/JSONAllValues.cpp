@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeObject.h>
@@ -13,6 +14,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypesCache.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -92,7 +94,7 @@ private:
         const auto & dynamic_path_columns = column_object.getDynamicPaths();
         auto dynamic_serialization = SerializationDynamic::create();
 
-        std::vector<PathInfo> sorted_paths;
+        VectorWithMemoryTracking<PathInfo> sorted_paths;
         sorted_paths.reserve(typed_path_types.size() + dynamic_path_columns.size());
 
         for (const auto & [path, type] : typed_path_types)
@@ -109,8 +111,8 @@ private:
 
         /// Cache of reusable (serialization, column) structs keyed by type name,
         /// to avoid createColumn and getDefaultSerialization per shared data value.
-        std::unordered_map<String, SerializationPtr> shared_serializations_cache;
-        std::unordered_map<String, MutableColumnPtr> shared_columns_cache;
+        UnorderedMapWithMemoryTracking<String, SerializationPtr> shared_serializations_cache;
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> shared_columns_cache;
 
         const auto & shared_data_offsets = column_object.getSharedDataOffsets();
         const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
@@ -165,8 +167,8 @@ private:
         std::string_view value_data,
         const FormatSettings & format_settings,
         ColumnString & data,
-        std::unordered_map<String, SerializationPtr> & shared_serializations_cache,
-        std::unordered_map<String, MutableColumnPtr> & shared_columns_cache)
+        UnorderedMapWithMemoryTracking<String, SerializationPtr> & shared_serializations_cache,
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> & shared_columns_cache)
     {
         ReadBufferFromMemory buf(value_data);
 
@@ -198,7 +200,7 @@ private:
             temp_column.popBack(1);
         };
 
-        char type_index;
+        char type_index = 0;
         if (!buf.peek(type_index))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse shared data value of JSON: no type index found");
 

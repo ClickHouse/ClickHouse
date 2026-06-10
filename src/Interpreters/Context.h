@@ -101,6 +101,7 @@ class RefreshSet;
 class Cluster;
 class Compiler;
 class MarkCache;
+class UniqueKeyIndexCache;
 class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
@@ -301,7 +302,6 @@ using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHold
 /// of the JOIN and use it to do early pre-filtering on the left side of the JOIN.
 struct IRuntimeFilterLookup;
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
-RuntimeFilterLookupPtr createRuntimeFilterLookup();
 
 class QueryMetadataCache;
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
@@ -351,7 +351,7 @@ private:
 class ContextData
 {
 protected:
-    ContextSharedPart * shared;
+    ContextSharedPart * shared{};
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
@@ -567,6 +567,11 @@ protected:
     bool is_internal_query = false;
     /// A flag, used to detect sub-operations of background operations - in this case we won't need to build another background contexts
     bool is_background_operation = false;
+    /// Set for queries created internally by the server for DDL replication (ON CLUSTER, DatabaseReplicated)
+    /// and internal backup coordination.
+    /// Unlike query_kind == SECONDARY_QUERY (which comes from the client and can be spoofed),
+    /// this flag can only be set server-side and is safe to use for security-sensitive checks.
+    bool is_ddl_or_on_cluster_internal = false;
     /// True when this context belongs to the inner query of an expanded view.
     /// Positional arguments inside views must be resolved even on remote/secondary nodes where
     /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
@@ -865,8 +870,8 @@ public:
     void setCurrentProfile(const String & profile_name, bool check_constraints = true);
     void setCurrentProfile(const UUID & profile_id, bool check_constraints = true);
     void setCurrentProfiles(const SettingsProfilesInfo & profiles_info, bool check_constraints = true);
-    std::vector<UUID> getCurrentProfiles() const;
-    std::vector<UUID> getEnabledProfiles() const;
+    UUIDs getCurrentProfiles() const;
+    UUIDs getEnabledProfiles() const;
 
     /// Checks access rights.
     /// Empty database means the current database.
@@ -1244,6 +1249,9 @@ public:
     bool getS3QueueDisableStreaming() const;
     void setS3QueueDisableStreaming(bool s3queue_disable_streaming) const;
 
+    bool getMessageQueueDisableInsertion() const;
+    void setMessageQueueDisableInsertion(bool message_queue_disable_insertion) const;
+
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
@@ -1360,7 +1368,7 @@ public:
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void signalKeeperDispatcherShutdown() const;
-    void shutdownKeeperDispatcher() const;
+    void shutdownKeeperDispatcher(bool closed_all_connections) const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
@@ -1395,6 +1403,13 @@ public:
     std::shared_ptr<MarkCache> getMarkCache() const;
     void clearMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
+
+    /// UNIQUE KEY index cache: ClickHouse-side `CacheBase` adapter
+    /// over the RocksDB block cache used by SST-backed UNIQUE KEY indexes.
+    void setUniqueKeyIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateUniqueKeyIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<UniqueKeyIndexCache> getUniqueKeyIndexCache() const;
+    void clearUniqueKeyIndexCache() const;
 
     void setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
@@ -1605,6 +1620,12 @@ public:
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;
 
+    /// Server-wide override for the new analyzer in mutations.
+    /// `std::nullopt` means there is no override (the session setting `allow_experimental_analyzer` is used).
+    /// Set from the main config reload callback.
+    void setMutationsUseAnalyzerOverride(std::optional<bool> value);
+    std::optional<bool> getMutationsUseAnalyzerOverride() const;
+
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
@@ -1644,6 +1665,9 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
+
+    bool isDDLOrOnClusterInternal() const { return is_ddl_or_on_cluster_internal; }
+    void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }

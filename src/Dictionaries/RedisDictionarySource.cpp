@@ -21,6 +21,7 @@ namespace DB
         extern const int LOGICAL_ERROR;
     }
 
+    void registerDictionarySourceRedis(DictionarySourceFactory & factory);
     void registerDictionarySourceRedis(DictionarySourceFactory & factory)
     {
         auto create_table_source = [=](const String & /*name*/,
@@ -50,7 +51,10 @@ namespace DB
             return std::make_unique<RedisDictionarySource>(dict_struct, configuration, std::make_shared<const Block>(std::move(sample_block)));
         };
 
-        factory.registerSource("redis", create_table_source);
+        factory.registerSource("redis", create_table_source, Documentation{
+            .description = "Reads dictionary data from a Redis server.",
+            .syntax = "SOURCE(REDIS(host 'host' port 6379 storage_type 'simple' db_index 0))",
+            .related = {}});
     }
 
     RedisDictionarySource::RedisDictionarySource(
