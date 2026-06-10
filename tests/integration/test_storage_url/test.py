@@ -157,6 +157,16 @@ def test_url_wildcard_body_without_content_length():
     assert result.strip() == "29"
 
 
+def test_url_wildcard_unknown_size_virtual_column():
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT sum(x), any(_size) IS NULL "
+            "FROM url('http://resolver:8087/data/unknown_size/**/part*.tsv', 'TSV', 'x UInt64')"
+        )
+    )
+    assert result.strip() == "31\t1"
+
+
 def test_url_wildcard_headers_virtual_column():
     result = node1.query(
         with_url_wildcard_setting(

@@ -2,6 +2,7 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/Operators.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>
@@ -27,6 +28,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+std::optional<size_t> getKnownFileSize(size_t file_size)
+{
+    if (file_size == StoredObject::UnknownSize)
+        return std::nullopt;
+
+    return file_size;
+}
+
+}
 
 ReadBufferFromWebServer::ReadBufferFromWebServer(
     const String & url_,
@@ -55,7 +68,7 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     bool use_external_buffer_,
     size_t read_until_position_,
     HTTPHeaderEntries headers_)
-    : ReadBufferFromFileBase(settings_.remote_fs_settings.buffer_size, nullptr, 0, file_size_)
+    : ReadBufferFromFileBase(settings_.remote_fs_settings.buffer_size, nullptr, 0, getKnownFileSize(file_size_))
     , log(getLogger("ReadBufferFromWebServer"))
     , context(context_)
     , urls(std::move(urls_))

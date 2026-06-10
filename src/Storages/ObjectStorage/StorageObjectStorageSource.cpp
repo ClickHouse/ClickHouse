@@ -494,13 +494,19 @@ Chunk StorageObjectStorageSource::generate()
                 iceberg_metadata_file_path = &iceberg_info->info.data_object_file_path_key.serialize();
 #endif
 
+            std::optional<size_t> object_size;
+            if (object_info->isArchive())
+                object_size = object_info->fileSizeInArchive();
+            else if (object_metadata->is_size_known)
+                object_size = object_metadata->size_bytes;
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
                     .storage_id = storage_snapshot->storage.getStorageID(),
-                    .size = object_info->isArchive() ? object_info->fileSizeInArchive() : object_metadata->size_bytes,
+                    .size = object_size,
                     .filename = &filename,
                     .last_modified = object_metadata->last_modified,
                     .etag = &(object_metadata->etag),
@@ -1138,7 +1144,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// filename to `readWithDistributedCache` (it ends up in `getFileName()` and in
     /// `system.distributed_cache_log.filename`). Use the object path so the DC log
     /// shows a useful name rather than an empty string.
-    StoredObject stored_object(object_info.getPath(), object_info.getPath(), object_size, object_info.read_source_index);
+    const auto stored_object_size = is_size_known ? object_size : StoredObject::UnknownSize;
+    StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_object_size, object_info.read_source_index);
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
     /// Filesystem cache

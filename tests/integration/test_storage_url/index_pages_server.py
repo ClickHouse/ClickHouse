@@ -48,6 +48,7 @@ DATA_PARTS = {
     "/data/mixed_headers/part1.tsv": "1\n",
     "/data/mixed_headers/part2.tsv": "2\n",
     "/data/no_content_length_get/subdir/part1.tsv": "29\n",
+    "/data/unknown_size/subdir/part1.tsv": "31\n",
     "/data/redirect_target/part1.tsv": "19\n",
     "/data/auth_failover/part1.tsv": "23\n",
 }
@@ -148,6 +149,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         if path in DATA_PARTS:
+            if path.startswith("/data/unknown_size/"):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                return
+
             data = DATA_PARTS[path].encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
@@ -188,6 +195,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             "/data/mixed_headers/",
             "/data/no_content_length_get/",
             "/data/no_content_length_get/subdir/",
+            "/data/unknown_size/",
+            "/data/unknown_size/subdir/",
             "/data/redirect/",
             "/data/redirect_target/",
             "/data/archive_identity/",
@@ -253,6 +262,14 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_html(body)
             return
         if path == "/data/no_content_length_get/subdir/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/unknown_size/":
+            body = "<a href=\"subdir/\">subdir/</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/unknown_size/subdir/":
             body = "<a href=\"part1.tsv\">part1.tsv</a>\n"
             self._send_html(body)
             return
