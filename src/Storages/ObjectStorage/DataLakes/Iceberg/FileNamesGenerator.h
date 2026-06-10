@@ -50,7 +50,6 @@ public:
 
     void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
     void setCompressionMethod(CompressionMethod compression_method_) { compression_method = compression_method_; }
-    Int32 getInitialVersion() const { return initial_version; }
 
     void setDataLocation(String data_location_)
     {

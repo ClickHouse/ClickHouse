@@ -124,6 +124,7 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
     df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 90
 
+
 def test_optimize_manifest_per_file_stats(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session

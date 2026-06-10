@@ -32,7 +32,6 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
 
-#include <Parsers/ASTOptimizeQuery.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/ObjectStorage/Utils.h>
 
