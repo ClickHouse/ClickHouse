@@ -45,6 +45,7 @@
 #include <Parsers/ASTSubquery.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -2354,7 +2355,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             auto it = scope.nullable_group_by_keys.find(node);
             if (it != scope.nullable_group_by_keys.end())
             {
-                node = it->node->clone();
+                node = it->second->clone();
                 node->convertToNullable();
             }
         }
@@ -3407,7 +3408,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 auto it = scope_ptr->nullable_group_by_keys.find(node);
                 if (it != scope_ptr->nullable_group_by_keys.end())
                 {
-                    node = it->node->clone();
+                    node = it->second->clone();
                     node->convertToNullable();
                     break;
                 }
@@ -3675,12 +3676,114 @@ void expandTuplesInList(QueryTreeNodes & key_list)
     key_list = std::move(expanded_keys);
 }
 
+bool nodeSupportsConvertToNullable(const QueryTreeNodePtr & node)
+{
+    auto node_type = node->getNodeType();
+    return node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::CONSTANT || node_type == QueryTreeNodeType::FUNCTION;
+}
+
+/** Convert maximal subtrees that are GROUP BY keys to Nullable and recompute the types of all
+  * nodes above them. This mirrors what resolveExpressionNode does during bottom-up resolution
+  * of an expression containing GROUP BY keys as subexpressions: a subexpression equal to a key
+  * is replaced with a clone of the key converted to Nullable, and the functions above it are
+  * resolved with the new argument types.
+  * Returns true if any key was converted inside the given subtree.
+  */
+bool convertNestedGroupByKeysToNullable(
+    QueryTreeNodePtr & node,
+    const QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> & nullable_group_by_keys,
+    const ContextPtr & context)
+{
+    if (nodeSupportsConvertToNullable(node) && nullable_group_by_keys.contains(node))
+    {
+        node->convertToNullable();
+        return true;
+    }
+
+    auto node_type = node->getNodeType();
+    if (node_type != QueryTreeNodeType::FUNCTION && node_type != QueryTreeNodeType::LAMBDA && node_type != QueryTreeNodeType::LIST)
+        return false;
+
+    bool converted = false;
+    for (auto & child : node->getChildren())
+    {
+        if (child && convertNestedGroupByKeysToNullable(child, nullable_group_by_keys, context))
+            converted = true;
+    }
+
+    if (!converted)
+        return false;
+
+    if (auto * function_node = node->as<FunctionNode>())
+    {
+        rerunFunctionResolve(function_node, context);
+    }
+    else if (auto * lambda_node = node->as<LambdaNode>())
+    {
+        const auto * lambda_type = typeid_cast<const DataTypeFunction *>(lambda_node->getResultType().get());
+        if (!lambda_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Lambda node {} result type is not a function type",
+                lambda_node->formatASTForErrorMessage());
+
+        lambda_node->resolve(std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), lambda_node->getExpression()->getResultType()));
+    }
+
+    return true;
+}
+
+/** Register GROUP BY keys in scope.nullable_group_by_keys in every shape in which an expression
+  * equal to a key can arrive at the lookup in resolveExpressionNode, so that the lookup can use
+  * exact comparison (including types):
+  * - the original form, for keys resolved from scratch;
+  * - the form with every maximal proper sub-key already converted to Nullable and the types of
+  *   the nodes above recomputed, for keys that contain other keys as subexpressions;
+  * - the form converted to Nullable itself, for already converted expressions resolved again
+  *   (for example, reused through an alias).
+  * All shapes are mapped to the original key node.
+  */
+void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, IdentifierResolveScope & scope)
+{
+    for (const auto & key : group_by_keys)
+        scope.nullable_group_by_keys.emplace(key, key);
+
+    for (const auto & key : group_by_keys)
+    {
+        if (key->as<FunctionNode>())
+        {
+            auto key_with_converted_sub_keys = key->clone();
+            bool converted = false;
+
+            for (auto & child : key_with_converted_sub_keys->getChildren())
+            {
+                if (child && convertNestedGroupByKeysToNullable(child, scope.nullable_group_by_keys, scope.context))
+                    converted = true;
+            }
+
+            if (converted)
+            {
+                rerunFunctionResolve(key_with_converted_sub_keys->as<FunctionNode>(), scope.context);
+                scope.nullable_group_by_keys.emplace(std::move(key_with_converted_sub_keys), key);
+            }
+        }
+
+        if (nodeSupportsConvertToNullable(key))
+        {
+            auto converted_key = key->clone();
+            converted_key->convertToNullable();
+            scope.nullable_group_by_keys.emplace(std::move(converted_key), key);
+        }
+    }
+}
+
 }
 
 /** Resolve GROUP BY clause.
   */
 void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope)
 {
+    QueryTreeNodes nullable_group_by_keys;
+
     if (query_node_typed.isGroupByWithGroupingSets())
     {
         for (auto & grouping_sets_keys_list_node : query_node_typed.getGroupBy().getNodes())
@@ -3701,7 +3804,7 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
             {
                 validateGroupByKeyType(group_by_elem->getResultType(), scope);
                 if (scope.group_by_use_nulls)
-                    scope.nullable_group_by_keys.insert(group_by_elem);
+                    nullable_group_by_keys.push_back(group_by_elem);
             }
         }
     }
@@ -3720,9 +3823,12 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
         {
             validateGroupByKeyType(group_by_elem->getResultType(), scope);
             if (scope.group_by_use_nulls)
-                scope.nullable_group_by_keys.insert(group_by_elem);
+                nullable_group_by_keys.push_back(group_by_elem);
         }
     }
+
+    if (!nullable_group_by_keys.empty())
+        registerNullableGroupByKeys(nullable_group_by_keys, scope);
 }
 
 /** Validate data types of GROUP BY key.
