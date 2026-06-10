@@ -118,6 +118,11 @@ namespace
 /// so we only check when there actually are nulls to read.
 void checkValidityBitmap(const arrow::Array & chunk, const String & column_name)
 {
+    if (unlikely(chunk.length() < 0 || chunk.offset() < 0))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow array has negative length or offset for column '{}': length={}, offset={}",
+            column_name, chunk.length(), chunk.offset());
     if (chunk.null_count() == 0)
         return;
     const auto & buffer = chunk.data()->buffers[0];
@@ -137,6 +142,11 @@ void checkValidityBitmap(const arrow::Array & chunk, const String & column_name)
 /// before touching any raw pointer, so the check can never be silently omitted.
 void checkArrowBuffer(const arrow::Array & chunk, size_t elem_size, const String & column_name)
 {
+    if (unlikely(chunk.length() < 0 || chunk.offset() < 0))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow array has negative length or offset for column '{}': length={}, offset={}",
+            column_name, chunk.length(), chunk.offset());
     const auto & buffer = chunk.data()->buffers[1];
     const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
     const size_t count = static_cast<size_t>(chunk.offset() + chunk.length());
@@ -168,6 +178,11 @@ const T * getValidatedBuffer(const arrow::Array & chunk, const String & column_n
 /// required byte count uses ceiling division rather than a simple multiply.
 void checkBooleanBuffer(const arrow::BooleanArray & chunk, const String & column_name)
 {
+    if (unlikely(chunk.length() < 0 || chunk.offset() < 0))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow array has negative length or offset for column '{}': length={}, offset={}",
+            column_name, chunk.length(), chunk.offset());
     const auto & buffer = chunk.data()->buffers[1];
     const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
     const size_t count = static_cast<size_t>(chunk.offset() + chunk.length());
@@ -265,6 +280,11 @@ const ArrowViewArray & checkedCastView(const arrow::Array & array, const String 
 template <typename ArrowBinaryArray>
 void checkBinaryOffsetsBuffer(const ArrowBinaryArray & chunk, const String & column_name)
 {
+    if (unlikely(chunk.length() < 0 || chunk.offset() < 0))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow array has negative length or offset for column '{}': length={}, offset={}",
+            column_name, chunk.length(), chunk.offset());
     const auto & buffer = chunk.data()->buffers[1];
     const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
     const size_t count_plus_one = static_cast<size_t>(chunk.offset() + chunk.length()) + 1;
