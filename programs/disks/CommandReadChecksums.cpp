@@ -41,14 +41,11 @@ public:
 
         LOG_INFO(log, "Reading checksums from '{}' at disk '{}'", path_arg, disk_ptr->getName());
 
-        /// Read the whole file and deserialize it via the canonical entry point, so that the parsing
-        /// and error behavior matches the rest of the codebase (e.g. `IMergeTreeDataPart::loadChecksums`).
-        String contents;
-        {
-            auto in = disk_ptr->readFile(path, getReadSettings());
-            readStringUntilEOF(contents, *in);
-        }
-        auto checksums = MergeTreeDataPartChecksums::deserializeFrom(contents);
+        auto in = disk_ptr->readFile(path, getReadSettings());
+        MergeTreeDataPartChecksums checksums;
+        if (!checksums.read(*in))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Checksums format is too old in '{}'", path_arg);
+        assertEOF(*in);
 
         WriteBufferFromFileDescriptor out(STDOUT_FILENO);
         writeString("name\tfile_size\tfile_hash\tuncompressed_size\tuncompressed_hash\n", out);
