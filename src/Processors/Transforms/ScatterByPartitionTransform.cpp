@@ -1,19 +1,36 @@
 #include <Columns/IColumn.h>
 #include <Core/ColumnNumbers.h>
+#include <Interpreters/castColumn.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
+#include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/MapToRange.h>
 #include <Common/PODArray.h>
 
 namespace DB
 {
-ScatterByPartitionTransform::ScatterByPartitionTransform(SharedHeader header, size_t output_size_, ColumnNumbers key_columns_)
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+ScatterByPartitionTransform::ScatterByPartitionTransform(SharedHeader header, size_t output_size_, ColumnNumbers key_columns_, DataTypes hash_cast_types_)
     : IProcessor(InputPorts{header}, OutputPorts{output_size_, header})
     , output_size(output_size_)
     , key_columns(std::move(key_columns_))
+    , hash_cast_types(std::move(hash_cast_types_))
     , hash(0)
-{}
+{
+    if (!hash_cast_types.empty() && hash_cast_types.size() != key_columns.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "ScatterByPartitionTransform: hash_cast_types size ({}) does not match key columns size ({})",
+            hash_cast_types.size(), key_columns.size());
+
+    hash_input_types.reserve(key_columns.size());
+    for (const auto & column_number : key_columns)
+        hash_input_types.push_back(header->getByPosition(column_number).type);
+}
 
 IProcessor::Status ScatterByPartitionTransform::prepare()
 {
@@ -139,8 +156,18 @@ void ScatterByPartitionTransform::generateOutputChunks()
 
     hash.assign(num_rows, WEAK_HASH32_INITIAL_VALUE);
 
-    for (const auto & column_number : key_columns)
-        columns[column_number]->computeHashInto(0, num_rows, hash.data(), false);
+    for (size_t i = 0; i < key_columns.size(); ++i)
+    {
+        const auto & column = columns[key_columns[i]];
+        const auto & cast_type = hash_cast_types.empty() ? nullptr : hash_cast_types[i];
+        if (cast_type && !cast_type->equals(*hash_input_types[i]))
+        {
+            auto casted = castColumn({column, hash_input_types[i], ""}, cast_type);
+            casted->computeHashInto(0, num_rows, hash.data(), false);
+        }
+        else
+            column->computeHashInto(0, num_rows, hash.data(), false);
+    }
 
     selector.resize(num_rows);
     mapToRange(hash.data(), num_rows, static_cast<UInt32>(output_size), selector.data());
