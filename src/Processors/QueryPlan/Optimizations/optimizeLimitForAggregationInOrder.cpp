@@ -33,8 +33,10 @@ static bool isTransparentStep(IQueryPlanStep * step)
     if (!transforming)
         return false;
 
-    return transforming->getDataStreamTraits().preserves_sorting
-        && transforming->getTransformTraits().preserves_number_of_rows;
+    const auto preserves_sorting =  transforming->getDataStreamTraits().preserves_sorting;
+    const auto preserves_number_of_rows = transforming->getTransformTraits().preserves_number_of_rows;
+
+    return preserves_sorting && preserves_number_of_rows;
 }
 
 /// Returns true if every column referenced in sort_desc is the same value on

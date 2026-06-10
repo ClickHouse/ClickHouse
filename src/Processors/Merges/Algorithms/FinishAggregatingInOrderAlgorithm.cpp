@@ -133,8 +133,8 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
     inputs_to_update.pop_back();
 
     /// Do not merge blocks, if there are too few rows or bytes.
-    bool need_flush = accumulated_rows >= max_block_size_rows || accumulated_bytes >= max_block_size_bytes;
-    bool limit_reached = limit_hint && groups_produced >= limit_hint;
+    const bool need_flush = accumulated_rows >= max_block_size_rows || accumulated_bytes >= max_block_size_bytes;
+    const bool limit_reached = limit_hint != 0 && groups_produced >= limit_hint;
 
     if (need_flush || limit_reached)
         status.chunk = prepareToMerge();
