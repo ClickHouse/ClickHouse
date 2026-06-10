@@ -331,7 +331,7 @@ On error at any point the server sends an `Exception` instead of `EndOfStream`, 
    | Packet type           | Action |
    |-----------------------|--------|
    | `Data` (1)            | Decode the block. The first Data is the schema header; later ones are result blocks (accumulate); an empty block is a boundary marker. `num_rows == 0` is **not** end-of-query. |
-   | `Progress` (3)        | Execution metrics. Cumulative, not deltas. |
+   | `Progress` (3)        | Execution metrics. Each packet is an **increment** since the previous one — accumulate locally. |
    | `EndOfStream` (5)     | Query complete. Exit the loop and return to `READY`. |
    | `ProfileInfo` (6)     | Post-execution profiling data. |
    | `Totals` (7)          | Aggregation totals block (same wire format as Data). |
@@ -608,17 +608,17 @@ The block variants and what they mean are documented under [Block variants](/int
 
 ### Progress (packet type 3) {#progress}
 
-Server → Client. Sent periodically during query execution. All fields are VarUInt, and each packet carries cumulative totals (not deltas) since the start of the query.
+Server → Client. Sent periodically during query execution. All fields are VarUInt, and each packet carries **increments since the previous `Progress` packet**, not cumulative totals. Before sending, the server reads and resets its counters to zero (`TCPHandler::sendProgress` calls `Progress::fetchValuesAndResetPiecewiseAtomically`, and computes `elapsed_ns` as the delta since the last send). A client therefore **must accumulate** successive packets locally to obtain running totals — treating a packet as an absolute value makes the progress display jump backwards or undercount once more than one packet arrives.
 
 | # | Field       | Type    | Role      | Condition                              | Description |
 |---|-------------|---------|-----------|----------------------------------------|-------------|
-| 1 | rows        | VarUInt | universal | always                                 | Rows processed so far |
-| 2 | bytes       | VarUInt | universal | always                                 | Bytes processed so far |
-| 3 | total_rows  | VarUInt | universal | always                                 | Estimated total rows (may be 0) |
-| 4 | total_bytes | VarUInt | universal | TOTAL_BYTES_IN_PROGRESS (v54463)       | Estimated total bytes (may be 0). Sits BETWEEN `total_rows` and `wrote_rows` on the wire. |
-| 5 | wrote_rows  | VarUInt | universal | WRITE_CLIENT_INFO (v54420)             | Rows written (for INSERT) |
-| 6 | wrote_bytes | VarUInt | universal | WRITE_CLIENT_INFO (v54420)             | Bytes written (for INSERT) |
-| 7 | elapsed_ns  | VarUInt | universal | SERVER_QUERY_TIME_IN_PROGRESS (v54460) | Elapsed nanoseconds since query start |
+| 1 | rows        | VarUInt | universal | always                                 | Rows read since the previous packet (add to running total) |
+| 2 | bytes       | VarUInt | universal | always                                 | Bytes read since the previous packet (add to running total) |
+| 3 | total_rows  | VarUInt | universal | always                                 | Increment to the estimated total rows to read; accumulate (may be 0 in a given packet) |
+| 4 | total_bytes | VarUInt | universal | TOTAL_BYTES_IN_PROGRESS (v54463)       | Increment to the estimated total bytes to read; accumulate. Sits BETWEEN `total_rows` and `wrote_rows` on the wire. |
+| 5 | wrote_rows  | VarUInt | universal | WRITE_CLIENT_INFO (v54420)             | Rows written since the previous packet (for INSERT); accumulate |
+| 6 | wrote_bytes | VarUInt | universal | WRITE_CLIENT_INFO (v54420)             | Bytes written since the previous packet (for INSERT); accumulate |
+| 7 | elapsed_ns  | VarUInt | universal | SERVER_QUERY_TIME_IN_PROGRESS (v54460) | Nanoseconds elapsed since the previous packet (a delta, not total query time); accumulate |
 
 ### ProfileInfo (packet type 6) {#profileinfo}
 
