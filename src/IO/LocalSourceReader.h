@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IO/ISourceReader.h>
+#include <IO/IFileBasedSourceReader.h>
 #include <IO/ReadSettings.h>
 #include <Common/Logger.h>
 
@@ -8,7 +8,7 @@ namespace DB
 {
 
 /// Reads from local filesystem.
-class LocalSourceReader : public ISourceReader
+class LocalSourceReader : public IFileBasedSourceReader
 {
 public:
     explicit LocalSourceReader(ReadSettings read_settings_ = {})

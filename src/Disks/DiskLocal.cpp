@@ -379,7 +379,9 @@ void DiskLocal::prepareRead(
 
     /// Do not fail eagerly if the file doesn't exist or can't be stat'd.
     /// The error should come at read time with the proper error code
-    /// (e.g. FILE_DOESNT_EXIST for broken projections).
+    /// (e.g. FILE_DOESNT_EXIST for broken projections). Mark the size unknown in
+    /// that case so the reader opens the file rather than treating a zero size as
+    /// an empty file.
     std::error_code ec;
     auto file_size = fs::file_size(full_path, ec);
     /// On stat() failure we use `UnknownSize` as a sentinel — `bytes_size = 0`

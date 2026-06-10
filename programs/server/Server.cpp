@@ -49,6 +49,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Scheduler/IResourceManager.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/getMappedArea.h>
@@ -1081,7 +1082,8 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
                 startup_context->setCurrentQueryId("");
 
                 {
-                    auto query_scope = QueryScope::create(startup_context);
+                    auto thread_group = ThreadGroup::createForQuery(startup_context);
+                    ThreadGroupSwitcher switcher(thread_group, /*allow_existing_group=*/ true);
                     executeQuery(condition_read_buffer, condition_write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
                 }
 
@@ -1114,7 +1116,8 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             startup_context->setCurrentQueryId("");
 
-            auto query_scope = QueryScope::create(startup_context);
+            auto thread_group = ThreadGroup::createForQuery(startup_context);
+            ThreadGroupSwitcher switcher(thread_group, /*allow_existing_group=*/ true);
 
             executeQuery(read_buffer, write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
@@ -2665,6 +2668,9 @@ try
                     std::lock_guard lock(servers_lock);
                     updateServers(config(), new_server_settings, server_pool, *async_metrics, servers, servers_to_start_before_tables);
                 }
+
+                if (config().has("startup_scripts"))
+                    loadStartupScripts(config(), new_server_settings, global_context, log);
             }
 
             global_context->updateStorageConfiguration(config());

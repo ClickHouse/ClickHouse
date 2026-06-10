@@ -1,6 +1,6 @@
 #include <IO/PipelineReadBuffer.h>
 #include <IO/ReaderExecutor.h>
-#include <IO/ISourceReader.h>
+#include <IO/IFileBasedSourceReader.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/MMappedFileCache.h>
@@ -21,7 +21,7 @@ namespace
 /// In-memory source reader for testing. open() materializes the data into a
 /// temp file and returns a file-backed ReadBufferFromFileBase; temp file is
 /// removed on destruction.
-class MemorySourceReader : public ISourceReader
+class MemorySourceReader : public IFileBasedSourceReader
 {
 public:
     explicit MemorySourceReader(String data_) : data(std::move(data_)) {}
@@ -183,7 +183,7 @@ namespace
 /// Source reader that returns `MMapReadBufferFromFileWithCache` over a temp
 /// file. Used to drive the executor through the mmap path so we can assert it
 /// doesn't trip on `set()+next()` returning `false` (mmap has no `nextImpl`).
-class MMapSourceReader : public ISourceReader
+class MMapSourceReader : public IFileBasedSourceReader
 {
 public:
     explicit MMapSourceReader(String data_) : data(std::move(data_)) {}

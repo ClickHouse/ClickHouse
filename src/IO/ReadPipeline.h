@@ -5,6 +5,7 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <IO/ReadSettings.h>
+#include <Common/Logger.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <functional>
@@ -235,6 +236,8 @@ private:
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
     std::shared_ptr<LiveConnectionLimit> buffer_limit;
     VectorWithMemoryTracking<DecryptionStage> decryption_stages;
+
+    LoggerPtr log = getLogger("ReadPipeline");
 
     /// `query_id` is captured once on the calling thread before any stage
     /// runs, then threaded into helpers (which may run on a worker).

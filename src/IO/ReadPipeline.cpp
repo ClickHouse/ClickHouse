@@ -279,32 +279,32 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     /// the legacy path when it's requested.
     if (distributed_cache)
     {
-        LOG_DEBUG(getLogger("ReadPipeline"),
+        LOG_DEBUG(log,
             "use_reader_executor: falling back to the legacy read path (distributed cache not supported by the executor)");
         return nullptr;
     }
 
     /// Returns nullptr (so the caller falls back to the legacy path) for
     /// source variants the executor does not yet support.
-    std::shared_ptr<ISourceReader> source_reader;
+    std::shared_ptr<IFileBasedSourceReader> source_reader;
     size_t min_bytes_for_seek = settings.reader_executor_min_bytes_for_seek;
 
     if (const auto * local_src = std::get_if<LocalFileSource>(&source->source))
     {
-        LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for local file, {} objects, path={}",
+        LOG_DEBUG(log, "build: using ReaderExecutor for local file, {} objects, path={}",
             source->objects.size(), local_src->path);
         source_reader = std::make_shared<LocalSourceReader>(settings);
         min_bytes_for_seek = 0; /// Local seeks are free.
     }
     else if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
     {
-        LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for object storage, {} objects, gather={}",
+        LOG_DEBUG(log, "build: using ReaderExecutor for object storage, {} objects, gather={}",
             source->objects.size(), gather);
         source_reader = std::make_shared<ObjectStorageSourceReader>(obj_src->storage, settings);
     }
     else if (const auto * backup_src = std::get_if<BackupSource>(&source->source))
     {
-        LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for backup, path={}", backup_src->path);
+        LOG_DEBUG(log, "build: using ReaderExecutor for backup, path={}", backup_src->path);
         auto backup = backup_src->backup;
         auto backup_path = backup_src->path;
         source_reader = std::make_shared<BufferSourceReader>(
@@ -313,7 +313,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     }
     else if (const auto * custom_src = std::get_if<CustomSource>(&source->source))
     {
-        LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for custom source");
+        LOG_DEBUG(log, "build: using ReaderExecutor for custom source");
         auto creator = custom_src->creator;
         auto captured_settings = settings;
         source_reader = std::make_shared<BufferSourceReader>(
@@ -327,7 +327,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
 
     if (!source_reader)
     {
-        LOG_DEBUG(getLogger("ReadPipeline"),
+        LOG_DEBUG(log,
             "use_reader_executor: falling back to the legacy read path (source kind not supported by the executor)");
         return nullptr;
     }

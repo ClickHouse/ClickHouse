@@ -14,7 +14,7 @@
 /// `FileCache` (or `removeAllReleasable`) makes a filesystem layer cold.
 
 #include <IO/ReaderExecutor.h>
-#include <IO/ISourceReader.h>
+#include <IO/IFileBasedSourceReader.h>
 #include <IO/ICacheProvider.h>
 #include <IO/PageCacheProvider.h>
 #include <IO/DiskCacheProvider.h>
@@ -101,7 +101,7 @@ size_t promotedBytesSoFar()
 /// In-memory source reader. `open` materializes the requested object into a
 /// temp file and returns a file-backed `ReadBufferFromFileBase`. Temp files
 /// are cleaned up on destruction. (Copied from `gtest_reader_executor.cpp`.)
-class MemorySourceReader : public ISourceReader
+class MemorySourceReader : public IFileBasedSourceReader
 {
 public:
     explicit MemorySourceReader(std::unordered_map<String, String> data_)
@@ -140,7 +140,7 @@ private:
 /// source above does not (local file descriptors return `false`), so it cannot
 /// exercise the executor's connection-draining right bound. Needed to reproduce
 /// the cache-expanded `readBigAt` short read.
-class BoundedMemorySource : public ISourceReader
+class BoundedMemorySource : public IFileBasedSourceReader
 {
 public:
     explicit BoundedMemorySource(std::unordered_map<String, String> data_) : data(std::move(data_)) {}

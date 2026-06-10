@@ -1,4 +1,4 @@
-#include <IO/ISourceReader.h>
+#include <IO/IFileBasedSourceReader.h>
 #include <IO/LocalSourceReader.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>

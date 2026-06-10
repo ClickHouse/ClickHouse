@@ -158,7 +158,7 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
 }
 
 ReaderExecutor::ReaderExecutor(
-    std::shared_ptr<ISourceReader> source_,
+    std::shared_ptr<IFileBasedSourceReader> source_,
     const StoredObjects & objects,
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches_,
     size_t window_size_,

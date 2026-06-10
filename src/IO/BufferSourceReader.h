@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IO/ISourceReader.h>
+#include <IO/IFileBasedSourceReader.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/logger_useful.h>
 
@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class BufferSourceReader : public ISourceReader
+class BufferSourceReader : public IFileBasedSourceReader
 {
 public:
     using BufferFactory = std::function<std::unique_ptr<ReadBufferFromFileBase>(const StoredObject & object)>;

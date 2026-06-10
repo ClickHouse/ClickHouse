@@ -20,7 +20,7 @@
 /// by COMPRESSION. The FileCache is real.
 
 #include <IO/ReaderExecutor.h>
-#include <IO/ISourceReader.h>
+#include <IO/IFileBasedSourceReader.h>
 #include <IO/ICacheProvider.h>
 #include <IO/DiskCacheProvider.h>
 #include <IO/PageCacheProvider.h>
@@ -144,7 +144,7 @@ private:
     std::optional<size_t> read_until;
 };
 
-class MemBoundedSource : public ISourceReader
+class MemBoundedSource : public IFileBasedSourceReader
 {
 public:
     explicit MemBoundedSource(std::unordered_map<String, String> data_) : data(std::move(data_)) {}

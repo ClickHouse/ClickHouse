@@ -1,6 +1,6 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/BufferSourceReader.h>
-#include <IO/ISourceReader.h>
+#include <IO/IFileBasedSourceReader.h>
 #include <IO/ICacheProvider.h>
 #include <IO/PrefetchThreadPool.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -103,7 +103,7 @@ namespace
 /// In-memory source reader for testing.
 /// open() materializes the requested object into a temp file and returns a
 /// file-backed ReadBufferFromFileBase. Temp files are cleaned up on destruction.
-class MemorySourceReader : public ISourceReader
+class MemorySourceReader : public IFileBasedSourceReader
 {
 public:
     explicit MemorySourceReader(std::unordered_map<String, String> data_)
@@ -1056,7 +1056,7 @@ namespace
 /// Used to drive an asynchronous failure into the prefetch lambda so the
 /// future held by ReaderExecutor ends up holding an exception when the
 /// destructor calls future.get() via discardPrefetch.
-class ThrowOnSecondOpenSourceReader : public ISourceReader
+class ThrowOnSecondOpenSourceReader : public IFileBasedSourceReader
 {
 public:
     explicit ThrowOnSecondOpenSourceReader(String data_)
@@ -1840,7 +1840,7 @@ private:
     std::optional<size_t> read_until;
 };
 
-class BoundRecordingSource : public ISourceReader
+class BoundRecordingSource : public IFileBasedSourceReader
 {
 public:
     BoundRecordingSource(std::unordered_map<String, String> data_, BoundLog & log_)

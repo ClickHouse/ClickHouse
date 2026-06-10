@@ -4,7 +4,7 @@
 #include <IO/OffsetMap.h>
 #include <IO/ICacheProvider.h>
 #include <IO/IntervalSet.h>
-#include <IO/ISourceReader.h>
+#include <IO/IFileBasedSourceReader.h>
 #include <IO/LiveConnectionLimit.h>
 
 #include <Common/Logger.h>
@@ -69,7 +69,7 @@ public:
     static constexpr size_t DEFAULT_PLAN_LOOK_AHEAD = 64 * 1024 * 1024; /// 64 MiB
 
     ReaderExecutor(
-        std::shared_ptr<ISourceReader> source,
+        std::shared_ptr<IFileBasedSourceReader> source,
         const StoredObjects & objects,
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches,
         size_t window_size = DEFAULT_WINDOW_SIZE,
@@ -106,7 +106,7 @@ public:
     void mergeTransientStats(const ReaderExecutor & transient);
 
     /// Whether `makeTransientForReadAt` / `readBigAt` is allowed. All current
-    /// `ISourceReader` implementations support concurrent `open()` (each call
+    /// `IFileBasedSourceReader` implementations support concurrent `open()` (each call
     /// returns an independent buffer), so this is true whenever a source is
     /// configured. Kept as a method so future non-reusable sources can opt out.
     bool canReadAt() const { return static_cast<bool>(source); }
@@ -440,7 +440,7 @@ private:
     Rope readWindowLogical(ByteRange physical_window, ConnState & conn,
         const ReadPlanGeometry & geometry, bool & eof_latch, Stats & out_stats);
 
-    std::shared_ptr<ISourceReader> source;
+    std::shared_ptr<IFileBasedSourceReader> source;
     StoredObjects stored_objects;  /// retained for makeTransientForReadAt
     OffsetMap offset_map;
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
