@@ -71,7 +71,7 @@ With Keeper storage, handlers are kept in sync across all replicas automatically
 ```sql
 ALTER HANDLER name
 [PROTOCOL protocol_name]
-[URL '/path']
+[URL [PREFIX|REGEXP] '/path']
 [METHODS (GET, POST)]
 [TYPE query]
 [AS SELECT ...]
