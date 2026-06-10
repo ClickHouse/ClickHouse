@@ -644,7 +644,7 @@ profiles:
             return False
         for attempt in range(attempts):
             res, out, err = Shell.get_res_stdout_stderr(
-                f'clickhouse-client --port {port} --query "select 1"', verbose=True
+                f'clickhouse-client --port {port} --receive_timeout=5 --query "select 1"', verbose=True
             )
             if out.strip() == "1":
                 print(f"Server replica {replica_num} ready")
@@ -1134,7 +1134,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             "minio_audit_logs",
             "minio_server_logs",
         ]
-        ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 10_000_000
+        ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 20_000_000
 
         command_args = self.LOGS_SAVER_CLIENT_OPTIONS
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"
