@@ -429,7 +429,11 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             /*out_row_sources_buf=*/ nullptr,
             /*filter_column_name=*/ std::nullopt,
             /*use_average_block_sizes=*/ false,
-            apply_virtual_row_conversions);
+            apply_virtual_row_conversions,
+            /// Allow this many sources deferred behind virtual rows to read ahead in
+            /// parallel, so that the merge does not serialize reads that previously
+            /// ran concurrently. Bounds the number of concurrently open readers.
+            /*virtual_row_prefetch_window=*/ pipeline.getNumThreads());
 
         pipeline.addTransform(std::move(transform));
     }

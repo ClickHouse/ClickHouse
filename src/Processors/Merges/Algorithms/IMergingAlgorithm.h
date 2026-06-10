@@ -21,6 +21,11 @@ public:
         bool is_finished = false;
         ssize_t required_source = -1;
 
+        /// Additional sources that are worth reading ahead because the merge is likely
+        /// to need them soon (e.g. sources deferred behind a virtual row). Unlike
+        /// `required_source`, the algorithm does not wait for data from them.
+        std::vector<size_t> sources_to_prefetch;
+
         explicit Status(Chunk chunk_) : chunk(std::move(chunk_)) {}
         explicit Status(Chunk chunk_, bool is_finished_) : chunk(std::move(chunk_)), is_finished(is_finished_) {}
         explicit Status(size_t source) : required_source(source) {}

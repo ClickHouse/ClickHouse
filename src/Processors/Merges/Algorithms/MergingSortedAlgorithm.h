@@ -26,7 +26,8 @@ public:
         WriteBuffer * out_row_sources_buf_ = nullptr,
         const std::optional<String> & filter_column_name_ = std::nullopt,
         bool use_average_block_sizes = false,
-        bool apply_virtual_row_conversions_ = true);
+        bool apply_virtual_row_conversions_ = true,
+        size_t virtual_row_prefetch_window_ = 0);
 
     void addInput();
 
@@ -56,6 +57,22 @@ private:
 
     bool apply_virtual_row_conversions;
 
+    /// When sources are deferred behind virtual rows, let the ones the merge will need
+    /// soon read ahead in parallel (at most this many at once when there is no limit).
+    /// Zero disables the read-ahead.
+    const size_t virtual_row_prefetch_window;
+
+    /// Sources whose current chunk is a virtual row (so their real data has not been
+    /// requested yet), ordered by the virtual row sort key, i.e. in the order the merge
+    /// will need them.
+    std::vector<size_t> deferred_sources_in_merge_order;
+    /// Position in `deferred_sources_in_merge_order` of the next source to prefetch.
+    size_t next_deferred_source_pos = 0;
+    /// Flag per source: the source is still deferred behind its virtual row.
+    std::vector<char> source_is_deferred;
+    /// Sources to report for read-ahead with the next `merge` status.
+    std::vector<size_t> sources_to_prefetch;
+
     /// Chunks currently being merged.
     Inputs current_inputs;
 
@@ -72,6 +89,7 @@ private:
     Status mergeBatchImpl(TSortingQueue & queue);
 
     bool hasFilter() const { return filter_column_position != -1; }
+    void prefetchSourcesNeededBefore(SortCursorImpl & boundary);
     void insertRow(const SortCursorImpl & current);
     void insertRows(const SortCursorImpl & current, size_t num_rows);
     void insertChunk(size_t source_num);

@@ -268,6 +268,7 @@ void MergeSortingTransform::consume(Chunk chunk)
                         /*filter_column_name=*/ std::nullopt,
                         use_average_block_sizes,
                         apply_virtual_row,
+                        /*virtual_row_prefetch_window=*/ 0,
                         have_all_inputs);
 
                 processors.emplace_back(external_merging_sorted);

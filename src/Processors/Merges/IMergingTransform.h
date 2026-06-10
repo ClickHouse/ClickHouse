@@ -56,6 +56,10 @@ protected:
         bool no_data = false;
         size_t next_input_to_read = 0;
 
+        /// Inputs to ask for data without waiting for it (read-ahead for sources
+        /// deferred behind virtual rows). See `IMergingAlgorithm::Status::sources_to_prefetch`.
+        std::vector<size_t> inputs_to_prefetch;
+
         IMergingAlgorithm::Inputs init_chunks;
     };
 
@@ -148,6 +152,10 @@ public:
             state.next_input_to_read = status.required_source;
             state.need_data = true;
         }
+
+        if (!status.sources_to_prefetch.empty())
+            state.inputs_to_prefetch.insert(
+                state.inputs_to_prefetch.end(), status.sources_to_prefetch.begin(), status.sources_to_prefetch.end());
 
         if (status.is_finished)
         {
