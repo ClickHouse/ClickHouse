@@ -113,13 +113,6 @@ def create_table(
     )
 
 
-def split_s3_path(path):
-    assert path.startswith("s3://")
-    bucket_and_key = path[len("s3://") :]
-    bucket, key = bucket_and_key.split("/", 1)
-    return bucket, key
-
-
 def generate_record():
     return {
         "datetime": datetime.now(),
@@ -758,8 +751,12 @@ def test_insert_into_empty_table_without_refs(started_cluster):
     create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
 
     iceberg_table = catalog.load_table(f"{root_namespace}.{table_name}")
-    metadata_bucket, metadata_key = split_s3_path(iceberg_table.metadata_location)
+
+    assert iceberg_table.metadata_location.startswith("s3://")
+    bucket_and_key = iceberg_table.metadata_location[len("s3://") :]
+    metadata_bucket, metadata_key = bucket_and_key.split("/", 1)
     metadata = json.loads(get_file_contents(started_cluster.minio_client, metadata_bucket, metadata_key))
+
     # Imitate the behaviour when metadata can be created without refs, for example for empty tables created not from ClickHouse
     metadata.pop("refs", None)
     metadata_bytes = json.dumps(metadata).encode()
