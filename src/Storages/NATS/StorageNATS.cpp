@@ -846,14 +846,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
     [nats_credential_file = '/var/nats_credentials',]
-    [nats_startup_connect_tries = '5']
+    [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
     [nats_handle_error_mode = 'default']
 ```
 
 Required parameters:
 
-- `nats_url` – host:port (for example, `localhost:5672`)..
+- `nats_url` – host:port (for example, `localhost:4222`)..
 - `nats_subjects` – List of subject for NATS table to subscribe/publish to. Supports wildcard subjects like `foo.*.bar` or `baz.>`
 - `nats_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
 

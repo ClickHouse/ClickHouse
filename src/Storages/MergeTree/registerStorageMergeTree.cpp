@@ -2820,7 +2820,7 @@ SELECT * FROM UAct
 
     factory.registerStorage("ReplacingMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(
-The engine differs from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree) in that it removes duplicate entries with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md) value (`ORDER BY` table section, not `PRIMARY KEY`).
+The engine differs from [MergeTree](/engines/table-engines/mergetree-family/mergetree) in that it removes duplicate entries with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md) value (`ORDER BY` table section, not `PRIMARY KEY`).
 
 Data deduplication occurs only during a merge. Merging occurs in the background at an unknown time, so you can't plan for it. Some of the data may remain unprocessed. Although you can run an unscheduled merge using the `OPTIMIZE` query, do not count on using it, because the `OPTIMIZE` query will read and write a large amount of data.
 
@@ -3170,7 +3170,7 @@ SELECT key, last_value(value_int), last_value(value_string), last_value(value_da
 
     factory.registerStorage("AggregatingMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(
-The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
+The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
 
 You can use `AggregatingMergeTree` tables for incremental data aggregation, including for aggregated materialized views.
 
@@ -3356,7 +3356,7 @@ Each source row produces one row in the materialized view, and the actual aggreg
 
     factory.registerStorage("SummingMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(
-The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with one row which contains summed values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
+The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with one row which contains summed values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
 We recommend using the engine together with `MergeTree`. Store complete data in `MergeTree` table, and use `SummingMergeTree` for aggregated data storing, for example, when preparing reports. Such an approach will prevent you from losing valuable data due to an incorrectly composed primary key.
 
@@ -3819,7 +3819,7 @@ This engine:
 
 See the section [Collapsing](#table_engines_versionedcollapsingmergetree) for details.
 
-The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](../../../engines/table-engines/mergetree-family/collapsingmergetree.md) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
+The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](../../../engines/table-engines/mergetree-family/collapsingmergetree.md) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
 
 ## Creating a table {#creating-a-table}
 
@@ -3867,7 +3867,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE [=] VersionedCollapsingMergeTree(date-column [, samp#table_engines_versionedcollapsingmergetreeling_expression], (primary, key), index_granularity, sign, version)
+) ENGINE [=] VersionedCollapsingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, sign, version)
 ```
 
 All of the parameters except `sign` and `version` have the same meaning as in `MergeTree`.
