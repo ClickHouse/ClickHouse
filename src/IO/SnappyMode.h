@@ -8,7 +8,7 @@ namespace DB
 /// Controls which wire format is used for Snappy compression.
 enum class SnappyMode : uint8_t
 {
-    Basic,   /// Raw/Hadoop snappy block format (legacy ClickHouse behavior)
+    Basic,   /// Hadoop snappy block format (legacy ClickHouse behavior)
     Framed,  /// Snappy framing format — the standard streaming format
 };
 
