@@ -6,3 +6,5 @@
 0
 -- non-root local data paths are present
 1
+-- a user with SELECT but without SHOW TABLES is denied
+1

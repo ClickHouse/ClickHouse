@@ -1,5 +1,7 @@
 #include <Storages/System/StorageSystemPlainRewritableDataPaths.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessType.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -54,6 +56,10 @@ Pipe StorageSystemPlainRewritableDataPaths::read(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
+
+    /// Exposes the internal object-storage layout (key prefixes, blob paths, table UUIDs)
+    /// of all tables on the disk, without per-table access filtering, so it is gated.
+    context->checkAccess(AccessType::SHOW_TABLES);
 
     MutableColumnPtr col_disk_name = ColumnString::create();
     MutableColumnPtr col_common_prefix = ColumnString::create();
