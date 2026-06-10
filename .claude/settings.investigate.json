@@ -1,5 +1,5 @@
 {
-  "//": "Locked-down profile for CI-failure investigation. Launch with: claude --settings .claude/settings.investigate.json. 'deny' wins over 'allow', so destructive actions are blocked even if some other settings file allows them. Read-only investigation commands run without prompts. For defense in depth, run this inside a throwaway git worktree and/or an environment with no push credentials.",
+  "//": "Locked-down profile for CI-failure investigation. Launch with: claude --settings .claude/settings.investigate.json. 'deny' wins over 'allow', so destructive actions are blocked even if some other settings file allows them. Read-only investigation commands run without prompts. WARNING: the node/python3 helper allows below execute repo-local scripts (.claude/tools/*) from the current checkout, and the Bash deny/allow list does NOT constrain child processes those scripts spawn — a PR under investigation could have modified them. Because of this, running this profile inside a throwaway git worktree on a trusted base-branch checkout of .claude/tools AND an environment with no credentials is REQUIRED when investigating untrusted PRs, not merely defense in depth.",
   "permissions": {
     "deny": [
       "Edit",

@@ -146,24 +146,28 @@ SELECT test_name,
 FROM checks
 WHERE check_start_time >= now() - INTERVAL 90 DAY
   AND test_name IN ( '<test1>', '<test2>', ... )
-  AND (pull_request_number = 0 OR base_ref IN ('master',''))
-  AND pull_request_number != <investigated PR>
+  AND pull_request_number = 0
 GROUP BY test_name
 ORDER BY fail_7d DESC
 FORMAT TabSeparatedWithNames
 "
 ```
 
-The `pull_request_number = 0 OR base_ref IN ('master','')` filter restricts to master commits
-and PRs targeting master, dropping fork-PR noise.
+**Gate on true master rows only — `pull_request_number = 0`.** Do *not* widen to
+`base_ref IN ('master','')`: that matches every PR targeting master (hundreds of nonzero PRs),
+so a failure in any *unrelated* PR — including a real regression that PR introduced — would make
+`fail_<window>d >= 1` here and send the investigated PR's own regression down the `FLAKY` path,
+skipping root-cause analysis. Direct `master` commits are the only rows that show the test is
+flaky independent of any PR.
 
-**Exclude the PR you are investigating** (`AND pull_request_number != <PR>`, the number from
-step 1). Its own failing checks carry `base_ref='master'`, so without this clause they satisfy
-the filter above and inflate `fail_<window>d` — a real regression that fails *only* in this PR
-would then read as `fail_<window>d >= 1` and be misclassified `FLAKY`, skipping root-cause
-analysis. The remaining rows (true master + *other* PRs) are exactly the independent signal the
-flaky verdict needs. When investigating master directly or an issue with no associated PR, there
-is no PR to exclude — drop the clause.
+**Cross-PR failures are a separate, secondary signal.** If master rows are sparse, you may widen
+to other PRs as *corroboration* — never as the gate — and only after comparing failure modes (a
+flaky repeats the *same* error across unrelated PRs; distinct errors mean distinct bugs). Exclude
+the investigated PR so its own failures never feed back in:
+
+```sql
+  AND base_ref IN ('master','') AND pull_request_number NOT IN (0, <investigated PR>)
+```
 
 **Never `GROUP BY` over or filter with `LIKE` on `test_context_raw`** — that column holds the
 full test output and a 90-day scan over it times out (60 s limit). The aggregate query above is
@@ -179,17 +183,17 @@ FROM checks
 WHERE check_start_time >= now() - INTERVAL 90 DAY
   AND test_name = '<test>'
   AND test_status IN ('FAIL','ERROR')
-  AND (pull_request_number = 0 OR base_ref IN ('master',''))
-  AND pull_request_number != <investigated PR>
+  AND pull_request_number = 0
 ORDER BY day DESC
 FORMAT TabSeparatedWithNames
 "
 ```
 
-Use this to confirm the master failures share the **same failure mode** as the report (a real
-regression repeats the same error; a flaky test often fails identically across *unrelated* PRs)
-and to see which `check_name` configs are affected (e.g. only the heavily-loaded
-`arm_binary, parallel` shard points to a load/timing race).
+Use this to confirm the master failures share the **same failure mode** as the report, and to
+see which `check_name` configs are affected (e.g. only the heavily-loaded `arm_binary, parallel`
+shard points to a load/timing race). In the optional cross-PR corroboration query, the same-error
+test is the giveaway: a flaky fails identically across *unrelated* PRs, whereas distinct errors
+mean distinct bugs.
 
 **Classify each failed test:**
 
