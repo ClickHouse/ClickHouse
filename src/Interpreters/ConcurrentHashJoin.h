@@ -108,6 +108,18 @@ public:
         std::mutex mutex;
         std::unique_ptr<HashJoin> data;
         bool space_was_preallocated = false;
+
+        /// Deferred (exact-size) build: scattered right blocks routed to this slot are buffered here
+        /// during the build phase instead of being inserted immediately. At `onBuildPhaseFinish` the
+        /// slot's hash map is reserved to the exact row count and the blocks are replayed, so the map
+        /// is filled without any rehash. Only used when `deferred_build` is set (no statistics hint).
+        /// `buffered_rows`/`buffered_bytes` keep `getTotalRowCount`/`getTotalByteCount` accurate while
+        /// the data is parked here, so the wrapping `SpillingHashJoin` can still decide to spill. On a
+        /// spill the buffered blocks are handed to `GraceHashJoin` directly (see `releaseSlotBlocks`),
+        /// without ever building the in-memory map.
+        std::vector<ScatteredBlock> buffered_blocks;
+        size_t buffered_rows = 0;
+        size_t buffered_bytes = 0;
     };
 
     friend class NotJoinedHash;
@@ -122,6 +134,11 @@ private:
 
     StatsCollectingParams stats_collecting_params;
     const size_t external_join_threshold;
+
+    /// When true, slots buffer their right blocks during the build phase and the hash maps are filled
+    /// at `onBuildPhaseFinish` after being reserved to the exact row count (no rehash during build).
+    /// Enabled only when there is no statistics-driven preallocation to fall back on (see the ctor).
+    bool deferred_build = false;
 
     std::mutex totals_mutex;
     Block totals;

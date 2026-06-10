@@ -102,6 +102,55 @@ HashJoin::RightTableDataPtr getData(const std::shared_ptr<ConcurrentHashJoin::In
     return join->data->getJoinedData();
 }
 
+/// Reserve the buckets owned by `HashJoin` instance `ind` so that, summed across all slots and
+/// buckets, the maps hold `reserve_size` entries without rehashing. `reserve_size` is the global
+/// total (matching the statistics `ht_size` semantics): each owned bucket gets `reserve_size /
+/// NUM_BUCKETS`. Used both for statistics-driven preallocation and for the exact-size deferred build.
+void reserveBucketsBySize(
+    HashJoin & hash_join,
+    size_t ind,
+    size_t reserve_size,
+    size_t slots,
+    size_t external_join_threshold)
+{
+    /// Each `HashJoin` instance "owns" a subset of buckets during the build phase, so we preallocate
+    /// only in the specific buckets of this instance.
+    size_t actual_reserve_size = reserve_size;
+    auto reserve_space_in_buckets = [&](auto & maps, HashJoin::Type type, size_t idx)
+    {
+        APPLY_TO_MAP(
+            INVOKE_WITH_MAP,
+            type,
+            maps,
+            [&](auto & map)
+            {
+                using BucketImpl = std::remove_cvref_t<decltype(map.impls[0])>;
+                constexpr size_t cell_size = sizeof(typename BucketImpl::cell_type);
+
+                if (external_join_threshold > 0)
+                {
+                    /// When a `SpillingHashJoin` wraps us, `external_join_threshold` is the auto-spill
+                    /// memory cap. Hash table buffers run at ~0.5 load factor (`maxFill = bufSize / 2`),
+                    /// so each stored entry consumes 2 cells of capacity, and `bufSize` is then rounded
+                    /// up to the next power of two - a factor of up to 4x in the worst case. So each
+                    /// reserved entry occupies up to 4 × cell_size bytes of buffer. We keep total
+                    /// preallocated bytes (summed across all slots and buckets) under `threshold / 2`,
+                    /// leaving headroom for the eventual SpillingHashJoin trigger (also at `threshold /
+                    /// 2`) and for the conversion peak when handing data over to GraceHashJoin.
+                    const size_t budget_entries = external_join_threshold / (8 * cell_size);
+                    actual_reserve_size = std::min(reserve_size, budget_entries);
+                }
+
+                for (size_t j = idx; j < map.NUM_BUCKETS; j += slots)
+                    map.impls[j].reserve(actual_reserve_size / map.NUM_BUCKETS);
+            })
+    };
+
+    const auto & right_data = hash_join.getJoinedData();
+    std::visit([&](auto & maps) { return reserve_space_in_buckets(maps, right_data->type, ind); }, right_data->maps.at(0));
+    ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, actual_reserve_size / slots);
+}
+
 void reserveSpaceInHashMaps(
     HashJoin & hash_join,
     size_t ind,
@@ -109,55 +158,10 @@ void reserveSpaceInHashMaps(
     size_t slots,
     size_t external_join_threshold)
 {
+    /// Hash map is shared between all `HashJoin` instances, so the hinted `ht_size` is the total size
+    /// we need to preallocate across all buckets of all hash maps.
     if (auto hint = getSizeHint(stats_collecting_params))
-    {
-        /// Hash map is shared between all `HashJoin` instances, so the `median_size` is actually the total size
-        /// we need to preallocate in all buckets of all hash maps.
-        const size_t reserve_size = hint->ht_size;
-
-        /// When a `SpillingHashJoin` wraps us, `external_join_threshold` is the auto-spill memory cap.
-        /// Statistics-driven preallocation can reserve many gigabytes up front based on a previous larger
-        /// query, blowing past that cap before `SpillingHashJoin` ever runs its threshold check. We still
-        /// want preallocation - just bounded by the memory budget. We aim for about half of the threshold
-        /// so that the cap itself plus the live data plus the conversion peak still fit under it. When
-        /// running standalone (`external_join_threshold == 0`), the original full reserve is used.
-
-        /// Each `HashJoin` instance will "own" a subset of buckets during the build phase. Because of that
-        /// we preallocate space only in the specific buckets of each `HashJoin` instance.
-        size_t actual_reserve_size = reserve_size;
-        auto reserve_space_in_buckets = [&](auto & maps, HashJoin::Type type, size_t idx)
-        {
-            APPLY_TO_MAP(
-                INVOKE_WITH_MAP,
-                type,
-                maps,
-                [&](auto & map)
-                {
-                    using BucketImpl = std::remove_cvref_t<decltype(map.impls[0])>;
-                    constexpr size_t cell_size = sizeof(typename BucketImpl::cell_type);
-
-                    if (external_join_threshold > 0)
-                    {
-                        /// Hash table buffers run at ~0.5 load factor (`maxFill = bufSize / 2`), so each
-                        /// stored entry consumes 2 cells of capacity, and `bufSize` is then rounded up to
-                        /// the next power of two - a factor of up to 4x in the worst case. So each reserved
-                        /// entry occupies up to 4 × cell_size bytes of buffer. We keep total preallocated
-                        /// bytes (summed across all slots and buckets) under `threshold / 2`, leaving
-                        /// headroom for the eventual SpillingHashJoin trigger (also at `threshold / 2`)
-                        /// and for the conversion peak when handing data over to GraceHashJoin.
-                        const size_t budget_entries = external_join_threshold / (8 * cell_size);
-                        actual_reserve_size = std::min(reserve_size, budget_entries);
-                    }
-
-                    for (size_t j = idx; j < map.NUM_BUCKETS; j += slots)
-                        map.impls[j].reserve(actual_reserve_size / map.NUM_BUCKETS);
-                })
-        };
-
-        const auto & right_data = hash_join.getJoinedData();
-        std::visit([&](auto & maps) { return reserve_space_in_buckets(maps, right_data->type, ind); }, right_data->maps.at(0));
-        ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, actual_reserve_size / slots);
-    }
+        reserveBucketsBySize(hash_join, ind, hint->ht_size, slots, external_join_threshold);
 }
 
 template <typename HashTable>
@@ -231,6 +235,19 @@ ConcurrentHashJoin::ConcurrentHashJoin(
         auto shared_index = getData(hash_joins[0])->stored_columns_index;
         for (size_t i = 1; i < slots; ++i)
             getData(hash_joins[i])->stored_columns_index = shared_index;
+
+        /// Exact-size deferred build: when there is no statistics hint to preallocate from, buffer the
+        /// right blocks and size each two-level map to the exact row count at build finish, avoiding
+        /// rehashes during the build. Skipped when statistics already provide a good hint (then the
+        /// streaming build + `reserveSpaceInHashMaps` is used), when size limits require incremental
+        /// enforcement, for `any_take_last_row`, and for single-level maps (FixedHashMap is already
+        /// exact-size and never rehashes). Coexists with a wrapping `SpillingHashJoin`: the buffered
+        /// data is reported by `getTotalByteCount`/`getTotalRowCount` so the spill threshold check
+        /// still fires, and on a spill the buffers are handed to `GraceHashJoin` (see
+        /// `releaseSlotBlocks`) without building the in-memory map.
+        deferred_build = !any_take_last_row
+            && !table_join->sizeLimits().hasLimits() && hash_joins[0]->data->twoLevelMapIsUsed()
+            && !getSizeHint(stats_collecting_params).has_value();
     }
     catch (...)
     {
@@ -290,6 +307,27 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
 
     auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block));
+
+    if (deferred_build)
+    {
+        /// Buffer the per-slot blocks instead of inserting now; they are reserved exactly and replayed
+        /// at `onBuildPhaseFinish` (or handed to GraceHashJoin if the wrapper decides to spill). Size
+        /// limits are not enforced here (deferral is disabled when any limit is set, see the ctor).
+        /// `buffered_rows`/`buffered_bytes` keep the totals accurate so the spill check stays correct.
+        for (size_t i = 0; i < dispatched_blocks.size(); ++i)
+        {
+            auto & dispatched_block = dispatched_blocks[i];
+            if (!dispatched_block.rows())
+                continue;
+            auto & hash_join = hash_joins[i];
+            std::lock_guard lock(hash_join->mutex);
+            hash_join->buffered_rows += dispatched_block.rows();
+            hash_join->buffered_bytes += dispatched_block.allocatedBytes();
+            hash_join->buffered_blocks.emplace_back(std::move(dispatched_block));
+        }
+        return true;
+    }
+
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
     {
@@ -463,7 +501,10 @@ size_t ConcurrentHashJoin::getTotalRowCount() const
     for (const auto & hash_join : hash_joins)
     {
         std::lock_guard lock(hash_join->mutex);
-        res += hash_join->data->getTotalRowCount();
+        /// A slot's rows live in exactly one place at a time: parked in `buffered_*` during a deferred
+        /// build, or in the hash map after the replay (or released to GraceHashJoin). Summing both is
+        /// always correct and never double-counts. For non-deferred builds `buffered_rows` is 0.
+        res += hash_join->data->getTotalRowCount() + hash_join->buffered_rows;
     }
     return res;
 }
@@ -474,7 +515,9 @@ size_t ConcurrentHashJoin::getTotalByteCount() const
     for (const auto & hash_join : hash_joins)
     {
         std::lock_guard lock(hash_join->mutex);
-        res += hash_join->data->getTotalByteCount();
+        /// See `getTotalRowCount`: buffered bytes account for a deferred build still parked in memory,
+        /// so the wrapping `SpillingHashJoin` sees the real footprint and can trigger a spill.
+        res += hash_join->data->getTotalByteCount() + hash_join->buffered_bytes;
     }
     return res;
 }
@@ -734,6 +777,25 @@ BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
     chassert(slot_idx < hash_joins.size());
     auto & hash_join = hash_joins[slot_idx];
     std::lock_guard lock(hash_join->mutex);
+
+    /// Deferred build that has not been replayed yet (the wrapping `SpillingHashJoin` decided to spill
+    /// before `onBuildPhaseFinish`): hand the buffered blocks over without ever building the in-memory
+    /// map. Materialize each block to its selected rows only, so rows are not duplicated across slots.
+    if (!hash_join->buffered_blocks.empty())
+    {
+        BlocksList blocks;
+        for (auto & scattered_block : hash_join->buffered_blocks)
+        {
+            scattered_block.filterBySelector();
+            blocks.emplace_back(std::move(scattered_block).getSourceBlock());
+        }
+        hash_join->buffered_blocks.clear();
+        hash_join->buffered_blocks.shrink_to_fit();
+        hash_join->buffered_rows = 0;
+        hash_join->buffered_bytes = 0;
+        return blocks;
+    }
+
     if (!hash_join->data || !hash_join->data->getJoinedData())
         return {};
     return hash_join->data->releaseJoinedBlocks(/*restructure=*/ false);
@@ -741,6 +803,41 @@ BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
 
 void ConcurrentHashJoin::onBuildPhaseFinish()
 {
+    if (deferred_build)
+    {
+        /// Exact-size build: reserve each slot's owned buckets to the actual global row count, then
+        /// replay the buffered blocks (the inserts now never rehash). Done in parallel across slots,
+        /// before the bucket merge below. `reserveBucketsBySize` takes the global total because each
+        /// owned bucket is reserved to `total / NUM_BUCKETS`, matching the statistics-driven path.
+        size_t global_total_rows = 0;
+        for (const auto & hash_join : hash_joins)
+            global_total_rows += hash_join->buffered_rows;
+
+        for (size_t i = 0; i < slots; ++i)
+        {
+            pool->scheduleOrThrow(
+                [&, i, thread_group = CurrentThread::getGroup()]()
+                {
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::CONCURRENT_JOIN);
+
+                    auto & hash_join = hash_joins[i];
+                    if (global_total_rows && hash_join->data->twoLevelMapIsUsed())
+                        reserveBucketsBySize(*hash_join->data, i, global_total_rows, slots, external_join_threshold);
+
+                    for (auto & scattered_block : hash_join->buffered_blocks)
+                    {
+                        auto [block, selector] = std::move(scattered_block).detachData();
+                        hash_join->data->addBlockToJoin(block, std::move(selector), /*check_limits=*/false);
+                    }
+                    hash_join->buffered_blocks.clear();
+                    hash_join->buffered_blocks.shrink_to_fit();
+                    hash_join->buffered_rows = 0;
+                    hash_join->buffered_bytes = 0;
+                });
+        }
+        pool->wait();
+    }
+
     if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
         // At this point, the build phase is finished. We need to build a shared common hash map to be used in the probe phase.
