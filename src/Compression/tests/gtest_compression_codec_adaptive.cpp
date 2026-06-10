@@ -25,6 +25,7 @@ namespace
 
 constexpr auto LZ4 = static_cast<uint8_t>(CompressionMethodByte::LZ4);
 constexpr auto T64 = static_cast<uint8_t>(CompressionMethodByte::T64);
+constexpr auto NONE = static_cast<uint8_t>(CompressionMethodByte::NONE);
 
 DataTypePtr type(const String & name)
 {
@@ -97,7 +98,7 @@ std::vector<char> bytesOf(const std::vector<T> & values)
 
 TEST(AdaptiveCodecPool, EachCandidateTypeBuildsWithDefaultAnchor)
 {
-    /// Drift guard. Every candidate must build for its type (a row naming a codec the type cannot take would otherwise throw at write time).
+    /// Drift guard. Every candidate must build for its type (naming a codec the type cannot take would otherwise throw at write time).
     for (const TypeIndex idx : AdaptiveCodec::candidateTypeIndexes())
     {
         const DataTypePtr t = representativeType(idx);
@@ -106,8 +107,9 @@ TEST(AdaptiveCodecPool, EachCandidateTypeBuildsWithDefaultAnchor)
 
         Codecs pool;
         ASSERT_NO_THROW(pool = AdaptiveCodec::poolForType(*t, defaultCodec())) << "TypeIndex " << static_cast<int>(idx);
-        EXPECT_EQ(pool[0].get(), defaultCodec().get()) << "TypeIndex " << static_cast<int>(idx); /// default is the anchor
-        EXPECT_GE(pool.size(), 2u) << "TypeIndex " << static_cast<int>(idx); /// a candidate beyond the default was added
+        EXPECT_EQ(pool[0]->getMethodByte(), NONE) << "TypeIndex " << static_cast<int>(idx); /// NONE is always [0]
+        EXPECT_EQ(pool[1].get(), defaultCodec().get()) << "TypeIndex " << static_cast<int>(idx); /// default is always [1]
+        EXPECT_GE(pool.size(), 3u) << "TypeIndex " << static_cast<int>(idx);
     }
 }
 
@@ -121,13 +123,14 @@ TEST(AdaptiveCodecPool, RepresentativeTypesMatchTheirIndex)
     }
 }
 
-TEST(AdaptiveCodecPool, NonIntegerTypesGetDefaultOnly)
+TEST(AdaptiveCodecPool, NonCandidateTypesGetNoneAndDefaultOnly)
 {
     for (const auto * name : {"Int128", "UInt256", "Decimal(38, 2)", "String", "Float32", "Float64", "UUID"})
     {
         auto pool = AdaptiveCodec::poolForType(*type(name), defaultCodec());
-        EXPECT_EQ(pool.size(), 1u) << "type " << name;
-        EXPECT_EQ(pool[0].get(), defaultCodec().get()) << "type " << name;
+        EXPECT_EQ(pool.size(), 2u) << "type " << name;
+        EXPECT_EQ(pool[0]->getMethodByte(), NONE) << "type " << name;
+        EXPECT_EQ(pool[1].get(), defaultCodec().get()) << "type " << name;
     }
 }
 
@@ -209,8 +212,9 @@ TEST(CompressionCodecAdaptive, CompressRoundTripsViaWinnerByte)
     EXPECT_EQ(0, memcmp(decoded.data(), bytes.data(), size));
 }
 
-TEST(CompressionCodecAdaptive, TinyBlockSelectsDefault)
+TEST(CompressionCodecAdaptive, TinyBlockStoredRaw)
 {
+    /// 16 bytes: every compressing candidate's framing alone exceeds the raw bytes, so NONE wins.
     std::vector<UInt32> values(4);
     for (size_t i = 0; i < values.size(); ++i)
         values[i] = static_cast<UInt32>(i);
@@ -221,7 +225,7 @@ TEST(CompressionCodecAdaptive, TinyBlockSelectsDefault)
 
     PODArray<char> encoded(adaptive.getCompressedReserveSize(size));
     adaptive.compress(bytes.data(), size, encoded.data());
-    EXPECT_EQ(ICompressionCodec::readMethod(encoded.data()), LZ4);
+    EXPECT_EQ(ICompressionCodec::readMethod(encoded.data()), NONE);
 }
 
 TEST(CompressionCodecAdaptive, HashHasOwnNamespace)
@@ -230,7 +234,7 @@ TEST(CompressionCodecAdaptive, HashHasOwnNamespace)
     /// fold their children's hashes the same way, so the leading "Adaptive" descriptor is what keeps the two distinct.
     CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
     auto pool = AdaptiveCodec::poolForType(*type("UInt32"), defaultCodec());
-    ASSERT_EQ(pool.size(), 2u);
+    ASSERT_EQ(pool.size(), 3u);
     CompressionCodecMultiple multiple(pool);
     EXPECT_NE(adaptive.getHash(), multiple.getHash());
 
@@ -294,8 +298,8 @@ TEST(GetCompressedBlockSize, CalculateMatchesCompressForT64)
     const UInt32 size = static_cast<UInt32>(bytes.size());
 
     auto pool = AdaptiveCodec::poolForType(*type("UInt32"), defaultCodec());
-    ASSERT_EQ(pool.size(), 2u);
-    const auto & t64 = pool[1];
+    ASSERT_EQ(pool.size(), 3u);
+    const auto & t64 = pool[2];
     ASSERT_EQ(t64->getMethodByte(), T64);
 
     PODArray<char> scratch;

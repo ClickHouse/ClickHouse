@@ -107,7 +107,8 @@ protected:
     /// This is used for fuzz testing
     friend int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
-    /// Return size of compressed data without header
+    /// Upper bound on the compressed data size without the header. While compressing, a codec may temporarily write more bytes
+    /// into `dest` than its final result, so the bound covers those writes too and may exceed the actual compressed size.
     virtual UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const { return uncompressed_size; }
 
     /// Actually compress data without header

@@ -70,8 +70,7 @@ CompressionCodecPtr buildCodecForType(std::string_view expr, const IDataType & t
 
 Codecs AdaptiveCodec::poolForType(const IDataType & type, const CompressionCodecPtr & deployment_default)
 {
-    /// TODO: add NONE to the pool.
-    Codecs pool{deployment_default};
+    Codecs pool{CompressionCodecFactory::instance().get("NONE", {}), deployment_default};
     const TypeIndex type_id = type.getTypeId();
     for (const auto & [codec_expr, types] : CANDIDATES)
         if (std::ranges::find(types, type_id) != types.end())
