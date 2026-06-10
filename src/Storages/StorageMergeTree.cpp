@@ -533,6 +533,12 @@ void StorageMergeTree::alter(
                 changeSettings(new_metadata.settings_changes, table_lock_holder);
                 checkTTLExpressions(new_metadata, old_metadata);
 
+                /// Validate setting-dependent metadata against the just-applied settings
+                /// before the durable commit; otherwise `setProperties` below can reject it
+                /// after the commit, leaving durable metadata ahead of the in-memory state.
+                /// The CREATE-AST pre-validation above does not cover these checks. See #80648.
+                checkMetadataProperties(new_metadata, old_metadata, local_context);
+
                 if (!maybe_mutation_commands.empty())
                     prepared.emplace(prepareMutationEntry(maybe_mutation_commands, local_context));
 
