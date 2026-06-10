@@ -45,6 +45,21 @@ fi
 # instead of hanging the runner.
 timeout 60 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null" || echo "KILL timed out"
 
+# Bound the wait for the client too: with a broken cancellation path the client never exits on its
+# own (the query may ignore max_execution_time as well), and an unbounded wait would hang the test
+# runner instead of failing the test.
+client_exited=0
+for _ in {1..600}; do
+    if ! kill -0 "$query_pid" 2>/dev/null; then
+        client_exited=1
+        break
+    fi
+    sleep 0.1
+done
+if [ "$client_exited" -eq 0 ]; then
+    echo "client did not exit"
+    kill -9 "$query_pid" 2>/dev/null
+fi
 wait "$query_pid" 2>/dev/null || true
 
 lingering=1
