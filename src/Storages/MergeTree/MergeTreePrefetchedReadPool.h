@@ -112,7 +112,8 @@ private:
 
     void preparePrefetchedReadersIfNeeded(ThreadTask & task);
 
-    MergeTreeReadTaskPtr stealTask(size_t thread, MergeTreeReadTask * previous_task);
+    /// Must be called with `mutex` held. Returns a task to prepare outside the lock.
+    ThreadTaskPtr stealTaskLocked(size_t thread);
     MergeTreeReadTaskPtr createTask(ThreadTask & thread_task, MergeTreeReadTask * previous_task);
 
     static std::string dumpTasks(const TasksPerThread & tasks);
