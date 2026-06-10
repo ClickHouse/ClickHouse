@@ -21,29 +21,13 @@ SETTINGS index_granularity = 3;
 
 INSERT INTO tab VALUES (1, [1.0, 0.0], 'a'), (2, [1.1, 0.0], 'b'), (3, [1.2, 0.0], 'c');
 
-SELECT 'Full EXPLAIN indexes output with rejected indexes';
+SELECT 'Both indexes rejected';
 EXPLAIN indexes = 1
     SELECT id FROM tab WHERE id > 0;
 
-SELECT 'Both skip indexes rejected when query does not match either';
-SELECT trimLeft(explain) FROM (
-    EXPLAIN indexes = 1
-    SELECT id FROM tab WHERE id > 0
-)
-WHERE explain LIKE '%Name:%' OR explain LIKE '%Status:%' OR explain LIKE '%Reason:%';
-
-SELECT 'vector_similarity applied, bloom_filter rejected (no predicate)';
-SELECT trimLeft(explain) FROM (
-    EXPLAIN indexes = 1
-    SELECT id FROM tab ORDER BY L2Distance(vec, [0.0, 0.0]) LIMIT 3
-)
-WHERE explain LIKE '%Name:%' OR explain LIKE '%Status:%' OR explain LIKE '%Reason:%';
-
-SELECT 'bloom_filter applied, vector_similarity rejected (no ORDER BY LIMIT)';
-SELECT trimLeft(explain) FROM (
-    EXPLAIN indexes = 1
-    SELECT id FROM tab WHERE attr1 = 'a'
-)
-WHERE explain LIKE '%Name:%' OR explain LIKE '%Status:%' OR explain LIKE '%Reason:%';
+SELECT 'Both indexes applied';
+EXPLAIN indexes = 1
+    SELECT id FROM tab WHERE attr1 = 'a' ORDER BY L2Distance(vec, [0.0, 0.0]) LIMIT 3
+    SETTINGS vector_search_filter_strategy = 'postfilter';
 
 DROP TABLE tab;

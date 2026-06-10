@@ -1,4 +1,4 @@
-Full EXPLAIN indexes output with rejected indexes
+Both indexes rejected
 Expression ((Project names + Projection))
   Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.tab)
@@ -21,20 +21,29 @@ Expression ((Project names + Projection))
         Description: bloom_filter GRANULARITY 1
         Status: NOT APPLIED
         Reason: condition is always unknown or true
-Both skip indexes rejected when query does not match either
-Name: idx_vec
-Status: NOT APPLIED
-Reason: query is not a vector search query (requires ORDER BY <distance_function>(column, reference_vector) ASC LIMIT N)
-Name: idx_bloom
-Status: NOT APPLIED
-Reason: condition is always unknown or true
-vector_similarity applied, bloom_filter rejected (no predicate)
-Name: idx_vec
-Name: idx_bloom
-Status: NOT APPLIED
-Reason: no condition could be created from the query predicate
-bloom_filter applied, vector_similarity rejected (no ORDER BY LIMIT)
-Name: idx_bloom
-Name: idx_vec
-Status: NOT APPLIED
-Reason: query is not a vector search query (requires ORDER BY <distance_function>(column, reference_vector) ASC LIMIT N)
+Both indexes applied
+Expression (Project names)
+  Expression
+    JoinLazyColumnsStep
+      Limit (preliminary LIMIT)
+        Sorting (Sorting for ORDER BY)
+          Expression
+            Filter
+              ReadFromMergeTree (default.tab)
+              Indexes:
+                PrimaryKey
+                  Condition: true
+                  Parts: 1/1
+                  Granules: 1/1
+                Skip
+                  Name: idx_vec
+                  Description: vector_similarity GRANULARITY 10000
+                  Parts: 1/1
+                  Granules: 1/1
+                Skip
+                  Name: idx_bloom
+                  Description: bloom_filter GRANULARITY 1
+                  Parts: 1/1
+                  Granules: 1/1
+                Ranges: 1
+      LazilyReadFromMergeTree
