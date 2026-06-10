@@ -4344,10 +4344,32 @@ class ClickHouseCluster:
     def _unpause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["unpause", instance_name])
 
+    def _signal_clickhouse_in_container(self, instance_name, signal_name):
+        # Returns True if a `clickhouse` process was signaled inside the
+        # container; False if no such process exists so callers can fall
+        # back to signaling the container's main process.
+        container_id = self.get_container_id(instance_name)
+        result = self.exec_in_container(
+            container_id,
+            ["bash", "-c", "pkill -{} clickhouse; echo $?".format(signal_name)],
+            nothrow=True,
+            user="root",
+        )
+        last_line = (result or "").strip().splitlines()[-1] if result else ""
+        return last_line == "0"
+
     def _pause_container_using_signal(self, instance_name):
+        # ClickHouse runs as a child of the bash entrypoint at PID 1, and
+        # bash does not propagate uncatchable signals to children, so we
+        # must target the `clickhouse` process directly. For non-ClickHouse
+        # containers (Kafka, MongoDB, etc.) PID 1 is the service itself.
+        if self._signal_clickhouse_in_container(instance_name, "STOP"):
+            return
         subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGSTOP", instance_name])
 
     def _unpause_container_using_signal(self, instance_name):
+        if self._signal_clickhouse_in_container(instance_name, "CONT"):
+            return
         subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGCONT", instance_name])
 
     def _wait_for_pause_effective(self, instance_name, timeout):
@@ -5314,6 +5336,7 @@ class ClickHouseInstance:
             raise Exception(
                 "clickhouse can be stopped only with stay_alive=True instance"
             )
+
         try:
             ps_clickhouse = self.exec_in_container(
                 ["bash", "-c", "ps --no-header -C clickhouse"], nothrow=True, user="root"
@@ -5321,6 +5344,26 @@ class ClickHouseInstance:
             if not ps_clickhouse:
                 logging.warning("ClickHouse process already stopped")
                 return False
+
+            # Under LLVM coverage the server runs several times slower and writes its
+            # .profraw only on a graceful shutdown (the libprofile atexit handler, or
+            # dumpCoverageReportIfPossible() on the forced-shutdown path). Escalating to
+            # SIGKILL loses everything this process executed. So for a graceful stop give
+            # the server a much larger window to finish shutting down (and flush coverage)
+            # before the force-kill below. We detect a coverage build from
+            # system.build_options (cached; the server is confirmed up at this point),
+            # which is reliable - unlike LLVM_PROFILE_FILE, which is set for every
+            # container regardless of build. restart_clickhouse() delegates here, so it
+            # is covered too.
+            if not kill and stop_wait_sec < 180:
+                if getattr(self, "_built_with_llvm_coverage", None) is None:
+                    try:
+                        self._built_with_llvm_coverage = self.is_built_with_llvm_coverage()
+                    except Exception as e:
+                        logging.warning(f"Could not detect LLVM coverage build: {e}")
+                        self._built_with_llvm_coverage = False
+                if self._built_with_llvm_coverage:
+                    stop_wait_sec = 180
 
             self.exec_in_container(
                 ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "-15")],

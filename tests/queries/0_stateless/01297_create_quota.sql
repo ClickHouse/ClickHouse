@@ -247,3 +247,74 @@ CREATE QUOTA q5_01297 FOR INTERVAL 1 MINUTE MAX query_selects = '1K1'; -- { clie
 CREATE QUOTA q6_01297 FOR INTERVAL 1 MINUTE MAX execution_time = '1K1'; -- { clientError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
 CREATE QUOTA q7_01297 FOR INTERVAL 1 MINUTE MAX query_selects = 'foo'; -- { clientError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
 CREATE QUOTA q8_01297 FOR INTERVAL 1 MINUTE MAX execution_time = 'bar'; -- { clientError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
+
+SELECT '-- ip prefix bits';
+CREATE QUOTA q1_01297 KEYED BY ip_address ipv4_prefix_bits 24;
+CREATE QUOTA q2_01297 KEYED BY ip_address ipv6_prefix_bits 64;
+CREATE QUOTA q3_01297 KEYED BY ip_address ipv4_prefix_bits 16 ipv6_prefix_bits 48;
+CREATE QUOTA q4_01297 KEYED BY ip_address ipv4_prefix_bits 0;
+CREATE QUOTA q5_01297 KEYED BY ip_address ipv4_prefix_bits 32 ipv6_prefix_bits 128;
+CREATE QUOTA q6_01297 KEYED BY ip_address ipv6_prefix_bits 64 ipv4_prefix_bits 24;
+SHOW CREATE QUOTA q1_01297;
+SHOW CREATE QUOTA q2_01297;
+SHOW CREATE QUOTA q3_01297;
+SHOW CREATE QUOTA q4_01297;
+SHOW CREATE QUOTA q5_01297;
+SHOW CREATE QUOTA q6_01297;
+ALTER QUOTA q1_01297 KEYED BY ip_address ipv4_prefix_bits 8 ipv6_prefix_bits 32;
+SHOW CREATE QUOTA q1_01297;
+ALTER QUOTA q6_01297 KEYED BY ip_address ipv6_prefix_bits 96 ipv4_prefix_bits 16;
+SHOW CREATE QUOTA q6_01297;
+
+SELECT '-- alter prefix bits independently';
+ALTER QUOTA q1_01297 ipv4_prefix_bits 16;
+SHOW CREATE QUOTA q1_01297;
+ALTER QUOTA q1_01297 ipv6_prefix_bits 96;
+SHOW CREATE QUOTA q1_01297;
+ALTER QUOTA q1_01297 ipv4_prefix_bits 20 ipv6_prefix_bits 80;
+SHOW CREATE QUOTA q1_01297;
+
+SELECT '-- alter prefix bits ON CLUSTER without KEYED BY (round-trips through formatImpl)';
+-- `ON CLUSTER` serializes the query AST via `formatImpl` and re-parses it on each
+-- replica. For `ALTER QUOTA q IPV4_PREFIX_BITS 16` (no `KEYED BY`) the AST has no
+-- `key_type`, so this exercises the `key_type == std::nullopt` formatter branch:
+-- a regression there would silently drop the prefix bits during distribution.
+SET distributed_ddl_output_mode = 'none';
+ALTER QUOTA q1_01297 ON CLUSTER test_shard_localhost ipv4_prefix_bits 16 ipv6_prefix_bits 80;
+SET distributed_ddl_output_mode = 'throw';
+SHOW CREATE QUOTA q1_01297;
+
+SELECT '-- system.quotas prefix bits';
+SELECT name, ipv4_prefix_bits, ipv6_prefix_bits FROM system.quotas WHERE name LIKE 'q%\_01297' ORDER BY name;
+
+DROP QUOTA IF EXISTS q1_01297, q2_01297, q3_01297, q4_01297, q5_01297, q6_01297;
+
+SELECT '-- ip prefix bits with intervals';
+CREATE QUOTA q1_01297 KEYED BY ip_address ipv4_prefix_bits 24 ipv6_prefix_bits 64 FOR INTERVAL 1 hour MAX queries = 100;
+SHOW CREATE QUOTA q1_01297;
+DROP QUOTA IF EXISTS q1_01297;
+
+SELECT '-- ip prefix bits invalid';
+CREATE QUOTA q1_01297 KEYED BY ip_address ipv4_prefix_bits 33; -- { clientError SYNTAX_ERROR }
+CREATE QUOTA q2_01297 KEYED BY ip_address ipv6_prefix_bits 129; -- { clientError SYNTAX_ERROR }
+CREATE QUOTA q3_01297 KEYED BY user_name ipv4_prefix_bits 24; -- { clientError SYNTAX_ERROR }
+CREATE QUOTA q4_01297 NOT KEYED ipv6_prefix_bits 64; -- { clientError SYNTAX_ERROR }
+CREATE QUOTA q5_01297 KEYED BY ip_address ipv4_prefix_bits 24.9; -- { clientError SYNTAX_ERROR }
+CREATE QUOTA q6_01297 KEYED BY ip_address ipv6_prefix_bits 64.1; -- { clientError SYNTAX_ERROR }
+
+SELECT '-- alter prefix bits on non-ip-keyed quota is rejected';
+CREATE QUOTA q1_01297 KEYED BY user_name;
+ALTER QUOTA q1_01297 ipv4_prefix_bits 24; -- { serverError BAD_ARGUMENTS }
+ALTER QUOTA q1_01297 ipv6_prefix_bits 64; -- { serverError BAD_ARGUMENTS }
+DROP QUOTA IF EXISTS q1_01297;
+
+SELECT '-- prefix bits cleared when key type changes away from ip';
+CREATE QUOTA q1_01297 KEYED BY ip_address ipv4_prefix_bits 24 ipv6_prefix_bits 64;
+SHOW CREATE QUOTA q1_01297;
+ALTER QUOTA q1_01297 KEYED BY client_key;
+SHOW CREATE QUOTA q1_01297;
+SELECT name, ipv4_prefix_bits, ipv6_prefix_bits FROM system.quotas WHERE name = 'q1_01297';
+ALTER QUOTA q1_01297 KEYED BY ip_address;
+SHOW CREATE QUOTA q1_01297;
+SELECT name, ipv4_prefix_bits, ipv6_prefix_bits FROM system.quotas WHERE name = 'q1_01297';
+DROP QUOTA IF EXISTS q1_01297;
