@@ -329,6 +329,17 @@ const arrow::BooleanArray & checkedCastBool(const arrow::Array & array, const St
     return typed;
 }
 
+/// Validate every chunk with `validate` before the caller reserves column memory based on
+/// arrow_column->length().  Without this, an inflated or buffer-inconsistent declared length
+/// makes reserve() throw CANNOT_ALLOCATE_MEMORY instead of a clean INCORRECT_DATA from the
+/// per-chunk validator.  Use the same validator the reader's main loop uses.
+template <typename Validator>
+void validateChunksBeforeReserve(const arrow::ChunkedArray & arrow_column, Validator && validate)
+{
+    for (int chunk_i = 0, num_chunks = arrow_column.num_chunks(); chunk_i < num_chunks; ++chunk_i)
+        validate(*arrow_column.chunk(chunk_i));
+}
+
 }
 
 /// Inserts numeric data right into internal column data to reduce an overhead
@@ -338,6 +349,11 @@ static ColumnWithTypeAndName readColumnWithNumericData(const std::shared_ptr<arr
     auto internal_type = std::make_shared<DataTypeNumber<NumericType>>();
     auto internal_column = internal_type->createColumn();
     auto & column_data = static_cast<VectorType &>(*internal_column).getData();
+
+    /// Validate every chunk's data buffer before reserving column memory: an inflated
+    /// (or buffer-inconsistent) declared length must surface as INCORRECT_DATA rather than
+    /// a huge reserve() that throws CANNOT_ALLOCATE_MEMORY.
+    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkArrowBuffer(chunk, sizeof(NumericType), column_name); });
     column_data.reserve(arrow_column->length());
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -384,6 +400,7 @@ static ColumnWithTypeAndName readColumnWithDurationData(const std::shared_ptr<ar
     auto internal_type = std::make_shared<DataTypeInterval>(IntervalKind(*interval_kind));
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnVector<Int64> &>(*internal_column).getData();
+    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkArrowBuffer(chunk, sizeof(Int64), column_name); });
     column_data.reserve(arrow_column->length());
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -683,6 +700,7 @@ static ColumnWithTypeAndName readColumnWithFixedStringData(const std::shared_ptr
     auto internal_type = std::make_shared<DataTypeFixedString>(fixed_len);
     auto internal_column = internal_type->createColumn();
     PaddedPODArray<UInt8> & column_chars = assert_cast<ColumnFixedString &>(*internal_column).getChars();
+    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCastFixedSizeBinary(chunk, column_name); });
     column_chars.reserve(arrow_column->length() * fixed_len);
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -712,6 +730,7 @@ static ColumnWithTypeAndName readColumnWithBigIntegerFromFixedBinaryData(const s
 
     auto internal_column = column_type->createColumn();
     auto & data = assert_cast<ColumnVector<ValueType> &>(*internal_column).getData();
+    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCastFixedSizeBinary(chunk, column_name); });
     data.reserve(arrow_column->length());
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -783,6 +802,7 @@ static ColumnWithTypeAndName readColumnWithBooleanData(const std::shared_ptr<arr
     auto internal_type = DataTypeFactory::instance().get("Bool");
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnVector<UInt8> &>(*internal_column).getData();
+    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCastBool(chunk, column_name); });
     column_data.reserve(arrow_column->length());
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -816,6 +836,7 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
 
     auto internal_column = internal_type->createColumn();
     PaddedPODArray<Int32> & column_data = assert_cast<ColumnVector<Int32> &>(*internal_column).getData();
+    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCast<arrow::Date32Array>(chunk, column_name); });
     column_data.reserve(arrow_column->length());
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -866,6 +887,7 @@ static ColumnWithTypeAndName readColumnWithDate64Data(const std::shared_ptr<arro
     auto internal_type = std::make_shared<DataTypeDateTime>();
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnVector<UInt32> &>(*internal_column).getData();
+    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCast<arrow::Date64Array>(chunk, column_name); });
     column_data.reserve(arrow_column->length());
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -890,6 +912,7 @@ static ColumnWithTypeAndName readColumnWithTimestampData(const std::shared_ptr<a
     auto internal_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnDecimal<DateTime64> &>(*internal_column).getData();
+    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCast<arrow::TimestampArray>(chunk, column_name); });
     column_data.reserve(arrow_column->length());
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -910,6 +933,7 @@ static ColumnWithTypeAndName readColumnWithTimeData(const std::shared_ptr<arrow:
     const UInt8 scale = arrow_type.unit() * 3;
     auto internal_type = std::make_shared<DataTypeDateTime64>(scale);
     auto internal_column = internal_type->createColumn();
+    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCast<TimeArray>(chunk, column_name); });
     internal_column->reserve(arrow_column->length());
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -943,6 +967,7 @@ static ColumnWithTypeAndName readColumnWithDecimalDataImpl(const std::shared_ptr
     auto internal_column = internal_type->createColumn();
     auto & column = assert_cast<ColumnDecimal<DecimalType> &>(*internal_column);
     auto & column_data = column.getData();
+    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCastFixedSizeBinary<DecimalArray>(chunk, column_name); });
     column_data.reserve(arrow_column->length());
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -960,6 +985,7 @@ static ColumnWithTypeAndName readColumnWithFloat16Data(const std::shared_ptr<arr
 {
     auto column = ColumnFloat32::create();
     auto & column_data = column->getData();
+    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCast<arrow::HalfFloatArray>(chunk, column_name); });
     column_data.reserve(arrow_column->length());
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -993,6 +1019,7 @@ static ColumnWithTypeAndName readColumnWithUUIDFromFixedBinaryData(
 {
     auto column = type_hint->createColumn();
     auto & column_data = assert_cast<ColumnVector<UUID> &>(*column).getData();
+    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCastFixedSizeBinary(chunk, column_name); });
     column_data.reserve(arrow_column->length());
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -1230,6 +1257,7 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
     auto internal_type = std::make_shared<DataTypeNumber<NumericType>>();
     auto internal_column = internal_type->createColumn();
     auto & column_data = static_cast<VectorType &>(*internal_column).getData();
+    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkArrowBuffer(chunk, sizeof(NumericType), column_name); });
     column_data.reserve(arrow_column->length());
     NumericType shift = is_nullable ? 2 : 1;
 
@@ -1503,6 +1531,7 @@ static ColumnWithTypeAndName readIPv4ColumnWithInt32Data(const std::shared_ptr<a
     auto internal_type = std::make_shared<DataTypeIPv4>();
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnIPv4 &>(*internal_column).getData();
+    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkArrowBuffer(chunk, sizeof(IPv4), column_name); });
     column_data.reserve(arrow_column->length());
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -2210,6 +2239,20 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
     const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet)
 {
+    /// Reject malformed chunk lengths/offsets up front, before any reader reserves column
+    /// memory based on arrow_column->length(): a negative length wraps to a huge size_t and
+    /// an absurd length makes reserve() throw CANNOT_ALLOCATE_MEMORY instead of INCORRECT_DATA.
+    /// This runs for every nested level too, since the function recurses for nested types.
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+    {
+        const auto & chunk = *arrow_column->chunk(chunk_i);
+        if (unlikely(chunk.length() < 0 || chunk.offset() < 0))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow array has negative length or offset for column '{}': length={}, offset={}",
+                column_name, chunk.length(), chunk.offset());
+    }
+
     bool type_hint_not_nullable_capable = type_hint && !removeNullable(type_hint)->canBeInsideNullable();
     bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&

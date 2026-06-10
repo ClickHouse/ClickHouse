@@ -51,6 +51,12 @@
 # Class H — monotonic offsets pointing past values.length:
 #   List / LargeList whose empty-list offsets are patched [0,0]→[1,1]; offsets are
 #   non-negative and monotonic but exceed values.length (0).  Rejected before Flatten.
+#
+# Class I — top-level declared length inconsistent with buffers:
+#   Fixed-width columns (Int32, Bool, Decimal) and an empty Struct whose RecordBatch /
+#   FieldNode length is patched negative or to 2^62, plus a LargeList that derives a 2^62
+#   flattened child length from 64-bit offsets over a one-element child.  Each must be
+#   rejected as INCORRECT_DATA before the column reserve, not as CANNOT_ALLOCATE_MEMORY.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -296,6 +302,37 @@ open(f'{out}/list_offset_past_values.arrow', 'wb').write(
     patch_offsets_past_values(pa.array([[]], type=pa.list_(pa.int32())), struct.pack('<2i', 1, 1)))
 open(f'{out}/largelist_offset_past_values.arrow', 'wb').write(
     patch_offsets_past_values(pa.array([[]], type=pa.large_list(pa.int32())), struct.pack('<2q', 1, 1)))
+
+# Class I — top-level declared length inconsistent with buffers (negative, or huge).
+# Patch every aligned int64 equal to the 5-row count (RecordBatch.length and FieldNode.length;
+# the data values avoid 5).  Readers must reject via the non-negative entry check / per-reader
+# buffer validation rather than reserve() throwing CANNOT_ALLOCATE_MEMORY.
+def patch_row_count(arr, new, name, count=5):
+    data = bytearray(write_arrow(arr, name=name))
+    pos = [i for i in range(0, len(data) - 7, 8) if struct.unpack_from('<q', data, i)[0] == count]
+    assert len(pos) >= 2, f"expected >=2 aligned int64={count}, got {len(pos)}"
+    for p in pos:
+        data[p:p+8] = struct.pack('<q', new)
+    return data
+
+NEG = -1
+HUGE = 1 << 62
+open(f'{out}/int32_neg_length.arrow', 'wb').write(patch_row_count(pa.array([11,22,33,44,66], type=pa.int32()), NEG, 'x'))
+open(f'{out}/int32_huge_length.arrow', 'wb').write(patch_row_count(pa.array([11,22,33,44,66], type=pa.int32()), HUGE, 'x'))
+open(f'{out}/bool_neg_length.arrow', 'wb').write(patch_row_count(pa.array([True,False,True,False,True], type=pa.bool_()), NEG, 'x'))
+open(f'{out}/decimal_huge_length.arrow', 'wb').write(patch_row_count(pa.array([11,22,33,44,66], type=pa.decimal128(10,2)), HUGE, 'x'))
+open(f'{out}/empty_struct_neg_length.arrow', 'wb').write(patch_row_count(pa.array([{} for _ in range(5)], type=pa.struct([])), NEG, 's'))
+
+# LargeList that derives a huge flattened child length from 64-bit offsets while the child data
+# buffer holds one Int32: offsets patched [0,1]->[0,2^62] and child FieldNode.length ->2^62.
+ll = bytearray(write_arrow(pa.array([[123]], type=pa.large_list(pa.int32())), name='x'))
+fn = ll.find(struct.pack('<4q', 1, 0, 1, 0))
+assert fn >= 0, "LargeList FieldNode pattern not found"
+ll[fn+16:fn+24] = struct.pack('<q', HUGE)  # child FieldNode.length -> 2^62
+ob = ll.find(struct.pack('<2q', 0, 1))
+assert ob >= 0, "LargeList offset buffer [0,1] not found"
+ll[ob:ob+16] = struct.pack('<2q', 0, HUGE)  # offsets -> [0, 2^62]
+open(f'{out}/largelist_huge_child_length.arrow', 'wb').write(ll)
 PYEOF
 
 check_incorrect_data() {
@@ -359,3 +396,21 @@ check_incorrect_data list_offset_past_values \
 
 check_incorrect_data largelist_offset_past_values \
     $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/largelist_offset_past_values.arrow', Arrow)"
+
+check_incorrect_data int32_neg_length \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/int32_neg_length.arrow', Arrow)"
+
+check_incorrect_data int32_huge_length \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/int32_huge_length.arrow', Arrow)"
+
+check_incorrect_data bool_neg_length \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/bool_neg_length.arrow', Arrow)"
+
+check_incorrect_data decimal_huge_length \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/decimal_huge_length.arrow', Arrow)"
+
+check_incorrect_data empty_struct_neg_length \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/empty_struct_neg_length.arrow', Arrow)"
+
+check_incorrect_data largelist_huge_child_length \
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/largelist_huge_child_length.arrow', Arrow)"
