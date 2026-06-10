@@ -16,19 +16,19 @@ DROP TABLE IF EXISTS t_allowed_custom_named;
 
 CREATE TABLE t_reject_top_level (id UInt32, t Nullable(Tuple(a UInt64, b UInt64)))
 ENGINE = SummingMergeTree ORDER BY id
-SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+SETTINGS allow_tuple_element_aggregation = 1; -- { serverError NOT_IMPLEMENTED }
 
 CREATE TABLE t_reject_nested (id UInt32, metrics Tuple(a UInt64, inner Nullable(Tuple(b UInt64))))
 ENGINE = SummingMergeTree ORDER BY id
-SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+SETTINGS allow_tuple_element_aggregation = 1; -- { serverError NOT_IMPLEMENTED }
 
 CREATE TABLE t_reject_aggregating (id UInt32, t Nullable(Tuple(v SimpleAggregateFunction(sum, UInt64))))
 ENGINE = AggregatingMergeTree ORDER BY id
-SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+SETTINGS allow_tuple_element_aggregation = 1; -- { serverError NOT_IMPLEMENTED }
 
 CREATE TABLE t_reject_coalescing (id UInt32, t Nullable(Tuple(a Nullable(UInt64))))
 ENGINE = CoalescingMergeTree ORDER BY id
-SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+SETTINGS allow_tuple_element_aggregation = 1; -- { serverError NOT_IMPLEMENTED }
 
 -- Allowed when the feature is disabled.
 CREATE TABLE t_allowed_when_disabled (id UInt32, t Nullable(Tuple(a UInt64, b UInt64)))
