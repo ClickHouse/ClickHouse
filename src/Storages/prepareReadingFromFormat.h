@@ -99,4 +99,10 @@ namespace DB
 
     /// Returns the serialization hints from the insertion table (if it's set in the Context).
     SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);
+
+    /// Clamp the user-controlled max_streams_for_files_processing_in_cluster_functions setting to the
+    /// same ceiling max_threads gets. The value flows into both num_streams and max_num_streams of the
+    /// *Cluster read steps and drives pipes.reserve()/pipe.resize(); unbounded it can overflow the pipe
+    /// vector (std::length_error) or exhaust memory.
+    size_t clampClusterFunctionNumStreams(UInt64 num_streams);
 }

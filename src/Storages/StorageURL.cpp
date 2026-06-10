@@ -36,7 +36,6 @@
 #include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Common/CurrentThread.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/parseRemoteDescription.h>
@@ -1216,13 +1215,8 @@ void IStorageURLBase::read(
     size_t num_streams)
 {
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
-    {
-        /// User-controlled and unbounded; clamp to the same ceiling max_threads gets so it cannot
-        /// overflow the pipe vector or blow up pipe.resize(max_num_streams) below.
-        num_streams = std::min<size_t>(
-            local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions],
-            256 * getNumberOfCPUCoresToUse());
-    }
+        num_streams = clampClusterFunctionNumStreams(
+            local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
 
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
     auto read_from_format_info = prepareReadingFromFormat(
