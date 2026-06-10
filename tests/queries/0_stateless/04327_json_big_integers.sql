@@ -42,3 +42,14 @@ SELECT '{"a" : 123456789123456789123456789}'::JSON(a String) AS j, j.a;
 
 SELECT '-- Untyped path: big integer inferred as String in dynamic JSON';
 SELECT '{"a" : 123456789123456789123456789}'::JSON AS j, j.a, dynamicType(j.a);
+
+SELECT '-- Big integer does not break extraction of other fields (issue #81132)';
+SELECT JSONExtractString('{"id":"123","big_number":100000000000000000000000000}', 'id');
+
+SELECT '-- isValidJSON with big integer (issue #45782)';
+SELECT isValidJSON('{"value": 7230000000000000000000000000000000000000000000000000000000000000000000000000}');
+
+SELECT '-- JSONExtract functions with big integers (issue #49895)';
+SELECT
+    JSONExtractString('{ "a": -57783588950605040000 }', 'a'),
+    JSONExtractFloat('{ "a": -57783588950605040000 }', 'a');

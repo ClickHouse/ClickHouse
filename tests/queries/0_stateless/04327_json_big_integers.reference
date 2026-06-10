@@ -25,3 +25,9 @@
 {"a":"123456789123456789123456789"}	123456789123456789123456789
 -- Untyped path: big integer inferred as String in dynamic JSON
 {"a":"123456789123456789123456789"}	123456789123456789123456789	String
+-- Big integer does not break extraction of other fields (issue #81132)
+123
+-- isValidJSON with big integer (issue #45782)
+1
+-- JSONExtract functions with big integers (issue #49895)
+-57783588950605040000	-57783588950605040000
