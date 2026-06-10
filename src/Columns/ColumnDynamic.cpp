@@ -776,7 +776,7 @@ std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena,
 void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     auto & variant_col = getVariantColumn();
-    UInt8 null_bit;
+    UInt8 null_bit = 0;
     readBinaryLittleEndian<UInt8>(null_bit, in);
     if (null_bit)
     {
@@ -785,7 +785,7 @@ void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
     }
 
     /// Read variant type and value in binary format.
-    size_t type_and_value_size;
+    size_t type_and_value_size = 0;
     readBinaryLittleEndian<size_t>(type_and_value_size, in);
     if (in.available() < type_and_value_size)
         throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after eof when deserializing ColumnDynamic");
@@ -820,12 +820,12 @@ void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
 
 void ColumnDynamic::skipSerializedInArena(ReadBuffer & in) const
 {
-    UInt8 null_bit;
+    UInt8 null_bit = 0;
     readBinaryLittleEndian<UInt8>(null_bit, in);
     if (null_bit)
         return;
 
-    size_t type_and_value_size;
+    size_t type_and_value_size = 0;
     readBinaryLittleEndian<size_t>(type_and_value_size, in);
     in.ignore(type_and_value_size);
 }
@@ -858,6 +858,11 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
 
     hash.update(variant_info.variant_names[discr]);
     variant_col.getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_col.offsetAt(n), hash);
+}
+
+void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    variant_column_ptr->updateHashWithValueRange(begin, end, hash);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

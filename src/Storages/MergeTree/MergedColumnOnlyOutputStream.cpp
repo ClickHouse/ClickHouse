@@ -51,7 +51,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         columns_list_,
         data_part->getColumnPositions(),
         metadata_snapshot_,
-        data_part->storage.getVirtualsPtr(),
         indices_to_recalc,
         data_part->getMarksFileExtension(),
         default_codec,
@@ -65,7 +64,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     if (!block.rows())
         return;
 
-    writer->write(block, nullptr);
+    writer->write(block, nullptr, nullptr);
     new_serialization_infos.add(block);
 }
 
@@ -83,14 +82,6 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
 
     for (const auto & filename : checksums_to_remove)
         all_checksums.files.erase(filename);
-
-    for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
-    {
-        checksums.addFile(
-            projection_name + ".proj",
-            projection_part->checksums.getTotalSizeOnDisk(),
-            projection_part->checksums.getTotalChecksumUInt128());
-    }
 
     auto columns = new_part->getColumns();
     auto serialization_infos = new_part->getSerializationInfos();

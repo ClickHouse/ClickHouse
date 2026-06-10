@@ -1,0 +1,16 @@
+<test>
+    <!-- GROUP BY ... ORDER BY min/max LIMIT K pattern.
+         Exercises the TopNAggregation optimization when enabled. -->
+
+    <!-- max(EventTime) DESC, ~130K groups (CounterID) -->
+    <query>SELECT CounterID, max(EventTime) AS m FROM hits_100m_single GROUP BY CounterID ORDER BY m DESC LIMIT 10 FORMAT Null</query>
+
+    <!-- min(EventTime) ASC, ~100K synthetic groups -->
+    <query>SELECT intHash32(UserID) % 100000 AS k, min(EventTime) AS m FROM hits_100m_single GROUP BY k ORDER BY m ASC LIMIT 10 FORMAT Null</query>
+
+    <!-- max(EventTime) DESC, larger LIMIT -->
+    <query>SELECT CounterID, max(EventTime) AS m FROM hits_100m_single GROUP BY CounterID ORDER BY m DESC LIMIT 100 FORMAT Null</query>
+
+    <!-- max(CounterID) DESC with CounterID as the first sorting key column -->
+    <query>SELECT RegionID, max(CounterID) AS m FROM hits_100m_single GROUP BY RegionID ORDER BY m DESC LIMIT 10 FORMAT Null</query>
+</test>

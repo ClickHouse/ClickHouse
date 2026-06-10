@@ -26,6 +26,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Core/UUID.h>
 
 
 namespace DB
@@ -599,6 +600,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_sample_by(Keyword::SAMPLE_BY);
     ParserKeyword s_ttl(Keyword::TTL);
     ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_unique_key(Keyword::UNIQUE_KEY);
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
@@ -613,6 +615,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr order_by;
     ASTPtr sample_by;
     ASTPtr ttl_table;
+    ASTPtr unique_key;
     ASTPtr settings;
 
     bool storage_like = false;
@@ -652,6 +655,16 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!order_by && s_order_by.ignore(pos, expected))
         {
             if (order_by_p.parse(pos, order_by, expected))
+            {
+                storage_like = true;
+                continue;
+            }
+            return false;
+        }
+
+        if (!unique_key && s_unique_key.ignore(pos, expected))
+        {
+            if (expression_p.parse(pos, unique_key, expected))
             {
                 storage_like = true;
                 continue;
@@ -717,6 +730,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     storage->set(storage->order_by, order_by);
     storage->set(storage->sample_by, sample_by);
     storage->set(storage->ttl_table, ttl_table);
+    storage->set(storage->unique_key, unique_key);
     storage->set(storage->settings, settings);
 
     node = storage;
@@ -843,6 +857,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->table = table_id->getTable();
         query->uuid = table_id->uuid;
         query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
+        query->has_uuid_clause = table_id->has_uuid;
+        query->has_inner_uuid_clause = to_inner_uuid != nullptr;
         query->setIsTemporary(is_temporary);
 
         query->attach_as_replicated = attach_as_replicated;
@@ -867,7 +883,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (storage && storage->engine && (storage->engine->name == "TimeSeries"))
         {
             is_time_series_table = true;
-            ParserViewTargets({ViewTarget::Data, ViewTarget::Tags, ViewTarget::Metrics}).parse(pos, targets, expected);
+            ParserViewTargets({ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics}).parse(pos, targets, expected);
         }
 
         return true;
@@ -1001,6 +1017,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->table = table_id->getTable();
     query->uuid = table_id->uuid;
     query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
+    query->has_uuid_clause = table_id->has_uuid;
+    query->has_inner_uuid_clause = to_inner_uuid != nullptr;
     query->cluster = cluster_str;
 
     if (query->database)
@@ -1053,7 +1071,10 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (to_inner_uuid)
     {
         if (!storage || !storage->engine || (storage->engine->name != "SharedSet" && storage->engine->name != "SharedJoin"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage engine {} does not inner UUID", storage->engine->name);
+        {
+            const String engine_name = (storage && storage->engine) ? storage->engine->name : "(no engine)";
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage engine {} does not support inner UUID", engine_name);
+        }
 
         if (targets)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "targets are already defined {}", targets->formatForErrorMessage());
@@ -1255,6 +1276,8 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
     query->uuid = table_id->uuid;
+    query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
+    query->has_uuid_clause = table_id->has_uuid;
     query->cluster = cluster_str;
 
     if (query->database)
@@ -1454,6 +1477,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     if (!name_p.parse(pos, database, expected))
         return false;
 
+    bool has_uuid_clause = false;
     if (s_uuid.ignore(pos, expected))
     {
         ParserStringLiteral uuid_p;
@@ -1461,6 +1485,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         if (!uuid_p.parse(pos, ast_uuid, expected))
             return false;
         uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
+        has_uuid_clause = true;
     }
 
     if (s_on.ignore(pos, expected))
@@ -1483,6 +1508,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     query->uuid = uuid;
     query->has_uuid = uuid != UUIDHelpers::Nil;
+    query->has_uuid_clause = has_uuid_clause;
     query->cluster = cluster_str;
     query->database = database;
 
@@ -1563,7 +1589,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     sql_security_p.parse(pos, sql_security, expected);
 
-    if (!replace_view && s_materialized.ignore(pos, expected))
+    if (s_materialized.ignore(pos, expected))
     {
         is_materialized_view = true;
     }
@@ -1740,6 +1766,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
     query->uuid = table_id->uuid;
+    query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
+    query->has_uuid_clause = table_id->has_uuid;
     query->cluster = cluster_str;
 
     if (query->database)
@@ -1973,6 +2001,8 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->database = dict_id->getDatabase();
     query->table = dict_id->getTable();
     query->uuid = dict_id->uuid;
+    query->has_uuid = dict_id->uuid != UUIDHelpers::Nil;
+    query->has_uuid_clause = dict_id->has_uuid;
 
     if (query->database)
         query->children.push_back(query->database);

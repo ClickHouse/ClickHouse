@@ -223,6 +223,7 @@ public:
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
@@ -345,6 +346,9 @@ public:
     /// and filter out rows in variants if needed.
     void applyNullMap(const ColumnVector<UInt8>::Container & null_map);
     void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map);
+
+    /// Create a null map column from the discriminators: 1 for NULL_DISCRIMINATOR rows, 0 otherwise.
+    ColumnPtr createNullMap() const;
 
     /// Extend current column with new variants. Change global discriminators of current variants to the new
     /// according to the mapping and add new variants with new global discriminators.

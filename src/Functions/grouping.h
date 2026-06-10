@@ -2,8 +2,6 @@
 
 #include <base/defines.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -80,7 +78,7 @@ public:
     }
 };
 
-class FunctionGrouping : public FunctionGroupingBase
+class FunctionGrouping final : public FunctionGroupingBase
 {
 public:
     explicit FunctionGrouping(bool force_compatibility_)
@@ -96,7 +94,7 @@ public:
     }
 };
 
-class FunctionGroupingOrdinary : public FunctionGroupingBase
+class FunctionGroupingOrdinary final : public FunctionGroupingBase
 {
 public:
     FunctionGroupingOrdinary(ColumnNumbers arguments_indexes_, bool force_compatibility_)
@@ -114,7 +112,7 @@ public:
     }
 };
 
-class FunctionGroupingForRollup : public FunctionGroupingBase
+class FunctionGroupingForRollup final : public FunctionGroupingBase
 {
     const UInt64 aggregation_keys_number;
 
@@ -143,7 +141,7 @@ public:
     }
 };
 
-class FunctionGroupingForCube : public FunctionGroupingBase
+class FunctionGroupingForCube final : public FunctionGroupingBase
 {
     const UInt64 aggregation_keys_number;
 
@@ -174,7 +172,7 @@ public:
     }
 };
 
-class FunctionGroupingForGroupingSets : public FunctionGroupingBase
+class FunctionGroupingForGroupingSets final : public FunctionGroupingBase
 {
     ColumnNumbersSetList grouping_sets;
 public:

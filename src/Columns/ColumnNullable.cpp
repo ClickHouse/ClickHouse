@@ -57,6 +57,13 @@ void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
         getNestedColumn().updateHashWithValue(n, hash);
 }
 
+void ColumnNullable::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    const auto & arr = getNullMapData();
+    getNestedColumn().updateHashWithValueRange(begin, end, hash);
+    hash.update(reinterpret_cast<const char *>(&arr[begin]), (end - begin) * sizeof(arr[0]));
+}
+
 WeakHash32 ColumnNullable::getWeakHash32() const
 {
     auto s = size();
@@ -214,7 +221,7 @@ std::optional<size_t> ColumnNullable::getSerializedValueSize(size_t n, const ICo
 
 void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    UInt8 val;
+    UInt8 val = 0;
     readBinaryLittleEndian<UInt8>(val, in);
 
     getNullMapData().push_back(val);
@@ -227,7 +234,7 @@ void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColum
 
 void ColumnNullable::skipSerializedInArena(ReadBuffer & in) const
 {
-    UInt8 val;
+    UInt8 val = 0;
     readBinaryLittleEndian<UInt8>(val, in);
 
     if (val == 0)
@@ -1039,13 +1046,21 @@ ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column)
     return ColumnNullable::create(column, ColumnUInt8::create(column->size(), static_cast<UInt8>(0)));
 }
 
+ColumnConstPtr makeNullableSafe(const ColumnConstPtr & column)
+{
+    if (isColumnNullable(column->getDataColumn()))
+        return column;
+
+    return ColumnConst::create(makeNullableSafe(column->getDataColumnPtr()), column->size());
+}
+
 ColumnPtr makeNullableSafe(const ColumnPtr & column)
 {
     if (isColumnNullable(*column))
         return column;
 
-    if (isColumnConst(*column))
-        return ColumnConst::create(makeNullableSafe(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
+        return makeNullableSafe(column_const->getPtr());
 
     if (column->canBeInsideNullable())
         return makeNullable(column);

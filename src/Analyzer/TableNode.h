@@ -80,6 +80,12 @@ public:
         return storage_lock;
     }
 
+    /// Returns true if table was created as a temporary table
+    bool isTemporaryTable() const
+    {
+        return !temporary_table_name.empty();
+    }
+
     /// Get temporary table name
     const std::string & getTemporaryTableName() const
     {

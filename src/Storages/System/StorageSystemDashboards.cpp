@@ -1,4 +1,7 @@
 #include <string_view>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <Core/NamesAndTypes.h>
 #include <Storages/System/StorageSystemDashboards.h>
 #include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
@@ -16,7 +19,7 @@ ColumnsDescription StorageSystemDashboards::getColumnsDescription()
     };
 }
 
-String trim(const char * text)
+static String trim(const char * text)
 {
     std::string_view view(text);
     ::trim(view, '\n');

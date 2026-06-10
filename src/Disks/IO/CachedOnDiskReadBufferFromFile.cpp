@@ -3,7 +3,7 @@
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/FileCache/FileCache.h>
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromS3.h>
@@ -26,6 +26,7 @@ extern const Event CachedReadBufferPredownloadedFromSourceMicroseconds;
 extern const Event CachedReadBufferReadFromCacheMicroseconds;
 extern const Event CachedReadBufferCacheWriteMicroseconds;
 extern const Event CachedReadBufferReadFromSourceBytes;
+extern const Event CachedReadBufferPredownloadedFromSourceBytes;
 extern const Event CachedReadBufferReadFromCacheBytes;
 extern const Event CachedReadBufferPredownloadedBytes;
 extern const Event CachedReadBufferCacheWriteBytes;
@@ -45,6 +46,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int UNKNOWN_FILE_SIZE;
     extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
@@ -52,13 +54,17 @@ CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
     const std::string & source_file_path_,
     ImplementationBufferCreator impl_creator_,
     bool use_external_buffer_,
-    const ReadSettings & read_settings_,
-    size_t read_until_position_)
+    const FilesystemCacheSettings & cache_settings_,
+    size_t local_fs_buffer_size_,
+    size_t read_until_position_,
+    ThrottlerPtr local_throttler_)
     : cache_key(cache_key_)
     , source_file_path(source_file_path_)
     , implementation_buffer_creator(impl_creator_)
     , use_external_buffer(use_external_buffer_)
-    , settings(read_settings_)
+    , cache_settings(cache_settings_)
+    , local_fs_buffer_size(local_fs_buffer_size_)
+    , local_throttler(std::move(local_throttler_))
     , read_until_position(read_until_position_)
 {
 }
@@ -76,15 +82,18 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     FileCachePtr cache_,
     const FileCacheOriginInfo & origin_,
     ImplementationBufferCreator implementation_buffer_creator_,
-    const ReadSettings & settings_,
+    const FilesystemCacheSettings & cache_settings_,
+    size_t remote_fs_buffer_size_,
+    size_t local_fs_buffer_size_,
     const String & query_id_,
     size_t file_size_,
     bool allow_seeks_after_first_read_,
     bool use_external_buffer_,
     std::optional<size_t> read_until_position_,
-    std::shared_ptr<FilesystemCacheLog> cache_log_)
+    std::shared_ptr<FilesystemCacheLog> cache_log_,
+    ThrottlerPtr local_throttler_)
     : ReadBufferFromFileBase(
-        /* buf_size */use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size,
+        /* buf_size */use_external_buffer_ ? 0 : remote_fs_buffer_size_,
         /* existing_memory */nullptr,
         /* alignment */0,
         /* file_size */file_size_ ? std::optional<size_t>(file_size_) : std::nullopt)
@@ -99,22 +108,24 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , current_buffer_id(getRandomASCIIString(8))
     , allow_seeks_after_first_read(allow_seeks_after_first_read_)
     , use_external_buffer(use_external_buffer_)
-    , cache_log(settings_.enable_filesystem_cache_log ? cache_log_ : nullptr)
-    , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
+    , cache_log(cache_settings_.enable_log ? cache_log_ : nullptr)
+    , query_context_holder(cache_->getQueryContextHolder(query_id, cache_settings_))
     , skip_cache_on_disk_failure(cache_->skipCacheOnDiskFailure())
     , info(
         cache_key_,
         source_file_path_,
         implementation_buffer_creator_,
         use_external_buffer_,
-        settings_,
-        read_until_position_.value_or(file_size_))
+        cache_settings_,
+        local_fs_buffer_size_,
+        read_until_position_.value_or(file_size_),
+        std::move(local_throttler_))
 {
     LOG_TEST(
         log, "Cache key: {}, source file path: {}, boundary alignment: {}, "
         "external buffer: {}, allow seeks after first read: {}, file size: {}",
         cache_key_.toString(), source_file_path_,
-        settings_.filesystem_cache_boundary_alignment.has_value() ? DB::toString(settings_.filesystem_cache_boundary_alignment.value()) : "None",
+        cache_settings_.boundary_alignment.has_value() ? DB::toString(cache_settings_.boundary_alignment.value()) : "None",
         use_external_buffer_, allow_seeks_after_first_read, file_size_);
 }
 
@@ -182,13 +193,13 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
     if (!size)
         return false;
 
-    if (info.settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    if (info.cache_settings.read_if_exists_otherwise_bypass)
     {
         info.file_segments = cache->get(
             info.cache_key,
             file_offset_of_buffer_end,
             size,
-            info.settings.filesystem_cache_segments_batch_size,
+            info.cache_settings.segments_batch_size,
             origin.user_id);
     }
     else
@@ -202,9 +213,9 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
             size,
             object_size,
             create_settings,
-            info.settings.filesystem_cache_segments_batch_size,
+            info.cache_settings.segments_batch_size,
             origin,
-            info.settings.filesystem_cache_boundary_alignment);
+            info.cache_settings.boundary_alignment);
     }
 
     return !info.file_segments->empty();
@@ -240,6 +251,19 @@ namespace
 using ReadType = CachedOnDiskReadBufferFromFile::ReadType;
 using ReadInfo = CachedOnDiskReadBufferFromFile::ReadInfo;
 
+/// Format the remote object's last modification time for diagnostics, alongside its size: a recent
+/// timestamp confirms the object was overwritten between listing and reading. Returns "None" when the
+/// metadata is unavailable (e.g. a non-remote buffer).
+String formatRemoteFileLastModified(const std::optional<RemoteFileMetadata> & metadata)
+{
+    if (!metadata.has_value())
+        return "None";
+
+    WriteBufferFromOwnString out;
+    writeDateTimeText(metadata->last_modification_time, out);
+    return fmt::format("{} (unix time {})", out.str(), metadata->last_modification_time);
+}
+
 std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     const FileSegment & file_segment,
     ReadInfo & info)
@@ -256,11 +280,30 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
         info.cache_file_reader.reset();
     }
 
-    ReadSettings local_read_settings{info.settings};
-    local_read_settings.local_fs_method = LocalFSReadMethod::pread;
-
-    if (info.use_external_buffer)
-        local_read_settings.local_fs_buffer_size = 0;
+    /// This reads a local filesystem cache file. We build `ReadSettings` from defaults
+    /// and propagate only the fields that apply to cache file reads:
+    ///   - `local_fs_method = pread`: cache file reads always use pread for predictable
+    ///     synchronous behavior, regardless of the caller's preferred remote method
+    ///   - `local_fs_buffer_size`: 0 when the wrapper provides memory via `set()`
+    ///     (external buffer mode), otherwise the size the wrapper requested
+    ///   - `local_throttler`: propagated so bandwidth limits apply to cache file reads too
+    ///
+    /// We deliberately do NOT propagate from the caller's `ReadSettings`:
+    ///   - `direct_io_threshold`, `mmap_threshold`/`mmap_cache`: cache files are hot
+    ///     (the same segments are read many times across queries). The kernel page cache
+    ///     keeps recently-read pages in RAM, so subsequent reads avoid disk I/O.
+    ///     O_DIRECT/mmap would bypass the kernel page cache, forcing disk reads on every
+    ///     access — counterproductive for cache files. Use the narrow defaults below
+    ///     so cache file reads never inherit these flags from the caller's settings.
+    ///   - `priority`, `enable_filesystem_read_prefetches_log`: only used by the async
+    ///     local readers (`io_uring`, `pread_fake_async`, `pread_threadpool`). We force
+    ///     pread, so these are irrelevant.
+    ///   - `remote_fs_*`, `page_cache*`, prefetch-related fields: target the remote read
+    ///     path or pipeline stages above us; do not apply to local cache file I/O.
+    ReadSettings local_read_settings;
+    local_read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    local_read_settings.local_fs_settings.buffer_size = info.use_external_buffer ? 0 : info.local_fs_buffer_size;
+    local_read_settings.local_throttler = info.local_throttler;
 
     info.cache_file_reader
         = createReadBufferFromFileBase(path, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
@@ -278,6 +321,14 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
     ReadInfo & info)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CachedReadBufferCreateBufferMicroseconds);
+
+    auto create_remote_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        auto impl = info.implementation_buffer_creator();
+        if (impl->supportsRightBoundedReads())
+            return impl;
+        return std::make_unique<BoundedReadBuffer>(std::move(impl));
+    };
 
     switch (read_type)
     {
@@ -303,12 +354,7 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
 
             if (!remote_fs_segment_reader)
             {
-                auto impl = info.implementation_buffer_creator();
-                if (impl->supportsRightBoundedReads())
-                    remote_fs_segment_reader = std::move(impl);
-                else
-                    remote_fs_segment_reader = std::make_unique<BoundedReadBuffer>(std::move(impl));
-
+                remote_fs_segment_reader = create_remote_read_buffer();
                 file_segment.setRemoteFileReader(remote_fs_segment_reader);
             }
             else
@@ -327,9 +373,13 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
             /// We cannot directly check info.remote_file_reader because of a possible race with background downloader.
             auto reader = file_segment.extractRemoteFileReader();
             if (reader && offset == reader->getFileOffsetOfBufferEnd())
+            {
                 info.remote_file_reader = reader;
+            }
             else
-                info.remote_file_reader = info.implementation_buffer_creator();
+            {
+                info.remote_file_reader = create_remote_read_buffer();
+            }
 
             return info.remote_file_reader;
         }
@@ -391,7 +441,7 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
     };
 
     auto download_state = file_segment.state();
-    if (info_.settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    if (info_.cache_settings.read_if_exists_otherwise_bypass)
     {
         if (download_state == FileSegment::State::DOWNLOADED)
             return create(ReadType::CACHED);
@@ -648,7 +698,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     info.remote_file_reader.reset();
 
     info.file_segments->completeAndPopFront(
-        info.settings.filesystem_cache_allow_background_download,
+        info.cache_settings.allow_background_download,
         /*force_shrink_to_downloaded_size=*/false);
 
     if (info.file_segments->empty() && !nextFileSegmentsBatch())
@@ -676,7 +726,7 @@ CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
     if (info.file_segments && !info.file_segments->empty() && !info.file_segments->front().isCompleted())
     {
         info.file_segments->completeAndPopFront(
-            info.settings.filesystem_cache_allow_background_download,
+            info.cache_settings.allow_background_download,
             /*force_shrink_to_downloaded_size=*/false);
 
         info.file_segments = {};
@@ -716,8 +766,8 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
         size_t initial_buffer_size = state.buf->internalBuffer().size();
         chassert(initial_buffer && initial_buffer_size);
 
-        char *  predownload_buffer;
-        size_t predownload_buffer_size;
+        char *  predownload_buffer = nullptr;
+        size_t predownload_buffer_size = 0;
         if (initial_buffer_size < DBMS_DEFAULT_BUFFER_SIZE)
         {
             state.predownload_memory.resize(std::min<size_t>(state.bytes_to_predownload, DBMS_DEFAULT_BUFFER_SIZE));
@@ -756,16 +806,66 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
             if (!state.bytes_to_predownload || !has_more_data)
             {
                 if (state.bytes_to_predownload)
+                {
+                    /// We failed to predownload all the bytes that were needed, so this downloader
+                    /// will not continue. Release the segment (transition it to
+                    /// PARTIALLY_DOWNLOADED_NO_CONTINUATION) before throwing, so that other readers
+                    /// waiting on this segment can take over instead of waiting for a download that
+                    /// will never finish. This mirrors the EOF handling in readFromFileSegment.
+                    if (file_segment.isDownloader())
+                        file_segment.setDownloadFinishedWithoutContinuation();
+
+                    /// The remote object may have been overwritten with shorter content
+                    /// between listing and reading. Check the actual remote file metadata (size and
+                    /// last modification time, fetched in a single request) to distinguish that from
+                    /// a genuine logic error.
+                    const auto remote_metadata = state.buf->getRemoteFileMetadata();
+                    /// The object size known at buffer creation time (from listing). Logged alongside
+                    /// the actual size so a truncation is immediately visible in diagnostics.
+                    const auto expected_object_size = state.buf->tryGetFileSize();
+                    if (remote_metadata.has_value()
+                        && remote_metadata->size == file_segment.getCurrentWriteOffset())
+                    {
+                        /// We reached the real end of the (now shorter) object while
+                        /// predownloading, before reaching the bytes the reader actually
+                        /// needs: those lie beyond the truncated object, because
+                        /// offset == current_write_offset + bytes_to_predownload > remote_metadata->size.
+                        ///
+                        /// There is no valid data to return for `offset`. We must NOT treat
+                        /// this as EOF (return a short/zero read): the caller would then
+                        /// consume buffer bytes that were never written -- a
+                        /// use-of-uninitialized-value under MSan, and silent garbage in
+                        /// release. Fail with a regular CANNOT_READ_ALL_DATA instead of a
+                        /// LOGICAL_ERROR: it does not alert as a server bug and is retryable
+                        /// while the object is being concurrently replaced.
+                        throw Exception(
+                            ErrorCodes::CANNOT_READ_ALL_DATA,
+                            "Remote object was truncated between listing and reading: "
+                            "actual object size {}, expected object size {}, last modified {}, "
+                            "but need to read until offset {}. Current file segment: {}",
+                            remote_metadata->size,
+                            expected_object_size ? std::to_string(*expected_object_size) : "None",
+                            formatRemoteFileLastModified(remote_metadata),
+                            offset,
+                            file_segment.getInfoForLog());
+                    }
+
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Failed to predownload remaining {} bytes. Current file segment: {}, "
-                        "current download offset: {}, expected: {}, eof: {}, internal buffer size: {}",
+                        "current download offset: {}, expected: {}, eof: {}, "
+                        "internal buffer size: {}, remote object size: {}, "
+                        "expected object size: {}, remote object last modified: {}",
                         state.bytes_to_predownload,
                         file_segment.range().toString(),
                         file_segment.getCurrentWriteOffset(),
                         offset,
                         state.buf->eof(),
-                        state.buf->internalBuffer().size());
+                        state.buf->internalBuffer().size(),
+                        remote_metadata ? std::to_string(remote_metadata->size) : "None",
+                        expected_object_size ? std::to_string(*expected_object_size) : "None",
+                        formatRemoteFileLastModified(remote_metadata));
+                }
 
                 chassert(!state.buf->hasPendingData());
                 auto result = state.buf->hasPendingData();
@@ -794,13 +894,14 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
             chassert(size == state.buf->available());
             chassert(size <= state.bytes_to_predownload);
 
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedFromSourceBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedBytes, size);
 
             std::string failure_reason;
             bool continue_predownload = file_segment.reserve(
                 size,
-                info.settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds,
+                info.cache_settings.reserve_space_wait_lock_timeout_milliseconds,
                 failure_reason);
 
             if (continue_predownload)
@@ -1062,8 +1163,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     {
         /// We allocate buffers not less than 1M so that s3 requests will not be too small. But the same buffers (members of AsynchronousReadIndirectBufferFromRemoteFS)
         /// are used for reading from files. Some of these readings are fairly small and their performance degrade when we use big buffers (up to ~20% for queries like Q23 from ClickBench).
-        if (info.settings.local_fs_buffer_size && info.settings.local_fs_buffer_size < internal_buffer.size())
-            internal_buffer.resize(info.settings.local_fs_buffer_size);
+        if (info.local_fs_buffer_size && info.local_fs_buffer_size < internal_buffer.size())
+            internal_buffer.resize(info.local_fs_buffer_size);
 
         /// It would make sense to reduce buffer size to what is left to read
         /// (when we read the last segment) regardless of the read_type.
@@ -1079,6 +1180,17 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             internal_buffer.resize(nextimpl_working_buffer_offset + new_buf_size);
         }
     }
+
+    if (internal_buffer.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "CachedOnDiskReadBufferFromFile::nextImplStep: internal_buffer is empty. "
+            "use_external_buffer={}, file_offset={}, read_type={}, "
+            "file_segment={}, source_path={}",
+            use_external_buffer, file_offset_of_buffer_end,
+            toString(state->read_type),
+            info.file_segments->front().range().toString(),
+            info.source_file_path);
 
     state->buf->set(internal_buffer.begin(), internal_buffer.size());
     size_t size = 0;
@@ -1238,7 +1350,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             std::string failure_reason;
             bool success = file_segment.reserve(
                 size,
-                info.settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds,
+                info.cache_settings.reserve_space_wait_lock_timeout_milliseconds,
                 failure_reason);
 
             if (success)
@@ -1324,19 +1436,42 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         else
             download_finished_time = "None";
 
-        std::optional<size_t> object_size;
+        std::optional<RemoteFileMetadata> remote_metadata;
         std::optional<size_t> impl_read_until_position;
         std::optional<std::string> impl_read_stop_reason;
         if (state.read_type != ReadType::CACHED)
         {
+            remote_metadata = state.buf->getRemoteFileMetadata();
+
 #if USE_AWS_S3
             if (const auto * s3_buf = dynamic_cast<const ReadBufferFromS3 *>(state.buf.get()))
             {
                 impl_read_until_position = s3_buf->getReadUntilPosition();
                 impl_read_stop_reason = s3_buf->getStopReason();
-                object_size = s3_buf->getObjectSizeFromS3();
             }
 #endif
+        }
+
+        if (remote_metadata.has_value() && remote_metadata->size == offset)
+        {
+            /// The remote object is smaller than file_size_ indicated, e.g. the object was
+            /// overwritten with shorter content between listing and reading. This downloader
+            /// will not continue: release the segment so other readers waiting on it can take
+            /// over, then fail with a regular CANNOT_READ_ALL_DATA -- retryable while the object
+            /// is being concurrently replaced, and (unlike a LOGICAL_ERROR) it does not alert as a
+            /// server bug. The predownloadForFileSegment and readBigAt paths fail the same way.
+            if (file_segment.isDownloader())
+                file_segment.setDownloadFinishedWithoutContinuation();
+            throw Exception(
+                ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Remote object was truncated between listing and reading: "
+                "read until offset {} but expected to read until position {}. "
+                "Actual object size {}, expected object size {}, last modified {}, stop reason: {}. "
+                "Current file segment: {}",
+                offset, info.read_until_position, remote_metadata->size, file_size_,
+                formatRemoteFileLastModified(remote_metadata),
+                impl_read_stop_reason ? *impl_read_stop_reason : "None",
+                file_segment.getInfoForLog());
         }
 
         throw Exception(
@@ -1345,6 +1480,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             "file offset: {}, "
             "read bytes: {}, "
             "object size: {}, "
+            "object last modified: {}, "
             "expected object size: {}, "
             "reading until: {}, "
             "read type: {}, "
@@ -1362,7 +1498,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             "current file segment: {}",
             offset + size,
             size,
-            object_size ? std::to_string(*object_size) : "None",
+            remote_metadata ? std::to_string(remote_metadata->size) : "None",
+            formatRemoteFileLastModified(remote_metadata),
             file_size_,
             info.read_until_position,
             toString(state.read_type),
@@ -1395,9 +1532,10 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
 {
     ReadInfo current_info(
         info.cache_key, info.source_file_path, info.implementation_buffer_creator,
-        info.use_external_buffer, info.settings, /* read_until_position */range_begin + n);
+        info.use_external_buffer, info.cache_settings, info.local_fs_buffer_size,
+        /* read_until_position */range_begin + n, info.local_throttler);
 
-    if (info.settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    if (info.cache_settings.read_if_exists_otherwise_bypass)
     {
         current_info.file_segments = cache->get(
             info.cache_key,
@@ -1460,7 +1598,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
         {
             current_info.cache_file_reader.reset();
             current_info.file_segments->completeAndPopFront(
-                info.settings.filesystem_cache_allow_background_download,
+                info.cache_settings.allow_background_download,
                 /* force_shrink_to_downloaded_size */false);
 
             current_state.reset();
@@ -1518,6 +1656,9 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
 
         if (!size)
         {
+            /// A truncated remote object (overwritten with shorter content between listing and
+            /// reading) is handled in readFromFileSegment, which throws CANNOT_READ_ALL_DATA before
+            /// returning here. Reaching this point with a zero-sized read is therefore unexpected.
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot read all data. Offset: {} (initial offset: {}), read bytes {}/{}",
