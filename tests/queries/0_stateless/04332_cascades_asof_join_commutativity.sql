@@ -28,5 +28,9 @@ SELECT '-- 2. Baseline without Cascades';
 SELECT count(), sum(r.v) FROM t_asof_small AS l ASOF JOIN t_asof_big AS r ON l.k = r.k AND l.t >= r.t
 SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 
+SELECT '-- 3. RightAny (any_join_distinct_right_table_keys) must not be swapped either';
+SELECT count() FROM t_asof_small AS l ANY INNER JOIN t_asof_big AS r ON l.k = r.k
+SETTINGS any_join_distinct_right_table_keys = 1;
+
 DROP TABLE t_asof_small;
 DROP TABLE t_asof_big;

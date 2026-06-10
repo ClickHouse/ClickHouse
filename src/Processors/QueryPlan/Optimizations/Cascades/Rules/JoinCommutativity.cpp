@@ -29,18 +29,18 @@ bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const Expres
 
     const auto & join = join_step->getJoinOperator();
 
-    /// ANY INNER is not commutative: "take at most one match" depends on
-    /// which side is probed, so swapping sides changes result cardinality.
-    if (join.kind == JoinKind::Inner && join.strictness == JoinStrictness::Any)
-        return false;
-
     /// ASOF is not commutative: the closest matching value is resolved per left
     /// row, so swapping sides changes the result.
     if (join.strictness == JoinStrictness::Asof)
         return false;
 
+    /// INNER is commutative only with strictness ALL: ANY ("take at most one match")
+    /// and RightAny (deduplicate right keys) depend on which side is which, and
+    /// swapInputs flips only the kind, never the strictness.
+    if (join.kind == JoinKind::Inner)
+        return join.strictness == JoinStrictness::All;
+
     return
-        join.kind == JoinKind::Inner ||
         join.kind == JoinKind::Cross ||
         join.strictness == JoinStrictness::Semi ||
         join.strictness == JoinStrictness::Any ||

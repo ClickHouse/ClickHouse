@@ -2,3 +2,5 @@
 20	92190
 -- 2. Baseline without Cascades
 20	92190
+-- 3. RightAny (any_join_distinct_right_table_keys) must not be swapped either
+20
