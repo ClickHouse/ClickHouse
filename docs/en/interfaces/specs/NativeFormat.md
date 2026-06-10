@@ -1276,7 +1276,7 @@ The non-flattened `Object` encodings (`V1`/`V2`/`V3`) are used by MergeTree on-d
 
 ClickHouse supports per-block compression for the column data carried inside `Data`, `Totals`, `Extremes`, `Log`, and `ProfileEvents` packets. Compression is opt-in, activated by the protocol-level `compression` flag in the [Query packet](/interfaces/specs/NativeProtocol#query).
 
-When compression is active, every Block body (the bytes after the `table_name` string of a Data-family packet) is wrapped in the frame below. The packet envelope itself — the packet type code, the `table_name` string, the BlockInfo prefix — is **not** compressed; only the columnar payload is.
+When compression is active, every Block body (the bytes after the `table_name` string of a Data-family packet) is wrapped in the frame below. The packet envelope itself — the packet type code and the `table_name` string — is **not** compressed; `TCPHandler::sendData` writes those to the raw stream (`out`). Everything the `NativeWriter` emits goes into the compressed stream, because `block_out` is constructed over `state.maybe_compressed_out`: the `BlockInfo` prefix is the first thing `NativeWriter::write` writes, so it lands **inside** the compression frame along with the dimensions and columns. A client must therefore decompress the frame before it can read `BlockInfo`.
 
 ### Frame format {#frame-format}
 
