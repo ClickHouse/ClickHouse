@@ -1627,6 +1627,64 @@ TEST(ReaderExecutor, MultipleEvictionsKeepSingleConnection)
     EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 1);
 }
 
+TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
+{
+    TestThreadGroup tg;
+
+    /// With a REAL prefetch pool, windows >= 2 arrive via the prefetch CONSUME path,
+    /// where the foreground (not the worker, which now only fetches the source) rebuilds
+    /// the Strategy-A pin under the new frontier. Two 2000-byte segments, window 1000:
+    /// W3 is the first window of segment 1 - the consume must re-pin that fresh partial
+    /// segment, or an eviction sweep right after drops it. A missing consume-path re-pin
+    /// would leave it `use_count()==1` and `evictUnpinned` would zero `downloaded[1]`.
+    String content(4000, 'Q');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"file", content}});
+    StoredObjects objects;
+    objects.emplace_back("file", "", 4000);
+
+    auto cache = std::make_shared<EvictableSegmentMockCache>(2000);
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(cache);
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    auto limit = std::make_shared<SourceBufferLimit>(10);
+    ReaderExecutor executor(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
+    executor.setPrefetchPool(pool);
+    executor.setBufferLimit(limit);
+
+    String result;
+    auto consume = [&](Rope rope)
+    {
+        for (const auto & node : rope.getNodes())
+            result.append(node.data(), node.size);
+    };
+
+    /// W1 [0,1000) sync (no prefetch in flight yet) -> launches the prefetch for [1000,2000).
+    consume(executor.readNextWindow());
+    /// W2 [1000,2000) consume -> fills segment 0 to 2000 (full).
+    consume(executor.readNextWindow());
+    /// W3 [2000,3000) consume -> first window of segment 1: fills it to cwo=1000 (partial)
+    /// and must RE-PIN it at consume; launches the prefetch for [3000,4000).
+    consume(executor.readNextWindow());
+
+    /// Evict everything unpinned. Segment 1 is the partial in-flight segment the consume
+    /// just pinned (the pin now rides the in-flight job's connection), so it must survive.
+    cache->evictUnpinned();
+    EXPECT_EQ(cache->downloaded[1], 1000u) << "consume-path pin did not protect the in-flight segment";
+
+    /// Finish and verify no corruption.
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (rope.empty())
+            break;
+        consume(std::move(rope));
+    }
+    EXPECT_EQ(result, content);
+    EXPECT_EQ(executor.getSourceRequestsCount(), 1u);
+}
+
 TEST(ReaderExecutor, PinReleasedOnSeek)
 {
     String content(8000, 'Q');
@@ -3339,8 +3397,12 @@ TEST(ReaderExecutor, PlanFirstResidentRunBetweenGapsHasNoPrefetchInFlight)
 /// prefetch worker credits `ReaderExecutorBytesPushedToCacheAsync`. `stats` are
 /// flushed to `ProfileEvents` in `~ReaderExecutor`, so each delta is read only
 /// after the executor scope closes.
-TEST(ReaderExecutor, PopulateBytesSplitSyncVsAsync)
+TEST(ReaderExecutor, PopulateBytesAreSyncIncludingPrefetch)
 {
+    /// A prefetch worker is a pure source fetch now and does NO cache work - the cache
+    /// backfill (`put`) runs on the foreground at consume. So every populate, foreground
+    /// gap read OR prefetched window, is attributed to the SYNC counter; the async
+    /// counter stays the seam a future dedicated write pool will use.
     constexpr size_t file_size = 2048;
     constexpr size_t window = 512;
     String content(file_size, 'P');
@@ -3366,9 +3428,11 @@ TEST(ReaderExecutor, PopulateBytesSplitSyncVsAsync)
         EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed) - async_before, 0u);
     }
 
-    /// `SyncPrefetchPool` runs each submitted task inline; the windows it reads
-    /// ahead populate the (fresh) cache through the prefetch path.
+    /// `SyncPrefetchPool` runs each submitted task inline; the prefetched windows it
+    /// reads ahead are backfilled by the foreground at consume - so the populate is
+    /// still SYNC, and nothing lands on the async counter.
     {
+        const auto sync_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed);
         const auto async_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed);
         {
             auto cache = std::make_shared<MockCacheProvider>(window);
@@ -3377,8 +3441,10 @@ TEST(ReaderExecutor, PopulateBytesSplitSyncVsAsync)
             executor.setPrefetchPool(pool);
             while (!executor.readNextWindow().empty()) {}
         }
-        EXPECT_GT(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed) - async_before, 0u)
-            << "prefetch-driven populates must be attributed to the async counter";
+        EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed) - sync_before, file_size)
+            << "prefetch-driven populates run on the foreground at consume -> sync";
+        EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed) - async_before, 0u)
+            << "no async populate without a dedicated write pool";
     }
 }
 

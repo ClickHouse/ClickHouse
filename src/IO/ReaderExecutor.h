@@ -227,50 +227,36 @@ private:
     struct ReadPlanGeometry;
     struct ReadPlanHandles;
 
-    /// Assemble the bytes for `physical_window` from the residency plan, then the
-    /// source. Two phases, no per-window cache discovery:
-    ///   1. `serveResidentFromPlan` — copy every byte the held plan reports
-    ///      resident straight from its pinned cache handle (synchronous).
-    ///   2. `fetchAndBackfillGaps` — the rest are remote gaps: read them from the
-    ///      source and write them back into the caches.
-    /// While a live connection streams sequentially, pins the segment it will
-    /// continue into so a mid-read eviction can't reset it (Strategy A).
-    /// `from_prefetch` routes populated bytes to the sync vs. async counters and
-    /// (for a worker) the issued counters. Served-byte counters land in `out_stats`
-    /// - the foreground passes `this->stats`, a worker passes its job-local `Stats`.
-    /// Returns one contiguous run from the window start (a hole would shift the
-    /// caller's offset interpretation).
-    /// `geometry` is the immutable residency snapshot the read serves resident bytes
-    /// from (the foreground passes `*read_geometry`, a worker passes its co-owned
-    /// `job->geometry`); `reached_eof` is the size-unknown EOF latch the read sets
-    /// (the foreground passes `this->reached_eof`, a worker passes `job->reached_eof`).
-    Rope readPhysicalWindow(ByteRange physical_window, bool from_prefetch, ConnState & conn,
+    /// Foreground assembler for `physical_window`: resident bytes from the plan, the
+    /// rest from the source, then the cache backfill + the Strategy-A pin. Reached by
+    /// `initDecryption` (header) and the two synchronous gap reads in `readNextWindow` -
+    /// a prefetch worker does NOT come through here (it runs `fetchGapsFromSource`
+    /// directly and the foreground backfills its bytes at consume). Returns one
+    /// contiguous run from the window start (a hole would shift the caller's offset
+    /// interpretation). `geometry` is the residency snapshot (`*read_geometry`, or an
+    /// empty one at init); `eof_latch` is the size-unknown EOF latch (`this->reached_eof`).
+    Rope readPhysicalWindow(ByteRange physical_window, ConnState & conn,
         const ReadPlanGeometry & geometry, bool & eof_latch, Stats & out_stats);
 
-    /// Phase 1 of `readPhysicalWindow`: append every byte the `geometry` snapshot
-    /// reports resident in `physical_window` to `result` (recording it in `covered`),
-    /// reading it from the matching foreground-private `handles` entry's pinning cache
-    /// handle. `handles` is null on the worker path (which serves no resident bytes -
-    /// its window is a pure gap), so the worker never touches the foreground handles;
-    /// the foreground passes `&read_handles`. Fastest-tier-first is preserved by the
-    /// `covered` guard (geometry is in tier order). Does NOT re-plan: an uncovered
-    /// remainder is left for `fetchAndBackfillGaps` (the residency-truth path).
+    /// Append every byte the `geometry` snapshot reports resident in `physical_window`
+    /// to `result` (recording it in `covered`), reading it from the matching
+    /// `read_handles` entry's pinning cache handle. FOREGROUND-only (a worker serves no
+    /// resident bytes - its window is a pure gap). Fastest-tier-first is preserved by
+    /// the `covered` guard (geometry is in tier order). Does NOT re-plan: an uncovered
+    /// remainder is left for `backfillBytes` (the residency-truth path).
     void serveResidentFromPlan(
-        ByteRange physical_window, bool from_prefetch, Rope & result, IntervalSet & covered,
-        const ReadPlanGeometry & geometry, ReadPlanHandles * handles, Stats & out_stats);
+        ByteRange physical_window, Rope & result, IntervalSet & covered,
+        const ReadPlanGeometry & geometry, Stats & out_stats);
 
-    /// Phase 2 of `readPhysicalWindow`: whatever `covered` does not already hold
-    /// in `physical_window` is a remote gap. Discover the per-tier backfill
-    /// segments (`getOrSet`), read the gaps from the source (merged into fewer
-    /// requests), append them, and write them back into every cache tier (via
-    /// `flushWritePlan`). Returns true if any source read happened (i.e. there were
-    /// gaps), which the caller uses to decide the live-connection keep/drop.
-    /// `write_plan` collects the populate handles, kept alive by the caller so
-    /// their deferred LRU-bump runs after the writes and the in-flight segment can
-    /// be pinned from them.
+    /// Synchronous foreground gap read + backfill in one pass: walk the tiers, segment/
+    /// block-align the misses (`getOrSet`), serve any cache hit, read the aligned misses
+    /// from the source, append them, and write them back. Self-aligning - one cache
+    /// lookup. Used by the foreground (`readBigAt`, the sync gap reads, the header);
+    /// the prefetch path instead pre-aligns at submit (`alignToCaches`) and splits this
+    /// into the worker's `fetchGapsFromSource` + the consume's `backfillBytes`. Returns
+    /// true if any source read happened (the caller's live-connection keep/drop signal).
     bool fetchAndBackfillGaps(
         ByteRange physical_window,
-        bool from_prefetch,
         Rope & result,
         IntervalSet & covered,
         WritePlan & write_plan,
@@ -279,11 +265,47 @@ private:
         MemoryPressureLevel pressure_level,
         Stats & out_stats);
 
-    /// Write every fetched miss range collected in `write_plan` into its tier
-    /// (`put`), splitting the populated bytes by foreground vs prefetch context.
-    /// The write side of `readPhysicalWindow` - the seam a lower->upper promotion
-    /// rule and a dedicated async write pool will attach to.
-    void flushWritePlan(WritePlan & write_plan, const Rope & result, bool from_prefetch, Stats & out_stats) const;
+    /// Expand `requested` to the boundaries the cache tiers need to align their writes,
+    /// so a narrow prefetch worker fetches enough for the foreground's consume `put` to
+    /// land aligned: page-cache misses are whole blocks (taken whole), disk-cache misses
+    /// are head-aligned to the segment frontier. The bounding box of every tier's miss
+    /// ranges; a fully-resident window is returned unchanged. Read-only probe.
+    ByteRange alignToCaches(ByteRange requested) const;
+
+    /// PURE source fetch: read the WHOLE `physical_window` from the source as one
+    /// contiguous physical Rope (short at EOF), no cache/plan/pin. This is ALL a
+    /// prefetch worker runs (it cannot touch shared state). `from_prefetch` routes the
+    /// issued-source counter into the worker's job-local `Stats`. `eof_latch` is set on
+    /// a size-unknown short read. The window is pre-aligned by `alignToCaches` at submit.
+    Rope fetchGapsFromSource(ByteRange physical_window, bool from_prefetch, ConnState & conn,
+        bool & eof_latch, MemoryPressureLevel pressure_level, Stats & out_stats);
+
+    /// Backfill the cache for `physical_window` from `source_bytes` (the whole window
+    /// already fetched from the source). FOREGROUND-only: walk the tiers (`getOrSet`),
+    /// serve any late-hit from cache into `result`/`covered`, append the still-missing
+    /// ranges from `source_bytes` (clamped to what it actually delivered), and write the
+    /// misses back synchronously (`flushWritePlan`). `write_plan` collects the populate
+    /// handles, kept alive by the caller so their deferred LRU-bump runs after the writes
+    /// and the in-flight segment can be pinned from them.
+    void backfillBytes(
+        ByteRange physical_window, const Rope & source_bytes,
+        Rope & result, IntervalSet & covered, WritePlan & write_plan, Stats & out_stats);
+
+    /// Shared tail of an assembled window: re-point the Strategy-A pin to the partial
+    /// segment under `pin_frontier` - the frontier the live connection actually reached,
+    /// which (with page-block alignment) can sit past `slice_window.end()` - cleared at
+    /// EOF / no live connection; release a never-opened slot; then slice `result` to
+    /// `slice_window` and enforce the single-contiguous-run-from-the-window-start
+    /// guarantee. Used by both `readPhysicalWindow` (foreground sync) and the prefetch
+    /// consume path.
+    Rope finalizeAssembledWindow(ByteRange slice_window, size_t pin_frontier, Rope & result,
+        const WritePlan & write_plan, ConnState & conn, bool eof_latch) const;
+
+    /// Write every fetched miss range collected in `write_plan` into its tier (`put`),
+    /// synchronously (a prefetch worker does no cache work, so the consume backfill runs
+    /// on the foreground). The write side of an assembled window - the seam a
+    /// lower->upper promotion rule and a dedicated async write pool will attach to.
+    void flushWritePlan(WritePlan & write_plan, const Rope & result, Stats & out_stats) const;
 
     /// Promote a range just served from `from_tier` up into every populatable
     /// cache faster than it (those all miss it, since `from_tier` was the fastest
@@ -421,7 +443,7 @@ private:
     /// readPhysicalWindow + remap the window's offsets to logical (subtract the
     /// encryption header). Payload decryption is deferred to the consumer
     /// (PipelineReadBuffer), so unconsumed read-ahead is never decrypted.
-    Rope readWindowLogical(ByteRange physical_window, bool from_prefetch, ConnState & conn,
+    Rope readWindowLogical(ByteRange physical_window, ConnState & conn,
         const ReadPlanGeometry & geometry, bool & eof_latch, Stats & out_stats);
 
     std::shared_ptr<ISourceReader> source;
@@ -562,7 +584,7 @@ private:
     ReadPlanHandles read_handles;
 
     /// The write side of one physical window: the cache populate-handles produced
-    /// while discovering gaps (`fetchAndBackfillGaps`), then pinned and `put` into
+    /// while discovering gaps (`backfillBytes`), then pinned and `put` into
     /// by `readPhysicalWindow`/`flushWritePlan`. A per-window local, held to the end
     /// of the read so the deferred LRU-bump in `~ICacheHandle` lands after the
     /// writes. The seam where lower->upper promotion and a dedicated async write
@@ -588,7 +610,13 @@ private:
     /// `prefetch_handle != nullptr`. `prefetch_range` is only meaningful when
     /// the handle is non-null.
     std::shared_ptr<PrefetchHandle> prefetch_handle;
+    /// `prefetch_range` is the LOGICAL requested read-ahead range (the space `position`,
+    /// seek and the consume slice work in). `prefetch_physical_window` is the PHYSICAL,
+    /// cache-aligned window the worker actually fetched (`alignToCaches` widened it to
+    /// whole page blocks / the disk-segment frontier) - the consume path backfills the
+    /// caches over it and pins at its frontier. Both meaningful only while the handle is set.
     ByteRange prefetch_range;
+    ByteRange prefetch_physical_window;
     /// The in-flight prefetch worker's job, co-owned with the worker lambda. Holds
     /// the worker's job-local `Stats` AND the source-connection cluster (`conn`) it
     /// took ownership of at submit. The worker writes ONLY `prefetch_job->stats` and
@@ -869,18 +897,18 @@ private:
 
     /// The in-flight prefetch's co-owned job (see the `prefetch_job` member). Bundles
     /// EVERYTHING a prefetch worker touches, so the worker reads/writes ONLY job state
-    /// — never a shared `this->` member (which is what lets the `readPhysicalWindow`
-    /// handoff `chassert` retire): the job-local `Stats`, the source-connection cluster
-    /// it owns for the job's duration, its own immutable look-ahead `geometry` snapshot,
-    /// the `reached_eof` latch it sets on a size-unknown short read (OR-ed into the
-    /// executor's member at consume), and the prefetch-log `execution_watch` it stamps
-    /// (read on the foreground after the `get()` edge). Defined here, after `Stats`,
-    /// `ConnState` and `ReadPlanGeometry`.
+    /// — never a shared `this->` member: the job-local `Stats`, the source-connection
+    /// cluster it owns for the job's duration, the per-plan `pressure_level` that sizes
+    /// its source blocks (it does no cache lookup or resident serve, so it needs no
+    /// geometry snapshot), the `reached_eof` latch it sets on a size-unknown short read
+    /// (OR-ed into the executor's member at consume), and the prefetch-log
+    /// `execution_watch` it stamps (read on the foreground after the `get()` edge).
+    /// Defined here, after `Stats` and `ConnState`.
     struct PrefetchJob
     {
         Stats stats;
         ConnState conn;
-        std::shared_ptr<const ReadPlanGeometry> geometry;
+        MemoryPressureLevel pressure_level{};
         bool reached_eof = false;
         std::optional<Stopwatch> execution_watch;
     };
