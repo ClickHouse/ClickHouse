@@ -2,11 +2,11 @@ import csv
 import logging
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import List, Tuple
 
-from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.docker_image import DockerImage
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika.info import Info
@@ -94,7 +94,6 @@ def get_run_command(
     result_path: Path,
     repo_tests_path: Path,
     server_log_path: Path,
-    cores_path: Path,
     additional_envs: List[str],
     image: DockerImage,
     upgrade_check: bool,
@@ -117,9 +116,7 @@ def get_run_command(
         f"--volume={build_path}:/package_folder "
         f"--volume={result_path}:/test_output "
         f"--volume={repo_tests_path}/..:/repo "
-        f"--volume={server_log_path}:/var/log/clickhouse-server "
-        f"--volume={cores_path}:/cores "
-        f"{env_str} {image} {run_script}"
+        f"--volume={server_log_path}:/var/log/clickhouse-server {env_str} {image} {run_script}"
     )
 
     return cmd
@@ -185,9 +182,6 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)
 
-    cores_path = temp_path / "cores"
-    cores_path.mkdir(parents=True, exist_ok=True)
-
     additional_envs = get_additional_envs(info, check_name)
 
     run_command = get_run_command(
@@ -195,7 +189,6 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         result_path,
         repo_tests_path,
         server_log_path,
-        cores_path,
         additional_envs,
         docker_image,
         upgrade_check,
@@ -204,9 +197,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
     exit_code = Shell.run(run_command)
 
-    Utils.fix_ownership_after_docker(temp_path, docker_image)
-
-    core_files = ClickHouseService.collect_cores(cores_path)
+    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     is_oom = False
 
@@ -356,7 +347,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             f"Unknown error: Test script failed with exit code {exit_code}"
         )
 
-    r.set_files(additional_logs).set_files(core_files).complete_job()
+    r.set_files(additional_logs).complete_job()
 
 
 if __name__ == "__main__":

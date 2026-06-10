@@ -278,6 +278,12 @@ void readStringUntilEquals(String & s, ReadBuffer & buf)
     readStringUntilCharsInto<'='>(s, buf);
 }
 
+void readStringUntilColon(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilCharsInto<':'>(s, buf);
+}
+
 template void readNullTerminated<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);
 template void readNullTerminated<String>(String & s, ReadBuffer & buf);
 

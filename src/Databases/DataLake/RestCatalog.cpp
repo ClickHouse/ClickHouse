@@ -7,6 +7,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <mutex>
 #include <chrono>
+#include <unordered_set>
 #include <Core/SettingsEnums.h>
 #include "config.h"
 
@@ -675,16 +676,58 @@ Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::s
 
 RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_namespace) const
 {
-    Poco::URI::QueryParameters params;
+    Poco::URI::QueryParameters base_params;
     if (!base_namespace.empty())
-        params = createParentNamespaceParams(base_namespace);
+        base_params = createParentNamespaceParams(base_namespace);
+
+    Namespaces all_namespaces;
+    String page_token;
+    /// Cycle-detection guard: tracks every non-empty `next-page-token` we have seen on this
+    /// request so we can refuse to loop when a malformed catalog repeats a token. Covers both
+    /// the immediate-repeat case (`A -> A`) and longer cycles (`A -> B -> A -> ...`), since
+    /// any revisit triggers a duplicate `insert`.
+    std::unordered_set<String> seen_tokens;
 
     try
     {
-        auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, params);
-        auto namespaces = parseNamespaces(*buf, base_namespace);
-        LOG_DEBUG(log, "Loaded {} namespaces in base namespace {}", namespaces.size(), base_namespace);
-        return namespaces;
+        while (true)
+        {
+            /// The Iceberg REST OpenAPI spec uses `pageToken` (request) / `next-page-token` (response)
+            /// for paginating the list-namespaces endpoint. Without this loop we silently return
+            /// only the first page when the catalog server (e.g. OneLake / BigLake / Microsoft Fabric)
+            /// caps the page size.
+            Poco::URI::QueryParameters params = base_params;
+            if (!page_token.empty())
+                params.push_back({"pageToken", page_token});
+
+            auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, params);
+            String next_page_token;
+            auto page_namespaces = parseNamespaces(*buf, base_namespace, next_page_token);
+            LOG_DEBUG(
+                log,
+                "Loaded {} namespaces in base namespace `{}` (page_token=`{}`, next_page_token=`{}`)",
+                page_namespaces.size(), base_namespace, page_token, next_page_token);
+
+            all_namespaces.insert(
+                all_namespaces.end(),
+                std::make_move_iterator(page_namespaces.begin()),
+                std::make_move_iterator(page_namespaces.end()));
+
+            if (next_page_token.empty())
+                break;
+            /// Cycle guard: if the catalog returns a `next-page-token` we have already seen
+            /// on this request, iterating further would loop forever. Treat it as a malformed
+            /// catalog response rather than hanging `SHOW TABLES` / `system.tables`. This
+            /// covers immediate repeats (`A -> A`) and longer cycles (`A -> B -> A`, etc.).
+            if (!seen_tokens.insert(next_page_token).second)
+                throw DB::Exception(
+                    DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                    "Iceberg REST catalog returned a `next-page-token` (`{}`) already seen on this "
+                    "request while listing namespaces under `{}` — refusing to loop.",
+                    next_page_token, base_namespace);
+            page_token = std::move(next_page_token);
+        }
+        return all_namespaces;
     }
     catch (const DB::HTTPException & e)
     {
@@ -703,8 +746,10 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
     }
 }
 
-RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace) const
+RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace, String & next_page_token) const
 {
+    next_page_token.clear();
+
     if (buf.eof())
         return {};
 
@@ -753,6 +798,26 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
             namespaces.push_back(full_namespace);
         }
 
+        /// Iceberg REST OpenAPI spec: response carries `next-page-token` (kebab-case).
+        /// Empty / null / missing token all mean "no more pages".
+        ///
+        /// BigLake-non-empty-base-namespace short-circuit: when the BigLake quirk
+        /// above drops every returned entry (because BigLake ignores `parent`
+        /// and returns unrelated top-level namespaces), continuing pagination
+        /// just burns O(pages) REST calls per parent namespace without ever
+        /// contributing to the result. Treat the first page as terminal by
+        /// leaving `next_page_token` empty (already cleared at function entry)
+        /// so the outer `getNamespaces` loop returns immediately.
+        const bool biglake_drops_all_entries
+            = getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
+            && !base_namespace.empty();
+        if (!biglake_drops_all_entries
+            && object->has("next-page-token")
+            && !object->isNull("next-page-token"))
+        {
+            next_page_token = object->get("next-page-token").extract<String>();
+        }
+
         return namespaces;
     }
     catch (DB::Exception & e)
@@ -767,12 +832,61 @@ DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limi
     auto encoded_namespace = encodeNamespaceForURI(base_namespace);
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encoded_namespace / "tables";
 
-    auto buf = createReadBuffer(config.prefix / endpoint);
-    return parseTables(*buf, base_namespace, limit);
+    DB::Names tables;
+    String page_token;
+    /// Cycle-detection guard: tracks every non-empty `next-page-token` we have seen on this
+    /// request so we can refuse to loop when a malformed catalog repeats a token. Covers both
+    /// the immediate-repeat case (`A -> A`) and longer cycles (`A -> B -> A -> ...`), since
+    /// any revisit triggers a duplicate `insert`.
+    std::unordered_set<String> seen_tokens;
+
+    while (true)
+    {
+        /// The Iceberg REST OpenAPI spec uses `pageToken` (request) / `next-page-token` (response)
+        /// for paginating the list-tables endpoint. Without this loop we silently return only the
+        /// first page when the catalog server (e.g. OneLake / BigLake / Microsoft Fabric) caps the
+        /// page size — making tables on later pages invisible to `SHOW TABLES` and `system.tables`.
+        Poco::URI::QueryParameters params;
+        if (!page_token.empty())
+            params.push_back({"pageToken", page_token});
+
+        auto buf = createReadBuffer(config.prefix / endpoint, params);
+
+        /// Pass through the remaining limit so that single-page short-circuiting still works
+        /// when the caller is in `empty()` (limit=1) and the first page already contains a row.
+        const size_t remaining_limit = (limit == 0) ? 0 : (limit > tables.size() ? limit - tables.size() : 0);
+        String next_page_token;
+        auto page_tables = parseTables(*buf, base_namespace, remaining_limit, next_page_token);
+
+        tables.insert(
+            tables.end(),
+            std::make_move_iterator(page_tables.begin()),
+            std::make_move_iterator(page_tables.end()));
+
+        if (limit && tables.size() >= limit)
+            break;
+        if (next_page_token.empty())
+            break;
+        /// Cycle guard: if the catalog returns a `next-page-token` we have already seen
+        /// on this request, iterating further would loop forever. Treat it as a malformed
+        /// catalog response rather than hanging `SHOW TABLES` / `system.tables`. This
+        /// covers immediate repeats (`A -> A`) and longer cycles (`A -> B -> A`, etc.).
+        if (!seen_tokens.insert(next_page_token).second)
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "Iceberg REST catalog returned a `next-page-token` (`{}`) already seen on this "
+                "request while listing tables in namespace `{}` — refusing to loop.",
+                next_page_token, base_namespace);
+        page_token = std::move(next_page_token);
+    }
+
+    return tables;
 }
 
-DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit) const
+DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit, String & next_page_token) const
 {
+    next_page_token.clear();
+
     if (buf.eof())
         return {};
 
@@ -806,6 +920,11 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
             if (limit && tables.size() >= limit)
                 break;
         }
+
+        /// Iceberg REST OpenAPI spec: response carries `next-page-token` (kebab-case).
+        /// Empty / null / missing token all mean "no more pages".
+        if (object->has("next-page-token") && !object->isNull("next-page-token"))
+            next_page_token = object->get("next-page-token").extract<String>();
 
         return tables;
     }

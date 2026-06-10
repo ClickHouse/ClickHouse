@@ -38,7 +38,6 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/operators.hpp>
-#include <Poco/String.h>
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
@@ -83,6 +82,7 @@ namespace Setting
     extern const SettingsBool table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
+    extern const SettingsBool input_format_parquet_use_native_reader_v3;
 }
 
 namespace ErrorCodes
@@ -400,7 +400,9 @@ Chunk StorageObjectStorageSource::generate()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     read_from_format_info.hive_partition_columns_to_read_from_file_path,
-                    path);
+                    path,
+                    format_settings,
+                    read_context);
             }
 
             const String * iceberg_metadata_file_path = nullptr;
@@ -423,7 +425,8 @@ Chunk StorageObjectStorageSource::generate()
                     .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
                     .iceberg_metadata_file_path = iceberg_metadata_file_path,
                 },
-                read_context);
+                read_context,
+                format_settings);
 
 #if USE_PARQUET
             if (chunk_size && chunk.hasColumns())
@@ -690,8 +693,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         logIcebergFileStats(object_info, log);
 
+        bool use_native_reader_v3 = format_settings.has_value()
+            ? format_settings->parquet.use_native_reader_v3
+            : context_->getSettingsRef()[Setting::input_format_parquet_use_native_reader_v3];
+
         InputFormatPtr input_format;
-        if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
+        if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache] && use_native_reader_v3
             && (Poco::toLower(object_info->getFileFormat().value_or(configuration->format)) == "parquet")
             && !object_info->getObjectMetadata()->etag.empty())
         {
@@ -976,8 +983,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     if (use_page_cache)
     {
-        PageCacheFile cache_file = {.path = "s3:" + object_info.getPath(), .file_version = "etag:" + object_info.metadata->etag};
-        impl = std::make_unique<CachedInMemoryReadBufferFromFile>(cache_file, effective_read_settings.page_cache, std::move(impl), modified_read_settings);
+        PageCacheKey key = {.path = "s3:" + object_info.getPath(), .file_version = "etag:" + object_info.metadata->etag};
+        impl = std::make_unique<CachedInMemoryReadBufferFromFile>(key, effective_read_settings.page_cache, std::move(impl), modified_read_settings);
     }
 
     if (!use_async_buffer)

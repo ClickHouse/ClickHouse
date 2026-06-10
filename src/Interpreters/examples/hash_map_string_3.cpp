@@ -48,13 +48,34 @@ done
 */
 
 
-namespace
-{
+#define DefineStringView(STRUCT) \
+\
+struct STRUCT : public std::string_view {}; \
+\
+namespace ZeroTraits \
+{ \
+    template <> \
+    inline bool check<STRUCT>(STRUCT x) { return x.empty(); } /* NOLINT */ \
+ \
+    template <> \
+    inline void set<STRUCT>(STRUCT & x) { x = STRUCT{}; } /* NOLINT */ \
+} \
+ \
+template <> \
+struct DefaultHash<STRUCT> \
+{ \
+    size_t operator() (STRUCT x) const \
+    { \
+        return CityHash_v1_0_2::CityHash64(x.data(), x.size()); \
+    } \
+};
 
-struct StringView_CompareMemcmp : public std::string_view {};
-struct StringView_CompareAlwaysTrue : public std::string_view {};
 
-[[maybe_unused]] inline bool operator==(StringView_CompareMemcmp lhs, StringView_CompareMemcmp rhs)
+DefineStringView(StringView_CompareMemcmp)
+DefineStringView(StringView_CompareAlwaysTrue)
+
+
+inline bool operator==(StringView_CompareMemcmp lhs, StringView_CompareMemcmp rhs)
 {
     if (lhs.size() != rhs.size())
         return false;
@@ -62,49 +83,14 @@ struct StringView_CompareAlwaysTrue : public std::string_view {};
     if (lhs.empty())
         return true;
 
-    return 0 == memcmp(lhs.data(), rhs.data(), lhs.size());
+    return 0 == memcmp(lhs.data(), rhs.data(), lhs.size()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
 }
 
-[[maybe_unused]] inline bool operator==(StringView_CompareAlwaysTrue, StringView_CompareAlwaysTrue)
+inline bool operator==(StringView_CompareAlwaysTrue, StringView_CompareAlwaysTrue)
 {
     return true;
 }
 
-} /// close anonymous namespace for ZeroTraits/DefaultHash specializations
-
-namespace ZeroTraits
-{
-    template <>
-    [[maybe_unused]] inline bool check<StringView_CompareMemcmp>(StringView_CompareMemcmp x) { return x.empty(); }
-    template <>
-    [[maybe_unused]] inline void set<StringView_CompareMemcmp>(StringView_CompareMemcmp & x) { x = StringView_CompareMemcmp{}; }
-
-    template <>
-    [[maybe_unused]] inline bool check<StringView_CompareAlwaysTrue>(StringView_CompareAlwaysTrue x) { return x.empty(); }
-    template <>
-    [[maybe_unused]] inline void set<StringView_CompareAlwaysTrue>(StringView_CompareAlwaysTrue & x) { x = StringView_CompareAlwaysTrue{}; }
-}
-
-template <>
-struct DefaultHash<StringView_CompareMemcmp>
-{
-    [[maybe_unused]] size_t operator() (StringView_CompareMemcmp x) const
-    {
-        return CityHash_v1_0_2::CityHash64(x.data(), x.size());
-    }
-};
-
-template <>
-struct DefaultHash<StringView_CompareAlwaysTrue>
-{
-    [[maybe_unused]] size_t operator() (StringView_CompareAlwaysTrue x) const
-    {
-        return CityHash_v1_0_2::CityHash64(x.data(), x.size());
-    }
-};
-
-namespace
-{
 
 struct FastHash64
 {
@@ -116,7 +102,7 @@ struct FastHash64
         return h;
     }
 
-    [[maybe_unused]] size_t operator() (std::string_view x) const
+    size_t operator() (std::string_view x) const
     {
         const char * buf = x.data();
         size_t len = x.size();
@@ -470,9 +456,8 @@ void NO_INLINE bench(const std::vector<std::string_view> & data, const char * na
         << std::endl;
 }
 
-}
 
-int mainEntryExampleHashMapString3(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     if (argc < 3)
     {

@@ -30,6 +30,12 @@ namespace ErrorCodes
 
 class Block;
 
+/// Maximum nesting depth for Avro schemas. Passed to the Avro library to
+/// prevent stack overflow on deeply nested schemas (e.g. crafted inputs with
+/// thousands of nested arrays/records). Real-world schemas rarely exceed 10-20
+/// levels, so 256 is more than enough.
+static constexpr size_t MAX_AVRO_SCHEMA_DEPTH = 256;
+
 class AvroInputStreamReadBufferAdapter : public avro::InputStream
 {
 public:
@@ -52,6 +58,12 @@ class AvroDeserializer
 public:
     AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
     AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
+
+    AvroDeserializer(const AvroDeserializer &) = delete;
+    AvroDeserializer & operator=(const AvroDeserializer &) = delete;
+    AvroDeserializer(AvroDeserializer &&) = default;
+    AvroDeserializer & operator=(AvroDeserializer &&) = delete;
+
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
 
     using DeserializeFn = std::function<bool(IColumn & column, avro::Decoder & decoder)>;

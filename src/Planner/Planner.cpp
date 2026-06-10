@@ -9,7 +9,6 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitors.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -98,6 +97,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -119,11 +119,11 @@ namespace Setting
     extern const SettingsUInt64 max_subquery_depth;
     extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
     extern const SettingsBool query_plan_enable_multithreading_after_window_functions;
+    extern const SettingsBool serialize_query_plan;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsFloat totals_auto_threshold;
     extern const SettingsTotalsMode totals_mode;
@@ -626,7 +626,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
                 && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),
         tmp_data_scope,
-        getMaxThreadsForAvailableMemory(settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]),
+        settings[Setting::max_threads],
         settings[Setting::min_free_disk_space_for_temporary_data],
         settings[Setting::compile_aggregate_expressions],
         settings[Setting::min_count_to_compile_aggregate_expression],
@@ -671,12 +671,10 @@ void addAggregationStep(QueryPlan & query_plan,
         sort_description_for_merging = group_by_sort_description;
     }
 
-    const size_t memory_limited_max_threads = getMaxThreadsForAvailableMemory(
-        settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
-    auto merge_threads = memory_limited_max_threads;
+    auto merge_threads = settings[Setting::max_threads];
     auto temporary_data_merge_threads = settings[Setting::aggregation_memory_efficient_merge_threads]
         ? static_cast<size_t>(settings[Setting::aggregation_memory_efficient_merge_threads])
-        : memory_limited_max_threads;
+        : static_cast<size_t>(settings[Setting::max_threads]);
 
     bool storage_has_evenly_distributed_read = false;
     const auto & table_expression_node_to_data = planner_context->getTableExpressionNodeToData();
@@ -737,8 +735,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
 
     /// For count() without parameters try to use just one thread
     /// Typically this will either be a trivial count or a really small number of states
-    size_t max_threads = getMaxThreadsForAvailableMemory(
-        settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
+    size_t max_threads = settings[Setting::max_threads];
     if (keys.empty() && aggregation_analysis_result.aggregate_descriptions.size() == 1
         && aggregation_analysis_result.aggregate_descriptions[0].function->getName() == String{"count"}
         && aggregation_analysis_result.grouping_sets_parameters_list.empty())
@@ -922,24 +919,13 @@ ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
 
     const auto & sort_description = query_analysis_result.sort_description;
 
-    SortingStep::Settings sort_settings(settings);
-
     auto merging_sorted = std::make_unique<SortingStep>(
         query_plan.getCurrentHeader(),
         sort_description,
-        sort_settings,
+        settings[Setting::max_block_size],
         query_analysis_result.partial_sorting_limit,
         settings[Setting::exact_rows_before_limit]);
     merging_sorted->setStepDescription(description);
-
-    /// Buffer incoming pre-sorted streams to decouple the readers from the merger.
-    /// Mirrors the single-node read-in-order case in optimizeReadInOrder.
-    /// If a limit is later pushed down into this step, `updateLimit` will turn buffering back off.
-    if (query_analysis_result.partial_sorting_limit == 0
-        && sort_settings.read_in_order_use_buffering
-        && !sort_settings.read_in_order_use_virtual_row_per_block)
-        merging_sorted->enableBuffering();
-
     query_plan.addStep(std::move(merging_sorted));
 }
 
@@ -1303,10 +1289,8 @@ void addWindowSteps(QueryPlan & query_plan,
         bool need_sort = !window_description.full_sort_description.empty();
         if (need_sort && i != 0)
         {
-            const size_t effective_max_threads = getMaxThreadsForAvailableMemory(
-                settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
             need_sort = !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)
-                || (effective_max_threads != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
+                || (settings[Setting::max_threads] != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
         }
         if (need_sort)
         {
@@ -1708,31 +1692,6 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
     auto fake_table_expression = std::make_shared<TableNode>(std::move(storage), query_context);
 
-    /// Each call to collectSourceColumns will register column identifiers in the shared GlobalPlannerContext.
-    /// When multiple UNION branches share the same GlobalPlannerContext and each applies additional_result_filter,
-    /// the bare column names (e.g. "a") would collide. Give the fake table expression a unique alias
-    /// so that identifiers become unique (e.g. "_additional_result_filter_0.a").
-    /// Loop until we find an alias that does not collide with any existing identifiers,
-    /// so that even a user alias like "_additional_result_filter_0" cannot cause a conflict.
-    auto & global_context = planner_context->getGlobalPlannerContext();
-    std::string unique_alias;
-    while (true)
-    {
-        unique_alias = "_additional_result_filter_" + std::to_string(global_context->nextUniqueId());
-        bool has_collision = false;
-        for (const auto & column : query_node.getProjectionColumns())
-        {
-            if (global_context->hasColumnIdentifier(unique_alias + "." + column.name))
-            {
-                has_collision = true;
-                break;
-            }
-        }
-        if (!has_collision)
-            break;
-    }
-    fake_table_expression->setAlias(unique_alias);
-
     auto filter_info = buildFilterInfo(additional_result_filter_ast, fake_table_expression, planner_context, std::move(fake_name_set));
     if (!query_plan.isInitialized())
         return;
@@ -1886,15 +1845,14 @@ void Planner::buildPlanForUnionNode()
     const auto & query_context = planner_context->getQueryContext();
     addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers, query_context);
     const auto & settings = query_context->getSettingsRef();
-    auto max_threads = getMaxThreadsForAvailableMemory(
-        settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
+    auto max_threads = settings[Setting::max_threads];
 
     bool is_distinct = union_mode == SelectUnionMode::UNION_DISTINCT || union_mode == SelectUnionMode::INTERSECT_DISTINCT
         || union_mode == SelectUnionMode::EXCEPT_DISTINCT;
 
     if (union_mode == SelectUnionMode::UNION_ALL || union_mode == SelectUnionMode::UNION_DISTINCT)
     {
-        auto union_step = std::make_unique<UnionStep>(std::move(query_plans_headers), max_threads, /* is_sql_union = */ true);
+        auto union_step = std::make_unique<UnionStep>(std::move(query_plans_headers), max_threads);
         query_plan.unitePlans(std::move(union_step), std::move(query_plans));
     }
     else if (union_mode == SelectUnionMode::INTERSECT_ALL || union_mode == SelectUnionMode::INTERSECT_DISTINCT
@@ -2007,6 +1965,26 @@ void Planner::buildPlanForQueryNode()
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
             LOG_DEBUG(log, "Disabling parallel replicas to execute a query with IN with subquery");
         }
+    }
+
+    /// `additional_table_filters` keys are resolved against the initiator's session current database,
+    /// but on followers the rewritten `SELECT` uses fully qualified names and the follower's current
+    /// database is the initiator's user-default DB, so the filter match is unreliable. Rather than
+    /// patch the match (which differs case by case), disable the combination on the analyzer path.
+    /// With `serialize_query_plan` the initiator lowers `additional_table_filters` into an explicit
+    /// `FilterStep` and ships the serialized plan, so the follower never re-resolves the setting —
+    /// the combination works there and the check is skipped.
+    if (query_context->canUseParallelReplicasOnInitiator()
+        && !settings[Setting::serialize_query_plan]
+        && !settings[Setting::additional_table_filters].value.empty())
+    {
+        if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "additional_table_filters is not supported with parallel and without serialize_query_plan=1");
+
+        auto & mutable_context = planner_context->getMutableQueryContext();
+        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        LOG_DEBUG(log, "Disabling parallel replicas to execute a query with additional_table_filters");
     }
 
     collectTableExpressionData(query_tree, planner_context);

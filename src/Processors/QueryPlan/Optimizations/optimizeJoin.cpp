@@ -580,13 +580,6 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
             auto child_join_kind = child_join_step->getJoinOperator().kind;
             bool allow_child_join_kind = isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
             allow_child_join_kind = allow_child_join_kind && child_join_step->getJoinOperator().strictness == JoinStrictness::All;
-            /// Do not flatten joins that have type-changing sides (e.g., LEFT JOIN
-            /// with `join_use_nulls` making right-side columns Nullable). Flattening
-            /// such joins allows the optimizer to reorder them, which can separate
-            /// a relation from the join that causes its type change, leading to
-            /// type changes being applied at the wrong step and the exception
-            /// "Cannot fold actions for projection".
-            allow_child_join_kind = allow_child_join_kind && child_join_step->typeChangingSides().empty();
             if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
             {
                 QueryGraphBuilder child_graph(graph.context);
@@ -742,15 +735,27 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         else
         {
             auto sources = edge.getSourceRelations();
+            bool should_pin = false;
+
             for (auto rel_id : sources)
             {
                 auto it = query_graph.join_kinds.find(rel_id);
                 if (it != query_graph.join_kinds.end())
                 {
-                    query_graph.pinned[edge] = total_inputs - 1;
+                    should_pin = true;
                     break;
                 }
             }
+
+            /// If a condition references only the preserved side of an outer join,
+            /// it must not be placed in that outer join's ON clause, because
+            /// ON-clause conditions on the preserved side only affect matching,
+            /// not filtering — rows from the preserved side are kept regardless.
+            should_pin = should_pin || std::ranges::any_of(query_graph.join_kinds | std::views::values,
+                [&sources](const auto & partner_info) { return isSubsetOf(sources, partner_info.first); });
+
+            if (should_pin)
+                query_graph.pinned[edge] = total_inputs - 1;
         }
     }
 

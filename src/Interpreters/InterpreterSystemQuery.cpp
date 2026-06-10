@@ -37,7 +37,6 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -131,8 +130,6 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsSetOperationMode except_default_mode;
-    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
 }
 
@@ -273,7 +270,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     }
     else
     {
-        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
         {
             startStopActionInDatabase(action_type, start, elem.first, elem.second, getContext(), log);
         }
@@ -345,16 +342,7 @@ BlockIO InterpreterSystemQuery::execute()
     }
     else if (query.table)
     {
-        StorageID id_in_query(query.getDatabase(), query.getTable());
-        /// `IF EXISTS` (currently parsed for `SYSTEM SYNC REPLICA`) must suppress
-        /// `UNKNOWN_DATABASE` in addition to `UNKNOWN_TABLE`. Plain `resolveStorageID`
-        /// throws on a missing database before the per-handler `if_exists` check is
-        /// reached, so use `tryResolveStorageID` here when `if_exists` is set.
-        /// The handler still validates table existence via the catalog.
-        if (query.if_exists)
-            table_id = getContext()->tryResolveStorageID(id_in_query, Context::ResolveOrdinary);
-        else
-            table_id = getContext()->resolveStorageID(id_in_query, Context::ResolveOrdinary);
+        table_id = getContext()->resolveStorageID(StorageID(query.getDatabase(), query.getTable()), Context::ResolveOrdinary);
     }
 
 
@@ -1432,7 +1420,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
     bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_RESTART_REPLICA);
     bool show_tables_is_granted_globally = access->isGranted(AccessType::SHOW_TABLES);
 
-    for (auto & elem : catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    for (auto & elem : catalog.getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
     {
         if (elem.second->isExternal())
             continue;
@@ -1494,7 +1482,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     }
     else if (query.is_drop_whole_replica)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
@@ -1518,7 +1506,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                 "SYSTEM DROP REPLICA",
                 fmt::join(required_access, ", "));
 
-        /// If we are here, then the user has the necessary access to drop the replica, continue with the operation.
+        /// If we are here, then the user has the necassary access to drop the replica, continue with the operation.
         for (auto & elem : databases)
         {
             DatabasePtr & database = elem.second;
@@ -1536,7 +1524,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         String remote_replica_path = fs::path(query.replica_zk_path)  / "replicas" / query.replica;
 
         /// This check is actually redundant, but it may prevent from some user mistakes
-        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
         {
             DatabasePtr & database = elem.second;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
@@ -1699,7 +1687,7 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
     {
         auto query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
-        query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        query_context->setDDLOrOnClusterInternal(true);
         query_context->setCurrentDatabase(restoring_database_name);
         query_context->setCurrentQueryId("");
 
@@ -1745,14 +1733,8 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
                 /*query=*/create_query_string);
             auto create_query_context = make_create_context();
 
-            {
-                SelectIntersectExceptQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::intersect_default_mode], create_query_context->getSettingsRef()[Setting::except_default_mode]};
-                SelectIntersectExceptQueryVisitor{data}.visit(query_ast);
-            }
-            {
-                NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
-                NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
-            }
+            NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
+            NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
 
             LOG_INFO(log, "Restoring {}", query_ast->formatForLogging());
             InterpreterCreateQuery(query_ast, create_query_context).execute();
@@ -1869,7 +1851,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     }
     else if (query.is_drop_whole_replica)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
@@ -1902,7 +1884,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
 
         /// This check is actually redundant, but it may prevent from some user mistakes
-        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
             if (auto * replicated = dynamic_cast<DatabaseReplicated *>(elem.second.get()))
                 check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
 
@@ -2052,7 +2034,7 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
         getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
         LOG_TRACE(log, "{} primary keys for all tables", load ? "Loading" : "Unloading");
 
-        for (auto & database : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+        for (auto & database : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
         {
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
             {

@@ -139,7 +139,6 @@ class ZooKeeperConnectionLog;
 class AggregatedZooKeeperLog;
 class IcebergMetadataLog;
 class DeltaMetadataLog;
-class PredicateStatisticsLog;
 class SessionLog;
 class BackupsWorker;
 class TransactionsInfoLog;
@@ -567,6 +566,11 @@ protected:
     bool is_internal_query = false;
     /// A flag, used to detect sub-operations of background operations - in this case we won't need to build another background contexts
     bool is_background_operation = false;
+    /// Set for queries created internally by the server for DDL replication (ON CLUSTER, DatabaseReplicated)
+    /// and internal backup coordination.
+    /// Unlike query_kind == SECONDARY_QUERY (which comes from the client and can be spoofed),
+    /// this flag can only be set server-side and is safe to use for security-sensitive checks.
+    bool is_ddl_or_on_cluster_internal = false;
 
     inline static ContextPtr global_context_instance;
     inline static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
@@ -749,8 +753,6 @@ public:
         DB_ORDINARY_DEPRECATED,
         DELAY_ACCOUNTING_DISABLED,
         LINUX_FAST_CLOCK_SOURCE_NOT_USED,
-        LINUX_MDRAID_IS_BEING_RESYNCHRONIZED,
-        LINUX_MDRAID_IS_DEGRADED,
         LINUX_MAX_PID_TOO_LOW,
         LINUX_MAX_THREADS_COUNT_TOO_LOW,
         LINUX_MEMORY_OVERCOMMIT_DISABLED,
@@ -785,7 +787,6 @@ public:
 
     std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;
     void addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
-    void addOrUpdateWarningMessage(WarningType warning, std::optional<PreformattedMessage> message) const;
     void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
     void removeWarningMessage(WarningType warning) const;
     void removeAllWarnings() const;
@@ -1536,7 +1537,6 @@ public:
     std::shared_ptr<AggregatedZooKeeperLog> getAggregatedZooKeeperLog() const;
     std::shared_ptr<IcebergMetadataLog> getIcebergMetadataLog() const;
     std::shared_ptr<DeltaMetadataLog> getDeltaMetadataLog() const;
-    std::shared_ptr<PredicateStatisticsLog> getPredicateStatisticsLog() const;
 
     SystemLogs getSystemLogs() const;
 
@@ -1611,6 +1611,10 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
+
+    bool isDDLOrOnClusterInternal() const { return is_ddl_or_on_cluster_internal; }
+    void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }
+
 
     ActionLocksManagerPtr getActionLocksManager() const;
 
@@ -1717,9 +1721,6 @@ public:
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();
     bool areBackgroundExecutorsInitialized() const;
-
-    /// True if the low-memory auto-tuning heuristic lowered background_pool_size at startup.
-    bool wasBackgroundPoolAutoLowered() const;
 
     MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
