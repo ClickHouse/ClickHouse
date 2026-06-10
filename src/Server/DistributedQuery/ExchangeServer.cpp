@@ -12,6 +12,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Poco/Net/NetException.h>
 
 namespace CurrentMetrics
@@ -85,6 +86,8 @@ void ExchangeServer::stop()
 
 void ExchangeServer::run()
 {
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
+
     while (!stopped)
     {
         Poco::Timespan timeout(250000);
