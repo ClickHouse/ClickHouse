@@ -166,6 +166,12 @@ namespace
         if (quota.key_type != QuotaKeyType::NONE)
             query->key_type = quota.key_type;
 
+        if (quota.ipv4_prefix_bits)
+            query->ipv4_prefix_bits = quota.ipv4_prefix_bits;
+
+        if (quota.ipv6_prefix_bits)
+            query->ipv6_prefix_bits = quota.ipv6_prefix_bits;
+
         query->all_limits.reserve(quota.all_limits.size());
 
         for (const auto & limits : quota.all_limits)
