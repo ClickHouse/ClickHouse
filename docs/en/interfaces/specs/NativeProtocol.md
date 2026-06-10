@@ -11,6 +11,10 @@ The native protocol is the binary, connection-oriented protocol that ClickHouse 
 
 This page covers the protocol itself: packet framing, the connection state machine, version negotiation, and the body of every non-`Block` message. The bytes inside `Data`-family packets (the `Block`, its columns, and the per-type encodings) are a separate concern, documented in the [Native Format](/interfaces/specs/NativeFormat) specification.
 
+:::note Companion specification
+This page is one half of a pair and is published together with the companion [Native Format](/interfaces/specs/NativeFormat) specification (slug `/interfaces/specs/NativeFormat`). Links on this page into that spec — such as `#varuint`, `#string`, `#compression-frame`, `#kind-stack-and-sparse-encoding`, `#block-and-column-structure`, and `#versioned-types` — are intentional cross-references to anchors defined there, not on the older [`Native` format](/interfaces/formats/Native) page. The two specs split the work cleanly: this page owns the packet and transport layer; the Native Format spec owns the bytes inside `Data`-family packets. They must be shipped together so these cross-references resolve.
+:::
+
 A few properties hold throughout. The protocol is binary and positional: there are no field tags except inside `BlockInfo`, so a single misplaced byte desynchronizes everything that follows. It is stateful, and each TCP connection processes one query at a time — there is no multiplexing. Fixed-width integers are little-endian.
 
 ## Overview {#overview}
