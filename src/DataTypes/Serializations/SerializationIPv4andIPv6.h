@@ -8,7 +8,7 @@ namespace DB
 {
 
 template <typename IPv>
-class SerializationIP : public SimpleTextSerialization
+class SerializationIP final : public SimpleTextSerialization
 {
 private:
     SerializationIP() = default;

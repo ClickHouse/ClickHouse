@@ -16,7 +16,7 @@ Contains information about available certificates and their sources.
 - `version` ([Int32](/sql-reference/data-types/int-uint)) — Version of the certificate. Values are 0 for v1, 1 for v2, 2 for v3.
 - `serial_number` ([Nullable(String)](/sql-reference/data-types/nullable)) — Serial Number of the certificate assigned by the issuer.
 - `signature_algo` ([Nullable(String)](/sql-reference/data-types/nullable)) — Signature Algorithm - an algorithm used by the issuer to sign this certificate.
-- `issuer` ([Nullable(String)](/sql-reference/data-types/nullable)) — Issuer - an unique identifier for the Certificate Authority issuing this certificate.
+- `issuer` ([Nullable(String)](/sql-reference/data-types/nullable)) — Issuer - a unique identifier for the Certificate Authority issuing this certificate.
 - `not_before` ([Nullable(String)](/sql-reference/data-types/nullable)) — The beginning of the time window when this certificate is valid.
 - `not_after` ([Nullable(String)](/sql-reference/data-types/nullable)) — The end of the time window when this certificate is valid.
 - `subject` ([Nullable(String)](/sql-reference/data-types/nullable)) — Subject - identifies the owner of the public key.

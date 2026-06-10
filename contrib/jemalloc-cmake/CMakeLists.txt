@@ -44,7 +44,7 @@ if (OS_LINUX)
     # Increasing from default 6(64x) to 8(256x) allows these coalesced blocks to be split and reused.
     # See: https://github.com/ClickHouse/ClickHouse/pull/80245
     # https://github.com/jemalloc/jemalloc/pull/2842
-    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:8")
+    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:67108864,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:8")
 else()
     # For non-Linux systems, percpu_arena and background_thread are assumed to be not supported by jemalloc.
     # These two settings directly affect arena purging frequency and predictability:
@@ -193,6 +193,8 @@ target_compile_definitions(_jemalloc INTERFACE -DJEMALLOC_NO_RENAME)
 
 # Because our coverage callbacks call malloc, and recursive call of malloc could not work.
 target_compile_options(_jemalloc PRIVATE ${WITHOUT_COVERAGE_FLAGS_LIST})
+# Due to LTO there are some UB in tcache
+target_compile_options(_jemalloc PRIVATE -fno-lto -fno-whole-program-vtables)
 
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_PROF=1)
 

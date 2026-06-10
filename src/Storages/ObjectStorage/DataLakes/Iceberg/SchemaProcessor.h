@@ -1,5 +1,4 @@
 #pragma once
-#include "config.h"
 
 
 #include <memory>
@@ -83,7 +82,7 @@ class IcebergSchemaProcessor : private WithContext
     using Node = ActionsDAG::Node;
 
 public:
-    explicit IcebergSchemaProcessor(ContextPtr context_) : WithContext(context_) {}
+    explicit IcebergSchemaProcessor(ContextPtr context_, bool allow_geo_parser_ = false) : WithContext(context_), allow_geo_parser(allow_geo_parser_) {}
 
     void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr, ContextPtr context_);
     std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
@@ -95,7 +94,7 @@ public:
     Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
     bool hasClickhouseTableSchemaById(Int32 id) const;
 
-    static DataTypePtr getSimpleType(const String & type_name, ContextPtr context_);
+    static DataTypePtr getSimpleType(const String & type_name, ContextPtr context_, bool allow_geo_parser = true);
 
     static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
 
@@ -139,6 +138,7 @@ private:
         Int32 new_id);
 
     mutable SharedMutex mutex;
+    bool allow_geo_parser = true;
 };
 
 using IcebergSchemaProcessorPtr = std::shared_ptr<IcebergSchemaProcessor>;

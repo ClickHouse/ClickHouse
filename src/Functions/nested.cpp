@@ -29,7 +29,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionNested : public IFunction
+class FunctionNested final : public IFunction
 {
 public:
     static constexpr auto name = "nested";
@@ -54,6 +54,11 @@ public:
     bool useDefaultImplementationForConstants() const override
     {
         return true;
+    }
+
+    bool useDefaultImplementationForLowCardinalityColumns() const override
+    {
+        return false;
     }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override

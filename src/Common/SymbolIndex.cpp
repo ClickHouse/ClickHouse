@@ -3,7 +3,7 @@
 #include <base/MemorySanitizer.h>
 #include <base/hex.h>
 #include <base/sort.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
+#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/SymbolIndex.h>
 
 #include <algorithm>
@@ -235,7 +235,7 @@ void collectSymbolsFromProgramHeaders(
                     if (!sym_name)
                         continue;
 
-                    SymbolIndex::Symbol symbol;
+                    SymbolIndex::Symbol symbol{};
                     symbol.offset_begin = reinterpret_cast<const void *>(
                         elf_sym[sym_index].value);
                     symbol.offset_end = reinterpret_cast<const void *>(
@@ -303,7 +303,7 @@ void collectSymbolsFromELFSymbolTable(
         if (!symbol_name)
             continue;
 
-        SymbolIndex::Symbol symbol;
+        SymbolIndex::Symbol symbol{};
         symbol.offset_begin = reinterpret_cast<const void *>(
             symbol_table_entry->value);
         symbol.offset_end = reinterpret_cast<const void *>(
@@ -792,7 +792,7 @@ const SymbolIndex & SymbolIndex::instance()
     ///
     ///   __cxa_guard_acquire detected recursive initialization: do you have a function-local static variable whose initialization depends on that function
     ///
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
     static SymbolIndex instance;
     return instance;
 }

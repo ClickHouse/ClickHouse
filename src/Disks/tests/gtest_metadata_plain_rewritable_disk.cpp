@@ -94,7 +94,7 @@ private:
     std::unordered_map<std::string, std::shared_ptr<IObjectStorage>> active_object_storages;
 };
 
-size_t writeObject(const std::shared_ptr<IObjectStorage> & object_storage, const std::string & remote_path, const std::string & data)
+static size_t writeObject(const std::shared_ptr<IObjectStorage> & object_storage, const std::string & remote_path, const std::string & data)
 {
     StoredObject object(remote_path);
     auto buffer = object_storage->writeObject(object, WriteMode::Rewrite);
@@ -105,7 +105,7 @@ size_t writeObject(const std::shared_ptr<IObjectStorage> & object_storage, const
     return written_bytes;
 }
 
-std::string readObject(const std::shared_ptr<IObjectStorage> & object_storage, const std::string & remote_path)
+static std::string readObject(const std::shared_ptr<IObjectStorage> & object_storage, const std::string & remote_path)
 {
     StoredObject object(remote_path);
     auto buffer = object_storage->readObject(object, getReadSettings(), /*read_hint=*/std::nullopt);
@@ -115,20 +115,20 @@ std::string readObject(const std::shared_ptr<IObjectStorage> & object_storage, c
     return content;
 }
 
-std::string generateObjectKeyPrefixForDirectoryPath(const std::shared_ptr<IMetadataStorage> & metadata, const std::string & directory)
+static std::string generateObjectKeyPrefixForDirectoryPath(const std::shared_ptr<IMetadataStorage> & metadata, const std::string & directory)
 {
     auto tx = metadata->createTransaction();
     auto file_remote_path = tx->generateObjectKeyForPath(fs::path(directory) / "file.txt").serialize();
     return fs::path(file_remote_path).parent_path().filename();
 }
 
-std::string generateObjectKeyForPath(const std::shared_ptr<IMetadataStorage> & metadata, const std::string & path)
+static std::string generateObjectKeyForPath(const std::shared_ptr<IMetadataStorage> & metadata, const std::string & path)
 {
     auto tx = metadata->createTransaction();
     return tx->generateObjectKeyForPath(path).serialize();
 }
 
-std::string createMetadataObjectPath(const std::shared_ptr<IMetadataStorage> & metadata, const std::string & directory)
+static std::string createMetadataObjectPath(const std::shared_ptr<IMetadataStorage> & metadata, const std::string & directory)
 {
     auto tx = metadata->createTransaction();
     auto file_remote_path = tx->generateObjectKeyForPath(fs::path(directory) / "file.txt").serialize();
@@ -137,13 +137,13 @@ std::string createMetadataObjectPath(const std::shared_ptr<IMetadataStorage> & m
     return fs::path(common_key_prefix) / "__meta" / object_key_prefix / "prefix.path";
 }
 
-std::vector<std::string> sorted(std::vector<std::string> array)
+static std::vector<std::string> sorted(std::vector<std::string> array)
 {
     std::sort(array.begin(), array.end());
     return array;
 }
 
-std::vector<std::string> listAllBlobs(std::string test)
+static std::vector<std::string> listAllBlobs(std::string test)
 {
     if (!std::filesystem::exists(fmt::format("./{}", test)))
         return {};
@@ -1560,8 +1560,8 @@ TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfo)
     EXPECT_TRUE(metadata->existsFile("/A/B/C/file"));
     EXPECT_EQ(metadata->getFileSizeIfExists("/A/B/C/file"), written_bytes);
     EXPECT_EQ(metadata->getFileSize("/A/B/C/file"), written_bytes);
-    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file").value(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
-    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file").value(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
+    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file")->epochTime(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
+    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file")->epochTime(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
 
     EXPECT_EQ(listAllBlobs("FileRemoteInfo"), std::vector<std::string>({
         "./FileRemoteInfo/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
@@ -1575,8 +1575,8 @@ TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfo)
     EXPECT_TRUE(metadata->existsFile("/A/B/C/file"));
     EXPECT_EQ(metadata->getFileSizeIfExists("/A/B/C/file"), written_bytes);
     EXPECT_EQ(metadata->getFileSize("/A/B/C/file"), written_bytes);
-    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file").value(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
-    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file").value(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
+    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file")->epochTime(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
+    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file")->epochTime(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfoAfterMove)

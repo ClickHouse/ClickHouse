@@ -117,3 +117,41 @@ def test_writes_with_partitioned_table_count_partitions(started_cluster_iceberg_
             num_pq_files += 1
 
     assert num_pq_files == 16
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
+@pytest.mark.parametrize("partition_transform", ["year", "month", "day"])
+def test_writes_spark_date_partition_by_time_transform(started_cluster_iceberg_with_spark, storage_type, partition_transform):
+    """Regression test for issue #86337: inserting into Spark-created Iceberg table
+    partitioned by year/month/day on a Date column caused a bad cast exception."""
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_date_partition_" + partition_transform + "_" + storage_type + "_" + get_uuid_str()
+
+    def execute_spark_query(query: str):
+        spark.sql(query)
+        default_upload_directory(
+            started_cluster_iceberg_with_spark,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+
+    execute_spark_query(
+        f"""
+            CREATE TABLE {TABLE_NAME} (
+                c0 DATE
+            )
+            USING iceberg
+            PARTITIONED BY ({partition_transform}(c0))
+            OPTIONS('format-version'='2')
+        """
+    )
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} (c0) VALUES ('2025-08-28');",
+        settings={"allow_insert_into_iceberg": 1}
+    )
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '2025-08-28\n'

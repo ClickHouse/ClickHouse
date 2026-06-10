@@ -1,5 +1,7 @@
 #include <numeric>
+#include <thread>
 
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionsTimeWindow.h>
@@ -327,7 +329,7 @@ namespace
         }
     }
 
-    class AddingAggregatedChunkInfoTransform : public ISimpleTransform
+    class AddingAggregatedChunkInfoTransform final : public ISimpleTransform
     {
     public:
         explicit AddingAggregatedChunkInfoTransform(SharedHeader header) : ISimpleTransform(header, header, false) { }
@@ -596,11 +598,9 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
     /// Adding window column
     DataTypes window_column_type{std::make_shared<DataTypeDateTime>(), std::make_shared<DataTypeDateTime>()};
-    ColumnWithTypeAndName column;
-    column.name = window_column_name;
-    column.type = std::make_shared<DataTypeTuple>(std::move(window_column_type));
-    column.column = column.type->createColumnConst(0, Tuple{w_start, watermark});
-    auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+    auto column_type = std::make_shared<DataTypeTuple>(std::move(window_column_type));
+    auto column = column_type->createColumnConst(0, Tuple{w_start, watermark});
+    auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column), std::move(column_type), window_column_name);
     auto adding_column_actions
         = std::make_shared<ExpressionActions>(std::move(adding_column_dag), ExpressionActionsSettings(getContext()));
     builder.addSimpleTransform([&](const SharedHeader & header)
@@ -813,7 +813,8 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
     Aliases aliases;
     QueryAliasesVisitor(aliases).visit(inner_query);
     auto inner_query_normalized = inner_query->clone();
-    QueryNormalizer::Data normalizer_data(aliases, {}, false, QueryNormalizer::ExtractedSettings(getContext()->getSettingsRef()), false);
+    NameSet source_columns;
+    QueryNormalizer::Data normalizer_data(aliases, source_columns, false, QueryNormalizer::ExtractedSettings(getContext()->getSettingsRef()), false);
     QueryNormalizer(normalizer_data).visit(inner_query_normalized);
 
     auto inner_select_query = boost::static_pointer_cast<ASTSelectQuery>(inner_query_normalized);
@@ -1019,7 +1020,7 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
 
     std::lock_guard lock(fire_signal_mutex);
 
-    bool updated;
+    bool updated = false;
     if (is_watermark_strictly_ascending)
     {
         updated = max_watermark < watermark;
@@ -1572,16 +1573,13 @@ void StorageWindowView::writeIntoWindowView(
         /// Fill ____timestamp column with current time in case of now() time column.
         if (window_view.is_time_column_func_now)
         {
-            ColumnWithTypeAndName column;
-            column.name = "____timestamp";
             const auto & timezone = window_view.function_now_timezone;
-            if (timezone.empty())
-                column.type = std::make_shared<DataTypeDateTime>();
-            else
-                column.type = std::make_shared<DataTypeDateTime>(timezone);
-            column.column = column.type->createColumnConst(0, Field(now()));
+            auto column_type = timezone.empty()
+                ? std::make_shared<DataTypeDateTime>()
+                : std::make_shared<DataTypeDateTime>(timezone);
+            auto column = column_type->createColumnConst(0, Field(now()));
 
-            auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+            auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column), std::move(column_type), "____timestamp");
             auto adding_column_actions = std::make_shared<ExpressionActions>(
                 std::move(adding_column_dag),
                 ExpressionActionsSettings(local_context));
@@ -1801,6 +1799,7 @@ void StorageWindowView::throwIfWindowViewIsDisabled(ContextPtr local_context) co
                         "in the current infrastructure for query analysis (the setting 'allow_experimental_analyzer')");
 }
 
+void registerStorageWindowView(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory)
 {
     factory.registerStorage(
