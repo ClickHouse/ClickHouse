@@ -80,6 +80,10 @@ namespace Nested
     /// Non-tuple columns are kept as-is in the result.
     Columns flattenTupleColumnsRecursive(const Block & header, const Columns & columns);
 
+    /// Appends to `out` the leaf names that `flattenTupleRecursive` would produce for a single
+    /// top-level column `(name, type)`.
+    void flattenTupleLeafNames(const String & name, const DataTypePtr & type, Names & out);
+
     /// This is the inverse operation of flattenTupleColumnsRecursive.
     /// All tuples in the header will be reconstructed, regardless of whether they have explicit names.
     /// The header defines the expected structure (including tuple types).

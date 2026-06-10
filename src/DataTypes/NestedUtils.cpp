@@ -361,6 +361,23 @@ Block flattenTupleRecursive(const Block & block, std::vector<Strings> * flattene
     return result;
 }
 
+void flattenTupleLeafNames(const String & name, const DataTypePtr & type, Names & out)
+{
+    /// Mirrors the name generation of `flattenTupleRecursiveImpl`: descend only into flattenable
+    /// tuples, joining each element name onto the prefix, and emit non-tuple types as leaves.
+    const auto * tuple_type = tryGetFlattenableTuple(type);
+    if (!tuple_type)
+    {
+        out.push_back(name);
+        return;
+    }
+
+    const DataTypes & element_types = tuple_type->getElements();
+    const Strings & element_names = tuple_type->getElementNames();
+    for (size_t i = 0; i < element_types.size(); ++i)
+        flattenTupleLeafNames(concatenateName(name, element_names[i]), element_types[i], out);
+}
+
 /// Flatten tuple columns: input a vector of columns, return a new vector with all tuples expanded
 /// All tuples are flattened recursively
 Columns flattenTupleColumnsRecursive(const Block & header, const Columns & columns)
