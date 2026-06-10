@@ -404,4 +404,4 @@
 	url = https://github.com/google/highway.git
 [submodule "contrib/eigen"]
 	path = contrib/eigen
-	url = https://gitlab.com/libeigen/eigen.git
+	url = https://github.com/lvzhipin03/eigen.git
