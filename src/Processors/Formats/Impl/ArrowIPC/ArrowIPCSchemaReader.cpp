@@ -107,12 +107,13 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
             continue;
         }
 
+        /// For the `0` (never) and `1` (always) modes, infer the bare type without wrapping the top level
+        /// in `Nullable` and let `remove`/`makeNullableRecursively` below apply nullability uniformly to
+        /// every leaf. Wrapping here would make the recursive pass short-circuit on the outer `Nullable`
+        /// and leave nested elements (e.g. `Tuple` fields) with the wrong nullability. The `auto` mode
+        /// keeps the per-field Arrow nullability flag.
         bool make_nullable = false;
-        if (make_columns_nullable == 0)
-            make_nullable = false;
-        else if (make_columns_nullable == 1)
-            make_nullable = true;
-        else
+        if (make_columns_nullable != 0 && make_columns_nullable != 1)
             make_nullable = field.nullable;
 
         DataTypePtr type;

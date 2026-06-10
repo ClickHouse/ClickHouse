@@ -212,12 +212,26 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
         {
             const Slice values = nextBuffer();
             const size_t arrow_value_size = static_cast<size_t>(type.decimal_bit_width) / 8;
+            /// `fillFixed` copies the low `sizeof(V)` bytes of each value and trusts the buffer to hold at
+            /// least `arrow_value_size` bytes per row. An untrusted Arrow file can declare a `bitWidth`
+            /// narrower than the ClickHouse decimal selected from `precision` (e.g. `bitWidth = 32` with
+            /// `precision = 18` -> `Decimal64`); reading `sizeof(V)` bytes from a smaller stride would read
+            /// out of bounds. Reject any decimal whose Arrow storage is narrower than the target value.
+            auto fill_decimal = [&]<typename Decimal>(size_t ch_value_size)
+            {
+                if (arrow_value_size < ch_value_size)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Arrow decimal bit width {} is too small for the {}-byte ClickHouse decimal",
+                        type.decimal_bit_width, ch_value_size);
+                fillFixed<ColumnDecimal<Decimal>>(*column, rows, values, arrow_value_size);
+            };
             switch (column->getDataType())
             {
-                case TypeIndex::Decimal32: fillFixed<ColumnDecimal<Decimal32>>(*column, rows, values, arrow_value_size); break;
-                case TypeIndex::Decimal64: fillFixed<ColumnDecimal<Decimal64>>(*column, rows, values, arrow_value_size); break;
-                case TypeIndex::Decimal128: fillFixed<ColumnDecimal<Decimal128>>(*column, rows, values, arrow_value_size); break;
-                case TypeIndex::Decimal256: fillFixed<ColumnDecimal<Decimal256>>(*column, rows, values, arrow_value_size); break;
+                case TypeIndex::Decimal32: fill_decimal.template operator()<Decimal32>(sizeof(Decimal32)); break;
+                case TypeIndex::Decimal64: fill_decimal.template operator()<Decimal64>(sizeof(Decimal64)); break;
+                case TypeIndex::Decimal128: fill_decimal.template operator()<Decimal128>(sizeof(Decimal128)); break;
+                case TypeIndex::Decimal256: fill_decimal.template operator()<Decimal256>(sizeof(Decimal256)); break;
                 default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected decimal column type");
             }
             break;
@@ -584,6 +598,10 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
     /// rows that reference a null child value can be translated to the Variant NULL discriminator below,
     /// instead of silently becoming the nested column's default value.
     std::vector<const NullMap *> child_null_maps;
+    /// Each `child_null_maps` entry points into the null-map column of a `ColumnNullable`. The owning
+    /// `ColumnNullable` is dropped below (only its nested column is kept as the Variant element), so keep
+    /// the null-map columns alive here for the lifetime of the decode; otherwise the pointers dangle.
+    std::vector<ColumnPtr> child_null_map_holders;
     /// Maps an Arrow union type id to a local Variant element index, or -1 for the NULL placeholder.
     std::unordered_map<int, int> type_id_to_local;
     for (size_t child_idx = 0; child_idx < type.children.size(); ++child_idx)
@@ -606,7 +624,12 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows)
         if (child_column->isNullable())
         {
             const auto & nullable = assert_cast<const ColumnNullable &>(*child_column);
-            child_null_map = &nullable.getNullMapData();
+            /// Keep the null-map column alive: the line below reassigns `child_column` to the nested
+            /// column, which would otherwise free the only owner of this `ColumnNullable` (and its null
+            /// map), leaving `child_null_map` dangling for the row checks further down.
+            ColumnPtr null_map_holder = nullable.getNullMapColumnPtr();
+            child_null_map = &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData();
+            child_null_map_holders.push_back(std::move(null_map_holder));
             child_column = nullable.getNestedColumnPtr();
         }
         type_id_to_local[tid] = static_cast<int>(variant_columns.size());
