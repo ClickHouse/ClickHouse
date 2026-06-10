@@ -225,6 +225,21 @@ def test_disallowed_constraint_merge_tree(started_cluster):
     instance.query("DROP TABLE IF EXISTS test")
 
 
+def test_create_table_query_setting_constraints(started_cluster):
+    """Test that query-level settings passed in CREATE TABLE's engine SETTINGS clause
+    are validated against setting constraints (not bypassing them)."""
+
+    # The settings in CREATE TABLE ... SETTINGS should be rejected:
+    assert "should not be changed" in instance.query_and_get_error(
+        "CREATE TABLE test_constraint (x Int64) ENGINE = MergeTree ORDER BY x SETTINGS force_index_by_date = 1"
+    )
+
+    # Also test with max_memory_usage min constraint via CREATE TABLE SETTINGS
+    assert "shouldn't be less than" in instance.query_and_get_error(
+        "CREATE TABLE test_constraint (x Int64) ENGINE = MergeTree ORDER BY x SETTINGS max_memory_usage = 1"
+    )
+
+
 def assert_query_settings(
     instance, query, settings, result=None, exception=None, user=None
 ):

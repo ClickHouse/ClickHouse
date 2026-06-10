@@ -123,12 +123,6 @@ LockedKeyPtr KeyMetadata::lockNoStateCheck()
     return std::make_unique<LockedKey>(shared_from_this());
 }
 
-KeyMetadata::KeyState KeyMetadata::getState()
-{
-    auto locked = lockNoStateCheck();
-    return key_state;
-}
-
 bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
 {
     if (created_base_directory.load())
@@ -505,7 +499,7 @@ CacheMetadata::IteratorPtr CacheMetadata::getIterator(const UserID & user_id)
     return std::make_unique<Iterator>(user_id, metadata_buckets);
 }
 
-void CacheMetadata::removeAllKeys(const UserID & user_id)
+void CacheMetadata::removeAllKeys(bool if_releasable, const UserID & user_id)
 {
     for (auto & bucket : metadata_buckets)
     {
@@ -521,7 +515,7 @@ void CacheMetadata::removeAllKeys(const UserID & user_id)
             auto locked_key = it->second->lockNoStateCheck();
             if (locked_key->getKeyState() == KeyMetadata::KeyState::ACTIVE)
             {
-                bool removed_all = locked_key->removeAllFileSegments();
+                bool removed_all = locked_key->removeAllFileSegments(if_releasable);
                 if (removed_all)
                 {
                     it = removeEmptyKey(bucket, it, *locked_key, lock);
@@ -533,7 +527,7 @@ void CacheMetadata::removeAllKeys(const UserID & user_id)
     }
 }
 
-void CacheMetadata::removeKey(const Key & key, bool if_exists, const UserID & user_id)
+void CacheMetadata::removeKey(const Key & key, bool if_exists, bool if_releasable, const UserID & user_id)
 {
     auto & bucket = getMetadataBucket(key);
     auto lock = bucket.lock();
@@ -555,7 +549,7 @@ void CacheMetadata::removeKey(const Key & key, bool if_exists, const UserID & us
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key: {} (state: {})", key, magic_enum::enum_name(state));
     }
 
-    bool removed_all = locked_key->removeAllFileSegments();
+    bool removed_all = locked_key->removeAllFileSegments(if_releasable);
     if (removed_all)
         removeEmptyKey(bucket, it, *locked_key, lock);
 }
@@ -1068,12 +1062,12 @@ bool LockedKey::isLastOwnerOfFileSegment(size_t offset) const
     return file_segment_metadata->file_segment.use_count() == 2;
 }
 
-bool LockedKey::removeAllFileSegments()
+bool LockedKey::removeAllFileSegments(bool if_releasable)
 {
     bool removed_all = true;
     for (auto it = key_metadata->begin(); it != key_metadata->end();)
     {
-        if (!it->second->releasable())
+        if (if_releasable && !it->second->releasable())
         {
             ++it;
             removed_all = false;

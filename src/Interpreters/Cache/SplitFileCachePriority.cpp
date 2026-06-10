@@ -170,11 +170,11 @@ IFileCachePriority::IteratorPtr SplitFileCachePriority::add( /// NOLINT
     size_t size,
     const CachePriorityGuard::WriteLock & write_lock,
     const CacheStateGuard::Lock * state_lock,
-    bool best_effort)
+    bool is_initial_load)
 {
     const auto type = getPriorityType(key_metadata->origin.segment_type);
     return priorities_holder.at(type)->add(
-        key_metadata, offset, size, write_lock, state_lock, best_effort);
+        key_metadata, offset, size, write_lock, state_lock, is_initial_load);
 }
 
 bool SplitFileCachePriority::canFit( /// NOLINT
@@ -183,11 +183,11 @@ bool SplitFileCachePriority::canFit( /// NOLINT
     const CacheStateGuard::Lock & lock,
     IteratorPtr reservee,
     const OriginInfo & origin_info,
-    bool best_effort) const
+    bool is_initial_load) const
 {
     const auto type = getPriorityType(origin_info.segment_type);
     return priorities_holder.at(type)->canFit(
-        size, elements, lock, reservee, origin_info, best_effort);
+        size, elements, lock, reservee, origin_info, is_initial_load);
 }
 
 EvictionInfoPtr SplitFileCachePriority::collectEvictionInfo(

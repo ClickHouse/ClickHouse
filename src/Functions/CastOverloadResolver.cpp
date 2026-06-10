@@ -137,7 +137,7 @@ protected:
             return type;
 
         if (keep_nullable
-            && (arguments.front().type->isNullable() || arguments.front().type->isLowCardinalityNullable() || isDynamic(*arguments.front().type))
+            && (arguments.front().type->isNullable() || arguments.front().type->isLowCardinalityNullable())
             && type->canBeInsideNullable())
             return makeNullable(type);
 

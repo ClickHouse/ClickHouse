@@ -127,6 +127,7 @@ void NamedCollectionFactory::add(
             "A named collection `{}` already exists",
             collection_name);
     }
+    CurrentMetrics::set(CurrentMetrics::NamedCollection, loaded_named_collections.size());
 }
 
 void NamedCollectionFactory::add(NamedCollectionsMap collections, std::lock_guard<std::mutex> & lock)
@@ -164,6 +165,7 @@ bool NamedCollectionFactory::removeIfExists(
             collection_name);
     }
     loaded_named_collections.erase(collection_name);
+    CurrentMetrics::set(CurrentMetrics::NamedCollection, loaded_named_collections.size());
     return true;
 }
 
@@ -172,6 +174,7 @@ void NamedCollectionFactory::removeById(NamedCollection::SourceId id, std::lock_
     std::erase_if(
         loaded_named_collections,
         [&](const auto & value) { return value.second->getSourceId() == id; });
+    CurrentMetrics::set(CurrentMetrics::NamedCollection, loaded_named_collections.size());
 }
 
 namespace
@@ -322,7 +325,6 @@ void NamedCollectionFactory::removeFromSQL(const ASTDropNamedCollectionQuery & q
 
     metadata_storage->remove(query.collection_name);
     remove(query.collection_name, lock);
-    CurrentMetrics::sub(CurrentMetrics::NamedCollection);
 }
 
 void NamedCollectionFactory::updateFromSQL(const ASTAlterNamedCollectionQuery & query)

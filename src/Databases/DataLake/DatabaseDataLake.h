@@ -28,7 +28,7 @@ public:
     UUID getUUID() const override { return db_uuid; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }
-    bool isDatalakeCatalog() const override { return true; }
+    bool isRemoteDatabase() const override { return true; }
 
     bool empty() const override;
 
@@ -47,7 +47,6 @@ public:
         const FilterByNameFunction & filter_by_table_name,
         bool skip_not_loaded) const override;
 
-    void checkDatabase() const override;
 
     void shutdown() override {}
 

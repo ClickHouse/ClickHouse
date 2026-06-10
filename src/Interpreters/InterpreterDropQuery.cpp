@@ -198,7 +198,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 "Table {} is not a Dictionary",
                 table_id.getNameForLogs());
 
-        bool secondary_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        bool secondary_query = getContext()->isDDLOrOnClusterInternal();
         if (!secondary_query && settings[Setting::ignore_drop_queries_probability] != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop
             && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= settings[Setting::ignore_drop_queries_probability])
         {
@@ -665,22 +665,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             tables_to_truncate.push_back(storage_id);
         }
 
-        /// Pre-cancel merges for all matching tables simultaneously.
-        /// This ensures all merges start stopping at time 0, so that by the time
-        /// a thread-pool thread reaches stopMergesAndWait() for each table,
-        /// the merge is already stopping or done.
-        std::vector<ActionLock> pre_merge_blockers;
-        pre_merge_blockers.reserve(tables_to_truncate.size());
-        for (const auto & table_id : tables_to_truncate)
-        {
-            if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, table_context))
-            {
-                auto lock = table->getActionLock(ActionLocks::PartsMerge);
-                if (!lock.expired())
-                    pre_merge_blockers.push_back(std::move(lock));
-            }
-        }
-
         std::mutex mutex_for_uuids;
         ThreadPoolCallbackRunnerLocal<void> runner(
             getDatabaseCatalogDropTablesThreadPool().get(),
@@ -844,7 +828,7 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
 
         if (ignore_sync_setting)
             drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
-        drop_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        drop_context->setDDLOrOnClusterInternal(true);
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// For Replicated database

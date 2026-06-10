@@ -232,7 +232,7 @@ BlockIO InterpreterShowTablesQuery::execute()
     }
     auto rewritten_query = getRewrittenQuery();
     String database = getContext()->resolveDatabase(query.getFrom());
-    if (query.databases || DatabaseCatalog::instance().isDatalakeCatalog(database))
+    if (query.databases || DatabaseCatalog::instance().isRemoteDatabase(database))
     {
         auto query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
@@ -245,6 +245,12 @@ BlockIO InterpreterShowTablesQuery::execute()
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
+    if (DatabaseCatalog::instance().isRemoteDatabase(database))
+    {
+        /// Explicit SHOW TABLES should include tables from the requested remote database.
+        /// system.databases already shows all databases unconditionally, so no override is needed for SHOW DATABASES.
+        query_context->setSetting("show_remote_databases_in_system_tables", true);
+    }
     return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
 }
 

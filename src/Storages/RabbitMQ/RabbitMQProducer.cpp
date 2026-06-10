@@ -279,12 +279,12 @@ void RabbitMQProducer::startProducingTaskLoop()
     .onSuccess([&]()
     {
         LOG_TRACE(log, "Successfully closed producer channel");
-        connection.getHandler().stopLoop();
+        connection.getHandler().stopBlockingLoop();
     })
     .onError([&](const char * message)
     {
         LOG_ERROR(log, "Failed to close producer channel: {}", message);
-        connection.getHandler().stopLoop();
+        connection.getHandler().stopBlockingLoop();
     });
 
     int active = connection.getHandler().startBlockingLoop();

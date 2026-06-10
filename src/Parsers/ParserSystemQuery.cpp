@@ -390,13 +390,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-        case Type::SET_COVERAGE_TEST:
-        {
-            ASTPtr ast;
-            if (ParserStringLiteral{}.parse(pos, ast, expected))
-                res->coverage_test_name = ast->as<ASTLiteral &>().value.safeGet<String>();
-            break;
-        }
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
@@ -573,6 +566,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
         case Type::STOP_REPLICATED_VIEW:
+        case Type::PAUSE_VIEW:
         case Type::CANCEL_VIEW:
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
@@ -580,6 +574,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
+        case Type::PAUSE_VIEWS:
         case Type::FREE_MEMORY:
             break;
 

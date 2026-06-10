@@ -37,6 +37,8 @@ from helpers.network import PartitionManager
 from helpers.client import QueryRuntimeException
 
 BASE_URL = "http://rest:8181/v1"
+BASE_URL_LOCAL = "http://localhost:8182/v1"
+BASE_URL_LOCAL_RAW = "http://localhost:8182"
 
 CATALOG_NAME = "demo"
 
@@ -73,9 +75,8 @@ DEFAULT_PARTITION_SPEC = PartitionSpec(
 DEFAULT_SORT_ORDER = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
 
 
-def list_namespaces(started_cluster):
-    base_url_local = f"http://localhost:{started_cluster.iceberg_rest_catalog_port}/v1"
-    response = requests.get(f"{base_url_local}/namespaces")
+def list_namespaces():
+    response = requests.get(f"{BASE_URL_LOCAL}/namespaces")
     if response.status_code == 200:
         return response.json()
     else:
@@ -83,11 +84,10 @@ def list_namespaces(started_cluster):
 
 
 def load_catalog_impl(started_cluster):
-    base_url_local_raw = f"http://localhost:{started_cluster.iceberg_rest_catalog_port}"
     return load_catalog(
         CATALOG_NAME,
         **{
-            "uri": base_url_local_raw,
+            "uri": BASE_URL_LOCAL_RAW,
             "type": "rest",
             "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
             "s3.access-key-id": minio_access_key,
@@ -233,7 +233,7 @@ def test_list_tables(started_cluster):
         catalog.create_namespace(namespace)
 
     found = False
-    for namespace_list in list_namespaces(started_cluster)["namespaces"]:
+    for namespace_list in list_namespaces()["namespaces"]:
         if root_namespace == namespace_list[0]:
             found = True
             break
@@ -282,70 +282,6 @@ def test_list_tables(started_cluster):
     assert expected == node.query(
         f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace_2}.tableC`"
     )
-
-
-def test_check_database(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    root_namespace = f"clickhouse_{uuid.uuid4()}"
-    namespace_1 = f"{root_namespace}.testA.A"
-    namespace_2 = f"{root_namespace}.testB.B"
-    namespace_1_tables = ["tableA", "tableB"]
-    namespace_2_tables = ["tableC", "tableD"]
-
-    catalog = load_catalog_impl(started_cluster)
-
-    for namespace in [namespace_1, namespace_2]:
-        catalog.create_namespace(namespace)
-
-    for namespace in [namespace_1, namespace_2]:
-        assert len(catalog.list_tables(namespace)) == 0
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    tables_list = ""
-    for table in namespace_1_tables:
-        create_table(catalog, namespace_1, table)
-        if len(tables_list) > 0:
-            tables_list += "\n"
-        tables_list += f"{namespace_1}.{table}"
-
-    for table in namespace_2_tables:
-        create_table(catalog, namespace_2, table)
-        if len(tables_list) > 0:
-            tables_list += "\n"
-        tables_list += f"{namespace_2}.{table}"
-
-    assert (
-            tables_list
-            == node.query(
-        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
-    ).strip()
-    )
-    node.restart_clickhouse()
-    assert (
-            tables_list
-            == node.query(
-        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
-    ).strip()
-    )
-
-    node.query(
-        f"CHECK DATABASE {CATALOG_NAME}"
-    )
-
-    try:
-        node.query(
-            f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
-        )
-    
-        assert "fault when checking database" in node.query_and_get_error(
-            f"CHECK DATABASE {CATALOG_NAME}"
-        )
-    finally:
-        node.query(
-            f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
-        )
 
 
 def test_many_namespaces(started_cluster):
@@ -448,7 +384,7 @@ def test_hide_sensitive_info(started_cluster):
         started_cluster,
         node,
         CATALOG_NAME,
-        additional_settings={"auth_header": "SECRET_2"},
+        additional_settings={"auth_header": "Authorization: SECRET_2"},
     )
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
 
@@ -725,7 +661,7 @@ def test_cluster_select(started_cluster):
         assert len(cluster_secondary_queries) == 1
 
     assert node2.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`", settings={"parallel_replicas_for_cluster_engines":1, 'enable_parallel_replicas': 2, 'cluster_for_parallel_replicas': 'cluster_simple', 'parallel_replicas_for_cluster_engines' : 1}) == 'pablo\n'
-
+    
 def test_not_specified_catalog_type(started_cluster):
     node = started_cluster.instances["node1"]
     settings = {
@@ -851,3 +787,22 @@ def test_gcs(started_cluster):
             """
         )
         assert "Google cloud storage converts to S3" in str(err.value)
+
+
+def test_invalid_auth_header_format(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME};")
+    with pytest.raises(Exception) as err:
+        node.query(
+            f"""
+            SET allow_database_iceberg = 1;
+            CREATE DATABASE {CATALOG_NAME}
+            ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'dummy')
+            SETTINGS
+                catalog_type = 'rest',
+                warehouse = 'demo',
+                auth_header = 'wrong.header'
+            """
+        )
+    assert "Invalid auth header format" in str(err.value)
