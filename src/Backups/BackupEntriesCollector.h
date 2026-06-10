@@ -3,6 +3,7 @@
 #include <Backups/BackupSettings.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Core/QualifiedTableName.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
@@ -94,6 +95,11 @@ private:
     void makeBackupEntriesForTablesDefs();
     void makeBackupEntriesForTablesData();
     void makeBackupEntriesForTableData(const QualifiedTableName & table_name);
+    bool shouldBackupTableData(
+        const QualifiedTableName & table_name,
+        /// Used in the Cloud build.
+        [[maybe_unused]] const StoragePtr & storage,
+        const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const;
 
     void addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry);
 
@@ -163,6 +169,7 @@ private:
         std::filesystem::path data_path_in_backup;
         std::optional<String> replicated_table_zk_path;
         std::optional<ASTs> partitions;
+        bool should_backup_data = true;
     };
 
     String current_stage;
