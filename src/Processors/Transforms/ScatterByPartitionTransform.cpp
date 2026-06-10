@@ -154,7 +154,10 @@ void ScatterByPartitionTransform::generateOutputChunks()
 
     chassert(!columns.empty());
 
-    hash.assign(num_rows, WEAK_HASH32_INITIAL_VALUE);
+    /// Cast to size_t to select the (count, value) overload of `assign`: on Darwin `UInt64` is
+    /// `unsigned long long` while `size_t` is `unsigned long`, so without the cast the iterator-pair
+    /// overload would be deduced and fail to compile.
+    hash.assign(static_cast<size_t>(num_rows), WEAK_HASH32_INITIAL_VALUE);
 
     for (size_t i = 0; i < key_columns.size(); ++i)
     {

@@ -135,7 +135,7 @@ void BufferedShardByHashTransform::generateOutputChunks()
 
     /// Compute a composite 32-bit hash over all key columns into a reusable buffer.
     /// No allocations: each `computeHashInto` call writes directly into hash_buffer.
-    hash_buffer.assign(num_rows, WEAK_HASH32_INITIAL_VALUE);
+    hash_buffer.assign(static_cast<size_t>(num_rows), WEAK_HASH32_INITIAL_VALUE);
     for (auto column_number : key_columns)
         columns[column_number]->computeHashInto(0, num_rows, hash_buffer.data(), false);
 
