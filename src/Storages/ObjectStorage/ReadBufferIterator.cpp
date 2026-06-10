@@ -43,9 +43,9 @@ ReadBufferIterator::ReadBufferIterator(
         format = configuration->format;
 }
 
-SchemaCache::Key ReadBufferIterator::getKeyForSchemaCache(const ObjectInfo & object_info, const String & format_name) const
+SchemaCache::Key ReadBufferIterator::getKeyForSchemaCache(const ObjectInfoPtr & object_info, const String & format_name) const
 {
-    auto source = StorageObjectStorageSource::getUniqueStoragePathIdentifier(*configuration, object_info);
+    auto source = StorageObjectStorageSource::getUniqueStoragePathIdentifier(*configuration, object_info, object_storage);
     return DB::getKeyForSchemaCache(source, format_name, format_settings, getContext());
 }
 
@@ -57,7 +57,7 @@ SchemaCache::Keys ReadBufferIterator::getKeysForSchemaCache() const
         read_keys.begin(),
         read_keys.end(),
         std::back_inserter(sources),
-        [&](const auto & elem) { return StorageObjectStorageSource::getUniqueStoragePathIdentifier(*configuration, *elem); });
+        [&](const auto & elem) { return StorageObjectStorageSource::getUniqueStoragePathIdentifier(*configuration, elem, object_storage); });
     return DB::getKeysForSchemaCache(sources, *format, format_settings, getContext());
 }
 
@@ -87,7 +87,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
 
         if (format)
         {
-            const auto cache_key = getKeyForSchemaCache(*object_info, *format);
+            const auto cache_key = getKeyForSchemaCache(object_info, *format);
             if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                 return columns;
         }
@@ -98,7 +98,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
             /// If we have such entry for some format, we can use this format to read the file.
             for (const auto & format_name : FormatFactory::instance().getAllInputFormats())
             {
-                const auto cache_key = getKeyForSchemaCache(*object_info, format_name);
+                const auto cache_key = getKeyForSchemaCache(object_info, format_name);
                 if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                 {
                     /// Now format is known. It should be the same for all files.
@@ -114,13 +114,13 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
 void ReadBufferIterator::setNumRowsToLastFile(size_t num_rows)
 {
     if (query_settings.schema_inference_use_cache)
-        schema_cache.addNumRows(getKeyForSchemaCache(*current_object_info, *format), num_rows);
+        schema_cache.addNumRows(getKeyForSchemaCache(current_object_info, *format), num_rows);
 }
 
 void ReadBufferIterator::setSchemaToLastFile(const ColumnsDescription & columns)
 {
     if (query_settings.schema_inference_use_cache)
-        schema_cache.addColumns(getKeyForSchemaCache(*current_object_info, *format), columns);
+        schema_cache.addColumns(getKeyForSchemaCache(current_object_info, *format), columns);
 }
 
 void ReadBufferIterator::setFormatName(const String & format_name)

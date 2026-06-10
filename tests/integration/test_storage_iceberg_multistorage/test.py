@@ -3,6 +3,7 @@ import pyspark
 import os
 import shutil
 import tempfile
+import time
 import json
 import avro.datafile
 import avro.io
@@ -516,3 +517,90 @@ def test_explicit_http_urls_different_buckets(started_cluster):
     result = instance.query(f"SELECT * FROM icebergS3(s3, filename='{base_path}/', format=Parquet, url='{minio_url}/{buckets[0]}/') ORDER BY id")
 
     assert result == "1\tAlice\t100\n2\tBob\t85\n3\tCarol\t92\n"
+
+
+# Regression test: external data files in different buckets under the same object key
+# used to share one num-rows cache entry, returning the wrong `count()`.
+# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3356426404
+def test_num_rows_cache_no_collision_across_buckets(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+
+    minio_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}"
+    base_bucket = started_cluster.minio_bucket
+    # The same object key for both tables, each in its own bucket.
+    shared_key = f"shared_count_cache_{get_uuid_str()}/data/part-0.parquet"
+
+    def prepare_table(table_name, values_sql, data_bucket):
+        spark.sql(f"CREATE TABLE {table_name} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
+        spark.sql(f"INSERT INTO {table_name} VALUES {values_sql}")
+
+        default_upload_directory(started_cluster, "s3", f"/iceberg_data/default/{table_name}/", f"/iceberg_data/default/{table_name}/")
+
+        temp_dir = tempfile.mkdtemp()
+        host_path = os.path.join(temp_dir, table_name)
+        os.makedirs(host_path, exist_ok=True)
+        default_download_directory(started_cluster, "s3", f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/", host_path)
+
+        base_path = f"var/lib/clickhouse/user_files/iceberg_data/default/{table_name}"
+        metadata_dir = os.path.join(host_path, "metadata")
+        data_dir = os.path.join(host_path, "data")
+
+        data_files = find_files(data_dir, ".parquet")
+        assert len(data_files) == 1, f"Expected a single data file, got: {data_files}"
+
+        # Point the data file to the same object key in a different bucket.
+        manifest_files = [f for f in find_files(metadata_dir, ".avro") if not os.path.basename(f).startswith("snap-")]
+        for mf in manifest_files:
+            modify_avro_file(mf, ["data_file", "file_path"], lambda _: f"s3a://{data_bucket}/{shared_key}")
+            # Drop the statistics so that `count()` is not answered from metadata.
+            modify_avro_file(mf, ["data_file", "value_counts"], lambda _: None)
+
+        for mj in find_files(metadata_dir, ".metadata.json"):
+            with open(mj, 'r') as f:
+                data = json.load(f)
+            for snap in data.get("snapshots", []):
+                snap.get("summary", {}).pop("total-records", None)
+            with open(mj, 'w') as f:
+                json.dump(data, f, indent=2)
+
+        for f in manifest_files + find_files(metadata_dir, ".metadata.json"):
+            rel = os.path.relpath(f, host_path)
+            started_cluster.default_s3_uploader.upload_file(f, f"{base_path}/{rel}")
+
+        S3Uploader(started_cluster.minio_client, data_bucket).upload_file(data_files[0], shared_key)
+
+        shutil.rmtree(temp_dir)
+        return base_path
+
+    # An entry is reused only for files older than it, so upload everything before querying.
+    base_path_a = prepare_table(
+        f"test_count_cache_a_{get_uuid_str()}", "(1, 'a'), (2, 'b'), (3, 'c')", f"{base_bucket}-storage1"
+    )
+    base_path_b = prepare_table(
+        f"test_count_cache_b_{get_uuid_str()}", "(1, 'a'), (2, 'b'), (3, 'c'), (4, 'd'), (5, 'e')", f"{base_bucket}-storage2"
+    )
+    # Margin for the second-resolution `last_modified` comparison.
+    time.sleep(3)
+
+    def count(base_path, marker):
+        result = instance.query(
+            f"SELECT /* {marker} */ count() FROM icebergS3(s3, filename='{base_path}/', format=Parquet, url='{minio_url}/{base_bucket}/') "
+            "SETTINGS optimize_trivial_count_query = 1, optimize_count_from_files = 1, use_cache_for_count_from_files = 1"
+        ).strip()
+        instance.query("SYSTEM FLUSH LOGS")
+        cache_lookups = int(instance.query(
+            "SELECT ProfileEvents['SchemaInferenceCacheHits'] + ProfileEvents['SchemaInferenceCacheMisses'] "
+            f"FROM system.query_log WHERE type = 'QueryFinish' AND query LIKE '%{marker}%' AND query NOT LIKE '%query_log%' "
+            "ORDER BY event_time_microseconds DESC LIMIT 1"
+        ).strip())
+        return result, cache_lookups
+
+    # The first query populates the num-rows cache; the second one must not reuse its entry.
+    count_a, cache_lookups_a = count(base_path_a, "count_cache_marker_a")
+    count_b, cache_lookups_b = count(base_path_b, "count_cache_marker_b")
+    assert count_a == "3"
+    assert count_b == "5"
+    # Both queries must actually consult the num-rows cache.
+    assert cache_lookups_a >= 1
+    assert cache_lookups_b >= 1

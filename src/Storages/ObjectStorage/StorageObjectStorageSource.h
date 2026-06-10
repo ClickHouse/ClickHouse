@@ -73,6 +73,14 @@ public:
     static std::string getUniqueStoragePathIdentifier(
         const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
 
+    /// Same as above, but objects read from a resolved (secondary) storage are identified
+    /// by that storage. Use this overload for schema/num-rows cache keys.
+    static std::string getUniqueStoragePathIdentifier(
+        const StorageObjectStorageConfiguration & configuration,
+        const ObjectInfoPtr & object_info,
+        const ObjectStoragePtr & object_storage,
+        bool include_connection_info = true);
+
 protected:
     StorageID storage_id;
     const String name;
@@ -150,7 +158,7 @@ protected:
 
     std::future<ReaderHolder> createReaderAsync();
 
-    void addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows);
+    void addNumRowsToCache(const ObjectInfoPtr & object_info, size_t num_rows);
     void lazyInitialize();
 };
 
