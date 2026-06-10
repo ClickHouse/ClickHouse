@@ -935,7 +935,7 @@ void SchemaConverter::processPrimitiveColumn(
             }
         }
 
-        size_t physical_bits;
+        size_t physical_bits = 0;
         if (type == parq::Type::INT32)
             physical_bits = 32;
         else if (type == parq::Type::INT64)
@@ -992,7 +992,7 @@ void SchemaConverter::processPrimitiveColumn(
         /// types as timestamps, since clickhouse doesn't have time-of-day type.
         /// E.g. time of day 12:34:56.789 turns into timestamp 1970-01-01 12:34:56.789.
 
-        UInt32 scale;
+        UInt32 scale = 0;
         if (logical.TIMESTAMP.unit.__isset.MILLIS || logical.TIME.unit.__isset.MILLIS || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIME_MILLIS)
             scale = 3;
         else if (logical.TIMESTAMP.unit.__isset.MICROS || logical.TIME.unit.__isset.MICROS || converted == CONV::TIMESTAMP_MICROS || converted == CONV::TIME_MICROS)

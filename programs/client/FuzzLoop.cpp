@@ -1,3 +1,5 @@
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+
 #include <Client.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
@@ -493,11 +495,18 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
 
 bool Client::processBuzzHouseQuery(const String & full_query)
 {
+    static constexpr size_t max_query_bytes = 1 << 20;
     bool server_up = true;
 
     have_error = false;
     error_code = 0;
-    if (!processQueryText(full_query))
+    if (full_query.size() > max_query_bytes)
+    {
+        have_error = true;
+        error_code = ErrorCodes::CANNOT_PARSE_TEXT;
+        LOG_WARNING(fuzz_config->log, "Skipping oversized query ({} bytes, limit {})", full_query.size(), max_query_bytes);
+    }
+    else if (!processQueryText(full_query))
     {
         have_error = true;
         error_code = ErrorCodes::CANNOT_PARSE_TEXT;

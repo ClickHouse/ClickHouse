@@ -36,7 +36,7 @@ static ContextMutablePtr getContext()
 
 static std::string env_format_name;
 
-bool isMerge(int argc, const char * const * argv)
+static bool isMerge(int argc, const char * const * argv)
 {
     for (int i = 1; i < argc; ++i)
     {
@@ -57,8 +57,11 @@ static std::string getFormatNameFromEnv()
     return "";
 }
 
+extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv);
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
+
 // Helper function to parse settings from command line arguments
-std::map<std::string, std::string> parseSettingsFromArgs(int argc, char ** argv)
+static std::map<std::string, std::string> parseSettingsFromArgs(int argc, char ** argv)
 {
     std::map<std::string, std::string> settings;
     bool ignore_remaining = false;

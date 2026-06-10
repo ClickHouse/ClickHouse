@@ -17,6 +17,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnConst.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -238,7 +239,6 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsBool allow_experimental_reverse_key;
     extern const MergeTreeSettingsBool allow_nullable_key;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool allow_suspicious_indices;
@@ -711,7 +711,6 @@ MergeTreeData::MergeTreeData(
     bool sanity_checks = mode <= LoadingStrictnessLevel::CREATE;
 
     allow_nullable_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_nullable_key];
-    allow_reverse_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_experimental_reverse_key];
 
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (sanity_checks)
@@ -934,27 +933,11 @@ void MergeTreeData::checkProperties(
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
     bool allow_empty_sorting_key,
-    bool allow_reverse_sorting_key,
     bool allow_nullable_key_,
     ContextPtr local_context) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
-
-    if (!allow_reverse_sorting_key)
-    {
-        size_t num_sorting_keys = new_metadata.sorting_key.column_names.size();
-        for (size_t i = 0; i < num_sorting_keys; ++i)
-        {
-            if (!new_metadata.sorting_key.reverse_flags.empty() && new_metadata.sorting_key.reverse_flags[i])
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Sorting key {} is reversed, but merge tree setting `allow_experimental_reverse_key` is disabled",
-                    new_metadata.sorting_key.column_names[i]);
-            }
-        }
-    }
 
     KeyDescription new_sorting_key = new_metadata.sorting_key;
     KeyDescription new_primary_key = new_metadata.primary_key;
@@ -1123,7 +1106,6 @@ void MergeTreeData::checkProperties(
                 *projection.metadata,
                 attach,
                 is_aggregate,
-                allow_reverse_key,
                 true /* allow_nullable_key */,
                 local_context);
 
@@ -1230,7 +1212,6 @@ void MergeTreeData::setProperties(
         old_metadata,
         attach,
         false,
-        allow_reverse_key,
         allow_nullable_key,
         local_context);
 
@@ -2096,7 +2077,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     res.part->setState(to_state);
 
     DataPartIteratorByInfo it;
-    bool inserted;
+    bool inserted = false;
 
     {
         std::lock_guard lock(part_loading_mutex);
@@ -2619,6 +2600,23 @@ void MergeTreeData::startStatisticsCache()
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
 try
 {
+    refreshDataPartsOnce(interval_milliseconds);
+    refresh_parts_task->scheduleAfter(interval_milliseconds);
+}
+catch (...)
+{
+    tryLogCurrentException(log, "Failed to refresh parts");
+}
+
+/// Re-scan the data directory once: reload disk metadata and add parts that appeared since the
+/// last scan (it does not detect parts that vanished from disk; `grabOldParts` only cleans up
+/// parts already marked outdated). Shared by the background refresh task (which reschedules
+/// itself afterwards) and by `SYSTEM RESTART DISK` (an explicit, one-shot refresh). The two
+/// callers are serialized so they cannot load the same new part concurrently.
+void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
+{
+    std::lock_guard refresh_lock(refresh_parts_mutex);
+
     for (auto & disk : getStoragePolicy()->getDisks())
         disk->refresh(interval_milliseconds);
 
@@ -2636,7 +2634,7 @@ try
         if (disk_ptr->isBroken())
             continue;
         if (!disk_ptr->isReadOnly())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeData::refreshDataParts should only be called if all disks are readonly");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeData::refreshDataPartsOnce should only be called if all disks are readonly");
 
         for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
@@ -2709,12 +2707,6 @@ try
 
     ProfileEvents::increment(ProfileEvents::LoadedDataParts, parts_to_add.size());
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
-
-    refresh_parts_task->scheduleAfter(interval_milliseconds);
-}
-catch (...)
-{
-    tryLogCurrentException(log, "Failed to refresh parts");
 }
 
 void MergeTreeData::refreshStatistics(UInt64 interval_seconds)
@@ -4795,7 +4787,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
-    checkProperties(new_metadata, old_metadata, false, false, allow_reverse_key, allow_nullable_key, local_context);
+    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context);
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())
@@ -9207,7 +9199,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
         : columns.getAllPhysical();
     SerializationInfo::Settings serialization_settings
     {
-        settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
         settings[MergeTreeSetting::serialization_info_version],
         settings[MergeTreeSetting::string_serialization_version],
@@ -9874,6 +9866,13 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
             std::terminate();
         data.currently_moving_parts.erase(moving_part.part);
     }
+}
+
+bool MergeTreeData::scheduleDataProcessingJob(BackgroundJobsAssignee & /*assignee*/)
+{
+    /// Last-resort guard for the post-vtable-demotion window of STID 3631-4165.
+    /// Derived overrides are always picked in normal operation.
+    return false;
 }
 
 bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
@@ -10638,7 +10637,7 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
 
     SerializationInfo::Settings settings
     {
-        (*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        static_cast<double>((*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
         (*getSettings())[MergeTreeSetting::serialization_info_version],
         (*getSettings())[MergeTreeSetting::string_serialization_version],
@@ -10890,7 +10889,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     SerializationInfo::Settings info_settings
     {
-        (*settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        static_cast<double>((*settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
         (*settings)[MergeTreeSetting::serialization_info_version],
         (*settings)[MergeTreeSetting::string_serialization_version],

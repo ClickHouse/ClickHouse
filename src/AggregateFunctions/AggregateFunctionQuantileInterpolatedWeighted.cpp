@@ -357,6 +357,7 @@ if (which.idx == TypeIndex::TYPE) return std::make_shared<Function<TYPE, true>>(
 
 }
 
+void registerAggregateFunctionsQuantileInterpolatedWeighted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileInterpolatedWeighted(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.

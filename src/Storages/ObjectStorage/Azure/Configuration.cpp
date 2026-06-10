@@ -665,7 +665,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
     connection_params = getAzureConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 
-void addStructureAndFormatToArgsIfNeededAzure(
+static void addStructureAndFormatToArgsIfNeededAzure(
     ASTs & args,
     const String & structure_,
     const String & format_,
@@ -693,7 +693,7 @@ void addStructureAndFormatToArgsIfNeededAzure(
     {
         if (args.size() < 3 || args.size() > AzureStorageParsedArguments::getMaxNumberOfArguments())
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Expected 3 to {} arguments in table function azureBlobStorage, got {}",
                 AzureStorageParsedArguments::getMaxNumberOfArguments(),
                 args.size());

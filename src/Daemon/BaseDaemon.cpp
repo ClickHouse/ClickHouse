@@ -284,7 +284,7 @@ void BaseDaemon::initialize(Application & self)
     /// (query profiler creates lots of timers - timer_create(), and this requires slot in pending signals)
     if (auto pending_signals = config().getUInt64("pending_signals", 0); pending_signals > 0)
     {
-        struct rlimit rlim;
+        struct rlimit rlim{};
         if (getrlimit(RLIMIT_SIGPENDING, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 
@@ -353,7 +353,7 @@ void BaseDaemon::initialize(Application & self)
         ///     }
         if (access(stderr_path.c_str(), W_OK))
         {
-            int fd;
+            int fd = 0;
             if ((fd = creat(stderr_path.c_str(), 0600)) == -1 && errno != EEXIST)
                 throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
             if (fd != -1)
@@ -363,18 +363,26 @@ void BaseDaemon::initialize(Application & self)
             }
         }
 
+        /// musl defines `stderr` and `stdout` as recursive macros `(stderr)` / `(stdout)`,
+        /// which trigger `-Wdisabled-macro-expansion` when used as function arguments.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         if (!freopen(stderr_path.c_str(), "a+", stderr))
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
         /// Disable buffering for stderr
         setbuf(stderr, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c, bugprone-unsafe-functions)
+#pragma clang diagnostic pop
     }
 
     if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
     {
         std::string stdout_path = config().getString("logger.stdout", log_path + "/stdout.log");
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         if (!freopen(stdout_path.c_str(), "a+", stdout))
             throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
+#pragma clang diagnostic pop
     }
 
     /// Change path for logging.
@@ -720,7 +728,7 @@ void BaseDaemon::setupWatchdog()
             _exit(WEXITSTATUS(status));
         }
 
-        int exit_code;
+        int exit_code = 0;
 
         if (WIFSIGNALED(status))
         {
@@ -783,7 +791,7 @@ void systemdNotify(const std::string_view & command)
 
     const size_t len = strlen(path);
 
-    struct sockaddr_un addr;
+    struct sockaddr_un addr{};
 
     addr.sun_family = AF_UNIX;
 
