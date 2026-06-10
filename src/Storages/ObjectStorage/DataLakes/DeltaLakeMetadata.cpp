@@ -48,6 +48,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/URI.h>
 
 namespace fs = std::filesystem;
 
@@ -315,8 +316,9 @@ struct DeltaLakeMetadataImpl
                 if (!add_object)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
 
-                auto path = add_object->getValue<String>("path");
-                auto full_path = fs::path(table_path) / path;
+                String path;
+                Poco::URI::decode(add_object->getValue<String>("path"), path);
+                auto full_path = resolvePathInsideTable(table_path, path);
                 result.insert(full_path);
 
                 auto filename = fs::path(path).filename().string();
@@ -360,8 +362,9 @@ struct DeltaLakeMetadataImpl
                 if (!remove_object)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
 
-                auto path = remove_object->getValue<String>("path");
-                result.erase(fs::path(table_path) / path);
+                String path;
+                Poco::URI::decode(remove_object->getValue<String>("path"), path);
+                result.erase(resolvePathInsideTable(table_path, path));
             }
         }
         insertDeltaRowToLogTable(context, sum_json, table_path, metadata_file_path);
@@ -561,12 +564,13 @@ struct DeltaLakeMetadataImpl
 
         for (size_t i = 0; i < path_column.size(); ++i)
         {
-            const auto path = String(path_column.getDataAt(i));
+            String path;
+            Poco::URI::decode(String(path_column.getDataAt(i)), path);
             if (path.empty())
                 continue;
 
             auto filename = fs::path(path).filename().string();
-            auto full_path = fs::path(table_path) / path;
+            auto full_path = resolvePathInsideTable(table_path, path);
             auto it = file_partition_columns.find(full_path);
             if (it == file_partition_columns.end())
             {
@@ -598,7 +602,7 @@ struct DeltaLakeMetadataImpl
             }
 
             LOG_TEST(log, "Adding {}", path);
-            const auto [_, inserted] = result.insert(std::filesystem::path(table_path) / path);
+            const auto [_, inserted] = result.insert(full_path);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
         }
