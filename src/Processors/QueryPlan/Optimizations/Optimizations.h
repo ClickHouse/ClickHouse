@@ -62,6 +62,13 @@ struct Optimization
 
         // parallel replicas
         bool parallel_replicas_filter_pushdown = false;
+
+        /// Top-K optimizations rely on a runtime `TopKThresholdTracker` shared between
+        /// `SortingStep` and `ReadFromMergeTree`, and the dynamic-filtering path adds
+        /// an internal `__topKFilter` function that is not registered in `FunctionFactory`.
+        /// Neither can survive serialization to remote workers, so we suppress the
+        /// optimization when the plan is going to be distributed.
+        bool make_distributed_plan = false;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);
@@ -206,7 +213,6 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & root, Stack & stack, Query
 void materializeQueryPlanReferences(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeUnusedCommonSubplans(QueryPlan::Node & node);
 void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings);
-void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.

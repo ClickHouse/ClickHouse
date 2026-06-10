@@ -31,14 +31,14 @@ function wait_for_server # port, pid
 {
     for _ in {1..60}
     do
-        if clickhouse-client --port "$1" --query "select 1" || ! kill -0 "$2"
+        if clickhouse-client --port "$1" --receive_timeout=5 --query "select 1" || ! kill -0 "$2"
         then
             break
         fi
         sleep 1
     done
 
-    if ! clickhouse-client --port "$1" --query "select 1"
+    if ! clickhouse-client --port "$1" --receive_timeout=5 --query "select 1"
     then
         echo "Cannot connect to ClickHouse server at $1"
         return 1
@@ -318,9 +318,9 @@ function run_tests
     do
         echo "$current_test of $total_tests tests complete" > status.txt
         # Check that both servers are alive, and restart them if they die.
-        clickhouse-client --port $LEFT_SERVER_PORT --query "select 1 format Null" \
+        clickhouse-client --port $LEFT_SERVER_PORT --receive_timeout=5 --query "select 1 format Null" \
             || { echo $test_name >> left-server-died.log ; restart ; }
-        clickhouse-client --port $RIGHT_SERVER_PORT --query "select 1 format Null" \
+        clickhouse-client --port $RIGHT_SERVER_PORT --receive_timeout=5 --query "select 1 format Null" \
             || { echo $test_name >> right-server-died.log ; restart ; }
 
         test_name=$(basename "$test" ".xml")
@@ -414,8 +414,8 @@ function get_profiles
 
     # Just check that the servers are alive so that we return a proper exit code.
     # We don't consistently check the return codes of the above background jobs.
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select 1"
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select 1"
+    clickhouse-client --port $LEFT_SERVER_PORT --receive_timeout=5 --query "select 1"
+    clickhouse-client --port $RIGHT_SERVER_PORT --receive_timeout=5 --query "select 1"
 }
 
 # Build and analyze randomization distribution for all queries.
