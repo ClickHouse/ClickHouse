@@ -87,12 +87,37 @@ private:
         std::array<PerOpStats, NUM_OP_SLOTS> per_op;
     };
 
+    /// Plain (non-atomic) copy of the counters: a snapshot of one period, also used
+    /// to accumulate the cumulative totals for the final report.
+    struct StatsSnapshot
+    {
+        struct PerOp
+        {
+            uint64_t count = 0;
+            uint64_t process_ns = 0;
+            uint64_t preprocess_ns = 0;
+            uint64_t list_entries = 0;
+        };
+
+        uint64_t writes = 0;
+        uint64_t reads = 0;
+        uint64_t preprocess_busy_ns = 0;
+        uint64_t commit_write_busy_ns = 0;
+        uint64_t commit_read_busy_ns = 0;
+        std::array<PerOp, NUM_OP_SLOTS> per_op{};
+
+        void add(const StatsSnapshot & other);
+    };
+
     void parseConfig(const Poco::Util::AbstractConfiguration & config);
     void setupStorage();
     void startGenerators();
     void generatorThread(size_t idx);
     void preprocessThread();
     void commitThread();
+    /// Reset the period counters to zero and return their values.
+    StatsSnapshot takePeriodStats();
+    void printStats(const std::string & header, double seconds, const StatsSnapshot & stats, std::optional<bool> snapshot_mode);
     void report(double period_seconds, bool snapshot_mode_during_period);
 
     /// Push with 100us polling.
@@ -137,6 +162,8 @@ private:
     std::atomic<int64_t> next_zxid{1};
 
     PeriodStats period_stats;
+    /// Accumulates stats across all periods for the final report. Only touched by the main thread.
+    StatsSnapshot total_stats;
 
     std::atomic<bool> snapshot_enabled{false};
 

@@ -501,28 +501,46 @@ void StorageRunner::commitThread()
     }
 }
 
-void StorageRunner::report(double period_seconds, bool snapshot_mode_during_period)
+void StorageRunner::StatsSnapshot::add(const StatsSnapshot & other)
+{
+    writes += other.writes;
+    reads += other.reads;
+    preprocess_busy_ns += other.preprocess_busy_ns;
+    commit_write_busy_ns += other.commit_write_busy_ns;
+    commit_read_busy_ns += other.commit_read_busy_ns;
+    for (size_t i = 0; i < NUM_OP_SLOTS; ++i)
+    {
+        per_op[i].count += other.per_op[i].count;
+        per_op[i].process_ns += other.per_op[i].process_ns;
+        per_op[i].preprocess_ns += other.per_op[i].preprocess_ns;
+        per_op[i].list_entries += other.per_op[i].list_entries;
+    }
+}
+
+StorageRunner::StatsSnapshot StorageRunner::takePeriodStats()
 {
     /// Swap/reset atomic counters for this period.
     auto take = [](std::atomic<uint64_t> & v) { return v.exchange(0, std::memory_order_relaxed); };
 
-    uint64_t writes = take(period_stats.writes_committed);
-    uint64_t reads = take(period_stats.reads_committed);
-    uint64_t pre_busy = take(period_stats.preprocess_busy_ns);
-    uint64_t w_busy = take(period_stats.commit_write_busy_ns);
-    uint64_t r_busy = take(period_stats.commit_read_busy_ns);
-
-    struct Snap { uint64_t count; uint64_t process_ns; uint64_t preprocess_ns; uint64_t list_entries; };
-    std::array<Snap, NUM_OP_SLOTS> snap{};
+    StatsSnapshot snapshot;
+    snapshot.writes = take(period_stats.writes_committed);
+    snapshot.reads = take(period_stats.reads_committed);
+    snapshot.preprocess_busy_ns = take(period_stats.preprocess_busy_ns);
+    snapshot.commit_write_busy_ns = take(period_stats.commit_write_busy_ns);
+    snapshot.commit_read_busy_ns = take(period_stats.commit_read_busy_ns);
     for (size_t i = 0; i < NUM_OP_SLOTS; ++i)
     {
-        snap[i].count = take(period_stats.per_op[i].count);
-        snap[i].process_ns = take(period_stats.per_op[i].process_ns);
-        snap[i].preprocess_ns = take(period_stats.per_op[i].preprocess_ns);
-        snap[i].list_entries = take(period_stats.per_op[i].list_entries);
+        snapshot.per_op[i].count = take(period_stats.per_op[i].count);
+        snapshot.per_op[i].process_ns = take(period_stats.per_op[i].process_ns);
+        snapshot.per_op[i].preprocess_ns = take(period_stats.per_op[i].preprocess_ns);
+        snapshot.per_op[i].list_entries = take(period_stats.per_op[i].list_entries);
     }
+    return snapshot;
+}
 
-    double period_ns = period_seconds * 1e9;
+void StorageRunner::printStats(const std::string & header, double seconds, const StatsSnapshot & stats, std::optional<bool> snapshot_mode)
+{
+    double period_ns = seconds * 1e9;
     auto util = [period_ns](uint64_t ns) { return period_ns > 0 ? 100.0 * static_cast<double>(ns) / period_ns : 0.0; };
 
     uint64_t rss_mb = 0;
@@ -545,37 +563,47 @@ void StorageRunner::report(double period_seconds, bool snapshot_mode_during_peri
 
     std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     out << std::fixed << std::setprecision(1);
-    out << "\n==== period " << period_seconds << "s ====\n";
-    out << "writes/s: " << static_cast<double>(writes) / period_seconds
-        << ", reads/s: " << static_cast<double>(reads) / period_seconds << "\n";
-    out << "util: preprocess " << util(pre_busy)
-        << "%, commit(writes) " << util(w_busy)
-        << "%, commit(reads) " << util(r_busy) << "%\n";
+    out << "\n==== " << header << " " << seconds << "s ====\n";
+    out << "writes/s: " << static_cast<double>(stats.writes) / seconds
+        << ", reads/s: " << static_cast<double>(stats.reads) / seconds << "\n";
+    out << "util: preprocess " << util(stats.preprocess_busy_ns)
+        << "%, commit(writes) " << util(stats.commit_write_busy_ns)
+        << "%, commit(reads) " << util(stats.commit_read_busy_ns) << "%\n";
     out << "znodes: " << znode_count
-        << ", rss: " << rss_mb << " MiB"
-        << ", snapshot_mode: " << (snapshot_mode_during_period ? "yes" : "no") << "\n";
+        << ", rss: " << rss_mb << " MiB";
+    if (snapshot_mode)
+        out << ", snapshot_mode: " << (*snapshot_mode ? "yes" : "no");
+    out << "\n";
     out << "per-op avg ns per request:\n";
     for (size_t i = 1; i < NUM_OP_SLOTS; ++i)
     {
-        if (snap[i].count == 0)
+        const auto & s = stats.per_op[i];
+        if (s.count == 0)
             continue;
-        uint64_t avg_process = snap[i].process_ns / snap[i].count;
-        out << "  " << opSlotName(i) << ": count=" << snap[i].count
+        uint64_t avg_process = s.process_ns / s.count;
+        out << "  " << opSlotName(i) << ": count=" << s.count
             << " process=" << avg_process << " ns";
-        if (snap[i].preprocess_ns > 0)
+        if (s.preprocess_ns > 0)
         {
-            uint64_t avg_preprocess = snap[i].preprocess_ns / snap[i].count;
+            uint64_t avg_preprocess = s.preprocess_ns / s.count;
             out << " preprocess=" << avg_preprocess << " ns";
         }
-        if (snap[i].list_entries > 0)
+        if (s.list_entries > 0)
         {
-            uint64_t ns_per_entry = snap[i].process_ns / snap[i].list_entries;
-            out << " (" << snap[i].list_entries << " names, " << ns_per_entry << " ns/name)";
+            uint64_t ns_per_entry = s.process_ns / s.list_entries;
+            out << " (" << s.list_entries << " names, " << ns_per_entry << " ns/name)";
         }
         out << "\n";
     }
 
     std::cerr << out.str() << std::flush;
+}
+
+void StorageRunner::report(double period_seconds, bool snapshot_mode_during_period)
+{
+    StatsSnapshot period = takePeriodStats();
+    total_stats.add(period);
+    printStats("period", period_seconds, period, snapshot_mode_during_period);
 }
 
 void StorageRunner::runBenchmark()
@@ -660,5 +688,7 @@ void StorageRunner::runBenchmark()
         snapshot_enabled.store(false);
     }
 
-    std::cerr << "Total elapsed: " << total_watch.elapsedSeconds() << "s\n";
+    /// Account for the work done while draining the queues after the last period report.
+    total_stats.add(takePeriodStats());
+    printStats("total", total_watch.elapsedSeconds(), total_stats, std::nullopt);
 }
