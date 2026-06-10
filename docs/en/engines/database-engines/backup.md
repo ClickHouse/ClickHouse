@@ -93,8 +93,10 @@ SELECT id, value FROM test_database_backup.test_table_3;
 It is also possible to work with this database Backup as with any ordinary database. For example query tables in it:
 
 ```sql
-SELECT database, name FROM system.tables WHERE database = 'test_database_backup':
+SELECT database, name FROM system.tables WHERE database = 'test_database_backup';
+```
 
+```text
 ┌─database─────────────┬─name─────────┐
 │ test_database_backup │ test_table_1 │
 │ test_database_backup │ test_table_2 │
