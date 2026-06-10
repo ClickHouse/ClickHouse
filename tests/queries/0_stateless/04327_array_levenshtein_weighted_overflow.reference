@@ -1,0 +1,10 @@
+--- large integer weights do not overflow ---
+36893488147419103000
+18446744073709552000
+18446744073709552000
+73786976294838210000
+--- arraySimilarity weights_sum does not overflow ---
+0
+--- results stay finite ---
+1
+1

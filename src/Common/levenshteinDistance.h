@@ -5,7 +5,7 @@
 #include <Common/iota.h>
 #include <span>
 
-#include <numeric>
+#include <algorithm>
 
 namespace DB
 {
@@ -48,10 +48,11 @@ size_t levenshteinDistance(std::span<const Element> lhs, std::span<const Element
     return v0[n];
 };
 
-/// Levenshtein Distance with weights, is used to calculate custom distance from lhs to rhs
+/// Levenshtein Distance with weights, is used to calculate custom distance from lhs to rhs.
+/// All callers consume the result as Float64, so sums are accumulated in Float64 to avoid integer overflow.
 template <class Element, class Weight>
-Weight levenshteinDistanceWeighted(std::span<const Element> lhs, std::span<const Element> rhs,
-                                   std::span<const Weight> lhs_weights, std::span<const Weight> rhs_weights)
+Float64 levenshteinDistanceWeighted(std::span<const Element> lhs, std::span<const Element> rhs,
+                                    std::span<const Weight> lhs_weights, std::span<const Weight> rhs_weights)
 {
     if (lhs.size() != lhs_weights.size() || rhs.size() != rhs_weights.size())
         throw Exception(
@@ -62,9 +63,12 @@ Weight levenshteinDistanceWeighted(std::span<const Element> lhs, std::span<const
             rhs.size(),
             rhs_weights.size());
 
-    auto sum_span = [](const std::span<const Weight> & span) -> Weight
+    auto sum_span = [](const std::span<const Weight> & span) -> Float64
     {
-        return std::accumulate(span.begin(), span.end(), Weight{});
+        Float64 sum = 0;
+        for (const auto & weight : span)
+            sum += static_cast<Float64>(weight);
+        return sum;
     };
     if (lhs.empty() || rhs.empty())
     {
@@ -81,18 +85,19 @@ Weight levenshteinDistanceWeighted(std::span<const Element> lhs, std::span<const
     const size_t m = lhs.size();
     const size_t n = rhs.size();
 
-    PODArray<Weight> row(m + 1);
+    PODArray<Float64> row(m + 1);
 
     row[0] = 0;
-    std::partial_sum(lhs_weights.begin(), lhs_weights.end(), row.begin() + 1);
+    for (size_t i = 1; i <= m; ++i)
+        row[i] = row[i - 1] + static_cast<Float64>(lhs_weights[i - 1]);
 
     for (size_t j = 1; j <= n; ++j)
     {
-        Weight prev = row[0];
-        row[0] += rhs_weights[j - 1];
+        Float64 prev = row[0];
+        row[0] += static_cast<Float64>(rhs_weights[j - 1]);
         for (size_t i = 1; i <= m; ++i)
         {
-            Weight old = row[i];
+            Float64 old = row[i];
             if (lhs[i - 1] == rhs[j - 1])
             {
                 row[i] = prev;
@@ -100,10 +105,10 @@ Weight levenshteinDistanceWeighted(std::span<const Element> lhs, std::span<const
                 continue;
             }
 
-            row[i] = static_cast<Weight>(std::min(
-                {old + rhs_weights[j - 1], // deletion
-                 row[i - 1] + lhs_weights[i - 1], // insertion
-                 prev + lhs_weights[i - 1] + rhs_weights[j - 1]})); // substitution
+            row[i] = std::min(
+                {old + static_cast<Float64>(rhs_weights[j - 1]), // deletion
+                 row[i - 1] + static_cast<Float64>(lhs_weights[i - 1]), // insertion
+                 prev + static_cast<Float64>(lhs_weights[i - 1]) + static_cast<Float64>(rhs_weights[j - 1])}); // substitution
             prev = old;
         }
     }

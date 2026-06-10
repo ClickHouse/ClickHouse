@@ -528,14 +528,18 @@ private:
                 res_values[row] = 1.0;
                 continue;
             }
-            W weights_sum = std::accumulate(from_weights.begin(), from_weights.end(), W{}) +
-                            std::accumulate(to_weights.begin(), to_weights.end(), W{});
+            // Accumulate in Float64 to match the distance domain and avoid overflow in the weight type.
+            Float64 weights_sum = 0;
+            for (const auto & weight : from_weights)
+                weights_sum += static_cast<Float64>(weight);
+            for (const auto & weight : to_weights)
+                weights_sum += static_cast<Float64>(weight);
             if (weights_sum == 0)
             {
                 res_values[row] = 1.0;
                 continue;
             }
-            res_values[row] = 1.0 - (distance->getFloat64(row) / static_cast<Float64>(weights_sum));
+            res_values[row] = 1.0 - (distance->getFloat64(row) / weights_sum);
         }
         return true;
     }
