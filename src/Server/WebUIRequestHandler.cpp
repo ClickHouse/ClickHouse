@@ -30,22 +30,6 @@ constexpr unsigned char resource_lz_string_js[] =
 {
 #embed "../../programs/server/js/lz-string.js"
 };
-constexpr unsigned char resource_xterm_js[] =
-{
-#embed "../../programs/server/js/xterm.min.js"
-};
-constexpr unsigned char resource_xterm_css[] =
-{
-#embed "../../programs/server/js/xterm.min.css"
-};
-constexpr unsigned char resource_addon_fit_js[] =
-{
-#embed "../../programs/server/js/addon-fit.min.js"
-};
-constexpr unsigned char resource_addon_web_links_js[] =
-{
-#embed "../../programs/server/js/addon-web-links.min.js"
-};
 constexpr unsigned char resource_binary_html[] =
 {
 #embed "../../programs/server/binary.html"
@@ -114,30 +98,19 @@ void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
 
 void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    struct Resource { const char * path; const unsigned char * data; size_t size; const char * content_type; };
-    const Resource resources[] = {
-        {"/js/uplot.js", resource_uplot_js, std::size(resource_uplot_js), "application/javascript; charset=UTF-8"},
-        {"/js/lz-string.js", resource_lz_string_js, std::size(resource_lz_string_js), "application/javascript; charset=UTF-8"},
-        {"/js/xterm.min.js", resource_xterm_js, std::size(resource_xterm_js), "application/javascript; charset=UTF-8"},
-        {"/js/xterm.min.css", resource_xterm_css, std::size(resource_xterm_css), "text/css; charset=UTF-8"},
-        {"/js/addon-fit.min.js", resource_addon_fit_js, std::size(resource_addon_fit_js), "application/javascript; charset=UTF-8"},
-        {"/js/addon-web-links.min.js", resource_addon_web_links_js, std::size(resource_addon_web_links_js), "application/javascript; charset=UTF-8"},
-    };
-
-    for (const auto & resource : resources)
+    if (request.getURI() == "/js/uplot.js")
     {
-        if (request.getURI() == resource.path)
-        {
-            auto headers = http_response_headers_override;
-            if (resource.content_type)
-                headers["Content-Type"] = resource.content_type;
-            handle(request, response, {reinterpret_cast<const char *>(resource.data), resource.size}, headers);
-            return;
-        }
+        handle(request, response, {reinterpret_cast<const char *>(resource_uplot_js), std::size(resource_uplot_js)}, http_response_headers_override);
     }
-
-    response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-    *response.send() << "Not found.\n";
+    else if (request.getURI() == "/js/lz-string.js")
+    {
+        handle(request, response, {reinterpret_cast<const char *>(resource_lz_string_js), std::size(resource_lz_string_js)}, http_response_headers_override);
+    }
+    else
+    {
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+        *response.send() << "Not found.\n";
+    }
 }
 
 void JemallocWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)

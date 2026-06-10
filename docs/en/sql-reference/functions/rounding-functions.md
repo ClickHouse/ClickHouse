@@ -6,6 +6,8 @@ title: 'Rounding functions'
 doc_type: 'reference'
 ---
 
+# Rounding functions
+
 :::note
 The documentation below is generated from the `system.functions` system table
 :::

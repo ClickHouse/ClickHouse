@@ -55,7 +55,6 @@ public:
     bool canRemoveColumnsFromOutput() const override;
 
     void setPreventInputRemoval() { prevent_input_removal = true; }
-    bool isInputRemovalPrevented() const { return prevent_input_removal; }
 
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
