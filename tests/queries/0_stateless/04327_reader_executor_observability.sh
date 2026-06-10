@@ -20,7 +20,7 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 # Run a read with reader-executor logging enabled. Tag the query so we can find it.
-QUERY_TAG="04262_re_obs"
+QUERY_TAG="04327_re_obs"
 $CLICKHOUSE_CLIENT --use_reader_executor=1 --enable_reader_executor_log=1 --query "
     SELECT '$QUERY_TAG', * FROM test_re_obs FORMAT Null
 "

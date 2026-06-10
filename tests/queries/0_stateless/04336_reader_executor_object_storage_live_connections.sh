@@ -16,7 +16,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-S3="s3('http://localhost:11111/test/${CLICKHOUSE_DATABASE}/04316.parquet', 'clickhouse', 'clickhouse', 'Parquet')"
+S3="s3('http://localhost:11111/test/${CLICKHOUSE_DATABASE}/04336.parquet', 'clickhouse', 'clickhouse', 'Parquet')"
 
 $CLICKHOUSE_CLIENT --query "
     INSERT INTO FUNCTION $S3
@@ -26,8 +26,8 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 SCAN="SELECT count() FROM $S3 WHERE NOT ignore(*) FORMAT Null"
-OFF_ID="04316_off_${CLICKHOUSE_DATABASE}"
-ON_ID="04316_on_${CLICKHOUSE_DATABASE}"
+OFF_ID="04336_off_${CLICKHOUSE_DATABASE}"
+ON_ID="04336_on_${CLICKHOUSE_DATABASE}"
 
 # Lower the live-connection threshold so this small Parquet's column-chunk reads (well under
 # the default 8 MiB window) take a live connection when enabled.

@@ -50,7 +50,7 @@ do
 
     # Measured: read from the source again (cache dropped); the executor should
     # reuse the connections the warm scan left in the pool.
-    MEASURED_ID="04305_re_pool_${CLICKHOUSE_DATABASE}_$RANDOM"
+    MEASURED_ID="04333_re_pool_${CLICKHOUSE_DATABASE}_$RANDOM"
     $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
     $CLICKHOUSE_CLIENT "${RE_SETTINGS[@]}" --query_id "$MEASURED_ID" --query "$SCAN"
 

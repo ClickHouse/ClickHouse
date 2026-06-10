@@ -28,8 +28,8 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO t_re_bytes SELECT number, sipHash64(number) FROM numbers(1000000)"
 $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE t_re_bytes FINAL"
 
-POINT="04306_point_${CLICKHOUSE_DATABASE}"
-FULL="04306_full_${CLICKHOUSE_DATABASE}"
+POINT="04334_point_${CLICKHOUSE_DATABASE}"
+FULL="04334_full_${CLICKHOUSE_DATABASE}"
 
 # One-granule point read (k = 530000 is mid-granule), and a full-column scan,
 # both through the executor.

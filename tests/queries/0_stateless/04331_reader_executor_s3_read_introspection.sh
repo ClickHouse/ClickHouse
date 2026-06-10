@@ -26,8 +26,8 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO t_re_s3_introspect SELECT number, number, number, number, number FROM numbers(512 * 32 * 40)
 "
 
-COLD_ID="04302_re_cold_${CLICKHOUSE_DATABASE}"
-WARM_ID="04302_re_warm_${CLICKHOUSE_DATABASE}"
+COLD_ID="04331_re_cold_${CLICKHOUSE_DATABASE}"
+WARM_ID="04331_re_warm_${CLICKHOUSE_DATABASE}"
 
 # Executor on, prefetch off so cache population is synchronous.
 RE_SETTINGS=(--use_reader_executor=1 --enable_reader_executor_log=1 --remote_filesystem_read_prefetch=0)

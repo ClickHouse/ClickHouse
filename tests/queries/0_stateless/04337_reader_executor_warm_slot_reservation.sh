@@ -27,7 +27,7 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 run_warm () {  # $1=label  $2=prefetch
-    local id="04317_${1}_${CLICKHOUSE_DATABASE}"
+    local id="04337_${1}_${CLICKHOUSE_DATABASE}"
     # Cold populate (drop cache first), then a warm re-scan, measured.
     $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
     $CLICKHOUSE_CLIENT --use_reader_executor=1 --remote_filesystem_read_prefetch="$2" \
