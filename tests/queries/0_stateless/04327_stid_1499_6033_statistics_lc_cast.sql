@@ -41,4 +41,14 @@ SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), ex
     WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
 SELECT count() FROM stid_1499_6033 WHERE v < toLowCardinality(toNullable(50));
 
+-- Explicit monotonic wrapper over a LowCardinality statistics column. The user CAST builds its
+-- FunctionCast chain element against the column's LowCardinality type, so the chain must be built
+-- and applied with the same LowCardinality-stripped invariant; otherwise the dictionary-unpack
+-- wrapper hits `Bad cast` at apply time.
+SELECT '-- explicit CAST over LowCardinality statistics column';
+WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE CAST(b, 'Int32') >= 1) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
+SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM stid_1499_6033 WHERE CAST(b, 'Int32') >= 1)
+    WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT count() FROM stid_1499_6033 WHERE CAST(b, 'Int32') >= 1;
+
 DROP TABLE stid_1499_6033;
