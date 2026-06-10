@@ -13,7 +13,10 @@ ${CLICKHOUSE_CLIENT} -m -q "
 DROP TABLE IF EXISTS t_readonly;
 DROP TABLE IF EXISTS t_writable;
 
-CREATE TABLE t_readonly (x UInt64) ENGINE = MergeTree ORDER BY x;
+-- min_age_to_force_merge_seconds covers the forced whole-partition merge fallback
+-- (getBestPartitionToOptimizeEntire): it must not merge a read-only table either.
+CREATE TABLE t_readonly (x UInt64) ENGINE = MergeTree ORDER BY x
+SETTINGS min_age_to_force_merge_seconds = 1, min_age_to_force_merge_on_partition_only = 1;
 CREATE TABLE t_writable (x UInt64) ENGINE = MergeTree ORDER BY x;
 
 -- Stop merges so the parts are not merged before the table is marked read-only.
@@ -63,13 +66,15 @@ DROP TABLE t_writable;
 ${CLICKHOUSE_CLIENT} -m -q "
 DROP TABLE IF EXISTS t_readonly_ttl;
 
+-- The TTL margin must be much larger than one day: the test runs with a randomized
+-- session_timezone, so today() may differ from the server date by a day in either direction.
 CREATE TABLE t_readonly_ttl (d Date, x UInt64)
 ENGINE = MergeTree ORDER BY x
-TTL d + INTERVAL 1 DAY
+TTL d + INTERVAL 1 MONTH
 SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0;
 
 -- One fully expired part and one fresh part.
-INSERT INTO t_readonly_ttl VALUES (today() - 10, 1);
+INSERT INTO t_readonly_ttl VALUES (today() - 100, 1);
 INSERT INTO t_readonly_ttl VALUES (today(), 2);
 
 ALTER TABLE t_readonly_ttl MODIFY SETTING table_readonly = 1;
