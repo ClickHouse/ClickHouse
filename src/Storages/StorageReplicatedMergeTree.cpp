@@ -8921,6 +8921,13 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
         auto response = batch.future.get();
         if (response.error != Coordination::Error::ZOK)
         {
+            /// Preserve the failure contract of the original tryMulti-based implementation:
+            /// non-user (hardware) errors such as ZCONNECTIONLOSS, ZSESSIONEXPIRED or ZOPERATIONTIMEOUT
+            /// must propagate so the caller does not proceed as if the blocks were removed. Only expected
+            /// per-op user errors (e.g. ZNONODE for an already-removed block) are logged and ignored.
+            if (!Coordination::isUserError(response.error))
+                throw zkutil::KeeperException(response.error);
+
             for (size_t i = 0; i < response.responses.size(); ++i)
                 if (response.responses[i]->error != Coordination::Error::ZOK)
                     LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.",
