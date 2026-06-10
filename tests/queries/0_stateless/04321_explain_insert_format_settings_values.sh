@@ -6,34 +6,39 @@
 # The decision must not depend on the clause order, otherwise a formatting roundtrip (the formatter
 # always emits SETTINGS before the SELECT and the INSERT FORMAT last) would flip it and trip the
 # "Inconsistent AST formatting" assertion. See https://github.com/ClickHouse/ClickHouse/pull/106686
+#
+# The full EXPLAIN output is printed, so the reference checks both that the requested format is
+# used for the EXPLAIN output and that the FORMAT clause is gone from (or kept on) the INSERT body.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 # SETTINGS written before the FORMAT belong to the INSERT, but the trailing FORMAT still
-# applies to the EXPLAIN output. JSONEachRow wraps the output in JSON.
+# applies to the EXPLAIN output: the output is JSON and the INSERT body has no FORMAT.
 echo "--- SETTINGS before FORMAT ---"
-${CLICKHOUSE_CLIENT} --query "EXPLAIN SYNTAX INSERT INTO FUNCTION null('x UInt64') SELECT 1 SETTINGS max_threads = 1 FORMAT JSONEachRow" | head -1 | grep -c '^{"explain"'
+${CLICKHOUSE_CLIENT} --query "EXPLAIN SYNTAX INSERT INTO FUNCTION null('x UInt64') SELECT 1 SETTINGS max_threads = 1 FORMAT JSONEachRow"
 
-# Values is a valid EXPLAIN output format; it must not be treated as the INSERT VALUES data path.
+# Values is a valid EXPLAIN output format; it must not be treated as the INSERT VALUES data path:
+# the output is Values and the INSERT body has no FORMAT.
 echo "--- FORMAT Values ---"
-${CLICKHOUSE_CLIENT} --query "EXPLAIN SYNTAX INSERT INTO FUNCTION null('x UInt64') SELECT 1 FORMAT Values" | grep -c "^('INSERT"
+${CLICKHOUSE_CLIENT} --query "EXPLAIN SYNTAX INSERT INTO FUNCTION null('x UInt64') SELECT 1 FORMAT Values"
+echo "" # The Values format does not end with a newline.
 
 # SETTINGS after FORMAT (allow_settings_after_format_in_insert) must behave the same as SETTINGS
-# before FORMAT: the FORMAT applies to the EXPLAIN output (JSON), the SETTINGS stay on the INSERT.
+# before FORMAT: the output is JSON, and both the SETTINGS and no FORMAT are on the INSERT body.
 echo "--- SETTINGS after FORMAT ---"
-${CLICKHOUSE_CLIENT} --query "EXPLAIN SYNTAX INSERT INTO FUNCTION null('x UInt64') SELECT 1 FORMAT JSONEachRow SETTINGS max_threads = 1" --allow_settings_after_format_in_insert 1 | head -1 | grep -c '^{"explain"'
+${CLICKHOUSE_CLIENT} --query "EXPLAIN SYNTAX INSERT INTO FUNCTION null('x UInt64') SELECT 1 FORMAT JSONEachRow SETTINGS max_threads = 1" --allow_settings_after_format_in_insert 1
 
-# Explicit double-FORMAT: the first FORMAT genuinely belongs to the INSERT and stays on it, while
-# the second FORMAT applies to the EXPLAIN output (JSON).
+# Explicit double-FORMAT: the first FORMAT genuinely belongs to the INSERT and stays on its body,
+# while the second FORMAT applies to the EXPLAIN output (JSON).
 echo "--- double FORMAT ---"
-${CLICKHOUSE_CLIENT} --query "EXPLAIN SYNTAX INSERT INTO FUNCTION null('x UInt64') SELECT 1 FORMAT Values FORMAT JSONEachRow" | head -1 | grep -c '^{"explain"'
+${CLICKHOUSE_CLIENT} --query "EXPLAIN SYNTAX INSERT INTO FUNCTION null('x UInt64') SELECT 1 FORMAT Values FORMAT JSONEachRow"
 
 # A trailing ';' query terminator must be accepted: an INSERT ... SELECT (without the `input` table
 # function) has no inline data, so the FORMAT applies to the EXPLAIN output and the ';' is not data.
 echo "--- trailing semicolon ---"
-${CLICKHOUSE_CLIENT} --query "EXPLAIN SYNTAX INSERT INTO FUNCTION null('x UInt64') SELECT 1 FORMAT JSONEachRow;" | head -1 | grep -c '^{"explain"'
+${CLICKHOUSE_CLIENT} --query "EXPLAIN SYNTAX INSERT INTO FUNCTION null('x UInt64') SELECT 1 FORMAT JSONEachRow;"
 
 # The choice of where the FORMAT lands must be stable across a formatting roundtrip, so that the
 # AST does not change when re-parsed. Compare the formatted output of the query with the formatted
