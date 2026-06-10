@@ -42,7 +42,7 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
         table_name = storage_id.getFullTableName();
     }
     if (const auto & dag = read.getPrewhereInfo())
-        dag->prewhere_actions.updateHash(hash);
+        dag->prewhere_actions.updateHash(hash, /*skip_volatile_constants=*/true);
     return hash.get64();
 }
 
@@ -54,6 +54,7 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     {
         WriteBufferFromOwnString wbuf;
         SerializedSetsRegistry registry;
+        registry.skip_cache_key = true;
         IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry, .skip_final_flag = true, .skip_cache_key = true};
 
         writeStringBinary(transform.getSerializationName(), wbuf);
@@ -86,13 +87,13 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
         if (op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals)
         {
             if (side == JoinTableSide::Left && lhs.fromLeft())
-                lhs.getNode()->updateHash(hash);
+                lhs.getNode()->updateHash(hash, /*skip_volatile_constants=*/true);
             if (side == JoinTableSide::Left && rhs.fromLeft())
-                rhs.getNode()->updateHash(hash);
+                rhs.getNode()->updateHash(hash, /*skip_volatile_constants=*/true);
             if (side == JoinTableSide::Right && lhs.fromRight())
-                lhs.getNode()->updateHash(hash);
+                lhs.getNode()->updateHash(hash, /*skip_volatile_constants=*/true);
             if (side == JoinTableSide::Right && rhs.fromRight())
-                rhs.getNode()->updateHash(hash);
+                rhs.getNode()->updateHash(hash, /*skip_volatile_constants=*/true);
         }
     }
 
@@ -232,7 +233,7 @@ void calculateHashTableCacheKeys(
                 frame.hash.update(static_cast<uint8_t>(table_join.getAsofInequality()));
             frame.hash.update(table_join.joinUseNulls());
             if (const auto & mixed = table_join.getMixedJoinExpression())
-                mixed->getActionsDAG().updateHash(frame.hash);
+                mixed->getActionsDAG().updateHash(frame.hash, /*skip_volatile_constants=*/true);
             frame.hash.update(a);
             frame.hash.update(b);
         }

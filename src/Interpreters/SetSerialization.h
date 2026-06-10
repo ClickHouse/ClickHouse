@@ -15,6 +15,12 @@ struct SerializedSetsRegistry
     };
 
     std::unordered_map<FutureSet::Hash, FutureSetPtr, Hashing> sets;
+
+    /// Set when this serialization is used to compute a plan-step cache key (not for transmission).
+    /// In that mode `ActionsDAG::serialize` omits the VALUE of non-deterministic constants: such a
+    /// value is volatile (e.g. a per-plan-build runtime-filter id) and not a stable key component.
+    /// The output is hash-only and never deserialized, so omitting it is safe.
+    bool skip_cache_key = false;
 };
 
 class ColumnSet;

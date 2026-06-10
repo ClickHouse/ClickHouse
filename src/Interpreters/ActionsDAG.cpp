@@ -184,7 +184,7 @@ UInt64 ActionsDAG::Node::getHash() const
     return hash_state.get64();
 }
 
-void ActionsDAG::Node::updateHash(SipHash & hash_state) const
+void ActionsDAG::Node::updateHash(SipHash & hash_state, bool skip_volatile_constants) const
 {
     hash_state.update(type);
 
@@ -211,11 +211,18 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
         /// Otherwise, two different constants with the same type and the same expression-based
         /// result_name (e.g. from CTE constant folding) would produce identical hashes,
         /// leading to query condition cache collisions and incorrect results.
-        column->updateHashWithValue(0, hash_state);
+        ///
+        /// Exception: when `skip_volatile_constants` is set (cache-key computation), the VALUE of a
+        /// non-deterministic constant (`is_deterministic_constant == false`) is not a stable hash
+        /// component, so only its stable `result_name` is kept. This lets a per-plan-build
+        /// runtime-filter id, carried as such a const, stay out of the plan-step hash while still
+        /// serializing normally for distributed propagation.
+        if (!(skip_volatile_constants && !is_deterministic_constant))
+            column->updateHashWithValue(0, hash_state);
     }
 
     for (const auto & child : children)
-        child->updateHash(hash_state);
+        child->updateHash(hash_state, skip_volatile_constants);
 }
 
 UInt64 ActionsDAG::getHash() const
@@ -225,7 +232,7 @@ UInt64 ActionsDAG::getHash() const
     return hash.get64();
 }
 
-void ActionsDAG::updateHash(SipHash & hash_state) const
+void ActionsDAG::updateHash(SipHash & hash_state, bool skip_volatile_constants) const
 {
     struct Frame
     {
@@ -242,7 +249,7 @@ void ActionsDAG::updateHash(SipHash & hash_state) const
         auto & frame = stack.top();
         if (frame.next_child == frame.node->children.size())
         {
-            frame.node->updateHash(hash_state);
+            frame.node->updateHash(hash_state, skip_volatile_constants);
             stack.pop();
         }
         else
@@ -3902,7 +3909,12 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
 
         writeIntBinary(column_flags, out);
 
-        if (has_column)
+        /// When computing a cache key (`registry.skip_cache_key`), skip the VALUE of a
+        /// non-deterministic constant: it is volatile (e.g. a per-plan-build runtime-filter id) and
+        /// not a stable key component, while its `result_name`/`column_flags` (already written) carry
+        /// the stable structural id. This output is hash-only and never deserialized, so omitting the
+        /// value is safe; the transmission path (`skip_cache_key == false`) always writes it.
+        if (has_column && !(registry.skip_cache_key && !node.is_deterministic_constant))
             serializeConstant(*node.result_type, *node.column, out, registry);
 
         if (node.type == ActionType::INPUT)

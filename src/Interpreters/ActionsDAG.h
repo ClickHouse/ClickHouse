@@ -113,7 +113,11 @@ public:
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
         UInt64 getHash() const;
-        void updateHash(SipHash & hash_state) const;
+        /// `skip_volatile_constants`: do not mix in the VALUE of non-deterministic constants
+        /// (`is_deterministic_constant == false`). Such values aren't a stable hash component, so the
+        /// cache-key callers set it; all other callers (e.g. the query condition cache) use the
+        /// default and are unaffected.
+        void updateHash(SipHash & hash_state, bool skip_volatile_constants = false) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -505,7 +509,7 @@ public:
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
     UInt64 getHash() const;
-    void updateHash(SipHash & hash_state) const;
+    void updateHash(SipHash & hash_state, bool skip_volatile_constants = false) const;
 
     friend class QueryPlanOptimizations::TextIndexDAGReplacer;
 
