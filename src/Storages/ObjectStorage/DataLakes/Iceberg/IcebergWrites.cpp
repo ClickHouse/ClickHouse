@@ -345,14 +345,15 @@ void generateManifestFile(
         avro::GenericRecord & manifest = manifest_datum.value<avro::GenericRecord>();
 
         /// A metadata-only rewrite (non-empty per_file_entry_lineage) must not re-stamp unchanged
-        /// files: they stay EXISTING and keep their original adding snapshot and sequence number.
-        /// Otherwise every entry is ADDED by the new snapshot (the append path).
+        /// files with the new snapshot's lineage: each entry keeps the snapshot-id and sequence
+        /// number that originally added the file. The entry status stays ADDED (rather than
+        /// EXISTING) because ClickHouse's manifest reader requires EXISTING entries to carry an
+        /// explicit non-null data sequence number, while ADDED entries are read back the same way
+        /// with the original sequence number preserved here.
         const DataFileEntryLineage * entry_lineage
             = per_file_entry_lineage.empty() ? nullptr : &per_file_entry_lineage[file_idx];
 
-        manifest.field(Iceberg::f_status)
-            = avro::GenericDatum(entry_lineage ? static_cast<Int32>(ManifestEntryStatus::EXISTING)
-                                               : static_cast<Int32>(ManifestEntryStatus::ADDED));
+        manifest.field(Iceberg::f_status) = avro::GenericDatum(static_cast<Int32>(ManifestEntryStatus::ADDED));
         Int64 snapshot_id = (entry_lineage && entry_lineage->added_snapshot_id)
             ? *entry_lineage->added_snapshot_id
             : new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);

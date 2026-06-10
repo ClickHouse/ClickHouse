@@ -593,12 +593,16 @@ static bool writeConsolidatedManifestFile(
                 pd.file_formats.push_back(data_file->parsed_entry->file_format);
                 pd.file_sort_order_ids.push_back(data_file->parsed_entry->sort_order_id);
 
-                /// Preserve the entry's lineage. The sequence number can be inherited (null on the
-                /// entry) for ADDED entries; the effective value is the manifest's added sequence
-                /// number from the manifest list. EXISTING entries written below require a non-null
-                /// sequence number, so resolve the inheritance here.
+                /// Preserve the entry's lineage. The snapshot-id and sequence number can be inherited
+                /// (null on the entry) for ADDED entries; the effective values are the adding
+                /// snapshot-id and sequence number of the manifest as recorded in the manifest list.
+                /// EXISTING entries written below require both to be non-null, so resolve the
+                /// inheritance here rather than falling back to the new (replace) snapshot, which
+                /// would re-stamp the file's lineage.
                 DataFileEntryLineage lineage;
                 lineage.added_snapshot_id = data_file->parsed_entry->parsed_snapshot_id;
+                if (!lineage.added_snapshot_id.has_value())
+                    lineage.added_snapshot_id = manifest_file.added_snapshot_id;
                 lineage.sequence_number = data_file->parsed_entry->parsed_sequence_number;
                 if (!lineage.sequence_number.has_value())
                     lineage.sequence_number = manifest_file.added_sequence_number;

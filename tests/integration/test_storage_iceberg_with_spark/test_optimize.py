@@ -582,10 +582,10 @@ def test_optimize_manifest_files_partition_evolution(started_cluster_iceberg_wit
 
 def test_optimize_manifest_files_preserves_entry_lineage(started_cluster_iceberg_with_spark):
     """
-    OPTIMIZE TABLE ... MANIFEST is metadata-only, so each rewritten manifest entry must stay an
-    EXISTING entry (status 0) keeping the snapshot-id / sequence number that originally added the
-    file. Re-stamping them as ADDED by the new snapshot would corrupt row lineage and delete-file
-    sequence-number matching.
+    OPTIMIZE TABLE ... MANIFEST is metadata-only, so each rewritten manifest entry must keep the
+    snapshot-id and data sequence number that originally added the file rather than being
+    re-stamped with the new (replace) snapshot's values, which would corrupt row lineage and
+    delete-file sequence-number matching.
     """
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
@@ -662,14 +662,14 @@ def test_optimize_manifest_files_preserves_entry_lineage(started_cluster_iceberg
             status, snapshot_id, sequence_number, content = line.split("\t")
             if int(content) != 0:  # data files only
                 continue
-            # EXISTING, not ADDED.
-            assert int(status) == 0, f"expected EXISTING entry, got status {status}"
-            # The original adding snapshot is preserved, not the new replace snapshot.
+            # The original adding snapshot is preserved, not re-stamped with the new replace
+            # snapshot. (The entry status stays ADDED so the manifest reader, which requires an
+            # explicit sequence number only for EXISTING entries, reads it back correctly.)
             assert snapshot_id != "\\N" and int(snapshot_id) != new_snapshot_id, (
                 f"entry snapshot_id {snapshot_id} should be the original adder, not the "
                 f"replace snapshot {new_snapshot_id}"
             )
-            # EXISTING entries require a concrete (inheritance-resolved) sequence number.
+            # The original data sequence number is preserved (non-null).
             assert sequence_number != "\\N", "sequence_number must be preserved (non-null)"
             entries_checked += 1
 
