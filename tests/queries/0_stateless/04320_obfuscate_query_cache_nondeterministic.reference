@@ -3,3 +3,8 @@
 -- non-empty seed is deterministic: cacheable
 8
 1
+-- empty seed in an inner SETTINGS overrides an outer non-empty seed: rejected
+0
+-- non-empty seed in an inner SETTINGS makes the result reproducible: cacheable
+8
+1

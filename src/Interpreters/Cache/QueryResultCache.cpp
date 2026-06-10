@@ -88,14 +88,6 @@ struct HasNonDeterministicFunctionsMatcher
 
         if (const auto * function = node->as<ASTFunction>())
         {
-            /// The `obfuscate` table function with an empty seed derives a fresh random seed per execution
-            /// (see `ObfuscateStep`), so its result is non-deterministic and must not be cached. A non-empty
-            /// `obfuscate_seed` makes the output reproducible and therefore cacheable.
-            if (function->name == "obfuscate" && data.context->getSettingsRef()[Setting::obfuscate_seed].value.empty())
-            {
-                data.has_non_deterministic_functions = true;
-                return;
-            }
             if (const auto func = FunctionFactory::instance().tryGet(function->name, data.context))
             {
                 if (!func->isDeterministic())
@@ -198,12 +190,44 @@ using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 
 }
 
+/// The `obfuscate` table function with an empty seed derives a fresh random seed per execution
+/// (see `ObfuscateStep`), so its result is non-deterministic and must not be cached. A non-empty
+/// `obfuscate_seed` makes the output reproducible and therefore cacheable. The setting can be
+/// overridden by the SETTINGS clause of any enclosing SELECT, and that override is what the
+/// table function effectively runs with, so track the effective value while descending into the AST.
+static bool hasNonDeterministicObfuscate(const ASTPtr & node, bool seed_is_empty)
+{
+    if (!node)
+        return false;
+
+    if (const auto * select = node->as<ASTSelectQuery>())
+    {
+        if (const auto * settings_ast = select->settings() ? select->settings()->as<ASTSetQuery>() : nullptr)
+        {
+            for (const auto & change : settings_ast->changes)
+                if (change.name == "obfuscate_seed")
+                    seed_is_empty = change.value.getType() == Field::Types::String && change.value.safeGet<String>().empty();
+        }
+    }
+
+    if (const auto * function = node->as<ASTFunction>())
+        if (function->name == "obfuscate" && seed_is_empty)
+            return true;
+
+    for (const auto & child : node->children)
+        if (hasNonDeterministicObfuscate(child, seed_is_empty))
+            return true;
+
+    return false;
+}
+
 /// Does AST contain non-deterministic functions like rand() and now()?
 static bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
     HasNonDeterministicFunctionsMatcher::Data finder_data{context};
     HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
-    return finder_data.has_non_deterministic_functions;
+    return finder_data.has_non_deterministic_functions
+        || hasNonDeterministicObfuscate(ast, context->getSettingsRef()[Setting::obfuscate_seed].value.empty());
 }
 
 /// Does AST contain system tables like "system.processes"?

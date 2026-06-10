@@ -18,3 +18,15 @@ SELECT count() FROM (SELECT * FROM obfuscate(SELECT * FROM numbers(8)) LIMIT 8) 
 SELECT count() FROM system.query_cache;
 
 SYSTEM CLEAR QUERY CACHE;
+
+SELECT '-- empty seed in an inner SETTINGS overrides an outer non-empty seed: rejected';
+SELECT count() FROM (SELECT * FROM obfuscate(SELECT * FROM numbers(8)) LIMIT 8 SETTINGS obfuscate_seed = '') SETTINGS use_query_cache = 1, obfuscate_seed = 'stable'; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
+SELECT count() FROM system.query_cache;
+
+SYSTEM CLEAR QUERY CACHE;
+
+SELECT '-- non-empty seed in an inner SETTINGS makes the result reproducible: cacheable';
+SELECT count() FROM (SELECT * FROM obfuscate(SELECT * FROM numbers(8)) LIMIT 8 SETTINGS obfuscate_seed = 'stable') SETTINGS use_query_cache = 1;
+SELECT count() FROM system.query_cache;
+
+SYSTEM CLEAR QUERY CACHE;
