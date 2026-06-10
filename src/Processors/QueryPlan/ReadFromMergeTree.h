@@ -45,9 +45,11 @@ struct UsefulSkipIndexes
     TopKThresholdTrackerPtr threshold_tracker{nullptr};
 };
 
-struct RejectedSkipIndex
+struct RejectedSkipIndexStat
 {
-    MergeTreeIndexPtr index;
+    std::string name;
+    std::string index_type;
+    size_t granularity;
     std::string rejection_reason;
 };
 
@@ -55,7 +57,7 @@ struct RejectedSkipIndexes
 {
     bool empty() const { return rejected_indices.empty(); }
 
-    std::vector<RejectedSkipIndex> rejected_indices;
+    std::vector<RejectedSkipIndexStat> rejected_indices;
 };
 
 /// Contains parts each from different projection index

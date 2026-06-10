@@ -2107,7 +2107,11 @@ void ReadFromMergeTree::buildIndexes(
         if (condition && !condition->alwaysUnknownOrTrue())
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
         else
-            rejected_indexes.rejected_indices.push_back({index_helper, condition ? condition->rejectionReason() : "no condition could be created from the query predicate"});
+            rejected_indexes.rejected_indices.push_back({
+                index.name,
+                index.type,
+                index.granularity,
+                condition ? condition->rejectionReason() : "no condition could be created from the query predicate"});
 
         auto can_skip_index_be_used_for_top_k_filtering = [top_k_filter_info](const MergeTreeIndexPtr & skip_index)
         {
@@ -4151,6 +4155,8 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 
     const std::string & prefix = format_settings.detail_prefix;
 
+    /// index_stats always contains at least a None entry (the baseline parts/granules count
+    /// before any filtering). A lone None entry means no actual index was applied.
     bool has_applied_indexes = !index_stats.empty()
         && !(index_stats.size() == 1 && index_stats.front().type == IndexType::None);
     bool has_rejected_indexes = !result.rejected_skip_indexes.empty();
@@ -4221,9 +4227,9 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
     for (const auto & rejected : result.rejected_skip_indexes.rejected_indices)
     {
         format_settings.out << prefix << indent << "Skip" << '\n';
-        format_settings.out << prefix << indent << indent << "Name: " << rejected.index->index.name << '\n';
+        format_settings.out << prefix << indent << indent << "Name: " << rejected.name << '\n';
         format_settings.out << prefix << indent << indent << "Description: "
-            << rejected.index->index.type << " GRANULARITY " << rejected.index->index.granularity << '\n';
+            << rejected.index_type << " GRANULARITY " << rejected.granularity << '\n';
         format_settings.out << prefix << indent << indent << "Status: NOT APPLIED" << '\n';
         format_settings.out << prefix << indent << indent << "Reason: " << rejected.rejection_reason << '\n';
     }
@@ -4234,6 +4240,7 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
     const auto & result = getAnalysisResult();
     const auto & index_stats = result.index_stats;
 
+    /// See comment in the text-format overload above.
     bool has_applied_indexes = !index_stats.empty()
         && !(index_stats.size() == 1 && index_stats.front().type == IndexType::None);
     bool has_rejected_indexes = !result.rejected_skip_indexes.empty();
@@ -4312,9 +4319,9 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
     {
         auto rejected_map = std::make_unique<JSONBuilder::JSONMap>();
         rejected_map->add("Type", "Skip");
-        rejected_map->add("Name", rejected.index->index.name);
+        rejected_map->add("Name", rejected.name);
         rejected_map->add("Description",
-            rejected.index->index.type + " GRANULARITY " + std::to_string(rejected.index->index.granularity));
+            rejected.index_type + " GRANULARITY " + std::to_string(rejected.granularity));
         rejected_map->add("Status", "NOT APPLIED");
         rejected_map->add("Reason", rejected.rejection_reason);
         indexes_array->add(std::move(rejected_map));
