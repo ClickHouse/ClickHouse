@@ -551,6 +551,20 @@ void Aggregator::Params::explain(ExplainFormatSettings & settings) const
                 aggregate.explain(out, prefix, 4);
         }
     }
+
+    if (top_k_keys > 0)
+    {
+        out << prefix << "Top-K: limit=" << top_k_keys
+            << ", columns=" << top_k_key_columns
+            << ", directions=[";
+        for (size_t i = 0; i < top_k_keys_directions.size(); ++i)
+        {
+            if (i > 0)
+                out << ',';
+            out << top_k_keys_directions[i];
+        }
+        out << "]\n";
+    }
 }
 
 void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
@@ -574,6 +588,18 @@ void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
         }
 
         map.add("Aggregates", std::move(aggregates_array));
+    }
+
+    if (top_k_keys > 0)
+    {
+        auto top_k_map = std::make_unique<JSONBuilder::JSONMap>();
+        top_k_map->add("Limit", top_k_keys);
+        top_k_map->add("Columns", top_k_key_columns);
+        auto directions = std::make_unique<JSONBuilder::JSONArray>();
+        for (int direction : top_k_keys_directions)
+            directions->add(direction);
+        top_k_map->add("Directions", std::move(directions));
+        map.add("Top-K", std::move(top_k_map));
     }
 }
 
