@@ -83,20 +83,32 @@ class GH:
         assert repo_name
         print(repo_name)
 
+        # Include both sides of renames: .filename is the destination path and
+        # .previous_filename (REST API only, absent for non-renames) is the
+        # source path. Without the source path a rename out of a watched
+        # directory is invisible to consumers such as job filtering and the
+        # read-only docs guard. Rename sources do not exist in the checkout at
+        # HEAD, same as deleted files, which were always included.
+        jq_both_sides = ".filename, (.previous_filename // empty)"
+
         for attempt in range(3):
             # store changed files
             if info.pr_number > 0:
                 exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
-                    f"gh pr view {info.pr_number} --repo {repo_name} --json files --jq '.files[].path'",
+                    f"gh api repos/{repo_name}/pulls/{info.pr_number}/files --paginate --jq '.[] | {jq_both_sides}'",
                 )
                 assert exit_code == 0, "Failed to retrieve changed files list"
             else:
                 exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
-                    f"gh api repos/{repo_name}/commits/{sha} | jq -r '.files[].filename'",
+                    f"gh api repos/{repo_name}/commits/{sha} --jq '.files[] | {jq_both_sides}'",
                 )
 
             if exit_code == 0:
-                res = changed_files_str.split("\n") if changed_files_str else []
+                res = (
+                    list(dict.fromkeys(changed_files_str.split("\n")))
+                    if changed_files_str
+                    else []
+                )
                 break
             else:
                 print(

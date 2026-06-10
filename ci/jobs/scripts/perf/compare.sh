@@ -1178,7 +1178,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         fromUnixTimestamp($CHPC_CHECK_START_TIMESTAMP) check_start_time,
         test_name :: LowCardinality(String) AS test_name ,
         test_status :: LowCardinality(String) AS test_status,
-        test_duration_ms :: UInt64 AS test_duration_ms,
+        test_duration_ms :: Float64 AS test_duration_ms,
         report_url,
         $PR_TO_TEST = 0
             ? 'https://github.com/ClickHouse/ClickHouse/commit/$SHA_TO_TEST'
