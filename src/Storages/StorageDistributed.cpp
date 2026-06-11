@@ -51,6 +51,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -758,106 +759,159 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 namespace
 {
 
-/** Replaces ALIAS column nodes with their underlying expressions so that the
-  * query sent to remote shards contains explicit computations rather than
-  * column references that may not exist on the shard table.
+/** Replaces ALIAS column nodes with their underlying expressions, so that the query
+  * sent to remote shards contains explicit computations rather than references to
+  * columns that may not exist on the shard tables.
   *
-  * When two ALIAS columns share the same expression (e.g.
-  * `d Float64 ALIAS b + c, e Float64 ALIAS b + c`), naive replacement
-  * produces identical expression trees whose aggregate action names
-  * coincide, causing the Planner to deduplicate them into a single
-  * aggregate column. To prevent this, the second and subsequent
-  * occurrences of an already-seen expression tree are wrapped in an
-  * `identity` function call, which is a no-op at runtime but produces a
-  * distinct action name. See #85895.
+  * When several ALIAS columns of one table share the same expression
+  * (e.g. `d Float64 ALIAS b + c, e Float64 ALIAS b + c`), the naive replacement
+  * produces identical expression trees with identical action names, and the planner
+  * collapses them into a single column. The initiator, however, plans the original
+  * query, where `d` and `e` are distinct columns, so the positional conversion between
+  * the header received from remote shards and the header expected by the initiator
+  * fails with NUMBER_OF_COLUMNS_DOESNT_MATCH (issue #85895).
+  *
+  * To keep such expansions distinct, every occurrence of an ALIAS column whose
+  * expression coincides with the expression of another ALIAS column of the same table
+  * is wrapped into the internal function `__actionName(expression, 'name')`. It is
+  * a no-op at runtime, but its action name is taken from the second argument
+  * (see PlannerActionsVisitor), so both the sample block computed on the initiator
+  * and the plan built on the shard keep one column per ALIAS column. The name is
+  * derived from the ALIAS column name, so all occurrences of one ALIAS column resolve
+  * to the same action name and are correctly recognized as the same column, while
+  * different ALIAS columns stay distinct regardless of how many of them share one
+  * expression.
+  *
+  * Occurrences inside WHERE and PREWHERE are expanded bare, without the wrapper:
+  * filters are computed entirely on the shard and do not contribute columns to the
+  * block sent over the network, identical expression trees are harmless there, and
+  * an opaque wrapper would prevent the shard from using primary key and skipping
+  * indexes. Such bare expansions carry no alias, because the alias is already bound
+  * to the wrapped expansion of the same column.
   */
-class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasColumnsVisitor>
+class ReplaceAliasColumnsVisitor
 {
-    QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
+public:
+    explicit ReplaceAliasColumnsVisitor(ContextPtr context_)
+        : context(std::move(context_))
+    {}
+
+    void visit(QueryTreeNodePtr & node)
+    {
+        collectAliasColumns(node);
+        replace(node, /*is_filter_context=*/ false);
+    }
+
+private:
+    static const IQueryTreeNode * getSupportedColumnSource(const ColumnNode & column_node)
+    {
+        const auto & column_source = column_node.getColumnSourceOrNull();
+        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
+                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
+                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+            return nullptr;
+        return column_source.get();
+    }
+
+    static IQueryTreeNode::Hash getExpressionHash(const QueryTreeNodePtr & expression)
+    {
+        return expression->getTreeHash({.compare_aliases = false, .compare_types = true, .ignore_cte = false});
+    }
+
+    /// Remember the names of all ALIAS columns sharing one expression, per column source.
+    void collectAliasColumns(const QueryTreeNodePtr & node)
+    {
+        if (const auto * column_node = node->as<ColumnNode>(); column_node && column_node->hasExpression())
+        {
+            if (const auto * column_source = getSupportedColumnSource(*column_node))
+            {
+                source_ordinals.emplace(column_source, source_ordinals.size());
+                alias_names_by_expression[{column_source, getExpressionHash(column_node->getExpression())}].insert(column_node->getColumnName());
+            }
+        }
+
+        for (const auto & child : node->getChildren())
+        {
+            if (child)
+                collectAliasColumns(child);
+        }
+    }
+
+    void replace(QueryTreeNodePtr & node, bool is_filter_context)
+    {
+        if (auto column_expression = getColumnNodeAliasExpression(node, is_filter_context))
+            node = std::move(column_expression);
+
+        /// Continue into the children of the replaced node as well: the expression
+        /// of an ALIAS column may reference other ALIAS columns.
+        if (auto * query_node = node->as<QueryNode>())
+        {
+            for (auto & child : query_node->getChildren())
+            {
+                if (!child)
+                    continue;
+                bool is_filter = child == query_node->getWhere() || child == query_node->getPrewhere();
+                replace(child, is_filter);
+            }
+            return;
+        }
+
+        for (auto & child : node->getChildren())
+        {
+            if (child)
+                replace(child, is_filter_context);
+        }
+    }
+
+    QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node, bool is_filter_context) const
     {
         const auto * column_node = node->as<ColumnNode>();
         if (!column_node || !column_node->hasExpression())
             return nullptr;
 
-        const auto & column_source = column_node->getColumnSourceOrNull();
-        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+        const auto * column_source = getSupportedColumnSource(*column_node);
+        if (!column_source)
             return nullptr;
 
-        const String & alias_name = column_node->getColumnName();
         auto column_expression = column_node->getExpression();
+        const String & column_name = column_node->getColumnName();
 
-        /// Same `ALIAS` column visited more than once (e.g. referenced in both SELECT and GROUP BY) —
-        /// reuse the same expansion decision that was made the first time. Otherwise different
-        /// positions in the query would end up with different expressions (one plain, one wrapped
-        /// in `identity`) for the same alias, triggering `MULTIPLE_EXPRESSIONS_FOR_ALIAS`.
-        if (auto it = alias_wrapped_in_identity.find(alias_name); it != alias_wrapped_in_identity.end())
-            return finalizeExpansion(column_expression, alias_name, it->second);
+        bool is_duplicate = false;
+        if (auto it = alias_names_by_expression.find({column_source, getExpressionHash(column_expression)}); it != alias_names_by_expression.end())
+            is_duplicate = it->second.size() > 1;
 
-        /// Compute the tree hash BEFORE setting the alias so that two `ALIAS` columns that
-        /// share the same underlying expression are recognized as duplicates.
-        auto expression_hash = column_expression->getTreeHash(
-            {.compare_aliases = false, .compare_types = true, .ignore_cte = false});
-
-        /// First alias gets the bare expression; every subsequent distinct alias that shares the
-        /// same expression tree is wrapped in `identity` so the Planner keeps them as separate
-        /// aggregate columns (otherwise deduplication collapses them and the Distributed result
-        /// header loses a column — see #85895).
-        const bool already_used = !seen_expression_hashes.emplace(expression_hash).second;
-        alias_wrapped_in_identity.emplace(alias_name, already_used);
-        return finalizeExpansion(column_expression, alias_name, already_used);
-    }
-
-    /// Attaches the alias to exactly one node — either the bare expression or the `identity`
-    /// wrapper, never both. Setting the alias on the inner expression *and* on the wrapper
-    /// produces `identity(X AS e) AS e`, which the analyzer rejects with
-    /// `MULTIPLE_EXPRESSIONS_FOR_ALIAS` because the same alias is bound to two distinct trees.
-    QueryTreeNodePtr finalizeExpansion(const QueryTreeNodePtr & column_expression, const String & alias_name, bool wrap)
-    {
-        if (!wrap)
+        if (!is_duplicate)
         {
-            column_expression->setAlias(alias_name);
+            column_expression->setAlias(column_name);
             return column_expression;
         }
 
-        /// Make sure no stale alias is lingering on the inner node before wrapping.
+        if (is_filter_context)
+        {
+            auto bare_expression = column_expression->clone();
+            bare_expression->removeAlias();
+            return bare_expression;
+        }
+
         column_expression->removeAlias();
 
-        auto identity_function_node = std::make_shared<FunctionNode>("identity");
-        identity_function_node->getArguments().getNodes().push_back(column_expression);
-        auto identity_function = FunctionFactory::instance().get("identity", context);
-        identity_function_node->resolveAsFunction(identity_function->build(identity_function_node->getArgumentColumns()));
-        identity_function_node->setAlias(alias_name);
-        return identity_function_node;
+        auto action_name = fmt::format("__aliasColumn_{}_{}", source_ordinals.at(column_source), column_name);
+        auto wrapper_node = std::make_shared<FunctionNode>("__actionName");
+        auto & wrapper_arguments = wrapper_node->getArguments().getNodes();
+        wrapper_arguments.push_back(std::move(column_expression));
+        wrapper_arguments.push_back(std::make_shared<ConstantNode>(std::move(action_name)));
+        auto wrapper_function = FunctionFactory::instance().get("__actionName", context);
+        wrapper_node->resolveAsFunction(wrapper_function->build(wrapper_node->getArgumentColumns()));
+        wrapper_node->setAlias(column_name);
+        return wrapper_node;
     }
 
-public:
-    explicit ReplaseAliasColumnsVisitor(ContextPtr context_)
-        : context(std::move(context_))
-    {}
-
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (auto column_expression = getColumnNodeAliasExpression(node))
-            node = column_expression;
-    }
-
-private:
     ContextPtr context;
 
-    struct TreeHashHash
-    {
-        size_t operator()(const IQueryTreeNode::Hash & h) const
-        {
-            return CityHash_v1_0_2::Hash128to64(h);
-        }
-    };
-
-    std::unordered_set<IQueryTreeNode::Hash, TreeHashHash> seen_expression_hashes;
-    /// Maps `ALIAS` column name to whether its expansion was wrapped in `identity` on first visit,
-    /// so repeat visits of the same alias reuse the same decision.
-    std::unordered_map<String, bool> alias_wrapped_in_identity;
+    /// Ordinals make wrapped action names unique when ALIAS columns of different
+    /// tables of one query happen to have equal names.
+    std::map<const IQueryTreeNode *, size_t> source_ordinals;
+    std::map<std::pair<const IQueryTreeNode *, IQueryTreeNode::Hash>, std::set<String>> alias_names_by_expression;
 };
 
 class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
@@ -1009,7 +1063,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
-    ReplaseAliasColumnsVisitor replace_alias_columns_visitor(query_context);
+    ReplaceAliasColumnsVisitor replace_alias_columns_visitor(query_context);
     replace_alias_columns_visitor.visit(query_tree_to_modify);
 
     const auto & settings = query_context->getSettingsRef();
