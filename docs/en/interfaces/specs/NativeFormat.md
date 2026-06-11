@@ -1231,7 +1231,8 @@ The **FLATTENED (version 3)** layout selected by that setting:
 [per block with rows > 0]:
   [8 bytes:  UInt64 LE version = 3]                ← state prefix, repeated at the start of every non-empty block
   [VarUInt num_types]                              ← number of runtime types
-  [num_types × String]                             ← type names, in wire order
+  [num_types × type]                               ← type names, in wire order; each a String, or a binary
+                                                     type encoding when output_format_native_encode_types_in_binary_format = 1
   [per type: its own state prefix]                 ← empty for leaf types; + indexes-type prefix (empty, integer)
   [num_rows × discriminator]                       ← width by num_types (UInt8 if ≤ 255, else UInt16/32/64);
                                                      NULL discriminator = num_types (one past the last type)
