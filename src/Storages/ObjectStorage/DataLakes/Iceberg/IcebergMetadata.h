@@ -109,9 +109,6 @@ public:
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
-    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot>
-    getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false) const;
-
     /// Returns file records contributed by a single manifest list entry of `data_snapshot`.
     IcebergFiles getFilesForManifest(
         const Iceberg::IcebergDataSnapshotPtr & data_snapshot,
