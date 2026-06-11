@@ -365,8 +365,18 @@ std::vector<PlainRewritableRemoteObject> MetadataStorageFromPlainRewritableObjec
         if (!remote_info.has_value())
             continue;
 
+        /// A directory is an ephemeral leftover of an interrupted recursive removal when its top-level
+        /// logical component is a temporary name (the rename target `removeRecursive` moves it under).
+        const std::string_view first_component = std::string_view(local_path).substr(0, local_path.find('/'));
+        const bool directory_is_ephemeral = PlainRewritableLayout::looksLikeEphemeralName(first_component);
+
         for (const auto & [file_name, file_info] : remote_info->files)
         {
+            /// A file directly at the root is an ephemeral scratch copy of a file move/unlink when its
+            /// own name is a temporary name (created under the `__root` namespace).
+            const bool is_ephemeral = directory_is_ephemeral
+                || (local_path.empty() && PlainRewritableLayout::looksLikeEphemeralName(file_name));
+
             result.push_back(PlainRewritableRemoteObject{
                 .local_path = local_path,
                 .directory_remote_path = remote_info->remote_path,
@@ -374,6 +384,7 @@ std::vector<PlainRewritableRemoteObject> MetadataStorageFromPlainRewritableObjec
                 .remote_path = layout->constructFileObjectKey(remote_info->remote_path, file_name),
                 .size = file_info.bytes_size,
                 .last_modified = file_info.last_modified,
+                .is_ephemeral = is_ephemeral,
             });
         }
     }
@@ -455,7 +466,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
     }
 
     if (!uncommitted_fs_tree->getDirectoryRemoteInfo(path))
-        uncommitted_fs_tree->recordDirectoryPath(path, DirectoryRemoteInfo{ .remote_path = getRandomASCIIString(32), .etag = "", .files = {}});
+        uncommitted_fs_tree->recordDirectoryPath(path, DirectoryRemoteInfo{ .remote_path = getRandomASCIIString(PlainRewritableLayout::DIRECTORY_REMOTE_NAME_LENGTH), .etag = "", .files = {}});
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         /*recursive=*/false,
@@ -477,7 +488,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
     }
 
     if (!uncommitted_fs_tree->getDirectoryRemoteInfo(path))
-        uncommitted_fs_tree->recordDirectoryPath(path, DirectoryRemoteInfo{ .remote_path = getRandomASCIIString(32), .etag = "", .files = {}});
+        uncommitted_fs_tree->recordDirectoryPath(path, DirectoryRemoteInfo{ .remote_path = getRandomASCIIString(PlainRewritableLayout::DIRECTORY_REMOTE_NAME_LENGTH), .etag = "", .files = {}});
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         /*recursive=*/true,

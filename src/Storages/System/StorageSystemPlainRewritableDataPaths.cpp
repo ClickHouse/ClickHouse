@@ -35,6 +35,9 @@ StorageSystemPlainRewritableDataPaths::StorageSystemPlainRewritableDataPaths(con
         {"remote_path", std::make_shared<DataTypeString>(), "Full blob object key in object storage."},
         {"size", std::make_shared<DataTypeUInt64>(), "Size of the file in bytes."},
         {"last_modified", std::make_shared<DataTypeDateTime>(), "Last modification time of the blob."},
+        {"is_ephemeral", std::make_shared<DataTypeUInt8>(),
+            "Whether the blob looks like an ephemeral temporary object. Also matches in-flight operations; "
+            "only entries persisting across refreshes are leaks."},
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
@@ -74,6 +77,7 @@ Pipe StorageSystemPlainRewritableDataPaths::read(
     MutableColumnPtr col_remote_path = ColumnString::create();
     MutableColumnPtr col_size = ColumnUInt64::create();
     MutableColumnPtr col_last_modified = ColumnUInt32::create();
+    MutableColumnPtr col_is_ephemeral = ColumnUInt8::create();
 
     for (const auto & [disk_name, disk_ptr] : context->getDisksMap())
     {
@@ -98,6 +102,7 @@ Pipe StorageSystemPlainRewritableDataPaths::read(
             col_remote_path->insert(object.remote_path);
             col_size->insert(object.size);
             col_last_modified->insert(static_cast<UInt32>(object.last_modified));
+            col_is_ephemeral->insert(object.is_ephemeral);
         }
     }
 
@@ -111,6 +116,7 @@ Pipe StorageSystemPlainRewritableDataPaths::read(
     res_columns.emplace_back(std::move(col_remote_path));
     res_columns.emplace_back(std::move(col_size));
     res_columns.emplace_back(std::move(col_last_modified));
+    res_columns.emplace_back(std::move(col_is_ephemeral));
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);

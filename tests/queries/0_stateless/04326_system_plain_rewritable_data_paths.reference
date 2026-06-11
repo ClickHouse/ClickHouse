@@ -6,5 +6,7 @@
 0
 -- non-root local data paths are present
 1
+-- a freshly written table has no ephemeral entries
+0
 -- a user with SELECT but without SHOW TABLES is denied
 1

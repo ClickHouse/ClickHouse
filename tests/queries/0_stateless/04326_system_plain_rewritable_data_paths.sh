@@ -43,6 +43,11 @@ ${CLICKHOUSE_CLIENT} --query "
 SELECT count() >= 1 FROM system.plain_rewritable_data_paths
 WHERE disk_name = '${disk_name}' AND local_path != ''"
 
+echo "-- a freshly written table has no ephemeral entries"
+${CLICKHOUSE_CLIENT} --query "
+SELECT count() FROM system.plain_rewritable_data_paths
+WHERE disk_name = '${disk_name}' AND is_ephemeral"
+
 echo "-- a user with SELECT but without SHOW TABLES is denied"
 ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} NOT IDENTIFIED"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON system.plain_rewritable_data_paths TO ${user}"

@@ -8,10 +8,10 @@ namespace DB
 class Context;
 
 /** Implements the system table `plain_rewritable_data_paths`, which exposes the
-  * local-to-remote path mapping of every `plain_rewritable` disk, as known to the
-  * in-memory metadata tree. Unlike `system.remote_data_paths`, which walks the local
-  * `store`/`data`/`shadow` namespace, this table enumerates the metadata tree directly,
-  * so it also surfaces directories that are not reachable through that namespace.
+  * local-to-remote path mapping of every `plain_rewritable` disk, like `system.remote_data_paths`
+  * does for disks with local per-file metadata. The difference is the disk `metadata_type`:
+  * `plain_rewritable` disks keep their metadata in memory, so this table reads that in-memory
+  * metadata tree directly instead of walking the local `store`/`data`/`shadow` namespace.
   */
 class StorageSystemPlainRewritableDataPaths final : public StorageWithCommonVirtualColumns
 {

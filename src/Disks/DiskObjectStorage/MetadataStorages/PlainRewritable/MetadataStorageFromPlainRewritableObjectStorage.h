@@ -46,6 +46,7 @@ struct PlainRewritableRemoteObject
     std::string remote_path;            /// Full blob object key in object storage.
     uint64_t size = 0;                  /// File size in bytes.
     time_t last_modified = 0;           /// File last modification time.
+    bool is_ephemeral = false;          /// Whether the blob looks like an ephemeral leftover of an interrupted operation.
 };
 
 class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataStorage
