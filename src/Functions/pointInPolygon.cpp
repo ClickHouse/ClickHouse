@@ -107,9 +107,7 @@ template <typename Impl>
 PreprocessedPolygonsCache<Impl> & preprocessedPolygonsCache()
 {
     static PreprocessedPolygonsCache<Impl> cache(
-        CurrentMetrics::PointInPolygonCacheBytes,
-        CurrentMetrics::PointInPolygonCacheCells,
-        DEFAULT_POINT_IN_POLYGON_CACHE_MAX_SIZE);
+        CurrentMetrics::PointInPolygonCacheBytes, CurrentMetrics::PointInPolygonCacheCells, DEFAULT_POINT_IN_POLYGON_CACHE_MAX_SIZE);
     return cache;
 }
 
