@@ -68,7 +68,7 @@ SELECT count() FROM t_ifnull_nullable WHERE NOT ifNull(equals(k, 0), 0) SETTINGS
 
 DROP TABLE t_ifnull_nullable;
 
--- Value-context guard: as a value argument of another function the wrapper is not truth-tested, so the
+-- Value-context guard: as a value argument of another function the wrapper is a value, not a condition, so the
 -- boolean rewrite must not fire. `equals(ifNull(equals(k, 0), 0), 0)` keeps `k = 1` and `k = NULL`
 -- (2 rows); a wrongly-dropped wrapper could prune the `NULL` granule on the functional key and lose it.
 DROP TABLE IF EXISTS t_ifnull_value_ctx;

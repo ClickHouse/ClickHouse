@@ -37,9 +37,10 @@ struct ActionsDAGWithInversionPushDown
     const ActionsDAG::Node * predicate = nullptr;
 
     /// Defaults to false (conservative): the boolean-position `ifNull`/`coalesce` unwrap is skipped
-    /// unless a caller opts in. Pass true only when `predicate_` is a truth-tested filter
-    /// (WHERE/PREWHERE or another predicate used for pruning), never for value-expression
-    /// canonicalization such as reconstructing a captured-lambda column name.
+    /// unless a caller opts in. Pass true only when `predicate_` is used as a filter condition
+    /// (WHERE/PREWHERE or another predicate used for pruning), where only its true/false outcome
+    /// matters; never for value-expression canonicalization such as reconstructing a captured-lambda
+    /// column name.
     explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context, bool boolean_context = false);
 };
 

@@ -949,7 +949,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
     return &inverted_dag.addFunction(or_func, std::move(or_children), "");
 }
 
-/// Rewrite a truth-tested `ifNull(X, 0)` / `coalesce(X, 0)` to `X` for key analysis, so the wrapped
+/// Rewrite an `ifNull(X, 0)` / `coalesce(X, 0)` used as a condition to `X` for key analysis, so the wrapped
 /// predicate becomes a prunable key atom. `ifNull(X, 0)` is truthy exactly when `X` is truthy, for any
 /// `X`, so no whitelist of inner functions is needed; but its value differs from `X` on NULL rows, so
 /// the caller restricts this to non-inverted (`need_inversion == false`) boolean position
@@ -1126,9 +1126,9 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             {
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
-                /// Only `and`/`or` propagate a truth-tested (boolean) context to their children; arguments
-                /// of any other function are value context, where dropping an ifNull/coalesce wrapper is
-                /// not value-preserving and must be left alone.
+                /// Children of `and`/`or` are still conditions (boolean context); arguments of any other
+                /// function are values, where dropping an ifNull/coalesce wrapper is not value-preserving
+                /// and must be left alone.
                 const bool child_boolean_context = boolean_context && (name == "and" || name == "or");
                 for (auto & arg : children)
                     arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false, child_boolean_context);
