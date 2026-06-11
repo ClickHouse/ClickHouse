@@ -154,10 +154,18 @@ def test_prepared_statement_malformed_string_param_is_rejected():
     # Bind the malformed parameter batch out of band, in the same session.
     _raw_bind_parameters(session_id, stmt.handle, schema_header, batch_header, batch_body)
 
-    # Executing must surface a clean error (the parameter buffers are validated before GetScalar),
-    # not crash the server.
-    with pytest.raises(Exception):
+    # Executing must surface the Arrow buffer-validation error (params->ValidateFull rejects the
+    # malformed offsets before GetScalar reads them), not crash the server. Assert it is that
+    # specific error and not an unrelated binding/session/handle failure that would also raise.
+    with pytest.raises(Exception) as exc_info:
         stmt.execute()
+    message = str(exc_info.value)
+    assert ("Offsets buffer" in message) or ("isn't large enough" in message), (
+        f"expected an Arrow offsets-buffer validation error, got: {message}"
+    )
+    lowered = message.lower()
+    for unrelated in ("not bound", "session", "prepared statement handle", "does not exist"):
+        assert unrelated not in lowered, f"rejection came from an unrelated error ({unrelated!r}): {message}"
 
     stmt.close()
 

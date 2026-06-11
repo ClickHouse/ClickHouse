@@ -671,11 +671,30 @@ static ColumnWithTypeAndName readColumnWithJSONData(
     auto internal_column = internal_type->createColumn();
     auto & column_object = assert_cast<ColumnObject &>(*internal_column);
 
-    /// Validate every chunk's offsets buffer before reserving column memory, so a forged
-    /// (or buffer-inconsistent) declared length is rejected as INCORRECT_DATA rather than a
-    /// huge reserve(). The String/Binary reader validates in its first pass for the same reason.
+    /// Validate every chunk's offsets buffer AND each row's data range before reserving column
+    /// memory, so a forged (or buffer-inconsistent) declared length, or valid offsets metadata
+    /// over a truncated data buffer, is rejected as INCORRECT_DATA rather than a huge reserve().
+    /// The String/Binary reader validates in its first pass for the same reason.
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
-        checkBinaryOffsetsBuffer(dynamic_cast<const ArrowArray &>(*(arrow_column->chunk(chunk_i))), column_name);
+    {
+        const ArrowArray & chunk = dynamic_cast<const ArrowArray &>(*(arrow_column->chunk(chunk_i)));
+        checkBinaryOffsetsBuffer(chunk, column_name);
+        const size_t data_buf_size = chunk.value_data() ? static_cast<size_t>(chunk.value_data()->size()) : 0;
+        const bool has_nulls = chunk.null_count() != 0;
+        for (size_t row_i = 0, num_rows = chunk.length(); row_i < num_rows; ++row_i)
+        {
+            if (has_nulls && chunk.IsNull(row_i))
+                continue;
+            const size_t safe_offset = static_cast<size_t>(chunk.value_offset(row_i));
+            const size_t safe_length = static_cast<size_t>(chunk.value_length(row_i));
+            if (unlikely(safe_offset > data_buf_size || safe_length > data_buf_size - safe_offset))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow BinaryArray offsets exceed data buffer bounds for column '{}': "
+                    "row {} has offset {} and length {} but buffer is {} bytes",
+                    column_name, row_i, chunk.value_offset(row_i), chunk.value_length(row_i), data_buf_size);
+        }
+    }
 
     column_object.reserve(arrow_column->length());
 
@@ -790,12 +809,24 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(const std::sh
         const auto & chunk = dynamic_cast<const arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         checkBinaryOffsetsBuffer(chunk, column_name);
         const size_t chunk_length = chunk.length();
+        const size_t data_buf_size = chunk.value_data() ? static_cast<size_t>(chunk.value_data()->size()) : 0;
 
         for (size_t i = 0; i != chunk_length; ++i)
         {
+            if (chunk.IsNull(i))
+                continue;
             /// If at least one value size is not equal to the size if big integer, fallback to reading String column and further cast to result type.
-            if (!chunk.IsNull(i) && chunk.value_length(i) != sizeof(ValueType))
+            if (chunk.value_length(i) != sizeof(ValueType))
                 return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
+            /// Validate the data range before reserve(total_size): valid sizeof(ValueType) offsets
+            /// with a truncated data buffer must be rejected here, not after the allocation.
+            const size_t safe_offset = static_cast<size_t>(chunk.value_offset(i));
+            if (unlikely(safe_offset > data_buf_size || sizeof(ValueType) > data_buf_size - safe_offset))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow BinaryArray data buffer too small for column '{}': "
+                    "row {} has offset {} but buffer is {} bytes",
+                    column_name, i, chunk.value_offset(i), data_buf_size);
         }
         total_size += chunk_length;
     }
@@ -1529,12 +1560,24 @@ static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(const std::shared_ptr<
         const auto & chunk = dynamic_cast<const arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         checkBinaryOffsetsBuffer(chunk, column_name);
         const size_t chunk_length = chunk.length();
+        const size_t data_buf_size = chunk.value_data() ? static_cast<size_t>(chunk.value_data()->size()) : 0;
 
         for (size_t i = 0; i != chunk_length; ++i)
         {
+            if (chunk.IsNull(i))
+                continue;
             /// If at least one value size is not 16 bytes, fallback to reading String column and further cast to IPv6.
-            if (!chunk.IsNull(i) && chunk.value_length(i) != sizeof(IPv6))
+            if (chunk.value_length(i) != sizeof(IPv6))
                 return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
+            /// Validate the data range before reserve(total_size): valid 16-byte offsets with a
+            /// truncated data buffer must be rejected here, not after the allocation.
+            const size_t safe_offset = static_cast<size_t>(chunk.value_offset(i));
+            if (unlikely(safe_offset > data_buf_size || sizeof(IPv6) > data_buf_size - safe_offset))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow BinaryArray data buffer too small for column '{}': "
+                    "row {} has offset {} but buffer is {} bytes",
+                    column_name, i, chunk.value_offset(i), data_buf_size);
         }
         total_size += chunk_length;
     }
