@@ -1,10 +1,13 @@
+import os
+import time
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_logs_contain_with_retry
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", stay_alive=True)
+node = cluster.add_instance("node", stay_alive=True, with_zookeeper=True)
 
 # Three ways a retryable error can interrupt background loading of outdated parts:
 #   - thrown by the worker while loading the part (loadDataPartWithRetries)
@@ -14,6 +17,11 @@ node = cluster.add_instance("node", stay_alive=True)
 WORKER_FAILPOINT = "mergetree_load_outdated_parts_inject_retryable_exception"
 SCHEDULE_FAILPOINT = "mergetree_load_outdated_parts_inject_schedule_failure"
 POST_LOAD_FAILPOINT = "mergetree_load_outdated_parts_inject_post_load_retryable_exception"
+# loadUnexpectedDataParts has the same contract: a retryable error thrown after the part is loaded
+# but before its optional broken-on-start detach finishes must reschedule, not skip the part.
+UNEXPECTED_POST_LOAD_FAILPOINT = (
+    "mergetree_load_unexpected_parts_inject_post_load_retryable_exception"
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -95,3 +103,86 @@ def test_retryable_exception_while_loading_outdated_parts_does_not_terminate(fai
     )
 
     node.query("DROP TABLE t_outdated SYNC")
+
+
+def test_retryable_exception_while_loading_unexpected_parts_does_not_terminate():
+    # loadUnexpectedDataParts has the same retry contract as loadOutdatedDataParts. A retryable error
+    # thrown after the part is loaded but before its broken-on-start detach finishes used to take down
+    # the server (catch(...) -> std::terminate). It must reschedule and KEEP RETRYING the same part:
+    # the done-marker is the `finished` flag, not `load_state.part` (which is set before the detach).
+    # With the pre-fix `load_state.part` marker the retry would skip the part and mark loading finished
+    # after a single failure, instead of retrying until the transient error clears.
+    table = "t_unexpected"
+    zk_path = "/clickhouse/tables/t_unexpected"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table} (key UInt64) ENGINE = ReplicatedMergeTree('{zk_path}', '1') ORDER BY key
+        SETTINGS max_suspicious_broken_parts = 0, replicated_max_ratio_of_wrong_parts = 0
+        """
+    )
+    node.query(f"INSERT INTO {table} SELECT number FROM numbers(1000)")
+    node.query(f"INSERT INTO {table} SELECT number FROM numbers(1000, 1000)")
+    # Merge the two inserted parts. The merged part is committed to ZooKeeper and stays active; the
+    # source part all_0_0_0 becomes inactive but is still on disk.
+    node.query(f"OPTIMIZE TABLE {table} FINAL")
+
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE name = '{table}'"
+    ).strip()
+
+    # Drop the source part from ZooKeeper (no longer expected) and corrupt it on disk. On the next
+    # ATTACH it is found on disk, is not expected, and fails to load, so loadUnexpectedDataParts loads
+    # it as a broken unexpected part.
+    zk = cluster.get_kazoo_client("zoo1")
+    zk.delete(os.path.join(zk_path, "replicas/1/parts", "all_0_0_0"))
+    node.exec_in_container(
+        ["bash", "-c", f"mv {data_path}/all_0_0_0/columns.txt {data_path}/all_0_0_0/columns.txt.bak"]
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {UNEXPECTED_POST_LOAD_FAILPOINT}")
+    node.query(f"DETACH TABLE {table}")
+    # The replicated attach thread waits for the unexpected parts to be loaded, so ATTACH blocks while
+    # the failpoint keeps firing. Run it asynchronously and clear the failpoint once retries are seen.
+    attach = node.get_query_request(f"ATTACH TABLE {table}")
+
+    # The injected exception is caught and the unexpected-parts loading task is rescheduled instead of
+    # terminating the server.
+    assert_logs_contain_with_retry(
+        node, "Loading of unexpected parts was interrupted by a retryable error"
+    )
+
+    # While the failpoint keeps firing the loader must KEEP retrying the same part (it backs off and
+    # reschedules every ~100ms). The done-marker is `finished`, so the part is re-attempted every pass.
+    # With the pre-fix `load_state.part` marker the retry would skip the part and mark loading finished
+    # after a single failure, so the interrupt log would stop at one occurrence. Require several retries.
+    retries = 0
+    for _ in range(60):
+        retries = int(
+            node.count_in_log(
+                "Loading of unexpected parts was interrupted by a retryable error"
+            )
+        )
+        if retries >= 3:
+            break
+        time.sleep(0.5)
+    assert retries >= 3
+    # The server stayed up the whole time (it never std::terminate'd on the retryable error).
+    assert node.query("SELECT 1").strip() == "1"
+
+    # Clear the transient condition; the loader finishes the part, ATTACH returns, and the data is
+    # intact. The broken part reaches its intended detached state during the replica sanity check.
+    node.query(f"SYSTEM DISABLE FAILPOINT {UNEXPECTED_POST_LOAD_FAILPOINT}")
+    attach.get_answer()
+    node.wait_for_log_line(r"Loaded \d+ unexpected data parts", timeout=60)
+    assert node.query(f"SELECT count() FROM {table}").strip() == "2000"
+    for _ in range(60):
+        detached = node.query(
+            f"SELECT count() FROM system.detached_parts WHERE table = '{table}' AND name LIKE '%all_0_0_0%'"
+        ).strip()
+        if detached == "1":
+            break
+        time.sleep(0.5)
+    assert detached == "1"
+
+    node.query(f"DROP TABLE {table} SYNC")
