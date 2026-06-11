@@ -28,12 +28,12 @@ namespace DB
 /// TODO: move
 std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context);
 
-StatelessTaskExecutor::StatelessTaskExecutor(size_t max_threads, size_t max_free_threads, size_t queue_size)
+StatelessTaskExecutor::StatelessTaskExecutor()
     : thread_pool(
         CurrentMetrics::StatelessWorkerThreads,
         CurrentMetrics::StatelessWorkerThreadsActive,
         CurrentMetrics::StatelessWorkerThreadsScheduled,
-        max_threads, max_free_threads, queue_size)
+        1000, 100, 3000)
 {
 }
 
