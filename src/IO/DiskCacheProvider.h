@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ICacheProvider.h>
+#include <IO/IntervalSet.h>
 #include <IO/ReadSettings.h>
 #include <Interpreters/FileCache/FileCache.h>
 
@@ -144,6 +145,112 @@ private:
 };
 
 
+/// Held, re-readable view of ONE resident (hit) file-level range, backed by a
+/// shared read-only `FileSegmentsHolder` built once by `planResidencyView`. All
+/// hit read buffers of a single view share that holder (so the segments stay
+/// pinned for the view's lifetime). Re-readable any sub-range, any number of
+/// times; holds NO cursor and never mutates the cache. See `CacheReadBuffer`.
+class DiskCacheReadBuffer : public CacheReadBuffer
+{
+public:
+    DiskCacheReadBuffer(
+        std::shared_ptr<FileSegmentsHolder> holder_,
+        ByteRange range_in_file,
+        size_t object_file_offset_,
+        ThrottlerPtr local_throttler_,
+        ReaderAnchorCache * anchors_,
+        StreamingReaderSlot * stream_slot_,
+        std::vector<ByteRange> * hits_to_touch_sink_);
+
+    ByteRange range() const override { return hit_range; }
+    size_t readable() const override;
+    Rope read(ByteRange sub) override;
+
+private:
+    std::shared_ptr<FileSegmentsHolder> holder;
+    ByteRange hit_range;
+    size_t object_file_offset;
+    ThrottlerPtr local_throttler;
+    ReaderAnchorCache * anchors = nullptr;
+    StreamingReaderSlot * stream_slot = nullptr;
+    /// Back-pointer to the owning `DiskCacheView`'s deferred-bump list. Each
+    /// `read` appends its `sub` here so the view's destructor can bump the LRU
+    /// after all writes (see `~DiskCacheView`). Not owned; the view outlives this.
+    std::vector<ByteRange> * hits_to_touch_sink = nullptr;
+    LoggerPtr log = getLogger("DiskCacheReadBuffer");
+};
+
+/// Held, incrementally-fillable target for ONE miss file-level range. Owns its
+/// OWN `FileSegmentsHolder` (from a single `getOrSet` over its cache-aligned
+/// range, built by `openWriteBuffers`), so it appends across many windows and is
+/// finalized only at destruction — when the held holder's destructor completes
+/// each segment (this buffer being the last owner shrinks a partial segment to
+/// its downloaded size and releases the reserved tail). See `CacheWriteBuffer`.
+class DiskCacheWriteBuffer : public CacheWriteBuffer
+{
+public:
+    DiskCacheWriteBuffer(
+        FileCachePtr cache_,
+        size_t object_file_offset_,
+        const FilesystemCacheSettings & cache_settings_,
+        FileSegmentsHolderPtr holder_,
+        ByteRange aligned_range_in_file);
+
+    ByteRange range() const override { return aligned_range; }
+    const IntervalSet & committed() const override { return committed_ranges; }
+    bool complete() const override;
+    size_t write(Rope data) override;
+    Rope read(ByteRange sub) override;
+    CacheWriteBuffer::CacheSegmentPin pin(size_t frontier) const override;
+
+private:
+    bool tryWriteToSegment(FileSegment & segment, char * data, size_t size, size_t offset);
+
+    FileCachePtr cache;
+    size_t object_file_offset;
+    FilesystemCacheSettings cache_settings;
+    FileSegmentsHolderPtr holder;
+    IntervalSet committed_ranges;
+    ByteRange aligned_range;
+    LoggerPtr log = getLogger("DiskCacheWriteBuffer");
+};
+
+/// Read-only `CacheView` returned by `DiskCacheProvider::planResidencyView`.
+/// Holds the shared read-only holder (keeps hit segments pinned and shared by
+/// every `DiskCacheReadBuffer` it owns) plus the deferred-LRU-bump context. Its
+/// destructor runs the bump over all ranges the read buffers recorded, mirroring
+/// `~DiskCacheHandle`. Misses carry `writer == nullptr` (this view never opens
+/// writers — `openWriteBuffers` does that separately).
+class DiskCacheView : public CacheView
+{
+public:
+    DiskCacheView(
+        std::shared_ptr<FileSegmentsHolder> read_holder_,
+        FileCachePtr cache_,
+        FileCacheKey cache_key_,
+        FileCacheOriginInfo origin_,
+        size_t object_file_offset_);
+
+    ~DiskCacheView() override;
+
+    const std::vector<HitEntry> & hits() const override { return hit_entries; }
+    const std::vector<MissEntry> & misses() const override { return miss_entries; }
+
+    std::vector<HitEntry> hit_entries;
+    std::vector<MissEntry> miss_entries;
+    /// Appended to by the owned read buffers' `read` calls; consumed by the dtor.
+    std::vector<ByteRange> hits_to_touch;
+
+private:
+    std::shared_ptr<FileSegmentsHolder> read_holder;
+    FileCachePtr cache;
+    FileCacheKey cache_key;
+    FileCacheOriginInfo origin;
+    size_t object_file_offset;
+    LoggerPtr log = getLogger("DiskCacheView");
+};
+
+
 /// ICacheProvider wrapping FileCache.
 ///
 /// Safe for concurrent use: `lookup` only reads immutable members and the
@@ -202,6 +309,22 @@ public:
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
     bool populatesOnMiss() const override { return !cache_settings.read_if_exists_otherwise_bypass; }
 
+    /// Read-only residency probe for the new per-range buffer API. Builds a
+    /// `DiskCacheView` over a single `cache->get` (no segment creation): each
+    /// resident sub-range becomes a `HitEntry` with a shared-holder-backed
+    /// `DiskCacheReadBuffer`, each gap a cache-aligned `MissEntry` with
+    /// `writer == nullptr`. Hits + misses tile the request. See
+    /// `ICacheProvider::planResidencyView` and `DiskCacheHandle::status`.
+    CacheViewPtr planResidencyView(
+        const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) override;
+
+    /// Open write buffers for the already-known cache-aligned miss ranges (one
+    /// `getOrSet` per range, the held holder owned by each `DiskCacheWriteBuffer`).
+    /// Returns empty when `!populatesOnMiss()`. See `ICacheProvider::openWriteBuffers`.
+    std::vector<MissEntry> openWriteBuffers(
+        const StoredObject & object, size_t object_file_offset,
+        const std::vector<ByteRange> & aligned_miss_ranges) override;
+
 private:
     /// Shared by `lookup` / `planResidency`: build a `DiskCacheHandle` over
     /// `settings` (the only thing that differs between the two — `lookup` passes
@@ -232,6 +355,7 @@ private:
     /// One held cache-segment reader reused across windows by the sequential
     /// read path; borrowed by each handle in `lookup`. See `StreamingReaderSlot`.
     StreamingReaderSlot streaming_slot;
+    LoggerPtr log = getLogger("DiskCacheProvider");
 };
 
 }
