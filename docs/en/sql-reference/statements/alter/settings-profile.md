@@ -35,7 +35,9 @@ Both `ADD SETTINGS` and `MODIFY SETTINGS` preserve the other settings in the pro
 - `ADD SETTINGS variable = value ...` first drops any existing entry for `variable` and then inserts the new one. It therefore **replaces the value together with all constraints** of that setting. Any previously defined `MIN`, `MAX`, or writability (`READONLY`/`WRITABLE`/`CONST`/`CHANGEABLE_IN_READONLY`) for `variable` that you do not repeat is discarded.
 - `MODIFY SETTINGS variable = value ...` **merges field by field**: it overrides only the fields you actually specify (the value, or `MIN`, or `MAX`, or the writability) and keeps the other fields of that setting as they were.
 
-In short: use `MODIFY SETTINGS` when you only want to tweak one aspect of a setting (e.g. just the value, while keeping an existing `MAX`); use `ADD SETTINGS` when you want to redefine a setting from scratch.
+:::tip
+In short, use `MODIFY SETTINGS` when you only want to tweak one aspect of a setting (e.g. just the value, while keeping an existing `MAX`); use `ADD SETTINGS` when you want to redefine a setting from scratch.
+:::
 
 ## Examples {#examples}
 
