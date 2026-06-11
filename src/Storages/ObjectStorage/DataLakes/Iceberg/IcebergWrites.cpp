@@ -344,16 +344,17 @@ void generateManifestFile(
         avro::GenericDatum manifest_datum(root_schema);
         avro::GenericRecord & manifest = manifest_datum.value<avro::GenericRecord>();
 
-        /// A metadata-only rewrite (non-empty per_file_entry_lineage) must not re-stamp unchanged
-        /// files with the new snapshot's lineage: each entry keeps the snapshot-id and sequence
-        /// number that originally added the file. The entry status stays ADDED (rather than
-        /// EXISTING) because ClickHouse's manifest reader requires EXISTING entries to carry an
-        /// explicit non-null data sequence number, while ADDED entries are read back the same way
-        /// with the original sequence number preserved here.
+        /// A metadata-only rewrite (non-empty per_file_entry_lineage) does not add data: each entry
+        /// is written as EXISTING and keeps the snapshot-id and sequence number that originally added
+        /// the file, instead of being re-stamped as ADDED by the new snapshot. This keeps the new
+        /// snapshot internally consistent with the manifest-list entry (which reports the files as
+        /// existing) and lets incremental planning distinguish carried-forward files from additions.
         const DataFileEntryLineage * entry_lineage
             = per_file_entry_lineage.empty() ? nullptr : &per_file_entry_lineage[file_idx];
 
-        manifest.field(Iceberg::f_status) = avro::GenericDatum(static_cast<Int32>(ManifestEntryStatus::ADDED));
+        manifest.field(Iceberg::f_status)
+            = avro::GenericDatum(entry_lineage ? static_cast<Int32>(ManifestEntryStatus::EXISTING)
+                                               : static_cast<Int32>(ManifestEntryStatus::ADDED));
         Int64 snapshot_id = (entry_lineage && entry_lineage->added_snapshot_id)
             ? *entry_lineage->added_snapshot_id
             : new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
@@ -362,16 +363,12 @@ void generateManifestFile(
         {
             if (version > 1)
             {
-                size_t field_index = 0;
-                if (!schema.root()->nameIndex(field_name, field_index))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", field_name);
-
-                const avro::NodePtr & union_schema = schema.root()->leafAt(static_cast<UInt32>(field_index));
-
-                avro::GenericUnion field(union_schema);
+                /// Select the non-null branch of the ["null", T] union in place and assign the value.
+                /// (Constructing a detached GenericUnion and assigning it back does not reliably
+                /// persist the branch value, which left EXISTING entries with a null sequence number.)
+                auto & field = manifest.field(field_name);
                 field.selectBranch(1);
-                field.datum() = avro::GenericDatum(value);
-                manifest.field(field_name) = avro::GenericDatum(union_schema, field);
+                field.value<std::decay_t<decltype(value)>>() = value;
             }
             else
             {

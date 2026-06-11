@@ -583,10 +583,11 @@ def test_optimize_manifest_files_partition_evolution(started_cluster_iceberg_wit
 
 def test_optimize_manifest_files_preserves_entry_lineage(started_cluster_iceberg_with_spark):
     """
-    OPTIMIZE TABLE ... MANIFEST is metadata-only, so each rewritten manifest entry must keep the
-    snapshot-id and data sequence number that originally added the file rather than being
-    re-stamped with the new (replace) snapshot's values, which would corrupt row lineage and
-    delete-file sequence-number matching.
+    OPTIMIZE TABLE ... MANIFEST is metadata-only, so each rewritten manifest entry must stay an
+    EXISTING entry that keeps the snapshot-id and data sequence number that originally added the
+    file, rather than being re-stamped as ADDED by the new (replace) snapshot. Otherwise the
+    snapshot is internally inconsistent (the manifest list reports the files as existing) and row
+    lineage / delete-file sequence-number matching would be corrupted.
     """
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
@@ -663,14 +664,16 @@ def test_optimize_manifest_files_preserves_entry_lineage(started_cluster_iceberg
             status, snapshot_id, sequence_number, content = line.split("\t")
             if int(content) != 0:  # data files only
                 continue
-            # The original adding snapshot is preserved, not re-stamped with the new replace
-            # snapshot. (The entry status stays ADDED so the manifest reader, which requires an
-            # explicit sequence number only for EXISTING entries, reads it back correctly.)
+            # A metadata-only rewrite carries files forward: entries are EXISTING (status 0), not
+            # ADDED, so the new snapshot is consistent with the manifest list (which reports them as
+            # existing) and incremental planning can tell them apart from additions.
+            assert int(status) == 0, f"expected EXISTING entry (status 0), got {status}"
+            # The original adding snapshot is preserved, not re-stamped with the new replace snapshot.
             assert snapshot_id != "\\N" and int(snapshot_id) != new_snapshot_id, (
                 f"entry snapshot_id {snapshot_id} should be the original adder, not the "
                 f"replace snapshot {new_snapshot_id}"
             )
-            # The original data sequence number is preserved (non-null).
+            # EXISTING entries require an explicit, preserved (non-null) data sequence number.
             assert sequence_number != "\\N", "sequence_number must be preserved (non-null)"
             entries_checked += 1
 
