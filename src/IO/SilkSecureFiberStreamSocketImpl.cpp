@@ -195,7 +195,8 @@ bool SecureFiberStreamSocketImpl::pollImpl(Poco::Timespan & timeout, int mode)
 
     if (r)
         error(r, "poll");
-    return (triggered & static_cast<uint64_t>(events)) != 0;
+
+    return triggered != 0;
 }
 
 }

@@ -121,7 +121,10 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
             const auto throttler = std::make_shared<Silk::Throttler>(/*max_speed_*/ 1'000'000);
             socket.setSendThrottler(throttler);
             socket.setReceiveThrottler(throttler);
+            socket.bind(Poco::Net::SocketAddress("127.0.0.1", 0), /*reuseAddress*/ true);
+            const uint16_t bound_port = socket.address().port();
             socket.connect(Poco::Net::SocketAddress("127.0.0.1", p->port));
+            EXPECT_EQ(socket.address().port(), bound_port);
 
             socket.sendBytes("Hello ", 6);
             socket.sendBytes("world", 5);

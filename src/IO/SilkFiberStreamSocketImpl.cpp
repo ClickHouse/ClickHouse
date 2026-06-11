@@ -40,7 +40,8 @@ void FiberStreamSocketImpl::connect(const Poco::Net::SocketAddress & address)
 
 void FiberStreamSocketImpl::connect(const Poco::Net::SocketAddress & address, const Poco::Timespan & timeout)
 {
-    init(address.af());
+    if (sockfd() == POCO_INVALID_SOCKET)
+        init(address.af());
 
     silk::FiberScheduler::IoFuture future;
     silk::FiberScheduler::connect(sockfd(), address.addr(), address.length(), &future);
@@ -103,7 +104,8 @@ bool FiberStreamSocketImpl::pollImpl(Poco::Timespan & timeout, int mode)
 
     if (r)
         error(r, "poll");
-    return (triggered & static_cast<uint64_t>(events)) != 0;
+
+    return triggered != 0;
 }
 
 int FiberStreamSocketImpl::sendBytes(const void * buffer, int length, int flags)
