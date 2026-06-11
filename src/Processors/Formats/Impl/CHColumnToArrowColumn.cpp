@@ -86,6 +86,7 @@ namespace DB
         extern const int DECIMAL_OVERFLOW;
         extern const int ILLEGAL_COLUMN;
         extern const int UNKNOWN_TYPE;
+        extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     }
 
     class ArrowUUIDExtensionType : public arrow::ExtensionType
@@ -328,6 +329,28 @@ namespace DB
         }
     }
 
+    /// Number of Arrow time units in one day for a given Arrow time unit. Arrow time32/time64 values
+    /// are a time of day and must lie in [0, units_per_day).
+    static Int64 arrowTimeUnitsPerDay(arrow::TimeUnit::type unit)
+    {
+        switch (unit)
+        {
+            case arrow::TimeUnit::SECOND: return 86400LL;
+            case arrow::TimeUnit::MILLI:  return 86400LL * 1000;
+            case arrow::TimeUnit::MICRO:  return 86400LL * 1000000;
+            case arrow::TimeUnit::NANO:   return 86400LL * 1000000000;
+        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected Arrow time unit {}", static_cast<int>(unit));
+    }
+
+    [[noreturn]] static void throwArrowTimeOutOfRange(Int64 value, const String & column_name, Int64 units_per_day, const char * arrow_type)
+    {
+        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+            "Cannot convert value {} of column {} to Arrow {}: it is outside the valid time-of-day range [0, {}). "
+            "Arrow time types represent a time of day, so negative or >= 24h ClickHouse Time/Time64 values cannot be represented.",
+            value, column_name, arrow_type, units_per_day);
+    }
+
     static void fillArrowArrayWithTime64ColumnData(
         const DataTypePtr & type,
         ColumnPtr write_column,
@@ -345,6 +368,14 @@ namespace DB
         bool need_rescale = scale % 3;
         auto rescale_multiplier = DecimalUtils::scaleMultiplier<Time64::NativeType>(3 - scale % 3);
 
+        /// Validate the raw value (in the column's own scale) against the valid time-of-day range
+        /// [0, 86400 * 10^scale) BEFORE rescaling. Checking the raw value means out-of-range inputs
+        /// always report VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE instead of a misleading DECIMAL_OVERFLOW
+        /// from the rescale multiply. An in-range raw value cannot overflow the subsequent rescale:
+        /// it is below 86400 * 10^scale, and multiplying by 10^(3 - scale%3) keeps it below
+        /// 86400 * 10^9, well within Int64.
+        const Int64 source_units_per_day = 86400LL * DecimalUtils::scaleMultiplier<Time64::NativeType>(scale);
+
         bool to_arrow_time32 = (scale <= 3);
         if (to_arrow_time32)
         {
@@ -359,15 +390,10 @@ namespace DB
                 else
                 {
                     auto value = static_cast<Int64>(column[value_i].safeGet<DecimalField<Time64>>().getValue());
+                    if (value < 0 || value >= source_units_per_day)
+                        throwArrowTimeOutOfRange(value, write_column->getName(), source_units_per_day, "time32");
                     if (need_rescale)
-                    {
-                        if (common::mulOverflow(value, rescale_multiplier, value))
-                            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
-                    }
-                    if (value > std::numeric_limits<Int32>::max() || value < std::numeric_limits<Int32>::min())
-                    {
-                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
-                    }
+                        value *= rescale_multiplier;
                     status = builder.Append(static_cast<Int32>(value));
                 }
                 checkStatus(status, write_column->getName(), format_name);
@@ -387,11 +413,10 @@ namespace DB
                     else
                     {
                         auto value = static_cast<Int64>(column[value_i].safeGet<DecimalField<Time64>>().getValue());
+                        if (value < 0 || value >= source_units_per_day)
+                            throwArrowTimeOutOfRange(value, write_column->getName(), source_units_per_day, "time64");
                         if (need_rescale)
-                        {
-                            if (common::mulOverflow(value, rescale_multiplier, value))
-                                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
-                        }
+                            value *= rescale_multiplier;
                         status = builder.Append(value);
                     }
                     checkStatus(status, write_column->getName(), format_name);
@@ -404,7 +429,10 @@ namespace DB
 
                 for (size_t value_i = start; value_i < end; ++value_i)
                 {
-                    values.emplace_back(static_cast<Int64>(column[value_i].safeGet<DecimalField<Time64>>().getValue()));
+                    auto value = static_cast<Int64>(column[value_i].safeGet<DecimalField<Time64>>().getValue());
+                    if (value < 0 || value >= source_units_per_day)
+                        throwArrowTimeOutOfRange(value, write_column->getName(), source_units_per_day, "time64");
+                    values.emplace_back(value);
                 }
 
                 status = builder.AppendValues(values.data(), values.size());
@@ -1202,20 +1230,30 @@ namespace DB
         const PaddedPODArray<Int32> & internal_data = assert_cast<const ColumnVector<Int32> &>(*write_column).getData();
         arrow::Time32Builder & builder = assert_cast<arrow::Time32Builder &>(*array_builder);
         arrow::Status status;
+        const Int64 units_per_day = arrowTimeUnitsPerDay(std::static_pointer_cast<arrow::Time32Type>(builder.type())->unit());
 
         if (null_bytemap)
         {
             for (size_t value_i = start; value_i < end; ++value_i)
             {
                 if ((*null_bytemap)[value_i])
+                {
                     status = builder.AppendNull();
+                }
                 else
+                {
+                    if (internal_data[value_i] < 0 || internal_data[value_i] >= units_per_day)
+                        throwArrowTimeOutOfRange(internal_data[value_i], write_column->getName(), units_per_day, "time32");
                     status = builder.Append(internal_data[value_i]);
+                }
                 checkStatus(status, write_column->getName(), format_name);
             }
         }
         else
         {
+            for (size_t value_i = start; value_i < end; ++value_i)
+                if (internal_data[value_i] < 0 || internal_data[value_i] >= units_per_day)
+                    throwArrowTimeOutOfRange(internal_data[value_i], write_column->getName(), units_per_day, "time32");
             status = builder.AppendValues(internal_data.data() + start, end - start);
             checkStatus(status, write_column->getName(), format_name);
         }

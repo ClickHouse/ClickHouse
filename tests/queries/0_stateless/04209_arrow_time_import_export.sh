@@ -122,12 +122,34 @@ assert schema.field('t_s').type == pa.time32('s'), f't_s: expected time32[s], go
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$DATA_FILE', 'Arrow')"
 
 # ---------------------------------------------------------------
-# 3. Overflow
+# 3. Out-of-range time-of-day rejection.
+#    Arrow time32/time64 values are a time of day and must lie in [0, units_per_day).
+#    ClickHouse Time/Time64 can hold negative values and values >= 24h, which must be
+#    rejected on export instead of being written as invalid Arrow data.
 # ---------------------------------------------------------------
-echo "=== Export Time64 to Arrow – Overflow ==="
+echo "=== Export Time64 to Arrow – out of time-of-day range ==="
 
+# Far out of range (also exceeds the builder width).
 $CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 3) + INTERVAL 1000 YEAR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
 $CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 3) - INTERVAL 1000 YEAR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
+
+# In Int32 range but outside a valid time-of-day: >= 24h and negative, for each export path.
+# Time64(3) -> Arrow time32[ms] (no rescale):
+$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 3) + INTERVAL 25 HOUR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
+$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 3) - INTERVAL 1 HOUR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
+# Exactly 24h must be rejected too (the upper bound is exclusive):
+$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 3) + INTERVAL 24 HOUR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
+# Time64(6) -> Arrow time64[us], bulk AppendValues path (no rescale, not nullable):
+$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 6) + INTERVAL 25 HOUR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
+# Time64(4) -> Arrow time64[us], per-element path because scale%3 != 0 forces a rescale:
+$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 4) + INTERVAL 25 HOUR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
+# Nullable(Time64(6)) -> Arrow time64[us], per-element path because of the null bytemap:
+$CLICKHOUSE_LOCAL -q "SELECT (toTime64(0, 6) + INTERVAL 25 HOUR)::Nullable(Time64(6)) INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
+# A value that would overflow the rescale multiply must still report the time-of-day error
+# (the raw value is checked before rescaling), not DECIMAL_OVERFLOW:
+$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 8) + INTERVAL 500 YEAR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
+# Time -> Arrow time32[s]:
+$CLICKHOUSE_LOCAL -q "SELECT '25:00:00'::Time AS t INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
 
 # Cleanup
 rm -f "$DATA_FILE"
