@@ -413,6 +413,7 @@ public:
     {
         Disabled,
         Enabled,
+        Finalized,
         Ready,
     };
 
@@ -615,7 +616,6 @@ private:
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 
-    bool isRightTableRerangeEnabled() const;
     bool rightTableCanBeReranged() const;
     void tryRerangeRightTableData();
 
@@ -630,7 +630,7 @@ private:
 
     bool isRowStoreSupported() const;
     /// Determine which columns can be added to the row store and which columns remain
-    /// columnar, and there indexes in the input block.
+    /// columnar, and their indexes in the input block.
     static std::optional<ColumnAccessIndexes> computeColumnAccessIndexes(
         const Block & block,
         const std::vector<bool> & column_replicated_flags,
@@ -638,6 +638,7 @@ private:
         size_t max_row_store_bytes,
         size_t min_row_store_columns);
     void finalizeRowStoreStatus();
+    bool canConvertToRowStore() const;
     void tryConvertToRowStore();
 
     void reinitUsedFlags();

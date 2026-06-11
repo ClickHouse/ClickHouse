@@ -7885,7 +7885,7 @@ Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or 
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
 )", 0) \
     DECLARE(UInt64, min_columns_for_hash_join_row_store, 3, R"(
-Minimum number of payload columns to trigger transforming hash join payload to row major. 0 disables the row transformation.
+Minimum number of payload columns to trigger transforming hash join payload to row-major. 0 disables the row-major transformation.
 )", 0) \
     DECLARE(UInt64, max_bytes_for_hash_join_row_store, 5_GiB, R"(
 Maximum number of bytes to place into the row-major hash join storage. 0 means no limit.

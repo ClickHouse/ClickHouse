@@ -769,10 +769,8 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             have_compressed = true;
         }
 
-        Columns columns = block_to_save.getColumns();
-
         doDebugAsserts();
-        data->columns.emplace_back(ColumnsInfo(std::move(columns), std::move(row_store)), std::move(selector));
+        data->columns.emplace_back(ColumnsInfo(block_to_save.getColumns(), std::move(row_store)), std::move(selector));
         const auto * stored_columns = &data->columns.back();
         size_t data_allocated_bytes = stored_columns->allocatedBytes();
         data->allocated_size += data_allocated_bytes;
@@ -2140,12 +2138,6 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
     }
 }
 
-bool HashJoin::isRightTableRerangeEnabled() const
-{
-    return table_join->allowJoinSorting() && !table_join->getMixedJoinExpression() && isInnerOrLeft(kind)
-        && strictness == JoinStrictness::All && data && !data->sorted && data->maps.size() == 1;
-}
-
 /// We should not rerange the right table on such conditions:
 /// 1. The right table is already reranged by key, or it is empty.
 /// 2. The join clauses size is greater than 1, for example:
@@ -2157,7 +2149,8 @@ bool HashJoin::isRightTableRerangeEnabled() const
 ///    insignificant performance improvement after reranging by key.
 bool HashJoin::rightTableCanBeReranged() const
 {
-    return isRightTableRerangeEnabled() && !data->columns.empty()
+    return table_join->allowJoinSorting() && !table_join->getMixedJoinExpression() && isInnerOrLeft(kind)
+        && strictness == JoinStrictness::All && data && !data->sorted && !data->columns.empty() && data->maps.size() == 1
         && data->rows_to_join <= table_join->sortRightMaximumTableRows()
         && data->avgPerKeyRows() >= table_join->sortRightMinimumPerkeyRows();
 }
@@ -2392,7 +2385,7 @@ bool HashJoin::isRowStoreSupported() const
 
 void HashJoin::finalizeRowStoreStatus()
 {
-    /// In the case of concurrent hash join the row store is finalized one in `ConcurrentHashJoin`
+    /// In the case of concurrent hash join the row store is finalized once in `ConcurrentHashJoin`
     /// for all hash join instances.
     if (is_concurrent_hash_join)
         return;
@@ -2431,6 +2424,7 @@ void HashJoin::finalizeRowStoreStatus()
         return;
     }
 
+    data->row_store_state = RowStoreState::Finalized;
     data->column_access_indexes = std::move(*access_indexes);
 
     Strings row_store_column_names;
@@ -2497,9 +2491,14 @@ std::optional<ColumnAccessIndexes> HashJoin::computeColumnAccessIndexes(
     return access_indexes;
 }
 
+bool HashJoin::canConvertToRowStore() const
+{
+    return data->row_store_state == RowStoreState::Finalized;
+}
+
 void HashJoin::tryConvertToRowStore()
 {
-    if (data->row_store_state != RowStoreState::Enabled || data->columns.empty())
+    if (!canConvertToRowStore())
         return;
     size_t new_allocated_size = 0;
     for (auto & scattered_cols : data->columns)
@@ -2529,7 +2528,7 @@ void HashJoin::onBuildPhaseFinish()
 
 bool HashJoin::hasPostBuildPhase() const
 {
-    return rightTableCanBeReranged() || canConvertToFixedHashMap() || data->row_store_state == RowStoreState::Enabled;
+    return rightTableCanBeReranged() || canConvertToFixedHashMap() || canConvertToRowStore();
 }
 
 bool HashJoin::runPostBuildPhase()

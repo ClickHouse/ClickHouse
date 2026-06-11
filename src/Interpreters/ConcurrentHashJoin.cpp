@@ -955,6 +955,12 @@ void ConcurrentHashJoin::finalizeRowStoreStatus()
         }
     };
 
+    if (blocks_to_columns_info.empty())
+    {
+        disable_row_store();
+        return;
+    }
+
     auto & first_hash_join = hash_joins[0]->data;
     auto & first_hash_join_data = *getData(hash_joins[0]);
 
@@ -1008,7 +1014,11 @@ void ConcurrentHashJoin::finalizeRowStoreStatus()
 
     auto & access_indexes = access_indexes_opt.value();
     for (auto & hash_join : hash_joins)
-        getData(hash_join)->column_access_indexes = access_indexes;
+    {
+        auto & data = *getData(hash_join);
+        data.row_store_state = HashJoin::RowStoreState::Finalized;
+        data.column_access_indexes = access_indexes;
+    }
 
     Strings row_store_column_names;
     for (size_t i = 0; i < access_indexes.size(); ++i)
@@ -1021,7 +1031,7 @@ void ConcurrentHashJoin::finalizeRowStoreStatus()
 
 bool ConcurrentHashJoin::hasPostBuildPhase() const
 {
-    return !blocks_to_columns_info.empty() && getData(hash_joins[0])->row_store_state == HashJoin::RowStoreState::Enabled;
+    return getData(hash_joins[0])->row_store_state == HashJoin::RowStoreState::Finalized;
 }
 
 bool ConcurrentHashJoin::runPostBuildPhase()
@@ -1046,7 +1056,7 @@ void ConcurrentHashJoin::onPostBuildPhaseFinish()
     for (auto & hash_join : hash_joins)
     {
         auto & data = *getData(hash_join);
-        if (data.row_store_state != HashJoin::RowStoreState::Enabled)
+        if (data.row_store_state != HashJoin::RowStoreState::Finalized)
             continue;
 
         if (data.columns.empty())
