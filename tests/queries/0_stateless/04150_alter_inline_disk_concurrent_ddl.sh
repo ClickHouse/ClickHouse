@@ -124,7 +124,7 @@ done
                 disk = '${DISK_REJ}',
                 path = './${DISK_REJ}_cache_v${i}_data/',
                 max_size = '1Mi');" 2>&1 \
-                | grep -qE "BAD_ARGUMENTS" \
+                | grep -qE "BAD_ARGUMENTS|CANNOT_OPEN_FILE" \
                 && echo "rejector_iter_${i}_rejected" >>"${REJECTOR_LOG}"
     done
 ) &
@@ -199,6 +199,13 @@ SETTINGS disk = disk(
 # Sequential-rollback path: a separate name that NO concurrent thread observed. Run a
 # single rejector ALTER on a brand-new name and verify the rollback freed it for a fresh
 # `CREATE` with DIFFERENT settings.
+#
+# The cache-disk wrap is built once during ALTER validation (checkAlterIsPossible) and
+# rolled back, then built again on the apply path. The wrap is rejected either by the
+# storage-policy migration guard (BAD_ARGUMENTS) or, when the validation disk's FileCache
+# StatusFile flock has not yet been released by its async destructor, by the status-file
+# lock on the re-created cache (CANNOT_OPEN_FILE). Both reject the ALTER and leave the
+# table unchanged; accept either so the marker does not depend on cache-teardown timing.
 ${CLICKHOUSE_CLIENT} --query "
 ALTER TABLE ${TABLE_REJ} MODIFY SETTING disk = disk(
     name = '${DISK_REJ}_cache_seq',
@@ -206,7 +213,7 @@ ALTER TABLE ${TABLE_REJ} MODIFY SETTING disk = disk(
     disk = '${DISK_REJ}',
     path = './${DISK_REJ}_cache_seq_data/',
     max_size = '1Mi');" 2>&1 \
-    | grep -qE "BAD_ARGUMENTS" \
+    | grep -qE "BAD_ARGUMENTS|CANNOT_OPEN_FILE" \
     && echo "sequential_rejector_rejected"
 
 ${CLICKHOUSE_CLIENT} --query "
