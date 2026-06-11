@@ -39,3 +39,15 @@ def test_write_time(started_cluster_iceberg_no_spark, time_type):
     assert node.query(f"SELECT * FROM `{TABLE_NAME}` WHERE value = '13:10:00.000000' ORDER BY key") == "13:00:00.000000\t13:10:00.000000\ttest2\n"
     assert node.query(f"SELECT * FROM `{TABLE_NAME}` WHERE value >= '13:10:00.000000' ORDER BY key") == "13:00:00.000000\t13:10:00.000000\ttest2\n14:00:00.000000\t14:10:00.000000\ttest3\n"
     assert node.query(f"SELECT * FROM `{TABLE_NAME}` WHERE value <= '13:10:00.000000' ORDER BY key") == "12:00:00.000000\t12:10:00.000000\ttest1\n13:00:00.000000\t13:10:00.000000\ttest2\n"
+
+    err = node.query_and_get_error(
+        f"INSERT INTO `{TABLE_NAME}` VALUES ('100:00:00', '100:10:00', 'test1');",
+        settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1}
+        )
+    assert "Iceberg time value 360000000000 microseconds is out of allowed range [0, 86400000000) for time of day" in err
+
+    err = node.query_and_get_error(
+        f"INSERT INTO `{TABLE_NAME}` VALUES ('-100:00:00', '-100:10:00', 'test1');",
+        settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1}
+        )
+    assert "Iceberg time value -360000000000 microseconds is out of allowed range [0, 86400000000) for time of day" in err
