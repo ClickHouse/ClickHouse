@@ -1,8 +1,8 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest
 
 SET enable_analyzer = 1;
 
-INSERT INTO FUNCTION file('04317_data.tsv', 'TSV', 'x UInt8')
+INSERT INTO FUNCTION file(currentDatabase() || '_04317_data.tsv', 'TSV', 'x UInt8')
 SELECT number FROM numbers(3)
 SETTINGS engine_file_truncate_on_insert = 1;
 
@@ -14,4 +14,4 @@ WITH RECURSIVE r AS
     UNION ALL
     SELECT n + 1 FROM r WHERE n < 3
 )
-SELECT count() FROM fileCluster('test_cluster_one_shard_two_replicas', '04317_data.tsv', 'TSV', 'x UInt8');
+SELECT count() FROM fileCluster('test_cluster_one_shard_two_replicas', currentDatabase() || '_04317_data.tsv', 'TSV', 'x UInt8');
