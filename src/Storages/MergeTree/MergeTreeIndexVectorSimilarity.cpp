@@ -34,10 +34,7 @@
 #endif // USE_USEARCH
 
 #include <cmath>
-#include <ranges>
 #include <string_view>
-
-#include <fmt/ranges.h>
 
 #if USE_USEARCH
 namespace ProfileEvents

@@ -228,13 +228,14 @@ void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & o
 
 void MergeTreeIndexGranuleVectorSimilarityScann::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
-    UInt8 fmt_version;
+    UInt8 fmt_version = 0;
     readIntBinary(fmt_version, istr);
     if (fmt_version != FILE_FORMAT_VERSION)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Unsupported vector_similarity('scann', ...) index version: {}", static_cast<int>(fmt_version));
 
-    UInt64 n, pd;
+    UInt64 n = 0;
+    UInt64 pd = 0;
     readIntBinary(n, istr);
     readIntBinary(pd, istr);
     num_vectors = n;
@@ -245,7 +246,7 @@ void MergeTreeIndexGranuleVectorSimilarityScann::deserializeBinary(ReadBuffer & 
 
     /// Read pre-trained artifacts and restore without retraining.
 
-    UInt64 part_len;
+    UInt64 part_len = 0;
     readIntBinary(part_len, istr);
     if (part_len > 0)
     {
@@ -253,7 +254,7 @@ void MergeTreeIndexGranuleVectorSimilarityScann::deserializeBinary(ReadBuffer & 
         istr.readStrict(serialized_partitioner_proto.data(), part_len);
     }
 
-    UInt64 codebook_len;
+    UInt64 codebook_len = 0;
     readIntBinary(codebook_len, istr);
     if (codebook_len > 0)
     {
@@ -261,7 +262,8 @@ void MergeTreeIndexGranuleVectorSimilarityScann::deserializeBinary(ReadBuffer & 
         istr.readStrict(serialized_codebook_proto.data(), codebook_len);
     }
 
-    UInt64 hashed_rows, hashed_dim_read;
+    UInt64 hashed_rows = 0;
+    UInt64 hashed_dim_read = 0;
     readIntBinary(hashed_rows, istr);
     readIntBinary(hashed_dim_read, istr);
     hashed_dim = static_cast<size_t>(hashed_dim_read);
@@ -271,12 +273,12 @@ void MergeTreeIndexGranuleVectorSimilarityScann::deserializeBinary(ReadBuffer & 
         istr.readStrict(reinterpret_cast<char *>(hashed_data.data()), hashed_rows * hashed_dim);
     }
 
-    UInt64 num_tokens;
+    UInt64 num_tokens = 0;
     readIntBinary(num_tokens, istr);
     datapoints_by_token.resize(num_tokens);
     for (auto & token_dps : datapoints_by_token)
     {
-        UInt32 count;
+        UInt32 count = 0;
         readIntBinary(count, istr);
         token_dps.resize(count);
         if (count > 0)
@@ -845,7 +847,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
             /// - cosineDistance: ScaNN returns -dot(a_norm, b_norm); store as 1 - cos(θ)
             /// - L2Distance:     ScaNN returns squared L2; store as-is (optimizer applies sqrt)
             /// - dotProduct:     ScaNN returns -dot(a, b); store as dot(a, b)
-            float converted;
+            float converted = 0.0f;
             if (index_params.distance_name == "cosineDistance")
                 converted = 1.0f + dist;
             else if (index_params.distance_name == "L2Distance")

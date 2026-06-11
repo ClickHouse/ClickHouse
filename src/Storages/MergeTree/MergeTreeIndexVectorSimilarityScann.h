@@ -19,7 +19,7 @@ namespace DB
 struct ScannIndexParams
 {
     String distance_name; /// "L2Distance", "cosineDistance", "dotProduct"
-    UInt64 dimensions;
+    UInt64 dimensions = 0;
 };
 
 /// Opaque wrapper so ScaNN heavy headers stay out of this header.
