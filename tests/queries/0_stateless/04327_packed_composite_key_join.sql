@@ -1,12 +1,14 @@
 -- Tests correctness of joins on packed composite fixed keys of various widths.
 -- Composite keys that fit in 4 / 8 bytes are routed to the keys32 / keys64 hash
 -- maps; previously every all-fixed key up to 16 bytes was packed into keys128.
--- Each table holds 1000 rows with unique composite keys and v = w = number, and
--- both sides are identical, so every inner join is strictly 1:1 over the full
--- overlap. The result must therefore always be: count() = 1000 and
--- sum(v + w) = 2 * (0 + 1 + ... + 999) = 999000, independent of the internal
--- hash-map type. A bug that dropped part of the key (collisions) would change
--- the count; a bug that lost high-order bytes would change it too.
+--
+-- Every multi-component key is generated so that NO single component is unique,
+-- but the whole tuple is a bijection over [0, 1000). Both tables hold the same
+-- 1000 rows with v = number, so every inner join is strictly 1:1 over the full
+-- overlap and must yield count() = 1000 and sum(l.v + r.v) = 2 * (0 + ... + 999)
+-- = 999000, independent of the internal hash-map type. Because each component is
+-- non-unique on its own, a bug that ignored, truncated, or dropped any single
+-- component would make the key many-to-many and blow up the count.
 
 DROP TABLE IF EXISTS pj_left;
 DROP TABLE IF EXISTS pj_right;
@@ -23,15 +25,16 @@ CREATE TABLE pj_left
 
 CREATE TABLE pj_right AS pj_left;
 
--- intDiv(number, 32) and number % 32 form a bijection for number in [0, 1000),
--- so the composite keys are unique and include swapped pairs like (1, 2)/(2, 1).
+-- number = 40 * intDiv(number, 40) + number % 40, etc., so each (component_a,
+-- component_b[, component_c]) tuple below bijects [0, 1000) while every single
+-- component repeats. The 3-component key uses the decimal digits of number.
 INSERT INTO pj_left
 SELECT
-    toUInt16(intDiv(number, 32)), toUInt16(number % 32),
-    toUInt32(number), toUInt32(number * 7 + 1),
-    toUInt32(number), toUInt8(number % 256),
+    toUInt16(number % 40), toUInt16(intDiv(number, 40)),
+    toUInt32(number % 40), toUInt32(intDiv(number, 40)),
+    toUInt32(number % 8),  toUInt8(intDiv(number, 8)),
     toFixedString(leftPad(toString(number), 4, '0'), 4),
-    toUInt32(number), toUInt32(number * 3 + 1), toUInt32(number * 5 + 2),
+    toUInt32(intDiv(number, 100)), toUInt32(intDiv(number, 10) % 10), toUInt32(number % 10),
     number
 FROM numbers(1000);
 
