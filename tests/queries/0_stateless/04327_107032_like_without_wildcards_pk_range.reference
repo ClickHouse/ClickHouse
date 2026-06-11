@@ -28,3 +28,14 @@ LIKE with an unknown escape keeps the matching row under force_primary_key (matc
 NOT LIKE with an unknown escape keeps the non-matching row under force_primary_key (matches inequality)
 1
 1
+An empty LIKE pattern uses the exact empty-string point range, same as equality
+Condition: (value in [\'\', \'\'])
+Condition: (value in [\'\', \'\'])
+An empty NOT LIKE pattern excludes the exact empty-string point range, same as inequality
+Condition: (value not in [\'\', \'\'])
+Condition: (value not in [\'\', \'\'])
+LIKE / NOT LIKE empty use the primary key (no INDEX_NOT_USED) and match equality / inequality
+1
+1
+2
+2

@@ -101,3 +101,30 @@ SELECT count() FROM t_like_unknown_escape WHERE value NOT LIKE '\\w' SETTINGS fo
 SELECT count() FROM t_like_unknown_escape WHERE value != '\\w';
 
 DROP TABLE t_like_unknown_escape;
+
+DROP TABLE IF EXISTS t_like_empty;
+
+-- The empty pattern is wildcard-free and equivalent to value = '' / value != '', so it must use an exact
+-- empty-string point range, not bail out. index_granularity = 1 puts '' and 'a' in separate granules so
+-- force_primary_key = 1 must succeed (the empty point range prunes a granule) and the counts must match
+-- the equivalent equality / inequality.
+CREATE TABLE t_like_empty (value String)
+ENGINE = MergeTree ORDER BY value SETTINGS index_granularity = 1;
+
+INSERT INTO t_like_empty VALUES (''), ('a'), ('b');
+
+SELECT 'An empty LIKE pattern uses the exact empty-string point range, same as equality';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_like_empty WHERE value LIKE '') WHERE explain LIKE '%Condition:%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_like_empty WHERE value = '') WHERE explain LIKE '%Condition:%';
+
+SELECT 'An empty NOT LIKE pattern excludes the exact empty-string point range, same as inequality';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_like_empty WHERE value NOT LIKE '') WHERE explain LIKE '%Condition:%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_like_empty WHERE value != '') WHERE explain LIKE '%Condition:%';
+
+SELECT 'LIKE / NOT LIKE empty use the primary key (no INDEX_NOT_USED) and match equality / inequality';
+SELECT count() FROM t_like_empty WHERE value LIKE '' SETTINGS force_primary_key = 1;
+SELECT count() FROM t_like_empty WHERE value = '' SETTINGS force_primary_key = 1;
+SELECT count() FROM t_like_empty WHERE value NOT LIKE '' SETTINGS force_primary_key = 1;
+SELECT count() FROM t_like_empty WHERE value != '' SETTINGS force_primary_key = 1;
+
+DROP TABLE t_like_empty;

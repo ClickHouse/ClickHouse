@@ -518,16 +518,20 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                     return false;
 
                 auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
-                if (prefix.empty())
-                    return false;
 
                 /// A pattern without wildcards is equivalent to an equality, so use an exact point range.
+                /// This must come before the empty-prefix bailout below: the empty pattern is wildcard-free
+                /// and equivalent to `value = ''`, so it needs the exact empty-string point range too.
                 if (is_exact)
                 {
                     out.function = RPNElement::FUNCTION_IN_RANGE;
                     out.range = Range(prefix);
                     return true;
                 }
+
+                /// A non-exact pattern with an empty prefix (e.g. '%' or '_foo') gives no usable bound.
+                if (prefix.empty())
+                    return false;
 
                 if (!is_perfect)
                     out.relaxed = true;
@@ -550,16 +554,20 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                     return false;
 
                 auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
-                if (prefix.empty())
-                    return false;
 
                 /// A pattern without wildcards is equivalent to an inequality, so exclude an exact point range.
+                /// This must come before the empty-prefix bailout below: the empty pattern is wildcard-free
+                /// and equivalent to `value != ''`, so it needs the exact empty-string point exclusion too.
                 if (is_exact)
                 {
                     out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
                     out.range = Range(prefix);
                     return true;
                 }
+
+                /// A non-exact pattern with an empty prefix (e.g. '%' or '_foo') gives no usable bound.
+                if (prefix.empty())
+                    return false;
 
                 chassert(is_perfect);
 
