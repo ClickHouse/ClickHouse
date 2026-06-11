@@ -782,8 +782,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     if is_flaky_check or is_targeted_check:
         # The flaky/targeted parallel bucket runs `--dist=each`: every worker runs
-        # every parallel module at once. Heavy modules would start one cluster per
-        # worker and OOM small runners, so move them to the looped sequential phase.
+        # every parallel module at once. TEST_CONFIGS `dist_each_sequential` modules
+        # would start one cluster per worker and OOM small runners, so move them to
+        # the looped sequential phase. Normal `--dist=loadfile` runs do not call this.
         before = list(parallel_test_modules)
         parallel_test_modules, sequential_test_modules = force_heavy_modules_sequential(
             parallel_test_modules, sequential_test_modules
