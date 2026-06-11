@@ -44,7 +44,11 @@ check() {
     local query="$2"
     ${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${TABLE} SYNC"
     ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "ATTACH TABLE ${TABLE}" 2>/dev/null
-    if ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "${query}" 2>&1 | grep -qF 'Logical error'; then
+    local output
+    output=$(${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "${query}" 2>&1)
+    # Reject both forms: the debug fatal-log wording "Logical error" and the release-build
+    # client exception code name "LOGICAL_ERROR" (Code: 49), which does not abort the server.
+    if echo "${output}" | grep -qE 'Logical error|LOGICAL_ERROR'; then
         echo "FAIL: ${label} raised a logical error"
     else
         echo "OK: ${label}"
