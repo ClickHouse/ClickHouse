@@ -25,3 +25,6 @@ SELECT 1 SETTINGS interactive_delay = 100000000000000000;
 -- A huge lock_acquire_timeout must not overflow the table-lock acquire deadline (now() + timeout);
 -- the query just acquires the lock and completes.
 SELECT count() > 0 FROM numbers(1000) SETTINGS lock_acquire_timeout = 100000000000;
+
+-- A negative lock_acquire_timeout must saturate to an immediate deadline, not underflow now() + timeout.
+SELECT count() > 0 FROM numbers(1000) SETTINGS lock_acquire_timeout = -100000000000;
