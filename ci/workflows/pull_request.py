@@ -41,131 +41,37 @@ PLAIN_FUNCTIONAL_TEST_JOB = [
     j for j in JobConfigs.functional_tests_jobs if "amd_debug, parallel" in j.name
 ][0]
 
+# NOTE: this PR workflow is temporarily trimmed down to a Darwin fast-test bed:
+# 10 'Fast test (arm_darwin)' jobs in parallel, plus the arm_darwin build that
+# provides their binary, and nothing else. This is for stress-testing the macOS
+# fast-test lane (e.g. checking that disabling JIT reliably avoids the SIGILL),
+# NOT intended to be merged. Each duplicate gets a unique name so the job digest
+# (which includes the name) differs and all copies actually run instead of
+# collapsing to a single cache hit. force_success was dropped from the job config
+# so a failing run is visible at the top level instead of being forced green.
+DARWIN_BUILD = [
+    job for job in JobConfigs.special_build_jobs if job.name == "Build (arm_darwin)"
+]
+
+DARWIN_FAST_TESTS_PARALLEL = [
+    JobConfigs.darwin_fast_test_jobs[0].set_name(f"Fast test (arm_darwin) [{i}]")
+    for i in range(1, 11)
+]
+
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
     jobs=[
-        JobConfigs.style_check,
-        JobConfigs.code_review,
-        JobConfigs.docs_job,
-        JobConfigs.docs_job_mintlify,
-        JobConfigs.fast_test,
-        JobConfigs.ci_tests,
-        *JobConfigs.darwin_fast_test_jobs,
-        *JobConfigs.tidy_build_arm_jobs,
-        *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
-        *[
-            job.set_run_after(STYLE_AND_FAST_TESTS)
-            for job in JobConfigs.extra_validation_build_jobs
-        ],
-        *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.release_build_jobs
-        ],
-        *[
-            (
-                job.set_provides([ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS])
-                if "fuzzers" in job.name
-                else job
-            ).set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.special_build_jobs
-        ],
-        *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
-        JobConfigs.smoke_tests_macos,
-        # TODO: stabilize new jobs and remove set_allow_failure
-        JobConfigs.lightweight_functional_tests_job,
-        *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
-        JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_failure(),
-        JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
-        JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
-        *JobConfigs.stateless_tests_flaky_pr_jobs,
-        *JobConfigs.integration_test_asan_flaky_pr_jobs,
-        JobConfigs.bugfix_validation_ft_pr_job,
-        JobConfigs.bugfix_validation_it_job,
-        *[
-            j.set_run_after(
-                FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-                if j.name not in FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-                else []
-            )
-            for j in JobConfigs.functional_tests_jobs
-        ],
-        *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.functional_tests_jobs_azure
-        ],
-        *JobConfigs.functional_test_llvm_coverage_jobs,
-        *JobConfigs.functional_test_excluded_from_llvm_job,
-        *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.integration_test_jobs_required[:]
-        ],
-        *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.integration_test_jobs_non_required
-        ],
-        *JobConfigs.integration_test_llvm_coverage_jobs,
-        *JobConfigs.integration_test_excluded_from_llvm_job,
-        *JobConfigs.unittest_jobs,
-        *JobConfigs.unittest_llvm_coverage_job,
-        JobConfigs.docker_server.set_run_after(
-            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-        ),
-        JobConfigs.docker_keeper.set_run_after(
-            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-        ),
-        *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.install_check_jobs
-        ],
-        *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.compatibility_test_jobs
-        ],
-        *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.stress_test_jobs
-        ],
-        *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.upgrade_test_jobs
-        ],
-        *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.ast_fuzzer_jobs
-        ],
-        *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.buzz_fuzzer_jobs
-        ],
-        *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.performance_comparison_with_master_head_jobs
-        ],
-        JobConfigs.llvm_coverage_job,
-        JobConfigs.sqllogic_test_master_job.set_run_after(
-            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-        ),
-        # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
-        # default backend only, 15 min each. Runs when src/Coordination or stress test files change.
-        JobConfigs.keeper_stress_job
-            .set_name("Keeper Stress Tests (PR)")
-            .set_timeout(3 * 3600),
-        *JobConfigs.toolchain_build_jobs,
+        *DARWIN_BUILD,
+        *DARWIN_FAST_TESTS_PARALLEL,
     ],
     artifacts=[
-        *ArtifactConfigs.unittests_binaries,
-        *ArtifactConfigs.clickhouse_binaries,
-        *ArtifactConfigs.clickhouse_debians,
-        *ArtifactConfigs.clickhouse_rpms,
-        *ArtifactConfigs.clickhouse_tgzs,
-        ArtifactConfigs.fuzzers,
-        ArtifactConfigs.fuzzers_corpus,
-        *ArtifactConfigs.llvm_profdata_file,
-        ArtifactConfigs.llvm_coverage_info_file,
-        ArtifactConfigs.toolchain_pgo_bolt_amd,
-        ArtifactConfigs.toolchain_pgo_bolt_arm,
+        *[
+            a
+            for a in ArtifactConfigs.clickhouse_binaries
+            if a.name == ArtifactNames.CH_ARM_DARWIN_BIN
+        ],
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,
@@ -194,15 +100,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/can_be_merged.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/check_report_messages.py",
     ],
-    job_aliases={
-        "integration": JobConfigs.integration_test_jobs_non_required[
-            0
-        ].name,  # plain integration test job, no old analyzer, no dist plan
-        "fast": "Fast test",
-        "functional": PLAIN_FUNCTIONAL_TEST_JOB.name,
-        "build_debug": "Build (amd_debug)",
-        "build": "Build (amd_binary)",
-    },
+    job_aliases={},
     runs_on_label_prefix="pr-",
 )
 
