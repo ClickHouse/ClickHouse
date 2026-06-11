@@ -1,0 +1,8 @@
+User with SELECT+SHOW on both sources can create the overlay
+CREATE: allowed
+And, once granted SELECT on the overlay, can read through it
+READ: allowed
+User with access to only one source cannot create the overlay (denied)
+ACCESS_DENIED
+User with no source access cannot create the overlay (denied)
+ACCESS_DENIED

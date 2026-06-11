@@ -111,7 +111,18 @@ DROP DATABASE dboverlay SYNC;
 
 ## Access control {#access-control}
 
-Access checks use the database name as written in the query. To read a table through an `Overlay` database, a user needs a `SELECT` grant on the `Overlay` database itself; grants on the underlying databases are neither required nor consulted for queries that go through the facade. Conversely, a grant on an underlying database does not allow reading the same table through the `Overlay`.
+Access for reads is checked against the database name written in the query. To read a
+table through an `Overlay` database, a user needs a `SELECT` grant on the `Overlay`
+database itself — grants on the underlying databases are neither required nor consulted
+for queries that go through the facade. Conversely, a `SELECT` grant on an underlying
+database allows reading that database directly but does not grant access to the same
+table through the `Overlay`.
+
+Creating an `Overlay` database requires `SELECT` and `SHOW TABLES` privileges on each
+underlying database it unions. A user who cannot read a source database therefore cannot
+expose it through a new `Overlay`. Creating an `Overlay` confers no privileges on the
+overlay database itself: as with any database engine, the creator must be granted
+`SELECT` on the `Overlay` before they can read through it.
 
 ```sql
 GRANT SELECT ON dboverlay.* TO some_user;  -- allows reading any table exposed by `dboverlay`

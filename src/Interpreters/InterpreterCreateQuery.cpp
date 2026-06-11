@@ -2619,7 +2619,28 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     }
 
     if (create.storage && create.storage->engine)
-        required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+    {
+        if (!create.table && Poco::toLower(create.storage->engine->name) == "overlay")
+        {
+            if (create.storage->engine->arguments)
+            {
+                for (const auto & arg : create.storage->engine->arguments->children)
+                {
+                    const auto * literal = arg->as<ASTLiteral>();
+                    if (literal && literal->value.getType() == Field::Types::String)
+                    {
+                        const String source_db = literal->value.safeGet<String>();
+                        required_access.emplace_back(AccessType::SELECT, source_db);
+                        required_access.emplace_back(AccessType::SHOW_TABLES, source_db);
+                    }
+                }
+            }
+        }
+        else
+        {
+            required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+        }
+    }
 
     return required_access;
 }
