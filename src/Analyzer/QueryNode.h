@@ -646,6 +646,14 @@ public:
     /// Resolve query node projection columns
     void resolveProjectionColumns(NamesAndTypes projection_columns_value);
 
+    /// Rename a single resolved projection column's internal name (keeping its type). Used to
+    /// disambiguate duplicate names exposed by a union subquery; the column's display name is
+    /// preserved separately on the owning UnionNode.
+    void renameProjectionColumn(size_t index, const String & name)
+    {
+        projection_columns.at(index).name = name;
+    }
+
     /// Clear query node projection columns
     void clearProjectionColumns()
     {
@@ -693,6 +701,14 @@ public:
     void setProjectionAliasesToOverride(Names pr_aliases)
     {
         projection_aliases_to_override = std::move(pr_aliases);
+    }
+
+    /// A pending table/CTE column alias list (`... AS s(a, b, c)`) applied by
+    /// `resolveProjectionColumns`. These aliases are unique (duplicates are rejected), so a
+    /// subquery carrying them never needs duplicate-name disambiguation.
+    bool hasProjectionAliasesToOverride() const
+    {
+        return !projection_aliases_to_override.empty();
     }
 
     /// Record the original display names after duplicate projection column names were made

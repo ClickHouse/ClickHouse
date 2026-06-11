@@ -42,3 +42,25 @@ SELECT my_field FROM (SELECT *, 'redefined' AS my_field FROM t04327);
 SELECT my_field FROM (SELECT 'redefined' AS my_field, * FROM t04327);
 SELECT my_field FROM (SELECT *, 'redefined' AS my_field FROM (SELECT * FROM t04327));
 DROP TABLE t04327;
+
+-- A pending table/CTE column alias list `... AS s(a, b, c)` renames every column to a unique
+-- alias, so disambiguation must not record the stale pre-override names: the outer `SELECT *`
+-- header must be the alias list, not the inner duplicate names.
+SELECT * FROM (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) AS s(a, x, b);
+SELECT a, x, b FROM (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) AS s(a, x, b);
+
+-- A later explicit alias only shadows a same-named column produced by `*`. Two independently
+-- listed same-named columns are distinct and must keep both values, even when one carries an
+-- explicit alias.
+SELECT * FROM (SELECT materialize(1), materialize(2) AS `1`);
+SELECT * FROM (SELECT materialize(100) AS a, * FROM (SELECT materialize(1) AS a, materialize(2) AS b));
+
+-- A union used as a subquery exposes its column names from the first branch. When the first
+-- branch has duplicate names backed by different expressions, an outer `SELECT *` must keep both
+-- values instead of collapsing them; the duplicate display names are preserved.
+SELECT * FROM ((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`))) ORDER BY 1;
+SELECT * FROM (SELECT * FROM ((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`)))) ORDER BY 1;
+-- Equal expressions in the first branch collapse harmlessly (same value).
+SELECT * FROM ((SELECT number, number FROM numbers(2)) UNION ALL (SELECT 5, 6)) ORDER BY 1;
+-- A nested union as the first branch of an outer union still keeps both values.
+SELECT * FROM (((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION ALL (SELECT 1, 2)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`))) ORDER BY 1, 2;
