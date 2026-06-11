@@ -359,9 +359,10 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
     if (!google::protobuf::TextFormat::ParseFromString(config_str, &config))
         throw Exception(ErrorCodes::INCORRECT_DATA, "ScaNN index build failed: could not parse ScaNN config string");
 
+    /// Move vectors[] into the dataset to avoid a duplicate copy in memory;
+    /// serializeBinary reads the data back from the searcher's dataset when vectors is empty.
     auto dataset = std::make_shared<research_scann::DenseDataset<float>>(
-        std::vector<float>(vectors), /// copy — ScaNN takes ownership
-        num_vectors);
+        std::move(vectors), num_vectors);
 
     research_scann::SingleMachineFactoryOptions build_opts;
     try
@@ -407,12 +408,10 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
     if (opts.ah_codebook)
         opts.ah_codebook->SerializeToString(&serialized_codebook_proto);
 
+    /// Do not copy hashed_data here: the searcher retains hashed_dataset internally,
+    /// and serializeBinary reads from it when hashed_data is empty.
     if (opts.hashed_dataset && opts.hashed_dataset->size() > 0)
-    {
         hashed_dim = opts.hashed_dataset->dimensionality();
-        auto span = opts.hashed_dataset->data();
-        hashed_data.assign(span.begin(), span.end());
-    }
 
     if (opts.datapoints_by_token)
     {
@@ -422,10 +421,11 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
             datapoints_by_token.emplace_back(token.begin(), token.end());
     }
 
+    const size_t hashed_rows_extracted = (opts.hashed_dataset && hashed_dim > 0) ? opts.hashed_dataset->size() : 0;
     LOG_DEBUG(log, "Extracted ScaNN artifacts: partitioner={} bytes, codebook={} bytes, "
         "hashed_dataset={}×{} bytes, {} IVF tokens",
         serialized_partitioner_proto.size(), serialized_codebook_proto.size(),
-        hashed_data.size() / std::max(hashed_dim, size_t(1)), hashed_dim,
+        hashed_rows_extracted, hashed_dim,
         datapoints_by_token.size());
 }
 
