@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: zookeeper
+# Tags: zookeeper, no-shared-merge-tree
+# no-shared-merge-tree: the test checks that `table_readonly` is rejected specifically for
+# `ReplicatedMergeTree` (in its constructor); with the engine substituted by `SharedMergeTree`,
+# the `CREATE` succeeds and the subsequent queries fail with `TABLE_ALREADY_EXISTS`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
