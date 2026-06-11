@@ -557,13 +557,19 @@ void generateManifestList(
     bool use_previous_snapshots,
     const std::vector<ManifestListEntryExistingCounts> & existing_entry_counts,
     const std::unordered_set<String> & carry_forward_manifest_paths,
-    const std::vector<Int64> & entry_partition_spec_ids)
+    const std::vector<Int64> & entry_partition_spec_ids,
+    const std::vector<ManifestListEntryPartitionSummary> & entry_partition_summaries)
 {
     if (!entry_partition_spec_ids.empty() && entry_partition_spec_ids.size() != manifest_entry_names.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "entry_partition_spec_ids size ({}) does not match number of manifest entries ({})",
             entry_partition_spec_ids.size(), manifest_entry_names.size());
+    if (!entry_partition_summaries.empty() && entry_partition_summaries.size() != manifest_entry_names.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "entry_partition_summaries size ({}) does not match number of manifest entries ({})",
+            entry_partition_summaries.size(), manifest_entry_names.size());
     /// When provided, existing_entry_counts must be parallel to manifest_entry_names: it marks
     /// this as a manifest-only rewrite and supplies the existing-file/row counts per entry.
     if (!existing_entry_counts.empty() && existing_entry_counts.size() != manifest_entry_names.size())
@@ -641,6 +647,36 @@ void generateManifestList(
             set_versioned_field(0, Iceberg::f_added_rows_count);
             set_versioned_field(counts.existing_rows_count, Iceberg::f_existing_rows_count);
             set_versioned_field(0, Iceberg::f_deleted_rows_count);
+
+            /// Recompute the manifest-list `partitions` field summary so manifest-level pruning
+            /// bounds survive the rewrite. Each consolidated manifest covers a single partition
+            /// value, so for every partition field lower_bound == upper_bound == that value
+            /// (null when the value is null). contains_nan is left null (not tracked here).
+            if (!entry_partition_summaries.empty())
+            {
+                auto & partitions_field = entry.field(Iceberg::f_partitions);
+                partitions_field.selectBranch(1);
+                auto & summaries = partitions_field.value<avro::GenericArray>();
+                auto summary_schema = summaries.schema()->leafAt(0);
+                for (const auto & [partition_value, partition_type] : entry_partition_summaries[entry_idx].partition_fields)
+                {
+                    avro::GenericDatum summary_datum(summary_schema);
+                    auto & summary_record = summary_datum.value<avro::GenericRecord>();
+                    const bool is_null = partition_value.isNull();
+                    summary_record.field(Iceberg::f_contains_null) = avro::GenericDatum(is_null);
+                    if (!is_null)
+                    {
+                        auto bound = dumpFieldToBytes(partition_value, partition_type);
+                        auto & lower = summary_record.field(Iceberg::f_lower_bound);
+                        lower.selectBranch(1);
+                        lower.value<std::vector<uint8_t>>() = bound;
+                        auto & upper = summary_record.field(Iceberg::f_upper_bound);
+                        upper.selectBranch(1);
+                        upper.value<std::vector<uint8_t>>() = bound;
+                    }
+                    summaries.value().push_back(summary_datum);
+                }
+            }
 
             writer.write(entry_datum);
             continue;

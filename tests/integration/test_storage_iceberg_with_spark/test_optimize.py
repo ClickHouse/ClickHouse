@@ -1,6 +1,7 @@
 import gzip
 import json
 import os
+import re
 import pytest
 import threading
 from datetime import datetime, timezone
@@ -30,20 +31,36 @@ def _open_metadata_file(filepath):
     return open(filepath, "r")
 
 
+def _metadata_version_from_name(filename):
+    """Extract the leading metadata version from a metadata file name for tie-breaking.
+
+    Iceberg metadata files are named like `v<N>.metadata.json`, `v<N>.gzip.metadata.json`
+    or `<N>-<uuid>.metadata.json`; return <N> (0 if not parseable)."""
+    match = re.match(r"v?0*(\d+)", filename)
+    return int(match.group(1)) if match else 0
+
+
+def _load_latest_metadata(path_to_table):
+    """Return the parsed latest metadata file. When two files share last-updated-ms, the higher
+    metadata version wins, so the result is deterministic regardless of os.listdir order."""
+    metadata_dir = f"{path_to_table}/metadata/"
+    best = None
+    best_key = None
+    for filename in os.listdir(metadata_dir):
+        if not filename.endswith(".json"):
+            continue
+        with _open_metadata_file(os.path.join(metadata_dir, filename)) as f:
+            data = json.load(f)
+        key = (data.get("last-updated-ms", 0), _metadata_version_from_name(filename))
+        if best_key is None or key > best_key:
+            best_key = key
+            best = data
+    return best
+
+
 def get_current_snapshot_summary(path_to_table):
     """Return the summary dict of the current snapshot from the latest metadata file."""
-    metadata_dir = f"{path_to_table}/metadata/"
-    last_timestamp = 0
-    best = None
-    for filename in os.listdir(metadata_dir):
-        if filename.endswith(".json"):
-            filepath = os.path.join(metadata_dir, filename)
-            with _open_metadata_file(filepath) as f:
-                data = json.load(f)
-            ts = data.get("last-updated-ms", 0)
-            if ts > last_timestamp:
-                last_timestamp = ts
-                best = data
+    best = _load_latest_metadata(path_to_table)
     if best is None:
         return {}
     current_id = best.get("current-snapshot-id")
@@ -55,18 +72,7 @@ def get_current_snapshot_summary(path_to_table):
 
 def get_all_snapshot_ids(path_to_table):
     """Return the set of all snapshot-ids recorded in the latest metadata file."""
-    metadata_dir = f"{path_to_table}/metadata/"
-    last_timestamp = -1
-    best = None
-    for filename in os.listdir(metadata_dir):
-        if filename.endswith(".json"):
-            filepath = os.path.join(metadata_dir, filename)
-            with _open_metadata_file(filepath) as f:
-                data = json.load(f)
-            ts = data.get("last-updated-ms", 0)
-            if ts > last_timestamp:
-                last_timestamp = ts
-                best = data
+    best = _load_latest_metadata(path_to_table)
     return {snap.get("snapshot-id") for snap in (best or {}).get("snapshots", [])}
 
 @pytest.mark.parametrize("storage_type", ["local", "s3", "azure"])
@@ -598,6 +604,85 @@ def test_optimize_manifest_files_partition_evolution(started_cluster_iceberg_wit
     assert sorted(row["id"] for row in spark_rows) == list(range(0, 80))
 
 
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_optimize_manifest_files_dropped_partition_source_column(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """
+    OPTIMIZE TABLE ... MANIFEST must derive each preserved manifest's partition value types from a
+    schema that actually defines the spec's source columns, not unconditionally from the current
+    schema. After partition evolution drops a partition field and the source column itself is then
+    dropped, the current schema no longer contains that column, yet the current snapshot still
+    references manifests written under the old spec. Deriving the partition types from the current
+    schema would throw (the column is absent) or encode the preserved partition tuple under the
+    wrong type. The end-to-end check is that compaction succeeds and Spark (a reference reader) can
+    still read the table back correctly.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_manifest_droppedcol_" + storage_type + "_" + get_uuid_str()
+
+    # spec 0: partitioned by identity(region). 'region' is both a partition source and a column.
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string, region string) USING iceberg
+        PARTITIONED BY (region)
+        TBLPROPERTIES ('format-version' = '2')
+        """
+    )
+    spark.sql(
+        f"INSERT INTO {TABLE_NAME} VALUES "
+        f"(0, 'a', 'us'), (1, 'b', 'us'), (2, 'c', 'eu'), (3, 'd', 'eu')"
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (4, 'e', 'us'), (5, 'f', 'eu')")
+
+    # Evolve: drop the partition field, then drop the source column. The current snapshot still
+    # references the spec-0 manifests above, whose partition source column no longer exists in the
+    # current schema.
+    spark.sql(f"ALTER TABLE {TABLE_NAME} DROP PARTITION FIELD region")
+    spark.sql(f"ALTER TABLE {TABLE_NAME} DROP COLUMN region")
+
+    # Insert more rows under the new (unpartitioned) spec and schema so specs are mixed.
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (6, 'g'), (7, 'h')")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 8
+
+    # Without resolving the old spec's source-column type from a historical schema this throws.
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 2,
+        },
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 8
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == instance.query(
+        "SELECT number FROM numbers(0, 8)"
+    )
+
+    # Spark must still read the table back correctly (partition metadata not corrupted).
+    default_download_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+    )
+    spark_rows = spark.read.format("iceberg").load(
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    ).collect()
+    assert len(spark_rows) == 8
+    assert sorted(row["id"] for row in spark_rows) == list(range(0, 8))
+
+
 def test_optimize_manifest_files_preserves_entry_lineage(started_cluster_iceberg_with_spark):
     """
     OPTIMIZE TABLE ... MANIFEST is metadata-only, so each rewritten manifest entry must stay an
@@ -700,7 +785,7 @@ def test_optimize_manifest_files_preserves_entry_lineage(started_cluster_iceberg
     assert entries_checked > 0, "no data-file entries found in consolidated manifest(s)"
 
 
-@pytest.mark.parametrize("format_version", ["2", "3"])
+@pytest.mark.parametrize("format_version", ["2"])
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_optimize_manifest_files_with_deletes(started_cluster_iceberg_with_spark, storage_type, format_version):
     """
@@ -708,7 +793,9 @@ def test_optimize_manifest_files_with_deletes(started_cluster_iceberg_with_spark
     manifests, while delete-file manifests are carried forward unchanged into the new manifest
     list. If they were dropped, the previously deleted rows would reappear after compaction.
 
-    Covers both v2 (position delete files) and v3 (deletion vectors) row-level deletes.
+    Covers v2 (position delete files) row-level deletes. Format-version 3 is rejected by
+    manifest compaction for now (see test_optimize_manifest_files_v3_rejected), because the
+    writer does not yet round-trip the v3 row-lineage 'first_row_id' metadata.
     """
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
@@ -788,6 +875,52 @@ def test_optimize_manifest_files_with_deletes(started_cluster_iceberg_with_spark
     assert len(spark_rows) == 80
     spark_ids = sorted(row["id"] for row in spark_rows)
     assert spark_ids == list(range(20, 100))
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_optimize_manifest_files_v3_rejected(started_cluster_iceberg_with_spark, storage_type):
+    """
+    Format-version 3 adds row lineage: each data file carries an inherited 'first_row_id' from
+    which readers assign '_row_id'. The manifest writer does not yet round-trip 'first_row_id'
+    (it uses the v2 Avro schema for v3), so a manifest-only rewrite would carry data files forward
+    while dropping their row ids, producing a v3 table with a valid-looking snapshot but broken row
+    lineage. Until the round-trip is implemented, OPTIMIZE TABLE ... MANIFEST must fail loudly on a
+    v3 table rather than silently corrupt lineage.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_manifest_v3_rejected_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg "
+        f"TBLPROPERTIES ('format-version' = '3')"
+    )
+    for lo in range(0, 40, 10):
+        spark.sql(
+            f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range({lo}, {lo + 10})"
+        )
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 40
+
+    error_message = instance.query_and_get_error(
+        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 2,
+        },
+    )
+    assert "not yet supported for Iceberg format-version 3" in error_message
+
+    # The rejected compaction must leave the table untouched and still readable.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 40
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])

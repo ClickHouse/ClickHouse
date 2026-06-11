@@ -85,6 +85,11 @@ DEFINE_ICEBERG_FIELD(null_value_counts);
 DEFINE_ICEBERG_FIELD(lower_bounds);
 DEFINE_ICEBERG_FIELD(upper_bounds);
 DEFINE_ICEBERG_FIELD(partitions);
+/// Fields of a manifest-list `partitions` field_summary record.
+DEFINE_ICEBERG_FIELD(contains_null);
+DEFINE_ICEBERG_FIELD(contains_nan);
+DEFINE_ICEBERG_FIELD(lower_bound);
+DEFINE_ICEBERG_FIELD(upper_bound);
 DEFINE_ICEBERG_FIELD(key_metadata);
 
 

@@ -498,10 +498,68 @@ static bool writeConsolidatedManifestFile(
         ResolvedPartitionSpec resolved;
         resolved.spec = spec;
         auto spec_fields = spec->getArray(f_fields);
+
+        /// Partition field names and the schema source-ids they transform.
+        std::vector<Int32> source_ids;
         for (UInt32 i = 0; i < spec_fields->size(); ++i)
-            resolved.partition_columns.push_back(spec_fields->getObject(i)->getValue<String>(f_name));
+        {
+            auto spec_field = spec_fields->getObject(i);
+            resolved.partition_columns.push_back(spec_field->getValue<String>(f_name));
+            source_ids.push_back(spec_field->getValue<Int32>(Iceberg::f_source_id));
+        }
+
+        /// Derive the partition value types from a schema that actually defines every source column
+        /// the spec references, not unconditionally from the current schema. After partition/schema
+        /// evolution an older spec can reference a source column that was dropped from the current
+        /// schema; deriving the types from the current schema would then throw (the column is absent
+        /// from the sample block) or encode the preserved partition tuple under the wrong type.
+        /// Prefer the current schema, then fall back to any historical schema that still defines the
+        /// source columns. All metadata schemas are registered first (idempotent) so they can be
+        /// queried by id.
+        for (UInt32 i = 0; i < schemas->size(); ++i)
+            persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(static_cast<UInt32>(i)));
+
+        auto build_sample_block = [&](Int32 schema_id) -> std::optional<Block>
+        {
+            auto fields_characteristics
+                = persistent_table_components.schema_processor->tryGetFieldsCharacteristics(schema_id, source_ids);
+            /// tryGetFieldsCharacteristics skips source-ids absent from the schema, so a short result
+            /// means this schema does not define every partition source column.
+            if (fields_characteristics.size() != source_ids.size())
+                return std::nullopt;
+            Block block;
+            for (const auto & name_and_type : fields_characteristics)
+                block.insert(ColumnWithTypeAndName(name_and_type.type, name_and_type.name));
+            return block;
+        };
+
+        Int32 schema_id_for_spec = static_cast<Int32>(current_schema_id);
+        std::optional<Block> spec_sample_block = build_sample_block(schema_id_for_spec);
+        if (!spec_sample_block)
+        {
+            for (UInt32 i = 0; i < schemas->size(); ++i)
+            {
+                Int32 candidate_id = schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id);
+                if (candidate_id == schema_id_for_spec)
+                    continue;
+                spec_sample_block = build_sample_block(candidate_id);
+                if (spec_sample_block)
+                {
+                    schema_id_for_spec = candidate_id;
+                    break;
+                }
+            }
+        }
+        if (!spec_sample_block)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "No Iceberg schema defines all source columns referenced by partition spec {}",
+                spec_id);
+
+        auto schema_for_spec = persistent_table_components.schema_processor->getIcebergTableSchemaById(schema_id_for_spec);
+        auto shared_sample_block = std::make_shared<const Block>(std::move(*spec_sample_block));
         resolved.partition_types
-            = ChunkPartitioner(spec_fields, current_schema->getArray(Iceberg::f_fields), context, sample_block_).getResultTypes();
+            = ChunkPartitioner(spec_fields, schema_for_spec->getArray(Iceberg::f_fields), context, shared_sample_block).getResultTypes();
         return resolved_specs.emplace(spec_id, std::move(resolved)).first->second;
     };
 
@@ -688,6 +746,9 @@ static bool writeConsolidatedManifestFile(
     /// Parallel to consolidated_manifest_paths: each manifest's partition spec-id, so the manifest
     /// list records the spec each (possibly partition-evolved) manifest was written under.
     std::vector<Int64> entry_partition_spec_ids;
+    /// Parallel to consolidated_manifest_paths: each manifest's single partition value, used to
+    /// recompute the manifest-list `partitions` summary so manifest-level pruning bounds survive.
+    std::vector<ManifestListEntryPartitionSummary> entry_partition_summaries;
 
     /// Defined before the write phase so it can be called on both commit conflict and exceptions.
     /// Each manifest path is tracked in consolidated_manifest_paths before the corresponding
@@ -765,6 +826,16 @@ static bool writeConsolidatedManifestFile(
             const auto & resolved_spec = resolve_partition_spec(pd.partition_spec_id);
             entry_partition_spec_ids.push_back(pd.partition_spec_id);
 
+            /// All files in this manifest share one partition value (grouped by partition key), so
+            /// the manifest-list partition summary's lower/upper bounds are exactly that value.
+            ManifestListEntryPartitionSummary partition_summary;
+            for (size_t i = 0; i < resolved_spec.partition_types.size(); ++i)
+            {
+                Field partition_value = i < pd.partition_values.size() ? pd.partition_values[i] : Field{};
+                partition_summary.partition_fields.emplace_back(partition_value, resolved_spec.partition_types[i]);
+            }
+            entry_partition_summaries.push_back(std::move(partition_summary));
+
             generateManifestFile(
                 metadata_object,
                 resolved_spec.partition_columns,
@@ -819,7 +890,8 @@ static bool writeConsolidatedManifestFile(
             false,
             existing_entry_counts,
             /* carry_forward_manifest_paths */ delete_manifest_paths,
-            /* entry_partition_spec_ids */ entry_partition_spec_ids);
+            /* entry_partition_spec_ids */ entry_partition_spec_ids,
+            /* entry_partition_summaries */ entry_partition_summaries);
         buffer_manifest_list->finalize();
 
         // Commit: write metadata file with If-None-Match + update version hint with ETag-based CAS.

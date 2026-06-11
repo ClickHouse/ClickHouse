@@ -460,6 +460,18 @@ bool IcebergMetadata::optimizeManifestFiles(
 {
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
+        /// Format-version 3 adds row lineage: each data file carries an inherited `first_row_id`
+        /// from which readers assign `_row_id`. The manifest writer does not yet round-trip
+        /// `first_row_id` (it uses the v2 Avro schema for v3), so a manifest-only rewrite would
+        /// carry data files forward while dropping their row ids, producing a v3 table with a
+        /// valid-looking snapshot but broken row lineage. Reject the operation (fail-close) instead
+        /// of silently corrupting lineage until the round-trip is implemented.
+        if (persistent_components.format_version >= 3)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "OPTIMIZE TABLE ... MANIFEST is not yet supported for Iceberg format-version 3: "
+                "row-lineage 'first_row_id' round-trip is not implemented");
+
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
 
         // Perform manifest-only compaction using the current snapshot from the metadata file

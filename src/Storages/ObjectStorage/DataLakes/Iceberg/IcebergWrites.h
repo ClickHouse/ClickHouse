@@ -121,6 +121,15 @@ struct ManifestListEntryExistingCounts
     Int64 min_sequence_number = 0;
 };
 
+/// Partition tuple of a (single-partition) manifest, used to recompute the manifest-list
+/// `partitions` field summary for a manifest-only rewrite so manifest-level pruning bounds are not
+/// dropped. Each consolidated manifest covers one partition value, so lower_bound == upper_bound.
+struct ManifestListEntryPartitionSummary
+{
+    /// One entry per partition field: its value and ClickHouse type (for byte encoding).
+    std::vector<std::pair<Field, DataTypePtr>> partition_fields;
+};
+
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
     Poco::JSON::Object::Ptr metadata,
@@ -141,7 +150,11 @@ void generateManifestList(
     /// Optional per-entry partition_spec_id parallel to manifest_entry_names. When non-empty, each
     /// manifest-list entry records the supplied spec id instead of the table's default spec id, so a
     /// manifest-only rewrite of a partition-evolved table keeps each manifest under its own spec.
-    const std::vector<Int64> & entry_partition_spec_ids = {});
+    const std::vector<Int64> & entry_partition_spec_ids = {},
+    /// Optional per-entry partition summary parallel to manifest_entry_names. When non-empty, the
+    /// manifest-list `partitions` field summary is recomputed for each entry (manifest-only rewrite),
+    /// preserving manifest-level pruning bounds that would otherwise be dropped.
+    const std::vector<ManifestListEntryPartitionSummary> & entry_partition_summaries = {});
 
 class IcebergStorageSink final : public SinkToStorage
 {
