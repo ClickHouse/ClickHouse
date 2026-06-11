@@ -1212,7 +1212,7 @@ Type string: `Dynamic` or `Dynamic(max_types=N)`. The `max_types` parameter boun
 `Dynamic` has four encodings — `V1 = 1`, `V2 = 2`, `FLATTENED = 3`, `V3 = 4`. Which one the server emits depends on the channel and on the query settings:
 
 - Over `clickhouse-client` and HTTP `FORMAT Native` the writer's revision is `0` (unless raised with `client_protocol_version`), so the default is **V1**.
-- Over the native TCP protocol at its negotiated revision the default is **V2**, which additionally carries per-variant statistics.
+- Over the native TCP protocol at its negotiated revision the default is **V2**. The `Native` writer leaves statistics disabled, so a default `V2` payload carries no per-variant statistics — after the type list come the nested `Variant` prefix and data directly. (Per-variant statistics are a MergeTree on-disk concern, not part of the Native wire.)
 - The query setting `output_format_native_use_flattened_dynamic_and_json_serialization = 1` overrides both and emits **FLATTENED (version 3)** regardless of revision.
 
 :::note Scope
