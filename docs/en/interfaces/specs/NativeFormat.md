@@ -225,9 +225,10 @@ A decoder reconstructs a dense column of `num_rows` entries by filling every non
 
 A sparse `Nullable(T)` column is a special case, because the default value of `Nullable(T)` is **NULL**. The sparse encoding drops the usual `Nullable` null-map stream entirely: the offset stream identifies the non-default — that is, non-NULL — positions, the values stream holds only those non-NULL values densely in `T`, and every non-explicit position reconstructs as NULL. A decoder must therefore *not* look for a null map in the values stream, and must *not* fill the gaps with a present `0`; it fills them with NULL.
 
-**Replicated wire format.** When `kind_stack = 0x04`, the column `data` is a dictionary: a list of distinct element values plus a per-row index into that list (the same lookup shape as `LowCardinality`).
+**Replicated wire format.** When `kind_stack = 0x04`, the column `data` is a dictionary: a list of distinct element values plus a per-row index into that list (the same lookup shape as `LowCardinality`). When the inner type is itself versioned — for example `LowCardinality(T)` — its state prefix is written **first**, ahead of the index stream: the replicated serialization delegates the prefix phase to the inner type before writing `num_rows`. Inners with an empty prefix (the leaf types and the plain composites) contribute no bytes here.
 
 ```text
+[inner type's state prefix]              empty for leaf inners; e.g. LowCardinality version (Int64 = 1)
 [VarUInt num_rows]
 [UInt8  size_of_indexes_type]            width of each index: 1, 2, 4, or 8 bytes
 [indexes: num_rows × size_of_indexes_type bytes]
