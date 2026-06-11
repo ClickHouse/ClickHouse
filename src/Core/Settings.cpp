@@ -4570,13 +4570,16 @@ marks (sparse-encoded columns only).
 
 Recognised predicate shapes match those of [optimize_trivial_count_with_sparsity_filter](#optimize_trivial_count_with_sparsity_filter).
 
-Parts are silently skipped when they don't carry the `exact_num_defaults` flag (so the
-mode never produces wrong answers). The flag is written when the MergeTree table setting
-`compute_exact_num_defaults_for_sparse_columns` is enabled at insert / merge time;
-parts written by older servers or by the current server with that table setting off
-will not be pruned. The `IS NULL` / `IS NOT NULL` patterns on `Nullable` columns also
-require `nullable_serialization_version = 'allow_sparse'` at insert / merge time; the
-default value `basic` produces no per-column entry for `Nullable` columns, so they fall
+Part-level pruning consumes the per-part `num_defaults` counter and only acts on parts
+that carry the `exact_num_defaults` flag, written by the MergeTree table setting
+`compute_exact_num_defaults_for_sparse_columns`. Parts without the flag (older servers
+or current servers with the table setting off) can still be pruned at the granule level.
+
+Granule-level pruning reads the column's `SparseOffsets` stream directly, so it works
+for any part whose column ended up sparse-serialized regardless of `exact_num_defaults`.
+For `Nullable` columns this additionally requires the MergeTree table setting
+`nullable_serialization_version = 'allow_sparse'` at insert / merge time; with the
+default value `basic`, `Nullable` columns never go sparse and granule pruning falls
 back to the regular scan path.
 
 See also:
