@@ -37,8 +37,16 @@ CACHE_CELLS_QUERY = (
     "SELECT value FROM system.metrics WHERE metric = 'PointInPolygonCacheCells'"
 )
 
+SERVER_SETTING_QUERY = """
+SELECT value, changeable_without_restart
+FROM system.server_settings
+WHERE name = 'point_in_polygon_cache_size'
+"""
+
 
 def test_point_in_polygon_cache_size_is_runtime_configurable(start_cluster):
+    assert node.query(SERVER_SETTING_QUERY) == "268435456\tYes\n"
+
     # The first query preprocesses the constant polygon and caches it.
     assert node.query(POINT_IN_POLYGON_QUERY) == "640\n"
     assert node.query(CACHE_CELLS_QUERY) == "1\n"
@@ -52,6 +60,7 @@ def test_point_in_polygon_cache_size_is_runtime_configurable(start_cluster):
     )
     node.query("SYSTEM RELOAD CONFIG")
 
+    assert node.query(SERVER_SETTING_QUERY) == "0\tYes\n"
     assert node.query(CACHE_CELLS_QUERY) == "0\n"
 
     # Queries still work while the cache is disabled; the preprocessed
