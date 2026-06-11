@@ -1,5 +1,3 @@
--- Tags: no-parallel-replicas
-
 -- Regression test for a LOGICAL_ERROR "Cannot find input column ... on its position in inputs of
 -- expression actions DAG" thrown from buildPhysicalJoinImpl, which aborted the server. A correlated
 -- scalar subquery is decorrelated into a JOIN; when the input side projects the same identifier twice
