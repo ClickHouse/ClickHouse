@@ -225,6 +225,16 @@ private:
     Rope serveCacheBlock(size_t position_phys, size_t to_read);
     Rope coverWindow(size_t position_phys, size_t to_read);
 
+    /// The in-flight-prefetch state machine, lifted out of `coverWindow`. With a prefetch
+    /// in flight for this gap: if it has already started/finished, CONSUME it (reclaim its
+    /// connection, backfill the cache from its bytes, finalize) into `rope` and return true;
+    /// if it was still queued, CANCEL it (reclaim the untouched connection, stash the handle
+    /// for the destructor) and return false so the caller reads synchronously.
+    bool tryConsumePrefetch(Rope & rope);
+    /// Read one gap window synchronously from the source (the no-prefetch / cancelled path):
+    /// take the live-connection lease iff the plan is wide, then `readWindowLogical`.
+    Rope syncGapRead(ByteRange physical_window);
+
     /// Foreground assembler for `physical_window`: resident bytes from the plan, the
     /// rest from the source, then the cache backfill + the Strategy-A pin. Reached by
     /// `initDecryption` (header) and the two synchronous gap reads in `readNextWindow` -

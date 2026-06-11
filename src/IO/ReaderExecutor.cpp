@@ -1170,13 +1170,10 @@ Rope ReaderExecutor::serveCacheBlock(size_t position_phys, size_t to_read)
 
 Rope ReaderExecutor::coverWindow(size_t position_phys, size_t to_read)
 {
-    /// A gap (or extent reached): the source-fetching path. Bound the read to the plan gap
-    /// `[position, gapEnd)` so each call returns one pure run; the next resident run is
-    /// served from cache on the following call. The live connection still bridges a
-    /// sub-`min_bytes_for_seek` cached hole across calls. A remote gap reads a full
-    /// (pressure-scaled, cached-level) window to amortise the source open, clamped to the
-    /// extent and the plan gap.
-    Rope rope;
+    /// A gap (or extent reached): the source-fetching path. Bound the read to one plan gap
+    /// `[position, gapEnd)` so each call returns one pure run (the next resident run is
+    /// served from cache on the following call). A remote gap reads a full (pressure-scaled,
+    /// cached-level) window to amortise the source open, clamped to the extent and the gap.
     size_t gap_size = to_read;
     if (to_read > 0)
         gap_size = std::min(clampToExtent(effectiveWindowSize(read_plan.geometry()->pressure_level)),
@@ -1188,97 +1185,89 @@ Rope ReaderExecutor::coverWindow(size_t position_phys, size_t to_read)
     if (!read_plan.geometry())
         planResidencyWindow(position_phys);
 
-    if (prefetch_handle)
+    /// Consume an in-flight read-ahead for this gap if it has started; if it was still
+    /// queued, `tryConsumePrefetch` cancels it and we read synchronously below.
+    Rope rope;
+    if (prefetch_handle && tryConsumePrefetch(rope))
+        return rope;
+    return syncGapRead(physical_window);
+}
+
+bool ReaderExecutor::tryConsumePrefetch(Rope & rope)
+{
+    /// The worker may own `connection` mid-read, so the `get()`/`tryCancel` handoff must
+    /// complete before any source touch.
+    auto local_handle = std::move(prefetch_handle);
+
+    if (local_handle->tryCancel())
     {
-        /// A read-ahead for this gap is already in flight (launched last call): consume it.
-        /// The worker may own `connection` mid-read, so the `get()`/`tryCancel` handoff must
-        /// complete before any source touch.
-        auto local_handle = std::move(prefetch_handle);
-
-        if (local_handle->tryCancel())
+        /// Still queued: cancel and let the caller read synchronously. Stash the handle
+        /// FIRST - the worker attaches a `ThreadGroupSwitcher` before checking cancellation,
+        /// so ~ReaderExecutor must join it before our state is freed (a throw on the unwind
+        /// would otherwise drop it un-joined; see `discardPrefetch`).
+        LOG_TRACE(log, "coverWindow: prefetch was queued, cancelling and reading from position {}", position);
+        stats.add(Stats::PrefetchCancelled);
+        abandoned_prefetches.push_back(std::move(local_handle));
+        /// The worker never ran, so `prefetch_job->conn` is the UNTOUCHED cluster handed over
+        /// at submit - reclaim it so the sync read reuses the same open connection (cold R=1).
+        if (prefetch_job)
         {
-            LOG_TRACE(log, "coverWindow: prefetch was queued, cancelling and reading from position {}", position);
-            stats.add(Stats::PrefetchCancelled);
-
-            /// Stash BEFORE the synchronous read: the worker attaches a `ThreadGroupSwitcher`
-            /// before checking cancellation, so ~ReaderExecutor must join it before our state
-            /// is freed. If the read below throws, the handle would otherwise be dropped on
-            /// the unwind and the destructor would never wait (see `discardPrefetch`).
-            abandoned_prefetches.push_back(std::move(local_handle));
-            /// The worker never ran (cancelled while queued), so `prefetch_job->conn` is the
-            /// UNTOUCHED cluster handed over at submit - reclaim it into
-            /// `foreground_connection_state` so the synchronous read below reuses the same
-            /// open connection (preserves cold R=1). Stats stay zero (worker never ran).
-            if (prefetch_job)
-            {
-                chassert(!foreground_connection_state.connection);
-                foreground_connection_state = std::move(prefetch_job->conn);
-                prefetch_job.reset();
-            }
-
-            acquireLeaseIfWide();  /// keep this sync gap read's connection live iff the plan is wide
-            StatTimer sync_scope(stats, Stats::SyncReadMicroseconds);
-            rope = readWindowLogical(physical_window, foreground_connection_state, *read_plan.geometry(), reached_eof, stats);
-            HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
-                static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
-        }
-        else
-        {
-            /// If a seek landed inside the prefetched window, trim the prefix below so
-            /// `rope.range().offset` matches `position`.
-            LOG_TRACE(log, "coverWindow: waiting on prefetched [{}, {})", prefetch_range.offset, prefetch_range.end());
-            StatTimer wait_scope(stats, Stats::PrefetchWaitMicroseconds);
-            /// The worker delivered the raw PHYSICAL gap bytes only (no cache work, no
-            /// shift). Reclaim the connection cluster it advanced FIRST - move it back into
-            /// `foreground_connection_state` so the backfill below pins the in-flight segment
-            /// on it and the next `readFromSource` reuse gate continues the same open GET
-            /// (preserves cold R=1) - then fold its job-local source I/O into `this->stats`.
-            Rope source_bytes = local_handle->get();
-            stats.add(Stats::PrefetchHits);
             chassert(!foreground_connection_state.connection);
-            if (prefetch_job)
-            {
-                foreground_connection_state = std::move(prefetch_job->conn);
-                /// Reconcile the worker's one-way EOF latch into the executor member - ONLY
-                /// on this consumed/used path (the worker's bytes are kept). The discard/
-                /// cancel paths must NOT, or a wasted prefetch's EOF would strand the
-                /// foreground at a false EOF.
-                reached_eof |= prefetch_job->reached_eof;
-            }
-            mergePrefetchJobStats(/*wasted=*/false);
-            HistogramMetrics::ReaderExecutorPrefetchWaitLatency.observe(
-                static_cast<HistogramMetrics::Value>(wait_scope.elapsedMicroseconds()));
-
-            /// Backfill the cache for the prefetched window on the foreground (the worker did
-            /// none), then pin the in-flight segment at the aligned frontier the connection
-            /// reached. Slice the result back to the REQUESTED window (`prefetch_range`
-            /// shifted by the header prefix) and shift it to logical once.
-            const ByteRange requested_phys{prefetch_range.offset + data_start_offset, prefetch_range.size};
-            Rope result;
-            IntervalSet covered;
-            backfillBytes(prefetch_physical_window, requested_phys, source_bytes, result, covered, stats);
-            rope = finalizeAssembledWindow(requested_phys, prefetch_physical_window.end(),
-                result, foreground_connection_state, reached_eof);
-            if (data_start_offset)
-                rope.shift(-static_cast<ssize_t>(data_start_offset));
-
-            if (!rope.empty() && position > rope.range().offset)
-            {
-                size_t end = rope.range().end();
-                rope = rope.slice(ByteRange{position, end - position});
-            }
+            foreground_connection_state = std::move(prefetch_job->conn);
+            prefetch_job.reset();
         }
+        return false;
     }
-    else
+
+    /// Started/finished: consume the worker's raw PHYSICAL gap bytes. Reclaim the connection
+    /// cluster it advanced FIRST (so the backfill pins the in-flight segment on it and the
+    /// next `readFromSource` continues the same open GET - cold R=1), then fold its job-local
+    /// source I/O into `this->stats`.
+    LOG_TRACE(log, "coverWindow: waiting on prefetched [{}, {})", prefetch_range.offset, prefetch_range.end());
+    StatTimer wait_scope(stats, Stats::PrefetchWaitMicroseconds);
+    Rope source_bytes = local_handle->get();
+    stats.add(Stats::PrefetchHits);
+    chassert(!foreground_connection_state.connection);
+    if (prefetch_job)
     {
-        LOG_TRACE(log, "coverWindow: synchronous gap read physical [{}, {})",
-            physical_window.offset, physical_window.end());
-        acquireLeaseIfWide();  /// keep this gap read's connection live iff the plan is wide
-        StatTimer sync_scope(stats, Stats::SyncReadMicroseconds);
-        rope = readWindowLogical(physical_window, foreground_connection_state, *read_plan.geometry(), reached_eof, stats);
-        HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
-            static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
+        foreground_connection_state = std::move(prefetch_job->conn);
+        /// Reconcile the worker's one-way EOF latch - ONLY here (its bytes are kept); the
+        /// discard/cancel paths must not, or a wasted prefetch's EOF strands us at false EOF.
+        reached_eof |= prefetch_job->reached_eof;
     }
+    mergePrefetchJobStats(/*wasted=*/false);
+    HistogramMetrics::ReaderExecutorPrefetchWaitLatency.observe(
+        static_cast<HistogramMetrics::Value>(wait_scope.elapsedMicroseconds()));
+
+    /// Backfill the cache for the prefetched window (the worker did none), pin the in-flight
+    /// segment at the aligned frontier, slice back to the REQUESTED window and shift to logical.
+    const ByteRange requested_phys{prefetch_range.offset + data_start_offset, prefetch_range.size};
+    Rope result;
+    IntervalSet covered;
+    backfillBytes(prefetch_physical_window, requested_phys, source_bytes, result, covered, stats);
+    rope = finalizeAssembledWindow(requested_phys, prefetch_physical_window.end(),
+        result, foreground_connection_state, reached_eof);
+    if (data_start_offset)
+        rope.shift(-static_cast<ssize_t>(data_start_offset));
+
+    /// A seek landed inside the prefetched window: trim the prefix so `rope` starts at `position`.
+    if (!rope.empty() && position > rope.range().offset)
+    {
+        const size_t end = rope.range().end();
+        rope = rope.slice(ByteRange{position, end - position});
+    }
+    return true;
+}
+
+Rope ReaderExecutor::syncGapRead(ByteRange physical_window)
+{
+    LOG_TRACE(log, "coverWindow: synchronous gap read physical [{}, {})",
+        physical_window.offset, physical_window.end());
+    acquireLeaseIfWide();  /// keep this gap read's connection live iff the plan is wide
+    StatTimer sync_scope(stats, Stats::SyncReadMicroseconds);
+    Rope rope = readWindowLogical(physical_window, foreground_connection_state, *read_plan.geometry(), reached_eof, stats);
+    HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
+        static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
     return rope;
 }
 
