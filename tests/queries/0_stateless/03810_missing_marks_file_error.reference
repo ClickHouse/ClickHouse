@@ -5,3 +5,6 @@ is listed in the part's checksums
 --- index granularity load path ---
 broken-on-start
 1
+--- compact index granularity load path ---
+broken-on-start
+1

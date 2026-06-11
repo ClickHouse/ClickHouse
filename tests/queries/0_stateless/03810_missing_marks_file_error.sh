@@ -120,3 +120,56 @@ WHERE event_date >= yesterday()
 SETTINGS max_rows_to_read = 0, max_bytes_to_read = 0, max_threads = 1, use_query_condition_cache = 0, optimize_use_implicit_projections = 0"
 
 $CLICKHOUSE_CLIENT -q "drop table t_missing_granularity_marks sync;"
+
+# --- Case 3: index-granularity load path for compact parts (MergeTreeDataPartCompact::loadIndexGranularity) ---
+# A compact part keeps every column's marks in a single "data" marks file, read directly on part
+# load through a different API (readFileIfExists) than the wide path. Removing that file and
+# reloading the table must produce the same typed diagnostic, not the opaque std::filesystem error.
+
+# large min_*_for_wide_part forces a compact part (the 1000-row insert stays below both thresholds).
+$CLICKHOUSE_CLIENT -q "drop table if exists t_missing_compact_marks sync;"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_missing_compact_marks (a UInt64, b UInt64)
+ENGINE = MergeTree ORDER BY a
+SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, replace_long_file_name_to_hash = 0, prewarm_mark_cache = 0, ratio_of_defaults_for_sparse_serialization = 1"
+
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_missing_compact_marks SELECT number, number FROM numbers(1000)"
+
+# guard: the compact loader is only exercised if the part really is compact.
+$CLICKHOUSE_CLIENT -q "select throwIf(part_type != 'Compact', 'Part is not compact') from system.parts where database=currentDatabase() and table='t_missing_compact_marks' and active=1 limit 1" > /dev/null || exit 1
+
+path=$($CLICKHOUSE_CLIENT -q "select path from system.parts where database=currentDatabase() and table='t_missing_compact_marks' and active=1 limit 1")
+$CLICKHOUSE_CLIENT -q "select throwIf(substring('$path', 1, 1) != '/', 'Path is relative: $path')" > /dev/null || exit 1
+
+$CLICKHOUSE_CLIENT -q "detach table t_missing_compact_marks"
+
+# the single compact marks file is "data" with extension .cmrk4 / .mrk4 (with substreams) or
+# .cmrk3 / .mrk3 depending on randomized compress_marks; cover every compact extension.
+mark_file=""
+for ext in cmrk4 mrk4 cmrk3 mrk3; do
+    if [ -f "${path}data.${ext}" ]; then
+        mark_file="${path}data.${ext}"
+        break
+    fi
+done
+if [ -z "$mark_file" ]; then
+    echo "NO MARKS FILE FOUND for compact data in $path" >&2
+    ls "$path" >&2
+    exit 1
+fi
+rm -f "$mark_file"
+
+$CLICKHOUSE_CLIENT --send_logs_level=none -q "attach table t_missing_compact_marks"
+
+echo "--- compact index granularity load path ---"
+$CLICKHOUSE_CLIENT -q "SELECT reason FROM system.detached_parts WHERE database = currentDatabase() AND table = 't_missing_compact_marks'"
+
+$CLICKHOUSE_CLIENT -q "system flush logs text_log"
+$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.text_log
+WHERE event_date >= yesterday()
+  AND event_time > now() - INTERVAL 5 MINUTE
+  AND logger_name LIKE '%' || currentDatabase() || '.t_missing_compact_marks%'
+  AND message LIKE '%does not exist on disk in part%'
+  AND message LIKE '%listed in the part%checksums%'
+SETTINGS max_rows_to_read = 0, max_bytes_to_read = 0, max_threads = 1, use_query_condition_cache = 0, optimize_use_implicit_projections = 0"
+
+$CLICKHOUSE_CLIENT -q "drop table t_missing_compact_marks sync;"
