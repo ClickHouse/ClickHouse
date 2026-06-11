@@ -20,9 +20,6 @@
     <max_table_num_to_warn>5</max_table_num_to_warn>
     <max_table_num_to_throw>10</max_table_num_to_throw>
 
-    <max_replicated_table_num_to_warn>5</max_replicated_table_num_to_warn>
-    <max_replicated_table_num_to_throw>10</max_replicated_table_num_to_throw>
-
     <max_view_num_to_warn>5</max_view_num_to_warn>
     <max_view_num_to_throw>10</max_view_num_to_throw>
 
