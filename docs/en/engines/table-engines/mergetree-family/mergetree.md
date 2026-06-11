@@ -381,9 +381,6 @@ Data skipping indexes can also be created on composite columns:
 INDEX map_key_index mapKeys(map_column) TYPE bloom_filter
 INDEX map_value_index mapValues(map_column) TYPE bloom_filter
 
--- on columns of type JSON:
-INDEX json_paths_index JSONAllPaths(json_column) TYPE bloom_filter
-
 -- on columns of type Tuple:
 INDEX tuple_1_index tuple_column.1 TYPE bloom_filter
 INDEX tuple_2_index tuple_column.2 TYPE bloom_filter
@@ -451,10 +448,6 @@ The following data types are supported:
 
 :::note Map data type: specifying index creation with keys or values
 For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/sql-reference/functions/tuple-map-functions.md/#mapKeys) or [`mapValues`](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions.
-:::
-
-:::note JSON data type: indexing JSON paths
-For the [`JSON`](/sql-reference/data-types/newjson) data type, a bloom filter index can be created on the set of paths using the [`JSONAllPaths`](/sql-reference/functions/json-functions#JSONAllPaths) function. This allows skipping granules where a queried JSON path is absent. See [Data skipping indexes for JSON](/sql-reference/data-types/newjson#data-skipping-indexes-for-json) for details.
 :::
 
 #### N-gram bloom filter *(Deprecated)* {#n-gram-bloom-filter}
@@ -572,9 +565,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✔    |
-| [multiSearchAnyUTF8](/sql-reference/functions/string-search-functions.md/#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [multiMatchAny](/sql-reference/functions/string-search-functions.md/#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✗    |
 | [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
 | [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
 | [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
@@ -642,16 +633,13 @@ Projections can be modified or dropped with the [ALTER](/sql-reference/statement
 
 ### Projection indexes {#projection-index}
 
-Projection indexes extend the projection subsystem by providing a lightweight and explicit way to define projection-level indexes.
-Externally, a projection index is still a projection, but with simplified syntax and clearer intent: it defines an expression which is dedicated to filtering, rather than serving materialized data.
-Internally, a projection index does not materialize the original table in permuted row order like a regular projection.
-Instead, the permutation is stored in the form of a numeric permutation column `_part_offset`, i.e. `SELECT _part_offset ORDER BY <index_expr>`.
+Projection indexes extend the projection subsystem by providing a lightweight, explicit way to define projection-level indexes. 
+Conceptually, a projection index is still a projection, but with simplified syntax and clearer intent: it defines an expression which is dedicated to filtering, rather than serving as materialized data.
 
 #### Syntax {#projection-index-syntax}
-
 ```sql
 PROJECTION <name> INDEX <index_expr> TYPE <index_type>
-```
+````
 
 Example:
 
@@ -697,12 +685,6 @@ Determines the lifetime of values.
 The `TTL` clause can be set for the whole table and for each individual column. Table-level `TTL` can also specify the logic of automatic moving data between disks and volumes, or recompressing parts where all the data has been expired.
 
 Expressions must evaluate to [Date](/sql-reference/data-types/date.md), [Date32](/sql-reference/data-types/date32.md), [DateTime](/sql-reference/data-types/datetime.md) or [DateTime64](/sql-reference/data-types/datetime64.md) data type.
-
-:::tip[Avoid non-deterministic functions in TTL expressions]
-TTL is evaluated during background merges, and not at insert time.
-Functions like `rand()`, `now()`, or `now64()` will be re-evaluated on every merge, leading to unpredictable deletion behavior.
-ClickHouse blocks expressions with no column dependency at all, but does not currently reject non-deterministic functions mixed with a column reference (e.g. `ts + rand()`). TTL expressions should be based solely on deterministic, column-derived values for predictable results.
-:::
 
 **Syntax**
 
@@ -886,8 +868,6 @@ In addition to local block devices, ClickHouse supports these storage types:
 ### Introduction {#introduction}
 
 `MergeTree` family table engines can store data on multiple block devices. For example, it can be useful when the data of a certain table are implicitly split into "hot" and "cold". The most recent data is regularly requested but requires only a small amount of space. On the contrary, the fat-tailed historical data is requested rarely. If several disks are available, the "hot" data may be located on fast disks (for example, NVMe SSDs or in memory), while the "cold" data - on relatively slow ones (for example, HDD).
-
-This applies to all disk types, including S3 and other object storage disks. For example, you can spread data across multiple S3 buckets within a single volume, or create tiered policies that move data from local disks to S3. See [Using S3 disks with multiple volumes](#s3-multiple-volumes) for details.
 
 Data part is the minimum movable unit for `MergeTree`-engine tables. The data belonging to one part are stored on one disk. Data parts can be moved between disks in the background (according to user settings) as well as by means of the [ALTER](/sql-reference/statements/alter/partition) queries.
 
@@ -1135,77 +1115,6 @@ Configuration markup:
 
 Also see [configuring external storage options](/operations/storing-data.md/#configuring-external-storage).
 
-### Using S3 disks with multiple volumes {#s3-multiple-volumes}
-
-S3 (and other object storage) disks can be used in multi-disk and multi-volume storage policies the same way as local disks. This allows you to spread data across multiple S3 buckets within a single volume (JBOD-style), or set up tiered storage policies with S3 volumes.
-
-For example, to distribute data across two S3 buckets in a round-robin fashion:
-
-```xml
-<storage_configuration>
-    <disks>
-        <s3_bucket1>
-            <type>s3</type>
-            <endpoint>https://s3.amazonaws.com/bucket-1/data/</endpoint>
-            <access_key_id>your_access_key_id</access_key_id>
-            <secret_access_key>your_secret_access_key</secret_access_key>
-        </s3_bucket1>
-        <s3_bucket2>
-            <type>s3</type>
-            <endpoint>https://s3.amazonaws.com/bucket-2/data/</endpoint>
-            <access_key_id>your_access_key_id</access_key_id>
-            <secret_access_key>your_secret_access_key</secret_access_key>
-        </s3_bucket2>
-    </disks>
-    <policies>
-        <s3_multi_bucket>
-            <volumes>
-                <main>
-                    <disk>s3_bucket1</disk>
-                    <disk>s3_bucket2</disk>
-                </main>
-            </volumes>
-        </s3_multi_bucket>
-    </policies>
-</storage_configuration>
-```
-
-You can also combine local and S3 volumes in a tiered policy, for example moving data from a local SSD to S3 as it ages:
-
-```xml
-<storage_configuration>
-    <disks>
-        <local_ssd>
-            <path>/mnt/fast_ssd/clickhouse/</path>
-        </local_ssd>
-        <s3_cold>
-            <type>s3</type>
-            <endpoint>https://s3.amazonaws.com/cold-storage/data/</endpoint>
-            <access_key_id>your_access_key_id</access_key_id>
-            <secret_access_key>your_secret_access_key</secret_access_key>
-        </s3_cold>
-    </disks>
-    <policies>
-        <local_to_s3>
-            <volumes>
-                <hot>
-                    <disk>local_ssd</disk>
-                    <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
-                </hot>
-                <cold>
-                    <disk>s3_cold</disk>
-                </cold>
-            </volumes>
-            <move_factor>0.2</move_factor>
-        </local_to_s3>
-    </policies>
-</storage_configuration>
-```
-
-:::note
-When using `use_environment_credentials` for S3 authentication, the environment credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`) are shared across all S3 disks. It is not possible to use different environment credentials for different disks. If you need different credentials for each S3 disk, use explicit `access_key_id` and `secret_access_key` settings per disk instead.
-:::
-
 It is possible to set up non-replicated MergeTree tables with a one-writer, many-readers scenario on shared storage. This is provided by the automatic refresh of the parts list, which can be set up on readers. Note that this requires shared filesystem metadata across replicas (or `table_disk = true` with a table-local disk). See [refresh_parts_interval and table_disk](/operations/storing-data.md/#refresh-parts-interval-and-table-disk).
 
 :::note cache configuration
@@ -1254,52 +1163,7 @@ ALTER TABLE tab DROP STATISTICS a;
 These lightweight statistics aggregate information about distribution of values in columns. Statistics are stored in every part and updated when every insert comes.
 They can be used for prewhere optimization only if we enable `set use_statistics = 1`.
 
-#### Part Pruning with Statistics {#part-pruning-with-statistics}
-
-When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
-Currently, only `MinMax` and `Basic` statistics support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
-Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
-
-**Example:**
-
-```sql
--- Create a table with MinMax statistics on the 'value' column
-CREATE TABLE test_stats
-(
-    id UInt64,
-    value Int64 STATISTICS(MinMax)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-SYSTEM STOP MERGES test_stats;
-
--- Insert data in separate inserts to create multiple parts
-INSERT INTO test_stats SELECT number, number FROM numbers(1000); -- Part 1: value range [0, 999]
-INSERT INTO test_stats SELECT number, number + 10000 FROM numbers(1000); -- Part 2: value range [10000, 10999]
-
-SET use_statistics_for_part_pruning = 1;
-
--- This query will skip Part 1 entirely because its max value (999) < 5000
-SELECT count() FROM test_stats WHERE value > 5000;
-
--- Use EXPLAIN to see the pruning effect
-EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
--- The output will show "Parts: 1/2" indicating one part was pruned
-```
-
 ### Available types of column statistics {#available-types-of-column-statistics}
-
-- `Basic`
-
-    A compact bundle of single-value summaries derived from a column. Depending on the column type, the following pieces are populated:
-  - for any column whose values are represented by a number (integers, floats, `Decimal*`, `Date*`, `DateTime*`, `Enum*`, `IPv4`, ...): the minimum and maximum value, which allow to estimate the selectivity of range filters and enable part pruning;
-  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived);
-  - for `Nullable` and `LowCardinality(Nullable)` columns: the count of `NULL` values, which the optimizer uses to discount `NULL` rows from selectivity estimates.
-
-    A single `Basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the null count. Compared to `MinMax`, `Basic` additionally works on `String` / `FixedString` columns and can be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
-
-    Syntax: `basic`
 
 - `MinMax`
 
@@ -1327,29 +1191,21 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Supported data types {#supported-data-types}
 
-|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString |
-|-----------|----------------------------------------------------|------|-----------------------|
-| Basic     | ✔                                                  | ✔    | ✔                     |
-| CountMin  | ✔                                                  | ✔    | ✔                     |
-| MinMax    | ✔                                                  | ✔    | ✗                     |
-| TDigest   | ✔                                                  | ✗    | ✗                     |
-| Uniq      | ✔                                                  | ✔    | ✔                     |
-
-All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `Basic` may additionally be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
+|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString |
+|-----------|----------------------------------------------------|-----------------------|
+| CountMin  | ✔                                                  | ✔                     |
+| MinMax    | ✔                                                  | ✗                     |
+| TDigest   | ✔                                                  | ✗                     |
+| Uniq      | ✔                                                  | ✔                     |
 
 ### Supported operations {#supported-operations}
 
 |           | Equality filters (==) | Range filters (`>, >=, <, <=`) |
-|-----------|-----------------------|--------------------------------|
-| Basic     | ✗                     | ✔ (numeric columns only)       |
-| CountMin  | ✔                     | ✗                              |
-| MinMax    | ✗                     | ✔ (numeric columns only)       |
-| TDigest   | ✗                     | ✔ (numeric columns only)       |
-| Uniq      | ✔                     | ✗                              |
-
-For `Basic` on `String` / `FixedString` columns the statistic only records the total
-non-NULL byte length (used to estimate average string length) and the null count;
-range filters and part pruning are not driven by it.
+|-----------|-----------------------|------------------------------|
+| CountMin  | ✔                     | ✗                            |
+| MinMax    | ✗                     | ✔                            |
+| TDigest   | ✗                     | ✔                            |
+| Uniq      | ✔                     | ✗                            |
 
 ## Column-level settings {#column-level-settings}
 
