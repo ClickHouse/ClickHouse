@@ -198,7 +198,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
             on_disk_files.str());
     };
 
-    size_t file_size;
+    size_t file_size = 0;
     try
     {
         file_size = data_part_storage->getFileSize(mrk_path);

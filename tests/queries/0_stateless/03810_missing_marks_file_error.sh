@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-shared-merge-tree, no-object-storage
+# Tags: no-parallel, no-replicated-database, no-shared-merge-tree, no-object-storage
+# no-parallel: issues SYSTEM DROP MARK CACHE (server-wide shared state)
 # no-shared-merge-tree, no-object-storage: the test removes a marks file from the local filesystem
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
