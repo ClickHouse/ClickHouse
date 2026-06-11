@@ -537,7 +537,7 @@ Client → Server, embedded in the Query body (field 2). Gated by `CLIENT_INFO` 
 | 9  | client_name                  | String  | client       | if interface = TCP                     | Client application name |
 | 10 | version_major                | VarUInt | universal    | if interface = TCP                     | Client major version |
 | 11 | version_minor                | VarUInt | universal    | if interface = TCP                     | Client minor version |
-| 12 | protocol_version             | VarUInt | universal    | if interface = TCP                     | Negotiated protocol version |
+| 12 | protocol_version             | VarUInt | universal    | if interface = TCP                     | The originating client's own TCP protocol version (`DBMS_TCP_PROTOCOL_VERSION`), **not** the negotiated version. The peer revision only decides which fields are present; this value is the initiator's compiled-in version, so on a newer client talking to an older server it can be higher than the negotiated/server revision. |
 | 13 | quota_key                    | String  | inter-server | QUOTA_KEY_IN_CLIENT_INFO (v54060)      | Resource quota key. External clients send empty string. |
 | 14 | distributed_depth            | VarUInt | inter-server | DISTRIBUTED_DEPTH (v54448)             | Distributed query nesting depth. External clients send `0`. |
 | 15 | version_patch                | VarUInt | universal    | VERSION_PATCH (v54401), TCP only       | Client patch version |
