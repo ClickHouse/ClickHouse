@@ -182,6 +182,7 @@ static struct InitFiu
     REGULAR(check_database_datalake_negative) \
     REGULAR(restart_replica_fail_after_detach) \
     REGULAR(database_replicated_force_metadata_digest_check) \
+    ONCE(oom_canary_force_oom_evidence) \
     PAUSEABLE(truncate_database_tables_pause) \
     REGULAR(datalake_try_get_table_return_nullptr) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \

@@ -1625,6 +1625,13 @@ namespace ErrorCodes
     DECLARE(Bool, allow_suspicious_indices, false, R"(
     Reject primary/secondary indexes and sorting keys with identical expressions
     )", 0) \
+    DECLARE(Bool, allow_tuple_element_aggregation, false, R"(
+    When enabled, individual elements within Tuple columns participate in
+    aggregation during merge in SummingMergeTree, AggregatingMergeTree, and
+    CoalescingMergeTree. Nested Tuples are expanded recursively so that all
+    leaf elements are aggregated independently. This setting is immutable
+    and must be specified at table creation time.
+    )", 0) \
     DECLARE(Bool, compatibility_allow_sampling_expression_not_in_primary_key, false, R"(
     Allow to create a table with sampling expression not in primary key. This is
     needed only to temporarily allow to run the server with wrong tables for
@@ -2820,6 +2827,7 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "add_minmax_index_for_block_number_column"
         || name == "add_minmax_index_for_block_offset_column"
         || name == "table_disk"
+        || name == "allow_tuple_element_aggregation"
         || name == "share_nested_offsets"
     ;
 }

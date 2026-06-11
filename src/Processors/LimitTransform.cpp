@@ -381,8 +381,22 @@ bool LimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort
     size_t size = current_chunk_sort_columns.size();
     const auto & previous_row_sort_columns = previous_row_chunk.getColumns();
     for (size_t i = 0; i < size; ++i)
-        if (0 != current_chunk_sort_columns[i]->compareAt(current_chunk_row_num, 0, *previous_row_sort_columns[i], 1))
+    {
+        const auto & column = *current_chunk_sort_columns[i];
+        const auto & previous_column = *previous_row_sort_columns[i];
+
+        /// Compare ties using the same collation as ORDER BY, otherwise rows that are equal
+        /// according to the collation (for example '1' and '01' under numeric collation) would
+        /// be treated as distinct and wrongly dropped from the result.
+        int res = 0;
+        if (description[i].collator && column.isCollationSupported())
+            res = column.compareAtWithCollation(current_chunk_row_num, 0, previous_column, 1, *description[i].collator);
+        else
+            res = column.compareAt(current_chunk_row_num, 0, previous_column, 1);
+
+        if (res != 0)
             return false;
+    }
     return true;
 }
 

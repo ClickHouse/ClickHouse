@@ -23,6 +23,15 @@ struct KeeperStorageStats;
 
 struct ISnapshotLoader;
 
+struct KeeperSnapshotStatus
+{
+    uint64_t last_log_index;
+    String path;
+    DiskPtr disk;
+    SnapshotFileInfoPtr pin;
+    bool is_received;
+};
+
 class IKeeperStateMachine : public nuraft::state_machine
 {
 public:
@@ -124,6 +133,8 @@ public:
     virtual void recalculateStorageStats() = 0;
 
     virtual void reconfigure(const KeeperRequestForSession& request_for_session) = 0;
+
+    virtual std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const = 0;
 
     /// Return a pin for `log_idx`, or `nullptr` if absent. The pin defers
     /// unlink and cross-disk moves until the transfer releases it.
@@ -284,6 +295,8 @@ public:
     void recalculateStorageStats() override;
 
     void reconfigure(const KeeperRequestForSession& request_for_session) override;
+
+    std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const override;
 
     /// Cancel an in-progress snapshot receive: remove partial files and reset the context.
     void cancelIfHasUnfinishedSnapshotReceive() TSA_REQUIRES(snapshots_lock);

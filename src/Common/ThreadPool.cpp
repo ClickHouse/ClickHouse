@@ -318,7 +318,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         Stopwatch watch;
         std::unique_lock lock(mutex);
         ProfileEvents::increment(
-            std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
+            std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
             watch.elapsedMicroseconds());
 
         if (CannotAllocateThreadFaultInjector::injectFault())
@@ -426,7 +426,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     /// Wake up a free thread to run the new job.
     new_job_or_shutdown.notify_one();
 
-    ProfileEvents::increment(std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
+    ProfileEvents::increment(std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
 
     return static_cast<ReturnType>(true);
 }
@@ -512,7 +512,7 @@ void ThreadPoolImpl<Thread>::wait()
     Stopwatch watch;
     std::unique_lock lock(mutex);
     ProfileEvents::increment(
-        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
+        std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
         watch.elapsedMicroseconds());
     /// Signal here just in case.
     /// If threads are waiting on condition variables, but there are some jobs in the queue
@@ -614,10 +614,10 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
     thread = Thread(&ThreadFromThreadPool::worker, this);
 
     ProfileEvents::increment(
-        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds : ProfileEvents::LocalThreadPoolThreadCreationMicroseconds,
+        std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds : ProfileEvents::LocalThreadPoolThreadCreationMicroseconds,
         watch2.elapsedMicroseconds());
     ProfileEvents::increment(
-        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions);
+        std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions);
 
     parent_pool.available_threads.fetch_add(1, std::memory_order_relaxed);
 }
@@ -665,7 +665,7 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::~ThreadFromThreadPool()
     join();
 
     ProfileEvents::increment(
-        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks);
+        std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks);
 }
 
 
@@ -708,7 +708,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             Stopwatch watch;
             std::unique_lock lock(parent_pool.mutex);
             ProfileEvents::increment(
-                std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
+                std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
                 watch.elapsedMicroseconds());
 
             // Finish with previous job if any
@@ -761,7 +761,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             parent_pool.jobs.pop();
 
             ProfileEvents::increment(
-                std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds : ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds,
+                std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds : ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds,
                 job_data->elapsedMicroseconds());
 
             /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
@@ -796,7 +796,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             DB::ThreadGroupPtr initial_thread_group = DB::CurrentThread::getGroup();
 #endif
 
-            if constexpr (!std::is_same_v<Thread, std::thread>)
+            if constexpr (!std::is_same_v<Thread, GlobalThreadType>)
             {
                 Stopwatch watch;
                 job_data->job();
@@ -863,7 +863,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
     }
 }
 
-template class ThreadPoolImpl<std::thread>;
+template class ThreadPoolImpl<GlobalThreadType>;
 template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, true>>;
 template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, false>>;
 template class ThreadFromGlobalPoolImpl<true, true>;

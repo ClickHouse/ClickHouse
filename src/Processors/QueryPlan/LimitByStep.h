@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/SortDescription.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
 namespace DB
@@ -28,7 +29,7 @@ public:
     size_t getGroupOffset() const { return group_offset; }
     const Names & getColumns() const { return columns; }
 
-    void applyOrder(bool input_sorted_by_keys_) { input_sorted_by_keys = input_sorted_by_keys_; }
+    void applyOrder();
 
     /// Skip the resize-to-one-stream and run one `LimitByTransform` per input stream.
     /// Set by `optimizeLimitByPerPartition`; assumes upstream streams carry disjoint

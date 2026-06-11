@@ -90,8 +90,11 @@ SELECT DISTINCT 'Sorted ORDER BY key, dt LIMIT BY key, val: ' || replaceRegexpOn
 FROM (EXPLAIN PIPELINE SELECT key FROM 03701_sorted ORDER BY key, dt LIMIT 1 BY key, val LIMIT 10)
 WHERE explain LIKE '%LimitBy%Transform';
 
+OPTIMIZE TABLE 03701_sorted FINAL;
+
+-- For now, we intentionally do not use in order LIMIT BY for parallel replicas.
 SELECT DISTINCT 'Sorted w/o ORDER BY: ' || replaceRegexpOne(trim(BOTH ' ' FROM explain), ' × \\d+$', '')
-FROM (EXPLAIN PIPELINE SELECT key FROM 03701_sorted LIMIT 1 BY key LIMIT 10)
+FROM (EXPLAIN PIPELINE SELECT key FROM 03701_sorted LIMIT 1 BY key LIMIT 10 SETTINGS enable_parallel_replicas = 0)
 WHERE explain LIKE '%LimitBy%Transform';
 
 SELECT '';

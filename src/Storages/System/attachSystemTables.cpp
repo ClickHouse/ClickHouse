@@ -110,6 +110,7 @@
 #include <Storages/System/StorageSystemZooKeeperWatches.h>
 #if USE_NURAFT
 #include <Storages/System/StorageSystemKeeperChangelogs.h>
+#include <Storages/System/StorageSystemKeeperSnapshots.h>
 #endif
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
@@ -297,6 +298,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 #if USE_NURAFT
     if (has_keeper_server)
     {
+        attach<StorageSystemKeeperSnapshots>(context, system_database, "keeper_snapshots", "Contains information about Keeper snapshots stored on this Keeper node. The table includes finalized snapshots and at most one in-flight snapshot currently being received from the leader.");
         attach<StorageSystemKeeperCluster>(context, system_database, "keeper_cluster", "Contains one row per Raft cluster member as seen by this Keeper.");
         attach<StorageSystemKeeperChangelogs>(context, system_database, "keeper_changelogs", "Contains information about changelogs stored on this Keeper node.");
     }

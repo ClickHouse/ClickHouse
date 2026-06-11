@@ -832,6 +832,32 @@ class GH:
         return output == "CONFLICTING"
 
     @classmethod
+    def check_labels_exist(cls, labels: List[str], repo="", verbose=False):
+        """
+        Raise a clear error if any of `labels` does not exist in `repo`.
+
+        `gh issue create` rejects the entire request with an opaque
+        `could not add label: '<name>' not found` message if a label is
+        unknown, and label sets differ between the public and private
+        repositories. Surface a precise, actionable error instead.
+        """
+        if not labels:
+            return
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        existing_raw = Shell.get_output(
+            f"gh label list --repo {shlex.quote(repo)} --limit 1000 --json name --jq '.[].name'",
+            verbose=verbose,
+        )
+        existing = {line.strip() for line in (existing_raw or "").splitlines()}
+        missing = [label for label in labels if label not in existing]
+        if missing:
+            raise RuntimeError(
+                f"Cannot create issue in {repo}: label(s) {missing} do not exist there. "
+                f"Create them in the repository first (e.g. `gh label create '{missing[0]}' --repo {repo}`)."
+            )
+
+    @classmethod
     def create_issue(
         cls,
         title,
@@ -857,6 +883,11 @@ class GH:
         if len(body) > max_body_length:
             truncation_note = "\n\n... (truncated due to GitHub body size limit)"
             body = body[: max_body_length - len(truncation_note)] + truncation_note
+
+        # `gh issue create` fails the whole call with an opaque error if any
+        # label is missing in the target repo (labels differ between the public
+        # and private repos). Check up front and surface a precise error.
+        cls.check_labels_exist(labels, repo=repo, verbose=verbose)
 
         temp_file_path = None
         try:

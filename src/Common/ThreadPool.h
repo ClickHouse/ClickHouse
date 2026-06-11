@@ -18,6 +18,7 @@
 #include <Poco/Event.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadWithStackSize.h>
 #include <Common/Priority.h>
 #include <base/scope_guard.h>
 
@@ -208,8 +209,18 @@ private:
     void onDestroy();
 };
 
-/// ThreadPool with std::thread for threads.
-using FreeThreadPool = ThreadPoolImpl<std::thread>;
+/// The OS-thread type backing the global pool. On macOS we use a wrapper that requests a larger
+/// stack than the small 512 KiB default (see ThreadStackSize.h); elsewhere plain std::thread, whose
+/// default stack already follows RLIMIT_STACK. `std::is_same_v<Thread, GlobalThreadType>` is used
+/// across ThreadPoolImpl to tell the global pool apart from local (ThreadFromGlobalPool) pools.
+#if defined(OS_DARWIN)
+using GlobalThreadType = DB::ThreadWithStackSize;
+#else
+using GlobalThreadType = std::thread;
+#endif
+
+/// ThreadPool with OS threads.
+using FreeThreadPool = ThreadPoolImpl<GlobalThreadType>;
 
 
 /** Global ThreadPool that can be used as a singleton.
