@@ -3,6 +3,9 @@
 -- aggregate states were already referenced in the places[] array.
 -- https://github.com/ClickHouse/ClickHouse/pull/96630
 
+-- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
+SET max_rows_to_group_by = 0;
+
 DROP TABLE IF EXISTS t_gbylimit_distinct;
 
 CREATE TABLE t_gbylimit_distinct (k UInt32, val UInt64) ENGINE = MergeTree ORDER BY k;

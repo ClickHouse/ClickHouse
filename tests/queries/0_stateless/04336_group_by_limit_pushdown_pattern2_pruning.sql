@@ -10,6 +10,8 @@
 -- non-optimized aggregation).
 
 SET max_threads = 1;
+-- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
+SET max_rows_to_group_by = 0;
 -- The trivial analyzer pass handles `GROUP BY ... LIMIT` via `max_rows_to_group_by`
 -- and hides the plan-level Pattern 2; disable it to exercise the heap path.
 SET optimize_trivial_group_by_limit_query = 0;

@@ -8,6 +8,8 @@
 
 SET enable_group_by_top_k_optimization = 1;
 SET max_threads = 1;
+-- The CI test profile sets max_rows_to_group_by, which disables the optimization; reset it.
+SET max_rows_to_group_by = 0;
 
 SELECT 'UInt32 key (key32)';
 SELECT k, count(), sum(v) FROM (SELECT toUInt32(999 - (number % 1000)) AS k, number AS v FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 10;
