@@ -410,7 +410,7 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
 
     /// Do not copy hashed_data here: the searcher retains hashed_dataset internally,
     /// and serializeBinary reads from it when hashed_data is empty.
-    if (opts.hashed_dataset && opts.hashed_dataset->size() > 0)
+    if (opts.hashed_dataset && !opts.hashed_dataset->empty())
         hashed_dim = opts.hashed_dataset->dimensionality();
 
     if (opts.datapoints_by_token)
