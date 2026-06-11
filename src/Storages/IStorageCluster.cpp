@@ -5,6 +5,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -237,6 +238,10 @@ ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
 
     /// Cluster table functions should always skip unavailable shards.
     new_settings[Setting::skip_unavailable_shards] = true;
+
+    /// `database` is an initiator-only setting (see `stripDatabaseSetting`): the remote servers
+    /// must keep their own default database.
+    ClusterProxy::stripDatabaseSetting(new_settings);
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
