@@ -1,6 +1,8 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -41,6 +43,7 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
     extern const int ASYNC_LOAD_CANCELED;
+    extern const int NO_FILE_IN_DATA_PART;
 }
 
 MergeTreeMarksGetter::MergeTreeMarksGetter(MarkCache::MappedPtr marks_, size_t num_columns_in_mark_)
@@ -146,6 +149,46 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         auto res = std::make_shared<MarksInCompressedFile>(PODArray<MarkInCompressedFile>{});
         ProfileEvents::increment(ProfileEvents::LoadedMarksFiles);
         return res;
+    }
+
+    /// The marks file name comes from the part's own checksums (see getStreamNameForColumn), so it
+    /// must exist on disk. If it is missing, throw a typed error with the part's ground truth rather
+    /// than the opaque std::filesystem_error that getFileSize below would produce.
+    if (!data_part_storage->existsFile(mrk_path))
+    {
+        WriteBufferFromOwnString checksums_files;
+        for (const auto & [name, _] : data_part_reader->getChecksums().files)
+        {
+            if (checksums_files.count())
+                checksums_files << ", ";
+            checksums_files << name;
+        }
+
+        WriteBufferFromOwnString on_disk_files;
+        try
+        {
+            for (auto it = data_part_storage->iterate(); it->isValid(); it->next())
+            {
+                if (on_disk_files.count())
+                    on_disk_files << ", ";
+                on_disk_files << it->name();
+            }
+        }
+        catch (...)
+        {
+            on_disk_files << "<failed to list directory: " << getCurrentExceptionMessage(false) << ">";
+        }
+
+        throw Exception(
+            ErrorCodes::NO_FILE_IN_DATA_PART,
+            "Marks file '{}' does not exist in part '{}' at '{}', although it is listed in the part's checksums. "
+            "Part columns: [{}]. Checksums files: [{}]. Files on disk: [{}].",
+            mrk_path,
+            data_part_reader->getPartName(),
+            data_part_storage->getFullPath(),
+            data_part_reader->getColumns().toString(),
+            checksums_files.str(),
+            on_disk_files.str());
     }
 
     size_t file_size = data_part_storage->getFileSize(mrk_path);
