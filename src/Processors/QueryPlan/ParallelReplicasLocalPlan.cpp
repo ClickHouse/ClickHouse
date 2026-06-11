@@ -11,11 +11,13 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ConvertingActions.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -32,6 +34,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_group_by_top_k_optimization;
+    extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
 }
 
@@ -152,7 +155,9 @@ static const ASTSelectQuery * findInnerSelect(const ASTPtr & query_ast)
 /// to drive the existing optimization).
 ///
 /// Only Pattern 1 (ORDER BY = leading prefix of GROUP BY, simple identifiers,
-/// no collators, no LIMIT WITH TIES, no WITH TOTALS/ROLLUP/CUBE) is handled
+/// no collators, no LIMIT WITH TIES, no WITH TOTALS/ROLLUP/CUBE, no
+/// post-aggregation clauses such as HAVING / QUALIFY / DISTINCT / window
+/// functions, `exact_rows_before_limit` disabled) is handled
 /// here.  Pattern 2 (no ORDER BY) is intentionally skipped because the
 /// coordinator's `LimitStep` has no ordering with which to discard tuples
 /// with corrupted partial state - extending it requires either a sort before
@@ -179,6 +184,23 @@ static std::optional<UInt64> evalConstantUInt64(const ASTPtr & node, const Conte
     return value.safeGet<UInt64>();
 }
 
+/// True when the expression tree contains a window function application
+/// (`f(...) OVER ...`).  Does not descend into subqueries - their window
+/// functions are evaluated independently of the outer aggregation.
+static bool hasWindowFunction(const ASTPtr & node)
+{
+    if (!node)
+        return false;
+    if (const auto * func = node->as<ASTFunction>(); func && func->isWindowFunction())
+        return true;
+    if (node->as<ASTSubquery>())
+        return false;
+    for (const auto & child : node->children)
+        if (hasWindowFunction(child))
+            return true;
+    return false;
+}
+
 static void tryPushDownTopKToPartialAggregation(QueryPlan & remote_plan, const ASTPtr & query_ast, const ContextPtr & context)
 {
     const auto * select = findInnerSelect(query_ast);
@@ -193,6 +215,26 @@ static void tryPushDownTopKToPartialAggregation(QueryPlan & remote_plan, const A
     if (select->limit_with_ties)
         return;
     if (select->limitBy() || select->limitByOffset())
+        return;
+
+    /// Post-aggregation clauses consume the full set of groups, so a replica
+    /// must not prune partial states for keys the coordinator may still need
+    /// after filtering.  The plan-shape optimizer never matches these cases
+    /// because they insert steps between `AggregatingStep` and
+    /// `SortingStep` / `LimitStep`; this AST mirror has to reject them
+    /// explicitly.
+    if (select->having() || select->qualify() || select->window())
+        return;
+    if (select->distinct)
+        return;
+    if (hasWindowFunction(select->select()))
+        return;
+
+    /// `exact_rows_before_limit` promises an exact `rows_before_limit_at_least`
+    /// counter, which requires counting all groups.  The plan-shape optimizer
+    /// checks this via `LimitStep::alwaysReadTillEnd`; there is no `LimitStep`
+    /// in the remote plan, so check the setting directly.
+    if (context->getSettingsRef()[Setting::exact_rows_before_limit])
         return;
 
     auto limit_opt = evalConstantUInt64(select->limitLength(), context);

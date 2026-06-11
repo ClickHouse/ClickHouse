@@ -28,6 +28,8 @@ catch the regression by observing diverging values between
 `enable_group_by_top_k_optimization = 0` and `= 1`.
 """
 
+import json
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -453,6 +455,120 @@ def test_parallel_replicas_pattern1_serialize_query_plan(
         f"{k}\t{100 if k != 5 else 101}" for k in range(10)
     ) + "\n"
     assert off == expected
+
+
+def test_remote_partial_aggregation_no_top_k_with_having(start_cluster):
+    """`HAVING` is applied on the coordinator over the full set of merged
+    groups, so the follower must not prune partial aggregation states: a
+    replica could keep only the heap's top key, the coordinator would filter
+    it out by `HAVING`, and the real answer would already be gone.
+
+    Data shape: keys 0..999 have sum(v) >= 100, keys 10000..10009 have
+    sum(v) = 1.  `HAVING s = 1 ORDER BY k LIMIT 1` must return key 10000.
+    A per-replica top-1 heap by `k ASC` would keep only key 0, which the
+    coordinator then discards - returning an empty (wrong) result.
+    """
+    table = "t_pr"
+    _create_replicated_shards(table)
+    query = (
+        f"SELECT k, sum(v) AS s FROM {table} GROUP BY k "
+        "HAVING s = 1 ORDER BY k ASC LIMIT 1"
+    )
+    settings_base = {
+        "enable_parallel_replicas": 2,
+        "max_parallel_replicas": 2,
+        "cluster_for_parallel_replicas": "one_shard_two_replicas",
+        "serialize_query_plan": 1,
+    }
+    off = node1.query(
+        query, settings=dict(settings_base, enable_group_by_top_k_optimization=0)
+    )
+    on = node1.query(
+        query, settings=dict(settings_base, enable_group_by_top_k_optimization=1)
+    )
+    assert off == on == "10000\t1\n", (
+        f"HAVING must disable the partial top-K pushdown.\n"
+        f"  off:\n{off}\n  on:\n{on}\n"
+    )
+
+    plan = node1.query(
+        f"EXPLAIN distributed=1, actions=1 {query}",
+        settings=dict(settings_base, enable_group_by_top_k_optimization=1),
+    )
+    assert "Top-K:" not in plan, (
+        f"Top-K must not be pushed into partial aggregation under HAVING.\n"
+        f"Full plan:\n{plan}"
+    )
+
+
+def test_remote_partial_aggregation_no_top_k_with_post_aggregation_clauses(
+    start_cluster,
+):
+    """QUALIFY, window functions (inline and via a named WINDOW clause) and
+    DISTINCT all consume the full set of groups on the coordinator, so the
+    AST-driven pushdown in `createRemotePlanForParallelReplicas` must skip
+    them - the plan-shape optimizer never matches these cases, and the
+    mirror must not be more permissive."""
+    table = "t_pr"
+    _create_replicated_shards(table)
+    queries = [
+        # QUALIFY (with an inline window function)
+        f"SELECT k, sum(v) AS s, row_number() OVER (ORDER BY k ASC) AS rn "
+        f"FROM {table} GROUP BY k QUALIFY rn <= 3 ORDER BY k ASC LIMIT 10",
+        # Inline window function without QUALIFY
+        f"SELECT k, sum(sum(v)) OVER () AS total "
+        f"FROM {table} GROUP BY k ORDER BY k ASC LIMIT 10",
+        # Named WINDOW clause
+        f"SELECT k, count() OVER w FROM {table} GROUP BY k "
+        f"WINDOW w AS (ORDER BY k ASC) ORDER BY k ASC LIMIT 10",
+        # DISTINCT between aggregation and ORDER BY / LIMIT
+        f"SELECT DISTINCT k, sum(v) FROM {table} GROUP BY k "
+        f"ORDER BY k ASC LIMIT 10",
+    ]
+    settings = {
+        "enable_parallel_replicas": 2,
+        "max_parallel_replicas": 2,
+        "cluster_for_parallel_replicas": "one_shard_two_replicas",
+        "serialize_query_plan": 1,
+        "enable_group_by_top_k_optimization": 1,
+    }
+    for query in queries:
+        plan = node1.query(f"EXPLAIN distributed=1, actions=1 {query}", settings=settings)
+        assert "Top-K:" not in plan, (
+            f"Top-K must not be pushed into partial aggregation.\n"
+            f"  query: {query}\nFull plan:\n{plan}"
+        )
+
+
+def test_remote_partial_aggregation_no_top_k_with_exact_rows_before_limit(
+    start_cluster,
+):
+    """`exact_rows_before_limit = 1` promises an exact
+    `rows_before_limit_at_least` counter, which requires counting every
+    group.  The follower must not prune partial aggregation in that mode."""
+    table = "t_pr"
+    _create_replicated_shards(table)
+    query = f"SELECT k, sum(v) FROM {table} GROUP BY k ORDER BY k ASC LIMIT 10"
+    settings = {
+        "enable_parallel_replicas": 2,
+        "max_parallel_replicas": 2,
+        "cluster_for_parallel_replicas": "one_shard_two_replicas",
+        "serialize_query_plan": 1,
+        "enable_group_by_top_k_optimization": 1,
+        "exact_rows_before_limit": 1,
+    }
+    plan = node1.query(f"EXPLAIN distributed=1, actions=1 {query}", settings=settings)
+    assert "Top-K:" not in plan, (
+        f"Top-K must not be pushed down with exact_rows_before_limit.\n"
+        f"Full plan:\n{plan}"
+    )
+
+    # The dataset has 1010 distinct keys: 0..999 and 10000..10009.
+    result = node1.query(f"{query} FORMAT JSON", settings=settings)
+    rows_before_limit = json.loads(result)["rows_before_limit_at_least"]
+    assert rows_before_limit == 1010, (
+        f"exact_rows_before_limit must count all groups, got {rows_before_limit}"
+    )
 
 
 @pytest.mark.parametrize("max_parallel_replicas", [2])
