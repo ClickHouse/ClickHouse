@@ -464,18 +464,11 @@ static std::optional<HashJoin::Type> tryGetLowCardinalityMethod(const ColumnPtr 
 
     const auto * nested = low_cardinality_column->getDictionary().getNestedNotNullableColumn().get();
 
-    if (nested->isNumeric())
-    {
-        switch (nested->sizeOfValueIfFixed())
-        {
-            case 1: return Type::low_cardinality_key8;
-            case 2: return Type::low_cardinality_key16;
-            case 4: return Type::low_cardinality_key32;
-            case 8: return Type::low_cardinality_key64;
-            default: return {};
-        }
-    }
-
+    /// Numeric keys are intentionally not routed here. A materialized numeric key uses the key* maps,
+    /// which (with `enable_join_fixed_hash_table_conversion`) convert a dense small range to a
+    /// `range*_key*` FixedHashMap after build and can publish the shared fixed-hash-table runtime
+    /// filter; the dictionary-aware map skips both for no measurable gain. The benefit of the
+    /// dictionary-aware map is concentrated on variable-length string keys.
     if (typeid_cast<const ColumnString *>(nested))
         return Type::low_cardinality_key_string;
     if (typeid_cast<const ColumnFixedString *>(nested))

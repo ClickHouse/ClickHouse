@@ -216,10 +216,6 @@ public:
         M(keys128)                     \
         M(keys256)                     \
         M(hashed)                      \
-        M(low_cardinality_key8)             \
-        M(low_cardinality_key16)            \
-        M(low_cardinality_key32)            \
-        M(low_cardinality_key64)            \
         M(low_cardinality_key_string)       \
         M(low_cardinality_key_fixed_string) \
         M(two_level_key32)             \
@@ -248,10 +244,6 @@ public:
         M(key64)                               \
         M(key_string)                          \
         M(key_fixed_string)                    \
-        M(low_cardinality_key8)                \
-        M(low_cardinality_key16)               \
-        M(low_cardinality_key32)               \
-        M(low_cardinality_key64)               \
         M(low_cardinality_key_string)          \
         M(low_cardinality_key_fixed_string)
 
@@ -296,10 +288,6 @@ public:
     {
         switch (type)
         {
-            case Type::low_cardinality_key8:
-            case Type::low_cardinality_key16:
-            case Type::low_cardinality_key32:
-            case Type::low_cardinality_key64:
             case Type::low_cardinality_key_string:
             case Type::low_cardinality_key_fixed_string:
                 return true;
@@ -324,10 +312,6 @@ public:
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>           keys128;
         std::shared_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>           keys256;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>         hashed;
-        std::shared_ptr<FixedHashMap<UInt8, Mapped>>                         low_cardinality_key8;
-        std::shared_ptr<FixedHashMap<UInt16, Mapped>>                        low_cardinality_key16;
-        std::shared_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>          low_cardinality_key32;
-        std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>          low_cardinality_key64;
         std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>      low_cardinality_key_string;
         std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>      low_cardinality_key_fixed_string;
         std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_key32;

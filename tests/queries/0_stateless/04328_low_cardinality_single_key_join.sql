@@ -39,7 +39,7 @@ SELECT 'all_full',   (SELECT (count(), sum(cityHash64(toString(k))), sum(ifNull(
 SELECT 'semi_left',  (SELECT (count(), sum(cityHash64(toString(k))), sum(v)) FROM lcj_l_lc SEMI LEFT JOIN lcj_r_lc USING (k)) = (SELECT (count(), sum(cityHash64(toString(k))), sum(v)) FROM lcj_l_pl SEMI LEFT JOIN lcj_r_pl USING (k));
 SELECT 'anti_left',  (SELECT (count(), sum(cityHash64(toString(k))), sum(v)) FROM lcj_l_lc ANTI LEFT JOIN lcj_r_lc USING (k)) = (SELECT (count(), sum(cityHash64(toString(k))), sum(v)) FROM lcj_l_pl ANTI LEFT JOIN lcj_r_pl USING (k));
 
--- Single FixedString and numeric LowCardinality keys use the other dictionary-aware maps.
+-- A single FixedString LowCardinality key also uses a dictionary-aware map.
 DROP TABLE IF EXISTS lcj_fs_lc;
 DROP TABLE IF EXISTS lcj_fs_pl;
 CREATE TABLE lcj_fs_lc (k LowCardinality(FixedString(4)), v UInt64) ENGINE = Memory;
@@ -48,6 +48,9 @@ INSERT INTO lcj_fs_lc SELECT toFixedString(leftPad(toString(number % 50), 4, '0'
 INSERT INTO lcj_fs_pl SELECT toFixedString(leftPad(toString(number % 50), 4, '0'), 4), number FROM numbers(2000);
 SELECT 'fixedstring', (SELECT (count(), sum(l.v + r.v)) FROM lcj_fs_lc AS l ALL INNER JOIN lcj_fs_lc AS r USING (k)) = (SELECT (count(), sum(l.v + r.v)) FROM lcj_fs_pl AS l ALL INNER JOIN lcj_fs_pl AS r USING (k));
 
+-- Numeric LowCardinality keys are intentionally not routed to a dictionary-aware map; they keep the
+-- materialized key* path (which retains the FixedHashMap conversion and the runtime filter). This
+-- guards that such a key still joins correctly.
 DROP TABLE IF EXISTS lcj_u32_lc;
 DROP TABLE IF EXISTS lcj_u32_pl;
 CREATE TABLE lcj_u32_lc (k LowCardinality(UInt32), v UInt64) ENGINE = Memory;

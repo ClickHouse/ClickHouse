@@ -232,26 +232,6 @@ template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin:
 {
     using Type = ColumnsHashing::HashMethodHashed<Value, Mapped, false, use_offset>;
 };
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::low_cardinality_key8, Value, Mapped>
-{
-    using Type = LowCardinalityKeyGetterForJoin<
-        ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt8, false, use_offset>, Mapped>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::low_cardinality_key16, Value, Mapped>
-{
-    using Type = LowCardinalityKeyGetterForJoin<
-        ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt16, false, use_offset>, Mapped>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::low_cardinality_key32, Value, Mapped>
-{
-    using Type = LowCardinalityKeyGetterForJoin<
-        ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt32, false, use_offset>, Mapped>;
-};
-template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::low_cardinality_key64, Value, Mapped>
-{
-    using Type = LowCardinalityKeyGetterForJoin<
-        ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt64, false, use_offset>, Mapped>;
-};
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::low_cardinality_key_string, Value, Mapped>
 {
     using Type = LowCardinalityKeyGetterForJoin<
