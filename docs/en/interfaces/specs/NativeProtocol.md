@@ -1,6 +1,7 @@
 ---
 description: 'Specification of the ClickHouse native TCP protocol: packet framing, the connection lifecycle, version negotiation, and the body of each message'
 sidebar_label: 'Native Protocol'
+sidebar_position: 29
 slug: /interfaces/specs/NativeProtocol
 title: 'Native Protocol'
 doc_type: 'reference'
