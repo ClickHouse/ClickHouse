@@ -208,7 +208,7 @@ private:
         bool continuous_reading,
         DeserializeBinaryBulkStateVariantDiscriminators & state) const;
 
-    static void readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, ReadBuffer * stream);
+    static void readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, ReadBuffer * stream, size_t num_variants = 0);
 
     /// Shared implementation for Escaped and Raw text deserialization.
     /// Checks for NULL representation in the raw buffer before escape processing

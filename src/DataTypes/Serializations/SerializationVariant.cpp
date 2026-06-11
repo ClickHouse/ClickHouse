@@ -774,16 +774,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
             if (stream->eof())
                 return {variant_rows_offsets, variant_limits};
 
-            readDiscriminatorsGranuleStart(state, stream);
-
-            /// Instrumentation: catch stream/state desync at the source — a garbage discriminator
-            /// here means we read a granule header at a non-boundary offset.
-            if (state.granule_format == CompactDiscriminatorsGranuleFormat::COMPACT
-                && state.compact_discr != ColumnVariant::NULL_DISCRIMINATOR
-                && state.compact_discr >= variant_serializations.size())
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "DESYNC: invalid compact discriminator {} (num variants {}), granule_size {}, continuous_reading {}",
-                    UInt32(state.compact_discr), variant_serializations.size(), state.remaining_rows_in_granule, continuous_reading);
+            readDiscriminatorsGranuleStart(state, stream, variant_serializations.size());
         }
 
         size_t limit_in_granule = std::min(limit, state.remaining_rows_in_granule);
@@ -812,6 +803,16 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
             size_t start = discriminators_data.size() - limit_in_granule;
             size_t skipped_rows = std::min(rows_offset, limit_in_granule);
 
+            /// Instrumentation: a PLAIN granule read at a desynced offset yields garbage discriminators;
+            /// each is used below as an index into variant_rows_offsets/variant_limits, so validate first.
+            for (size_t i = start; i != discriminators_data.size(); ++i)
+            {
+                ColumnVariant::Discriminator discr = discriminators_data[i];
+                if (discr != ColumnVariant::NULL_DISCRIMINATOR && discr >= variant_serializations.size())
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "DESYNC: invalid plain discriminator {} (num variants {})", UInt32(discr), variant_serializations.size());
+            }
+
             for (size_t i = start; i != start + skipped_rows; ++i)
             {
                 ColumnVariant::Discriminator discr = discriminators_data[i];
@@ -836,7 +837,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
     return {variant_rows_offsets, variant_limits};
 }
 
-void SerializationVariant::readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, DB::ReadBuffer * stream)
+void SerializationVariant::readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, DB::ReadBuffer * stream, size_t num_variants)
 {
     UInt64 granule_size = 0;
     readVarUInt(granule_size, *stream);
@@ -853,7 +854,16 @@ void SerializationVariant::readDiscriminatorsGranuleStart(DeserializeBinaryBulkS
 
     state.granule_format = static_cast<CompactDiscriminatorsGranuleFormat>(granule_format);
     if (granule_format == CompactDiscriminatorsGranuleFormat::COMPACT)
+    {
         readBinaryLittleEndian(state.compact_discr, *stream);
+        /// Instrumentation: a garbage discriminator here means we read a granule header at a
+        /// non-boundary offset (stream/state desync). num_variants == 0 means the caller cannot
+        /// supply the count (subcolumn reader); the granule_size check above is the backstop there.
+        if (num_variants && state.compact_discr != ColumnVariant::NULL_DISCRIMINATOR && state.compact_discr >= num_variants)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "DESYNC: invalid compact discriminator {} (num variants {}), granule_size {}",
+                UInt32(state.compact_discr), num_variants, granule_size);
+    }
 }
 
 void SerializationVariant::addVariantElementToPath(DB::ISerialization::SubstreamPath & path, size_t i) const
