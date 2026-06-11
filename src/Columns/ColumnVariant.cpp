@@ -970,8 +970,8 @@ void ColumnVariant::computeHashInto(size_t row_begin, size_t row_end, UInt32 * h
     }
 
     /// Calculate per-row hash for all variants once, then gather by discriminator.
-    /// NULL rows contribute a constant (0), distinct from any variant value.
-    std::vector<PaddedPODArray<UInt32>> nested_hashes(variants.size()); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    /// NULL rows contribute `WEAK_HASH32_INITIAL_VALUE`, like `ColumnNullable` and the former `getWeakHash32`.
+    VectorWithMemoryTracking<PaddedPODArray<UInt32>> nested_hashes(variants.size());
     for (size_t v = 0; v < variants.size(); ++v)
     {
         const size_t variant_size = variants[v]->size();
@@ -983,7 +983,7 @@ void ColumnVariant::computeHashInto(size_t row_begin, size_t row_end, UInt32 * h
     for (size_t i = row_begin; i < row_end; ++i)
     {
         const Discriminator discr = local_discriminators_data[i];
-        const UInt32 value = discr == NULL_DISCRIMINATOR ? 0 : nested_hashes[discr][offsets_data[i]];
+        const UInt32 value = discr == NULL_DISCRIMINATOR ? WEAK_HASH32_INITIAL_VALUE : nested_hashes[discr][offsets_data[i]];
         UInt32 & out = hash_out[i - row_begin];
         out = initial ? value : combineWeakHash32(value, out);
     }
