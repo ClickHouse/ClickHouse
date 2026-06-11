@@ -620,6 +620,12 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
             for (size_t i = discriminators_offset; i != discriminators_offset + rows_offset; ++i)
             {
                 ColumnVariant::Discriminator discr = discriminators_data[i];
+                /// Instrumentation: discriminators may come from the substreams cache (e.g. first
+                /// read through a subcolumn); validate before using as an index.
+                if (discr != ColumnVariant::NULL_DISCRIMINATOR && discr >= variant_serializations.size())
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "DESYNC: invalid discriminator {} from discriminators column (num variants {})",
+                        UInt32(discr), variant_serializations.size());
                 if (discr != ColumnVariant::NULL_DISCRIMINATOR)
                     ++variant_rows_offsets[discr];
             }
@@ -643,6 +649,12 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         for (size_t i = discriminators_offset ; i != discriminators_data.size(); ++i)
         {
             ColumnVariant::Discriminator discr = discriminators_data[i];
+            /// Instrumentation: discriminators may come from the substreams cache (e.g. first
+            /// read through a subcolumn); validate before using as an index.
+            if (discr != ColumnVariant::NULL_DISCRIMINATOR && discr >= variant_serializations.size())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "DESYNC: invalid discriminator {} from discriminators column (num variants {})",
+                    UInt32(discr), variant_serializations.size());
             if (discr != ColumnVariant::NULL_DISCRIMINATOR)
                 ++variant_limits[discr];
         }
@@ -774,7 +786,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
             if (stream->eof())
                 return {variant_rows_offsets, variant_limits};
 
-            readDiscriminatorsGranuleStart(state, stream, variant_serializations.size());
+            readDiscriminatorsGranuleStart(state, stream, variant_serializations.size(), continuous_reading);
         }
 
         size_t limit_in_granule = std::min(limit, state.remaining_rows_in_granule);
@@ -810,7 +822,8 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
                 ColumnVariant::Discriminator discr = discriminators_data[i];
                 if (discr != ColumnVariant::NULL_DISCRIMINATOR && discr >= variant_serializations.size())
                     throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "DESYNC: invalid plain discriminator {} (num variants {})", UInt32(discr), variant_serializations.size());
+                        "DESYNC: invalid plain discriminator {} (num variants {}), continuous_reading {}",
+                        UInt32(discr), variant_serializations.size(), continuous_reading);
             }
 
             for (size_t i = start; i != start + skipped_rows; ++i)
@@ -837,7 +850,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
     return {variant_rows_offsets, variant_limits};
 }
 
-void SerializationVariant::readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, DB::ReadBuffer * stream, size_t num_variants)
+void SerializationVariant::readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, DB::ReadBuffer * stream, size_t num_variants, bool continuous_reading)
 {
     UInt64 granule_size = 0;
     readVarUInt(granule_size, *stream);
@@ -850,7 +863,7 @@ void SerializationVariant::readDiscriminatorsGranuleStart(DeserializeBinaryBulkS
     /// Instrumentation: a stream/state desync makes us read a granule header at a non-boundary,
     /// yielding a garbage granule_size. A real granule never exceeds the index granularity.
     if (granule_size > 100'000'000)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "DESYNC: implausible granule_size {}", granule_size);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "DESYNC: implausible granule_size {}, continuous_reading {}", granule_size, continuous_reading);
 
     state.granule_format = static_cast<CompactDiscriminatorsGranuleFormat>(granule_format);
     if (granule_format == CompactDiscriminatorsGranuleFormat::COMPACT)
@@ -861,8 +874,8 @@ void SerializationVariant::readDiscriminatorsGranuleStart(DeserializeBinaryBulkS
         /// supply the count (subcolumn reader); the granule_size check above is the backstop there.
         if (num_variants && state.compact_discr != ColumnVariant::NULL_DISCRIMINATOR && state.compact_discr >= num_variants)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "DESYNC: invalid compact discriminator {} (num variants {}), granule_size {}",
-                UInt32(state.compact_discr), num_variants, granule_size);
+                "DESYNC: invalid compact discriminator {} (num variants {}), granule_size {}, continuous_reading {}",
+                UInt32(state.compact_discr), num_variants, granule_size, continuous_reading);
     }
 }
 

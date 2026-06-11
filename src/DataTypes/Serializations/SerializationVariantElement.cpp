@@ -337,7 +337,7 @@ std::pair<size_t, size_t> SerializationVariantElement::deserializeCompactDiscrim
             if (stream->eof())
                 return {variant_rows_offset, variant_limit};
 
-            SerializationVariant::readDiscriminatorsGranuleStart(*discriminators_state, stream);
+            SerializationVariant::readDiscriminatorsGranuleStart(*discriminators_state, stream, /*num_variants*/ 0, continuous_reading);
         }
 
         size_t limit_in_granule = std::min(limit, discriminators_state->remaining_rows_in_granule);
