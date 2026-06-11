@@ -206,6 +206,18 @@ namespace
         return path;
     }
 
+    void rejectOriginChangingRedirect(const std::string & requested_url, const std::string & final_url)
+    {
+        const Poco::URI requested_uri(requested_url, false);
+        const Poco::URI final_uri(final_url, false);
+        if (!WebIndexPage::isSameOrigin(requested_uri, final_uri))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Index page '{}' was redirected to a different origin '{}'",
+                requested_url,
+                final_url);
+    }
+
     using WebIndexPage::getEffectiveRelativePathForDeduplication;
 
     const re2::RE2 & getURLRegex()
@@ -497,6 +509,7 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
             try
             {
                 auto index_page = readIndexPage(listing_url);
+                rejectOriginChangingRedirect(listing_url, index_page.final_url);
                 const auto final_path_prefix = stripLeadingSlash(getPathPrefixForMatching(index_page.final_url));
                 auto entries = extractURLs(
                     index_page.body,

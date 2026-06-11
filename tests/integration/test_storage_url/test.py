@@ -22,7 +22,14 @@ node1 = cluster.add_instance(
 def setup_node():
     try:
         cluster.start()
-        start_mock_servers(cluster, os.path.dirname(__file__), [("index_pages_server.py", "resolver", 8087)])
+        start_mock_servers(
+            cluster,
+            os.path.dirname(__file__),
+            [
+                ("index_pages_server.py", "resolver", 8087),
+                ("index_pages_server_redirect_target.py", "resolver", 8088),
+            ],
+        )
         node1.query(
             "insert into table function url(url1) partition by column3 values (1, 2, 3), (3, 2, 1), (1, 3, 2)"
         )
@@ -573,6 +580,16 @@ def test_url_engine_wildcard_limit_uses_query_setting():
         assert "url_wildcard_max_directories_to_read" in error
     finally:
         node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+
+def test_url_wildcard_rejects_cross_origin_index_redirect():
+    error = node1.query_and_get_error(
+        with_url_wildcard_setting(
+            "SELECT count() FROM url('http://resolver:8087/data/cross_origin_redirect/**/part*.tsv', 'TSV', 'x UInt64') "
+            "SETTINGS max_http_get_redirects=1"
+        )
+    )
+    assert "redirected to a different origin" in error
 
 
 def test_url_engine_wildcard_redirect_uses_query_setting():
