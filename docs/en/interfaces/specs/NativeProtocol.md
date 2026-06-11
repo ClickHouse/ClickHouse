@@ -112,6 +112,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | DISPLAY_NAME                    | 54372   | ServerHello            | Adds the `display_name` field to ServerHello. |
 | VERSION_PATCH                   | 54401   | ServerHello, ClientInfo | Adds the `version_patch` field to both. |
 | SERVER_LOGS                     | 54406   | Log                    | Server emits Log packets when `send_logs_level` is set. |
+| COLUMN_DEFAULTS_METADATA        | 54410   | TableColumns           | Server may send the [`TableColumns`](#tablecolumns) packet (type 11) with column-default metadata before the INSERT/input schema block. Sent only when negotiated version ≥ 54410 **and** `input_format_defaults_for_omitted_fields` is enabled. Below this version the packet is never sent; clients must not wait for it. |
 | WRITE_CLIENT_INFO               | 54420   | Progress               | Adds `wrote_rows` and `wrote_bytes` to Progress. (Despite the name, this does **not** gate the ClientInfo block — that is `CLIENT_INFO` (v54032).) |
 | SETTINGS_SERIALIZED_AS_STRINGS  | 54429   | Query (settings encoding) | Changes **how** the always-present settings list is encoded; does **not** gate whether settings are sent. v54429+ writes each setting as `(name, flags, value-as-string)`; older peers write `(name, type-specific-binary-value)` with no flags. See [Setting](#setting). |
 | INTERSERVER_SECRET              | 54441   | Query                  | Adds the `cluster_secret` field to Query. |
@@ -720,7 +721,7 @@ The `value` column's element type is not fixed across packets — older servers 
 
 ### TableColumns (packet type 11) {#tablecolumns}
 
-Server → Client. Sent when the client needs column-default metadata, typically before an INSERT that omits some columns.
+Server → Client, gated by `COLUMN_DEFAULTS_METADATA` (v54410). The server sends it before the INSERT schema block to carry column-default metadata, but only when the negotiated version is ≥ 54410 **and** the `input_format_defaults_for_omitted_fields` setting is enabled. Below 54410 the packet is never sent, so an older client must **not** wait for it — the schema `Data` block comes directly. A v54410+ client should be ready for either order: an optional `TableColumns`, then the schema block.
 
 | # | Field               | Type   | Role      | Description |
 |---|---------------------|--------|-----------|-------------|
