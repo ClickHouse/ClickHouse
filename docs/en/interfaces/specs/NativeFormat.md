@@ -143,7 +143,15 @@ A single byte. `0x00` is false; any non-zero value is true (canonically `0x01`).
 Whether the `BlockInfo` prefix is present depends on the channel, because the writer is parameterized by a *revision*:
 
 - On the **native TCP protocol**, the server writes blocks at the connection's negotiated revision (a large value — `DBMS_TCP_PROTOCOL_VERSION` is `54484` in this release). `BlockInfo` is written whenever that revision is greater than zero, which is always the case for a real connection. The `has_custom_serialization` byte in each column (see [column wire layout](#column-wire-layout)) is written at revision `54454` and above.
-- The `Native` *output format* — `SELECT ... FORMAT Native` over HTTP, `INTO OUTFILE ... FORMAT Native`, and the `Native` format produced by `clickhouse-client` — serializes at revision `0` *by default*. At revision `0` the `BlockInfo` prefix and the `has_custom_serialization` byte are both omitted, so a block is just `num_columns`, `num_rows`, and the columns. Over HTTP this revision is not fixed: a client may raise it with the `client_protocol_version` query parameter. `HTTPHandler` parses `?client_protocol_version=<n>` and stores it on the context, `FormatFactory` copies it into `FormatSettings::client_protocol_version`, and `NativeOutputFormat` passes it to `NativeWriter` as the revision. With a high enough value the HTTP output includes the `BlockInfo` prefix (written whenever the revision is greater than `0`) and the `has_custom_serialization` byte (written at revision `54454` and above), exactly as on the TCP path. Clients must therefore not assume that every HTTP `FORMAT Native` payload is revision `0`.
+- The `Native` *output format* — `SELECT ... FORMAT Native` over HTTP, `INTO OUTFILE ... FORMAT Native`, and the `Native` format produced by `clickhouse-client` — serializes at revision `0` *by default*. At revision `0` the `BlockInfo` prefix and the `has_custom_serialization` byte are both omitted, so a block is just `num_columns`, `num_rows`, and the columns.
+
+  Over HTTP this revision is not fixed: a client may raise it with the `client_protocol_version` query parameter, which flows through three components:
+
+  1. `HTTPHandler` parses `?client_protocol_version=<n>` and stores it on the context.
+  2. `FormatFactory` copies it into `FormatSettings::client_protocol_version`.
+  3. `NativeOutputFormat` passes it to `NativeWriter` as the revision.
+
+  With a high enough value the HTTP output includes the `BlockInfo` prefix (written whenever the revision is greater than `0`) and the `has_custom_serialization` byte (written at revision `54454` and above), exactly as on the TCP path. Clients must therefore not assume that every HTTP `FORMAT Native` payload is revision `0`.
 
 In other words, the byte examples in this section that begin with a `BlockInfo` prefix describe the TCP Data-packet payload. The same query taken through `FORMAT Native` produces the shorter form shown alongside them.
 
@@ -227,7 +235,13 @@ A decoder reconstructs a dense column of `num_rows` entries by filling every non
 
 A decoder reconstructs a dense column by selecting `elements[indexes[i]]` for each output row `i`. Composite inner types recurse: the element list is materialized in the inner type, then indexed. Supported inner types include the leaf types, `Nullable(T)`, `Array(T)`, `Tuple(...)`, `Map(K, V)`, `Nested(...)` (each field expanded like an `Array`), and `LowCardinality(T)` (the shared dictionary is kept; only the per-element keys are indexed).
 
-**Detached wire format.** `DETACHED` (`0x02`) and `DETACHED_OVER_SPARSE` (`0x03`) *do* appear over the wire — they are not purely internal. On the TCP path, when compression is enabled and the negotiated revision is at least `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` (v54478), `convertColumnsToBLOBs` wraps each eligible column (non-`const`, non-`Tuple`, in a block with more than one row) in a `ColumnBLOB` that holds the column already marshalled and compressed off the main thread. `ISerialization::getKindStack` then appends `DETACHED` to the wrapped column's stack, and `SerializationDetached::serializeBinaryBulk` writes the column `data` as a `VarUInt` blob size followed by exactly that many blob bytes. If the wrapped column was sparse, its stack is `{DEFAULT, SPARSE, DETACHED}`, which serializes as `DETACHED_OVER_SPARSE`. A client decoding such a column reads the blob length and bytes, then decompresses the blob to recover the inner column payload (see the [`ColumnBLOB` note](#compression-negotiation) under compression).
+**Detached wire format.** `DETACHED` (`0x02`) and `DETACHED_OVER_SPARSE` (`0x03`) *do* appear over the wire — they are not purely internal. On the TCP path, when compression is enabled and the negotiated revision is at least `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` (v54478), the column goes through three steps:
+
+1. `convertColumnsToBLOBs` wraps each eligible column (non-`const`, non-`Tuple`, in a block with more than one row) in a `ColumnBLOB` that holds the column already marshalled and compressed off the main thread.
+2. `ISerialization::getKindStack` appends `DETACHED` to the wrapped column's stack.
+3. `SerializationDetached::serializeBinaryBulk` writes the column `data` as a `VarUInt` blob size followed by exactly that many blob bytes.
+
+If the wrapped column was sparse, its stack is `{DEFAULT, SPARSE, DETACHED}`, which serializes as `DETACHED_OVER_SPARSE`. A client decoding such a column reads the blob length and bytes, then decompresses the blob to recover the inner column payload (see the [`ColumnBLOB` note](#compression-negotiation) under compression).
 
 ### Block variants {#block-variants}
 
@@ -662,7 +676,11 @@ They share three structural properties:
 
 Composites are recursive — an inner type may itself be a composite.
 
-**Prefix phase before the data streams.** Reading a column is two phases, in this order: a **state-prefix phase** and then the **data-stream phase**. A composite wrapper has no prefix bytes of its own, but it *delegates* the prefix phase to its inner serialization before writing any of its own data streams: `SerializationArray::serializeBinaryBulkStatePrefix` calls `nested->serializeBinaryBulkStatePrefix` before the array offsets are written, and `Tuple`, `Map`, and `Nested` do the same through their element serializations. So when a composite wraps a [versioned/stateful type](#versioned-types) (`LowCardinality`, `Variant`, `Dynamic`, `JSON`), that inner type's version/state prefix is emitted *first*, ahead of the wrapper's offsets and element payload. For example, `Array(LowCardinality(String))` is laid out as `[LowCardinality state prefix]` → `[array offsets]` → `[flattened LowCardinality element payload]`, not offsets-first. A decoder that reads offsets before running the inner prefix phase will desynchronize on any composite containing `LowCardinality`, `Variant`, `Dynamic`, or `JSON`. When every inner type is a plain leaf or another non-versioned composite, the prefix phase emits no bytes and the offsets-first description below applies verbatim.
+**Prefix phase before the data streams.** Reading a column is two phases, in this order: a **state-prefix phase** and then the **data-stream phase**. A composite wrapper has no prefix bytes of its own, but it *delegates* the prefix phase to its inner serialization before writing any of its own data streams: `SerializationArray::serializeBinaryBulkStatePrefix` calls `nested->serializeBinaryBulkStatePrefix` before the array offsets are written, and `Tuple`, `Map`, and `Nested` do the same through their element serializations.
+
+So when a composite wraps a [versioned/stateful type](#versioned-types) (`LowCardinality`, `Variant`, `Dynamic`, `JSON`), that inner type's version/state prefix is emitted *first*, ahead of the wrapper's offsets and element payload. For example, `Array(LowCardinality(String))` is laid out as `[LowCardinality state prefix]` → `[array offsets]` → `[flattened LowCardinality element payload]`, not offsets-first.
+
+A decoder that reads offsets before running the inner prefix phase will desynchronize on any composite containing `LowCardinality`, `Variant`, `Dynamic`, or `JSON`. When every inner type is a plain leaf or another non-versioned composite, the prefix phase emits no bytes and the offsets-first description below applies verbatim.
 
 #### Nullable(T) {#nullable}
 
@@ -982,7 +1000,11 @@ It is distinct from the protocol version:
 
 Most versioned types write the version as a little-endian UInt64 immediately before any other state-prefix data; a few use VarUInt or UInt8. A decoder reads the version first and rejects unknown values — a higher version implies a newer sender format the decoder does not understand, and mis-parsing it corrupts every subsequent byte.
 
-The state prefix is emitted at the start of **every block whose row count is greater than zero**, immediately before that block's payload. The Native writer and reader do **not** keep serialization state across blocks: `NativeWriter::writeData` creates a fresh serialize state and calls `serializeBinaryBulkStatePrefix` for each non-empty column block it writes, and `NativeReader::readData` creates a fresh deserialize state and calls `deserializeBinaryBulkStatePrefix` for each non-empty block it reads (both skip the call entirely when `rows == 0`). Header blocks (rows = 0) and empty blocks therefore emit nothing, and a decoder must read the state prefix again at the start of each non-empty block. A decoder that reads the prefix only once and treats later blocks as payload-only will read the next block's prefix as data and desynchronize:
+The state prefix is emitted at the start of **every block whose row count is greater than zero**, immediately before that block's payload.
+
+The Native writer and reader do **not** keep serialization state across blocks: `NativeWriter::writeData` creates a fresh serialize state and calls `serializeBinaryBulkStatePrefix` for each non-empty column block it writes, and `NativeReader::readData` creates a fresh deserialize state and calls `deserializeBinaryBulkStatePrefix` for each non-empty block it reads (both skip the call entirely when `rows == 0`).
+
+Header blocks (rows = 0) and empty blocks therefore emit nothing, and a decoder must read the state prefix again at the start of each non-empty block. A decoder that reads the prefix only once and treats later blocks as payload-only will read the next block's prefix as data and desynchronize:
 
 ```mermaid
 sequenceDiagram
@@ -1056,7 +1078,11 @@ The per-block metadata UInt64 is a bitfield:
 
 For a typical query response with a single data block per column, the metadata is `0x600` (HasAdditionalKeys + NeedUpdateDictionary).
 
-The dict values are `dict_size` values encoded using the inner type T. The dictionary reserves leading slots for special values: a non-nullable column reserves one (`dict[0]` holds the inner type's default value, e.g. `""` for `String`), and real distinct values start at `dict[1]`. For `LowCardinality(Nullable(T))` the dict is still encoded as plain T (no null-map stream), but **two** slots are reserved: `dict[0]` is the NULL marker and `dict[1]` is the inner type's default value (e.g. `""` for `String`); real distinct values start at `dict[2]`. A NULL row's key points at `dict[0]`, and that slot is written on the wire as the inner type's default bytes. The keys are indices into the dict, with `keys.len()` equal to the block's row count; each index is `1 << key_type_code` bytes (1, 2, 4, or 8), and logical row `N` is reconstructed as `dict[keys[N]]`.
+The dict values are `dict_size` values encoded using the inner type T. The dictionary reserves leading slots for special values: a non-nullable column reserves one (`dict[0]` holds the inner type's default value, e.g. `""` for `String`), and real distinct values start at `dict[1]`.
+
+For `LowCardinality(Nullable(T))` the dict is still encoded as plain T (no null-map stream), but **two** slots are reserved: `dict[0]` is the NULL marker and `dict[1]` is the inner type's default value (e.g. `""` for `String`); real distinct values start at `dict[2]`. A NULL row's key points at `dict[0]`, and that slot is written on the wire as the inner type's default bytes.
+
+The keys are indices into the dict, with `keys.len()` equal to the block's row count; each index is `1 << key_type_code` bytes (1, 2, 4, or 8), and logical row `N` is reconstructed as `dict[keys[N]]`.
 
 The state prefix is read at the start of every block whose row count is greater than zero — header blocks (rows = 0) and empty blocks emit nothing. Within a block, `keys_count` equals the row count, `dict_size` equals the number of values in the dict stream, and each key fits in `1 << key_type_code` bytes.
 
@@ -1320,7 +1346,9 @@ The checksum is computed over the 9 header bytes (method + compressed_size + unc
 
 ### Per-block boundaries {#per-block-boundaries}
 
-The compressed payload of a Block is a **stream of one or more frames**, not necessarily a single frame. The sender writes the serialized block through a `CompressedWriteBuffer` that emits a frame whenever its internal buffer fills (≈1 MB, `DBMS_DEFAULT_BUFFER_SIZE`) and a final frame when the block is flushed. So a small block is one frame; a large block is several consecutive frames. The invariant runs one way only: because `sendData` flushes the compressed buffer at the end of each block, **every block end coincides with a frame boundary** — but the converse does not hold. An intermediate frame boundary, emitted when the buffer filled mid-block, falls in the *middle* of a block and is not a block boundary. A decoder must therefore use the block's own dimensions (`num_columns`/`num_rows`) to find where a block ends; it must not assume that each frame is one complete block.
+The compressed payload of a Block is a **stream of one or more frames**, not necessarily a single frame. The sender writes the serialized block through a `CompressedWriteBuffer` that emits a frame whenever its internal buffer fills (≈1 MB, `DBMS_DEFAULT_BUFFER_SIZE`) and a final frame when the block is flushed. So a small block is one frame; a large block is several consecutive frames.
+
+The invariant runs one way only: because `sendData` flushes the compressed buffer at the end of each block, **every block end coincides with a frame boundary** — but the converse does not hold. An intermediate frame boundary, emitted when the buffer filled mid-block, falls in the *middle* of a block and is not a block boundary. A decoder must therefore use the block's own dimensions (`num_columns`/`num_rows`) to find where a block ends; it must not assume that each frame is one complete block.
 
 A receiver streams the frames: read 16 + 9 bytes, read exactly `compressed_size - 9` body bytes, decompress to exactly `uncompressed_size` bytes, and serve those bytes to the block decoder; when the decoder needs more than the current frame holds, pull the next frame. Because the sender flushes per block, after a block is fully decoded the frame buffer is empty and the next block begins at a fresh frame.
 
