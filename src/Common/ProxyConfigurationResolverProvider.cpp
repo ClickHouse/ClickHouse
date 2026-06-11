@@ -151,18 +151,21 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
 {
     auto context = Context::getGlobalContextInstance();
 
-    /// isSharedContextAlive: during late shutdown (after resetSharedContext)
-    /// the global context still exists but its shared part is destroyed, so
-    /// getConfigRef would be a member call on a null pointer. CrashWriter
-    /// reaches this from the signal handler in that window.
-    if (!context || !context->isSharedContextAlive())
+    /// tryGetConfig: during late shutdown (after resetSharedContext) the
+    /// global context still exists but its shared part is destroyed, so
+    /// getConfigRef would be a member call on a null pointer, racing with the
+    /// shutdown thread. CrashWriter reaches this from the signal handler in
+    /// that window. The returned pointer also keeps the configuration alive
+    /// while it is being read.
+    const auto config = context ? context->tryGetConfig() : nullptr;
+    if (!config)
     {
         return std::make_shared<EnvironmentProxyConfigurationResolver>(
             request_protocol,
             false);
     }
 
-    return get(request_protocol, context->getConfigRef());
+    return get(request_protocol, *config);
 }
 
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(
