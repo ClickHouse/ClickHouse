@@ -1,6 +1,6 @@
 /// Unit grid for the NEW per-range cache-buffer API on `DiskCacheProvider`
-/// (`planResidencyView` / `openWriteBuffers` + `DiskCacheReadBuffer` /
-/// `DiskCacheWriteBuffer` / `DiskCacheView`). Backed by a REAL `FileCache` over a
+/// (`planResidencyView` / `openWriteBuffers` + `DiskCacheReader` /
+/// `DiskCacheWriter` / `DiskCacheView`). Backed by a REAL `FileCache` over a
 /// temp dir, mirroring `RealDiskCacheSequentialEvictionKeepsConnection` in
 /// `gtest_reader_executor.cpp` (same `ThreadStatus` + `QueryScope` machinery so
 /// `FileSegment::reserve` finds a query budget).

@@ -726,7 +726,7 @@ private:
     /// `range()` contains it and whose `pin(frontier)` is non-null (the full 3-part
     /// guard lives in the write buffer). Empty when nothing partial is there - the
     /// frontier landed in a hit region or past the last open writer (`[CF-pin]`).
-    CacheWriteBuffer::CacheSegmentPin writerPinAt(size_t frontier) const
+    CacheWriter::CacheSegmentPin writerPinAt(size_t frontier) const
     {
         for (const auto & buf : read_plan.bufs)
             for (const auto & w : buf.writers)
@@ -862,7 +862,7 @@ private:
         /// re-read of bytes already delivered. Re-pointed each window to the
         /// segment under the live frontier (from the plan's held write buffer's
         /// `pin`); dropped on seek/EOF/connection reset / plan rebuild.
-        CacheWriteBuffer::CacheSegmentPin inflight_segment_pin;
+        CacheWriter::CacheSegmentPin inflight_segment_pin;
     };
 
     /// The foreground's connection cluster. EMPTY while a prefetch is in flight —

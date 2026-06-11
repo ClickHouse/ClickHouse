@@ -13,7 +13,7 @@ namespace DB
 /// not-yet-covered sub-ranges). `ReaderExecutor` uses one as `covered` while
 /// assembling a window: every byte appended to the result is first `add`-ed, and
 /// cache/source reads only fill what `subtract` reports as still uncovered — so
-/// the assembled rope is disjoint by construction (which `ICacheHandle::put`
+/// the assembled rope is disjoint by construction (which `CacheWriter::write`
 /// requires) regardless of overlapping cache tiers or source over-reads.
 class IntervalSet
 {

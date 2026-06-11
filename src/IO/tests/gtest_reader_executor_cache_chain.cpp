@@ -240,9 +240,8 @@ String makePattern(size_t size)
 
 
 /// Provides the query-context preamble that `FileCache::reserve` needs
-/// (`DiskCacheHandle::put` reserves space against the current query context).
-/// Replicates the `DiskCacheHandlePinSurvivesEviction` setup. Each test gets a
-/// fresh cache directory.
+/// (`CacheWriter::write` reserves space against the current query context).
+/// Each test gets a fresh cache directory.
 class ReaderExecutorCacheChain : public ::testing::Test
 {
 public:
@@ -512,11 +511,10 @@ TEST_F(ReaderExecutorCacheChain, PageHitSkipsSourceAndFs)
     /// report only misses across the file.
     {
         StoredObject object{"obj", "", file_size};
-        auto handle = disk_provider->lookup(object, /*object_file_offset=*/0, ByteRange{0, file_size});
-        auto status = handle->status();
-        EXPECT_TRUE(status.hit_ranges.empty())
+        auto view = disk_provider->planResidencyView(object, /*object_file_offset=*/0, ByteRange{0, file_size});
+        EXPECT_TRUE(view->hits().empty())
             << "page hits must not back-fill the fs cache";
-        EXPECT_FALSE(status.miss_ranges.empty());
+        EXPECT_FALSE(view->misses().empty());
     }
 }
 

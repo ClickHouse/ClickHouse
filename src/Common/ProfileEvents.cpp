@@ -830,15 +830,15 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorBytesPushedToCacheSync, "Bytes ReaderExecutor wrote back into cache tiers via put from a foreground (synchronous) read.", ValueType::Bytes) \
     M(ReaderExecutorBytesPushedToCacheAsync, "Bytes ReaderExecutor wrote back into cache tiers via put from a background prefetch read.", ValueType::Bytes) \
     M(ReaderExecutorBytesPromoted, "Bytes ReaderExecutor wrote into a faster cache tier by promotion: a range served from a slower tier, written up into a missing populatable upper tier (e.g. filesystem cache to page cache).", ValueType::Bytes) \
-    M(ReaderExecutorCacheGetRequests, "Number of ICacheHandle::get invocations in ReaderExecutor.", ValueType::Number) \
-    M(ReaderExecutorCachePopulateRequests, "Number of ICacheHandle::put invocations in ReaderExecutor.", ValueType::Number) \
+    M(ReaderExecutorCacheGetRequests, "Number of CacheReader::read invocations in ReaderExecutor.", ValueType::Number) \
+    M(ReaderExecutorCachePopulateRequests, "Number of CacheWriter::write invocations in ReaderExecutor.", ValueType::Number) \
     M(ReaderExecutorSourceRequests, "Number of source-side requests opened by ReaderExecutor (excludes live-buffer reuses).", ValueType::Number) \
     M(ReaderExecutorIncompleteConnections, "Number of source connections ReaderExecutor dropped before draining them to their right bound; not pool-reusable, forcing a re-establishment.", ValueType::Number) \
     M(ReaderExecutorOverReadBytes, "Bytes ReaderExecutor fetched from source that did not serve the requested window (segment/block head-alignment slack and mergeRanges bridged-gap bytes).", ValueType::Bytes) \
     M(ReaderExecutorModeledCostMicroseconds, "Modeled I/O cost of ReaderExecutor reads: a synthetic proxy KPI for read-path optimality, NOT measured latency. Weighted sum of the counters above with heuristic S3 weights: 30ms per source request + 5ms per incomplete connection + 20ms per MiB transferred from source (useful payload plus over-read) + 0.1ms per cache put + 0.05ms per cache get. Divide by ReaderExecutorRequestedBytes for a load-independent cost-per-byte. Experimental, tracks the experimental ReaderExecutor.", ValueType::Microseconds) \
     M(ReaderExecutorRequestedBytes, "Useful bytes ReaderExecutor delivered to read requests (the requested window payload, excluding over-read and cache write-back). Denominator for the modeled cost-per-byte KPI (ReaderExecutorModeledCostMicroseconds / ReaderExecutorRequestedBytes).", ValueType::Bytes) \
-    M(ReaderExecutorCacheGetMicroseconds, "Time spent inside ICacheHandle::get serving cache hits in ReaderExecutor.", ValueType::Microseconds) \
-    M(ReaderExecutorCachePopulateMicroseconds, "Time spent inside ICacheHandle::put populating caches in ReaderExecutor.", ValueType::Microseconds) \
+    M(ReaderExecutorCacheGetMicroseconds, "Time spent inside CacheReader::read serving cache hits in ReaderExecutor.", ValueType::Microseconds) \
+    M(ReaderExecutorCachePopulateMicroseconds, "Time spent inside CacheWriter::write populating caches in ReaderExecutor.", ValueType::Microseconds) \
     M(ReaderExecutorSourceReadMicroseconds, "Time spent in source reads driven by ReaderExecutor (foreground and prefetch worker combined).", ValueType::Microseconds) \
     M(ReaderExecutorDecryptMicroseconds, "Time spent in ReaderExecutor decryption layers.", ValueType::Microseconds) \
     M(ReaderExecutorPrefetchWaitMicroseconds, "Time the consumer thread blocked on a not-yet-ready prefetch future. Contributes directly to query latency.", ValueType::Microseconds) \

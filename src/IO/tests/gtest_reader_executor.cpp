@@ -240,75 +240,14 @@ public:
     std::vector<MissEntry> miss_entries;
 };
 
-/// Mock cache that stores data in memory, organized by blocks.
-class MockCacheHandle : public ICacheHandle
-{
-public:
-    MockCacheHandle(
-        ByteRange range,
-        std::unordered_map<size_t, String> & storage_,
-        size_t block_size_)
-        : storage(storage_), block_size(block_size_)
-    {
-        size_t start_block = range.offset / block_size;
-        size_t end_block = (range.end() + block_size - 1) / block_size;
-
-        for (size_t b = start_block; b < end_block; ++b)
-        {
-            size_t block_start = b * block_size;
-            size_t block_end = std::min(block_start + block_size, range.end());
-            block_start = std::max(block_start, range.offset);
-            ByteRange block_range{block_start, block_end - block_start};
-
-            if (storage.contains(b))
-                result.hit_ranges.push_back(block_range);
-            else
-                result.miss_ranges.push_back(block_range);
-        }
-    }
-
-    CacheLookupResult status() const override { return result; }
-
-    Rope get(ByteRange range) override
-    {
-        size_t block = range.offset / block_size;
-        const auto & data = storage.at(block);
-        auto buf = std::make_shared<OwnedRopeBuffer>(data.size());
-        std::memcpy(buf->data(), data.data(), data.size());
-
-        Rope rope;
-        rope.append(RopeNode{buf, 0, data.size(), block * block_size});
-        return rope.slice(range);
-    }
-
-    size_t put(ByteRange range, Rope data) override
-    {
-        size_t block = range.offset / block_size;
-        if (storage.contains(block))
-            return 0;
-
-        String content;
-        for (const auto & node : data.getNodes())
-            content.append(node.data(), node.size);
-        size_t bytes = content.size();
-        storage[block] = std::move(content);
-        return bytes;
-    }
-
-private:
-    std::unordered_map<size_t, String> & storage;
-    size_t block_size;
-    CacheLookupResult result;
-};
-
 /// Held read buffer over a run of resident blocks in `MockCacheProvider`'s storage.
 /// Re-readable; clamps `read(sub)` to its own range so a shared-storage view never
 /// reaches into a neighbouring hit's blocks. Reads each call from the LIVE storage
-/// (so eviction/regrowth is reflected). Mirrors the legacy `MockCacheHandle::get`.
-class MockCacheReadBuffer : public CacheReadBuffer
+/// (so eviction/regrowth is reflected).
+class MockCacheReader : public CacheReader
 {
 public:
-    MockCacheReadBuffer(ByteRange range_in_file, std::unordered_map<size_t, String> & storage_, size_t block_size_)
+    MockCacheReader(ByteRange range_in_file, std::unordered_map<size_t, String> & storage_, size_t block_size_)
         : range_member(range_in_file), storage(storage_), block_size(block_size_) {}
 
     ByteRange range() const override { return range_member; }
@@ -350,10 +289,10 @@ private:
 /// `put`), advancing `committed` even when the bytes were already present (so
 /// `complete` converges). `read` serves the committed prefix; `pin` is a no-op (the
 /// block mock has no evictable in-flight segment).
-class MockCacheWriteBuffer : public CacheWriteBuffer
+class MockCacheWriter : public CacheWriter
 {
 public:
-    MockCacheWriteBuffer(ByteRange aligned_range, std::unordered_map<size_t, String> & storage_, size_t block_size_)
+    MockCacheWriter(ByteRange aligned_range, std::unordered_map<size_t, String> & storage_, size_t block_size_)
         : range_member(aligned_range), storage(storage_), block_size(block_size_) {}
 
     ByteRange range() const override { return range_member; }
@@ -428,11 +367,6 @@ public:
     explicit MockCacheProvider(size_t block_size_)
         : block_size(block_size_) {}
 
-    std::unique_ptr<ICacheHandle> lookup(const StoredObject &, size_t, ByteRange range) override
-    {
-        return std::make_unique<MockCacheHandle>(range, storage, block_size);
-    }
-
     String name() const override { return "MockCache"; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
@@ -457,7 +391,7 @@ public:
                 return;
             if (run_is_hit)
                 view->hit_entries.push_back(HitEntry{
-                    run_range, std::make_unique<MockCacheReadBuffer>(run_range, storage, block_size)});
+                    run_range, std::make_unique<MockCacheReader>(run_range, storage, block_size)});
             else
                 view->miss_entries.push_back(MissEntry{run_range, /*writer=*/nullptr});
             run_active = false;
@@ -489,7 +423,7 @@ public:
         result.reserve(aligned_miss_ranges.size());
         for (const auto & aligned : aligned_miss_ranges)
             result.push_back(MissEntry{
-                aligned, std::make_unique<MockCacheWriteBuffer>(aligned, storage, block_size)});
+                aligned, std::make_unique<MockCacheWriter>(aligned, storage, block_size)});
         return result;
     }
 
@@ -1614,22 +1548,20 @@ namespace
 {
 
 /// FileCache-style cache with fixed-size segments that the test can evict
-/// between windows. Mirrors DiskCacheHandle::status miss-head behavior:
+/// between windows. Mirrors `DiskCacheProvider`'s status miss-head behavior:
 ///   - partially downloaded segment -> miss head at current write offset,
 ///   - empty/evicted segment        -> miss head at segment start.
-/// Honors pinSegmentAt using FileCache's releasable() rule (use_count()==1).
+/// Honors pinning via the write buffer's `pin` using FileCache's releasable()
+/// rule (use_count()==1).
 class EvictableSegmentMockCache : public ICacheProvider
 {
 public:
     explicit EvictableSegmentMockCache(size_t segment_size_)
         : segment_size(segment_size_) {}
 
-    std::unique_ptr<ICacheHandle> lookup(const StoredObject &, size_t, ByteRange range) override;
-
     /// Read-only residency probe (defined out-of-line below, after the buffer
-    /// classes): mirrors `EvictableSegmentMockCacheHandle::status`'s hit/miss
-    /// classification (committed prefix is a hit, the segment-aligned tail past the
-    /// download frontier is a per-segment miss). MUST NOT mutate the store.
+    /// classes): committed prefix is a hit, the segment-aligned tail past the
+    /// download frontier is a per-segment miss. MUST NOT mutate the store.
     CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange range_in_file) override;
 
     /// One held write buffer per aligned (segment) miss range; each appends into its
@@ -1671,95 +1603,12 @@ private:
     size_t segment_size;
 };
 
-class EvictableSegmentMockCacheHandle : public ICacheHandle
-{
-public:
-    EvictableSegmentMockCacheHandle(ByteRange requested_, EvictableSegmentMockCache & cache_)
-        : requested(requested_), cache(cache_)
-    {
-        const size_t seg = cache.segmentSize();
-        const size_t first = requested.offset / seg;
-        const size_t last = requested.end() == 0 ? 0 : (requested.end() - 1) / seg;
-        for (size_t idx = first; idx <= last; ++idx)
-        {
-            const size_t seg_start = idx * seg;
-            const size_t seg_end = seg_start + seg;
-            const size_t dl = cache.downloaded.contains(idx) ? cache.downloaded[idx] : 0;
-            if (dl >= seg)
-            {
-                result.hit_ranges.push_back(ByteRange{seg_start, seg});
-            }
-            else if (dl > 0)
-            {
-                result.hit_ranges.push_back(ByteRange{seg_start, dl});
-                const size_t miss_head = seg_start + dl;
-                const size_t miss_end = std::min(seg_end, requested.end());
-                if (miss_head < miss_end)
-                    result.miss_ranges.push_back(ByteRange{miss_head, miss_end - miss_head});
-            }
-            else
-            {
-                const size_t miss_end = std::min(seg_end, requested.end());
-                if (seg_start < miss_end)
-                    result.miss_ranges.push_back(ByteRange{seg_start, miss_end - seg_start});
-            }
-        }
-    }
-
-    CacheLookupResult status() const override { return result; }
-
-    Rope get(ByteRange range) override
-    {
-        auto buf = std::make_shared<OwnedRopeBuffer>(range.size);
-        std::memset(buf->data(), 'D', range.size);
-        Rope rope;
-        rope.append(RopeNode{buf, 0, range.size, range.offset});
-        return rope;
-    }
-
-    size_t put(ByteRange range, Rope data) override
-    {
-        cache.put_log.emplace_back(range, data.totalBytes());
-        const size_t seg = cache.segmentSize();
-        const size_t idx = range.offset / seg;
-        if (auto it = cache.reject_put.find(idx); it != cache.reject_put.end() && it->second)
-            return 0;
-        const size_t seg_start = idx * seg;
-        const size_t cwo = seg_start + (cache.downloaded.contains(idx) ? cache.downloaded[idx] : 0);
-        if (range.offset != cwo)   // append-only, like FileSegment::write
-            return 0;
-        cache.downloaded[idx] = std::min(seg, (range.offset + range.size) - seg_start);
-        cache.livenessFor(idx);
-        return range.size;
-    }
-
-    CacheSegmentPin pinSegmentAt(size_t file_offset) const override
-    {
-        const size_t seg = cache.segmentSize();
-        const size_t idx = file_offset / seg;
-        const size_t dl = cache.downloaded.contains(idx) ? cache.downloaded[idx] : 0;
-        if (dl == 0 || dl >= seg)
-            return nullptr;   // nothing partial to pin
-        return std::static_pointer_cast<void>(cache.livenessFor(idx));
-    }
-
-private:
-    ByteRange requested;
-    EvictableSegmentMockCache & cache;
-    CacheLookupResult result;
-};
-
-inline std::unique_ptr<ICacheHandle> EvictableSegmentMockCache::lookup(const StoredObject &, size_t, ByteRange range)
-{
-    return std::make_unique<EvictableSegmentMockCacheHandle>(range, *this);
-}
-
 /// Held read buffer over ONE segment's committed prefix `[seg_start, seg_start+dl)`.
 /// `readable()` re-reads the LIVE `downloaded[idx]` each call (clamped to the hit
 /// range), so a partial segment grown across windows by a concurrent writer becomes
-/// visible - like the real `DiskCacheReadBuffer`. `read(sub)` fabricates 'D' bytes
-/// for the committed sub-range (mirroring `EvictableSegmentMockCacheHandle::get`).
-class EvictableSegmentReadBuffer : public CacheReadBuffer
+/// visible - like the real `DiskCacheReader`. `read(sub)` fabricates 'D' bytes
+/// for the committed sub-range.
+class EvictableSegmentReadBuffer : public CacheReader
 {
 public:
     EvictableSegmentReadBuffer(ByteRange hit_range_, size_t seg_idx_, EvictableSegmentMockCache & cache_)
@@ -1796,12 +1645,11 @@ private:
 };
 
 /// Held write buffer over ONE aligned (segment) miss range. `write` appends into the
-/// segment append-only at the live `cwo` (mirroring the old append-only `put`,
-/// including `reject_put` and the `livenessFor` token), advancing `committed`.
-/// `read` serves the committed prefix as 'D' bytes. `pin(frontier)` mirrors the old
-/// `pinSegmentAt`: a partially-downloaded segment returns its liveness token (so it
+/// segment append-only at the live `cwo` (with `reject_put` and the `livenessFor`
+/// token), advancing `committed`. `read` serves the committed prefix as 'D' bytes.
+/// `pin(frontier)`: a partially-downloaded segment returns its liveness token (so it
 /// survives `evictUnpinned` while the executor holds it).
-class EvictableSegmentWriteBuffer : public CacheWriteBuffer
+class EvictableSegmentWriteBuffer : public CacheWriter
 {
 public:
     EvictableSegmentWriteBuffer(ByteRange aligned_range_, size_t seg_idx_, EvictableSegmentMockCache & cache_)
@@ -2666,166 +2514,6 @@ TEST(ReaderExecutor, LiveBufferReleasedAtEof)
     EXPECT_EQ(limit->getActiveCount(), 0u);
 }
 
-TEST(PageCacheProvider, BypassMissDoesNotPolluteCache)
-{
-    /// `read_from_page_cache_if_exists_otherwise_bypass_cache = true`
-    /// (e.g. background merges/mutations via `MergeTreeSequentialSource`)
-    /// must not populate the page cache on miss. Confirm by writing data
-    /// through a bypass-mode provider and verifying that a fresh handle
-    /// from a non-bypass provider on the same `PageCacheFile` sees a
-    /// MISS — the bytes never made it into the registered cache.
-    using namespace DB;
-    /// `min_size_in_bytes` is the initial per-shard capacity. Tests don't
-    /// call `autoResize`, so we set it equal to `max_size_in_bytes` so the
-    /// shard can actually store entries from the get-go.
-    constexpr size_t cache_capacity = 1ull << 20;
-    auto cache = std::make_shared<PageCache>(
-        std::chrono::milliseconds(2000), "LRU", 0.5,
-        /*min_size_in_bytes=*/cache_capacity,
-        /*max_size_in_bytes=*/cache_capacity,
-        /*free_memory_ratio=*/0.0,
-        /*num_shards=*/1);
-
-    PageCacheFile file;
-    file.path = "test-bypass";
-    file.file_version = "v1";
-
-    constexpr size_t block_size = 4096;
-    constexpr size_t inject_eviction = false;
-
-    /// Step 1: bypass=true. Put bytes into block [0, 4096).
-    PageCacheProvider bypass_provider(cache, file, block_size, inject_eviction, /*bypass_if_missing=*/true, /*file_size_in_bytes=*/block_size);
-    {
-        auto handle = bypass_provider.lookup(StoredObject{}, /*object_file_offset=*/0, ByteRange{0, block_size});
-        auto status = handle->status();
-        ASSERT_EQ(status.hit_ranges.size(), 0u);
-        ASSERT_EQ(status.miss_ranges.size(), 1u);
-
-        Rope data;
-        auto buf = std::make_shared<OwnedRopeBuffer>(block_size);
-        std::memset(buf->data(), 'B', block_size);
-        data.append(RopeNode{buf, 0, block_size, 0});
-
-        size_t written = handle->put(ByteRange{0, block_size}, std::move(data));
-        EXPECT_EQ(written, 0u)
-            << "bypass mode is a read-only probe: put populates nothing and counts 0 bytes";
-    }   /// the cache stays empty - bypass put never allocated or registered a cell.
-
-    /// Step 2: lookup via a NON-bypass provider on the same file/block.
-    /// Should be a MISS — bypass mode did not register the bytes.
-    PageCacheProvider observer_provider(cache, file, block_size, inject_eviction, /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
-    {
-        auto handle = observer_provider.lookup(StoredObject{}, /*object_file_offset=*/0, ByteRange{0, block_size});
-        auto status = handle->status();
-        EXPECT_EQ(status.hit_ranges.size(), 0u)
-            << "bypass-mode put must NOT register the cell with the cache; "
-               "subsequent lookups must miss";
-        EXPECT_EQ(status.miss_ranges.size(), 1u);
-    }
-}
-
-TEST(PageCacheProvider, NonBypassMissPopulatesCache)
-{
-    /// Symmetry check: when bypass is OFF, put DOES populate the cache,
-    /// and a later lookup hits.
-    using namespace DB;
-    /// `min_size_in_bytes` is the initial per-shard capacity. Tests don't
-    /// call `autoResize`, so we set it equal to `max_size_in_bytes` so the
-    /// shard can actually store entries from the get-go.
-    constexpr size_t cache_capacity = 1ull << 20;
-    auto cache = std::make_shared<PageCache>(
-        std::chrono::milliseconds(2000), "LRU", 0.5,
-        /*min_size_in_bytes=*/cache_capacity,
-        /*max_size_in_bytes=*/cache_capacity,
-        /*free_memory_ratio=*/0.0,
-        /*num_shards=*/1);
-
-    PageCacheFile file;
-    file.path = "test-populate";
-    file.file_version = "v1";
-
-    constexpr size_t block_size = 4096;
-    constexpr size_t inject_eviction = false;
-
-    PageCacheProvider provider(cache, file, block_size, inject_eviction, /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
-
-    {
-        auto handle = provider.lookup(StoredObject{}, 0, ByteRange{0, block_size});
-        EXPECT_EQ(handle->status().miss_ranges.size(), 1u);
-
-        Rope data;
-        auto buf = std::make_shared<OwnedRopeBuffer>(block_size);
-        std::memset(buf->data(), 'P', block_size);
-        data.append(RopeNode{buf, 0, block_size, 0});
-        handle->put(ByteRange{0, block_size}, std::move(data));
-    }
-
-    {
-        auto handle = provider.lookup(StoredObject{}, 0, ByteRange{0, block_size});
-        EXPECT_EQ(handle->status().hit_ranges.size(), 1u)
-            << "non-bypass put must register the cell so subsequent lookups hit";
-    }
-}
-
-TEST(PageCacheProvider, TailBlockSizedToFile)
-{
-    /// File size 1500, block size 1024. The tail block must be sized to the
-    /// 476 real bytes, NOT to a full 1024-byte block. With the cell sized to
-    /// real data, `get` has no past-EOF region to ever serve back (regardless
-    /// of what range the caller asks for), and `put` cannot leave a zero-filled
-    /// trailing gap that a subsequent reader could mistake for file content.
-    using namespace DB;
-    constexpr size_t cache_capacity = 1ull << 20;
-    auto cache = std::make_shared<PageCache>(
-        std::chrono::milliseconds(2000), "LRU", 0.5,
-        /*min_size_in_bytes=*/cache_capacity,
-        /*max_size_in_bytes=*/cache_capacity,
-        /*free_memory_ratio=*/0.0,
-        /*num_shards=*/1);
-
-    PageCacheFile file;
-    file.path = "test-tail-clamp";
-    file.file_version = "v1";
-
-    constexpr size_t file_size = 1500;
-    constexpr size_t block_size = 1024;
-    constexpr bool inject_eviction = false;
-    PageCacheProvider provider(cache, file, block_size, inject_eviction, /*bypass_if_missing=*/false, file_size);
-
-    /// Populate both blocks.
-    {
-        auto handle = provider.lookup(StoredObject{}, 0, ByteRange{0, file_size});
-        auto status = handle->status();
-        ASSERT_EQ(status.miss_ranges.size(), 2u);
-        EXPECT_EQ(status.miss_ranges[0].size, 1024u);
-        EXPECT_EQ(status.miss_ranges[1].offset, 1024u);
-        EXPECT_EQ(status.miss_ranges[1].size, 476u) << "tail block must be sized to valid bytes";
-
-        Rope data;
-        auto buf0 = std::make_shared<OwnedRopeBuffer>(1024);
-        std::memset(buf0->data(), '0', 1024);
-        data.append(RopeNode{buf0, 0, 1024, 0});
-        auto buf1 = std::make_shared<OwnedRopeBuffer>(476);
-        std::memset(buf1->data(), '1', 476);
-        data.append(RopeNode{buf1, 0, 476, 1024});
-        handle->put(ByteRange{0, 1024}, data.slice(ByteRange{0, 1024}));
-        handle->put(ByteRange{1024, 476}, data.slice(ByteRange{1024, 476}));
-    }
-
-    /// Now read across the tail block with a range that would extend past EOF
-    /// if the cell were full block_size. Even an explicit attempt to read
-    /// [1024, 2048) returns only 476 bytes — the cell physically has no more.
-    {
-        auto handle = provider.lookup(StoredObject{}, 0, ByteRange{1024, block_size});
-        auto status = handle->status();
-        ASSERT_EQ(status.hit_ranges.size(), 1u);
-        EXPECT_EQ(status.hit_ranges[0].size, 476u);
-
-        Rope rope = handle->get(ByteRange{1024, block_size});
-        EXPECT_EQ(rope.totalBytes(), 476u);
-    }
-}
-
 TEST(ReaderExecutor, UnknownSizeStreamsToEof)
 {
     /// When `StoredObject::bytes_size == UnknownSize`,
@@ -3077,99 +2765,13 @@ namespace
 {
 
 /// Mock cache that reports hits/misses at FULL block granularity, matching the
-/// production behaviour of PageCacheHandle and DiskCacheHandle. The existing
-/// MockCacheHandle clips ranges to the request which hides the cache-vs-cache
-/// overlap problem these tests target.
-///
-/// `put` records its arguments in `put_log` and refuses non-disjoint ropes
-/// (totalBytes != range.size) — production caches assume disjoint coverage,
-/// and DiskCacheHandle::put's flat_buf memcpy would overflow otherwise.
-class WideGranularityMockCacheHandle : public ICacheHandle
-{
-public:
-    WideGranularityMockCacheHandle(
-        ByteRange requested_,
-        std::unordered_map<size_t, String> & storage_,
-        std::vector<std::pair<ByteRange, size_t>> & put_log_,
-        size_t block_size_)
-        : storage(storage_), put_log(put_log_), block_size(block_size_)
-    {
-        size_t start_block = requested_.offset / block_size;
-        size_t end_block = (requested_.end() + block_size - 1) / block_size;
-        for (size_t b = start_block; b < end_block; ++b)
-        {
-            /// FULL block, NOT clipped to requested_.
-            ByteRange block_range{b * block_size, block_size};
-            if (storage.contains(b))
-                result.hit_ranges.push_back(block_range);
-            else
-                result.miss_ranges.push_back(block_range);
-        }
-    }
-
-    CacheLookupResult status() const override { return result; }
-
-    Rope get(ByteRange range) override
-    {
-        Rope rope;
-        size_t start_block = range.offset / block_size;
-        size_t end_block = (range.end() + block_size - 1) / block_size;
-        for (size_t b = start_block; b < end_block; ++b)
-        {
-            auto it = storage.find(b);
-            if (it == storage.end())
-                continue;
-            const auto & data = it->second;
-            auto buf = std::make_shared<OwnedRopeBuffer>(data.size());
-            std::memcpy(buf->data(), data.data(), data.size());
-            rope.append(RopeNode{buf, 0, data.size(), b * block_size});
-        }
-        return rope.slice(range);
-    }
-
-    size_t put(ByteRange range, Rope data) override
-    {
-        put_log.emplace_back(range, data.totalBytes());
-
-        /// Production caches assume disjoint coverage. If totalBytes doesn't
-        /// match range.size, the chain handed us duplicate coverage — refuse.
-        if (data.totalBytes() != range.size)
-            return 0;
-
-        size_t bytes_written = 0;
-        size_t start_block = range.offset / block_size;
-        size_t end_block = (range.end() + block_size - 1) / block_size;
-        for (size_t b = start_block; b < end_block; ++b)
-        {
-            if (storage.contains(b))
-                continue;
-            ByteRange block_range{b * block_size, block_size};
-            Rope slice = data.slice(block_range);
-            String content;
-            content.resize(slice.totalBytes());
-            size_t pos = 0;
-            for (const auto & node : slice.getNodes())
-            {
-                std::memcpy(content.data() + pos, node.data(), node.size);
-                pos += node.size;
-            }
-            bytes_written += content.size();
-            storage[b] = std::move(content);
-        }
-        return bytes_written;
-    }
-
-private:
-    std::unordered_map<size_t, String> & storage;
-    std::vector<std::pair<ByteRange, size_t>> & put_log;
-    size_t block_size;
-    CacheLookupResult result;
-};
+/// production behaviour of `PageCacheProvider` and `DiskCacheProvider`. A clipped
+/// per-request view would hide the cache-vs-cache overlap problem these tests target.
 
 /// Held read buffer over a run of resident FULL blocks. `read(sub)` clamps to its own
 /// range (shared-storage safety) and assembles the overlapping stored blocks, so it
-/// covers `sub` exactly. Mirrors `WideGranularityMockCacheHandle::get`.
-class WideGranularityReadBuffer : public CacheReadBuffer
+/// covers `sub` exactly.
+class WideGranularityReadBuffer : public CacheReader
 {
 public:
     WideGranularityReadBuffer(ByteRange range_in_file, std::unordered_map<size_t, String> & storage_, size_t block_size_)
@@ -3213,7 +2815,7 @@ private:
 /// with `(block_range, slice.totalBytes())` (always disjoint, so total == range.size),
 /// and advances `committed` per block (even on a first-writer-wins loss, so `complete`
 /// converges). A block `data` does not fully cover is left for a later window.
-class WideGranularityWriteBuffer : public CacheWriteBuffer
+class WideGranularityWriteBuffer : public CacheWriter
 {
 public:
     WideGranularityWriteBuffer(
@@ -3293,12 +2895,6 @@ class WideGranularityMockCache : public ICacheProvider
 public:
     WideGranularityMockCache(size_t block_size_, String name_)
         : block_size(block_size_), provider_name(std::move(name_)) {}
-
-    std::unique_ptr<ICacheHandle> lookup(const StoredObject &, size_t, ByteRange range) override
-    {
-        return std::make_unique<WideGranularityMockCacheHandle>(
-            range, storage, put_log, block_size);
-    }
 
     String name() const override { return provider_name; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
@@ -3493,9 +3089,9 @@ TEST(ReaderExecutor, ChainLowerCacheFilledFullyAfterRead)
         << "DiskCache must be filled with the full segment after the read (gap over-read)";
 }
 
-/// Every put across the chain must receive a rope with disjoint coverage —
+/// Every write across the chain must receive a rope with disjoint coverage —
 /// totalBytes == range.size. A rope with duplicate nodes would overflow
-/// DiskCacheHandle::put's flat_buf.
+/// the write buffer's flat copy.
 TEST(ReaderExecutor, ChainPutReceivesDisjointRope)
 {
     auto src = std::make_shared<MemorySourceReader>(
@@ -3604,25 +3200,9 @@ namespace
         ByteRange range_in_file;
     };
 
-    class TrackingCacheHandle : public ICacheHandle
-    {
-    public:
-        explicit TrackingCacheHandle(ByteRange range_) : range(range_) {}
-        CacheLookupResult status() const override
-        {
-            CacheLookupResult r;
-            r.miss_ranges.push_back(range);
-            return r;
-        }
-        Rope get(ByteRange) override { return {}; }
-        size_t put(ByteRange, Rope) override { return 0; }
-    private:
-        ByteRange range;
-    };
-
-    /// No-op write buffer: never commits (the source bytes are not cached), mirroring
-    /// the old `TrackingCacheHandle::put` returning 0. `write`/`read` are no-ops.
-    class TrackingWriteBuffer : public CacheWriteBuffer
+    /// No-op write buffer: never commits (the source bytes are not cached).
+    /// `write`/`read` are no-ops.
+    class TrackingWriteBuffer : public CacheWriter
     {
     public:
         explicit TrackingWriteBuffer(ByteRange aligned_range_) : aligned_range(aligned_range_) {}
@@ -3639,14 +3219,6 @@ namespace
     class TrackingCacheProvider : public ICacheProvider
     {
     public:
-        std::unique_ptr<ICacheHandle> lookup(
-            const StoredObject & object,
-            size_t object_file_offset,
-            ByteRange range_in_file) override
-        {
-            log.push_back(TrackedLookup{object.remote_path, object_file_offset, range_in_file});
-            return std::make_unique<TrackingCacheHandle>(range_in_file);
-        }
         String name() const override { return "Tracking"; }
         CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
@@ -4128,20 +3700,18 @@ TEST(ReaderExecutor, MemoryBackedFileBufferIsReadFully)
 /// backed by a REAL `FileCache`, force real eviction between windows, and
 /// assert the source connection is opened exactly once (no reset, no re-read).
 ///
-/// The other pin tests use a MOCK cache (`EvictableSegmentMockCache`) or test
-/// `DiskCacheHandle::pinSegmentAt` in isolation. This test closes the gap: it
-/// proves the executor's in-flight pin keeps the partially-downloaded segment
-/// non-releasable through an eviction flood that targets the REAL FileCache
-/// LRU/reserve machinery. A prior bug — `pinSegmentAt` reading the holder that
-/// `put` empties — was invisible to the mock but is caught here.
+/// The other pin tests use a MOCK cache (`EvictableSegmentMockCache`). This test
+/// closes the gap: it proves the executor's in-flight pin keeps the
+/// partially-downloaded segment non-releasable through an eviction flood that
+/// targets the REAL FileCache LRU/reserve machinery — exercising the real
+/// `DiskCacheWriter`/`CacheWriter::pin` path the mock can only approximate.
 TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsConnection)
 {
     DB::ServerUUID::setRandomForUnitTests();
 
     /// `FileCache::reserve` charges the per-query budget via
     /// `CurrentThread::getQueryId()`, so a real `ThreadStatus` + `QueryScope`
-    /// (with a query context) must be in scope — same setup as
-    /// `gtest_filecache.cpp`'s `DiskCacheHandlePinSurvivesEviction`.
+    /// (with a query context) must be in scope.
     ///
     /// Another test in the binary may have instantiated the `MainThreadStatus`
     /// singleton (e.g. via `MainThreadStatus::getInstance()`), leaving

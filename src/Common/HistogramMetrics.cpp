@@ -70,12 +70,12 @@ namespace HistogramMetrics
 
     Metric & ReaderExecutorCacheReadLatency = Factory::instance().registerMetric(
         "reader_executor_cache_read_microseconds",
-        "Per-call latency of ICacheHandle::get inside ReaderExecutor, in microseconds.",
+        "Per-call latency of CacheReader::read inside ReaderExecutor, in microseconds.",
         {10, 100, 1000, 5000, 20000, 100000, 500000, 2000000});
 
     Metric & ReaderExecutorCachePopulateLatency = Factory::instance().registerMetric(
         "reader_executor_cache_populate_microseconds",
-        "Per-call latency of ICacheHandle::put inside ReaderExecutor, in microseconds.",
+        "Per-call latency of CacheWriter::write inside ReaderExecutor, in microseconds.",
         {10, 100, 1000, 5000, 20000, 100000, 500000, 2000000});
 
     Metric & ReaderExecutorSourceReadLatency = Factory::instance().registerMetric(

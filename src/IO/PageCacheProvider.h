@@ -29,48 +29,7 @@ private:
 };
 
 
-/// ICacheHandle for PageCache. Holds pinned cells for the lookup duration.
-class PageCacheHandle : public ICacheHandle
-{
-public:
-    PageCacheHandle(
-        PageCacheFile file,
-        ByteRange requested,
-        PageCachePtr cache,
-        size_t block_size,
-        bool inject_eviction,
-        bool bypass_if_missing,
-        size_t file_size_in_bytes);
-
-    CacheLookupResult status() const override;
-    Rope get(ByteRange range) override;
-    size_t put(ByteRange range, Rope data) override;
-
-private:
-    struct Block
-    {
-        PageCacheByteRange byte_range;
-        UInt128 key_hash{};
-        PageCache::MappedPtr cell;  /// non-null for hits
-        bool is_hit = false;
-    };
-
-    PageCacheFile file;
-    PageCachePtr cache;
-    bool inject_eviction;
-    /// Mirrors `PageCacheSettings::read_from_page_cache_if_exists_otherwise_bypass_cache`.
-    /// When true, misses populate a *detached* cell (held by this handle but
-    /// not registered with the cache) — the data is usable for the lifetime
-    /// of the handle but doesn't pollute the global cache. Matches the
-    /// legacy `CachedInMemoryReadBufferFromFile` behaviour for bypass-mode
-    /// reads (background merges/mutations).
-    bool bypass_if_missing;
-    VectorWithMemoryTracking<Block> blocks;
-    LoggerPtr log = getLogger("PageCacheHandle");
-};
-
-
-/// ── NEW per-range buffer API (see `ICacheProvider.h`; coexists with `lookup`) ──
+/// ── Per-range buffer API (see `ICacheProvider.h`) ──
 
 /// Held, re-readable view of ONE resident (hit) file-level range. Owns the pinned
 /// `PageCache::MappedPtr` cell(s) of the whole-block(s) backing the range, so the
@@ -78,8 +37,8 @@ private:
 /// number of times; holds NO cursor and never mutates the cache. Page cells are
 /// whole blocks, so `readable() == range().end()` (no partial-prefix growth), and
 /// there is no deferred-LRU bump (page cache has no LRU touch on read). See
-/// `CacheReadBuffer` and the body of the legacy `PageCacheHandle::get`.
-class PageCacheReadBuffer : public CacheReadBuffer
+/// `CacheReader`.
+class PageCacheReader : public CacheReader
 {
 public:
     struct HeldCell
@@ -88,7 +47,7 @@ public:
         PageCache::MappedPtr cell;
     };
 
-    PageCacheReadBuffer(ByteRange range_in_file, std::vector<HeldCell> cells_)
+    PageCacheReader(ByteRange range_in_file, std::vector<HeldCell> cells_)
         : range_member(range_in_file), cells(std::move(cells_))
     {
     }
@@ -108,11 +67,11 @@ private:
 /// `PageCache::getOrSet`, first-writer-wins), adopted into `blocks`, and the page
 /// write buffer DOUBLES as a read buffer — the executor can serve a self-populated
 /// page block straight back from it. Page cache has no evictable in-flight segment,
-/// so `pin` keeps the default no-op. See `CacheWriteBuffer`.
-class PageCacheWriteBuffer : public CacheWriteBuffer
+/// so `pin` keeps the default no-op. See `CacheWriter`.
+class PageCacheWriter : public CacheWriter
 {
 public:
-    PageCacheWriteBuffer(
+    PageCacheWriter(
         PageCachePtr cache_,
         PageCacheFile file_,
         size_t block_size_,
@@ -155,14 +114,13 @@ private:
     ByteRange range_member;
     IntervalSet committed_ranges;
     std::vector<AdoptedBlock> blocks;
-    LoggerPtr log = getLogger("PageCacheWriteBuffer");
+    LoggerPtr log = getLogger("PageCacheWriter");
 };
 
-/// Read-only/lazy `CacheView` returned by `PageCacheProvider::planResidencyView`
-/// (and `lookupView`, which is the same read-only probe — page lookup never
-/// mutates). Holds the per-range hit read buffers (each pinning its block cells)
-/// and the cache-aligned miss entries. No deferred-LRU bump (page cache has none),
-/// so no special destructor. See `CacheView`.
+/// Read-only/lazy `CacheView` returned by `PageCacheProvider::planResidencyView`.
+/// Holds the per-range hit read buffers (each pinning its block cells) and the
+/// cache-aligned miss entries. No deferred-LRU bump (page cache has none), so no
+/// special destructor. See `CacheView`.
 class PageCacheView : public CacheView
 {
 public:
@@ -208,10 +166,6 @@ public:
     {
     }
 
-    std::unique_ptr<ICacheHandle> lookup(
-        const StoredObject & object,
-        size_t object_file_offset,
-        ByteRange range_in_file) override;
     String name() const override { return "PageCache"; }
     CacheTier tier() const override { return CacheTier::PageCache; }
     bool populatesOnMiss() const override { return !bypass_if_missing; }
@@ -223,9 +177,7 @@ public:
     size_t fetchTailAlignment() const override { return block_size; }
 
     /// Read-only residency probe: hit read buffers + cache-aligned writer-null misses
-    /// (writers come from `openWriteBuffers`). `lookupView` is left as the throwing
-    /// default - the executor uses `planResidencyView` + `openWriteBuffers`, and a
-    /// mutating combined probe has no use here (matches DiskCacheProvider).
+    /// (writers come from `openWriteBuffers`).
     CacheViewPtr planResidencyView(
         const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) override;
 
@@ -237,9 +189,9 @@ public:
         const std::vector<ByteRange> & aligned_miss_ranges) override;
 
 private:
-    /// Shared by `lookupView` / `planResidencyView`: read-only block-by-block
-    /// residency probe over `range_in_file`, coalescing adjacent hit blocks into
-    /// one `HitEntry` and adjacent miss blocks into one `MissEntry` (writer null).
+    /// Backs `planResidencyView`: read-only block-by-block residency probe over
+    /// `range_in_file`, coalescing adjacent hit blocks into one `HitEntry` and
+    /// adjacent miss blocks into one `MissEntry` (writer null).
     CacheViewPtr buildView(ByteRange range_in_file);
 
     PageCachePtr cache;

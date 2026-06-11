@@ -2293,7 +2293,7 @@ void ReaderExecutor::planResidencyWindow(size_t physical_start)
 
     /// Reset the in-flight segment pin BEFORE tearing down the held buffers
     /// (`[CF-plan-rebuild]`): the pin aliases a held write buffer's own bare segment ref,
-    /// so dropping it first makes `~DiskCacheWriteBuffer` the LAST owner and
+    /// so dropping it first makes `~DiskCacheWriter` the LAST owner and
     /// `FileSegment::complete` effective (otherwise a PARTIALLY_DOWNLOADED segment would
     /// stay un-shrunk and the next `openWriteBuffers` would alias the same segment in two
     /// buffers). The pin is re-established through the NEW buffer on the next
