@@ -1,0 +1,48 @@
+<!-- Regression coverage for top-level keys that are consumed outside `ServerSettings`
+     (read directly from the server config by various components). Every key here is
+     read somewhere in the codebase; if a future allowlist edit drops one of them, the
+     server will fail to start and this test will catch it. -->
+<clickhouse>
+    <proto_caps>
+        <send>notchunked</send>
+        <recv>notchunked</recv>
+    </proto_caps>
+    <enable_http_close_session>true</enable_http_close_session>
+    <enable_arrow_close_session>true</enable_arrow_close_session>
+    <hsts_max_age>0</hsts_max_age>
+    <ignore_table_dependencies_on_metadata_loading>1</ignore_table_dependencies_on_metadata_loading>
+    <allow_reserved_database_name_tmp_convert>1</allow_reserved_database_name_tmp_convert>
+    <keeper_map_keys_limit>0</keeper_map_keys_limit>
+    <umask>027</umask>
+    <distributed_ddl_keeper_max_retries>5</distributed_ddl_keeper_max_retries>
+    <distributed_ddl_keeper_initial_backoff_ms>100</distributed_ddl_keeper_initial_backoff_ms>
+    <distributed_ddl_keeper_max_backoff_ms>5000</distributed_ddl_keeper_max_backoff_ms>
+    <schema_inference_cache_max_elements_for_hdfs>1024</schema_inference_cache_max_elements_for_hdfs>
+    <schema_inference_cache_max_elements_for_local>1024</schema_inference_cache_max_elements_for_local>
+    <resource_overload_warnings>
+        <memory_overload_warn_ratio>0.9</memory_overload_warn_ratio>
+    </resource_overload_warnings>
+    <nats>
+        <user>nats_user</user>
+        <password>nats_password</password>
+    </nats>
+    <azure>
+        <use_native_copy>true</use_native_copy>
+    </azure>
+    <library_bridge>
+        <host>localhost</host>
+        <port>9012</port>
+    </library_bridge>
+    <odbc_bridge>
+        <host>localhost</host>
+        <port>9018</port>
+    </odbc_bridge>
+    <jdbc_bridge>
+        <host>localhost</host>
+        <port>9019</port>
+    </jdbc_bridge>
+    <!-- Per-user HDFS client section: `hdfs_USERNAME` with an arbitrary user name. -->
+    <hdfs_testuser>
+        <hadoop_kerberos_principal>testuser@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
+    </hdfs_testuser>
+</clickhouse>

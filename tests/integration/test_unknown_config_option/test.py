@@ -60,6 +60,16 @@ node_include_from_in_configd = cluster_include_from_in_configd.add_instance(
     ],
 )
 
+# Positive case: top-level keys that are consumed outside `ServerSettings`
+# (read directly from the server config by `TCPHandler`, `HTTPHandler`,
+# `TablesLoader`, bridges, etc.) must be accepted. Regression coverage so that
+# future allowlist edits don't reject configs that were valid before.
+cluster_existing_keys = ClickHouseCluster(__file__, name="existing_keys")
+node_existing_keys = cluster_existing_keys.add_instance(
+    "node_existing_keys",
+    main_configs=["configs/config.d/existing_keys.xml"],
+)
+
 # Reload regression: the unknown-key check also runs on `SYSTEM RELOAD CONFIG`,
 # not only at startup. Use a separate cluster that starts with a minimal
 # placeholder config (no `<http_handlers>`) so that the test can later inject
@@ -134,6 +144,13 @@ def start_include_from_in_configd_cluster():
 
 
 @pytest.fixture(scope="module")
+def start_existing_keys_cluster():
+    cluster_existing_keys.start()
+    yield
+    cluster_existing_keys.shutdown()
+
+
+@pytest.fixture(scope="module")
 def start_reload_cluster():
     cluster_reload.start()
     yield
@@ -193,6 +210,13 @@ def test_include_from_source_in_configd_accepted(
     assert (
         node_include_from_in_configd.query("SELECT 1").strip() == "1"
     )
+
+
+def test_existing_keys_outside_server_settings_accepted(start_existing_keys_cluster):
+    # If the unknown-key validator rejected any of the keys in
+    # `existing_keys.xml` (all of which are read by C++ code outside
+    # `ServerSettings`), the node would have failed to start.
+    assert node_existing_keys.query("SELECT 1").strip() == "1"
 
 
 def test_reload_rejects_unknown_then_accepts_config_ref(start_reload_cluster):

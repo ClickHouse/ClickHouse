@@ -1885,6 +1885,10 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "proxy",
         "enable_http_stacktrace",
         "enable_verbose_replicas_status",
+        "proto_caps",
+        "enable_http_close_session",
+        "enable_arrow_close_session",
+        "hsts_max_age",
 
         /// Monitoring and metrics
         "graphite",
@@ -1934,11 +1938,19 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// Engine-specific
         "kafka",
         "rabbitmq",
+        "nats",
         "s3",
+        "azure",
         "rocksdb",
         "distributed",
         "mqs",
         "kafka_consumer_hang",
+        "iceberg_biglake_metadata_service_hosts",
+
+        /// External bridges
+        "library_bridge",
+        "odbc_bridge",
+        "jdbc_bridge",
 
         /// Sections used in private builds (shared catalog, distributed cache, stateless workers, cloud readiness)
         "shared_database_catalog",
@@ -1981,8 +1993,11 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "default_session_timeout",
         "max_session_timeout",
         "keeper_map_path_prefix",
+        "keeper_map_keys_limit",
         "user_defined_zookeeper_path",
+        "user_defined_path",
         "workload_zookeeper_path",
+        "workload_path",
         "warning_supress_regexp",
         "enable_system_unfreeze",
         "disable_insertion_and_mutation",
@@ -1995,6 +2010,17 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "test",
         "include",
         "include_endpoint",
+        "ignore_table_dependencies_on_metadata_loading",
+        "allow_reserved_database_name_tmp_convert",
+        "resource_overload_warnings",
+        "distributed_ddl_keeper_max_retries",
+        "distributed_ddl_keeper_initial_backoff_ms",
+        "distributed_ddl_keeper_max_backoff_ms",
+
+        /// Daemon-level settings (read by `BaseDaemon` before the server starts)
+        "umask",
+        "pid",
+        "pending_signals",
 
         /// Obsolete settings that may still appear in long-lived configurations
         /// (e.g., cloud installations carrying historical settings). Kept here so
@@ -2022,6 +2048,8 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "schema_inference_cache_max_elements_for_file",
         "schema_inference_cache_max_elements_for_url",
         "schema_inference_cache_max_elements_for_azure",
+        "schema_inference_cache_max_elements_for_hdfs",
+        "schema_inference_cache_max_elements_for_local",
 
         /// Config processing
         "include_from",
@@ -2048,6 +2076,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     static const std::vector<String> known_prefixes = {
         "graphite_rollup",
         "http_handlers",
+        /// Per-user HDFS client sections: `<hdfs_USERNAME>` where USERNAME is arbitrary
+        /// (the global `<hdfs>` section is covered by the `hdfs.libhdfs3_conf` setting path).
+        "hdfs",
     };
 
     /// Collect top-level config sections that are referenced from elsewhere in the config.
