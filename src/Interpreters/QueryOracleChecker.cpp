@@ -628,6 +628,27 @@ bool hasWithFillAnywhere(const ASTPtr & ast)
     return false;
 }
 
+/// True if any table expression in the query uses `FINAL`. FINAL's dedup is
+/// global over the table's row versions and is NOT distributive over a WHERE
+/// predicate: the TLP rewrites split rows into `p` / `NOT p` / `p IS NULL`
+/// branches with `UNION ALL`, and FINAL applied within each branch can keep a
+/// different "winning" version per branch, so a key whose versions straddle
+/// the partitions survives in more than one branch — the partitioned result
+/// then has more rows than the reference. Not a bug, just non-distributive;
+/// skip the whole query. Checked recursively (FINAL may be in a subquery).
+bool usesFinalAnywhere(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * table_expr = ast->as<ASTTableExpression>())
+        if (table_expr->final)
+            return true;
+    for (const auto & child : ast->children)
+        if (usesFinalAnywhere(child))
+            return true;
+    return false;
+}
+
 /// ASOF JOIN tie-breaking among equal asof-column values is
 /// implementation-defined, so which right-side row a left row pairs with can
 /// change between plans — observed as a `Subquery wrap` false mismatch.
@@ -2267,6 +2288,12 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (hasWithFillAnywhere(query_ast))
     {
         LOG_TRACE(logger, "Oracle skip: ORDER BY ... WITH FILL (synthesises order-dependent rows)");
+        return false;
+    }
+
+    if (usesFinalAnywhere(query_ast))
+    {
+        LOG_TRACE(logger, "Oracle skip: FINAL (dedup is not distributive over WHERE partitions)");
         return false;
     }
 
