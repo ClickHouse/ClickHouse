@@ -216,6 +216,15 @@ private:
     /// `const ReadPlanGeometry &`.
     struct ReadPlanGeometry;
 
+    /// The two tracks of `readNextWindow`, dispatched by `residentAt(cursor)`.
+    /// `serveCacheBlock` streams a granular block of the resident run straight from the
+    /// plan's held cache readers (no source, no fill); `coverWindow` is the descending
+    /// path - it consumes an in-flight prefetch for the gap or reads it synchronously,
+    /// fills the caches, and bounds the read to one plan gap. Both take the physical
+    /// cursor and the remaining-bytes budget and return the delivered (logical-shifted) rope.
+    Rope serveCacheBlock(size_t position_phys, size_t to_read);
+    Rope coverWindow(size_t position_phys, size_t to_read);
+
     /// Foreground assembler for `physical_window`: resident bytes from the plan, the
     /// rest from the source, then the cache backfill + the Strategy-A pin. Reached by
     /// `initDecryption` (header) and the two synchronous gap reads in `readNextWindow` -
