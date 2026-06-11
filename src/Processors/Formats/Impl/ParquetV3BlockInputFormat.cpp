@@ -27,7 +27,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
+static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
 {
     Parquet::ReadOptions options;
     options.format = format_settings;
@@ -132,23 +132,8 @@ Chunk ParquetV3BlockInputFormat::read()
         temp_prefetcher.init(in, read_options, parser_shared_resources);
         parquet::format::FileMetaData file_metadata = getFileMetadata(temp_prefetcher);
 
-        size_t num_rows = 0;
-        if (buckets_to_read)
-        {
-            /// Only count rows in the assigned row groups. Otherwise multiple sources
-            /// reading buckets of the same file would each report the file's total.
-            for (size_t rg : buckets_to_read->row_group_ids)
-            {
-                if (rg < file_metadata.row_groups.size())
-                    num_rows += size_t(file_metadata.row_groups[rg].num_rows);
-            }
-        }
-        else
-        {
-            num_rows = size_t(file_metadata.num_rows);
-        }
 
-        auto chunk = getChunkForCount(num_rows);
+        auto chunk = getChunkForCount(size_t(file_metadata.num_rows));
         chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
 
         reported_count = true;
@@ -255,11 +240,11 @@ void ParquetFileBucketInfo::serialize(WriteBuffer & buffer)
 
 void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
 {
-    size_t size_chunks;
+    size_t size_chunks = 0;
     readVarUInt(size_chunks, buffer);
     row_group_ids = std::vector<size_t>{};
     row_group_ids.resize(size_chunks);
-    size_t bucket;
+    size_t bucket = 0;
     for (size_t i = 0; i < size_chunks; ++i)
     {
         readVarUInt(bucket, buffer);
@@ -296,6 +281,7 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
     return std::make_shared<ParquetFileBucketInfo>(std::move(filtered));
 }
 
+void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances);
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
 {
     instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
@@ -338,35 +324,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     return result;
 }
 
-std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBucketsByCount(size_t target_count, ReadBuffer & buf, const FormatSettings & format_settings_)
-{
-    std::atomic<int> is_stopped = false;
-    auto arrow_file = asArrowFile(buf, format_settings_, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, nullptr);
-    auto metadata = parquet::ReadMetaData(arrow_file);
-    const size_t num_row_groups = metadata->num_row_groups();
-
-    if (target_count == 0 || num_row_groups == 0)
-        return {};
-
-    /// Distribute row groups across at most target_count contiguous chunks. Each
-    /// chunk becomes a single ParquetFileBucketInfo containing several row groups,
-    /// so the caller gets one source per chunk and no row group is dropped.
-    const size_t num_chunks = std::min(target_count, num_row_groups);
-    std::vector<FileBucketInfoPtr> result;
-    result.reserve(num_chunks);
-    for (size_t g = 0; g < num_chunks; ++g)
-    {
-        size_t lo = g * num_row_groups / num_chunks;
-        size_t hi = (g + 1) * num_row_groups / num_chunks;
-        std::vector<size_t> ids;
-        ids.reserve(hi - lo);
-        for (size_t k = lo; k < hi; ++k)
-            ids.push_back(k);
-        result.push_back(std::make_shared<ParquetFileBucketInfo>(ids));
-    }
-    return result;
-}
-
+void registerInputFormatParquet(FormatFactory & factory);
 void registerInputFormatParquet(FormatFactory & factory)
 {
     factory.registerFileBucketInfo(
@@ -389,8 +347,12 @@ void registerInputFormatParquet(FormatFactory & factory)
            const ContextPtr & context) -> InputFormatPtr
         {
             size_t min_bytes_for_seek
-                = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
-            ParquetMetadataCachePtr metadata_cache = context->getParquetMetadataCache();
+                = is_remote_fs ? read_settings.remote_fs_settings.min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
+            /// `tryGet` keeps the metadata-aware creator usable from contexts that don't
+            /// initialise the cache (e.g. the client side of `INSERT ... FROM INFILE`).
+            /// In such contexts we just don't memoise the footer — the format itself works
+            /// correctly with a null cache.
+            ParquetMetadataCachePtr metadata_cache = context->tryGetParquetMetadataCache();
             return std::make_shared<ParquetV3BlockInputFormat>(
                 buf,
                 std::make_shared<const Block>(sample),
@@ -413,7 +375,7 @@ void registerInputFormatParquet(FormatFactory & factory)
         FormatFilterInfoPtr format_filter_info) -> InputFormatPtr
     {
         size_t min_bytes_for_seek
-            = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
+            = is_remote_fs ? read_settings.remote_fs_settings.min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
         return std::make_shared<ParquetV3BlockInputFormat>(
             buf,
             std::make_shared<const Block>(sample),
@@ -432,6 +394,7 @@ void registerInputFormatParquet(FormatFactory & factory)
     });
 }
 
+void registerParquetSchemaReader(FormatFactory & factory);
 void registerParquetSchemaReader(FormatFactory & factory)
 {
     factory.registerSplitter("Parquet", []
@@ -463,6 +426,8 @@ void registerParquetSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatParquet(FormatFactory &);
+void registerParquetSchemaReader(FormatFactory &);
 void registerInputFormatParquet(FormatFactory &)
 {
 }

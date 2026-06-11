@@ -131,9 +131,16 @@ public:
     bool supportsDataflowStatisticsCollection() const override { return true; }
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
 
+    void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_);
+
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
     void updateOutputHeader() override;
+
+    /// Adds a per-stream `LimitByTransform` before sorted streams are merged into one.
+    /// This reduces rows processed by the final merge and later pipeline steps.
+    /// It is applied only when `LIMIT BY` keys are a prefix of `stream_sort_desc`.
+    void addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, const SortDescription & stream_sort_desc);
 
     static void mergeSorting(
         QueryPipelineBuilder & pipeline,
@@ -174,6 +181,10 @@ private:
     TopKThresholdTrackerPtr threshold_tracker;
 
     Settings sort_settings;
+
+    /// See `pushLimitByIntoSort`. Empty means no hint.
+    Names limit_by_columns;
+    UInt64 limit_by_group_length = 0;
 };
 
 }
