@@ -412,7 +412,16 @@ finalizeAnalysis(const AnalysisPlan & plan, const std::vector<ChunkResult> & chu
 
     /// Persist for the next query: the verdict depends only on the column's data,
     /// so any predicate of the matching class on the same column will hit this.
-    if (plan.cache && plan.table_uuid != UUIDHelpers::Nil)
+    /// Only write when the analyzed ranges cover the whole part: cache readers treat
+    /// the entry as the complete per-part verdict, so a partial-range analysis would
+    /// leave uninspected marks cached as "not prunable" and permanently suppress
+    /// pruning for them.
+    size_t analyzed_marks = 0;
+    for (const auto & range : plan.ranges)
+        if (range.begin < range.end)
+            analyzed_marks += range.end - range.begin;
+
+    if (plan.cache && plan.table_uuid != UUIDHelpers::Nil && analyzed_marks == plan.total_marks)
     {
         writeBitmapToCache(*plan.cache, plan.table_uuid, plan.cache_part_name,
             syntheticConditionHash(CACHE_DOMAIN_DEFAULTS, plan.column_name),
