@@ -1,0 +1,25 @@
+--- direct INNER: NaN probe must not match (only 1,2) ---
+1	one
+2	two
+--- direct LEFT: NaN probe -> default empty ---
+1	one
+2	two
+nan	
+--- direct LEFT join_use_nulls: NaN probe -> NULL ---
+1	one
+2	two
+nan	\N
+--- direct LEFT SEMI: NaN probe not semi-matched ---
+1
+2
+--- direct LEFT ANTI: NaN probe kept (no match) ---
+nan
+--- direct INNER: non-NaN float keys still match (no regression) ---
+1	one
+2	two
+--- direct INNER Float32: NaN probe must not match ---
+1	f1
+--- direct INNER String key "nan" still matches (not a float NaN) ---
+a	va
+b	vb
+nan	vstr
