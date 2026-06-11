@@ -4,3 +4,5 @@ right	1
 full	1
 semi	1
 anti	1
+nullable_probe_inner	1
+nullable_probe_left	1
