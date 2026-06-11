@@ -38,6 +38,7 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
@@ -1405,6 +1406,13 @@ int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {
     DB::MainThreadStatus::getInstance();
+
+    /// Join global-pool threads before the statics they may have accessed are destroyed.
+    /// That way, accesses happen-before destruction.
+    SCOPE_EXIT_SAFE({
+        DB::StaticThreadPool::shutdownAll();
+        GlobalThreadPool::shutdown();
+    });
 
     try
     {
