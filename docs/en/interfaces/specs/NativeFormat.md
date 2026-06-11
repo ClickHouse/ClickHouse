@@ -221,7 +221,9 @@ The `kind_stack` byte enumerates a non-default per-column serialization:
    - `v` with bit 62 set (`END_OF_GRANULE_FLAG`): the value with the flag cleared = the number of trailing default positions after the last non-default. This marks the end of the offset stream for the block.
 2. **Values stream** — `count` non-default values densely encoded in the inner type, where `count` is the number of non-EOG VarUInts read above.
 
-A decoder reconstructs a dense column of `num_rows` entries by filling every non-explicit position with the inner type's zero value (`0` for integers and floats, `""` for `String`, `0` days for `Date`, and so on).
+A decoder reconstructs a dense column of `num_rows` entries by filling every non-explicit position with the inner type's default value (`0` for integers and floats, `""` for `String`, `0` days for `Date`, and so on).
+
+A sparse `Nullable(T)` column is a special case, because the default value of `Nullable(T)` is **NULL**. The sparse encoding drops the usual `Nullable` null-map stream entirely: the offset stream identifies the non-default — that is, non-NULL — positions, the values stream holds only those non-NULL values densely in `T`, and every non-explicit position reconstructs as NULL. A decoder must therefore *not* look for a null map in the values stream, and must *not* fill the gaps with a present `0`; it fills them with NULL.
 
 **Replicated wire format.** When `kind_stack = 0x04`, the column `data` is a dictionary: a list of distinct element values plus a per-row index into that list (the same lookup shape as `LowCardinality`).
 
