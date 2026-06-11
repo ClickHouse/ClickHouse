@@ -521,6 +521,14 @@ const std::unordered_set<String> truncating_settings = {
     /// for session leakage, but an inline `SETTINGS` clause survives in the
     /// clones and overrides the pin, so gate it here too.
     "aggregate_functions_null_for_empty",
+    /// Same asymmetry from the other direction: with this on, an aggregation
+    /// with no GROUP BY over an *empty* input returns ZERO rows instead of one
+    /// default row. NoREC's `count()` over an empty (always-false WHERE)
+    /// subquery then yields no row, while the `countIf` form over the
+    /// non-empty table yields one `0` row — a false mismatch. (This was the
+    /// cause of the long-unreproducible NoREC count()=NULL family, surfaced
+    /// once mismatch reproducers started carrying their active settings.)
+    "empty_result_for_aggregation_by_empty_set",
     /// Appends an extremes block (blank separator + min/max rows) to every
     /// result; the oracle's row collection would count those as data rows.
     "extremes",
@@ -912,6 +920,9 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     /// becomes NULL while `countIf` still aggregates every row and returns 0.
     /// Pin it off so both sides of every comparison use standard semantics.
     oracle_context->setSetting("aggregate_functions_null_for_empty", Field(false));
+    /// See `truncating_settings`: with this on, `count()` over an empty input
+    /// returns zero rows while the NoREC `countIf` form returns one `0` row.
+    oracle_context->setSetting("empty_result_for_aggregation_by_empty_set", Field(false));
     /// Neutralize session-leaked read/result caps (a seed's `SET
     /// max_rows_to_read = N, read_overflow_mode = 'break'` would truncate
     /// oracle sub-queries asymmetrically — see `truncating_settings`).
