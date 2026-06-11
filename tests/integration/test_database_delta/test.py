@@ -206,14 +206,16 @@ def _capture_spark_hang_diagnostics(node):
         print(f"Spark hang diag: ss snapshot failed: {str(e)}")
 
 
-# A healthy Spark invocation finishes in well under a minute; the only thing
-# that exceeds this is a hung session, so a single attempt gets a generous
-# margin while keeping two attempts within the per-test pytest timeout.
-SPARK_QUERY_ATTEMPT_TIMEOUT = 300
+# A healthy Spark invocation finishes in well under a minute; only a hung
+# session runs long. Non-retry callers keep the original single-attempt budget;
+# retry-enabled callers use a shorter per-attempt budget so two attempts still
+# fit the per-test pytest timeout (900s).
+SPARK_QUERY_TIMEOUT = 600
+SPARK_QUERY_RETRY_ATTEMPT_TIMEOUT = 300
 SPARK_QUERY_MAX_ATTEMPTS = 2
 
 
-def _run_spark_query_once(node, query_text):
+def _run_spark_query_once(node, query_text, timeout):
     # Kill any lingering Spark processes and remove the Derby metastore
     # before starting a new Spark session. The metastore_db is created inside
     # /spark-3.5.4-bin-hadoop3/ because spark-sql is run with cd to that directory.
@@ -250,7 +252,7 @@ def _run_spark_query_once(node, query_text):
         -S -e "{query_text}"
     """,
         ],
-        timeout=SPARK_QUERY_ATTEMPT_TIMEOUT,
+        timeout=timeout,
     )
 
 
@@ -264,10 +266,15 @@ def execute_spark_query(node, query_text, retry_on_timeout=False):
     # duplicate INSERT data. Callers set retry_on_timeout=True only after making
     # their batch idempotent (CREATE ... IF NOT EXISTS, INSERT OVERWRITE) or for
     # read-only queries. Only the hang is retried, real errors are re-raised.
-    max_attempts = SPARK_QUERY_MAX_ATTEMPTS if retry_on_timeout else 1
+    if retry_on_timeout:
+        max_attempts = SPARK_QUERY_MAX_ATTEMPTS
+        attempt_timeout = SPARK_QUERY_RETRY_ATTEMPT_TIMEOUT
+    else:
+        max_attempts = 1
+        attempt_timeout = SPARK_QUERY_TIMEOUT
     for attempt in range(1, max_attempts + 1):
         try:
-            result = _run_spark_query_once(node, query_text)
+            result = _run_spark_query_once(node, query_text, attempt_timeout)
             break
         except Exception as e:
             is_timeout = "timed out after" in str(e)
