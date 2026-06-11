@@ -51,6 +51,18 @@ public:
             ///
             /// This serialization is used in Native format only for easier support for Dynamic type in clients.
             FLATTENED = 3,
+            /// NARROWED serialization (in-part variant of V4):
+            /// - DynamicStructure stream:
+            ///     V3-style header (variant list + statistics)
+            ///     <narrowed_type encoded with `encodeDataType`>
+            ///     <bool: stored_as_nullable>
+            /// - DynamicData stream:
+            ///     The substreams of `Nullable(narrowed_type)` (or just `narrowed_type` when
+            ///     `stored_as_nullable` is false). No Variant discriminator/offset streams.
+            ///
+            /// Only chosen by the writer when statistics are reliable and indicate a single non-empty
+            /// variant. Used in MergeTree only; client/Native protocol always uses V3 or FLATTENED.
+            NARROWED = 5,
         };
 
         Value value;
@@ -147,6 +159,7 @@ public:
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
     SerializationPtr createSerializationForType(const DataTypePtr & type) const;
+    const SerializationInfoSettings & getSerializationInfoSettings() const { return serialization_info_settings; }
 
 private:
     friend SerializationDynamicElement;
@@ -157,6 +170,12 @@ private:
         DataTypePtr variant_type;
         size_t num_dynamic_types{};
         ColumnDynamic::StatisticsPtr statistics;
+
+        /// For NARROWED serialization only.
+        /// Concrete variant type that the part was narrowed to (without Nullable wrapper).
+        DataTypePtr narrowed_type;
+        /// Whether the on-disk data is `Nullable(narrowed_type)` (true) or just `narrowed_type` (false).
+        bool narrowed_stored_as_nullable = false;
 
         /// For flattened serialization only.
         DataTypes flattened_data_types;

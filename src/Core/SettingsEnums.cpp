@@ -429,7 +429,8 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"v1", MergeTreeDynamicSerializationVersion::V1},
      {"v2", MergeTreeDynamicSerializationVersion::V2},
-     {"v3", MergeTreeDynamicSerializationVersion::V3}})
+     {"v3", MergeTreeDynamicSerializationVersion::V3},
+     {"v4", MergeTreeDynamicSerializationVersion::V4}})
 
 IMPLEMENT_SETTING_ENUM(
     SearchOrphanedPartsDisks,

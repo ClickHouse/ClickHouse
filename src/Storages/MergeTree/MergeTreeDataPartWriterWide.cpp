@@ -126,6 +126,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
 ISerialization::EnumerateStreamsSettings MergeTreeDataPartWriterWide::getEnumerateSettings(const MergeTreeWriterSettings & settings_)
 {
     ISerialization::EnumerateStreamsSettings enumerate_settings;
+    enumerate_settings.dynamic_serialization_version = settings_.dynamic_serialization_version;
     enumerate_settings.object_serialization_version = settings_.object_serialization_version;
     enumerate_settings.object_shared_data_serialization_version = settings_.object_shared_data_serialization_version;
     enumerate_settings.object_shared_data_buckets = settings_.object_shared_data_buckets;

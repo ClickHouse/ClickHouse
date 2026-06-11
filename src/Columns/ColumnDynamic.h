@@ -43,6 +43,24 @@ public:
         /// For shared variant we store statistics only for first 256 variants (should cover almost all cases and it's not expensive).
         static constexpr const size_t MAX_SHARED_VARIANT_STATISTICS_SIZE = 256;
         UnorderedMapWithMemoryTracking<String, size_t> shared_variants_statistics;
+
+        /// Number of rows whose discriminator is `ColumnVariant::NULL_DISCRIMINATOR`.
+        ///   - `std::nullopt` — the producer did not track NULL counts (e.g., a V3 on-disk part
+        ///     read with `object_and_dynamic_read_statistics`). Treat as "unknown".
+        ///   - `0` — the producer guarantees there are no NULL rows.
+        ///   - `> 0` — at least this many NULL rows are present.
+        /// Used by the `v4` narrowing decision to know whether to wrap the on-disk column in
+        /// `Nullable(T)` or store it as just `T`. Only consult when `reliable == true`.
+        std::optional<size_t> null_count;
+
+        /// True only when these statistics are an accurate full-part count of variant frequencies.
+        /// Calculated-in-memory and read-from-Wide-suffix statistics are reliable.
+        /// Statistics inherited from a pipeline (filter/permute/replicate) or read from a Compact
+        /// part prefix (which only reflects the first granule) are not reliable. Optimizations that
+        /// change on-disk layout based on statistics (e.g., Dynamic narrowing) must check this flag.
+        bool reliable = true;
+
+        bool isReliable() const { return reliable; }
     };
 
     using StatisticsPtr = std::shared_ptr<const Statistics>;
@@ -222,6 +240,8 @@ public:
     void expand(const Filter & mask, bool inverted) override
     {
         variant_column_ptr->expand(mask, inverted);
+        /// `expand` inserts NULL_DISCRIMINATOR rows; cached statistics no longer match the row set.
+        statistics.reset();
     }
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override

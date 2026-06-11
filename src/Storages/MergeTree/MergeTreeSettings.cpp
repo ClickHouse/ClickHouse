@@ -356,6 +356,10 @@ namespace ErrorCodes
     - `v1`
     - `v2`
     - `v3`
+    - `v4` (experimental): adds single-type narrowing. When part-level statistics show a Dynamic
+      column holds rows of exactly one variant type (possibly with NULLs), the on-disk layout is
+      collapsed to `Nullable(T)` instead of full Variant streams. Other parts continue to use the
+      `v3` layout. Reading remains compatible with `v3` parts.
     )", 0) \
     DECLARE(Bool, propagate_types_serialization_versions_to_nested_types, true, R"(
     If true, serialization versions like string_serialization_version will be propagated inside nested types like Array/Map/Nullable/JSON/etc. If disabled, the serialization version will take affect only to top-level columns of this type and Tuple el
@@ -2374,6 +2378,18 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         }
     }
 
+    /// `dynamic_serialization_version` is a tier-0 setting (`v1`-`v3` are PRODUCTION), but the `v4`
+    /// value introduces a new on-disk layout that older readers reject. Treat the `v4` value itself
+    /// as EXPERIMENTAL.
+    if (!allow_experimental
+        && (*this)[MergeTreeSetting::dynamic_serialization_version].changed
+        && (*this)[MergeTreeSetting::dynamic_serialization_version] == MergeTreeDynamicSerializationVersion::V4)
+    {
+        throw Exception(
+            ErrorCodes::READONLY,
+            "Cannot set 'dynamic_serialization_version = v4'. The `v4` layout is EXPERIMENTAL and "
+            "is disabled in the server config ('allow_feature_tier')");
+    }
 
     /// Skip these checks when the background pool was auto-lowered by the low-memory heuristic
     /// AND the corresponding table-level threshold is at its default. On small systems the pool

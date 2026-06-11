@@ -1,0 +1,20 @@
+-- 1. replica 1
+500	0	499
+-- 1. replica 2 (replicated)
+500	0	499
+-- 2. both replicas after cross-insert
+1000
+1000
+Int64	500
+String	500
+-- 3. after merge + sync
+1000
+1000
+Int64	500
+String	500
+0
+1
+2
+val_0
+val_1
+val_10

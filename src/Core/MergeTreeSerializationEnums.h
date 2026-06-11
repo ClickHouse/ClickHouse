@@ -42,6 +42,10 @@ enum class MergeTreeDynamicSerializationVersion : uint8_t
     V1,
     V2,
     V3,
+    /// V4 is V3 plus single-type "narrowing": when statistics show the column holds rows of exactly
+    /// one variant type (possibly with NULLs), the data is stored as `Nullable(T)` instead of full
+    /// Variant streams. Falls back to V3-style layout otherwise. Not enabled by default.
+    V4,
 };
 
 enum class MergeTreeMapSerializationVersion : uint8_t
