@@ -79,7 +79,7 @@ SSH challenge-response authentication is available from protocol version 54466 o
 
 ### Inter-server secret {#inter-server-secret}
 
-For distributed query execution, servers authenticate to one another with a shared secret string carried in the [`Query`](#query) message (the `cluster_secret` field). This is gated by the `INTERSERVER_SECRET` feature (v54441). External clients always send an empty string here.
+For distributed query execution, servers authenticate to one another by proving knowledge of a shared secret — without putting the secret on the wire. Each Query carries a 32-byte SHA-256 `auth_hash` in [`Query`](#query) field 4, computed over a salt, nonce, the configured secret, and the query, which the receiving server recomputes and compares. This is gated by the `INTERSERVER_SECRET` feature (v54441). External clients always send an empty string here. See [Inter-server authentication](#inter-server-authentication).
 
 ## Versioning and feature gates {#versioning-and-feature-gates}
 
