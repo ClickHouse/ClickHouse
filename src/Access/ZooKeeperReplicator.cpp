@@ -310,6 +310,7 @@ bool ZooKeeperReplicator::removeEntity(const UUID & id, bool throw_if_not_exists
     if (!ok)
         return false;
 
+    std::lock_guard refresh_lock{refresh_mutex};
     std::lock_guard lock{mutex};
     removeEntityNoLock(id);
     return true;
@@ -569,6 +570,13 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
 {
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Refreshing entities list");
 
+    /// Reading from ZooKeeper is one synchronous round trip per entity and must not happen under
+    /// `mutex`: findEntity (authentication, Context::getAccess) blocks on it, so holding it across
+    /// a slow refresh stalls every query on the server. `refresh_mutex` keeps the reads and the
+    /// publication of their results atomic with respect to other read->publish sequences, so this
+    /// snapshot can never overwrite the result of a newer read.
+    std::lock_guard refresh_lock{refresh_mutex};
+
     if (all)
     {
         /// It doesn't make sense to keep the queue because we will reread everything in this function.
@@ -586,11 +594,6 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
     entity_uuids.reserve(entity_uuid_strs.size());
     for (const String & entity_uuid_str : entity_uuid_strs)
         entity_uuids.emplace_back(parseUUID(entity_uuid_str));
-
-    /// Reading entities is one synchronous ZooKeeper round trip per entity and must not happen
-    /// under `mutex`: findEntity (authentication, Context::getAccess) blocks on it, so holding it
-    /// across a slow refresh stalls every query on the server. Entities changed concurrently while
-    /// we read without the lock are caught up via the watches these reads register.
 
     if (all)
     {
@@ -619,13 +622,19 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
             }
         }
         for (const auto & uuid : new_uuids)
-            refreshEntity(zookeeper, uuid);
+            refreshEntityImpl(zookeeper, uuid);
     }
 
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Refreshing entities list finished");
 }
 
 void ZooKeeperReplicator::refreshEntity(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id)
+{
+    std::lock_guard refresh_lock{refresh_mutex};
+    refreshEntityImpl(zookeeper, id);
+}
+
+void ZooKeeperReplicator::refreshEntityImpl(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id)
 {
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Refreshing entity {}", toString(id));
 
