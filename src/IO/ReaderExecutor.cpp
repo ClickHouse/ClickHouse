@@ -604,21 +604,21 @@ void ReaderExecutor::maybeTriggerPrefetch()
     if (probe_size == 0)
         return;
 
-    /// Gap-keyed read-ahead: prefetch only a GAP cursor. A resident cursor is served
-    /// straight from cache by the next `readNextWindow`, so prefetching it is pure
-    /// coordination overhead; skipping here also preserves the invariant that no
-    /// prefetch is in flight at a resident cursor (the resident fast-path never races
-    /// the worker over `connection`).
+    /// Read-ahead the FIRST GAP in the plan at or after the cursor (`nextGapStart`), even
+    /// when the cursor itself is resident: the gap fills in the background while the resident
+    /// run before it streams from cache (the resident/prefetch overlap). Skip only when the
+    /// plan holds no gap left to fetch (everything resident to `plan_end`).
     if (!read_plan.geometry() || !read_plan.geometry()->covers(ByteRange{position_phys, probe_size}))
         planResidencyWindow(position_phys);
-    if (read_plan.geometry()->residentAt(position_phys).resident())
+    const size_t gap_start = read_plan.geometry()->nextGapStart(position_phys);
+    if (gap_start >= read_plan.geometry()->plan_end)
     {
-        LOG_TRACE(log, "Prefetch: cursor {} resident, next read serves it from cache", position);
+        LOG_TRACE(log, "Prefetch: no gap ahead of {} in plan, nothing to read ahead", position);
         stats.add(Stats::PrefetchSkippedResident);
         return;
     }
 
-    /// A gap cursor within the extent: commit to a prefetch. The live-connection lease
+    /// A gap within the extent: commit to a prefetch. The live-connection lease
     /// (`connection_lease`) was decided per plan in `planResidencyWindow`; this path only
     /// reads it (via `job->leased`), never acquires/releases it.
     const size_t prefetch_window = effectivePrefetchWindowSize(read_plan.geometry()->pressure_level);
@@ -629,10 +629,12 @@ void ReaderExecutor::maybeTriggerPrefetch()
     if (next_size == 0)
         return;  /// at the file end / extent boundary, nothing left to prefetch
 
-    /// Bound the read-ahead to the plan gap `[position, gapEnd)`, mirroring the
-    /// synchronous gap read: one pure run per fetch, never straddling a resident run.
-    next_size = std::min(next_size, read_plan.geometry()->gapEnd(position_phys) - position_phys);
-    const size_t next_logical_offset = position;
+    /// Bound the read-ahead to the gap `[gap_start, gapEnd)`, mirroring the synchronous gap
+    /// read: one pure run per fetch, never straddling a resident run. The gap clamp keeps it
+    /// within the plan (and thus the extent) even though `boundedReadSize` measured from the
+    /// cursor.
+    next_size = std::min(next_size, read_plan.geometry()->gapEnd(gap_start) - gap_start);
+    const size_t next_logical_offset = gap_start - data_start_offset;
 
     /// Align the worker's fetch to the cache cells from the plan's immutable geometry
     /// (`fetchWindowAt` unions the aligned miss ranges - whole page-cache blocks,
@@ -641,10 +643,10 @@ void ReaderExecutor::maybeTriggerPrefetch()
     /// consume `write` lands aligned in every tier. `prefetch_range` stays the logical
     /// REQUESTED range (seek and the consume slice work in that space); the consume
     /// backfills the aligned `prefetch_physical_window` and slices back to the request.
-    const ByteRange next_physical_window = read_plan.geometry()->fetchWindowAt(ByteRange{position_phys, next_size});
+    const ByteRange next_physical_window = read_plan.geometry()->fetchWindowAt(ByteRange{gap_start, next_size});
 
-    LOG_TRACE(log, "Prefetch: submitting physical [{}, {}) (requested [{}, {}))",
-        next_physical_window.offset, next_physical_window.end(), position_phys, position_phys + next_size);
+    LOG_TRACE(log, "Prefetch: submitting physical [{}, {}) (requested gap [{}, {}))",
+        next_physical_window.offset, next_physical_window.end(), gap_start, gap_start + next_size);
 
     /// The worker's co-owned job: it accumulates served-byte counters into
     /// `job->stats` (never the shared `this->stats`) and operates ONLY on `job->conn`
@@ -1114,8 +1116,9 @@ Rope ReaderExecutor::serveCacheBlock(size_t position_phys, size_t to_read)
     /// Stream the contiguous resident run straight from the plan's held (pinning) cache
     /// readers - no per-window discovery, no source. Serve each tier's range from its own
     /// reader, advancing the cursor so the appended runs stay disjoint; stop at the first
-    /// gap (the next call serves it).
-    chassert(!prefetch_handle);
+    /// gap (the next call serves it). A prefetch for a downstream gap may be in flight here
+    /// (the resident/prefetch overlap): this path touches ONLY the caches and the (empty,
+    /// moved-to-the-job) foreground connection cluster, never the worker's `prefetch_job`.
     Rope rope;
 
     /// Test hook: pause after the plan classifies this run as a hit but before the read, so
@@ -1156,9 +1159,10 @@ Rope ReaderExecutor::serveCacheBlock(size_t position_phys, size_t to_read)
     HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
         static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
 
-    /// Cache-only serve: settle the open live connection for the next read (keep it if the
-    /// next read bridges, else drop it). Safe to touch `foreground_connection_state` - no
-    /// prefetch worker runs at a resident cursor (`chassert(!prefetch_handle)`).
+    /// Cache-only serve: settle the foreground's own live connection for the next read (keep
+    /// it if the next read bridges, else drop it). When a downstream-gap prefetch is in flight
+    /// the foreground cluster is EMPTY (moved into the job), so this is a no-op on it - the
+    /// worker's connection lives in `prefetch_job` and is never touched here.
     maybeKeepLiveConnectionBefore(position_phys + rope.range().size, foreground_connection_state, reached_eof, stats);
 
     if (data_start_offset)

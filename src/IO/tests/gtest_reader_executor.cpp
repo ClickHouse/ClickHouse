@@ -3527,18 +3527,18 @@ TEST(ReaderExecutor, UnknownSizePrefetchedFinalBytesAreServed)
     EXPECT_TRUE(r3.empty());
 }
 
-TEST(ReaderExecutor, PlanFirstResidentRunBetweenGapsHasNoPrefetchInFlight)
+TEST(ReaderExecutor, ResidentRunOverlapsDownstreamGapPrefetch)
 {
-    /// Regression guard for the plan-first invariant: a prefetch is in flight ONLY
-    /// at a gap cursor, so the resident fast-path's `chassert(!prefetch_handle)`
-    /// never fires. `maybeTriggerPrefetch` is cursor-keyed (skip when the cursor is
-    /// resident), not window-keyed (launch whenever the window has a gap).
+    /// The resident/prefetch OVERLAP: `maybeTriggerPrefetch` targets the FIRST GAP in the
+    /// plan (`nextGapStart`), not the cursor's residency, so a downstream gap prefetches in
+    /// the background WHILE the resident run before it streams from cache. `serveCacheBlock`
+    /// runs with that prefetch in flight (the connection cluster is in the job, so the
+    /// foreground touches nothing), and the gap is consumed when the cursor reaches it.
     ///
-    /// Layout: cold [0,100), CACHED [100,200), cold [200,300), window 300. At the
-    /// resident cursor 100 the window [100,300) still spans the [200,300) gap, so a
-    /// window-keyed prefetch would launch there and the next (resident) read would
-    /// trip the chassert. `SyncPrefetchPool` runs the prefetch inline, making the
-    /// race deterministic.
+    /// Layout: cold [0,100), CACHED [100,200), cold [200,300), window 300. After the first
+    /// gap read lands the cursor on the resident run at 100, the [200,300) gap is prefetched
+    /// while [100,200) is served from cache. `SyncPrefetchPool` runs the prefetch inline,
+    /// making it deterministic.
     constexpr size_t total = 300;
     String content(total, 0);
     for (size_t i = 0; i < total; ++i)
@@ -3569,20 +3569,20 @@ TEST(ReaderExecutor, PlanFirstResidentRunBetweenGapsHasNoPrefetchInFlight)
     auto r1 = executor.readNextWindow();
     EXPECT_EQ(r1.range().offset, 0u);
     EXPECT_EQ(r1.range().size, 100u);
-    /// The crux: cursor now resident, so NO prefetch was scheduled. A window-keyed
-    /// prefetch would be in flight here (and abort the resident read below).
-    EXPECT_FALSE(executor.hasInflightPrefetch())
-        << "prefetch must not be scheduled for a resident cursor";
+    /// The crux: the cursor is resident at 100, but the first gap ahead [200,300) is now
+    /// prefetched - overlapping the resident run that precedes it.
+    EXPECT_TRUE(executor.hasInflightPrefetch())
+        << "the first gap ahead must prefetch during the resident run (overlap)";
 
-    /// Resident run [100,200) from cache - the `chassert(!prefetch_handle)` path.
+    /// Resident run [100,200) from cache, served WHILE the [200,300) prefetch is in flight
+    /// (the relaxed `serveCacheBlock` path). The re-trigger at the tail is a no-op while one
+    /// is already pending.
     auto r2 = executor.readNextWindow();
     EXPECT_EQ(r2.range().offset, 100u);
     EXPECT_EQ(r2.range().size, 100u);
-    /// Cursor now at the [200,300) gap, so a read-ahead IS scheduled.
-    EXPECT_TRUE(executor.hasInflightPrefetch())
-        << "a gap cursor schedules the read-ahead";
+    EXPECT_TRUE(executor.hasInflightPrefetch());
 
-    /// Cold gap [200,300) - consumes the in-flight prefetch.
+    /// Cold gap [200,300) - the cursor reaches it and consumes the overlapped prefetch.
     auto r3 = executor.readNextWindow();
     EXPECT_EQ(r3.range().offset, 200u);
     EXPECT_EQ(r3.range().size, 100u);

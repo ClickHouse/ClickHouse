@@ -8,13 +8,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 disk_name="s3_cache_02944_lru"
 
 # Exercises the new `ReaderExecutor` pipeline on the same scenario as
-# `02944_dynamically_change_filesystem_cache_size.sh` (which forces the
-# legacy reader). The cold-scan occupancy is HIGHER than the legacy reader's:
-# the executor rounds a mid-cell read down to the `boundary_alignment` floor and
-# caches the whole aligned cell (the segment is created at that floor and its
-# write buffer appends from `cwo`), so it fills complete cells where the legacy
-# reader left aligned prefixes uncached (100 vs 98, and a full 10-byte survivor
-# vs 8 after eviction). A partially-cached re-populate still converges to 98.
+# `02944_dynamically_change_filesystem_cache_size.sh` (which forces the legacy
+# reader). Occupancy is consistently HIGHER than the legacy reader's: the executor
+# fills complete `boundary_alignment`-aligned cells - it rounds a read down to the
+# cell floor (the segment is created there and its write buffer appends from `cwo`)
+# AND prefetches the first gap ahead with the same alignment, so both cold scans and
+# re-populates cache whole cells where the legacy reader left aligned prefixes
+# uncached (100 vs 98, full 10-byte survivor vs 8, 20 vs 18 across two cells).
 ch="$CLICKHOUSE_CLIENT --use_reader_executor=1"
 
 $ch --query "SYSTEM CLEAR FILESYSTEM CACHE"
