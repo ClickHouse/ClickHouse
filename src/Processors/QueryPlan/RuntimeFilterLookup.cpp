@@ -397,12 +397,14 @@ public:
     void logStats() const override
     {
         SharedLockGuard g(rw_lock);
-        for (const auto & [filter_name, filter] : filters_by_name)
+        for (const auto & [filter_key, filter] : filters_by_name)
         {
             const auto & stats = filter->getStats();
+            /// `filter_key` is the opaque random rendezvous key; prefer the readable structural name.
+            const String & name = filter->display_name.empty() ? filter_key : filter->display_name;
             LOG_TRACE(getLogger("RuntimeFilter"),
                 "Stats for '{}': rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}",
-                filter_name, stats.rows_skipped.load(), stats.rows_checked.load(), stats.rows_passed.load(), stats.blocks_skipped.load(), stats.blocks_processed.load());
+                name, stats.rows_skipped.load(), stats.rows_checked.load(), stats.rows_passed.load(), stats.blocks_skipped.load(), stats.blocks_processed.load());
         }
     }
 

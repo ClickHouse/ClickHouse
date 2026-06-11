@@ -60,6 +60,10 @@ public:
     UInt64 getBlocksToSkipBeforeReenabling() const { return blocks_to_skip_before_reenabling; }
     const DataTypePtr & getFilterColumnTargetType() const { return filter_column_target_type; }
 
+    /// Human-readable structural id (`_runtime_filter_<hash>`) for logging. The lookup is keyed by the
+    /// random rendezvous key, which is opaque; the builder sets this to the stable name before adding.
+    String display_name;
+
 protected:
 
     IRuntimeFilter(

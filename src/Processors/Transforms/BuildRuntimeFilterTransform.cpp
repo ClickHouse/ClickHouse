@@ -115,6 +115,8 @@ void BuildRuntimeFilterTransform::finish()
     auto filter_lookup = query_context->getRuntimeFilterLookup();
     /// Register under the random key (matches the probe-side `__applyFilter`), not the displayed
     /// stable `filter_name`. Keeping the key off the plan means it never enters a plan-step hash.
+    /// Carry the stable name on the filter so its stats are logged readably (the key is opaque).
+    built_filter->display_name = filter_name;
     filter_lookup->add(filter_key, std::move(built_filter));
 }
 
