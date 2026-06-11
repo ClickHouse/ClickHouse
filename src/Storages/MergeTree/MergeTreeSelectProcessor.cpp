@@ -271,14 +271,21 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
 
         if (reader_settings.use_query_condition_cache)
         {
-            String part_name
-                = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name) : data_part->name;
-            chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(
-                data_part->storage.getStorageID().uuid,
-                part_name,
-                data_part->index_granularity->getMarksCount(),
-                data_part->index_granularity->hasFinalMark(),
-                res.read_mark_ranges));
+            /// The attached marks let the downstream FilterTransform record WHERE-filtered marks
+            /// into the QueryConditionCache. Skip attaching them when on-fly mutations run ahead of
+            /// the filter, otherwise a mutation-filtered mark would poison the cache for a later
+            /// apply_mutations_on_fly = 0 query.
+            if (!current_task.appliesMutationsBeforePrewhere())
+            {
+                String part_name
+                    = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name) : data_part->name;
+                chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(
+                    data_part->storage.getStorageID().uuid,
+                    part_name,
+                    data_part->index_granularity->getMarksCount(),
+                    data_part->index_granularity->hasFinalMark(),
+                    res.read_mark_ranges));
+            }
 
             /// Some rows survived PREWHERE, but individual granules within this batch may
             /// still have been fully filtered out. Record those granules immediately so that

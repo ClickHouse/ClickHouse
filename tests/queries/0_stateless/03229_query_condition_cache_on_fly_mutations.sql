@@ -53,3 +53,25 @@ SELECT count() FROM t_qcc_on_fly_update PREWHERE v >= 50 SETTINGS apply_mutation
 SELECT count() FROM t_qcc_on_fly_update PREWHERE v >= 50 SETTINGS apply_mutations_on_fly = 0;
 
 DROP TABLE t_qcc_on_fly_update;
+
+-- Case 3: same on-fly UPDATE but the predicate stays in WHERE (move-to-prewhere disabled), so the
+-- cache is written by the downstream FilterTransform rather than the PREWHERE attribution path.
+DROP TABLE IF EXISTS t_qcc_on_fly_where;
+
+CREATE TABLE t_qcc_on_fly_where (id UInt64, v UInt64)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+
+INSERT INTO t_qcc_on_fly_where SELECT number, number FROM numbers(100);
+
+SET mutations_sync = 0;
+SYSTEM STOP MERGES t_qcc_on_fly_where;
+ALTER TABLE t_qcc_on_fly_where UPDATE v = 0 WHERE id >= 50;
+
+SYSTEM DROP QUERY CONDITION CACHE;
+
+-- apply_mutations_on_fly = 1 first: v = 0 for ids >= 50, so no row has v >= 50 -> 0.
+SELECT count() FROM t_qcc_on_fly_where WHERE v >= 50 SETTINGS apply_mutations_on_fly = 1, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+-- apply_mutations_on_fly = 0 must see the original values -> ids 50..99 -> 50.
+SELECT count() FROM t_qcc_on_fly_where WHERE v >= 50 SETTINGS apply_mutations_on_fly = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+
+DROP TABLE t_qcc_on_fly_where;

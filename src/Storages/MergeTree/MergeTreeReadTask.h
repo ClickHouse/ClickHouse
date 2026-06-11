@@ -215,8 +215,9 @@ public:
     bool readersChainCanSkipMarksBeforePrewhere() const;
 
     /// Returns true if on-fly mutations or patch parts are applied earlier in the readers chain
-    /// than PREWHERE. When true, a mark may be fully filtered by the mutation rather than by the
-    /// PREWHERE predicate, so it must not be attributed to the predicate in the QueryConditionCache.
+    /// than PREWHERE (and therefore than the downstream WHERE filter too). When true, a mark may be
+    /// fully filtered by the mutation rather than by the predicate, so it must not be attributed to
+    /// the PREWHERE or WHERE predicate in the QueryConditionCache.
     bool appliesMutationsBeforePrewhere() const;
 
     Readers releaseReaders() { return std::move(readers); }
