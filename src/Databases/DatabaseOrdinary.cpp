@@ -708,6 +708,20 @@ Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
     return {unique_names.begin(), unique_names.end()};
 }
 
+void DatabaseOrdinary::eraseAsyncLoadState(const String & table_name)
+{
+    /// Drop pending async load/startup task references so that `getAllTableNames`
+    /// (and the hints derived from it) do not still suggest a no-longer-present name.
+    startup_table.erase(table_name);
+    load_table.erase(table_name);
+}
+
+StoragePtr DatabaseOrdinary::detachTableUnlocked(const String & table_name)
+{
+    eraseAsyncLoadState(table_name);
+    return DatabaseWithOwnTablesBase::detachTableUnlocked(table_name);
+}
+
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::alterTable");
