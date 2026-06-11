@@ -1,5 +1,6 @@
--- Tags: no-parallel-replicas, no-parallel
--- Tag no-parallel: messes with the server-level query condition cache
+-- Tags: no-parallel-replicas, no-parallel, no-old-analyzer
+-- no-parallel: messes with the server-level query condition cache
+-- no-old-analyzer: Not supported
 
 -- Regression test mirroring 04275_104781_qcc_prewhere_skip_index_attribution
 -- but for sparsity `data_read` pruning. When
@@ -7,8 +8,6 @@
 -- of PREWHERE and drops whole marks via `canSkipMark`. The reader chain must
 -- report this through `canSkipAnyMark`, otherwise those marks get attributed
 -- to the PREWHERE predicate and poison the query condition cache.
-
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_sparsity_prewhere;
 

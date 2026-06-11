@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: Not supported
+
 -- The granule analyzer is reachable from `MergeTreeSource` async-read jobs that
 -- run on `getIOThreadPool`. If the analyzer were to fan its per-chunk passes onto
 -- the same pool, a saturated pool could deadlock with every worker blocked in the
@@ -6,7 +9,6 @@
 -- and `allow_asynchronous_read_from_io_pool_for_merge_tree = 1` across many parts
 -- so the analyzer is invoked under the conditions that would expose the bug.
 
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_sparse_async_pool;
 

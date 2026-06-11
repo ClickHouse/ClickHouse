@@ -1,12 +1,13 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-old-analyzer
+-- no-old-analyzer: Not supported
 
 -- `STREAM` reshapes the row set under the count (cursor / window semantics),
 -- so the trivial-count-with-sparsity-filter rewrite must not answer it from
 -- whole-table `num_defaults` / `num_rows` stats. EXPLAIN PLAN should show
 -- `ReadFromMergeTree`, never `ReadFromPreparedSource`.
 
-SET enable_analyzer = 1;
 SET enable_streaming_queries = 1;
+SET optimize_trivial_count_query = 1;
 
 DROP TABLE IF EXISTS t_sparsity_stream;
 

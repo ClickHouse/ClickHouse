@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: Not supported
+
 -- `collectSparsityConjuncts` flattens top-level `AND` and feeds every classified
 -- conjunct to the pruning step. A part / granule is dropped when any single
 -- conjunct rules it out. The trivial-count rewrite remains single-predicate only.

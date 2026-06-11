@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: Not supported
+
 -- Regression test for `use_sparsity_info_for_pruning`. The optimisation
 -- drops whole parts when the per-part `num_defaults` / `num_rows` recorded in
 -- `serialization.json` prove the WHERE predicate is identically false on every row.

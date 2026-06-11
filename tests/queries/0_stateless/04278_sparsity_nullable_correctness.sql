@@ -1,7 +1,12 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: Not supported
+
 -- Correctness of sparsity based pruning and trivial count on Nullable columns.
 -- The per column `num_defaults` stat counts NULLs, so equality, inequality, empty
 -- and notEmpty predicates with non NULL constants on Nullable columns must not be
 -- answered from that stat. All modes must agree with the baseline count.
+
+SET optimize_trivial_count_query = 1;
 
 DROP TABLE IF EXISTS t_sparse_nullable;
 

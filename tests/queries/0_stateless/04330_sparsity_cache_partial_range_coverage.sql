@@ -1,10 +1,11 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: Not supported
+
 -- Regression test: the granule analyzer must not cache a verdict for the whole
 -- part when it only inspected a subset of the part's marks. A first query with
 -- a narrow primary-key range would otherwise leave a partial bitmap behind that
 -- a follow-up full-range query reads as the complete verdict, suppressing
 -- pruning for the marks the first query never analyzed.
-
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_partial_cache;
 

@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-old-analyzer
+-- no-old-analyzer: Not supported
 
 -- A constant whose conversion to the column type is lossy must not be classified
 -- as matching the column default. For `d Decimal(9, 2)` the predicate
@@ -6,7 +7,7 @@
 -- treated as `MatchesDefault`, making the trivial-count rewrite return the
 -- default-row count instead of the true count of zero matching rows.
 
-SET enable_analyzer = 1;
+SET optimize_trivial_count_query = 1;
 SET optimize_trivial_count_with_sparsity_filter = 1;
 
 DROP TABLE IF EXISTS t_dec_lossy SYNC;

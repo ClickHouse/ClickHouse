@@ -1,9 +1,10 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: Not supported
+
 -- Test that two conjuncts on the same column (different SparsityPredicateClass)
 -- do not double-seed the `SparseOffsetsShare`. Without dedup, a scan window
 -- straddling a chunk boundary would walk two copies of the offsets and
 -- produce wrong row counts under `use_sparsity_info_for_pruning = 'data_read'`.
-
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_sparse_unsat;
 

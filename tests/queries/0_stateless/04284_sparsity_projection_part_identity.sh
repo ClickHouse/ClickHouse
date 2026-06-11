@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
+# Tags: no-parallel-replicas, no-old-analyzer
+# no-old-analyzer: Not supported
 
 # Projection parts share `name` across parents (every parent part stores its
 # projection under the same projection name). Sparsity bitmaps are cached in

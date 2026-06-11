@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: Not supported
+
 -- Granule-level pruning for sparse-encoded columns in `planning` mode trims
 -- `MarkRanges` per part from the predicate column's offsets stream.
 

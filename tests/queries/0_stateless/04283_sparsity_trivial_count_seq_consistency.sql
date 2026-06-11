@@ -1,4 +1,5 @@
--- Tags: zookeeper, no-parallel-replicas, no-shared-merge-tree
+-- Tags: zookeeper, no-parallel-replicas, no-shared-merge-tree, no-old-analyzer
+-- no-old-analyzer: Not supported
 
 -- `ReplicatedMergeTree::totalRows` honors `select_sequential_consistency` by
 -- restricting active parts to those below the ZK max-added-block boundary. The
@@ -6,7 +7,7 @@
 -- under sequential consistency it returns the quorum-acknowledged count, not the
 -- local-only one.
 
-SET enable_analyzer = 1;
+SET optimize_trivial_count_query = 1;
 
 DROP TABLE IF EXISTS t_sparse_seq_consistency_r1 SYNC;
 DROP TABLE IF EXISTS t_sparse_seq_consistency_r2 SYNC;

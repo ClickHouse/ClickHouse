@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: Not supported
+
 -- Granule-level pruning in `data_read` (lazy) mode: the classification runs at
 -- scan time via `MergeTreeSparsityReader` and feeds `MergeTreeReaderIndex::canSkipMark`
 -- (same path as `use_skip_indexes_on_data_read`). Result must match the `off` baseline.

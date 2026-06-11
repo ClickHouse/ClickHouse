@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: Not supported
+
 -- Regression test for non-contiguous `MarkRanges` (e.g. when the PK / skip-index /
 -- query-condition-cache already trimmed some granules out): the analyzer must reset
 -- `continue_reading` between ranges, otherwise the reader skips the seek and reads

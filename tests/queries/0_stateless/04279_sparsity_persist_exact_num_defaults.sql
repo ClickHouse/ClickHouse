@@ -1,7 +1,12 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: Not supported
+
 -- Sparsity based count and pruning act only when `serialization.json` carries an
 -- `exact_num_defaults: true` flag for the column. The flag must survive a metadata
 -- reload, and the merged stats of `OPTIMIZE FINAL` must stay exact when every input
 -- part is exact.
+
+SET optimize_trivial_count_query = 1;
 
 DROP TABLE IF EXISTS t_persist;
 

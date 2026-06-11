@@ -1,11 +1,12 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-old-analyzer
+-- no-old-analyzer: Not supported
 
 -- A pending `MODIFY COLUMN` leaves the on-disk `num_defaults` in source-type units
 -- while reads convert to the new type. Sparsity-based pruning and the trivial-count
 -- rewrite must opt out under any pending alter mutation: otherwise predicates whose
 -- default/non-default partition changes across the conversion return wrong counts.
 
-SET enable_analyzer = 1;
+SET optimize_trivial_count_query = 1;
 
 DROP TABLE IF EXISTS t_alter_sparse_pending;
 
