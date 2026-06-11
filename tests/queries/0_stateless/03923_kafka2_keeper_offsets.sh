@@ -38,23 +38,39 @@ trap 'exit 143' TERM
 
 # Create the topic. Retry until it exists (created now or already present);
 # a transient broker error is retryable, "already exists" is success.
+# On exhausted budget, fail loudly with the last rpk output instead of falling
+# through: a swallowed failure would only surface as an empty result downstream.
+created=0
 for _ in $(seq 1 30); do
     create_out=$(rpk topic create $KAFKA_TOPIC -p 1 --brokers $KAFKA_BROKER 2>&1)
     if [ $? -eq 0 ] || echo "$create_out" | grep -q "TOPIC_ALREADY_EXISTS"; then
+        created=1
         break
     fi
     sleep 1
 done
+if [ "$created" -ne 1 ]; then
+    echo "Failed to create Kafka topic after 30 attempts. Last rpk output: $create_out" >&2
+    exit 1
+fi
 echo "Created topic."
 
-# Produce first batch. Retry the whole produce until it succeeds.
+# Produce first batch. Retry the whole produce until it succeeds; on exhausted
+# budget, fail loudly with the last rpk output instead of falling through.
+produced=0
 for _ in $(seq 1 30); do
-    if seq 1 3 | while read -r i; do echo "{\"id\": $i, \"data\": \"batch1_$i\"}"; done \
-        | timeout 30 rpk topic produce $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1; then
+    produce_out=$(seq 1 3 | while read -r i; do echo "{\"id\": $i, \"data\": \"batch1_$i\"}"; done \
+        | timeout 30 rpk topic produce $KAFKA_TOPIC --brokers $KAFKA_BROKER 2>&1)
+    if [ $? -eq 0 ]; then
+        produced=1
         break
     fi
     sleep 1
 done
+if [ "$produced" -ne 1 ]; then
+    echo "Failed to produce first batch after 30 attempts. Last rpk output: $produce_out" >&2
+    exit 1
+fi
 
 # Create Kafka2 engine table (with keeper path for offset storage)
 $CLICKHOUSE_CLIENT --allow_experimental_kafka_offsets_storage_in_keeper 1 -q "
@@ -93,14 +109,22 @@ done
 echo "--- After first batch ---"
 $CLICKHOUSE_CLIENT -q "SELECT id, data FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_dst ORDER BY id"
 
-# Produce second batch. Retry the whole produce until it succeeds.
+# Produce second batch. Retry the whole produce until it succeeds; on exhausted
+# budget, fail loudly with the last rpk output instead of falling through.
+produced=0
 for _ in $(seq 1 30); do
-    if seq 4 6 | while read -r i; do echo "{\"id\": $i, \"data\": \"batch2_$i\"}"; done \
-        | timeout 30 rpk topic produce $KAFKA_TOPIC --brokers $KAFKA_BROKER > /dev/null 2>&1; then
+    produce_out=$(seq 4 6 | while read -r i; do echo "{\"id\": $i, \"data\": \"batch2_$i\"}"; done \
+        | timeout 30 rpk topic produce $KAFKA_TOPIC --brokers $KAFKA_BROKER 2>&1)
+    if [ $? -eq 0 ]; then
+        produced=1
         break
     fi
     sleep 1
 done
+if [ "$produced" -ne 1 ]; then
+    echo "Failed to produce second batch after 30 attempts. Last rpk output: $produce_out" >&2
+    exit 1
+fi
 
 # Wait for second batch
 for i in $(seq 1 120); do
