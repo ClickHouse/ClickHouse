@@ -19,6 +19,8 @@ node_s3 = cluster.add_instance(
     "node_s3",
     main_configs=["configs/config.d/remote_storage_configuration.xml"],
     with_minio=True,
+    # The restart test needs to stop and start the server.
+    stay_alive=True,
 )
 
 
