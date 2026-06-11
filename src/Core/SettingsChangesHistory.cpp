@@ -1234,6 +1234,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
         {
+            {"allow_tuple_element_aggregation", false, false, "New setting"},
             {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup", false, false, "New setting which allows SMT download parts data from replicas instead of S3 on startup"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
