@@ -66,23 +66,32 @@ expired, so do not block on them.
 
 ### 1. Set up and fetch the failed tests
 
-`fetch_ci_report.js` needs `node` on `PATH`. Check once; if absent, skip the report fetch (and
-the step-4 download) and rely on the issue body's failure output plus step 3 (do not treat a
-missing `node` as a fatal error):
+`fetch_ci_report.js` needs `node` on `PATH`. Run these as **separate** commands (not one compound
+block) so each matches an allowed shape under the investigate profile — a combined
+`mkdir … ; if … node …` string matches neither the exact `mkdir` allow nor the node-fetch hook and
+would prompt. Primary inputs (PR/S3) skip step 0, so create the working dir here first:
 
 ```bash
-mkdir -p tmp/investigate   # primary inputs (PR/S3) skip step 0, so create it here before the redirect
-if command -v node >/dev/null; then
-  node .claude/tools/fetch_ci_report.js "$0" --failed --cidb > tmp/investigate/failed.txt 2>&1
-else
-  echo "node not available — skipping fetch_ci_report.js, using step 3"
-fi
+mkdir -p tmp/investigate
 ```
 
-When the `node` branch ran, this pulls the failed tests **and their output** straight from the
-praktika `result_*.json` (no copy-paste) and prints a CIDB link per failed test; read
-`tmp/investigate/failed.txt`. When `node` was absent, `failed.txt` does not exist — skip reading
-it and rely on the issue body's failure output plus step 3.
+Probe for `node` (`command -v` is allowed; do not wrap the fetch in an `if`/`;` one-liner, which
+would hide the `node` command from the hook):
+
+```bash
+command -v node
+```
+
+If `node` is present, fetch the failed tests and their output:
+
+```bash
+node .claude/tools/fetch_ci_report.js "$0" --failed --cidb > tmp/investigate/failed.txt 2>&1
+```
+
+This pulls the failed tests **and their output** straight from the praktika `result_*.json` (no
+copy-paste) and prints a CIDB link per failed test; read `tmp/investigate/failed.txt`. If `node`
+is **absent**, skip the report fetch (and the step-4 download) and rely on the issue body's
+failure output plus step 3 — do not treat a missing `node` as a fatal error.
 
 - If `$0` is a PR URL with many reports and the noise is high, narrow with `--report <n>`
   after listing reports (run the tool with no `--failed` to see the index).
