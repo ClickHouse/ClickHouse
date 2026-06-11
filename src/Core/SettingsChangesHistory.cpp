@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.6",
         {
-            {"enable_automatic_use_uncompressed_cache", false, true, "Enable automatic use of uncompressed cache for eligible local MergeTree reads by default."},
+            {"enable_automatic_use_uncompressed_cache", false, false, "New setting to allow automatic use of the uncompressed cache for eligible local MergeTree reads."},
             {"ai_function_embedding_max_batch_size", 100, 100, "New setting"},
             {"enable_sharding_aggregator", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."},
             {"allow_experimental_text_index_lazy_apply", false, false, "New setting to gate experimental lazy posting list apply mode"},

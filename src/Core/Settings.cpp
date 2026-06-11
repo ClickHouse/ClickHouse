@@ -777,16 +777,16 @@ Whether to count extreme values (the minimums and maximums in columns of a query
 For more information, see the section "Extreme values".
 )", IMPORTANT) \
     DECLARE(Bool, use_uncompressed_cache, false, R"(
-Whether to use a cache of uncompressed blocks. Accepts `0` or `1`.
-If this setting is explicitly set to `0`, the cache is disabled. If it is explicitly set to `1`, the cache is enabled. By default, it is `0`, but for eligible local reads from tables in the `MergeTree` family ClickHouse may enable the cache automatically if this setting was not overridden, [`enable_automatic_use_uncompressed_cache`](/operations/settings/settings#enable_automatic_use_uncompressed_cache) is enabled, and [`uncompressed_cache_size`](/operations/server-configuration-parameters/settings#uncompressed_cache_size) is greater than `0`.
+Whether to use a cache of uncompressed blocks. Accepts `0` or `1`. By default, `0` (disabled).
+When [`enable_automatic_use_uncompressed_cache`](/operations/settings/settings#enable_automatic_use_uncompressed_cache) is enabled, ClickHouse may also enable the cache automatically for eligible local reads from tables in the `MergeTree` family if this setting was not overridden and [`uncompressed_cache_size`](/operations/server-configuration-parameters/settings#uncompressed_cache_size) is greater than `0`.
 Using the uncompressed cache (only for tables in the `MergeTree` family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [`uncompressed_cache_size`](/operations/server-configuration-parameters/settings#uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
 For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically to save space for truly small queries. This means that you can keep the 'use_uncompressed_cache' setting always set to 1.
 )", 0) \
-    DECLARE(Bool, enable_automatic_use_uncompressed_cache, true, R"(
-When enabled, ClickHouse may automatically use the uncompressed cache for eligible local reads from tables in the `MergeTree` family when `use_uncompressed_cache` is not explicitly overridden and [`uncompressed_cache_size`](/operations/server-configuration-parameters/settings#uncompressed_cache_size) is greater than `0`.
+    DECLARE(Bool, enable_automatic_use_uncompressed_cache, false, R"(
+When enabled, ClickHouse may automatically use the uncompressed cache for eligible local reads from tables in the `MergeTree` family when `use_uncompressed_cache` is not explicitly overridden and [`uncompressed_cache_size`](/operations/server-configuration-parameters/settings#uncompressed_cache_size) is greater than `0`. Disabled by default.
 
-Explicit `use_uncompressed_cache` values still take precedence.
+A `use_uncompressed_cache` value set in the query text (`SETTINGS use_uncompressed_cache = 0`) or in a settings profile takes precedence over the automatic decision. Note that a setting passed as an HTTP query parameter or a command-line client option with a value equal to its default (`use_uncompressed_cache=0`) is indistinguishable from an unset one on the server side and does not override the automatic decision.
 )", 0) \
     DECLARE(Bool, replace_running_query, false, R"(
 When using the HTTP interface, the 'query_id' parameter can be passed. This is any string that serves as the query identifier.
