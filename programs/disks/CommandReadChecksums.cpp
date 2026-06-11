@@ -44,7 +44,7 @@ public:
         auto in = disk_ptr->readFile(path, getReadSettings());
         MergeTreeDataPartChecksums checksums;
         if (!checksums.read(*in))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Checksums format is too old in '{}'", path_arg);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' is not a valid checksums file", path_arg);
         assertEOF(*in);
 
         WriteBufferFromFileDescriptor out(STDOUT_FILENO);
