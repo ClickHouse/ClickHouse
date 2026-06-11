@@ -52,8 +52,10 @@ namespace Setting
     extern const SettingsUInt64 insert_keeper_max_retries;
     extern const SettingsUInt64 insert_keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 insert_keeper_retry_max_backoff_ms;
+    extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
     extern const SettingsBool optimize_on_insert;
+    extern const SettingsBool wait_for_part_commit_in_dependent_materialized_views;
 }
 
 namespace ServerSetting
@@ -74,6 +76,7 @@ namespace FailPoints
     extern const char replicated_merge_tree_insert_quorum_fail_0[];
     extern const char replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault[];
     extern const char replicated_merge_tree_insert_retry_pause[];
+    extern const char replicated_merge_tree_restore_attach_retry[];
     extern const char rmt_delay_commit_part[];
 }
 
@@ -115,7 +118,8 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     bool majority_quorum,
     ContextPtr context_,
     bool is_attach_,
-    bool allow_attach_while_readonly_)
+    bool allow_attach_while_readonly_,
+    std::optional<ZooKeeperRetriesInfo> keeper_retries_info_)
     : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -132,6 +136,7 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     , log(getLogger(storage.getLogName() + " (Replicated OutputStream)"))
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
+    , keeper_retries_info(std::move(keeper_retries_info_))
     , is_async_insert(async_insert_)
     , insert_deduplication_version(context->getServerSettings()[ServerSetting::insert_deduplication_version].value)
 {
@@ -166,6 +171,12 @@ ReplicatedMergeTreeSink::~ReplicatedMergeTreeSink()
         partition.temp_part->cancel();
     }
     delayed_parts.clear();
+}
+
+void ReplicatedMergeTreeSink::setHasDependentMaterializedViews(bool has_dependent_views)
+{
+    synchronously_commit_part_for_dependent_views
+        = has_dependent_views && context->getSettingsRef()[Setting::wait_for_part_commit_in_dependent_materialized_views];
 }
 
 size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper)
@@ -349,7 +360,7 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
         profile_events_scope.reset();
         UInt64 elapsed_ns = watch.elapsed();
 
-        size_t max_insert_delayed_streams_for_parallel_write;
+        size_t max_insert_delayed_streams_for_parallel_write = 0;
         if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
             max_insert_delayed_streams_for_parallel_write = settings[Setting::max_insert_delayed_streams_for_parallel_write];
         else if (support_parallel_write)
@@ -389,7 +400,16 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
     deduplication_info->setPartWriterHashes(all_partitions_block_ids, chunk.getNumRows());
 
     finishDelayed(zookeeper);
+
     delayed_parts = std::move(current_parts);
+    /// Streaming `INSERT` flushes partial blocks on a timeout, so commit the just-written
+    /// part immediately to make its rows visible without waiting for the next consume()
+    /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
+    if (settings[Setting::input_format_max_block_wait_ms] != 0)
+        finishDelayed(zookeeper);
+
+    if (synchronously_commit_part_for_dependent_views)
+        finishDelayed(zookeeper);
 
     ++num_blocks_processed;
 }
@@ -712,13 +732,15 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
     CommitRetryContext retry_context;
 
     const auto & settings = context->getSettingsRef();
+    ZooKeeperRetriesInfo retries_info = keeper_retries_info.value_or(ZooKeeperRetriesInfo{
+        settings[Setting::insert_keeper_max_retries],
+        settings[Setting::insert_keeper_retry_initial_backoff_ms],
+        settings[Setting::insert_keeper_retry_max_backoff_ms],
+        context->getProcessListElement()});
     ZooKeeperRetriesControl retries_ctl(
         "commitPart",
         log,
-        {settings[Setting::insert_keeper_max_retries],
-         settings[Setting::insert_keeper_retry_initial_backoff_ms],
-         settings[Setting::insert_keeper_retry_max_backoff_ms],
-         context->getProcessListElement()});
+        retries_info);
 
     auto resolve_duplicate_stage = [&] () -> CommitRetryContext::Stages
     {
@@ -840,6 +862,16 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
 
     auto commit_new_part_stage = [&]() -> CommitRetryContext::Stages
     {
+        if (is_attach)
+        {
+            fiu_do_on(FailPoints::replicated_merge_tree_restore_attach_retry,
+            {
+                retries_ctl.setUserError(
+                    Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Injected read-only error while attaching restored part"));
+                return CommitRetryContext::LOCK_AND_COMMIT;
+            });
+        }
+
         if (storage.is_readonly)
         {
             /// stop retries if in shutdown
@@ -1334,7 +1366,7 @@ ZooKeeperWithFaultInjectionPtr ReplicatedMergeTreeSink::createKeeper(String name
 {
     const auto & settings = context->getSettingsRef();
     return ZooKeeperWithFaultInjection::createInstance(
-        settings[Setting::insert_keeper_fault_injection_probability],
+        static_cast<double>(settings[Setting::insert_keeper_fault_injection_probability]),
         settings[Setting::insert_keeper_fault_injection_seed],
         storage.getZooKeeper(),
         name,

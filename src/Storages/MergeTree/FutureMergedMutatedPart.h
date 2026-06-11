@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Core/UUID.h>
 
 
 namespace DB
