@@ -394,7 +394,9 @@ template <>
 void SettingFieldSeconds::parseFromString(const String & str)
 {
     Float64 n = parse<Float64>(str.data(), str.size());
-    *this = Poco::Timespan{static_cast<Int64>(n * microseconds_per_unit)};
+    /// Use the same checked conversion as the Field path; a raw static_cast of an out-of-range
+    /// product is undefined behaviour and lets huge string values wrap the stored microseconds.
+    *this = Poco::Timespan{float64AsSecondsToTimespan(n)};
 }
 
 template <>

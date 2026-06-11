@@ -179,3 +179,30 @@ GTEST_TEST(SettingFieldMilliseconds, HugeValueSaturatesInsteadOfWrapping)
     ASSERT_EQ(small.totalMilliseconds(), 5000LL);
     ASSERT_EQ(small.totalMicroseconds(), 5000000LL);
 }
+
+GTEST_TEST(SettingFieldSeconds, HugeStringValueDoesNotWrap)
+{
+    // parseFromString (native-protocol string path) must reject an out-of-range value, like the
+    // Field path, rather than wrapping its microseconds via an undefined float-to-Int64 cast.
+    for (const char * huge : {"100000000000000", "9223372036854775807", "1e19"})
+    {
+        SettingFieldSeconds from_string;
+        ASSERT_ANY_THROW(from_string.parseFromString(huge));
+    }
+
+    // Values within range parse exactly, including fractional seconds.
+    SettingFieldSeconds ok;
+    ok.parseFromString("120");
+    ASSERT_EQ(ok.totalSeconds(), 120LL);
+    ASSERT_EQ(ok.totalMicroseconds(), 120000000LL);
+
+    SettingFieldSeconds fractional;
+    fractional.parseFromString("1.5");
+    ASSERT_EQ(fractional.totalMicroseconds(), 1500000LL);
+
+    // A large-but-representable value stays non-negative (no wrap).
+    SettingFieldSeconds big;
+    big.parseFromString("100000000000");
+    ASSERT_GE(big.totalMicroseconds(), 0);
+    ASSERT_EQ(big.totalSeconds(), 100000000000LL);
+}
