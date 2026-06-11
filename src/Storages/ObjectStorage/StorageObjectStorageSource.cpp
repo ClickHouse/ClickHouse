@@ -1,6 +1,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_set>
+#include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
@@ -14,6 +15,7 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
+#include <IO/EmptyReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadPipeline.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
@@ -30,9 +32,11 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
@@ -101,7 +105,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
+static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
 {
 #if USE_AVRO
     if (auto iceberg_object = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info))
@@ -284,7 +288,9 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     else if (configuration->supportsFileIterator())
     {
         auto iter = configuration->iterate(
-            filter_actions_dag, file_progress_callback, query_settings.list_object_keys_size, storage_metadata, local_context);
+            filter_actions_dag,
+            filter_actions_dag ? std::function<void(FileProgress)>{} : file_progress_callback,
+            query_settings.list_object_keys_size, storage_metadata, local_context);
 
         if (filter_actions_dag)
         {
@@ -294,7 +300,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 virtual_columns,
                 hive_columns,
                 configuration->getNamespace(),
-                local_context);
+                local_context,
+                file_progress_callback);
         }
         return iter;
     }
@@ -583,7 +590,7 @@ Chunk StorageObjectStorageSource::generate()
 
         total_rows_in_file = 0;
 
-        assert(reader_future.valid());
+        chassert(reader_future.valid());
         reader = reader_future.get();
 
         if (!reader)
@@ -760,17 +767,26 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     }
     else
     {
-        ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
+        const auto format_name = object_info->getFileFormat().value_or(configuration->format);
+        const bool input_format_does_not_read_file = Poco::toLower(format_name) == "one";
 
-        CompressionMethod compression_method;
-        if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
+        CompressionMethod compression_method = {};
+        if (input_format_does_not_read_file)
         {
+            /// `One` produces a single row per object without consuming the underlying `ReadBuffer`.
+            read_buf = std::make_unique<EmptyReadBuffer>();
+            compression_method = CompressionMethod::None;
+        }
+        else if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
+        {
+            ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
             compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
             const auto & archive_reader = object_info_in_archive->archive_reader;
             read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
         }
         else
         {
+            ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
             read_buf = createReadBuffer(object_info->relative_path_with_metadata, object_storage, context_, log);
         }
@@ -788,15 +804,89 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             initial_header = sample_header;
             schema_changed = true;
         }
-        auto filter_info = [&]()
+        /// Save stripped filters if we need to apply them as fallback FilterTransforms
+        /// later in the pipeline when the file format doesn't support PREWHERE.
+        FilterDAGInfoPtr stripped_row_level_filter;
+        PrewhereInfoPtr stripped_prewhere_info;
+
+        auto filter_info = [&]() -> FormatFilterInfoPtr
         {
-            if (!schema_changed)
-                return format_filter_info;
-            auto mapper = configuration->getColumnMapperForObject(object_info);
-            if (!mapper)
-                return format_filter_info;
-            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
+            if (!format_filter_info)
+                return nullptr;
+
+            /// Check if the actual file format supports PREWHERE. For mixed-format data lake
+            /// tables (e.g. Iceberg with Parquet + ORC files), table-level PREWHERE support
+            /// may not match the individual file's format capabilities.
+            /// See https://github.com/ClickHouse/ClickHouse/issues/96829
+            const auto actual_format = object_info->getFileFormat().value_or(configuration->format);
+            const bool format_supports_prewhere =
+                FormatFactory::instance().checkIfFormatSupportsPrewhere(actual_format, context_, format_settings);
+
+            /// Save filters for fallback FilterTransform when format doesn't support PREWHERE.
+            if (!format_supports_prewhere)
+            {
+                if (format_filter_info->row_level_filter)
+                    stripped_row_level_filter = format_filter_info->row_level_filter;
+                if (format_filter_info->prewhere_info)
+                    stripped_prewhere_info = format_filter_info->prewhere_info;
+            }
+
+            if (schema_changed)
+            {
+                if (auto mapper = configuration->getColumnMapperForObject(object_info))
+                {
+                    if (format_supports_prewhere)
+                        return std::make_shared<FormatFilterInfo>(
+                            format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
+                            mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
+                    else
+                        return std::make_shared<FormatFilterInfo>(
+                            format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
+                            mapper, nullptr, nullptr);
+                }
+            }
+
+            if (!format_supports_prewhere)
+                return std::make_shared<FormatFilterInfo>(
+                    format_filter_info->filter_actions_dag,
+                    format_filter_info->context.lock(),
+                    format_filter_info->column_mapper,
+                    nullptr, nullptr);
+
+            return format_filter_info;
         }();
+
+        /// When PREWHERE / row-level filter is stripped from `format_filter_info` (i.e. the
+        /// actual file format doesn't support PREWHERE), the format reader will not produce
+        /// the input columns of those filters in its output: `read_from_format_info.format_header`
+        /// was already adjusted by `updateFormatPrewhereInfo` to reflect the post-PREWHERE
+        /// schema, so the format reader treats columns referenced only by PREWHERE as
+        /// "consumed" and does not emit them. We need them in the block so the fallback
+        /// `FilterTransform`s further down can evaluate `c0 > 10` etc. Re-add any missing
+        /// input columns of the stripped DAGs to the reader's sample header.
+        ///
+        /// Skip this for the schema-changed path: there `initial_header` was set above to
+        /// the FULL underlying file schema (`sample_header` from `getInitialSchemaByPath`),
+        /// so all file-side columns — including the file-side counterparts of the filter
+        /// input columns — are already present and emitted by the reader. The schema
+        /// transform that runs below then renames/casts them to query-side names BEFORE
+        /// the fallback `FilterTransform`s run, so policies and `PREWHERE` evaluate
+        /// against the same names the query planner produced.
+        if (!schema_changed)
+        {
+            auto add_filter_inputs = [&](const ActionsDAG & dag)
+            {
+                for (const auto & required : dag.getRequiredColumns())
+                {
+                    if (!initial_header.has(required.name))
+                        initial_header.insert({required.type, required.name});
+                }
+            };
+            if (stripped_row_level_filter)
+                add_filter_inputs(stripped_row_level_filter->actions);
+            if (stripped_prewhere_info)
+                add_filter_inputs(stripped_prewhere_info->prewhere_actions);
+        }
 
         chassert(object_info->getObjectMetadata().has_value());
 
@@ -805,20 +895,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             "Reading object '{}', size: {} bytes, with format: {}",
             object_info->getPath(),
             object_info->getObjectMetadata()->size_bytes,
-            object_info->getFileFormat().value_or(configuration->format));
+            format_name);
 
         logIcebergFileStats(object_info, log);
 
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
-            && (Poco::toLower(object_info->getFileFormat().value_or(configuration->format)) == "parquet")
+            && (Poco::toLower(format_name) == "parquet")
             && !object_info->getObjectMetadata()->etag.empty())
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
                 object_with_metadata->relative_path = object_info->getPath();
             input_format = FormatFactory::instance().getInputWithMetadata(
-                object_info->getFileFormat().value_or(configuration->format),
+                format_name,
                 *read_buf,
                 initial_header,
                 context_,
@@ -837,7 +927,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         else
         {
             input_format = FormatFactory::instance().getInput(
-            object_info->getFileFormat().value_or(configuration->format),
+            format_name,
             *read_buf,
             initial_header,
             context_,
@@ -874,10 +964,28 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform)
         {
             schema_transform = object_info->data_lake_metadata->schema_transform->clone();
+            /// Preserve filter-input columns through the data lake schema transform. The
+            /// fallback `FilterTransform`s below evaluate against query-side names, so
+            /// the schema_transform must continue to output any column referenced by
+            /// `stripped_row_level_filter` / `stripped_prewhere_info`, not just those
+            /// in `requested_columns` (which is post-`PREWHERE` and excludes filter
+            /// inputs). For non-stripped (Parquet) reads the filter columns aren't
+            /// referenced after the format reader so this is a no-op.
+            ///
             /// FIXME: This is currently not done for the below case (configuration->getSchemaTransformer())
             /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
             /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
-            schema_transform->removeUnusedActions(read_from_format_info.requested_columns.getNames());
+            Names needed_names = read_from_format_info.requested_columns.getNames();
+            auto add_filter_required_names = [&needed_names](const ActionsDAG & dag)
+            {
+                for (const auto & required : dag.getRequiredColumns())
+                    needed_names.push_back(required.name);
+            };
+            if (stripped_row_level_filter)
+                add_filter_required_names(stripped_row_level_filter->actions);
+            if (stripped_prewhere_info)
+                add_filter_required_names(stripped_prewhere_info->prewhere_actions);
+            schema_transform->removeUnusedActions(needed_names);
         }
         if (!schema_transform)
         {
@@ -892,6 +1000,64 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
+            });
+        }
+
+        /// Apply row-level security filter and `PREWHERE` as fallback `FilterTransform`s
+        /// when the file format doesn't support `PREWHERE`. For mixed-format data lake
+        /// tables (e.g. Iceberg with Parquet + ORC files), table-level `PREWHERE` support
+        /// may not match the individual file's format. We strip `row_level_filter` and
+        /// `prewhere_info` from `FormatFilterInfo` above and apply them here as post-read
+        /// filters instead.
+        ///
+        /// These transforms run AFTER the schema_transform `ExpressionTransform` above so
+        /// that the block they see uses query-side column names. The data lake schema
+        /// transform handles Iceberg / Delta column renames, type evolution, and
+        /// constant-default columns added by schema evolution; running the filters
+        /// downstream of it means policy and `PREWHERE` expressions evaluate against
+        /// the exact names produced by the query planner. (Running them upstream would
+        /// fail with `NOT_FOUND_COLUMN_IN_BLOCK` in the schema-changed path because the
+        /// reader emits file-side names, while filter expressions reference query-side
+        /// names.)
+        ///
+        /// Order between the two filters matters: row-level filter first, `PREWHERE`
+        /// second. This mirrors the canonical filter pipeline used everywhere else in
+        /// the engine:
+        ///   - `SourceStepWithFilter::applyPrewhereActions`
+        ///   - `MergeTreeSelectProcessor::getPrewhereActions`
+        ///   - `Parquet::Reader::initializePrewhere`
+        /// `PREWHERE` actions drop their input columns from the block via `updateHeader`
+        /// (the DAG outputs the synthetic filter column plus only what is needed
+        /// downstream). If `PREWHERE` ran first, a row-policy expression that references
+        /// the same input column (a common case: row policy on `c0`, query
+        /// `SELECT c1 FROM t PREWHERE c0 > N`) could not be evaluated. Applying the
+        /// row-level filter first preserves the input columns for the policy and then
+        /// lets `PREWHERE` drop them as the planner intended.
+        ///
+        /// The query planner puts row policies into `row_level_filter` when
+        /// `storage->supportsPrewhere()` (`PlannerJoinTree.cpp:1012`), but individual
+        /// files in mixed-format tables may not support it at format level.
+        if (stripped_row_level_filter)
+        {
+            auto row_level_actions = std::make_shared<ExpressionActions>(stripped_row_level_filter->actions.clone());
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<FilterTransform>(
+                    header, row_level_actions,
+                    stripped_row_level_filter->column_name,
+                    stripped_row_level_filter->do_remove_column);
+            });
+        }
+
+        if (stripped_prewhere_info)
+        {
+            auto prewhere_actions = std::make_shared<ExpressionActions>(stripped_prewhere_info->prewhere_actions.clone());
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<FilterTransform>(
+                    header, prewhere_actions,
+                    stripped_prewhere_info->prewhere_column_name,
+                    stripped_prewhere_info->remove_prewhere_column);
             });
         }
 
@@ -961,7 +1127,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     }
 
     bool use_page_cache = !use_distributed_cache && !use_filesystem_cache
-        && effective_read_settings.page_cache && effective_read_settings.use_page_cache_for_object_storage;
+        && effective_read_settings.page_cache_settings.cache && effective_read_settings.use_page_cache_for_object_storage;
 
 
     /// We need object metadata for a few use cases:
@@ -992,10 +1158,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         ? effective_read_settings.adjustBufferSize(object_size)
         : effective_read_settings;
     /// FIXME: Changing this setting to default value breaks something around parquet reading
-    modified_read_settings.remote_read_min_bytes_for_seek = modified_read_settings.remote_fs_buffer_size;
+    modified_read_settings.remote_fs_settings.min_bytes_for_seek = modified_read_settings.remote_fs_settings.buffer_size;
     /// User's object may change, don't cache it.
     modified_read_settings.use_page_cache_for_disks_without_file_cache = false;
-    modified_read_settings.filesystem_cache_settings.filesystem_cache_boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
+    modified_read_settings.filesystem_cache_settings.boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
 
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
@@ -1003,8 +1169,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const bool object_too_small = is_size_known
         && object_size <= 2 * context_->getSettingsRef()[Setting::max_download_buffer_size];
     const bool use_prefetch = object_too_small
-        && modified_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
-        && modified_read_settings.remote_fs_prefetch;
+        && modified_read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool
+        && modified_read_settings.remote_fs_settings.prefetch;
 
     /// FIXME: Use async buffer if use_cache,
     /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
@@ -1015,10 +1181,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// so we gate on `use_filesystem_cache` rather than a runtime `isCached()` check.
     /// This means the bigger buffer may be used even when the cache stage is later
     /// skipped (e.g. missing etag) — slightly wasteful but not incorrect.
-    if (modified_read_settings.filesystem_cache_settings.filesystem_cache_prefer_bigger_buffer_size && use_filesystem_cache)
-        modified_read_settings.remote_fs_buffer_size = std::max<size_t>(
-            modified_read_settings.remote_fs_buffer_size,
-            modified_read_settings.prefetch_buffer_size);
+    if (modified_read_settings.filesystem_cache_settings.prefer_bigger_buffer_size && use_filesystem_cache)
+        modified_read_settings.remote_fs_settings.buffer_size = std::max<size_t>(
+            modified_read_settings.remote_fs_settings.buffer_size,
+            modified_read_settings.remote_fs_settings.large_buffer_size);
 
     /// Ensure the disk-level DC flag is consistent with the table-engine decision.
     /// `table_engine_read_through_distributed_cache` is a separate setting that enables DC
@@ -1082,7 +1248,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (use_page_cache)
     {
         pipeline.needMemoryCache(
-            effective_read_settings.page_cache,
             "s3:" + object_info.getPath(),
             "etag:" + object_info.metadata->etag,
             modified_read_settings.page_cache_settings);

@@ -83,20 +83,32 @@ class GH:
         assert repo_name
         print(repo_name)
 
+        # Include both sides of renames: .filename is the destination path and
+        # .previous_filename (REST API only, absent for non-renames) is the
+        # source path. Without the source path a rename out of a watched
+        # directory is invisible to consumers such as job filtering and the
+        # read-only docs guard. Rename sources do not exist in the checkout at
+        # HEAD, same as deleted files, which were always included.
+        jq_both_sides = ".filename, (.previous_filename // empty)"
+
         for attempt in range(3):
             # store changed files
             if info.pr_number > 0:
                 exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
-                    f"gh pr view {info.pr_number} --repo {repo_name} --json files --jq '.files[].path'",
+                    f"gh api repos/{repo_name}/pulls/{info.pr_number}/files --paginate --jq '.[] | {jq_both_sides}'",
                 )
                 assert exit_code == 0, "Failed to retrieve changed files list"
             else:
                 exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
-                    f"gh api repos/{repo_name}/commits/{sha} | jq -r '.files[].filename'",
+                    f"gh api repos/{repo_name}/commits/{sha} --jq '.files[] | {jq_both_sides}'",
                 )
 
             if exit_code == 0:
-                res = changed_files_str.split("\n") if changed_files_str else []
+                res = (
+                    list(dict.fromkeys(changed_files_str.split("\n")))
+                    if changed_files_str
+                    else []
+                )
                 break
             else:
                 print(
@@ -820,6 +832,32 @@ class GH:
         return output == "CONFLICTING"
 
     @classmethod
+    def check_labels_exist(cls, labels: List[str], repo="", verbose=False):
+        """
+        Raise a clear error if any of `labels` does not exist in `repo`.
+
+        `gh issue create` rejects the entire request with an opaque
+        `could not add label: '<name>' not found` message if a label is
+        unknown, and label sets differ between the public and private
+        repositories. Surface a precise, actionable error instead.
+        """
+        if not labels:
+            return
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        existing_raw = Shell.get_output(
+            f"gh label list --repo {shlex.quote(repo)} --limit 1000 --json name --jq '.[].name'",
+            verbose=verbose,
+        )
+        existing = {line.strip() for line in (existing_raw or "").splitlines()}
+        missing = [label for label in labels if label not in existing]
+        if missing:
+            raise RuntimeError(
+                f"Cannot create issue in {repo}: label(s) {missing} do not exist there. "
+                f"Create them in the repository first (e.g. `gh label create '{missing[0]}' --repo {repo}`)."
+            )
+
+    @classmethod
     def create_issue(
         cls,
         title,
@@ -845,6 +883,11 @@ class GH:
         if len(body) > max_body_length:
             truncation_note = "\n\n... (truncated due to GitHub body size limit)"
             body = body[: max_body_length - len(truncation_note)] + truncation_note
+
+        # `gh issue create` fails the whole call with an opaque error if any
+        # label is missing in the target repo (labels differ between the public
+        # and private repos). Check up front and surface a precise error.
+        cls.check_labels_exist(labels, repo=repo, verbose=verbose)
 
         temp_file_path = None
         try:
@@ -1108,10 +1151,14 @@ class GH:
             for name, links_md in self.extra_links:
                 body += f"- {name}: {links_md}\n"
             if self.failed_results:
+                # Blank line so the failure section isn't parsed as continuation
+                # of the Summary paragraph or the preceding bullet list.
+                body += "\n"
                 if len(self.failed_results) > 15:
-                    body += (
-                        f"    *15 failures out of {len(self.failed_results)} shown*:\n"
-                    )
+                    # Unindented + terminated with a blank line, otherwise the
+                    # 4-space indent turns this into an indented code block that
+                    # swallows the table that follows.
+                    body += f"*15 failures out of {len(self.failed_results)} shown*:\n\n"
                     self.failed_results = self.failed_results[:15]
                 body += "|job_name|test_name|status|info|comment|\n"
                 body += "|:--|:--|:-:|:--|:--|\n"

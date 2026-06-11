@@ -263,6 +263,21 @@ SelectQueryInfo makeStreamingSelectQueryInfo(SelectQueryInfo info)
     return info;
 }
 
+PrewhereInfoPtr makeStreamingPrewhereInfo(PrewhereInfoPtr info)
+{
+    if (!info)
+        return nullptr;
+
+    auto patched_info = std::make_shared<PrewhereInfo>(info->clone());
+
+    /// This columns are needed for cursor calculation. Do not loose them during prewhere.
+    patched_info->prewhere_actions.tryRestoreColumn(PartitionIdColumn::name);
+    patched_info->prewhere_actions.tryRestoreColumn(BlockNumberColumn::name);
+    patched_info->prewhere_actions.tryRestoreColumn(BlockOffsetColumn::name);
+
+    return patched_info;
+}
+
 }
 
 MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
@@ -279,7 +294,7 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     , header(std::move(header_))
     , storage(storage_)
     , query_info(makeStreamingSelectQueryInfo(query_info_))
-    , initial_prewhere_info(query_info_.prewhere_info)
+    , initial_prewhere_info(makeStreamingPrewhereInfo(query_info_.prewhere_info))
     , context(makeStreamingContext(std::move(context_)))
     , user_requested_columns(std::move(user_requested_columns_))
     , requested_num_streams(requested_num_streams_)
