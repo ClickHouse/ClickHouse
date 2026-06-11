@@ -152,6 +152,13 @@ const std::unordered_set<String> non_deterministic_functions = {
     "retentionState",
     /// Depends on physical data layout, not values.
     "estimateCompressionRatio",
+    /// Statistical hypothesis-test / correlation aggregates: they return
+    /// floating-point statistics or p-values computed with rank/tie handling
+    /// and non-associative summation, so the State/Merge, DQP and
+    /// subquery-rewrite paths legitimately differ from direct evaluation.
+    "mannWhitneyUTest", "studentTTest", "welchTTest", "meanZTest",
+    "kolmogorovSmirnovTest", "rankCorr", "theilsU", "cramersV",
+    "cramersVBiasCorrected", "contingency", "categoricalInformationValue",
 };
 
 /// Maximum formatted query length for oracle sub-queries.
