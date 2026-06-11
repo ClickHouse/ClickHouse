@@ -17,11 +17,6 @@ trap 'rm -f "$CONFIG_FILE"' EXIT
 cat > "$CONFIG_FILE" <<'EOF'
 <clickhouse>
     <max_server_memory_usage>4G</max_server_memory_usage>
-    <!-- Production default (4 MiB) reserves memory at every pipeline job spawn
-         and trips the tight `max_server_memory_usage` here. Disable for the
-         test; we are exercising `max_threads_min_free_memory_per_thread`, not
-         the per-thread speculative reservation. -->
-    <additional_memory_tracking_per_thread>0</additional_memory_tracking_per_thread>
 </clickhouse>
 EOF
 

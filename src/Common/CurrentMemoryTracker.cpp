@@ -122,6 +122,18 @@ AllocationTrace CurrentMemoryTracker::allocThrow(Int64 size)
     return allocImpl(size, enforce_memory_limit);
 }
 
+void CurrentMemoryTracker::allocGlobal(Int64 size)
+{
+    /// The returned trace is intentionally dropped: no actual allocation backs
+    /// this reservation, so it must not be reported to the allocation profiler.
+    std::ignore = total_memory_tracker.allocImpl(size, /*enforce_memory_limit=*/ true);
+}
+
+void CurrentMemoryTracker::freeGlobal(Int64 size)
+{
+    std::ignore = total_memory_tracker.free(size);
+}
+
 void CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(UInt64 value)
 {
     min_allocation_size_to_throw_on_memory_limit.store(

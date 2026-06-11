@@ -27,10 +27,7 @@ cluster = ClickHouseCluster(__file__)
 # node1: no constraints on max_memory_usage (unconstrained initiator)
 node1 = cluster.add_instance(
     "node1",
-    main_configs=[
-        "configs/remote_servers.xml",
-        "configs/additional_memory_tracking_per_thread.xml",
-    ],
+    main_configs=["configs/remote_servers.xml"],
     with_zookeeper=True,
     macros={"shard": "1", "replica": "1"},
 )
@@ -38,10 +35,7 @@ node1 = cluster.add_instance(
 # node2: strict constraint on max_memory_usage (min=5_000_000_000)
 node2 = cluster.add_instance(
     "node2",
-    main_configs=[
-        "configs/remote_servers.xml",
-        "configs/additional_memory_tracking_per_thread.xml",
-    ],
+    main_configs=["configs/remote_servers.xml"],
     user_configs=["configs/node2_users.xml"],
     with_zookeeper=True,
     macros={"shard": "2", "replica": "1"},

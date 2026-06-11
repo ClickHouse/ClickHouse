@@ -1,5 +1,5 @@
--- The pipeline executors charge `additional_memory_tracking_per_thread` (4 MiB by
--- default) against the query's `MemoryTracker` for the lifetime of every job.
+-- The pipeline executor charges `additional_memory_tracking_per_thread` (4 MiB by
+-- default) against the server-wide `MemoryTracker` for the lifetime of every worker.
 -- This test verifies that:
 --   * an in-pipeline `MEMORY_LIMIT_EXCEEDED` lands inside the per-job `catch`
 --     block and propagates as a normal query failure (no deadlock on the

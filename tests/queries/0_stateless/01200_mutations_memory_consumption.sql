@@ -1,32 +1,4 @@
-#!/usr/bin/env bash
-# Tags: no-debug, long, no-random-settings, no-random-merge-tree-settings
-
-CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
-. "$CURDIR"/../shell_config.sh
-
-# This test asserts that the peak memory of a `MutatePart` operation stays below the
-# number of bytes it reads (i.e. memory is almost constant and does not grow with the
-# data). The server-level `additional_memory_tracking_per_thread` (4 MiB by default)
-# speculatively reserves memory for every pipeline-executor thread of the mutation,
-# which inflates `peak_memory_usage` in `system.part_log` by tens of MiB and breaks the
-# invariant. The reservation is unrelated to what this test measures, so run inside
-# `clickhouse-local` with the feature disabled. `clickhouse-local` exercises the same
-# MergeTree mutation code path, with `mutations_sync = 1` making the mutation synchronous.
-CONFIG_FILE=$(mktemp -p "${CLICKHOUSE_TMP:-.}" 01200_config.XXXXXX.xml)
-trap 'rm -f "$CONFIG_FILE"' EXIT
-cat > "$CONFIG_FILE" <<'EOF'
-<clickhouse>
-    <additional_memory_tracking_per_thread>0</additional_memory_tracking_per_thread>
-    <part_log>
-        <database>system</database>
-        <table>part_log</table>
-        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
-    </part_log>
-</clickhouse>
-EOF
-
-${CLICKHOUSE_LOCAL} --config-file "$CONFIG_FILE" --multiquery "
+-- Tags: no-debug, no-parallel, long, no-object-storage, no-random-settings, no-random-merge-tree-settings
 SET optimize_trivial_insert_select = 1;
 
 DROP TABLE IF EXISTS table_with_single_pk;
@@ -85,7 +57,9 @@ SELECT
 
 DROP TABLE IF EXISTS table_with_multi_pk;
 
+
 DROP TABLE IF EXISTS table_with_function_pk;
+
 
 CREATE TABLE table_with_function_pk
   (
@@ -142,4 +116,3 @@ SELECT
  WHERE event_date >= yesterday() AND event_time >= now() - 600 AND event_type = 'MutatePart' AND table = 'table_without_pk' AND database = currentDatabase();
 
 DROP TABLE IF EXISTS table_without_pk;
-"

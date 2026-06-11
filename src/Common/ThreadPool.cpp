@@ -1,6 +1,5 @@
 #include <Common/ThreadPool.h>
 
-#include <Common/CurrentMemoryTracker.h>
 #include <Common/StackTrace.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
@@ -796,12 +795,11 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         try
         {
             /// The speculative per-thread memory reservation that compensates for
-            /// `max_untracked_memory` is performed by each pipeline executor lambda
-            /// AFTER it attaches the query's thread group (`ThreadGroupSwitcher`).
-            /// Doing it here would charge against an unrelated tracker chain and a
-            /// thrown `MEMORY_LIMIT_EXCEEDED` could not be routed back through the
-            /// pipeline's job-level `catch`, causing the pipeline consumer to block
-            /// on the output queue indefinitely.
+            /// `max_untracked_memory` (see `additional_memory_tracking_per_thread`)
+            /// is performed inside each pipeline-executor worker, not here:
+            /// a `MEMORY_LIMIT_EXCEEDED` thrown at this level could not be routed back
+            /// through the job's own error handling, so the job's owner (for example
+            /// a pipeline consumer waiting on an output queue) would block indefinitely.
 
             CurrentMetrics::Increment metric_active_pool_threads(parent_pool.metric_active_threads);
 

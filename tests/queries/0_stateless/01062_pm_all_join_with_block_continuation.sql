@@ -1,5 +1,4 @@
-SET max_threads = 1; -- pin the per-thread `additional_memory_tracking_per_thread` reservation to a single fixed offset
-SET max_memory_usage = 16194304; -- 12 MB + 4 MiB to absorb `additional_memory_tracking_per_thread`
+SET max_memory_usage = 12000000;
 SET join_algorithm = 'partial_merge';
 SET analyzer_compatibility_join_using_top_level_identifier = 1;
 SET joined_block_split_single_row = 0;
