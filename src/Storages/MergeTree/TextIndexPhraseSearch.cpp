@@ -2,6 +2,8 @@
 
 #include <Common/Exception.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -94,6 +96,19 @@ std::vector<RoaringishEntry> TextIndexPhraseSearch::intersect(
             ++rhs_idx;
         }
     }
+
+    /// Coalesce duplicate (doct_id, group) entries
+    std::sort(result.begin(), result.end());
+
+    size_t write_idx = 0;
+    for (size_t read_idx = 0; read_idx < result.size(); ++read_idx)
+    {
+        if (write_idx > 0 && result[write_idx - 1].sameBucket(result[read_idx]))
+            result[write_idx - 1].mergeBitmap(result[read_idx]);
+        else
+            result[write_idx++] = result[read_idx];
+    }
+    result.resize(write_idx);
 
     return result;
 }
