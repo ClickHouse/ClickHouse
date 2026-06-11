@@ -29,7 +29,7 @@ namespace
 class RandomAccessSQLiteFile : public sqlite3_file
 {
 public:
-    const SQLiteReadSource * source;
+    SQLiteReadSource * source;
 };
 
 extern sqlite3_io_methods mem_io_methods;
@@ -53,6 +53,10 @@ int memRead(sqlite3_file * file, void * buffer, int len, sqlite3_int64 offset)
     }
     catch (...)
     {
+        /// A C++ exception must not propagate through the SQLite C callback. Save it so that
+        /// the caller of the SQLite API can rethrow the original error instead of reporting
+        /// a generic SQLite I/O error.
+        memfile->source->exception = std::current_exception();
         return SQLITE_IOERR_READ;
     }
 
@@ -148,7 +152,7 @@ int memUnfetch(sqlite3_file *, sqlite3_int64, void *)
 int memOpen(sqlite3_vfs *, const char * zName, sqlite3_file * pFile, int, int *)
 {
     auto * c = static_cast<RandomAccessSQLiteFile *>(pFile);
-    c->source = reinterpret_cast<const SQLiteReadSource *>(unhexUInt<uintptr_t>(zName));
+    c->source = reinterpret_cast<SQLiteReadSource *>(unhexUInt<uintptr_t>(zName));
     if (c->source == nullptr || c->source->buf == nullptr)
         return SQLITE_CANTOPEN;
     pFile->pMethods = &mem_io_methods;
@@ -286,7 +290,7 @@ void initSQLiteReadVFS()
     });
 }
 
-std::string encodeSQLiteVFSFileName(const SQLiteReadSource * source)
+std::string encodeSQLiteVFSFileName(SQLiteReadSource * source)
 {
     return getHexUIntLowercase(reinterpret_cast<uintptr_t>(source));
 }

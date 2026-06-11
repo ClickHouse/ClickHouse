@@ -5,6 +5,7 @@
 #if USE_SQLITE
 
 #include <cstddef>
+#include <exception>
 #include <string>
 
 namespace DB
@@ -18,6 +19,11 @@ struct SQLiteReadSource
 {
     SeekableReadBuffer * buf;
     size_t size;
+
+    /// SQLite C callbacks cannot propagate C++ exceptions, so when reading from the buffer
+    /// throws, the VFS saves the exception here and returns an I/O error code to SQLite.
+    /// The caller of the SQLite API should rethrow it to report the original error.
+    std::exception_ptr exception;
 };
 
 /// Name of the SQLite VFS that reads a database from a ClickHouse SeekableReadBuffer
@@ -30,7 +36,8 @@ void initSQLiteReadVFS();
 /// Encodes a SQLiteReadSource pointer into the file name understood by the VFS.
 /// The pointer is passed as a portable lowercase hex string (no platform-dependent
 /// pointer formatting), and decoded back in the VFS xOpen callback.
-std::string encodeSQLiteVFSFileName(const SQLiteReadSource * source);
+/// The pointer is non-const because the VFS saves exceptions into the source.
+std::string encodeSQLiteVFSFileName(SQLiteReadSource * source);
 
 }
 
