@@ -1741,7 +1741,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
     /// writes it against the display names, so it must be evaluated on the display name (in the loop
     /// below). The internal (unique) name stays on the column node so the planner resolves each
     /// duplicate to a distinct column identifier, and the user-visible header is restored afterwards.
-    std::unordered_map<std::string_view, std::string_view> internal_name_to_display_name;
+    /// The map owns its keys/values: `UnionNode::computeProjectionColumns()` and a materialized-CTE
+    /// subquery yield temporaries, so storing string_view keys into them would dangle.
+    std::unordered_map<String, String> internal_name_to_display_name;
     auto collect_internal_to_display = [&](const NamesAndTypes & internal_columns, const Names & display_names)
     {
         for (size_t i = 0; i < internal_columns.size() && i < display_names.size(); ++i)
@@ -1760,14 +1762,34 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
         if (!display_names.empty())
             collect_internal_to_display(union_subquery_node->computeProjectionColumns(), display_names);
     }
+    else if (const auto * table_node = table_expression_node->as<TableNode>(); table_node && table_node->isMaterializedCTE())
+    {
+        /// A reused MATERIALIZED CTE is a TableNode whose temporary storage columns were built from
+        /// the (disambiguated) internal projection names of the resolved subquery. The display-name
+        /// sidecar lives on that subquery node, so recover the mapping from it to restore the
+        /// user-visible header / let a name-sensitive matcher address the original names.
+        const auto & subquery = table_node->getMaterializedCTESubquery();
+        if (const auto * cte_query_node = subquery->as<QueryNode>())
+        {
+            const auto & display_names = cte_query_node->getProjectionColumnDisplayNames();
+            if (!display_names.empty())
+                collect_internal_to_display(cte_query_node->getProjectionColumns(), display_names);
+        }
+        else if (const auto * cte_union_node = subquery->as<UnionNode>())
+        {
+            const auto & display_names = cte_union_node->getProjectionColumnDisplayNames();
+            if (!display_names.empty())
+                collect_internal_to_display(cte_union_node->computeProjectionColumns(), display_names);
+        }
+    }
 
-    auto display_name_of = [&](const std::string & internal_name) -> std::string
+    auto display_name_of = [&](const std::string & internal_name) -> const String &
     {
         if (!internal_name_to_display_name.empty())
         {
             auto it = internal_name_to_display_name.find(internal_name);
             if (it != internal_name_to_display_name.end())
-                return std::string(it->second);
+                return it->second;
         }
         return internal_name;
     };

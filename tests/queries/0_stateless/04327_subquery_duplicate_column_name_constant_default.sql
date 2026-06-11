@@ -80,3 +80,12 @@ SELECT * FROM (((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION DISTINCT
 -- the generated internal name `7_1` is not user-addressable.
 SELECT COLUMNS('^7$') FROM (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`));
 SELECT COLUMNS('^7_1$') FROM (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)); -- { serverError EMPTY_LIST_OF_COLUMNS_QUERIED }
+
+-- A reused MATERIALIZED CTE is materialized into a temporary table whose storage columns carry the
+-- (internally disambiguated) names, but the user-visible header must still show both `7` display
+-- names: the generated internal name `7_1` must not leak, and a name-sensitive `COLUMNS('^7$')`
+-- matcher over the CTE must match BOTH `7` columns while `7_1` stays unaddressable.
+SELECT * FROM (WITH t AS MATERIALIZED (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) SELECT * FROM t UNION ALL SELECT * FROM t) ORDER BY 1, 2, 3 SETTINGS enable_materialized_cte = 1;
+DESCRIBE (WITH t AS MATERIALIZED (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) SELECT * FROM t UNION ALL SELECT * FROM t) SETTINGS enable_materialized_cte = 1;
+SELECT COLUMNS('^7$') FROM (WITH t AS MATERIALIZED (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) SELECT * FROM t) SETTINGS enable_materialized_cte = 1;
+SELECT COLUMNS('^7_1$') FROM (WITH t AS MATERIALIZED (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) SELECT * FROM t) SETTINGS enable_materialized_cte = 1; -- { serverError EMPTY_LIST_OF_COLUMNS_QUERIED }
