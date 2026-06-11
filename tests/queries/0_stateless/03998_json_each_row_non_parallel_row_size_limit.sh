@@ -79,3 +79,35 @@ for i in range(20):
 " 2>/dev/null \
     | ${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --min_chunk_bytes_for_parallel_parsing=1000000 --max_memory_usage=0 \
         --input-format=JSONAsObject --structure="json JSON" -q "SELECT count() FROM table WHERE NOT ignore(json)"
+
+# The JSON format (with metadata) falls back to the JSONEachRow reader when readPrefix finds no
+# metadata (parse_as_json_each_row), so a single huge no-metadata object reaches the same base
+# readRow path and must be capped there too. Materialize the column (SELECT a ... FORMAT Null):
+# SELECT 1 / count() can be planned via countRows with optimize_count_from_files and skip the row
+# reader, leaving the cap untested.
+python3 -c "import sys; sys.stdout.buffer.write(b'{\"a\":\"' + b'x' * (30 * 1024 * 1024) + b'\"}\n')" 2>/dev/null \
+    | ${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --min_chunk_bytes_for_parallel_parsing=1000000 --max_memory_usage=0 \
+        --input-format=JSON --structure="a String" -q "SELECT a FROM table FORMAT Null" 2>&1 \
+    | grep -q "min_chunk_bytes_for_parallel_parsing" && echo "Ok." || echo "FAIL"
+
+# Schema inference of the JSON format also falls back to JSONEachRowSchemaReader on no metadata
+# (fallback_to_json_each_row), so an oversized no-metadata object must be capped during inference too.
+python3 -c "import sys; sys.stdout.buffer.write(b'{\"a\":\"' + b'x' * (30 * 1024 * 1024) + b'\"}\n')" 2>/dev/null \
+    | ${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --min_chunk_bytes_for_parallel_parsing=1000000 --max_memory_usage=0 \
+        --input-format=JSON -q "DESC table" 2>&1 \
+    | grep -q "min_chunk_bytes_for_parallel_parsing" && echo "Ok." || echo "FAIL"
+
+# A metadata-framed JSON document keeps the cap disabled (its rows are inside a "data" array, not
+# standalone objects), so a large value there must still parse.
+python3 -c "import sys; sys.stdout.buffer.write(b'{\"meta\":[{\"name\":\"a\",\"type\":\"String\"}],\"data\":[{\"a\":\"' + b'z' * (1024 * 1024) + b'\"}]}\n')" 2>/dev/null \
+    | ${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --min_chunk_bytes_for_parallel_parsing=1000000 --max_memory_usage=0 \
+        --input-format=JSON --structure="a String" -q "SELECT length(a) FROM table"
+
+# Normal-sized no-metadata JSON must still parse on the fallback read path.
+python3 -c "
+import sys
+for _ in range(20):
+    sys.stdout.buffer.write(b'{\"a\":\"' + b'y' * (1024 * 1024) + b'\"}\n')
+" 2>/dev/null \
+    | ${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --min_chunk_bytes_for_parallel_parsing=1000000 --max_memory_usage=0 \
+        --input-format=JSON --structure="a String" -q "SELECT count(), sum(length(a)) FROM table WHERE NOT ignore(a)"

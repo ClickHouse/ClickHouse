@@ -33,10 +33,10 @@ private:
 
     void readPrefix() override;
     void readSuffix() override;
-    /// Reads through a PeekableReadBuffer with metadata/array framing; the JSONEachRow
-    /// per-row segmentation cap is not applied (matches the parallel-parsing coverage,
-    /// which is not enabled for the JSON-with-metadata format either).
-    bool applyRowSizeLimit() const override { return false; }
+    /// Cap only on the no-metadata fallback, where readPrefix delegates to
+    /// JSONEachRowRowInputFormat and rows go through the base readRow path. The
+    /// metadata/array-framed path is not a single self-delimited object per row.
+    bool applyRowSizeLimit() const override { return parse_as_json_each_row; }
 
     const bool validate_types_from_metadata;
     bool parse_as_json_each_row = false;
@@ -56,9 +56,9 @@ public:
 private:
     JSONRowSchemaReader(std::unique_ptr<PeekableReadBuffer> buf, const FormatSettings & format_settings_, bool fallback_to_json_each_row_);
 
-    /// Reads through a PeekableReadBuffer with metadata/array framing; the per-row segmentation
-    /// cap is not applied (matches the input-format side, which also excludes this format).
-    bool applyRowSizeLimit() const override { return false; }
+    /// Cap only when inference can fall back to JSONEachRowSchemaReader (no metadata);
+    /// the direct metadata path does not read rows through the capped base reader.
+    bool applyRowSizeLimit() const override { return fallback_to_json_each_row; }
 
     std::unique_ptr<PeekableReadBuffer> peekable_buf;
     bool fallback_to_json_each_row;
