@@ -659,6 +659,11 @@ public:
 
     void resetSharedContext();
 
+    /// False after resetSharedContext() (late shutdown): the global Context
+    /// object may still be reachable via getGlobalContextInstance() while
+    /// every shared->... accessor is already invalid.
+    bool isSharedContextAlive() const;
+
 protected:
     using SampleBlockCache = std::unordered_map<std::string, SharedHeader>;
     mutable SampleBlockCache sample_block_cache;

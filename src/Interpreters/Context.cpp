@@ -1303,6 +1303,12 @@ void ContextData::resetSharedContext()
     shared = nullptr;
 }
 
+bool ContextData::isSharedContextAlive() const
+{
+    std::lock_guard<std::mutex> lock(mutex_shared_context);
+    return shared != nullptr;
+}
+
 Context::Context() = default;
 Context::Context(const Context & rhs) : ContextData(rhs), std::enable_shared_from_this<Context>(rhs) {}
 
