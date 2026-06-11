@@ -1,0 +1,5 @@
+<clickhouse>
+    <!-- Aggressive idle-thread trimming to maximize OS-thread teardown frequency. This is the
+         amplifier that turned the latent heap corruption into mass failures on 2026-06-10. -->
+    <max_thread_pool_free_size>16</max_thread_pool_free_size>
+</clickhouse>

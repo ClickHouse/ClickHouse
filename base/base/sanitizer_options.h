@@ -16,7 +16,9 @@ extern "C" {
 #ifdef ADDRESS_SANITIZER
 const char * __asan_default_options()
 {
-    return "halt_on_error=1 abort_on_error=1";
+    /// Large quarantine keeps freed memory poisoned longer so a wild write is reported as
+    /// heap-use-after-free with full stacks instead of corrupting recycled allocations silently.
+    return "halt_on_error=1 abort_on_error=1 quarantine_size_mb=2048 malloc_context_size=30";
 }
 const char * __lsan_default_options()
 {
