@@ -154,7 +154,6 @@ process_rust_crate() {
       "LICENSE_A2"
       "LICENSE_CC0"
       "LICENSE_A2LLVM"
-      "LICENSE-0BSD.txt"
     )
     for possible_path in "${arr[@]}"
     do

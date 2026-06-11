@@ -141,7 +141,7 @@ std::optional<String> IAccessStorage::readName(const UUID & id, bool throw_if_no
 }
 
 
-Strings IAccessStorage::readNames(const UUIDs & ids, bool throw_if_not_exists) const
+Strings IAccessStorage::readNames(const std::vector<UUID> & ids, bool throw_if_not_exists) const
 {
     Strings res;
     res.reserve(ids.size());
@@ -160,7 +160,7 @@ std::optional<String> IAccessStorage::tryReadName(const UUID & id) const
 }
 
 
-Strings IAccessStorage::tryReadNames(const UUIDs & ids) const
+Strings IAccessStorage::tryReadNames(const std::vector<UUID> & ids) const
 {
     return readNames(ids, /* throw_if_not_exists = */ false);
 }
@@ -231,7 +231,7 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
 
 std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & multiple_entities, const std::vector<UUID> & ids, bool replace_if_exists, bool throw_if_exists)
 {
-    chassert(ids.empty() || (multiple_entities.size() == ids.size()));
+    assert(ids.empty() || (multiple_entities.size() == ids.size()));
 
     if (multiple_entities.empty())
         return {};
