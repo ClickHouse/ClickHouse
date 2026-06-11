@@ -1,7 +1,6 @@
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
-#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -43,13 +42,17 @@ void ASTUpdateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 {
     ostr << "UPDATE ";
 
+    /// Format the target as AST nodes (not as strings via `getDatabase`/`getTable`),
+    /// because the table can be parameterized (e.g. `UPDATE {tbl:Identifier}`), and
+    /// a query parameter is not representable as a string identifier.
     if (database)
     {
-        ostr << backQuoteIfNeed(getDatabase());
+        database->format(ostr, settings, state, frame);
         ostr << ".";
     }
 
-    ostr << backQuoteIfNeed(getTable());
+    chassert(table);
+    table->format(ostr, settings, state, frame);
     formatOnCluster(ostr, settings);
 
     ostr << " SET ";
