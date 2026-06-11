@@ -1,13 +1,16 @@
-asciiCJK tokenizer
-- hasToken substring of CJK run, with index	0
-- hasToken substring of CJK run, no index	0
-ngrams tokenizer
-- hasToken inner substring, with index	0
-- hasToken inner substring, no index	0
-- hasToken full word, with index	1
-- hasToken full word, no index	1
+asciiCJK tokenizer (was a false positive)
+- substring of CJK run, with index	0
+- substring of CJK run, no index	0
+ngrams tokenizer, needle shorter than n (was a false negative)
+- short needle, with index	1
+- short needle, no index	1
+ngrams tokenizer, substring vs whole token
+- inner substring, with index	0
+- inner substring, no index	0
+- whole word, with index	1
+- whole word, no index	1
 splitByNonAlpha tokenizer (exact read still used, results unchanged)
-- hasToken existing token, with index	1
-- hasToken existing token, no index	1
-- hasToken missing substring, with index	0
-- hasToken missing substring, no index	0
+- existing token, with index	1
+- existing token, no index	1
+- missing substring, with index	0
+- missing substring, no index	0

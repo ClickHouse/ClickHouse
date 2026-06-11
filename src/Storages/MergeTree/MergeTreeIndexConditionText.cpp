@@ -232,8 +232,10 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 
     if (function_name == "hasToken")
     {
-        /// hasToken has fixed splitByNonAlpha semantics, so exact direct read from the posting lists is
-        /// only correct when the index produces the same tokens (splitByNonAlpha without a preprocessor).
+        /// hasToken has fixed splitByNonAlpha semantics. Exact direct read from the posting lists is sound
+        /// only when the index produces the same tokens: splitByNonAlpha without a preprocessor. Any other
+        /// tokenizer or a preprocessor can segment text differently, so use the index only as a hint and
+        /// re-evaluate hasToken on the rows.
         return is_split_by_non_alpha_tokenizer && !has_preprocessor ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
     }
 
@@ -924,20 +926,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         auto tokens = stringToTokens(value_field);
         if (tokens.empty())
         {
-            const String & string_needle = value_field.safeGet<String>();
-            if (!string_needle.empty())
-            {
-                /// hasToken uses splitByNonAlpha as its tokenizer, so:
-                ///  - A needle without any word character (alphanumeric or non-ASCII) is invalid.
-                ///  - Bypass the index in that case so the row-level evaluation throws BAD_ARGUMENTS (or returns NULL for hasTokenOrNull)
-                ///  -- Consistnt with the no-index behaviour.
-                /// If the needle does contain word characters (e.g. "abc" with ngrams(4)):
-                ///  - It is valid but too short for the index's tokenizer:
-                ///  -- Fall through to push "" so all granules are pruned and the query returns 0 rows.
-                if (std::ranges::none_of(string_needle, [](unsigned char c) { return !isASCII(c) || isAlphaNumericASCII(c); }))
-                    return false;
-            }
-            tokens.push_back("");
+            /// The needle does not map to any index token (a separator-only needle, or a needle shorter
+            /// than the tokenizer can represent, e.g. "abc" with ngrams(4)). The index tokens are then not
+            /// a necessary condition for the real hasToken result, so pushing an empty token would prune
+            /// every granule and return wrong (missing) rows. Decline the index and let the row-level
+            /// hasToken decide (it also throws BAD_ARGUMENTS / returns NULL for an invalid needle, as without the index).
+            return false;
         }
 
         out.function = RPNElement::FUNCTION_EQUALS;

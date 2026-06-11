@@ -22,6 +22,8 @@ WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT count() FROM tab WHERE hasToken(col, 'config');
 
+-- hasToken only uses exact direct read with the splitByNonAlpha tokenizer (issue #107186); with the array
+-- tokenizer it is added as a hint with row-level re-evaluation, so the INPUT below is a hint, not a replacement.
 SELECT trim(explain) FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(col, 'config')

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-# This test tests 2 things with and without the direct read optimization:
+# This test tests 3 things with and without the direct read optimization:
 # 1. That short ngrams (parsing words shorter than the ngram length N) return an empty set when tokenized
 # 2. That empty inputs to the search tokens return 0 rows instead of the whole table
+# 3. That hasToken keeps its splitByNonAlpha semantics and does not use a mismatched ngrams index (issue #107186)
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -56,6 +57,8 @@ SELECT count() FROM tab WHERE hasAllTokens(message, '');
 
 SELECT tokens('abc', 'ngrams', 4) AS tokens;
 
+-- hasToken keeps fixed splitByNonAlpha semantics regardless of the index tokenizer, so 'abc' is a real token of row 1.
+-- The ngrams index cannot represent that, so hasToken does not use it (see issue #107186) and the row is matched.
 SELECT count() FROM tab WHERE hasToken(message, 'abc');
 
 -- Arrays
