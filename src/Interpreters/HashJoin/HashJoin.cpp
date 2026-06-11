@@ -417,10 +417,10 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
             return Type::two_level_key32;
         case Type::key64:
             return Type::two_level_key64;
-        /// There are no two-level variants for the smaller packed-key maps,
-        /// so fall back to packing into the two-level UInt128 map.
         case Type::keys32:
+            return Type::two_level_keys32;
         case Type::keys64:
+            return Type::two_level_keys64;
         case Type::keys128:
             return Type::two_level_keys128;
         case Type::keys256:
