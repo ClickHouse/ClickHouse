@@ -636,7 +636,12 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
 
     const auto & node_map = table_expression_data.getColumnNodeMap();
-    if (auto it = node_map.find(identifier_full_name); it != node_map.end())
+    /// A generated internal name of a disambiguated duplicate subquery column (e.g. `7_1`) lives in
+    /// the column-node map only so the planner addresses each duplicate distinctly; it is not
+    /// user-addressable. Skip it here so a direct reference like `SELECT \`7_1\` FROM (...)` does not
+    /// bind to the hidden column. The original display name (`7`) still binds to the first occurrence.
+    if (auto it = node_map.find(identifier_full_name);
+        it != node_map.end() && !table_expression_data.isHiddenColumnName(identifier_full_name))
     {
         result_expression = it->second;
     }

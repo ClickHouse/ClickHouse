@@ -1719,6 +1719,58 @@ GetColumnsOptions QueryAnalyzer::buildGetColumnsOptions(QueryTreeNodePtr & match
     return GetColumnsOptions(static_cast<GetColumnsOptions::Kind>(get_columns_options_kind)).withVirtuals(virtuals_kind, VirtualsMaterializationPlace::All);
 }
 
+/// Map each generated unique internal name of a disambiguated subquery/union/materialized-CTE
+/// table expression back to its original (user-visible) display name. Empty when nothing was
+/// disambiguated. Single source of truth shared by the matcher (which evaluates name-sensitive
+/// matchers and restores the header against the display name) and by `initializeTableExpressionData`
+/// (which records the keys as `hidden_column_names`, the generated names a direct identifier must
+/// not bind to). The map owns its keys/values: `UnionNode::computeProjectionColumns()` and a
+/// materialized-CTE subquery yield temporaries, so storing string_view keys into them would dangle.
+static std::unordered_map<String, String> buildSubqueryInternalToDisplayNameMap(const QueryTreeNodePtr & table_expression_node)
+{
+    std::unordered_map<String, String> internal_name_to_display_name;
+    auto collect = [&](const NamesAndTypes & internal_columns, const Names & display_names)
+    {
+        for (size_t i = 0; i < internal_columns.size() && i < display_names.size(); ++i)
+            if (internal_columns[i].name != display_names[i])
+                internal_name_to_display_name.emplace(internal_columns[i].name, display_names[i]);
+    };
+
+    if (const auto * subquery_node = table_expression_node->as<QueryNode>())
+    {
+        const auto & display_names = subquery_node->getProjectionColumnDisplayNames();
+        if (!display_names.empty())
+            collect(subquery_node->getProjectionColumns(), display_names);
+    }
+    else if (const auto * union_subquery_node = table_expression_node->as<UnionNode>())
+    {
+        const auto & display_names = union_subquery_node->getProjectionColumnDisplayNames();
+        if (!display_names.empty())
+            collect(union_subquery_node->computeProjectionColumns(), display_names);
+    }
+    else if (const auto * table_node = table_expression_node->as<TableNode>(); table_node && table_node->isMaterializedCTE())
+    {
+        /// A reused MATERIALIZED CTE is a TableNode whose temporary storage columns were built from
+        /// the (disambiguated) internal projection names of the resolved subquery. The display-name
+        /// sidecar lives on that subquery node, so recover the mapping from it.
+        const auto & subquery = table_node->getMaterializedCTESubquery();
+        if (const auto * cte_query_node = subquery->as<QueryNode>())
+        {
+            const auto & display_names = cte_query_node->getProjectionColumnDisplayNames();
+            if (!display_names.empty())
+                collect(cte_query_node->getProjectionColumns(), display_names);
+        }
+        else if (const auto * cte_union_node = subquery->as<UnionNode>())
+        {
+            const auto & display_names = cte_union_node->getProjectionColumnDisplayNames();
+            if (!display_names.empty())
+                collect(cte_union_node->computeProjectionColumns(), display_names);
+        }
+    }
+
+    return internal_name_to_display_name;
+}
+
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
     const QueryTreeNodePtr & table_expression_node,
     const NamesAndTypes & matched_columns,
@@ -1735,55 +1787,14 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
         table_expression_data = &nearest_query_scope->getTableExpressionDataOrThrow(table_expression_node);
 
     /// If the matched table expression is a subquery (plain or union) whose duplicate output column
-    /// names were made internally unique (see `disambiguateDuplicateProjectionColumnNames` /
-    /// `disambiguateDuplicateUnionProjectionColumnNames`), build the mapping from each unique
-    /// internal name back to its original display name. The matcher is name-sensitive and the user
-    /// writes it against the display names, so it must be evaluated on the display name (in the loop
-    /// below). The internal (unique) name stays on the column node so the planner resolves each
-    /// duplicate to a distinct column identifier, and the user-visible header is restored afterwards.
-    /// The map owns its keys/values: `UnionNode::computeProjectionColumns()` and a materialized-CTE
-    /// subquery yield temporaries, so storing string_view keys into them would dangle.
-    std::unordered_map<String, String> internal_name_to_display_name;
-    auto collect_internal_to_display = [&](const NamesAndTypes & internal_columns, const Names & display_names)
-    {
-        for (size_t i = 0; i < internal_columns.size() && i < display_names.size(); ++i)
-            if (internal_columns[i].name != display_names[i])
-                internal_name_to_display_name.emplace(internal_columns[i].name, display_names[i]);
-    };
-    if (const auto * subquery_node = table_expression_node->as<QueryNode>())
-    {
-        const auto & display_names = subquery_node->getProjectionColumnDisplayNames();
-        if (!display_names.empty())
-            collect_internal_to_display(subquery_node->getProjectionColumns(), display_names);
-    }
-    else if (const auto * union_subquery_node = table_expression_node->as<UnionNode>())
-    {
-        const auto & display_names = union_subquery_node->getProjectionColumnDisplayNames();
-        if (!display_names.empty())
-            collect_internal_to_display(union_subquery_node->computeProjectionColumns(), display_names);
-    }
-    else if (const auto * table_node = table_expression_node->as<TableNode>(); table_node && table_node->isMaterializedCTE())
-    {
-        /// A reused MATERIALIZED CTE is a TableNode whose temporary storage columns were built from
-        /// the (disambiguated) internal projection names of the resolved subquery. The display-name
-        /// sidecar lives on that subquery node, so recover the mapping from it to restore the
-        /// user-visible header / let a name-sensitive matcher address the original names.
-        const auto & subquery = table_node->getMaterializedCTESubquery();
-        if (const auto * cte_query_node = subquery->as<QueryNode>())
-        {
-            const auto & display_names = cte_query_node->getProjectionColumnDisplayNames();
-            if (!display_names.empty())
-                collect_internal_to_display(cte_query_node->getProjectionColumns(), display_names);
-        }
-        else if (const auto * cte_union_node = subquery->as<UnionNode>())
-        {
-            const auto & display_names = cte_union_node->getProjectionColumnDisplayNames();
-            if (!display_names.empty())
-                collect_internal_to_display(cte_union_node->computeProjectionColumns(), display_names);
-        }
-    }
+    /// names were made internally unique, build the mapping from each unique internal name back to
+    /// its original display name. The matcher is name-sensitive and the user writes it against the
+    /// display names, so it must be evaluated on the display name (in the loop below). The internal
+    /// (unique) name stays on the column node so the planner resolves each duplicate to a distinct
+    /// column identifier, and the user-visible header is restored afterwards.
+    std::unordered_map<String, String> internal_name_to_display_name = buildSubqueryInternalToDisplayNameMap(table_expression_node);
 
-    auto display_name_of = [&](const std::string & internal_name) -> const String &
+    auto display_name_of = [&](const std::string & internal_name) -> String
     {
         if (!internal_name_to_display_name.empty())
         {
@@ -4177,6 +4188,13 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             && scope.context->getSettingsRef()[Setting::single_join_prefer_left_table])
             table_expression_data.should_qualify_columns = false;
     }
+
+    /// Record the generated internal names of a disambiguated subquery/union/materialized-CTE so a
+    /// direct identifier lookup (`tryResolveIdentifierFromStorage`) and typo correction can refuse
+    /// them: they exist in the column-node map only so the planner addresses each duplicate
+    /// distinctly, but they are not user-addressable (the user sees the original display names).
+    for (const auto & [internal_name, display_name] : buildSubqueryInternalToDisplayNameMap(table_expression_node))
+        table_expression_data.hidden_column_names.insert(internal_name);
 
     auto [data_it, inserted] = scope.table_expression_node_to_data.emplace(table_expression_node, std::move(table_expression_data));
     if (!inserted)

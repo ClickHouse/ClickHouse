@@ -96,3 +96,15 @@ SELECT * FROM (WITH t AS MATERIALIZED (SELECT 7, * FROM (SELECT 2 AS x, material
 DESCRIBE (WITH t AS MATERIALIZED (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) SELECT * FROM t UNION ALL SELECT * FROM t) SETTINGS enable_materialized_cte = 1;
 SELECT COLUMNS('^7$') FROM (WITH t AS MATERIALIZED (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) SELECT * FROM t) SETTINGS enable_materialized_cte = 1;
 SELECT COLUMNS('^7_1$') FROM (WITH t AS MATERIALIZED (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) SELECT * FROM t) SETTINGS enable_materialized_cte = 1; -- { serverError EMPTY_LIST_OF_COLUMNS_QUERIED }
+
+-- Disambiguation renames duplicates only internally so the planner addresses each distinctly; the
+-- generated name (`7_1`) must NOT be user-addressable on the direct-identifier path either. A direct
+-- reference to the original name binds to the first occurrence, and a reference to the generated
+-- name is an unknown identifier. Covered for a plain subquery, a union subquery, and a reused
+-- materialized CTE (all three table-expression surfaces direct identifier resolution sees).
+SELECT `7` FROM (SELECT 7, * FROM (SELECT materialize(0) AS `7`));
+SELECT `7_1` FROM (SELECT 7, * FROM (SELECT materialize(0) AS `7`)); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT `7` FROM ((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`))) ORDER BY 1;
+SELECT `7_1` FROM ((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`))); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT `7` FROM (WITH t AS MATERIALIZED (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) SELECT * FROM t) SETTINGS enable_materialized_cte = 1;
+SELECT `7_1` FROM (WITH t AS MATERIALIZED (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) SELECT * FROM t) SETTINGS enable_materialized_cte = 1; -- { serverError UNKNOWN_IDENTIFIER }
