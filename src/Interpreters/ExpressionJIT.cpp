@@ -388,6 +388,15 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
         {
             return false;
         }
+
+        /// The JIT bakes the function_base's declared types; a child whose actual nullability
+        /// disagrees with the declared argument type makes IFunction::compile emit a {T, i1}
+        /// value that CompileDAG mislabels as non-nullable, aborting a downstream compiled
+        /// function. Defer such a node to the interpreter.
+        if (i < node.children.size() && type->isNullable() != node.children[i]->result_type->isNullable())
+        {
+            return false;
+        }
     }
 
     return function.isCompilable();
