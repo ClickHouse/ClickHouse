@@ -10,6 +10,8 @@ title: 'AggregatingMergeTree table engine'
 doc_type: 'reference'
 ---
 
+# AggregatingMergeTree table engine
+
 The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
 
 You can use `AggregatingMergeTree` tables for incremental data aggregation, including for aggregated materialized views.
@@ -186,46 +188,6 @@ When using `initializeAggregation`, an aggregate state is created for each indiv
 Each source row produces one row in the materialized view, and the actual aggregation happens later when the
 `AggregatingMergeTree` merges parts. This is only true if `optimize_on_insert = 0`.
 :::
-
-## Tuple element aggregation {#tuple-element-aggregation}
-
-When the `allow_tuple_element_aggregation` setting is enabled, `Tuple` columns are recursively flattened so that each leaf element participates in aggregation independently. This means that `AggregateFunction` or `SimpleAggregateFunction` sub-columns inside a `Tuple` are aggregated according to their respective functions, just as if they were top-level columns.
-
-Sub-columns that belong to a `Tuple` in the sorting key are excluded from aggregation. Non-aggregate sub-columns are treated as ordinary columns (their first value is kept).
-
-:::note
-This setting is immutable and must be specified at table creation time.
-:::
-
-```sql
-CREATE TABLE agg_tuples
-(
-    key UInt32,
-    metrics Tuple(
-        total_visits SimpleAggregateFunction(sum, UInt64),
-        unique_users SimpleAggregateFunction(max, UInt64)
-    )
-) ENGINE = AggregatingMergeTree()
-ORDER BY key
-SETTINGS allow_tuple_element_aggregation = 1;
-
-INSERT INTO agg_tuples VALUES (1, (100, 5));
-INSERT INTO agg_tuples VALUES (1, (200, 8));
-INSERT INTO agg_tuples VALUES (2, (50, 3));
-
-OPTIMIZE TABLE agg_tuples FINAL;
-
-SELECT key, metrics.total_visits, metrics.unique_users FROM agg_tuples ORDER BY key;
-```
-
-```text
-┌─key─┬─metrics.total_visits─┬─metrics.unique_users─┐
-│   1 │                  300 │                    8 │
-│   2 │                   50 │                    3 │
-└─────┴──────────────────────┴──────────────────────┘
-```
-
-`total_visits` is aggregated with `sum` (100 + 200 = 300), while `unique_users` is aggregated with `max` (max(5, 8) = 8).
 
 ## Related content {#related-content}
 
