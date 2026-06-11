@@ -377,6 +377,8 @@ namespace FailPoints
 {
     extern const char mergetree_load_outdated_parts_inject_retryable_exception[];
     extern const char mergetree_load_outdated_parts_inject_schedule_failure[];
+    extern const char mergetree_load_outdated_parts_inject_post_load_retryable_exception[];
+    extern const char mergetree_load_unexpected_parts_inject_post_load_retryable_exception[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -2797,9 +2799,11 @@ try
     for (auto & load_state : unexpected_data_parts)
     {
         std::lock_guard lock(unexpected_data_parts_mutex);
-        /// A previous attempt may have already loaded this part before being interrupted by a
-        /// retryable error and rescheduled; skip the parts that are already done so the retry is idempotent.
-        if (load_state.part)
+        /// A previous attempt may have already finished this part before being interrupted by a retryable
+        /// error and rescheduled; skip the parts that are fully done so the retry is idempotent. `finished`
+        /// (not `part`) is the done-marker: the optional detach below runs after `part` is assigned and can
+        /// itself throw retryably, so a set `part` does not mean the per-part work completed.
+        if (load_state.finished)
             continue;
         if (unexpected_data_parts_loading_canceled)
         {
@@ -2810,11 +2814,25 @@ try
         runner.enqueueAndKeepTrack([this, &load_state, replicated, component_name = Coordination::getCurrentComponent()]()
         {
             auto local_component_guard = Coordination::setCurrentComponent(component_name);
-            loadUnexpectedDataPart(load_state);
+
+            /// A retry after a retryable detach failure re-enters here with the part already loaded; load it
+            /// only once so we resume at the detach step instead of building the part again.
+            if (!load_state.part)
+                loadUnexpectedDataPart(load_state);
 
             chassert(load_state.part);
+
+            fiu_do_on(FailPoints::mergetree_load_unexpected_parts_inject_post_load_retryable_exception,
+            {
+                throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure after loading unexpected part {}", load_state.part->name);
+            });
+
             if (load_state.is_broken)
                 load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+
+            /// Mark done only after the optional detach finished: a retryable failure above reschedules this
+            /// part and the rescheduled run must redo the detach rather than skip it.
+            load_state.finished = true;
         }, Priority{});
     }
     runner.waitForAllToFinishAndRethrowFirstError();
@@ -2917,6 +2935,7 @@ try
         {
             auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
+            LoadPartResult res;
             try
             {
                 fiu_do_on(FailPoints::mergetree_load_outdated_parts_inject_retryable_exception,
@@ -2924,12 +2943,16 @@ try
                     throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure while loading outdated part {}", my_part->name);
                 });
 
-                auto res = loadDataPartWithRetries(
+                res = loadDataPartWithRetries(
                     my_part->info, my_part->name, my_part->disk,
                     DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
                     loading_parts_max_backoff_ms, loading_parts_max_tries);
 
-                ++num_loaded_parts;
+                fiu_do_on(FailPoints::mergetree_load_outdated_parts_inject_post_load_retryable_exception,
+                {
+                    throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure after loading outdated part {}", my_part->name);
+                });
+
                 if (res.is_broken)
                 {
                     forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
@@ -2939,6 +2962,10 @@ try
                     res.part->remove();
                 else
                     preparePartForRemoval(res.part);
+
+                /// Count the part only after its cleanup finished: a retryable failure below requeues it and
+                /// the rescheduled run loads it again, which must not double-count it.
+                ++num_loaded_parts;
             }
             catch (...)
             {
@@ -2947,6 +2974,16 @@ try
                 /// transient, so put the part back and let the rescheduled task retry it instead of dropping it.
                 if (!is_async || !isRetryableException(std::current_exception()))
                     throw;
+
+                /// A published normal Outdated part must be rolled back before requeueing, else the retry
+                /// reloads its directory as a fresh part and the duplicate-part path removes it while it is
+                /// still referenced. Erasing only drops the in-memory object; the directory is kept.
+                if (res.part && !res.is_broken && !res.part->is_duplicate)
+                {
+                    std::lock_guard parts_lock(data_parts_mutex);
+                    if (auto it = data_parts_by_info.find(res.part->info); it != data_parts_by_info.end() && *it == res.part)
+                        data_parts_indexes.erase(it);
+                }
 
                 std::lock_guard lock(outdated_data_parts_mutex);
                 outdated_unloaded_data_parts.push_back(my_part);

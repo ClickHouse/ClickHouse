@@ -6,12 +6,14 @@ from helpers.test_tools import assert_logs_contain_with_retry
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True)
 
-# Two ways a retryable error can interrupt background loading of outdated parts:
+# Three ways a retryable error can interrupt background loading of outdated parts:
 #   - thrown by the worker while loading the part (loadDataPartWithRetries)
 #   - thrown by the runner while scheduling the worker (ThreadPool::scheduleOrThrow)
-# Both must reschedule the task and keep the failed part in the queue, not drop it.
+#   - thrown after the part was loaded, while doing its post-load cleanup (preparePartForRemoval, ...)
+# All must reschedule the task and keep the failed part in the queue, not drop it.
 WORKER_FAILPOINT = "mergetree_load_outdated_parts_inject_retryable_exception"
 SCHEDULE_FAILPOINT = "mergetree_load_outdated_parts_inject_schedule_failure"
+POST_LOAD_FAILPOINT = "mergetree_load_outdated_parts_inject_post_load_retryable_exception"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -23,7 +25,9 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("failpoint", [WORKER_FAILPOINT, SCHEDULE_FAILPOINT])
+@pytest.mark.parametrize(
+    "failpoint", [WORKER_FAILPOINT, SCHEDULE_FAILPOINT, POST_LOAD_FAILPOINT]
+)
 def test_retryable_exception_while_loading_outdated_parts_does_not_terminate(failpoint):
     # A transient retryable error (MEMORY_LIMIT_EXCEEDED, CANNOT_SCHEDULE_TASK, ...) thrown while
     # loading outdated parts in the background must not take down the whole server: the catch(...) in
@@ -80,5 +84,14 @@ def test_retryable_exception_while_loading_outdated_parts_does_not_terminate(fai
     )
     assert outdated_after == outdated_before
     assert node.query("SELECT count() FROM t_outdated").strip() == "3000"
+
+    # The POST_LOAD failpoint fires after loadDataPartWithRetries already published the Outdated part
+    # into data_parts_indexes. Requeueing it without rolling it back would make the retry reload the
+    # same directory as a fresh part, hit the duplicate-part path ("Duplicate part ..."), and
+    # res.part->remove() could delete the directory still referenced by the published part. The retry
+    # must instead roll the published part back and reload it cleanly, so no part is ever detached.
+    assert (
+        int(node.query("SELECT count() FROM system.detached_parts WHERE table = 't_outdated'")) == 0
+    )
 
     node.query("DROP TABLE t_outdated SYNC")

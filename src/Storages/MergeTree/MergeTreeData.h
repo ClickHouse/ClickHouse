@@ -1875,6 +1875,10 @@ protected:
         bool uncovered = true;
         bool is_broken = false;
         MutableDataPartPtr part;
+        /// Set only after the part was loaded AND its optional broken-on-start detach finished. Used to make
+        /// the retry after a retryable error idempotent: `part` alone is not a done-marker because the detach
+        /// step runs after `part` is assigned and can itself throw retryably.
+        bool finished = false;
     };
 
     BackgroundSchedulePoolTaskHolder unexpected_data_parts_loading_task;
