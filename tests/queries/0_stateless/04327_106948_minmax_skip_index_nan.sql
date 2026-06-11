@@ -109,8 +109,12 @@ SELECT count() FROM t_minmax_null_nan WHERE val IS NULL SETTINGS use_skip_indexe
 SELECT count() FROM t_minmax_null_nan WHERE NOT ((val >= 0.) AND (val <= 3.));
 SELECT count() FROM t_minmax_null_nan WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
 
--- A positive range no value satisfies must still prune the granule.
+-- The NULL+NaN granule's stored range is [1, +Inf] (the NULLS_LAST +Inf sentinel is preserved), so
+-- for val > 500 checkInHyperrectangle treats it as intersecting and reads it conservatively, not pruned.
+-- NaN/NULL-widening must not disable pruning entirely though: the sibling all-finite granule [100, 200]
+-- is still pruned. The result matches the no-index result, and EXPLAIN shows one of the two granules pruned (1/2).
 SELECT count() FROM t_minmax_null_nan WHERE val > 500;
 SELECT count() FROM t_minmax_null_nan WHERE val > 500 SETTINGS use_skip_indexes = 0;
+SELECT countIf(explain LIKE '%Granules: 1/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_minmax_null_nan WHERE val > 500);
 
 DROP TABLE t_minmax_null_nan;

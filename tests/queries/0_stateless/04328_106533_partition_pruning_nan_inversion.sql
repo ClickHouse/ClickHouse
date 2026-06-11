@@ -70,8 +70,27 @@ INSERT INTO t_106533_partlevel VALUES (1, 1.0), (2, nan), (3, 3.0);
 SELECT count() FROM t_106533_partlevel WHERE NOT ((val >= 0.) AND (val <= 3.));
 SELECT count() FROM t_106533_partlevel WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
 
--- A positive range no value satisfies must still prune the part.
+-- The mixed part's stored max is now NaN, so for val > 500 checkInHyperrectangle keeps intersects = true
+-- and reads the part conservatively. EXPLAIN confirms the part-level Min-Max does not prune it (no Parts: 0/1).
 SELECT count() FROM t_106533_partlevel WHERE val > 500;
 SELECT count() FROM t_106533_partlevel WHERE val > 500 SETTINGS use_skip_indexes = 0;
+SELECT countIf(explain LIKE '%Parts: 0/1%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_partlevel WHERE val > 500);
 
 DROP TABLE t_106533_partlevel;
+
+-- NaN-widening must not disable part-level pruning entirely: an all-finite part is still pruned for
+-- a range no value satisfies. A separate single-part table keeps this merge-stable (the Min-Max prunes
+-- the only part, so EXPLAIN shows Parts: 0/1).
+
+DROP TABLE IF EXISTS t_106533_partlevel_finite;
+
+CREATE TABLE t_106533_partlevel_finite (id UInt64, val Nullable(Float64))
+ENGINE = MergeTree PARTITION BY isNull(val) ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO t_106533_partlevel_finite VALUES (1, 100.0), (2, 150.0), (3, 200.0);
+
+SELECT count() FROM t_106533_partlevel_finite WHERE val > 500;
+SELECT count() FROM t_106533_partlevel_finite WHERE val > 500 SETTINGS use_skip_indexes = 0;
+SELECT countIf(explain LIKE '%Parts: 0/1%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_partlevel_finite WHERE val > 500);
+
+DROP TABLE t_106533_partlevel_finite;
