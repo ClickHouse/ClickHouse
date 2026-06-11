@@ -2131,25 +2131,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             ColumnPtr tuple_column;
             if (tuple_elements.empty())
-            {
-                /// A fields-less struct has no field buffers, so its declared length is backed
-                /// only by the validity bitmap.  Without a bitmap the length is unbounded and a
-                /// nullable wrapper would materialize an arbitrarily large null map from a tiny
-                /// file, so require the bitmap to cover the length (checkValidityBitmap) and
-                /// reject a non-empty chunk that has no bitmap at all.
-                for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
-                {
-                    const auto & struct_chunk = *arrow_column->chunk(chunk_i);
-                    checkValidityBitmap(struct_chunk, column_name);
-                    if (unlikely(struct_chunk.length() > 0 && struct_chunk.data()->buffers[0] == nullptr))
-                        throw Exception(
-                            ErrorCodes::INCORRECT_DATA,
-                            "Arrow fields-less Struct column '{}' declares {} rows but has no validity "
-                            "bitmap to back that length",
-                            column_name, struct_chunk.length());
-                }
                 tuple_column = ColumnTuple::create(arrow_column->length());
-            }
             else
                 tuple_column = ColumnTuple::create(std::move(tuple_elements));
             auto tuple_type = std::make_shared<DataTypeTuple>(std::move(tuple_types), std::move(tuple_names));
