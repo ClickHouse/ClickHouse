@@ -30,3 +30,13 @@ long
 long
 long
 long
+alias_filtered_topk_filter
+1
+physical_filtered_topk_filter
+1
+alias_filtered_skip_index_execution
+short
+short
+short
+alias_filtered_skip_index_rows_read
+1
