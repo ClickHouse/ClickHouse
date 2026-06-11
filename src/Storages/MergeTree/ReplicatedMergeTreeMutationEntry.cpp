@@ -44,7 +44,10 @@ void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
 
     in >> "source replica: " >> source_replica >> "\n";
     if (checkString("author: ", in))
-        in >> escape >> author >> "\n";
+    {
+        readEscapedStringUntilEOL(author, in);
+        assertChar('\n', in);
+    }
 
     size_t count;
     in >> "block numbers count: " >> count >> "\n";
