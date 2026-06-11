@@ -430,7 +430,6 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, const Actions
         return estimateReadRowsCount(*node.children.front(), filter);
 #endif
 
-
     return {};
 }
 
