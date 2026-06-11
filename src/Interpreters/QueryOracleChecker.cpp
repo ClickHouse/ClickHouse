@@ -687,6 +687,28 @@ bool fromContainsUnionSubquery(const ASTSelectQuery & select)
 /// identical between calls, the underlying values (timings, counters,
 /// thread ids) drift, which causes spurious oracle mismatches between the
 /// reference and rewritten queries.
+/// Recursively true if any table identifier anywhere in the query (including
+/// CTEs and subqueries, which `referencesNonDeterministicDatabase` does not
+/// reach) lives in `system` / `INFORMATION_SCHEMA`. Those are live snapshots
+/// (`system.events`, `system.metrics`, ...) that drift between the reference
+/// and rewrite executions — a false mismatch (observed: a CTE
+/// `WITH x AS (SELECT ... FROM system.events ...)`).
+bool referencesSystemDatabaseAnywhere(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * table_id = ast->as<ASTTableIdentifier>())
+    {
+        const String db = table_id->getDatabaseName();
+        if (db == "system" || db == "INFORMATION_SCHEMA" || db == "information_schema")
+            return true;
+    }
+    for (const auto & child : ast->children)
+        if (referencesSystemDatabaseAnywhere(child))
+            return true;
+    return false;
+}
+
 bool referencesNonDeterministicDatabase(const ASTSelectQuery & select)
 {
     ASTPtr tables = select.tables();
@@ -2275,7 +2297,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     /// always shows drift in `processes`, `merges`, `metric_log`, etc.
     /// Reject the whole query at the gate to avoid spurious mismatches in
     /// every oracle.
-    if (referencesNonDeterministicDatabase(*select))
+    if (referencesNonDeterministicDatabase(*select) || referencesSystemDatabaseAnywhere(query_ast))
     {
         LOG_TRACE(logger, "Oracle skip: query reads from system database");
         return false;
