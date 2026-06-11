@@ -175,6 +175,7 @@ namespace ServerSetting
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
     extern const ServerSettingsBool memory_worker_use_cgroup;
+    extern const ServerSettingsBool memory_worker_dynamic_hard_limit;
     extern const ServerSettingsString allowed_disks_for_table_engines;
 }
 
@@ -969,7 +970,9 @@ void LocalServer::processConfig()
             .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
             .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
             .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
-            .dynamic_hard_limit_ratio = server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio],
+            .dynamic_hard_limit_ratio = server_settings[ServerSetting::memory_worker_dynamic_hard_limit]
+                ? static_cast<double>(server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio])
+                : 0.0,
         };
         memory_worker.emplace(memory_worker_config, global_context->getPageCache());
         /// Inform `MemoryWorker` of the configured ceiling and the ratio so its dynamic
@@ -980,7 +983,9 @@ void LocalServer::processConfig()
         /// update.
         memory_worker->setDynamicHardLimitSettings(
             static_cast<Int64>(max_server_memory_usage),
-            server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio]);
+            server_settings[ServerSetting::memory_worker_dynamic_hard_limit]
+                ? max_server_memory_usage_to_ram_ratio
+                : 0.0);
         memory_worker->start();
     }
 

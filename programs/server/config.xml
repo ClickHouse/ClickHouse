@@ -476,6 +476,8 @@
 
          On memory constrained environments you may have to set this to a value larger than 1.
          A value of 0 disables both the startup cap and the runtime adjustment.
+         To keep only the static cap (the behavior of previous versions), set
+         memory_worker_dynamic_hard_limit to 0.
       -->
     <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
 
