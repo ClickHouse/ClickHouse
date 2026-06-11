@@ -383,6 +383,9 @@ void Rope::shift(ssize_t delta)
         node.logical_offset = static_cast<size_t>(static_cast<ssize_t>(node.logical_offset) + delta);
     for (auto & iv : intervals)
         iv.offset = static_cast<size_t>(static_cast<ssize_t>(iv.offset) + delta);
+    /// `consumed_pos` is a logical coordinate too; re-base it (clamped at 0 so a fresh
+    /// rope's 0 with a negative delta doesn't underflow).
+    consumed_pos = static_cast<size_t>(std::max<ssize_t>(0, static_cast<ssize_t>(consumed_pos) + delta));
 }
 
 size_t Rope::copyTo(char * dst, ByteRange req) const

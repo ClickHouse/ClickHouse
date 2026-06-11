@@ -915,3 +915,28 @@ TEST(Rope, AppendBeforeFrontAfterBoundaryAdvanceIsDropped)
     EXPECT_EQ(rope.peek().logical_offset, 300u);  /// not resurrected to 150
     EXPECT_EQ(rope.range().offset, 300u);
 }
+
+TEST(Rope, ShiftMovesConsumedFrontier)
+{
+    /// `shift` re-bases all logical coordinates, including the consumed frontier, so a
+    /// partly-consumed rope keeps `slice`/`append` clamped after the shift.
+    auto buf = std::make_shared<OwnedRopeBuffer>(100);
+    std::memset(buf->data(), 'A', 100);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 100});  /// [100, 200)
+    rope.advance(25);                           /// consume [100, 125); consumed_pos 125
+    rope.shift(100);                            /// -> [200, 300); cursor and consumed_pos -> 225
+    ASSERT_EQ(rope.peek().logical_offset, 225u);
+    ASSERT_EQ(rope.range().offset, 225u);
+
+    /// A slice dipping below the shifted cursor must not expose consumed bytes.
+    Rope s = rope.slice({200, 50});  /// [200, 250): [200, 225) is consumed
+    EXPECT_EQ(s.range().offset, 225u);
+
+    /// An append below the shifted consumed frontier is dropped, not inserted before front.
+    auto b = std::make_shared<OwnedRopeBuffer>(10);
+    std::memset(b->data(), 'B', 10);
+    rope.append(RopeNode{b, 0, 10, 150});  /// [150, 160), below 225
+    EXPECT_EQ(rope.peek().logical_offset, 225u);
+    EXPECT_EQ(rope.range().offset, 225u);
+}
