@@ -15,6 +15,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -457,7 +458,12 @@ bool hasWindowFunctionWithoutOrderBy(const ASTPtr & ast)
 }
 
 /// Collects every alias defined anywhere in the subtree (e.g. `1025 AS x`
-/// nested inside an array literal in the SELECT list).
+/// nested inside an array literal in the SELECT list). Also collects the
+/// column names redefined by a `* REPLACE (expr AS name)` transformer: like a
+/// regular alias, such a name is visible in WHERE (ClickHouse makes SELECT
+/// aliases visible there), so NoREC's `countIf` rewrite — which drops the
+/// SELECT list and thus the REPLACE — would bind the WHERE reference to the
+/// original column instead, a false mismatch.
 void collectAliases(const ASTPtr & ast, std::unordered_set<String> & out)
 {
     if (!ast)
@@ -465,6 +471,8 @@ void collectAliases(const ASTPtr & ast, std::unordered_set<String> & out)
     const String & alias = ast->tryGetAlias();
     if (!alias.empty())
         out.insert(alias);
+    if (const auto * replacement = ast->as<ASTColumnsReplaceTransformer::Replacement>())
+        out.insert(replacement->name);
     for (const auto & child : ast->children)
         collectAliases(child, out);
 }
