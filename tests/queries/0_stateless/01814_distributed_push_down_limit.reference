@@ -1,6 +1,8 @@
 distributed_push_down_limit=0
+10
 100 100
 distributed_push_down_limit=1
+10
 40 40
 distributed_push_down_limit=1 with OFFSET
 97
