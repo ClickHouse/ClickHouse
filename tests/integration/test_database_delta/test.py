@@ -223,11 +223,16 @@ def _run_spark_query_once(node, query_text, timeout):
     # SIGKILL the database can be left in a corrupted state, causing the next
     # Spark session to hang during initialization. Running this before every
     # attempt also reaps the JVM left behind by a previous attempt's timeout.
+    #
+    # `[o]rg.apache.spark` (character class), not `org.apache.spark`: this very
+    # bash -c command line contains the pattern text, so a plain match would
+    # SIGKILL this shell before `sleep`/`rm -rf` run. Same trick as
+    # `_capture_spark_hang_diagnostics`.
     node.exec_in_container(
         [
             "bash",
             "-c",
-            """pkill -9 -f 'org.apache.spark' 2>/dev/null; sleep 1; rm -rf /spark-3.5.4-bin-hadoop3/metastore_db""",
+            """pkill -9 -f '[o]rg.apache.spark' 2>/dev/null; sleep 1; rm -rf /spark-3.5.4-bin-hadoop3/metastore_db""",
         ],
         nothrow=True,
     )
