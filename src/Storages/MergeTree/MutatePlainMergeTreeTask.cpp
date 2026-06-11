@@ -56,7 +56,7 @@ void MutatePlainMergeTreeTask::prepare()
 
     write_part_log = [this, mutation_ids] (const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = thread_group->getProfileCountersSnapshot();
         storage.writePartLog(
             PartLogElement::MUTATE_PART,
             execution_status,

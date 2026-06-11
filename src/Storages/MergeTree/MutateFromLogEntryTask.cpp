@@ -61,7 +61,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     auto part_log_writer = [this](const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = thread_group->getProfileCountersSnapshot();
         storage.writePartLog(
             PartLogElement::MUTATE_PART, execution_status, thread_group->getGroupElapsedNs(),
             entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),

@@ -145,6 +145,13 @@ public:
     UInt64 getGroupElapsedMs() const;
     UInt64 getGroupElapsedNs() const;
 
+    /// Snapshot of the group's profile counters for logging (e.g. `system.part_log`).
+    /// If the current thread is attached to this group (or to its descendant), its pending
+    /// rusage/taskstats deltas (`RealTimeMicroseconds`, `OSCPUVirtualTimeMicroseconds`, ...) are
+    /// flushed first - otherwise they reach the group's counters only when the thread detaches,
+    /// and a snapshot taken while the thread is still attached would undercount them.
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> getProfileCountersSnapshot() const;
+
     void linkThread(UInt64 thread_id);
     void unlinkThread();
 

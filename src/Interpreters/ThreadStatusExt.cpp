@@ -184,6 +184,26 @@ UInt64 ThreadGroup::getGroupElapsedMs() const
     return getGroupElapsedNs() / 1000000UL;
 }
 
+std::shared_ptr<ProfileEvents::Counters::Snapshot> ThreadGroup::getProfileCountersSnapshot() const
+{
+    /// If the current thread is attached to this group or to one of its descendants, flush its
+    /// pending rusage/taskstats deltas: thread counters propagate through the whole parent chain,
+    /// so the flush reaches this group's counters before the snapshot is taken below.
+    if (current_thread)
+    {
+        for (const auto * group = current_thread->getThreadGroup().get(); group; group = group->parent.get())
+        {
+            if (group == this)
+            {
+                current_thread->updatePerformanceCounters();
+                break;
+            }
+        }
+    }
+
+    return std::make_shared<ProfileEvents::Counters::Snapshot>(performance_counters.getPartiallyAtomicSnapshot());
+}
+
 void ThreadGroup::linkThread(UInt64 thread_id)
 {
     if (parent)

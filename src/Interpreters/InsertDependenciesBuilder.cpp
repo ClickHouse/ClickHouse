@@ -1589,7 +1589,7 @@ void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_p
 
     element.peak_memory_usage = thread_group->memory_tracker.getPeak() > 0 ? thread_group->memory_tracker.getPeak() : 0;
 
-    auto profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+    auto profile_counters = thread_group->getProfileCountersSnapshot();
 
     element.read_rows = (*profile_counters)[ProfileEvents::SelectedRows];
     element.read_bytes = (*profile_counters)[ProfileEvents::SelectedBytes];

@@ -321,7 +321,7 @@ void MergeTreeSink::finishDelayedChunk()
         /// `OSCPUVirtualTimeMicroseconds`, `RealTimeMicroseconds`, ...) are flushed into the group's
         /// counters. Reading them while the switcher is still alive would undercount the `system.part_log`
         /// row. This mirrors `ReplicatedMergeTreeSink::finishDelayedPart`.
-        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto counters_snapshot = partition.thread_group->getProfileCountersSnapshot();
 
         PartLog::addNewPart(
             storage.getContext(),

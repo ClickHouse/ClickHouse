@@ -2340,7 +2340,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
             renameAndCommitEmptyParts(new_data_parts, transaction);
 
-            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            auto counters_snapshot = thread_group->getProfileCountersSnapshot();
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, thread_group->getGroupElapsedNs(), counters_snapshot));
 
             LOG_INFO(log, "Truncated table with {} parts by replacing them with new empty {} parts. With txn {}",
@@ -2402,7 +2402,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                 auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
                 renameAndCommitEmptyParts(new_data_parts, transaction);
 
-                auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+                auto counters_snapshot = thread_group->getProfileCountersSnapshot();
                 PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, thread_group->getGroupElapsedNs(), counters_snapshot));
 
                 const auto * op = detach ? "Detached" : "Dropped";
@@ -2490,7 +2490,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
             renameAndCommitEmptyParts(new_data_parts, transaction);
 
-            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            auto counters_snapshot = thread_group->getProfileCountersSnapshot();
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, thread_group->getGroupElapsedNs(), counters_snapshot));
 
             const auto * op = detach ? "Detached" : "Dropped";
@@ -2720,12 +2720,12 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         }
 
         /// Note: same elapsed time and profile events for all parts is used
-        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto counters_snapshot = thread_group->getProfileCountersSnapshot();
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, thread_group->getGroupElapsedNs(), counters_snapshot));
     }
     catch (...)
     {
-        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto counters_snapshot = thread_group->getProfileCountersSnapshot();
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, thread_group->getGroupElapsedNs(), counters_snapshot), ExecutionStatus::fromCurrentException("", true));
         throw;
     }
@@ -2876,12 +2876,12 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         clearOldPartsFromFilesystem();
 
         /// Note: same elapsed time and profile events for all parts is used
-        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto counters_snapshot = thread_group->getProfileCountersSnapshot();
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, thread_group->getGroupElapsedNs(), counters_snapshot));
     }
     catch (...)
     {
-        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto counters_snapshot = thread_group->getProfileCountersSnapshot();
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, thread_group->getGroupElapsedNs(), counters_snapshot), ExecutionStatus::fromCurrentException("", true));
         throw;
     }

@@ -61,7 +61,7 @@ void MergeTreeSinkPatch::finishDelayedChunk()
         /// The `thread_group_switcher` above has to be destroyed before taking the snapshot, so that the
         /// thread's final ProfileEvents and elapsed time are flushed into the group's counters (see the
         /// matching comment in `MergeTreeSink::finishDelayedChunk`).
-        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto counters_snapshot = partition.thread_group->getProfileCountersSnapshot();
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(partition.temp_part->part, partition.thread_group->getGroupElapsedNs(), counters_snapshot), block_ids);
     }
 

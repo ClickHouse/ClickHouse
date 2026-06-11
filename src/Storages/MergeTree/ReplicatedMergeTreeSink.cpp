@@ -538,7 +538,7 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
         }
 
         // profile_events_scope has to be destroyed in the scope above
-        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto counters_snapshot = partition.thread_group->getProfileCountersSnapshot();
         PartLog::addNewPart(
             storage.getContext(),
             PartLog::PartLogEntry(partition.temp_part->part, partition.thread_group->getGroupElapsedNs(), counters_snapshot),
@@ -642,13 +642,13 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
             }
         }
 
-        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto counters_snapshot = thread_group->getProfileCountersSnapshot();
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, thread_group->getGroupElapsedNs(), counters_snapshot), deduplication_ids, ExecutionStatus(error, error_message));
         return deduplicated;
     }
     catch (...)
     {
-        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto counters_snapshot = thread_group->getProfileCountersSnapshot();
         try_rollback_part_rename();
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, thread_group->getGroupElapsedNs(), counters_snapshot), deduplication_ids, ExecutionStatus::fromCurrentException("", true));
         throw;

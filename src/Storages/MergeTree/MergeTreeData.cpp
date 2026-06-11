@@ -10004,7 +10004,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
 
         auto write_part_log = [&](const ExecutionStatus & execution_status)
         {
-            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            auto counters_snapshot = thread_group->getProfileCountersSnapshot();
             writePartLog(
                 PartLogElement::Type::MOVE_PART,
                 execution_status,

@@ -64,12 +64,12 @@ void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjecti
 
             StorageReplicatedMergeTree::incrementInsertedPartsProfileEvent(part->getType());
 
-            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            auto counters_snapshot = partition.thread_group->getProfileCountersSnapshot();
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.thread_group->getGroupElapsedNs(), counters_snapshot), deduplication_blocks_ids, ExecutionStatus(0));
         }
         catch (...)
         {
-            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            auto counters_snapshot = partition.thread_group->getProfileCountersSnapshot();
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.thread_group->getGroupElapsedNs(), counters_snapshot), deduplication_blocks_ids, ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
             throw;
         }

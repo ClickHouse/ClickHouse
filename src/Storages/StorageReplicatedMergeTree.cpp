@@ -2560,7 +2560,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             chassert(renamed_parts.renamed && renamed_parts.old_and_new_names.size() == 1);
             renamed_parts.old_and_new_names.front().old_dir.clear();
 
-            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            auto counters_snapshot = thread_group->getProfileCountersSnapshot();
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
                 part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr,
                 counters_snapshot, {}, {});
@@ -3426,12 +3426,12 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             }
         }
 
-        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto counters_snapshot = thread_group->getProfileCountersSnapshot();
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(res_parts, thread_group->getGroupElapsedNs(), counters_snapshot));
     }
     catch (...)
     {
-        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto counters_snapshot = thread_group->getProfileCountersSnapshot();
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(res_parts, thread_group->getGroupElapsedNs(), counters_snapshot), ExecutionStatus::fromCurrentException("", true));
 
         for (const auto & res_part : res_parts)
@@ -5495,7 +5495,7 @@ bool StorageReplicatedMergeTree::fetchPart(
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
-        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto counters_snapshot = thread_group->getProfileCountersSnapshot();
         writePartLog(
             PartLogElement::DOWNLOAD_PART, execution_status, thread_group->getGroupElapsedNs(),
             part_name, part, replaced_parts, nullptr,
@@ -5775,7 +5775,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
-        auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto counters_snapshot = thread_group->getProfileCountersSnapshot();
         writePartLog(
             PartLogElement::DOWNLOAD_PART, execution_status, thread_group->getGroupElapsedNs(),
             part_name, part, replaced_parts, nullptr,
@@ -9254,12 +9254,12 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
                 }
             }
 
-            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            auto counters_snapshot = thread_group->getProfileCountersSnapshot();
             PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, thread_group->getGroupElapsedNs(), counters_snapshot));
         }
         catch (...)
         {
-            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            auto counters_snapshot = thread_group->getProfileCountersSnapshot();
             PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, thread_group->getGroupElapsedNs(), counters_snapshot), ExecutionStatus::fromCurrentException("", true));
             for (const auto & dst_part : dst_parts)
                 unlockSharedData(*dst_part);
@@ -9521,12 +9521,12 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 transaction.commit(src_data_parts_lock);
             }
 
-            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            auto counters_snapshot = thread_group->getProfileCountersSnapshot();
             PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, thread_group->getGroupElapsedNs(), counters_snapshot));
         }
         catch (...)
         {
-            auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            auto counters_snapshot = thread_group->getProfileCountersSnapshot();
             PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, thread_group->getGroupElapsedNs(), counters_snapshot), ExecutionStatus::fromCurrentException("", true));
 
             for (const auto & dst_part : dst_parts)

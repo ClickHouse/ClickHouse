@@ -103,7 +103,7 @@ void MergePlainMergeTreeTask::prepare()
         LOG_DEBUG(storage.log, "Writing part log for merge of part {} with status {} duration {} ms",
             future_part->name, execution_status.message, thread_group->getGroupElapsedMs());
 
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = thread_group->getProfileCountersSnapshot();
 
         auto projections_duration_ms = merge_task ? merge_task->grabProjectionsMergeTime() : std::map<String, UInt64>{};
 
