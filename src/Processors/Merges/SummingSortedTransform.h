@@ -25,6 +25,7 @@ public:
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
         std::optional<size_t> max_dynamic_subcolumns_,
+        bool allow_tuple_element_aggregation,
         UInt64 limit_ = 0
         )
         : IMergingTransform(
@@ -41,6 +42,7 @@ public:
             "sumMapWithOverflow",
             true,
             false,
+            allow_tuple_element_aggregation,
             limit_)
     {
     }

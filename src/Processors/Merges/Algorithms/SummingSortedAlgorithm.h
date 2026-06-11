@@ -30,6 +30,7 @@ public:
         const String & sum_function_map_name,
         bool remove_default_values,
         bool aggregate_all_columns,
+        bool allow_tuple_element_aggregation,
         UInt64 limit_ = 0);
 
     const char * getName() const override { return "SummingSortedAlgorithm"; }
@@ -73,6 +74,11 @@ public:
         /// Per-column flag: true for Float32/Float64 columns that need bit-exact
         /// copy via insertFrom() to avoid SNaN→QNaN conversion in Field roundtrip.
         std::vector<bool> columns_need_exact_copy;
+
+        /// Record the origin header before tuple flattening.
+        SharedHeader origin_header;
+
+        bool allow_tuple_element_aggregation = false;
     };
 
     /// Specialization for SummingSortedTransform. Inserts only data for non-aggregated columns.
