@@ -975,53 +975,42 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     /// 2. mutation_2 (no txn) is submitted - will wait for mutation_1 (txn 1) to commit or rollback
     /// 3. mutation_3 (txn 1)  is submitted - will wait for mutation_2 to finish: Deadlock!
     ///
-    /// With partition-scoped (`IN PARTITION`) mutations only an intermediate mutation that
-    /// affects a partition also affected by the current mutation can create such a dependency:
-    /// `selectPartsToMutate` skips non-affecting entries, so an intermediate mutation in an
-    /// unrelated partition never blocks the current one and must not be reported as a deadlock.
+    /// With partition-scoped (`IN PARTITION`) mutations all waits are partition-local:
+    /// `selectPartsToMutate` skips non-affecting entries, and a part never changes its
+    /// partition. So the cycle above exists only when some partition is affected by all
+    /// three mutations: the current mutation waits for the intermediate one on the parts
+    /// of such a partition, and the intermediate one waits there for the earlier mutation
+    /// (and thus for the transaction) to commit. Otherwise there is no cycle and reporting
+    /// a deadlock would be a false positive. Note that the earlier mutation does not have
+    /// to be the most recent mutation of the transaction, so all pairs are checked.
     if (txn && !from_another_mutation)
     {
-        /// Scan backwards to find the most recent mutation from the same transaction
-        for (auto it = current_mutation_it; it != current_mutations_by_version.begin();)
+        for (auto intermediate_it = current_mutations_by_version.begin(); intermediate_it != current_mutation_it; ++intermediate_it)
         {
-            --it;
+            const auto & intermediate_mutation = intermediate_it->second;
 
-            const auto & earlier_mutation = it->second;
-            if (earlier_mutation.tid == mutation_entry.tid)
+            /// Mutations of the same transaction do not wait for it to commit.
+            if (intermediate_mutation.tid == mutation_entry.tid)
+                continue;
+
+            /// Is there an earlier mutation of the same transaction that blocks the
+            /// intermediate mutation in a partition where the intermediate one in turn
+            /// blocks the current mutation?
+            for (auto earlier_it = current_mutations_by_version.begin(); earlier_it != intermediate_it; ++earlier_it)
             {
-                /// Look for an intermediate mutation that can actually create the dependency cycle.
-                /// The cycle is: the current mutation waits for the intermediate one, which in turn
-                /// waits for the earlier mutation (and thus the transaction) to commit. With
-                /// partition-scoped (`IN PARTITION`) mutations both waits are partition-local:
-                /// the current mutation waits for the intermediate one only in their common
-                /// partitions, and the intermediate one waits for the earlier mutation only in
-                /// their common partitions. So an intermediate mutation can block progress only
-                /// when it overlaps both the current and the earlier mutation; otherwise there is
-                /// no cycle and reporting a deadlock would be a false positive.
-                const MergeTreeMutationEntry * blocking_mutation = nullptr;
-                for (auto intermediate_it = std::next(it); intermediate_it != current_mutation_it; ++intermediate_it)
-                {
-                    if (partitionIdsOverlap(intermediate_it->second.partition_ids, mutation_entry.partition_ids)
-                        && partitionIdsOverlap(intermediate_it->second.partition_ids, earlier_mutation.partition_ids))
-                    {
-                        blocking_mutation = &intermediate_it->second;
-                        break;
-                    }
-                }
-
-                if (blocking_mutation)
+                const auto & earlier_mutation = earlier_it->second;
+                if (earlier_mutation.tid == mutation_entry.tid
+                    && partitionIdsOverlap(mutation_entry.partition_ids, intermediate_mutation.partition_ids, earlier_mutation.partition_ids))
                 {
                     result.latest_failed_part = "";
                     result.latest_fail_reason = fmt::format(
                         "Deadlock detected: mutation {} in transaction {} depends on earlier mutation {} "
                         "from the same transaction with intermediate mutation {} in between. ",
-                        mutation_entry.file_name, mutation_entry.tid, earlier_mutation.file_name, blocking_mutation->file_name);
+                        mutation_entry.file_name, mutation_entry.tid, earlier_mutation.file_name, intermediate_mutation.file_name);
                     result.latest_fail_error_code_name = ErrorCodes::getName(ErrorCodes::LOGICAL_ERROR);
                     result.latest_fail_time = time(nullptr);
                     return result;
                 }
-
-                break;
             }
         }
     }
@@ -1525,6 +1514,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     else
         return select_in_partition().and_then(construct_merge_select_entry);
 }
+
 bool StorageMergeTree::merge(
     bool aggressive,
     const String & partition_id,
