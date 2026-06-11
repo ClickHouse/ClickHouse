@@ -167,6 +167,17 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
         else if (auto * union_node_typed = query_node->as<UnionNode>())
             union_node_typed->removeUnusedProjectionColumns(used_projection_columns_indexes);
     }
+
+    /// Keep the display-name sidecar (if any) compacted in lock-step with computeProjectionColumns().
+    if (!projection_column_display_names.empty())
+    {
+        Names kept_display_names;
+        kept_display_names.reserve(used_projection_columns_indexes.size());
+        for (size_t i = 0; i < projection_column_display_names.size(); ++i)
+            if (used_projection_columns_indexes.contains(i))
+                kept_display_names.push_back(projection_column_display_names[i]);
+        projection_column_display_names = std::move(kept_display_names);
+    }
 }
 
 void UnionNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)

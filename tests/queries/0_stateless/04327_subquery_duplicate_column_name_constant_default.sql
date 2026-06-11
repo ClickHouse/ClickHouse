@@ -108,3 +108,17 @@ SELECT `7` FROM ((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION ALL (SE
 SELECT `7_1` FROM ((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`))); -- { serverError UNKNOWN_IDENTIFIER }
 SELECT `7` FROM (WITH t AS MATERIALIZED (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) SELECT * FROM t) SETTINGS enable_materialized_cte = 1;
 SELECT `7_1` FROM (WITH t AS MATERIALIZED (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)) SELECT * FROM t) SETTINGS enable_materialized_cte = 1; -- { serverError UNKNOWN_IDENTIFIER }
+
+-- The display-name sidecar is parallel to the projection columns, so it must be reset whenever the
+-- projection is rewritten. The `IN`-to-join rewrite resolves a duplicate-name subquery, then clears
+-- and re-resolves it under a single generated `__subquery_column_*`; a stale sidecar would map that
+-- generated name back to `7` and mark it hidden, so the rewritten subquery could not resolve its own
+-- column (UNKNOWN_IDENTIFIER). The rewrite must succeed and return correct membership: row 0 builds
+-- the tuple `(7, 0)` which matches the subquery's single row, row 1 builds `(8, 0)` which does not.
+-- (The membership is computed in a subquery and ordered in the outer query, because the rewritten
+-- correlated subquery cannot itself carry an ORDER BY.)
+SELECT m FROM (SELECT number, (number + 7, materialize(0)) IN (SELECT 7, * FROM (SELECT materialize(0) AS `7`)) AS m FROM numbers(2)) ORDER BY number SETTINGS rewrite_in_to_join = 1, allow_experimental_correlated_subqueries = 1;
+SELECT m FROM (SELECT number, (number + 7, materialize(0)) NOT IN (SELECT 7, * FROM (SELECT materialize(0) AS `7`)) AS m FROM numbers(2)) ORDER BY number SETTINGS rewrite_in_to_join = 1, allow_experimental_correlated_subqueries = 1;
+-- After the rewrite the disambiguated subquery is still addressable normally: the generated internal
+-- name `7_1` must remain non-bindable on the direct-identifier path.
+SELECT `7_1` FROM (SELECT 7, * FROM (SELECT materialize(0) AS `7`)) SETTINGS rewrite_in_to_join = 1; -- { serverError UNKNOWN_IDENTIFIER }

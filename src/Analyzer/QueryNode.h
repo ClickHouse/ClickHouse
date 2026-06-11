@@ -658,6 +658,8 @@ public:
     void clearProjectionColumns()
     {
         projection_columns.clear();
+        /// Sidecar is parallel to projection_columns; stale display names must not survive a clear.
+        projection_column_display_names.clear();
     }
 
     /// Remove unused projection columns

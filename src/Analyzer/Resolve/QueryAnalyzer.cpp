@@ -6148,13 +6148,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     for (auto & [_, node] : scope.aliases.alias_name_to_lambda_node)
         node->removeAlias();
 
-    disambiguateDuplicateProjectionColumnNames(query_node_typed, projection_columns, projection_has_explicit_alias, projection_from_matcher);
+    Names projection_column_display_names = disambiguateDuplicateProjectionColumnNames(
+        query_node_typed, projection_columns, projection_has_explicit_alias, projection_from_matcher);
 
+    /// resolveProjectionColumns clears any stale display-name sidecar, so record the fresh names after it.
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
+    if (!projection_column_display_names.empty())
+        query_node_typed.setProjectionColumnDisplayNames(std::move(projection_column_display_names));
 }
 
-void QueryAnalyzer::disambiguateDuplicateProjectionColumnNames(
-    QueryNode & query_node,
+Names QueryAnalyzer::disambiguateDuplicateProjectionColumnNames(
+    const QueryNode & query_node,
     NamesAndTypes & projection_columns,
     const std::vector<bool> & projection_has_explicit_alias,
     const std::vector<bool> & projection_from_matcher)
@@ -6166,19 +6170,19 @@ void QueryAnalyzer::disambiguateDuplicateProjectionColumnNames(
     /// first). Give the later duplicates unique internal names so the planner addresses them
     /// distinctly, and keep the original names so the user-visible display header is unchanged.
     if (!query_node.isSubquery())
-        return;
+        return {};
 
     /// A pending `... AS s(a, b, c)` column alias list rewrites every name in
     /// `resolveProjectionColumns` to a distinct alias, so there is nothing to disambiguate and a
     /// display-name sidecar recorded here would hold the stale pre-override names.
     if (query_node.hasProjectionAliasesToOverride())
-        return;
+        return {};
 
     const auto & projection_nodes = query_node.getProjection().getNodes();
     if (projection_columns.size() != projection_nodes.size()
         || projection_has_explicit_alias.size() != projection_columns.size()
         || projection_from_matcher.size() != projection_columns.size())
-        return;
+        return {};
 
     /// All names currently in use, so a generated unique name does not collide with an existing
     /// column (including one that appears later in the projection).
@@ -6231,8 +6235,9 @@ void QueryAnalyzer::disambiguateDuplicateProjectionColumnNames(
         disambiguated = true;
     }
 
-    if (disambiguated)
-        query_node.setProjectionColumnDisplayNames(std::move(display_names));
+    if (!disambiguated)
+        return {};
+    return display_names;
 }
 
 void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope)
