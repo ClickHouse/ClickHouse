@@ -4,11 +4,20 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Processors/Port.h>
 
 #include <typeinfo>
+
+namespace ProfileEvents
+{
+    extern const Event OverflowThrow;
+    extern const Event OverflowBreak;
+    extern const Event OverflowAny;
+}
 
 namespace DB
 {
@@ -16,10 +25,42 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_ROWS;
 }
 
 namespace
 {
+
+/// Mirrors `Aggregator::checkLimits` for the TopN transforms, which bypass `Aggregator`.
+/// Returns false when the transform must stop consuming input (`break` mode);
+/// throws `TOO_MANY_ROWS` for `throw` mode; sets `no_more_keys` for `any` mode.
+bool checkGroupByLimits(size_t num_groups, const TopNGroupByLimits & limits, bool & no_more_keys)
+{
+    if (!no_more_keys && limits.max_rows && num_groups > limits.max_rows)
+    {
+        switch (limits.overflow_mode)
+        {
+            case OverflowMode::THROW:
+                ProfileEvents::increment(ProfileEvents::OverflowThrow);
+                throw Exception(ErrorCodes::TOO_MANY_ROWS, "Limit for rows to GROUP BY exceeded: has {} rows, maximum: {}",
+                    num_groups, limits.max_rows);
+
+            case OverflowMode::BREAK:
+                ProfileEvents::increment(ProfileEvents::OverflowBreak);
+                return false;
+
+            case OverflowMode::ANY:
+                ProfileEvents::increment(ProfileEvents::OverflowAny);
+                no_more_keys = true;
+                break;
+        }
+    }
+
+    /// Some aggregate functions cannot throw exceptions on allocations (e.g. from C malloc)
+    /// but still track memory. Check it here, like `Aggregator::checkLimits` does.
+    CurrentMemoryTracker::check();
+    return true;
+}
 
 /// Compute aligned state layout for a set of aggregate functions.
 /// Returns {offsets[], total_size, max_alignment}.
@@ -125,7 +166,8 @@ TopNAggregatingTransformBase::TopNAggregatingTransformBase(
     const Names & key_names_,
     const AggregateDescriptions & aggregates_,
     const SortDescription & sort_description_,
-    size_t limit_)
+    size_t limit_,
+    const TopNGroupByLimits & group_by_limits_)
     : IAccumulatingTransform(
         std::make_shared<const Block>(input_header_),
         std::make_shared<const Block>(output_header_))
@@ -133,6 +175,7 @@ TopNAggregatingTransformBase::TopNAggregatingTransformBase(
     , aggregates(aggregates_)
     , sort_description(sort_description_)
     , limit(limit_)
+    , group_by_limits(group_by_limits_)
     , stored_input_header(input_header_)
     , arena(std::make_shared<Arena>())
 {
@@ -261,9 +304,10 @@ TopNSortedAggregatingTransform::TopNSortedAggregatingTransform(
     const Names & key_names_,
     const AggregateDescriptions & aggregates_,
     const SortDescription & sort_description_,
-    size_t limit_)
+    size_t limit_,
+    const TopNGroupByLimits & group_by_limits_)
     : TopNAggregatingTransformBase(
-        input_header_, output_header_, key_names_, aggregates_, sort_description_, limit_)
+        input_header_, output_header_, key_names_, aggregates_, sort_description_, limit_, group_by_limits_)
 {
 }
 
@@ -325,6 +369,16 @@ void TopNSortedAggregatingTransform::consume(Chunk chunk)
 
         ++num_groups;
 
+        if (!checkGroupByLimits(num_groups, group_by_limits, no_more_keys) || no_more_keys)
+        {
+            /// `break`: stop consuming and return what we have, like `Aggregator`.
+            /// `any`: nothing further can change on sorted input — existing groups
+            /// take their result from their first row, and new groups must not be
+            /// created — so stop consuming as well.
+            finishConsume();
+            return;
+        }
+
         if (num_groups >= limit)
         {
             finishConsume();
@@ -360,11 +414,12 @@ TopNDirectAggregatingTransform::TopNDirectAggregatingTransform(
     const AggregateDescriptions & aggregates_,
     const SortDescription & sort_description_,
     size_t limit_,
+    const TopNGroupByLimits & group_by_limits_,
     bool partial_,
     bool enable_threshold_pruning_,
     TopKThresholdTrackerPtr threshold_tracker_)
     : TopNAggregatingTransformBase(
-        input_header_, output_header_, key_names_, aggregates_, sort_description_, limit_)
+        input_header_, output_header_, key_names_, aggregates_, sort_description_, limit_, group_by_limits_)
     , partial(partial_)
     , enable_threshold_pruning(enable_threshold_pruning_)
     , threshold_tracker(std::move(threshold_tracker_))
@@ -440,6 +495,18 @@ void TopNDirectAggregatingTransform::consume(Chunk chunk)
         if (!threshold_keep_data && order_arg_col && isBelowThreshold(*order_arg_col, row))
             continue;
 
+        /// `group_by_overflow_mode = 'any'` triggered: keep aggregating existing
+        /// groups, skip rows that would create a new one (see `Aggregator::checkLimits`).
+        if (no_more_keys)
+        {
+            auto find_key_holder = serializeGroupKey(columns, row);
+            auto * found = group_indices.find(keyHolderGetKey(find_key_holder));
+            keyHolderDiscardKey(find_key_holder);
+            if (found)
+                addRowToAggregateStates(group_states[found->getMapped()].state, row);
+            continue;
+        }
+
         auto key_holder = serializeGroupKey(columns, row);
 
         decltype(group_indices)::LookupResult it = nullptr;
@@ -465,6 +532,13 @@ void TopNDirectAggregatingTransform::consume(Chunk chunk)
         {
             addRowToAggregateStates(group_states[it->getMapped()].state, row);
         }
+    }
+
+    /// Per-chunk granularity, like the per-block check in `Aggregator::executeOnBlock`.
+    if (!checkGroupByLimits(num_groups, group_by_limits, no_more_keys))
+    {
+        finishConsume();
+        return;
     }
 
     maybeRefreshThreshold();
@@ -692,7 +766,8 @@ TopNAggregatingMergeTransform::TopNAggregatingMergeTransform(
     const Names & key_names_,
     const AggregateDescriptions & aggregates_,
     const SortDescription & sort_description_,
-    size_t limit_)
+    size_t limit_,
+    const TopNGroupByLimits & group_by_limits_)
     : IAccumulatingTransform(
         std::make_shared<const Block>(intermediate_header_),
         std::make_shared<const Block>(output_header_))
@@ -700,6 +775,7 @@ TopNAggregatingMergeTransform::TopNAggregatingMergeTransform(
     , aggregates(aggregates_)
     , sort_description(sort_description_)
     , limit(limit_)
+    , group_by_limits(group_by_limits_)
     , stored_header(intermediate_header_)
     , arena(std::make_shared<Arena>())
 {
@@ -765,6 +841,27 @@ void TopNAggregatingMergeTransform::consume(Chunk chunk)
             key = key_col_ptrs[k]->serializeValueIntoArena(row, *arena, begin, nullptr);
         SerializedKeyHolder key_holder{std::string_view(begin, key.data() + key.size() - begin), *arena};
 
+        /// `group_by_overflow_mode = 'any'` triggered: merge into existing groups,
+        /// skip keys that would create a new one (see `Aggregator::checkLimits`).
+        if (no_more_keys)
+        {
+            auto * found = group_indices.find(keyHolderGetKey(key_holder));
+            keyHolderDiscardKey(key_holder);
+            if (!found)
+                continue;
+
+            AggregateDataPtr state = group_states[found->getMapped()].state;
+            for (size_t i = 0; i < aggregates.size(); ++i)
+            {
+                const auto & agg_col = assert_cast<const ColumnAggregateFunction &>(*columns[agg_column_indices[i]]);
+                aggregates[i].function->merge(
+                    state + agg_state_offsets[i],
+                    agg_col.getData()[row],
+                    arena.get());
+            }
+            continue;
+        }
+
         decltype(group_indices)::LookupResult it = nullptr;
         bool inserted = false;
         group_indices.emplace(key_holder, it, inserted);
@@ -799,6 +896,10 @@ void TopNAggregatingMergeTransform::consume(Chunk chunk)
                 arena.get());
         }
     }
+
+    /// Per-chunk granularity, like the per-block check in `Aggregator::mergeOnBlock`.
+    if (!checkGroupByLimits(num_groups, group_by_limits, no_more_keys))
+        finishConsume();
 }
 
 Chunk TopNAggregatingMergeTransform::generate()

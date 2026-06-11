@@ -44,18 +44,58 @@ DROP TABLE IF EXISTS t_topn_asc;
 CREATE TABLE t_topn_asc (g UInt32, val UInt32) ENGINE = MergeTree ORDER BY val;
 INSERT INTO t_topn_asc SELECT number % 100, number FROM numbers(10000);
 
--- (2) max_rows_to_group_by with throw: rewrite must be skipped and the standard
--- pipeline must enforce the limit (TOO_MANY_ROWS).
-SELECT '-- max_rows_to_group_by: no TopNAggregating';
+-- (2) max_rows_to_group_by: the rewrite stays active and the TopN transforms enforce
+-- the limit themselves, mirroring `Aggregator::checkLimits` (the CI test profile sets
+-- `max_rows_to_group_by = 10G` globally, so bailing out of the rewrite on any nonzero
+-- value would disable the optimization for every query in the test environment).
+-- The limit applies to groups the transforms actually create: Mode 1 early termination
+-- can legitimately stay under a limit the standard pipeline would exceed, in the same
+-- way a primary-key index that skips rows avoids `max_rows_to_read`.
+SELECT '-- max_rows_to_group_by: TopNAggregating is still used';
 SELECT count() > 0 FROM (
     EXPLAIN PLAN
     SELECT g, max(val) AS m FROM t_topn_asc GROUP BY g ORDER BY m DESC LIMIT 5
     SETTINGS optimize_topn_aggregation = 1, max_rows_to_group_by = 10, group_by_overflow_mode = 'throw'
 ) WHERE explain LIKE '%TopNAggregating%';
 
-SELECT '-- max_rows_to_group_by: limit is enforced';
+SELECT '-- max_rows_to_group_by above groups actually created: Mode 1 completes';
 SELECT g, max(val) AS m FROM t_topn_asc GROUP BY g ORDER BY m DESC LIMIT 5
+SETTINGS optimize_topn_aggregation = 1, max_rows_to_group_by = 10, group_by_overflow_mode = 'throw';
+
+SELECT '-- max_rows_to_group_by below LIMIT: enforced (throw)';
+SELECT g, max(val) AS m FROM t_topn_asc GROUP BY g ORDER BY m DESC LIMIT 5
+SETTINGS optimize_topn_aggregation = 1, max_rows_to_group_by = 3, group_by_overflow_mode = 'throw'; -- { serverError TOO_MANY_ROWS }
+
+-- Mode 2 (sorting key does not match the ORDER BY aggregate argument): all groups
+-- are created in the hash table, so a limit below the group count must throw.
+DROP TABLE IF EXISTS t_topn_limits;
+CREATE TABLE t_topn_limits (g UInt32, val UInt32) ENGINE = MergeTree ORDER BY g;
+INSERT INTO t_topn_limits SELECT number % 100, number FROM numbers(10000);
+
+SELECT '-- Mode 2 with max_rows_to_group_by: TopNAggregating is used';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN
+    SELECT g, max(val) AS m FROM t_topn_limits GROUP BY g ORDER BY m DESC LIMIT 5
+    SETTINGS optimize_topn_aggregation = 1, max_rows_to_group_by = 10, group_by_overflow_mode = 'throw'
+) WHERE explain LIKE '%TopNAggregating%';
+
+SELECT '-- Mode 2 max_rows_to_group_by: enforced (throw)';
+SELECT g, max(val) AS m FROM t_topn_limits GROUP BY g ORDER BY m DESC LIMIT 5
 SETTINGS optimize_topn_aggregation = 1, max_rows_to_group_by = 10, group_by_overflow_mode = 'throw'; -- { serverError TOO_MANY_ROWS }
+
+SELECT '-- Mode 2 max_rows_to_group_by break: no exception, at most LIMIT rows';
+SELECT count() <= 5 FROM (
+    SELECT g, max(val) AS m FROM t_topn_limits GROUP BY g ORDER BY m DESC LIMIT 5
+    SETTINGS optimize_topn_aggregation = 1, max_rows_to_group_by = 10, group_by_overflow_mode = 'break'
+);
+
+SELECT '-- Mode 2 max_rows_to_group_by any: no exception, at most LIMIT rows';
+SELECT count() <= 5 FROM (
+    SELECT g, max(val) AS m FROM t_topn_limits GROUP BY g ORDER BY m DESC LIMIT 5
+    SETTINGS optimize_topn_aggregation = 1, max_rows_to_group_by = 10, group_by_overflow_mode = 'any'
+);
+
+DROP TABLE t_topn_limits;
 
 -- (3) serialize_query_plan: rewrite must be skipped (no NOT_IMPLEMENTED) and produce correct results.
 SELECT '-- serialize_query_plan: no TopNAggregating';

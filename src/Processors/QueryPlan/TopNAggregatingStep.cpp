@@ -48,6 +48,7 @@ TopNAggregatingStep::TopNAggregatingStep(
     AggregateDescriptions aggregates_,
     SortDescription sort_description_,
     size_t limit_,
+    TopNGroupByLimits group_by_limits_,
     bool sorted_input_,
     bool enable_threshold_pruning_,
     TopKThresholdTrackerPtr threshold_tracker_,
@@ -64,6 +65,7 @@ TopNAggregatingStep::TopNAggregatingStep(
     , aggregates(std::move(aggregates_))
     , sort_description(std::move(sort_description_))
     , limit(limit_)
+    , group_by_limits(group_by_limits_)
     , sorted_input(sorted_input_)
     , enable_threshold_pruning(enable_threshold_pruning_)
     , threshold_tracker(std::move(threshold_tracker_))
@@ -93,7 +95,7 @@ void TopNAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, con
         /// the states and produce the final top-N result.
         pipeline.resize(1);
         pipeline.addTransform(std::make_shared<TopNAggregatingMergeTransform>(
-            in_header, out_header, key_names, aggregates, sort_description, limit));
+            in_header, out_header, key_names, aggregates, sort_description, limit, group_by_limits));
         return;
     }
 
@@ -122,7 +124,7 @@ void TopNAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, con
         {
             return std::make_shared<TopNDirectAggregatingTransform>(
                 in_header, intermediate_header, key_names, aggregates,
-                sort_description, limit, /*partial=*/true,
+                sort_description, limit, group_by_limits, /*partial=*/true,
                 enable_threshold_pruning, threshold_tracker);
         });
 
@@ -166,7 +168,7 @@ void TopNAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, con
         }
 
         pipeline.addTransform(std::make_shared<TopNSortedAggregatingTransform>(
-            in_header, out_header, key_names, aggregates, sort_description, limit));
+            in_header, out_header, key_names, aggregates, sort_description, limit, group_by_limits));
     }
     else
     {
@@ -180,13 +182,13 @@ void TopNAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, con
         {
             return std::make_shared<TopNDirectAggregatingTransform>(
                 in_header, intermediate_header, key_names, aggregates,
-                sort_description, limit, /*partial=*/true,
+                sort_description, limit, group_by_limits, /*partial=*/true,
                 enable_threshold_pruning, threshold_tracker);
         });
 
         pipeline.resize(1);
         pipeline.addTransform(std::make_shared<TopNAggregatingMergeTransform>(
-            intermediate_header, out_header, key_names, aggregates, sort_description, limit));
+            intermediate_header, out_header, key_names, aggregates, sort_description, limit, group_by_limits));
     }
 }
 

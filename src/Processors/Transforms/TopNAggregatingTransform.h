@@ -6,6 +6,7 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/TopKThresholdTracker.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
@@ -17,6 +18,20 @@ namespace DB
 /// Builds the intermediate header used between partial and merge transforms.
 /// Keys are pass-through; aggregates become DataTypeAggregateFunction columns.
 Block buildIntermediateHeader(const Block & input_header, const Names & key_names, const AggregateDescriptions & aggregates);
+
+/// GROUP BY limits from `Aggregator::Params`. The TopN transforms bypass `Aggregator`,
+/// so they enforce `max_rows_to_group_by` / `group_by_overflow_mode` themselves,
+/// mirroring `Aggregator::checkLimits`: `throw` raises `TOO_MANY_ROWS`, `break` stops
+/// consuming input, `any` stops creating new groups but keeps aggregating existing ones.
+/// The count is checked per transform (= per stream), like the per-thread check in
+/// `Aggregator`, and only counts groups actually created — rows skipped by threshold
+/// pruning or Mode 1 early termination do not contribute, in the same way that rows
+/// skipped by a primary-key index do not contribute to `max_rows_to_read`.
+struct TopNGroupByLimits
+{
+    size_t max_rows = 0;
+    OverflowMode overflow_mode = OverflowMode::THROW;
+};
 
 /// Base class for fused GROUP BY + ORDER BY aggregate + LIMIT K transforms.
 /// Contains shared infrastructure: column index mapping, aggregate state
@@ -30,7 +45,8 @@ public:
         const Names & key_names_,
         const AggregateDescriptions & aggregates_,
         const SortDescription & sort_description_,
-        size_t limit_);
+        size_t limit_,
+        const TopNGroupByLimits & group_by_limits_);
 
     ~TopNAggregatingTransformBase() override = default;
 
@@ -40,7 +56,12 @@ protected:
     AggregateDescriptions aggregates;
     SortDescription sort_description;
     size_t limit;
+    TopNGroupByLimits group_by_limits;
     Block stored_input_header;
+
+    /// Set when `group_by_overflow_mode = 'any'` triggered: keep aggregating
+    /// existing groups but do not create new ones (see `Aggregator::checkLimits`).
+    bool no_more_keys = false;
 
     /// --- Column index mapping (computed once in constructor) ---
     ColumnNumbers key_column_indices;
@@ -101,7 +122,8 @@ public:
         const Names & key_names_,
         const AggregateDescriptions & aggregates_,
         const SortDescription & sort_description_,
-        size_t limit_);
+        size_t limit_,
+        const TopNGroupByLimits & group_by_limits_);
 
     String getName() const override { return "TopNSortedAggregating"; }
 
@@ -133,6 +155,7 @@ public:
         const AggregateDescriptions & aggregates_,
         const SortDescription & sort_description_,
         size_t limit_,
+        const TopNGroupByLimits & group_by_limits_,
         bool partial_ = false,
         bool enable_threshold_pruning_ = false,
         TopKThresholdTrackerPtr threshold_tracker_ = nullptr);
@@ -186,7 +209,8 @@ public:
         const Names & key_names_,
         const AggregateDescriptions & aggregates_,
         const SortDescription & sort_description_,
-        size_t limit_);
+        size_t limit_,
+        const TopNGroupByLimits & group_by_limits_);
 
     ~TopNAggregatingMergeTransform() override;
 
@@ -202,7 +226,11 @@ private:
     AggregateDescriptions aggregates;
     SortDescription sort_description;
     size_t limit;
+    TopNGroupByLimits group_by_limits;
     Block stored_header;
+
+    /// See `TopNAggregatingTransformBase::no_more_keys`.
+    bool no_more_keys = false;
 
     /// --- Column index mapping ---
     ColumnNumbers key_column_indices;

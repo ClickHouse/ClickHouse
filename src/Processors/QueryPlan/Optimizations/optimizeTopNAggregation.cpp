@@ -187,18 +187,17 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (keys_ptr->empty())
         return;
 
-    /// The TopN transforms bypass `Aggregator`, so they cannot honor the GROUP BY
-    /// overflow limit: with `max_rows_to_group_by` set and `group_by_overflow_mode = 'throw'`
-    /// or `'break'`, the standard pipeline throws or stops, while the TopN transforms would
-    /// keep inserting groups. Fall back to the standard aggregation + sorting pipeline in
-    /// that case instead of silently changing semantics.
+    /// The TopN transforms bypass `Aggregator`, so they enforce `max_rows_to_group_by` /
+    /// `group_by_overflow_mode` themselves (mirroring `Aggregator::checkLimits`) — see
+    /// `TopNGroupByLimits`. Bailing out on a nonzero `max_rows_to_group_by` instead would
+    /// disable the rewrite for every deployment with a profile-level safety limit (the CI
+    /// test profile sets `max_rows_to_group_by = 10G` globally, for example).
     /// Note: we intentionally do not gate on `max_bytes_before_external_group_by` — it is
     /// non-zero by default (derived from `max_bytes_ratio_before_external_group_by`), so
     /// gating on it would disable the optimization for virtually all queries. The memory
     /// tradeoff of skipping on-disk spilling is inherent to this opt-in optimization and is
     /// bounded by Mode 2 threshold pruning.
-    if (params.max_rows_to_group_by != 0)
-        return;
+    const TopNGroupByLimits group_by_limits{params.max_rows_to_group_by, params.group_by_overflow_mode};
 
     const auto & agg_descs = *agg_descs_ptr;
     if (agg_descs.empty())
@@ -277,6 +276,7 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             AggregateDescriptions(agg_descs.begin(), agg_descs.end()),
             topn_sort_desc,
             limit_value,
+            group_by_limits,
             /*sorted_input=*/false,
             /*enable_threshold_pruning=*/false,
             /*threshold_tracker=*/nullptr,
@@ -382,6 +382,7 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                         AggregateDescriptions(local_agg->getParams().aggregates.begin(), local_agg->getParams().aggregates.end()),
                         topn_sort_desc,
                         limit_value,
+                        TopNGroupByLimits{local_agg->getParams().max_rows_to_group_by, local_agg->getParams().group_by_overflow_mode},
                         /*sorted_input=*/false,
                         /*enable_threshold_pruning=*/true,
                         /*threshold_tracker=*/nullptr,
@@ -555,6 +556,7 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         AggregateDescriptions(agg_descs.begin(), agg_descs.end()),
         topn_sort_desc,
         limit_value,
+        group_by_limits,
         sorted_input,
         enable_threshold_pruning,
         threshold_tracker,

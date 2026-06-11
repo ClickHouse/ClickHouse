@@ -4,6 +4,7 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/TopKThresholdTracker.h>
+#include <Processors/Transforms/TopNAggregatingTransform.h>
 
 namespace DB
 {
@@ -17,6 +18,7 @@ public:
         AggregateDescriptions aggregates_,
         SortDescription sort_description_,
         size_t limit_,
+        TopNGroupByLimits group_by_limits_,
         bool sorted_input_,
         bool enable_threshold_pruning_ = false,
         TopKThresholdTrackerPtr threshold_tracker_ = nullptr,
@@ -49,6 +51,8 @@ private:
     AggregateDescriptions aggregates;
     SortDescription sort_description;
     size_t limit;
+    /// `max_rows_to_group_by` / `group_by_overflow_mode`, enforced inside the transforms.
+    TopNGroupByLimits group_by_limits;
     bool sorted_input;
     bool enable_threshold_pruning;
     TopKThresholdTrackerPtr threshold_tracker;
