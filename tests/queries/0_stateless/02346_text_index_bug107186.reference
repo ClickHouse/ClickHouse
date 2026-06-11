@@ -1,0 +1,13 @@
+asciiCJK tokenizer
+- hasToken substring of CJK run, with index	0
+- hasToken substring of CJK run, no index	0
+ngrams tokenizer
+- hasToken inner substring, with index	0
+- hasToken inner substring, no index	0
+- hasToken full word, with index	1
+- hasToken full word, no index	1
+splitByNonAlpha tokenizer (exact read still used, results unchanged)
+- hasToken existing token, with index	1
+- hasToken existing token, no index	1
+- hasToken missing substring, with index	0
+- hasToken missing substring, no index	0

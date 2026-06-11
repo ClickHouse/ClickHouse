@@ -226,15 +226,22 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getHintOrNoneMode() const
 
 TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const String & function_name) const
 {
-    if (function_name == "hasToken"
-        || function_name == "hasAnyTokens"
+    bool is_array_tokenizer = typeid_cast<const ArrayTokenizer *>(tokenizer);
+    bool is_split_by_non_alpha_tokenizer = typeid_cast<const SplitByNonAlphaTokenizer *>(tokenizer);
+    bool has_preprocessor = preprocessor && preprocessor->hasActions();
+
+    if (function_name == "hasToken")
+    {
+        /// hasToken has fixed splitByNonAlpha semantics, so exact direct read from the posting lists is
+        /// only correct when the index produces the same tokens (splitByNonAlpha without a preprocessor).
+        return is_split_by_non_alpha_tokenizer && !has_preprocessor ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+    }
+
+    if (function_name == "hasAnyTokens"
         || function_name == "hasAllTokens")
     {
         return TextIndexDirectReadMode::Exact;
     }
-
-    bool is_array_tokenizer = typeid_cast<const ArrayTokenizer *>(tokenizer);
-    bool has_preprocessor = preprocessor && preprocessor->hasActions();
 
     if (function_name == "equals"
         || function_name == "has"
