@@ -217,7 +217,7 @@ Preprocessors are in principle equivalent to wrapping the index column or expres
 For example, the `lower` preprocessor in `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))` can be emulated by `INDEX idx lower(col) TYPE text(tokenizer = 'splitByNonAlpha')`.
 The latter form has the disadvantage that the emulated preprocessor is only applied if it matches the filter condition in the WHERE clause.
 For example, `WHERE hasAllTokens(lower(col), [...])` matches while `WHERE hasAllTokens(col, [...])` does not.
-We therefore recommend using preprocessor expressions.
+For an optimal user experience, we therefore recommend using preprocessor expressions.
 :::
 
 Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens), [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), and [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase) use the preprocessor to first transform the search term before tokenizing it.
