@@ -38,7 +38,14 @@ def cluster():
         cluster.shutdown()
 
 
-def create_table(node, table, replica, data_prefix="", aggressive_merge=True):
+def create_table(
+    node,
+    table,
+    replica,
+    data_prefix="",
+    aggressive_merge=True,
+    disable_background_merge=False,
+):
     if data_prefix == "":
         data_prefix = table
 
@@ -50,6 +57,14 @@ def create_table(node, table, replica, data_prefix="", aggressive_merge=True):
         vertical_merge_algorithm_min_rows_to_activate = 100000
         vertical_merge_algorithm_min_columns_to_activate = 100
         max_parts_to_merge_at_once = 3
+
+    # Stops background merge selection without blocking mutations, unlike
+    # SYSTEM STOP MERGES which on ReplicatedMergeTree also blocks MUTATE_PART.
+    disable_merge_setting = (
+        ", max_bytes_to_merge_at_max_space_in_pool = 1"
+        if disable_background_merge
+        else ""
+    )
 
     node.query(
         f"""
@@ -76,7 +91,7 @@ def create_table(node, table, replica, data_prefix="", aggressive_merge=True):
         enable_vertical_merge_algorithm=0,
         vertical_merge_algorithm_min_rows_to_activate = {vertical_merge_algorithm_min_rows_to_activate},
         vertical_merge_algorithm_min_columns_to_activate = {vertical_merge_algorithm_min_columns_to_activate},
-        compress_primary_key=0;
+        compress_primary_key=0{disable_merge_setting};
     """
     )
 
@@ -669,7 +684,8 @@ def test_mutation_with_broken_projection(cluster):
     node = cluster.instances["node"]
 
     table_name = "test1"
-    create_table(node, table_name, 1)
+    # Asserts exact per-source-part lineage names and never needs a merge.
+    create_table(node, table_name, 1, disable_background_merge=True)
 
     insert(node, table_name, 0, 5)
     insert(node, table_name, 5, 5)
