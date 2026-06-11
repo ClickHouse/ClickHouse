@@ -39,20 +39,23 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_timeout FORMAT JSONEachRow
 client_pid=$!
 
 # Open the write end. This blocks until the client opens the read end, synchronizing start.
-exec 3>"$fifo"
+# Let bash pick the descriptor (stream_fd) instead of hardcoding fd 3: shell_config.sh routes
+# bash xtrace to fd 3 under CI (BASH_XTRACEFD), so writing the rows to fd 3 would interleave
+# trace output into the INSERT stream and break parsing.
+exec {stream_fd}>"$fifo"
 
 for iteration in 1 2; do
     for i in $(seq 1 40); do
-        echo "{\"id\":$(( (iteration*100) + i )),\"data\":\"batch_${iteration}\"}" >&3
+        echo "{\"id\":$(( (iteration*100) + i )),\"data\":\"batch_${iteration}\"}" >&${stream_fd}
     done
 
     sleep 6
 
-    echo "{\"id\":$(( (iteration*100) + 99 )),\"data\":\"trigger_${iteration}\"}" >&3
+    echo "{\"id\":$(( (iteration*100) + 99 )),\"data\":\"trigger_${iteration}\"}" >&${stream_fd}
 done
 
 # Close the write end so the client finishes the INSERT.
-exec 3>&-
+exec {stream_fd}>&-
 wait "$client_pid"
 rm -f "$fifo"
 
