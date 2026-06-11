@@ -88,7 +88,7 @@ Translates the given text into the specified target language using an LLM provid
 
 Additional style or dialect instructions may be passed as a third argument (e.g. `'keep technical terms untranslated'`).
 
-Provider credentials and configuration are taken from the named collection named by the `ai_credentials` setting.
+Provider credentials and configuration are taken from the named collection specified by the `ai_credentials` setting.
 )",
         .syntax = "aiTranslate(text, target_language[, instructions[, temperature]])",
         .arguments = {

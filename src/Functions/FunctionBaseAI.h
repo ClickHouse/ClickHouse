@@ -59,7 +59,7 @@ public:
         String api_version;
     };
 
-    /// Resolve the named collection named by the `ai_credentials` setting: read the setting (erroring
+    /// Resolve the named collection specified by the `ai_credentials` setting: read the setting (erroring
     /// if it is empty), run the `NAMED_COLLECTION` access check, fetch from `NamedCollectionFactory`,
     /// and validate that the required fields (`provider`, `endpoint`, `model`) are non-empty.
     /// `api_key` is optional.

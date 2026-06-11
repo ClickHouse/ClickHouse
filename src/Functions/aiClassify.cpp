@@ -191,7 +191,7 @@ The function sends the text together with a fixed classification prompt and a JS
 constraining the model to return exactly one of the supplied labels. When the response is returned as a JSON
 object of the form `{"category": "..."}`, the label is unwrapped and the label string is returned.
 
-Provider credentials and configuration are taken from the named collection named by the `ai_credentials` setting.
+Provider credentials and configuration are taken from the named collection specified by the `ai_credentials` setting.
 )",
         .syntax = "aiClassify(text, categories[, temperature])",
         .arguments = {

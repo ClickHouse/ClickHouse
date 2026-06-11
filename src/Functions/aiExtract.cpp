@@ -231,7 +231,7 @@ JSON-encoded schema of the form `'{"field_a": "description of field a", "field_b
 In instruction mode, the function returns the extracted value as a plain string, or an empty string if nothing was found.
 In schema mode, the function returns a JSON object string whose keys match the requested schema; missing fields are `null`.
 
-Provider credentials and configuration are taken from the named collection named by the `ai_credentials` setting.
+Provider credentials and configuration are taken from the named collection specified by the `ai_credentials` setting.
 )",
         .syntax = "aiExtract(text, instruction_or_schema[, temperature])",
         .arguments = {

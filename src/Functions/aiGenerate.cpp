@@ -84,7 +84,7 @@ The function sends the prompt to the configured AI provider and returns the gene
 An optional system prompt can be provided to guide the model's behavior (e.g. tone, format, role).
 If no system prompt is given, the default system prompt is: `)" + String(default_system_prompt) + R"(`
 
-Provider credentials and configuration are taken from the named collection named by the `ai_credentials` setting.
+Provider credentials and configuration are taken from the named collection specified by the `ai_credentials` setting.
 )",
         .syntax = "aiGenerate(prompt[, system_prompt[, temperature]])",
         .arguments
