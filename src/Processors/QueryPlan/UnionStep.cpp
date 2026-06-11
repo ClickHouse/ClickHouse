@@ -1,5 +1,4 @@
 #include <Common/NaNUtils.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -31,9 +30,9 @@ static SharedHeader checkHeaders(const SharedHeaders & input_headers)
     return res;
 }
 
-UnionStep::UnionStep(SharedHeaders input_headers_, size_t max_threads_, bool is_sql_union_)
+UnionStep::UnionStep(SharedHeaders input_headers_, size_t max_threads_, bool allow_narrowing_)
     : max_threads(max_threads_)
-    , is_sql_union(is_sql_union_)
+    , allow_narrowing(allow_narrowing_)
 {
     updateInputHeaders(std::move(input_headers_));
 }
@@ -91,19 +90,20 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
     *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), new_max_threads, &processors);
 
     /// The `max_streams_for_union_step*` cap only applies to steps built for SQL
-    /// `UNION ALL` / `UNION DISTINCT`. For non-SQL-UNION call sites the narrowing must be
-    /// skipped: shuffling streams through `ConcatProcessor` would break the ordering
-    /// invariants of `GroupingAggregatedTransform` (memory-efficient distributed
-    /// aggregation), `MergingSortedTransform`, and similar order-sensitive consumers.
-    /// We still validate the ratio so misconfiguration is reported on every query rather
-    /// than only when a SQL `UNION` happens to be present.
+    /// `UNION ALL` / `UNION DISTINCT`, and only while no downstream step relies on
+    /// per-stream sortedness of the union output. For all other cases the narrowing
+    /// must be skipped: shuffling streams through `ConcatProcessor` would break the
+    /// ordering invariants of `GroupingAggregatedTransform` (memory-efficient
+    /// distributed aggregation), `MergingSortedTransform`, and similar order-sensitive
+    /// consumers. We still validate the ratio so misconfiguration is reported on every
+    /// query rather than only when a narrowable `UNION` happens to be present.
     const double max_streams_ratio = settings.max_streams_for_union_step_to_max_threads_ratio;
     if (!isFinite(max_streams_ratio) || max_streams_ratio < 0)
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
             "Invalid value for `max_streams_for_union_step_to_max_threads_ratio`: {}. Must be a finite non-negative number.",
             max_streams_ratio);
 
-    if (!is_sql_union)
+    if (!allow_narrowing)
         return pipeline;
 
     size_t effective_max_streams = settings.max_streams_for_union_step;
@@ -126,24 +126,10 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
 
     if (effective_max_streams && pipeline->getNumStreams() > effective_max_streams)
     {
-        if (must_preserve_order)
-        {
-            /// Narrowing concatenates streams via `ConcatProcessor` in random order, which
-            /// would break the per-stream sortedness that downstream steps (FinishSorting,
-            /// DISTINCT-in-order) rely on. Correctness wins over the stream cap.
-            LOG_TRACE(
-                getLogger("UnionStep"),
-                "Not narrowing union pipeline from {} to {} streams because downstream steps require "
-                "each stream to stay sorted",
-                pipeline->getNumStreams(), effective_max_streams);
-        }
-        else
-        {
-            QueryPipelineProcessorsCollector collector(*pipeline, this);
-            pipeline->narrow(effective_max_streams);
-            auto added_processors = collector.detachProcessors();
-            processors.insert(processors.end(), added_processors.begin(), added_processors.end());
-        }
+        QueryPipelineProcessorsCollector collector(*pipeline, this);
+        pipeline->narrow(effective_max_streams);
+        auto added_processors = collector.detachProcessors();
+        processors.insert(processors.end(), added_processors.begin(), added_processors.end());
     }
 
     return pipeline;

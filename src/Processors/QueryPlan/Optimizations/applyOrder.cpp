@@ -171,7 +171,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             /// (which may convert Sorting to FinishSorting or enable DISTINCT-in-order).
             /// Narrowing the union pipeline would concatenate sorted streams and silently
             /// invalidate this property, so forbid it.
-            union_step->setMustPreserveOrder();
+            union_step->disableNarrowing();
 
             /// `UnionStep` concatenates child pipelines without a sorted merge, so with multiple
             /// children each stream stays sorted by the common prefix.
