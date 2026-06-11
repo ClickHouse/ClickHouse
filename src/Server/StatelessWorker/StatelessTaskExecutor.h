@@ -18,7 +18,7 @@ namespace DB
 class StatelessTaskExecutor
 {
 public:
-    StatelessTaskExecutor(size_t max_threads, size_t max_free_threads, size_t queue_size);
+    StatelessTaskExecutor();
     virtual ~StatelessTaskExecutor() = default;
 
     enum Result
