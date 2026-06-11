@@ -35,7 +35,7 @@ class AsynchronousMetrics;
 ///         <my_rule1>
 ///             <url>/metrics</url>
 ///             <handler>
-///                 <type>expose_metrics</type>
+///                 <type>metrics</type>
 ///                 <metrics>true</metrics>
 ///                 <asynchronous_metrics>true</asynchronous_metrics>
 ///                 <events>true</events>
@@ -67,7 +67,7 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///     <my_rule_1>
 ///         <url>/metrics</url>
 ///         <handler>
-///             <type>prometheus</type>
+///             <type>prometheus_metrics</type>
 ///             <metrics>true</metrics>
 ///             <asynchronous_metrics>true</asynchronous_metrics>
 ///             <events>true</events>
@@ -75,26 +75,12 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///         </handler>
 ///     </my_rule_1>
 ///     <my_rule2>
-///         <url>/prometheus/api/v1/write</url>
+///         <url>/prometheus/api/v1</url>
 ///         <handler>
-///             <type>prometheus_remote_write</type>
+///             <type>prometheus_api_v1</type>
 ///             <table>db.time_series_table_name</table>
 ///         </handler>
 ///     </my_rule2>
-///     <my_rule3>
-///         <url>/prometheus/api/v1/read</url>
-///         <handler>
-///             <type>prometheus_remote_read</type>
-///             <table>db.time_series_table_name</table>
-///         </handler>
-///     </my_rule3>
-///     <my_rule4>
-///         <url>/prometheus/api/v1/query</url>
-///         <handler>
-///             <type>prometheus_query_api</type>
-///             <table>db.time_series_table_name</table>
-///         </handler>
-///     </my_rule4>
 /// </http_handlers>
 HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
     IServer & server,
@@ -128,7 +114,7 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRuleDefaults(
     const AsynchronousMetrics & asynchronous_metrics);
 
 /// Makes a handler factory to handle prometheus protocols.
-/// Supports the "expose_metrics" protocol only.
+/// Supports the "metrics" protocol only.
 HTTPRequestHandlerFactoryPtr createKeeperPrometheusHandlerFactory(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,

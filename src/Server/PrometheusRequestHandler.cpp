@@ -78,15 +78,15 @@ private:
 
 
 /// Implementation of the exposing metrics protocol.
-class PrometheusRequestHandler::ExposeMetricsImpl : public Impl
+class PrometheusRequestHandler::MetricsImpl : public Impl
 {
 public:
-    explicit ExposeMetricsImpl(PrometheusRequestHandler & parent) : Impl(parent) {}
+    explicit MetricsImpl(PrometheusRequestHandler & parent) : Impl(parent) {}
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
         LOG_INFO(log(), "Handling metrics request from {}", request.get("User-Agent"));
-        chassert(config().type == PrometheusRequestHandlerConfig::Type::ExposeMetrics);
+        chassert(config().type == PrometheusRequestHandlerConfig::Type::Metrics);
     }
 
     void handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response) override
@@ -127,7 +127,7 @@ public:
     virtual void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
 
     /// When true, `handleRequest` parses `application/x-www-form-urlencoded` (and multipart) bodies for POST/PUT.
-    /// Must stay false for RemoteWrite/RemoteRead so the raw body stream stays available for protobuf.
+    /// Must stay false for Write/Read so the raw body stream stays available for protobuf.
     virtual bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const { return false; }
 
 protected:
@@ -284,7 +284,7 @@ protected:
 
 
 /// Implementation of the remote-write protocol.
-class PrometheusRequestHandler::RemoteWriteImpl : public ImplWithContext
+class PrometheusRequestHandler::WriteImpl : public ImplWithContext
 {
 public:
     using ImplWithContext::ImplWithContext;
@@ -292,7 +292,7 @@ public:
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
         LOG_INFO(log(), "Handling remote write request from {}", request.get("User-Agent", ""));
-        chassert(config().type == PrometheusRequestHandlerConfig::Type::RemoteWrite
+        chassert(config().type == PrometheusRequestHandlerConfig::Type::Write
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
 
@@ -331,7 +331,7 @@ public:
 };
 
 /// Implementation of the remote-read protocol.
-class PrometheusRequestHandler::RemoteReadImpl : public ImplWithContext
+class PrometheusRequestHandler::ReadImpl : public ImplWithContext
 {
 public:
     using ImplWithContext::ImplWithContext;
@@ -339,7 +339,7 @@ public:
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
         LOG_INFO(log(), "Handling remote read request from {}", request.get("User-Agent", ""));
-        chassert(config().type == PrometheusRequestHandlerConfig::Type::RemoteRead
+        chassert(config().type == PrometheusRequestHandlerConfig::Type::Read
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
 
@@ -394,8 +394,9 @@ public:
     }
 };
 
-/// Handles Prometheus Query API endpoints (/api/v1/query, /api/v1/query_range, etc.)
-class PrometheusRequestHandler::QueryAPIImpl : public ImplWithContext
+/// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
+/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values).
+class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
     using ImplWithContext::ImplWithContext;
@@ -404,8 +405,8 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling Prometheus Query API request from {}", request.get("User-Agent", ""));
-        chassert(config().type == PrometheusRequestHandlerConfig::Type::QueryAPI
+        LOG_INFO(log(), "Handling Prometheus HTTP API query request from {}", request.get("User-Agent", ""));
+        chassert(config().type == PrometheusRequestHandlerConfig::Type::Query
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
 
@@ -424,7 +425,7 @@ public:
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
     {
         const String & uri = request.getURI();
-        LOG_DEBUG(log(), "Processing Query API request: method={}, uri={}", request.getMethod(), uri);
+        LOG_DEBUG(log(), "Processing Prometheus HTTP API query request: method={}, uri={}", request.getMethod(), uri);
 
         response.setContentType("application/json");
 
@@ -562,15 +563,15 @@ public:
 
 
 /// Handles all Prometheus "/api/v1" protocols, dispatching each request to the
-/// RemoteWrite, RemoteRead, or Query API implementation based on its path.
+/// Write, Read, or Query implementation based on its path.
 class PrometheusRequestHandler::APIv1Impl : public Impl
 {
 public:
     explicit APIv1Impl(PrometheusRequestHandler & parent)
         : Impl(parent)
-        , remote_write_impl(parent)
-        , remote_read_impl(parent)
-        , query_api_impl(parent)
+        , write_impl(parent)
+        , read_impl(parent)
+        , query_impl(parent)
     {
     }
 
@@ -603,18 +604,18 @@ private:
         const String path = Poco::URI(request.getURI()).getPath();
 
         if (path.ends_with("/api/v1/write"))
-            return remote_write_impl;
+            return write_impl;
         if (path.ends_with("/api/v1/read"))
-            return remote_read_impl;
+            return read_impl;
 
         /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values)
-        /// are served by the Query API implementation, which itself returns 404 for unknown paths.
-        return query_api_impl;
+        /// are served by the Query implementation, which itself returns 404 for unknown paths.
+        return query_impl;
     }
 
-    RemoteWriteImpl remote_write_impl;
-    RemoteReadImpl remote_read_impl;
-    QueryAPIImpl query_api_impl;
+    WriteImpl write_impl;
+    ReadImpl read_impl;
+    QueryImpl query_impl;
     Impl * current_impl = nullptr;
 };
 
@@ -641,24 +642,24 @@ void PrometheusRequestHandler::createImpl()
 {
     switch (config.type)
     {
-        case PrometheusRequestHandlerConfig::Type::ExposeMetrics:
+        case PrometheusRequestHandlerConfig::Type::Metrics:
         {
-            impl = std::make_unique<ExposeMetricsImpl>(*this);
+            impl = std::make_unique<MetricsImpl>(*this);
             return;
         }
-        case PrometheusRequestHandlerConfig::Type::RemoteWrite:
+        case PrometheusRequestHandlerConfig::Type::Write:
         {
-            impl = std::make_unique<RemoteWriteImpl>(*this);
+            impl = std::make_unique<WriteImpl>(*this);
             return;
         }
-        case PrometheusRequestHandlerConfig::Type::RemoteRead:
+        case PrometheusRequestHandlerConfig::Type::Read:
         {
-            impl = std::make_unique<RemoteReadImpl>(*this);
+            impl = std::make_unique<ReadImpl>(*this);
             return;
         }
-        case PrometheusRequestHandlerConfig::Type::QueryAPI:
+        case PrometheusRequestHandlerConfig::Type::Query:
         {
-            impl = std::make_unique<QueryAPIImpl>(*this);
+            impl = std::make_unique<QueryImpl>(*this);
             return;
         }
         case PrometheusRequestHandlerConfig::Type::APIv1:
