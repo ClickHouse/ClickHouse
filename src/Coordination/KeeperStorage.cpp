@@ -2267,7 +2267,8 @@ processLocal(const Coordination::ZooKeeperListRecursiveRequest & zk_request, Sto
             for (auto && [child_name, child_node] : children)
             {
                 auto child_path = (current_path_fs / child_name).generic_string();
-                if (check_acl && storage.checkACL(child_node.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+                /// (We silently skip nodes that fail ACL check.)
+                if (!check_acl || storage.checkACL(child_node.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
                 {
                     if (response->children.size() - 1 >= zk_request.children_nodes_limit)
                     {
@@ -2289,7 +2290,7 @@ processLocal(const Coordination::ZooKeeperListRecursiveRequest & zk_request, Sto
                 auto child_path = (current_path_fs / child_name).generic_string();
                 auto child_it = container.find(child_path);
                 chassert(child_it != container.end());
-                if (storage.checkACL(child_it->value.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
+                if (!check_acl || storage.checkACL(child_it->value.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
                 {
                     if (response->children.size() - 1 >= zk_request.children_nodes_limit)
                     {
@@ -3162,7 +3163,7 @@ Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKeeperGet
     {
         if (check_acl && !storage.checkACL(node_it->value.acl_id, Coordination::ACL::Admin | Coordination::ACL::Read, session_id, /*committed=*/ true))
         {
-            response->error = Coordination::Error::ZNONODE;
+            response->error = Coordination::Error::ZNOAUTH;
             return response;
         }
 

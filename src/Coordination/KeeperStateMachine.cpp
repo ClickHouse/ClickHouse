@@ -813,12 +813,16 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
         /// If there are uncommitted log entries above the snapshot, we re-preprocess them in the new
         /// KeeperStorage. This is unusual; normally apply_snapshot is called in order to fast-forward
         /// follower's state to a log_idx far above the tail of this follower's log_store.
-        uint64_t uncommitted_start_idx = s.get_last_log_idx() + 1;
-        uint64_t uncommitted_end_idx = std::max(storage->getLastUncommittedLogIdx() + 1, uncommitted_start_idx);
-        auto uncommitted_entries = log_store ? log_store->log_entries(uncommitted_start_idx, uncommitted_end_idx) : nullptr;
-
-        if (uncommitted_entries && !uncommitted_entries->empty())
-            LOG_DEBUG(log, "There are {} uncommitted log entries to apply after the snapshot", uncommitted_entries->size());
+        /// Call this with storage mutex locked.
+        auto preprocess_uncommitted_entries = [&](uint64_t last_uncommitted_log_idx)
+        {
+            uint64_t uncommitted_start_idx = s.get_last_log_idx() + 1;
+            uint64_t uncommitted_end_idx = std::max(last_uncommitted_log_idx + 1, uncommitted_start_idx);
+            auto uncommitted_entries = log_store ? log_store->log_entries(uncommitted_start_idx, uncommitted_end_idx) : nullptr;
+            if (uncommitted_entries && !uncommitted_entries->empty())
+                LOG_DEBUG(log, "There are {} uncommitted log entries to apply after the snapshot", uncommitted_entries->size());
+            preprocessUncommittedLogEntries(uncommitted_start_idx, uncommitted_end_idx, uncommitted_entries, /*lock_mutex=*/ false);
+        };
 
         if constexpr (std::is_same_v<Storage, KeeperMemoryStorage>)
         {
@@ -872,6 +876,7 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
                     std::optional<uint64_t> latest_snapshot_meta_index_before_reset;
                     if (latest_snapshot_meta)
                         latest_snapshot_meta_index_before_reset = latest_snapshot_meta->get_last_log_idx();
+                    uint64_t last_uncommitted_log_idx = storage->getLastUncommittedLogIdx();
 
                     storage.reset();
 
@@ -891,7 +896,7 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
 
                         snapshot_buf = nullptr;
                         storage = std::move(snapshot_deserialization_result.storage);
-                        preprocessUncommittedLogEntries(uncommitted_start_idx, uncommitted_end_idx, uncommitted_entries, /*lock_mutex=*/ false);
+                        preprocess_uncommitted_entries(last_uncommitted_log_idx);
                         latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
 
                         {
@@ -931,11 +936,12 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
 
             {
                 KEEPER_STORAGE_LOCK_EXCLUSIVE(storage_lock);
+                uint64_t last_uncommitted_log_idx = storage->getLastUncommittedLogIdx();
                 storage = std::move(snapshot_deserialization_result.storage);
 
                 try
                 {
-                    preprocessUncommittedLogEntries(uncommitted_start_idx, uncommitted_end_idx, uncommitted_entries, /*lock_mutex=*/ false);
+                    preprocess_uncommitted_entries(last_uncommitted_log_idx);
                 }
                 catch (...)
                 {
