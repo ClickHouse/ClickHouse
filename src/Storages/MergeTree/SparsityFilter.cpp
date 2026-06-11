@@ -98,7 +98,20 @@ tryAsColumnRef(const QueryTreeNodePtr & node, const QueryTreeNodePtr & expected_
     auto source = col->getColumnSourceOrNull();
     if (!source || source.get() != expected_table_expression.get())
         return std::nullopt;
-    return ColumnRef{col->getColumnName(), col->getColumnType()};
+
+    /// Use the storage type, not `col->getColumnType()`. With `join_use_nulls = 1`
+    /// the analyzer wraps the column as `Nullable(...)` in the JOIN view even when
+    /// the source column is not Nullable in storage; classifying `IS NULL` on the
+    /// wrapped view would then look up a `num_defaults` counter that never reflects
+    /// the post-join NULLs and incorrectly prune the source table.
+    const auto * table_node = expected_table_expression->as<TableNode>();
+    if (!table_node)
+        return std::nullopt;
+    const auto & snapshot = *table_node->getStorageSnapshot();
+    auto storage_column = snapshot.tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical), col->getColumnName());
+    if (!storage_column)
+        return std::nullopt;
+    return ColumnRef{col->getColumnName(), storage_column->type};
 }
 
 /// `WHERE n IS NULL` is rewritten by the analyzer to `WHERE n.null`, a UInt8
