@@ -1324,6 +1324,11 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
 
 KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context)
 {
+    // sort-orders / default-sort-order-id are optional in Iceberg V1 metadata
+    // (required only from V2); an unsorted table uses the no-op order-id 0.
+    // Treat their absence as "no sort order" rather than dereferencing a missing field.
+    if (!metadata_object->has(f_default_sort_order_id) || !metadata_object->has(f_sort_orders))
+        return KeyDescription{};
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
     std::unordered_map<Int64, String> source_id_to_column_name;

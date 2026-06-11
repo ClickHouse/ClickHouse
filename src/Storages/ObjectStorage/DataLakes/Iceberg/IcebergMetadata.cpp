@@ -1104,16 +1104,12 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
 std::optional<String> IcebergMetadata::partitionKey(ContextPtr context) const
 {
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(context);
-    if (!actual_data_snapshot)
-        return std::nullopt;
     return getPartitionKey(context, actual_table_state_snapshot);
 }
 
 std::optional<String> IcebergMetadata::sortingKey(ContextPtr context) const
 {
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(context);
-    if (!actual_data_snapshot)
-        return std::nullopt;
     auto metadata_object = getMetadataJSONObject(
         actual_table_state_snapshot.metadata_file_path,
         object_storage,
