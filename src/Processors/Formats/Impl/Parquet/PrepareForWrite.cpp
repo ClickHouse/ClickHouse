@@ -62,6 +62,7 @@ namespace DB::ErrorCodes
     extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 namespace DB::Parquet
@@ -692,6 +693,21 @@ void prepareColumnMap(
     }
 }
 
+/// Look up a leaf column's field id. Tolerates a missing name (returns nullopt) the same
+/// way the composite tuple/array/map branches do: a nested sub-map built by buildSubFieldIds()
+/// may legitimately omit some leaves. Must NOT use unordered_map::at(), which throws
+/// std::out_of_range (not a DB::Exception) and escalates to a fatal abort.
+std::optional<Int64> lookupLeafFieldId(
+    const std::optional<std::unordered_map<String, Int64>> & column_field_ids, const String & name)
+{
+    if (!column_field_ids)
+        return std::nullopt;
+    auto it = column_field_ids->find(name);
+    if (it == column_field_ids->end())
+        return std::nullopt;
+    return it->second;
+}
+
 void prepareColumnRecursive(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
     ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids)
@@ -714,11 +730,11 @@ void prepareColumnRecursive(
                     column->convertToFullColumnIfLowCardinality(), nested_type, name, options, states, schemas, column_field_ids);
             else
                 /// Use nested data type, but keep ColumnLowCardinality. The encoder can deal with it.
-                preparePrimitiveColumn(column, nested_type, name, options, states, schemas, column_field_ids ? std::optional(column_field_ids->at(name)) : std::nullopt);
+                preparePrimitiveColumn(column, nested_type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
             break;
         }
         default:
-            preparePrimitiveColumn(column, type, name, options, states, schemas, column_field_ids ? std::optional(column_field_ids->at(name)) : std::nullopt);
+            preparePrimitiveColumn(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
             break;
     }
 }
@@ -733,7 +749,21 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options,
     root.__set_num_children(static_cast<Int32>(sample.columns()));
 
     for (const auto & c : sample)
+    {
+        /// A field-id map is only supplied on the Iceberg write path, where the data-file footer
+        /// must carry the field id of every top-level column. If the block's column name is absent
+        /// the two are out of sync (e.g. a stale INSERT schema versus the sink's force-fetched
+        /// latest schema), so writing the file would silently mismatch its manifest. Reject with a
+        /// clean query error instead of writing corrupt data (and instead of crashing on at()).
+        if (column_field_ids && !column_field_ids->contains(c.name))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Column '{}' has no field id in the Iceberg schema being written. The table schema "
+                "likely changed concurrently; retry the INSERT.",
+                c.name);
+
         prepareColumnForWrite(c.column, c.type, c.name, options, nullptr, &schema, column_field_ids);
+    }
 
     return schema;
 }
