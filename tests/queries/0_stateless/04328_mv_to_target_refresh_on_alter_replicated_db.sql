@@ -18,11 +18,13 @@ ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.source MODIFY COLUMN status Enum8
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.target MODIFY COLUMN status Enum8('A' = 0, 'B' = 1, 'C' = 2);
 
 SELECT '-- mv reports the new enum after the upstream alter';
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 SELECT name, type FROM system.columns
-WHERE database = {CLICKHOUSE_DATABASE_1:String} AND table = 'mv' ORDER BY position;
+WHERE database = currentDatabase() AND table = 'mv' ORDER BY position;
 
 SELECT '-- reading the mv with the new enum value works';
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.source SETTINGS async_insert = 0 VALUES (1, 'C');
 SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.mv WHERE id = 1 ORDER BY id;
 
+USE {CLICKHOUSE_DATABASE:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
