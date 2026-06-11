@@ -178,6 +178,7 @@ struct Reader
         bool only_for_prewhere = false; // can remove this column after applying prewhere
 
         bool used_by_key_condition = false;
+        bool is_spatial_bbox_column = false; // one of the four covering.bbox primitives
 
         /// If use_bloom_filter, these are the values that we need to find in bloom filter.
         std::vector<UInt64> bloom_filter_hashes;
@@ -480,6 +481,20 @@ struct Reader
     /// are referenced by PrimitiveColumnInfo::column_index_condition.
     std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> column_conditions;
 
+    /// KeyConditions built from GeoParquet covering.bbox spatial filters.
+    /// One per spatial predicate; checked against the hyperrectangle of bbox column stats.
+    std::vector<std::shared_ptr<KeyCondition>> spatial_key_conditions;
+    /// For each spatial_key_conditions[i], the primitive_columns indices of its four bbox
+    /// columns (xmin, ymin, xmax, ymax). SIZE_MAX means not found. Used to check null_count
+    /// before applying row-group pruning: NULL bbox means unknown extent, must not prune.
+    std::vector<std::array<size_t, 4>> spatial_key_condition_bbox_col_indices;
+
+    /// Per-column KeyConditions extracted from spatial_key_conditions for page-level
+    /// spatial bbox pruning. Stored here (not as a local variable) to keep the shared_ptrs
+    /// alive, since raw pointers from them are referenced by
+    /// PrimitiveColumnInfo::column_index_condition.
+    std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> spatial_column_conditions;
+
     std::optional<KeyCondition> bloom_filter_condition;
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
@@ -533,7 +548,7 @@ private:
         bool findAnyHash(const std::vector<uint64_t> & hashes) override;
     };
 
-    void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle) const;
+    void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle, bool only_spatial_bbox = false) const;
     void adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;
     void prepareBloomFilterCondition();
     void initializePrefetches();
