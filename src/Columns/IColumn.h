@@ -505,7 +505,11 @@ public:
      * should have been, we form a new array with intervals that need to be sorted
      * If there is a limit, then for the last interval we do partial sorting and all that is described above,
      * but in addition we still find all the elements equal to the largest sorted, they will also need to be sorted.
-     * `equal_ranges` is not necessarily sorted. Single-element equal ranges are usually omitted.
+     * `equal_ranges` must be sorted in ascending order of `from`, both on input and on output: the limit
+     * handling relies on it (IColumn::updatePermutationImpl treats `equal_ranges.back()` as the only range
+     * that may straddle the limit, and getBlockSortPermutationImpl pops trailing ranges by `from`). An
+     * implementation that returns unsorted ranges silently drops below-limit ranges and yields wrong results
+     * (see issue #104376). Single-element equal ranges are usually omitted.
      */
     virtual void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
                             size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const = 0;
