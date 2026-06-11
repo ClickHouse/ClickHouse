@@ -185,6 +185,7 @@ static struct InitFiu
     REGULAR(datalake_try_get_table_return_nullptr) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
+    PAUSEABLE(storage_merge_tree_abandon_selected_merge) \
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \

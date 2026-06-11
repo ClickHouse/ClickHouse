@@ -81,6 +81,7 @@ namespace FailPoints
     extern const char mt_select_parts_to_mutate_max_part_size[];
     extern const char storage_shared_merge_tree_mutate_pause_before_wait[];
     extern const char storage_merge_tree_background_schedule_merge_fail[];
+    extern const char storage_merge_tree_abandon_selected_merge[];
 }
 
 namespace Setting
@@ -1795,6 +1796,17 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     if (merge_entry)
     {
+        /// Test hook: pause a just-selected merge so a test can deterministically observe the
+        /// selection (SYSTEM WAIT FAILPOINT ... PAUSE) and then abandon it without launching, both in
+        /// a single failpoint hit so the abandon cannot be lost to a concurrent SYSTEM DISABLE
+        /// FAILPOINT. Exercises that a manually scheduled merge is not lost when its selected merge is
+        /// dropped after selection (the same drop the is_cancelled path below can cause).
+        fiu_do_on(FailPoints::storage_merge_tree_abandon_selected_merge,
+        {
+            FailPointInjection::notifyPauseAndWaitForResume(FailPoints::storage_merge_tree_abandon_selected_merge);
+            return false;
+        });
+
         if (is_cancelled(merge_entry))
             return false;
 

@@ -24,8 +24,8 @@ struct ManualMergeSelectorTableInfo
 {
     std::deque<Names> queue;
     std::vector<MergeTreePartInfo> scheduled_part_infos;
-    /// Every merge scheduled since the last completed SYNC MERGES, kept (unlike `queue`, which is
-    /// drained by select) so the projection in push can replay them. See projectScheduledMerges.
+    /// Every merge scheduled since the last completed SYNC MERGES, kept (unlike `queue`, which select
+    /// drains as each merge materializes) so the projection in push can replay them. See projectScheduledMerges.
     std::vector<Names> merge_defs;
 };
 
@@ -148,13 +148,48 @@ PartsRanges ManualMergeSelector::select(
     if (info->queue.empty())
         return {};
 
+    /// Drop scheduled merges whose result has materialized. `parts_ranges` is the set offered for
+    /// selection, already filtered to exclude parts that are currently merging. A scheduled merge
+    /// whose inputs are all covered here by a larger active part has run and committed, so we advance
+    /// past it. An in-flight merge keeps its (currently-merging) inputs out of `parts_ranges`, so they
+    /// read as uncovered and the entry is NOT dropped -- it stays queued until its result appears.
+    ActiveDataPartSet active(MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+    for (const auto & range : parts_ranges)
+        for (const auto & part : range)
+            active.add(part.info, part.name);
+
+    const auto is_materialized = [&](const Names & merge)
+    {
+        return std::ranges::all_of(merge, [&](const std::string & name)
+        {
+            const std::string containing = active.getContainingPart(partInfoFromName(name));
+            return !containing.empty() && containing != name;
+        });
+    };
+
+    while (!info->queue.empty() && is_materialized(info->queue.front()))
+        info->queue.pop_front();
+
+    /// Hand out runnable scheduled merges WITHOUT removing them from the queue: an entry leaves the
+    /// queue only once its result has materialized (above). If a merge selected here is then abandoned
+    /// by the caller (merges stopped between selection and launch, the pool full, or the merge task
+    /// failing) it is simply re-selected on a later call, so a scheduled merge is never silently lost
+    /// and SYNC MERGES cannot wait forever for it. The local cursor avoids handing out the same entry
+    /// twice within one call; across calls the currently-merging filter prevents it once the merge runs.
+    ///
+    /// Scheduled merges are processed strictly FIFO: the loop stops at the first queue entry that is
+    /// not currently runnable, so an in-flight (or not-yet-runnable) head holds back the entries behind
+    /// it until it materializes. This is intentional for an explicit, ordered manual operation and
+    /// keeps chained schedules (a later merge consuming an earlier one's result) correct by
+    /// construction.
     PartsRanges ranges;
+    size_t cursor = 0;
     for (const auto & constraint : merge_constraints)
     {
-        if (info->queue.empty())
+        if (cursor >= info->queue.size())
             break;
 
-        auto range = lookupRange(parts_ranges, info->queue.front());
+        auto range = lookupRange(parts_ranges, info->queue[cursor]);
         if (!range)
             break;
 
@@ -164,8 +199,8 @@ PartsRanges ManualMergeSelector::select(
         if (range_filter && !range_filter(range.value()))
             break;
 
-        info->queue.pop_front();
         ranges.push_back(std::move(range.value()));
+        ++cursor;
     }
 
     return ranges;
