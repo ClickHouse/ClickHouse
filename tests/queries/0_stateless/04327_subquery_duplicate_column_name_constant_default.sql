@@ -74,6 +74,13 @@ DESCRIBE (SELECT * FROM (((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNIO
 -- Mixed union modes keep the first branch a genuine UnionNode (no flattening); the leaf first
 -- branch's duplicate names are disambiguated so the outer SELECT * keeps `7, 0`, not `7, 7`.
 SELECT * FROM (((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION DISTINCT (SELECT 8, 8)) UNION ALL (SELECT 9, 9)) ORDER BY 1, 2;
+-- Header forms for the genuine nested-UnionNode (mixed-mode) first branch: the leaf duplicate names
+-- are disambiguated through the inner union, so the outer header keeps both `7` display names (no
+-- internal `7_1` leak), `COLUMNS('^7$')` selects both, and `7_1` stays unaddressable.
+SELECT * FROM (((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION DISTINCT (SELECT 1, 2)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`))) ORDER BY 1, 2;
+DESCRIBE (SELECT * FROM (((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION DISTINCT (SELECT 1, 2)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`))));
+SELECT COLUMNS('^7$') FROM (((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION DISTINCT (SELECT 1, 2)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`))) ORDER BY 1, 2;
+SELECT COLUMNS('^7_1$') FROM (((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION DISTINCT (SELECT 1, 2)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`))); -- { serverError EMPTY_LIST_OF_COLUMNS_QUERIED }
 
 -- The disambiguation renames duplicates only internally: an outer name-sensitive matcher must see
 -- the original display names, so `COLUMNS('^7$')` selects BOTH `7` columns (values 7 and 0), and
