@@ -10,6 +10,7 @@ ch1 = cluster.add_instance(
         "configs/config.d/distributed_ddl.xml",
     ],
     with_zookeeper=True,
+    stay_alive=True,
 )
 ch2 = cluster.add_instance(
     "ch2",
@@ -18,6 +19,7 @@ ch2 = cluster.add_instance(
         "configs/config.d/distributed_ddl.xml",
     ],
     with_zookeeper=True,
+    stay_alive=True,
 )
 
 
@@ -132,26 +134,31 @@ def test_mixed_settings_and_comment_alter_on_cluster(started_cluster):
 
 
 def test_modify_column_comment_only_on_cluster(started_cluster):
-    # `ALTER ... MODIFY COLUMN c COMMENT 'x'` parses as `MODIFY_COLUMN` but the
-    # storage layer recognises it as comment-only and applies it as local
-    # metadata, so it must also be routed to every replica. A MODIFY COLUMN with
-    # a real type change instead takes the full replicated-log path (negative
-    # case below). Both must converge across replicas.
+    # A pure `ALTER ... MODIFY COLUMN c COMMENT 'x'` parses as `MODIFY_COLUMN` but
+    # the storage layer recognises it as comment-only and applies it as local
+    # metadata, so it must also be routed to every replica. A MODIFY COLUMN that
+    # carries a type change, a positional modifier (FIRST/AFTER) or per-column
+    # SETTINGS is NOT comment-only and must take the full replicated-log path
+    # (negative cases below). All must converge across replicas.
+    zookeeper_path = "/clickhouse/tables/modcol_comment"
     ch1.query(
         database="test_db",
-        sql="CREATE TABLE modcol_comment (id UInt64, x String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/modcol_comment', 'r1') ORDER BY id",
+        sql=f"CREATE TABLE modcol_comment (id UInt64, x String) ENGINE=ReplicatedMergeTree('{zookeeper_path}', 'r1') ORDER BY id",
     )
     ch2.query(
         database="test_db",
-        sql="CREATE TABLE modcol_comment (id UInt64, x String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/modcol_comment', 'r2') ORDER BY id",
+        sql=f"CREATE TABLE modcol_comment (id UInt64, x String) ENGINE=ReplicatedMergeTree('{zookeeper_path}', 'r2') ORDER BY id",
     )
 
-    # `MODIFY COLUMN ... COMMENT '...'` only.
+    # `MODIFY COLUMN ... COMMENT '...'` only: comment-only, local fast path on
+    # every replica, ZK /metadata version must not move.
+    version_before = get_zk_metadata_version(ch1, zookeeper_path)
     ch1.query(
         database="test_db",
         sql="ALTER TABLE modcol_comment ON CLUSTER 'cluster' MODIFY COLUMN x COMMENT 'modcol-comment-v1'",
     )
 
+    assert get_zk_metadata_version(ch1, zookeeper_path) == version_before
     for node in [ch1, ch2]:
         show_create = node.query(
             database="test_db",
@@ -187,15 +194,21 @@ def test_modify_column_comment_only_on_cluster(started_cluster):
         assert "modcol-comment-v3" in show_create, (node.name, show_create)
         assert "table-comment-modcol" in show_create, (node.name, show_create)
 
-    # Comment-only `MODIFY COLUMN ... FIRST`: a positional modifier still parses
-    # as comment-only (no type change), so the storage layer applies it as local
-    # metadata via the comment fast path. The column comment and the new column
-    # order must both converge on every replica.
+    # Positional `MODIFY COLUMN ... COMMENT '...' FIRST`: a placement modifier
+    # reorders the column, which is serialized into the replicated /columns
+    # (ColumnsDescription::operator== compares column order). It is therefore NOT
+    # comment-only and must take the full replicated path: the ZK /metadata
+    # version moves, /columns is rewritten in ZooKeeper, and every replica picks
+    # up the new order through the replication log. If it were wrongly applied via
+    # the local comment fast path, the leader would reorder its local columns
+    # without updating ZK /columns and throw INCOMPATIBLE_COLUMNS on restart.
+    version_before = get_zk_metadata_version(ch1, zookeeper_path)
     ch1.query(
         database="test_db",
         sql="ALTER TABLE modcol_comment ON CLUSTER 'cluster' MODIFY COLUMN x COMMENT 'modcol-placement-comment' FIRST",
     )
 
+    assert get_zk_metadata_version(ch1, zookeeper_path) > version_before
     for node in [ch1, ch2]:
         show_create = node.query(
             database="test_db",
@@ -207,6 +220,23 @@ def test_modify_column_comment_only_on_cluster(started_cluster):
             sql="SELECT name FROM system.columns WHERE database = 'test_db' AND table = 'modcol_comment' ORDER BY position FORMAT TSVRaw",
         ).split()
         assert order == ["x", "id"], (node.name, order)
+
+    # Restart both replicas: the local columns (reordered to x, id) must match the
+    # ZK /columns written by the replicated ALTER, so the table loads without
+    # INCOMPATIBLE_COLUMNS and the order survives the restart.
+    for node in [ch1, ch2]:
+        node.restart_clickhouse()
+    for node in [ch1, ch2]:
+        order = node.query(
+            database="test_db",
+            sql="SELECT name FROM system.columns WHERE database = 'test_db' AND table = 'modcol_comment' ORDER BY position FORMAT TSVRaw",
+        ).split()
+        assert order == ["x", "id"], (node.name, order)
+        show_create = node.query(
+            database="test_db",
+            sql="SHOW CREATE modcol_comment FORMAT TSVRaw",
+        )
+        assert "modcol-placement-comment" in show_create, (node.name, show_create)
 
     # Negative case: `MODIFY COLUMN` with a real type change must still route as a
     # full replicated ALTER and converge across replicas through the replication log.

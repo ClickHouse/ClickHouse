@@ -1225,7 +1225,11 @@ bool AlterCommand::isCommentAlter() const
     }
     if (type == MODIFY_COLUMN)
     {
-        return comment.has_value() && codec == nullptr && data_type == nullptr && default_expression == nullptr && ttl == nullptr;
+        /// Placement (FIRST/AFTER) and per-column SETTINGS change the replicated
+        /// /columns (ColumnsDescription::operator== compares column order and
+        /// settings, ignoring only the comment), so they are not comment-only.
+        return comment.has_value() && codec == nullptr && data_type == nullptr && default_expression == nullptr && ttl == nullptr
+            && settings_changes.empty() && settings_resets.empty() && after_column.empty() && !first;
     }
     return false;
 }

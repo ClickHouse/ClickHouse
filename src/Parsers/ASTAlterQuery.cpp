@@ -654,14 +654,11 @@ bool ASTAlterQuery::isCommentAlter() const
 namespace
 {
 
-/// `MODIFY COLUMN c COMMENT 'x'` parses as `MODIFY_COLUMN`, but the resolved
-/// `AlterCommand::isCommentAlter` (Storages/AlterCommands.cpp) treats it as
-/// comment-only and the storage layer applies it as local metadata, so the
-/// routing predicate must recognise the same shape. Mirror that resolved check
-/// exactly: a comment plus no type / codec / default / TTL change. Placement
-/// (AFTER/FIRST) and per-column settings are deliberately not inspected because
-/// `AlterCommand::isCommentAlter` ignores them too; treating those shapes as
-/// non-replicated keeps DDLWorker routing in step with the storage fast path.
+/// True only for a pure comment-only `MODIFY COLUMN c COMMENT 'x'`, mirroring the
+/// resolved `AlterCommand::isCommentAlter` (Storages/AlterCommands.cpp) so DDL
+/// routing and the storage fast path agree. Placement (FIRST/AFTER) and
+/// per-column SETTINGS are excluded: they alter the replicated /columns and must
+/// take the full replicated path.
 bool isCommentOnlyModifyColumn(const ASTAlterCommand & command)
 {
     if (command.type != ASTAlterCommand::MODIFY_COLUMN)
@@ -675,7 +672,12 @@ bool isCommentOnlyModifyColumn(const ASTAlterCommand & command)
         && col_decl->getType() == nullptr
         && col_decl->getCodec() == nullptr
         && col_decl->getDefaultExpression() == nullptr
-        && col_decl->getTTL() == nullptr;
+        && col_decl->getTTL() == nullptr
+        && col_decl->getSettings() == nullptr
+        && command.settings_changes == nullptr
+        && command.settings_resets == nullptr
+        && command.column == nullptr
+        && !command.first;
 }
 
 }
