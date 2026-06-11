@@ -196,14 +196,15 @@ namespace DB
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of key in Redis dictionary");
         };
 
+        if (configuration.storage_type == RedisStorageType::SIMPLE && key_columns.size() != 1)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Expected exactly one key column for 'simple' storage type");
+
         RedisArray keys;
         for (auto row : requested_rows)
         {
             if (configuration.storage_type == RedisStorageType::SIMPLE)
             {
                 /// 'simple' storage is read with MGET, which expects a flat list of keys (one per row).
-                if (key_columns.size() != 1)
-                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Expected exactly one key column for 'simple' storage type");
                 serialize_key(keys, 0, row);
             }
             else
