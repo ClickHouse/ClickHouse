@@ -46,5 +46,12 @@ SELECT 'keys64_u32_u8', count(), sum(l.v + r.v) FROM pj_left l INNER JOIN pj_rig
 SELECT 'keys32_fixstr', count(), sum(l.v + r.v) FROM pj_left l INNER JOIN pj_right r ON l.fs = r.fs;
 SELECT 'keys128_u32x3', count(), sum(l.v + r.v) FROM pj_left l INNER JOIN pj_right r ON l.u32x = r.u32x AND l.u32y = r.u32y AND l.u32z = r.u32z;
 
+-- parallel_hash routes these through the two-level maps (two_level_keys32 / two_level_keys64). Their
+-- results are checked too: an incorrect scatter selector could drop rows, which a perf query reading
+-- into FORMAT Null would not catch. max_threads > 1 forces the concurrent build so the scatter across
+-- sub-joins is actually exercised.
+SELECT 'two_level_keys32', count(), sum(l.v + r.v) FROM pj_left l INNER JOIN pj_right r ON l.u16a = r.u16a AND l.u16b = r.u16b SETTINGS join_algorithm = 'parallel_hash', max_threads = 8;
+SELECT 'two_level_keys64', count(), sum(l.v + r.v) FROM pj_left l INNER JOIN pj_right r ON l.u32a = r.u32a AND l.u32b = r.u32b SETTINGS join_algorithm = 'parallel_hash', max_threads = 8;
+
 DROP TABLE pj_left;
 DROP TABLE pj_right;
