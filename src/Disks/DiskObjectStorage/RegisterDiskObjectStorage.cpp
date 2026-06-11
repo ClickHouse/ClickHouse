@@ -114,7 +114,9 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         .syntax = "disk(type = s3_plain, endpoint = '...')",
         .related = {"s3", "s3_plain_rewritable"}}); /// For compatibility
     factory.registerDiskType("s3_with_keeper", creator, Documentation{
-        .description = "An S3-backed disk that keeps its metadata in ClickHouse Keeper instead of on a local metadata disk. Retained for compatibility.",
+        .description = "An S3-backed disk that keeps its metadata in ClickHouse Keeper instead of on a local metadata disk. "
+            "The `keeper` metadata storage is available only in ClickHouse Cloud builds; in other builds, creating a disk of this type "
+            "fails with an `unknown metadata storage type: keeper` error. Retained for compatibility.",
         .syntax = "disk(type = s3_with_keeper, endpoint = '...')",
         .related = {"s3"}}); /// For compatibility
     factory.registerDiskType("s3_plain_rewritable", creator, Documentation{
