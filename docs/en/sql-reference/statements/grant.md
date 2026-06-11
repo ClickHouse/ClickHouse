@@ -271,6 +271,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SQLITE`
     - `URL`
   - [`SYSTEM`](#system)
+    - `SYSTEM BACKGROUND`
     - `SYSTEM CLEANUP`
     - `SYSTEM DROP CACHE`
       - `SYSTEM DROP COMPILED EXPRESSION CACHE`
