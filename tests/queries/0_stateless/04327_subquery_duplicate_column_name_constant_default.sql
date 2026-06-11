@@ -1,4 +1,3 @@
--- Tags: no-parallel-replicas
 -- https://github.com/ClickHouse/ClickHouse/issues/106923
 -- A subquery whose projection has two output columns with the same name backed by
 -- different expressions must not corrupt values when the subquery is wrapped in an
