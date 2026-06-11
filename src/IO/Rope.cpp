@@ -97,7 +97,9 @@ void Rope::advance(size_t bytes)
     /// node that sits entirely behind the new position is released even if it overlaps a
     /// node still ahead, so its bytes are never re-served.
     const size_t cur = nodes.front().logical_offset + front_offset;
-    const size_t new_position = std::min(cur + bytes, range().end());
+    /// Clamp the delta to EOF, not `cur + bytes` (which could overflow past EOF and wrap
+    /// below `cur`). `cur <= range().end()` by the cursor invariant.
+    const size_t new_position = cur + std::min(bytes, range().end() - cur);
 
     /// Drop coverage before the new position. Cascades across intervals (a forward
     /// `tryRewind` can jump over a gap straight to a later node).
@@ -127,9 +129,11 @@ bool Rope::tryRewind(size_t new_position)
     /// Reachable from the cursor = entire held nodes (their buffers are
     /// alive). The lowest reachable byte is the ORIGINAL start of the
     /// front node (`logical_offset`, not `+ front_offset`), because a
-    /// backward rewind into the buffer is supported.
+    /// backward rewind into the buffer is supported. The highest reachable byte is the
+    /// merged-coverage end, not `nodes.back()` — nodes are sorted by start, so under
+    /// overlap the last node by start can end before an earlier, longer one.
     const size_t reachable_lo = nodes.front().logical_offset;
-    const size_t reachable_hi = nodes.back().logical_offset + nodes.back().size;
+    const size_t reachable_hi = range().end();
     if (new_position < reachable_lo || new_position > reachable_hi)
         return false;
 

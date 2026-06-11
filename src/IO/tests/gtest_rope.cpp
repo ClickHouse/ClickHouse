@@ -773,3 +773,36 @@ TEST(Rope, DrainServesOnlyNovelTailOfOverlappingNode)
     EXPECT_EQ(out.size(), 150u);
     EXPECT_EQ(out, std::string(100, 'A') + std::string(50, 'B'));
 }
+
+TEST(Rope, AdvancePastEndClampsWithoutOverflow)
+{
+    /// A huge advance must clamp to EOF, not overflow `cur + bytes` and wrap below the
+    /// cursor (which would move it backwards / leave nodes intact).
+    auto buf = std::make_shared<OwnedRopeBuffer>(100);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 0});
+    rope.advance(50);
+    EXPECT_EQ(rope.peek().logical_offset, 50u);
+
+    rope.advance(static_cast<size_t>(-1));  /// SIZE_MAX
+    EXPECT_TRUE(rope.atEnd());
+}
+
+TEST(Rope, TryRewindIntoFrontNodeUnderOverlap)
+{
+    /// nodes [0,1000) and [100,110): sorted by start, the back node ends earlier, so the
+    /// reachable upper bound must come from merged coverage (1000), not nodes.back().end
+    /// (110). Byte 500 is still in the front node, so the rewind must succeed.
+    auto big = std::make_shared<OwnedRopeBuffer>(1000);
+    auto small = std::make_shared<OwnedRopeBuffer>(10);
+    for (size_t i = 0; i < 1000; ++i)
+        big->data()[i] = static_cast<char>('A' + (i % 26));
+    Rope rope;
+    rope.append(RopeNode{big, 0, 1000, 0});
+    rope.append(RopeNode{small, 0, 10, 100});  /// [100, 110), entirely inside [0, 1000)
+
+    ASSERT_TRUE(rope.tryRewind(500));
+    auto s = rope.peek();
+    EXPECT_EQ(s.logical_offset, 500u);
+    EXPECT_EQ(static_cast<unsigned char>(s.data[0]), static_cast<unsigned char>('A' + (500 % 26)));
+}
