@@ -16,9 +16,11 @@
 #include <base/types.h>
 
 #include <array>
+#include <cstddef>
 #include <memory>
 #include <new>
 #include <span>
+#include <type_traits>
 #include <vector>
 
 #include <roaring/roaring.hh>
@@ -133,7 +135,7 @@ struct PostingListBuilder
 
         if (promoted)
         {
-            static_cast<Accumulator *>(promoted_state.accumulator)->insert(value, posting_list_block_size, promoted_state.bulk_context);
+            static_cast<Accumulator *>(promoted_state.accumulator)->insert(value, posting_list_block_size, insertState<Accumulator>());
             return;
         }
 
@@ -144,23 +146,21 @@ struct PostingListBuilder
         }
 
         /// The inline buffer is full: promote to a streaming accumulator and replay the buffered
-        /// values. The promoted state (accumulator pointer + bulk context) shares storage with `small`
-        /// (union), so snapshot the buffer first.
+        /// values. The promoted state shares storage with `small` (union), so snapshot the buffer first.
         const SmallContainer buffered = small;
         holder.push_back(codec.createAccumulator());
         auto * acc = static_cast<Accumulator *>(holder.back().get());
 
-        /// Start the lifetime of the `promoted_state` union member (small is now dead). Placement-new
-        /// because `roaring::BulkContext` is not trivially constructible. The context starts empty (no
-        /// cached container yet) and lives here so it stays cache-warm next to the token's hash-map
-        /// entry; it is passed by reference into every `insert`.
-        ::new (&promoted_state) PromotedState{acc, roaring::BulkContext{}};
+        /// Start the lifetime of the `promoted_state` union member (small is now dead) and of the
+        /// accumulator's hot insert state inside it.
+        ::new (&promoted_state) PromotedState{.accumulator = acc, .insert_state = {}};
+        auto & state = *::new (promoted_state.insert_state) typename Accumulator::InsertState{};
         promoted = true;
 
         for (UInt32 buffered_value : buffered)
-            acc->insert(buffered_value, posting_list_block_size, promoted_state.bulk_context);
+            acc->insert(buffered_value, posting_list_block_size, state);
 
-        acc->insert(value, posting_list_block_size, promoted_state.bulk_context);
+        acc->insert(value, posting_list_block_size, state);
     }
 
     size_t size() const { return promoted ? promoted_state.accumulator->cardinality() : small_size; }
@@ -175,17 +175,34 @@ struct PostingListBuilder
     UInt32 minimum() const { return small[0]; }
     UInt32 maximum() const { return small[small_size - 1]; }
 
-    /// The (externally owned) accumulator pointer paired with the roaring bulk-insert context.
-    /// Keeping `bulk_context` here — rather than inside the separately allocated accumulator — means
-    /// the per-row `roaring_bitmap_add_bulk` reads `bulk_context.container` from the same cache line as
-    /// the token's hash-map entry (already warmed by the lookup), instead of chasing a pointer into a
-    /// cold accumulator object on every row. It costs no extra builder bytes: it overlaps the dead
-    /// inline buffer (see the union below). `bitpacking` ignores the context.
+    /// The (externally owned) accumulator pointer paired with the accumulator's per-row hot state
+    /// (`Accumulator::InsertState`, see `IPostingListAccumulator`). Keeping that state here — rather
+    /// than inside the separately allocated accumulator — means the per-row `insert` reads and writes
+    /// only the same cache line as the token's hash-map entry (already warmed by the lookup), instead
+    /// of chasing a pointer into a cold accumulator object on every row. It costs no extra builder
+    /// bytes: it overlaps the dead inline buffer (see the union below). The storage is type-erased
+    /// because builders for different codecs share this layout; `add` recovers the concrete state
+    /// type from its `Accumulator` template parameter via `insertState`.
     struct PromotedState
     {
         IPostingListAccumulator * accumulator;
-        roaring::BulkContext bulk_context;
+        /// Sized so the promoted state exactly fills the inline buffer it overlaps.
+        alignas(void *) std::byte insert_state[sizeof(SmallContainer) - sizeof(IPostingListAccumulator *)];
     };
+
+    static_assert(sizeof(PromotedState) == sizeof(SmallContainer));
+
+    /// Returns the accumulator's hot insert state living in `promoted_state.insert_state`.
+    /// Valid only after promotion, which placement-news the state there.
+    template <typename Accumulator>
+    typename Accumulator::InsertState & insertState()
+    {
+        using InsertState = typename Accumulator::InsertState;
+        static_assert(sizeof(InsertState) <= sizeof(promoted_state.insert_state));
+        static_assert(alignof(InsertState) <= alignof(void *));
+        static_assert(std::is_trivially_destructible_v<InsertState>);
+        return *std::launder(reinterpret_cast<InsertState *>(promoted_state.insert_state));
+    }
 
     /// Before promotion the inline buffer holds the row ids; after promotion that storage is reused
     /// for the promoted state, discriminated by `promoted`.
@@ -194,6 +211,7 @@ struct PostingListBuilder
         SmallContainer small{};
         PromotedState promoted_state;
     };
+
     UInt32 last_value = 0;
     UInt8 small_size = 0;
     bool promoted = false;

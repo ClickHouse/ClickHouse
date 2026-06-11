@@ -226,9 +226,13 @@ private:
 class PostingListAccumulatorBitpacking final : public IPostingListAccumulator
 {
 public:
-    /// The bulk context is part of the shared per-row `insert` signature (see `PostingListBuilder::add`);
-    /// the bitpacking codec streams deltas into a vector and does not use it.
-    void insert(UInt32 row_id, size_t posting_list_block_size, roaring::BulkContext &) { impl.insert(row_id, posting_list_block_size); }
+    /// Per-row hot state owned by the caller (see `IPostingListAccumulator` for the contract).
+    /// The bitpacking codec streams deltas directly into the impl and needs none.
+    struct InsertState
+    {
+    };
+
+    void insert(UInt32 row_id, size_t posting_list_block_size, InsertState &) { impl.insert(row_id, posting_list_block_size); }
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
     UInt32 cardinality() const override { return static_cast<UInt32>(impl.cardinality()); }
@@ -273,16 +277,24 @@ public:
 class PostingListAccumulatorNone final : public IPostingListAccumulator
 {
 public:
-    /// `bulk_context` caches the current bitmap's container. It is owned by the caller (the
-    /// `PostingListBuilder`, where it stays cache-warm next to the token's hash-map entry) and passed in
-    /// by reference; it is reset at every segment boundary. The segment size is passed in (rather than
-    /// stored) because it is a per-index constant.
-    ALWAYS_INLINE void insert(UInt32 row_id, size_t posting_list_block_size, roaring::BulkContext & bulk_context)
+    /// Per-row hot state owned by the caller (see `IPostingListAccumulator` for the contract):
+    /// `bulk_context` caches the current bitmap's container, `rows_in_segment` counts row ids toward
+    /// the segment boundary. Both are reset at every segment boundary. Keeping them in the caller's
+    /// storage means the per-row path below touches no field of this (likely cache-cold) object:
+    /// the Roaring bulk insert goes straight to the cached container.
+    struct InsertState
     {
-        current_segment.addBulk(bulk_context, row_id);
+        roaring::BulkContext bulk_context;
+        size_t rows_in_segment = 0;
+    };
 
-        if (++rows_in_current_segment == posting_list_block_size)
-            sealSegment(bulk_context);
+    /// The segment size is passed in (rather than stored) because it is a per-index constant.
+    ALWAYS_INLINE void insert(UInt32 row_id, size_t posting_list_block_size, InsertState & state)
+    {
+        current_segment.addBulk(state.bulk_context, row_id);
+
+        if (++state.rows_in_segment == posting_list_block_size)
+            sealSegment(state);
     }
 
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
@@ -301,12 +313,11 @@ public:
     size_t memoryUsageBytes() const override;
 
 private:
-    /// Seals the current (full) segment and starts a new one. Resets the caller-owned `bulk_context`
+    /// Seals the current (full) segment and starts a new one. Resets the caller-owned state
     /// because the new segment is a fresh bitmap with no cached container. Cold path.
-    void sealSegment(roaring::BulkContext & bulk_context);
+    void sealSegment(InsertState & state);
 
     PostingList current_segment;
-    size_t rows_in_current_segment = 0;
     std::vector<PostingList> segments;
 };
 

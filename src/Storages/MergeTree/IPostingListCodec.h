@@ -34,6 +34,14 @@ public:
     /// called through its concrete (final) type so the per-row hot path is devirtualized — see
     /// `dispatchByPostingCodec` and `PostingListBuilder::add`. It is intentionally not part of this
     /// interface to keep that call out of the vtable.
+    ///
+    /// Each concrete accumulator also defines a trivially destructible `InsertState` struct holding
+    /// the state that `insert` reads and writes on every row (e.g. the Roaring bulk-insert cursor
+    /// and the segment row counter for the None codec; empty for Bitpacking). The caller constructs
+    /// one per accumulator inside its own storage and passes it by reference into every `insert`,
+    /// so the per-row state stays on the caller's cache-warm line (next to the token's hash-map
+    /// entry) instead of in this separately allocated, likely cache-cold object — see
+    /// `PostingListBuilder::PromotedState`.
 
     /// Flushes all accumulated postings to `out` and fills per-segment metadata and
     /// header flags into `info`. Must be called exactly once after all `insert` calls.

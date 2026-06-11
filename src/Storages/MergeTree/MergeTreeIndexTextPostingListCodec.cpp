@@ -216,21 +216,19 @@ void PostingListAccumulatorBitpacking::finalize(WriteBuffer & out, TokenPostings
         info.header |= SingleBlock;
 }
 
-void PostingListAccumulatorNone::sealSegment(roaring::BulkContext & bulk_context)
+void PostingListAccumulatorNone::sealSegment(InsertState & state)
 {
     segments.push_back(std::move(current_segment));
     current_segment = PostingList{};
-    bulk_context = roaring::BulkContext{};
-    rows_in_current_segment = 0;
+    state = InsertState{};
 }
 
 void PostingListAccumulatorNone::finalize(WriteBuffer & out, TokenPostingsInfo & info)
 {
-    if (rows_in_current_segment != 0)
+    if (!current_segment.isEmpty())
     {
         segments.push_back(std::move(current_segment));
         current_segment = PostingList{};
-        rows_in_current_segment = 0;
     }
 
     /// Local buffer freed after this call: a per-accumulator member would keep one buffer alive per
