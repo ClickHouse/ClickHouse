@@ -31,26 +31,46 @@ def started_cluster():
         cluster.shutdown()
 
 
+def get_zk_metadata_version(node, zookeeper_path):
+    # The ZooKeeper `/metadata` node version is only bumped by the replicated
+    # ALTER_METADATA path. A local settings/comment fast path leaves it
+    # untouched, so it is a precise signal for "this ALTER did not write a
+    # replicated log entry".
+    return int(
+        node.query(
+            f"SELECT version FROM system.zookeeper WHERE path = '{zookeeper_path}' AND name = 'metadata'"
+        ).strip()
+    )
+
+
 def test_mixed_settings_and_comment_alter_on_cluster(started_cluster):
     # ON CLUSTER ALTER batches mixing MODIFY SETTING / RESET SETTING with
     # column or table comments must converge on every replica. The storage
     # layer applies settings/comments as local metadata (never via the
     # replicated log), so convergence relies on DDLWorker forwarding the
     # query to all replicas rather than just the leader.
+    zookeeper_path = "/clickhouse/tables/mixed_alter"
     ch1.query(
         database="test_db",
-        sql="CREATE TABLE mixed_alter (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/mixed_alter', 'r1') ORDER BY tuple()",
+        sql=f"CREATE TABLE mixed_alter (x UInt64) ENGINE=ReplicatedMergeTree('{zookeeper_path}', 'r1') ORDER BY tuple()",
     )
     ch2.query(
         database="test_db",
-        sql="CREATE TABLE mixed_alter (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/mixed_alter', 'r2') ORDER BY tuple()",
+        sql=f"CREATE TABLE mixed_alter (x UInt64) ENGINE=ReplicatedMergeTree('{zookeeper_path}', 'r2') ORDER BY tuple()",
     )
 
     # MODIFY COMMENT + MODIFY SETTING in a single ON CLUSTER ALTER.
+    version_before = get_zk_metadata_version(ch1, zookeeper_path)
     ch1.query(
         database="test_db",
         sql="ALTER TABLE mixed_alter ON CLUSTER 'cluster' MODIFY COMMENT 'mixed-on-cluster', MODIFY SETTING old_parts_lifetime = 123",
     )
+
+    # The mixed batch must take the local fast path on every replica, not the
+    # replicated ALTER_METADATA path. Otherwise both replicas race for the same
+    # /metadata version, one wins and the others retry with CANNOT_ASSIGN_ALTER
+    # while appending no-op log entries. The ZK metadata version must not move.
+    assert get_zk_metadata_version(ch1, zookeeper_path) == version_before
 
     # Both replicas must see the new comment and the new setting value.
     for node in [ch1, ch2]:
