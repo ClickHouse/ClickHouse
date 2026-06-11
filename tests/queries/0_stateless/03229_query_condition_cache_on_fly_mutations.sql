@@ -1,5 +1,7 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-parallel-replicas
 -- no-parallel: drops the (instance-wide) query condition cache
+-- no-parallel-replicas: the query condition cache is populated per replica, so the poisoning is
+--                       deterministic only on a single replica
 
 -- Regression test for the query condition cache being poisoned by on-fly mutations.
 -- A query with apply_mutations_on_fly = 1 applies pending UPDATE/DELETE mutations as a
@@ -75,3 +77,28 @@ SELECT count() FROM t_qcc_on_fly_where WHERE v >= 50 SETTINGS apply_mutations_on
 SELECT count() FROM t_qcc_on_fly_where WHERE v >= 50 SETTINGS apply_mutations_on_fly = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
 
 DROP TABLE t_qcc_on_fly_where;
+
+-- Case 4: a patch part (lightweight UPDATE) rather than an on-fly mutation step. The fix gates both
+-- info->mutation_steps and info->patch_parts; cases 1-3 only exercise the mutation_steps path
+-- (ALTER ... UPDATE defaults to alter_update_mode = 'heavy'). alter_update_mode = 'lightweight_force'
+-- produces a patch part instead, so apply_patch_parts (not apply_mutations_on_fly) controls whether
+-- it is applied.
+DROP TABLE IF EXISTS t_qcc_patch;
+
+CREATE TABLE t_qcc_patch (id UInt64, v UInt64)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, enable_block_number_column = 1, enable_block_offset_column = 1;
+
+INSERT INTO t_qcc_patch SELECT number, number FROM numbers(100);
+
+SYSTEM STOP MERGES t_qcc_patch;
+ALTER TABLE t_qcc_patch UPDATE v = 0 WHERE id >= 50 SETTINGS alter_update_mode = 'lightweight_force', enable_lightweight_update = 1;
+
+SYSTEM DROP QUERY CONDITION CACHE;
+
+-- apply_patch_parts = 1 first: the patch sets v = 0 for ids >= 50, so no row has v >= 50 -> 0.
+SELECT count() FROM t_qcc_patch PREWHERE v >= 50 SETTINGS apply_patch_parts = 1;
+-- apply_patch_parts = 0 must ignore the patch -> ids 50..99 -> 50.
+SELECT count() FROM t_qcc_patch PREWHERE v >= 50 SETTINGS apply_patch_parts = 0;
+
+DROP TABLE t_qcc_patch;
