@@ -14,6 +14,8 @@
 #include <Common/thread_local_rng.h>
 #include <Common/FailPoint.h>
 
+#include <base/scope_guard.h>
+
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
@@ -1941,4 +1943,38 @@ TEST_F(MetadataPlainRewritableDiskTest, TestComplexUnlink)
     }
 
     EXPECT_TRUE(metadata->existsFile("file"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, EmptyFileObjectWriteUndo)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("EmptyFileObjectWriteUndo");
+    auto object_storage = getObjectStorage("EmptyFileObjectWriteUndo");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto blobs_before = listAllBlobs("EmptyFileObjectWriteUndo");
+
+    /// Materializing a 0-byte file object that fails after the remote write must leave no orphan object,
+    /// otherwise a later reload from the object listing would resurrect an uncommitted file.
+    {
+        FailPointInjection::enableFailPoint("plain_object_storage_write_fail_after_empty_file_object");
+        SCOPE_EXIT({ FailPointInjection::disableFailPoint("plain_object_storage_write_fail_after_empty_file_object"); });
+
+        auto tx = metadata->createTransaction();
+        tx->createMetadataFile("/A/empty", /*objects=*/{});
+        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+    }
+
+    EXPECT_FALSE(metadata->existsFile("/A/empty"));
+    EXPECT_EQ(listAllBlobs("EmptyFileObjectWriteUndo"), blobs_before);
+
+    metadata = restartMetadataStorage("EmptyFileObjectWriteUndo");
+    EXPECT_FALSE(metadata->existsFile("/A/empty"));
+    EXPECT_EQ(listAllBlobs("EmptyFileObjectWriteUndo"), blobs_before);
 }

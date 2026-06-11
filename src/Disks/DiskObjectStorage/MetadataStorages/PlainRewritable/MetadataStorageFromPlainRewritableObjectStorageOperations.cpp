@@ -39,6 +39,7 @@ namespace FailPoints
 {
     extern const char plain_object_storage_write_fail_on_directory_create[];
     extern const char plain_object_storage_write_fail_on_directory_move[];
+    extern const char plain_object_storage_write_fail_after_empty_file_object[];
     extern const char plain_object_storage_copy_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_source_file_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_target_file_fail_on_file_move[];
@@ -346,13 +347,18 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
     /// blob must still get a real (empty) object here or it would not survive reload or a later copy.
     if (create_empty_object)
     {
+        /// Mark attempted before the write so undo() removes the object even if the write created it then threw.
+        object_write_attempted = true;
         object_storage->writeObject(
             object,
             WriteMode::Rewrite,
             /*object_attributes*/ std::nullopt,
             /*buf_size*/ 128,
             /*settings*/ getWriteSettings())->finalize();
-        object_written = true;
+
+        fiu_do_on(FailPoints::plain_object_storage_write_fail_after_empty_file_object, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after creating empty file object for '{}'", path);
+        });
     }
 
     fs_tree->recordFile(path, {object.bytes_size, std::time(nullptr)});
@@ -364,7 +370,7 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo()
     if (written)
         fs_tree->removeFile(path);
 
-    if (object_written)
+    if (object_write_attempted)
         object_storage->removeObjectIfExists(object);
 }
 

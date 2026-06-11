@@ -106,7 +106,7 @@ private:
     const std::shared_ptr<PlainRewritableMetrics> metrics;
 
     bool written = false;
-    bool object_written = false;
+    bool object_write_attempted = false;
 
 public:
     MetadataStorageFromPlainObjectStorageWriteFileOperation(
