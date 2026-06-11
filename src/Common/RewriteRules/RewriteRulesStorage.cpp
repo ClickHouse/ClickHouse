@@ -229,6 +229,10 @@ private:
     mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
     mutable Coordination::EventPtr wait_event;
     mutable Int32 collections_node_cversion = 0;
+    /// zxid of the most recent data modification across rule znodes, as observed by
+    /// the last `list`. `ALTER RULE` changes only the data of a child znode, which
+    /// does not affect the parent's `cversion`, so it has to be tracked separately.
+    mutable Int64 max_child_mzxid = 0;
 
 public:
     ZooKeeperStorage(ContextPtr context_, const std::string & path_)
@@ -269,14 +273,29 @@ public:
 
         std::string res;
         Coordination::Stat stat;
+        auto client = getClient();
 
-        if (!getClient()->tryGet(root_path, res, &stat))
+        if (!client->tryGet(root_path, res, &stat))
         {
             chassert(false);
             return false;
         }
 
-        return stat.cversion != collections_node_cversion;
+        if (stat.cversion != collections_node_cversion)
+            return true;
+
+        /// The child list is unchanged, but `ALTER RULE` on another replica modifies
+        /// only the data of a rule znode, which fires no child-list watch and keeps
+        /// the parent's `cversion` intact. Compare the most recent data-modification
+        /// zxid across the rule znodes to detect such updates.
+        Int64 current_max_mzxid = 0;
+        for (const auto & child : client->getChildren(root_path))
+        {
+            Coordination::Stat child_stat;
+            if (client->exists(getPath(child), &child_stat))
+                current_max_mzxid = std::max(current_max_mzxid, child_stat.mzxid);
+        }
+        return current_max_mzxid != max_child_mzxid;
     }
 
     std::vector<std::string> list() const override
@@ -290,14 +309,21 @@ public:
         collections_node_cversion = stat.cversion;
 
         /// Sort children by `czxid` so the load order matches the creation order on this cluster.
+        Int64 current_max_mzxid = 0;
         std::vector<std::pair<std::string, int64_t>> entries;
         entries.reserve(children.size());
         for (const auto & child : children)
         {
             Coordination::Stat child_stat;
-            if (client->exists(getPath(child), &child_stat))
+            /// Watch each rule znode as well: `ALTER RULE` on another replica changes
+            /// only the data of a child, which fires no watch on the parent.
+            if (client->exists(getPath(child), &child_stat, wait_event))
+            {
                 entries.emplace_back(child, child_stat.czxid);
+                current_max_mzxid = std::max(current_max_mzxid, child_stat.mzxid);
+            }
         }
+        max_child_mzxid = current_max_mzxid;
         std::sort(entries.begin(), entries.end(),
             [](const auto & a, const auto & b)
             {
