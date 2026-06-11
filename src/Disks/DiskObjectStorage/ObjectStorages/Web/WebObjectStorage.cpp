@@ -91,7 +91,11 @@ WebObjectStorage::WebObjectStorage(
     ContextPtr context_,
     HTTPHeaderEntries headers_,
     size_t max_directories_to_read_)
-    : WithContext(context_)
+    /// The object storage may outlive the context it was created with (e.g. a dynamic `web` disk
+    /// created inside a query stays in the disks map after the query context expires),
+    /// so pin the global context here. Per-request settings are taken from the current
+    /// query context via `getRequestContext`.
+    : WithContext(context_->getGlobalContext())
     , url_shards(std::move(url_shards_))
     , headers(std::move(headers_))
     , max_directories_to_read(max_directories_to_read_)

@@ -441,6 +441,22 @@ def test_url_wildcard_file_filter_uses_visible_file_name():
     assert result == "part1.tsv\t6\n"
 
 
+def test_url_wildcard_path_filter_uses_visible_path():
+    visible_path = node1.query(
+        with_url_wildcard_setting(
+            "SELECT DISTINCT _path FROM url('http://resolver:8087/data/query_override/part*.tsv?x=1', 'TSV', 'x UInt64')"
+        )
+    ).strip()
+    assert visible_path != ""
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT _path, sum(x) FROM url('http://resolver:8087/data/query_override/part*.tsv?x=1', 'TSV', 'x UInt64') "
+            f"WHERE _path = '{visible_path}' GROUP BY _path"
+        )
+    )
+    assert result == f"{visible_path}\t6\n"
+
+
 def test_url_wildcard_preserves_query_for_directory_listing():
     result = node1.query(
         with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/query_directory/**/part*.tsv', 'TSV', 'x UInt64')")

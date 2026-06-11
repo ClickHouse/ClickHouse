@@ -1355,17 +1355,32 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
 
             if (filter_expr)
             {
+                /// The filter must see the same `_path` and `_file` values that rows later expose
+                /// (`getUniqueStoragePathIdentifier` with `include_connection_info = false` and `getFileName`),
+                /// otherwise a predicate written against the visible values could drop a file before it is read.
+                /// For web paths the two diverge: `_path` keeps the URL query/fragment while `_file` strips it,
+                /// so the file names are passed to the filter separately instead of being derived from the path.
                 std::vector<String> paths;
+                std::vector<String> file_names;
                 paths.reserve(new_batch.size());
+                if (match_web_paths_only)
+                    file_names.reserve(new_batch.size());
                 for (const auto & object_info : new_batch)
                 {
-                    auto path = getUniqueStoragePathIdentifier(*configuration, *object_info, false);
+                    paths.push_back(getUniqueStoragePathIdentifier(*configuration, *object_info, false));
                     if (match_web_paths_only)
-                        path = getPathComponentForGlobMatching(object_info->relative_path_with_metadata.getPathForGlobMatching());
-                    paths.push_back(path);
+                        file_names.push_back(object_info->getFileName());
                 }
 
-                VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_expr, virtual_columns, hive_columns, local_context);
+                VirtualColumnUtils::filterByPathOrFile(
+                    new_batch,
+                    paths,
+                    filter_expr,
+                    virtual_columns,
+                    hive_columns,
+                    local_context,
+                    /*format_settings=*/std::nullopt,
+                    match_web_paths_only ? &file_names : nullptr);
             }
 
             after_filter = new_batch.size();
