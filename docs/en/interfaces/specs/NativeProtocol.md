@@ -635,8 +635,10 @@ The wire format is symmetric — both directions include a `table_name` prefix b
 
 | Field      | Type   | Role      | Description |
 |------------|--------|-----------|-------------|
-| table_name | String | universal | External table name. Client: empty = end-of-data marker. Server: always empty for query results. |
+| table_name | String | universal | External table name. Empty (`""`) is the common case — for the main table, query results, and the INSERT row stream. Empty `table_name` alone is **not** the end-of-data marker (normal INSERT row packets also carry `""`). |
 | Block body | —      | —         | See [Block & column structure](/interfaces/specs/NativeFormat#block-and-column-structure). |
+
+The **end-of-data marker** is a packet whose Block is empty — `0` columns and `0` rows — regardless of `table_name`. The server treats a client `Data` packet as the terminator only when the decoded block is empty (`block.empty()`); a packet with `table_name = ""` and a non-empty block is an ordinary row packet, not a terminator. So an INSERT row stream is a sequence of non-empty `Data` blocks followed by one empty `Data` block that ends it.
 
 The block variants and what they mean are documented under [Block variants](/interfaces/specs/NativeFormat#block-variants).
 
