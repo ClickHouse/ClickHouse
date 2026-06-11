@@ -435,6 +435,22 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       restart the engine probes the server while loading the persisted object and logs `<Error>` for the
 #       expected connection failure. Filtered to require the MySQL component AND the connection-failure
 #       symptom together, so real MySQL regressions (auth, protocol, query errors) are not masked.
+# `DDLWorker(rdb_test_...)` + `Error on initialization of rdb_test_...` + `Mapping for table with UUID=... already
+#       exists` + `TABLE_ALREADY_EXISTS` is benign noise from the `--replicated-database` test wrapper during the
+#       upgrade restart. `clickhouse-test --replicated-database` creates each test's database as
+#       `ENGINE=Replicated(...)` named `rdb_test_<rnd>_<shard>`. On the upgrade restart the database's DDLWorker
+#       runs `DatabaseReplicatedDDLWorker::initializeReplication` -> `recoverLostReplica`, which re-creates tables
+#       from the ZooKeeper metadata snapshot. If a stale local table still owns a table's UUID (e.g. a leftover
+#       `_tmp_replace_*` from `CREATE OR REPLACE`, or a table not yet finally dropped), `addUUIDMapping` reports the
+#       collision as a non-fatal `TABLE_ALREADY_EXISTS` (code 57). The DDLWorker main loop catches it, logs this
+#       `<Error> ... Error on initialization of ...` line, waits 5s and retries; recovery self-heals (after enough
+#       retries `max_retries_before_automatic_recovery` forces a digest reset). The server stays up - every other
+#       upgrade-check sub-test (incl. "Server successfully started") passes; only the post-restart `<Error>` scrub
+#       trips. Filtered via regex in the secondary pipe below to require ALL of: `Error on initialization of`
+#       (logged at exactly one site, the DDLWorker recovery retry), the `rdb_test_` test-DB prefix, the UUID mapping
+#       message, AND the `TABLE_ALREADY_EXISTS` code together. So a real `LOGICAL_ERROR` UUID-mapping crash, the same
+#       collision on a non-test database, a different init failure on an `rdb_test_` DB, and unrelated
+#       `TABLE_ALREADY_EXISTS` errors all still surface.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -511,6 +527,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
+    | grep -av -e "Error on initialization of rdb_test_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
     | grep -av -e "SystemLogQueue.*Queue had been full" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
