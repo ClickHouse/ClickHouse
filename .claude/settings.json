@@ -23,7 +23,6 @@
       "Bash(grep:*)",
       "Bash(wc:*)",
       "Bash(jq:*)",
-      "Bash(curl -sS https://play.clickhouse.com/?user=play:*)",
       "Bash(which:*)",
       "Bash(strings:*)",
       "Bash(nm:*)",

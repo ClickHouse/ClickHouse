@@ -146,19 +146,22 @@ SELECT test_name,
 FROM checks
 WHERE check_start_time >= now() - INTERVAL 90 DAY
   AND test_name IN ( '<test1>', '<test2>', ... )
-  AND pull_request_number = 0
+  AND pull_request_number = 0 AND head_ref = 'master'
 GROUP BY test_name
 ORDER BY fail_7d DESC
 FORMAT TabSeparatedWithNames
 "
 ```
 
-**Gate on true master rows only — `pull_request_number = 0`.** Do *not* widen to
-`base_ref IN ('master','')`: that matches every PR targeting master (hundreds of nonzero PRs),
-so a failure in any *unrelated* PR — including a real regression that PR introduced — would make
-`fail_<window>d >= 1` here and send the investigated PR's own regression down the `FLAKY` path,
-skipping root-cause analysis. Direct `master` commits are the only rows that show the test is
-flaky independent of any PR.
+**Gate on direct `master` rows only — `pull_request_number = 0 AND head_ref = 'master'`.**
+`pull_request_number = 0` alone is not enough: it also matches release branches
+(`head_ref = '26.5'`) and merge-queue refs (`head_ref = 'gh-readonly-queue/master/pr-...'`), so a
+failure from an unrelated merge-queue PR or a release branch would inflate `fail_<window>d`.
+And do *not* widen to `base_ref IN ('master','')`: that matches every PR targeting master, so any
+unrelated PR's failure — including a real regression that PR introduced — would make
+`fail_<window>d >= 1` and send the investigated PR's own regression down the `FLAKY` path,
+skipping root-cause analysis. Only direct `master` HEAD rows show the test is flaky independent of
+any PR. (Add `AND head_repo = 'ClickHouse/ClickHouse'` if fork rows are a concern.)
 
 **Cross-PR failures are a separate, secondary signal.** If master rows are sparse, you may widen
 to other PRs as *corroboration* — never as the gate — and only after comparing failure modes (a
@@ -183,7 +186,7 @@ FROM checks
 WHERE check_start_time >= now() - INTERVAL 90 DAY
   AND test_name = '<test>'
   AND test_status IN ('FAIL','ERROR')
-  AND pull_request_number = 0
+  AND pull_request_number = 0 AND head_ref = 'master'
 ORDER BY day DESC
 FORMAT TabSeparatedWithNames
 "
