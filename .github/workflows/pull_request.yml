@@ -2713,7 +2713,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, sequential)' --workflow "PR" --ci --timestamp
 
   stateless_tests_arm_asan_ubsan_azure_parallel:
-    runs-on: [self-hosted, pr-arm-medium]
+    runs-on: [self-hosted, pr-arm-medium-mem]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_tidy, ci_tests, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, stateless_tests_amd_asan_ubsan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_ubsan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_arm_binary_parallel, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbl91YnNhbiwgYXp1cmUsIHBhcmFsbGVsKQ==') }}
     name: "Stateless tests (arm_asan_ubsan, azure, parallel)"

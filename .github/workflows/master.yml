@@ -2676,7 +2676,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_binary_excluded_from_llvm)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_arm_asan_ubsan_azure_parallel:
-    runs-on: [self-hosted, arm-medium]
+    runs-on: [self-hosted, arm-medium-mem]
     needs: [build_arm_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYXNhbl91YnNhbiwgYXp1cmUsIHBhcmFsbGVsKQ==') }}
     name: "Stateless tests (arm_asan_ubsan, azure, parallel)"

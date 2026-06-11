@@ -723,7 +723,7 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="arm_asan_ubsan, azure, parallel",
-            runs_on=RunnerLabels.ARM_MEDIUM,
+            runs_on=RunnerLabels.ARM_MEDIUM_MEM,
             requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
