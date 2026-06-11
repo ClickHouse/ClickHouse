@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Disks/createVolume.h>
@@ -128,8 +129,8 @@ void buildScatterSelector(
     for (size_t i = 0; i < num_rows; ++i)
     {
         Data::key_type key = ColumnsHashing::hash128(i, columns.size(), columns);
-        typename Data::LookupResult it;
-        bool inserted;
+        typename Data::LookupResult it = nullptr;
+        bool inserted = false;
         partitions_map.emplace(key, it, inserted);
 
         if (inserted)
@@ -578,11 +579,29 @@ Block MergeTreeDataWriter::mergeBlock(
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedAlgorithm>(
-                    header, 1, sort_description, merging_params.columns_to_sum,
-                    required_columns, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt, "sumWithOverflow", "sumMapWithOverflow", true, false);
+                    header,
+                    1,
+                    sort_description,
+                    merging_params.columns_to_sum,
+                    required_columns,
+                    block_size + 1,
+                    /*block_size_bytes=*/0,
+                    /*max_dynamic_subcolumns=*/std::nullopt,
+                    "sumWithOverflow",
+                    "sumMapWithOverflow",
+                    true,
+                    false,
+                    merging_params.allow_tuple_element_aggregation);
             }
             case MergeTreeData::MergingParams::Aggregating:
-                return std::make_shared<AggregatingSortedAlgorithm>(header, 1, sort_description, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt);
+                return std::make_shared<AggregatingSortedAlgorithm>(
+                    header,
+                    1,
+                    sort_description,
+                    block_size + 1,
+                    /*block_size_bytes=*/0,
+                    /*max_dynamic_subcolumns=*/std::nullopt,
+                    merging_params.allow_tuple_element_aggregation);
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingAlgorithm>(
                     header, 1, sort_description, merging_params.sign_column, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt);
@@ -595,7 +614,7 @@ Block MergeTreeDataWriter::mergeBlock(
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedAlgorithm>(
                     header, 1, sort_description, merging_params.columns_to_sum,
-                    required_columns, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt, "last_value", "last_value", false, true);
+                    required_columns, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt, "last_value", "last_value", false, true, merging_params.allow_tuple_element_aggregation);
             }
         }
     };
@@ -805,7 +824,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
     ReservationPtr reservation;
 
-    if (!is_system_database && (min_bytes_to_perform_insert > 0 || min_ratio_to_perform_insert > 0.0))
+    if (!is_system_database && (min_bytes_to_perform_insert > 0 || min_ratio_to_perform_insert > 0.0f))
     {
         ReservationConstraints constraints(min_bytes_to_perform_insert, min_ratio_to_perform_insert);
 
@@ -848,7 +867,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     SerializationInfo::Settings settings
     {
-        (*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        static_cast<double>((*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
@@ -944,7 +963,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr));
 
-    out->writeWithPermutation(block, perm_ptr);
+    Block permuted_columns_cache;
+    out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
 
     for (const auto & projection : metadata_snapshot->getProjections())
     {
@@ -1025,7 +1045,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
 
     auto new_data_part = parent_part->getProjectionPartBuilder(part_name, &projection, is_temp).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();
-    auto data_settings = data.getSettings(&projection);
+    auto data_settings = data.getSettings(&projection.settings_changes);
 
     if (is_temp)
         projection_part_storage->beginTransaction();
@@ -1035,7 +1055,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
     SerializationInfo::Settings settings
     {
-        (*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        static_cast<double>((*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
@@ -1140,7 +1160,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         data.getContext()->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr));
 
-    out->writeWithPermutation(block, perm_ptr);
+    Block permuted_columns_cache;
+    out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
     out->finalizeIndexGranularity();
     auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, false);
     temp_part->part = new_data_part;

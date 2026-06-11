@@ -99,7 +99,7 @@ public:
 
         size_t keysCount() const
         {
-            assert(key_names_left.size() == key_names_right.size());
+            chassert(key_names_left.size() == key_names_right.size());
             return key_names_right.size();
         }
 
@@ -468,7 +468,6 @@ public:
 bool allowParallelHashJoin(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
-    JoinStrictness strictness,
     bool is_special_storage,
     bool one_disjunct);
 }

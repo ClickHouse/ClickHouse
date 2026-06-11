@@ -11,6 +11,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnQBit.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Columns/ColumnVariant.h>
@@ -72,6 +73,7 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IPv6ToBinary.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
@@ -1290,13 +1292,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res;
+                        time_t res = 0;
                         parseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                     else
                     {
-                        time_t res;
+                        time_t res = 0;
                         parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
@@ -1317,13 +1319,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res;
+                        time_t res = 0;
                         parseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                     else
                     {
-                        time_t res;
+                        time_t res = 0;
                         parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
@@ -1384,7 +1386,7 @@ struct ConvertThroughParsing
             }
             else
             {
-                bool parsed;
+                bool parsed = false;
 
                 if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64))
                 {
@@ -1402,13 +1404,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res;
+                        time_t res = 0;
                         parsed = tryParseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
-                        time_t res;
+                        time_t res = 0;
                         parsed = tryParseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
@@ -1429,13 +1431,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res;
+                        time_t res = 0;
                         parsed = tryParseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
-                        time_t res;
+                        time_t res = 0;
                         parsed = tryParseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
@@ -1770,6 +1772,18 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
         vec_null_map_to = &col_null_map_to->getData();
     }
 
+    /// Same-width integer conversions are bit-reinterprets; `memcpy` is faster than the compiler-unrolled
+    /// per-element copy at x86-64-v3.
+    if constexpr (std::is_integral_v<FromFieldType> && std::is_integral_v<ToFieldType>
+        && sizeof(FromFieldType) == sizeof(ToFieldType)
+        && !std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
+        && !std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+    {
+        if (input_rows_count > 0)
+            std::memcpy(vec_to.data(), vec_from.data(), input_rows_count * sizeof(ToFieldType));
+        return std::move(col_to);
+    }
+
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         /// Handle NaN/Inf when converting from float to integer
@@ -1833,30 +1847,40 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
 
             i += remaining - 1;
         }
-        /// ARM64 optimized conversion: UInt64 -> Float32
+#endif
         else if constexpr (std::is_same_v<FromFieldType, UInt64> && std::is_same_v<ToFieldType, Float32>)
         {
             const UInt64* __restrict s = &vec_from[i];
             Float32* __restrict d = &vec_to[i];
             size_t remaining = input_rows_count - i;
 
-#if !defined(OS_DARWIN)
+#if defined(__aarch64__) && !defined(OS_DARWIN)
             _Pragma("clang diagnostic push")
             _Pragma("clang diagnostic ignored \"-Wpass-failed\"")
             _Pragma("clang loop vectorize_width(4) interleave_count(2)")
-#endif
             for (size_t j = 0; j < remaining; ++j)
             {
                 double tmp = static_cast<double>(s[j]);
                 d[j] = Float32(tmp);
             }
-#if !defined(OS_DARWIN)
             _Pragma("clang diagnostic pop")
+#elif defined(__x86_64__)
+            /// Prevent auto-vectorization on x86: the compiler's attempt to semi-vectorize
+            /// UInt64->Float32 with AVX2 is slower than scalar code, because there is no
+            /// vector instruction for this conversion before AVX-512.
+            /// Also disable unrolling: with LTO on v3, the compiler unrolls this scalar
+            /// loop 2-4x, bloating the function by ~2KB with no throughput benefit
+            /// (vcvtsi2ss is inherently serial).
+            _Pragma("clang loop vectorize(disable) unroll(disable)")
+            for (size_t j = 0; j < remaining; ++j)
+                d[j] = static_cast<Float32>(s[j]);
+#else
+            for (size_t j = 0; j < remaining; ++j)
+                d[j] = static_cast<Float32>(s[j]);
 #endif
 
             i += remaining - 1;
         }
-#endif
         /// Default: simple static_cast conversion
         else
         {
@@ -2102,7 +2126,7 @@ struct ConvertImpl
 
             const DateLUTImpl * time_zone = nullptr;
 
-            UInt32 scale;
+            UInt32 scale = 0;
 
             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                         || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
@@ -2184,7 +2208,7 @@ struct ConvertImpl
 
             const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
 
-            UInt32 scale;
+            UInt32 scale = 0;
             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                         || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 scale = additions.scale;
@@ -2297,13 +2321,33 @@ struct ConvertImpl
 
                 bool cut_trailing_zeros_align_to_groups_of_thousands = settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
 
-                if (!null_map && arguments.size() > 1)
-                    null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst());
+                if (arguments.size() > 1 && arguments[1].type->isNullable())
+                {
+                    if (auto tz_null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst()))
+                    {
+                        if (null_map)
+                        {
+                            auto & dst = null_map->getData();
+                            const auto & src = tz_null_map->getData();
+                            for (size_t i = 0; i < dst.size(); ++i)
+                                dst[i] |= src[i];
+                        }
+                        else
+                        {
+                            null_map = std::move(tz_null_map);
+                        }
+                    }
+                }
 
                 if (null_map)
                 {
                     for (size_t i = 0; i < size; ++i)
                     {
+                        if (null_map->getData()[i])
+                        {
+                            offsets_to[i] = write_buffer.count();
+                            continue;
+                        }
                         if (!time_zone_column && arguments.size() > 1)
                         {
                             if (!arguments[1].column.get()->getDataAt(i).empty())
@@ -2591,7 +2635,7 @@ struct ConvertImpl
 
             if constexpr (IsDataTypeDecimal<ToDataType>)
             {
-                UInt32 scale;
+                UInt32 scale = 0;
 
                 if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                     || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
@@ -2799,12 +2843,25 @@ struct ConvertImplGenericFromString
 
 struct ConvertImplFromDynamicToColumn
 {
-    /// Variant and Dynamic hold NULLs natively via NULL_DISCRIMINATOR, so they
-    /// do not need Nullable wrapping. `canBeInsideNullable` returns false for them
-    /// (meaning they cannot be *wrapped* in Nullable), but that does not mean they
-    /// cannot represent NULL — so we must exclude them from the throw check.
-    static bool shouldThrowOnNull(bool keep_nullable, const DataTypePtr & result_type);
+    /// Returns true when a NULL in Dynamic/Variant must cause an exception
+    /// rather than being silently replaced with a default value.
+    /// This only fires when cast_keep_nullable is on AND the result type
+    /// is neither nullable-like nor wrappable in Nullable (e.g. Array).
+    static bool shouldThrowOnNull(bool keep_nullable, const DataTypePtr & result_type)
+    {
+        return keep_nullable && !canContainNull(*result_type) && !result_type->canBeInsideNullable();
+    }
 
+    static ColumnPtr execute(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert,
+        bool throw_on_null = false);
+};
+
+struct ConvertImplFromVariantToColumn
+{
     static ColumnPtr execute(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
@@ -2912,7 +2969,7 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
 #endif
 
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
-class FunctionConvert : public IFunction
+class FunctionConvert final : public IFunction
 {
 public:
     using Monotonic = MonotonicityImpl;
@@ -2958,6 +3015,20 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         NullPresence null_presence = getNullPresense(arguments);
+
+        /// When cast_keep_nullable is enabled, treat Dynamic and Variant
+        /// as Nullable because they can contain nulls.
+        if (settings.cast_keep_nullable)
+        {
+            for (const auto & arg : arguments)
+            {
+                if (isDynamic(*arg.type) || isVariant(*arg.type))
+                {
+                    null_presence.has_nullable = true;
+                    break;
+                }
+            }
+        }
 
         if (null_presence.has_null_constant)
         {
@@ -3094,7 +3165,23 @@ public:
         /// Maybe it's a bug, or maybe there's some logic behind it that I couldn't comprehend.
         /// For now, here's a workaround.
         DataTypePtr result_type = weird_result_type;
-        if (getNullPresense(arguments).has_nullable && !isNullableOrLowCardinalityNullable(result_type))
+        auto null_presence = getNullPresense(arguments);
+        /// When cast_keep_nullable is enabled, treat Dynamic and Variant
+        /// as Nullable because they can contain nulls.
+        bool has_dynamic_or_variant = false;
+        if (settings.cast_keep_nullable)
+        {
+            for (const auto & arg : arguments)
+            {
+                if (isDynamic(*arg.type) || isVariant(*arg.type))
+                {
+                    null_presence.has_nullable = true;
+                    has_dynamic_or_variant = true;
+                    break;
+                }
+            }
+        }
+        if (null_presence.has_nullable && !isNullableOrLowCardinalityNullable(result_type))
             result_type = std::make_shared<DataTypeNullable>(std::move(result_type));
 
         try
@@ -3102,7 +3189,10 @@ public:
             /// Do something like IExecutableFunction::defaultImplementationForNulls.
             /// We can't just enable default implementation for nulls because we need to know
             /// whether the result is nullable (`to_nullable`).
-            if (result_type->isNullable() && !std::is_same_v<ToDataType, DataTypeString>)
+            /// For DataTypeString we normally skip this branch (toString handles nullable
+            /// arguments itself, e.g. nullable timezone), but for Dynamic/Variant we must
+            /// enter it to extract their null map.
+            if (result_type->isNullable() && (!std::is_same_v<ToDataType, DataTypeString> || has_dynamic_or_variant))
             {
                 if (result_type->onlyNull())
                     return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -3110,27 +3200,78 @@ public:
                 ColumnPtr result_null_map;
                 for (const auto & arg : arguments)
                 {
-                    if (!arg.type->isNullable())
-                        continue;
-                    if (isColumnConst(*arg.column))
+                    if (arg.type->isNullable())
                     {
-                        if (arg.column->onlyNull())
-                            return result_type->createColumnConstWithDefaultValue(input_rows_count);
-                        else
+                        if (isColumnConst(*arg.column))
+                        {
+                            if (arg.column->onlyNull())
+                                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
                             continue;
+                        }
+                        if (result_null_map)
+                        {
+                            MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                            auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                            const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                                result_null_map_data[i] |= null_map[i];
+                            result_null_map = std::move(mut);
+                        }
+                        else
+                        {
+                            result_null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                        }
                     }
-                    if (result_null_map)
+                    else if (isDynamic(*arg.type))
                     {
-                        MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
-                        auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
-                        const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
-                        for (size_t i = 0; i < input_rows_count; ++i)
-                            result_null_map_data[i] |= null_map[i];
-                        result_null_map = std::move(mut);
+                        if (isColumnConst(*arg.column))
+                        {
+                            if (arg.column->onlyNull())
+                                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+                            continue;
+                        }
+                        const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arg.column);
+                        auto dynamic_null_map = column_dynamic.getVariantColumn().createNullMap();
+                        if (result_null_map)
+                        {
+                            MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                            auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                            const auto & null_map_data = assert_cast<const ColumnUInt8 &>(*dynamic_null_map).getData();
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                                result_null_map_data[i] |= null_map_data[i];
+                            result_null_map = std::move(mut);
+                        }
+                        else
+                        {
+                            result_null_map = std::move(dynamic_null_map);
+                        }
                     }
-                    else
+                    else if (isVariant(*arg.type))
                     {
-                        result_null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                        if (isColumnConst(*arg.column))
+                        {
+                            if (arg.column->onlyNull())
+                                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+                            continue;
+                        }
+                        const auto & column_variant = assert_cast<const ColumnVariant &>(*arg.column);
+                        auto variant_null_map = column_variant.createNullMap();
+                        if (result_null_map)
+                        {
+                            MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                            auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                            const auto & null_map_data = assert_cast<const ColumnUInt8 &>(*variant_null_map).getData();
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                                result_null_map_data[i] |= null_map_data[i];
+                            result_null_map = std::move(mut);
+                        }
+                        else
+                        {
+                            result_null_map = std::move(variant_null_map);
+                        }
                     }
                 }
 
@@ -3219,6 +3360,18 @@ private:
             };
 
             return ConvertImplFromDynamicToColumn::execute(
+                arguments, result_type, input_rows_count, nested_convert,
+                ConvertImplFromDynamicToColumn::shouldThrowOnNull(settings.cast_keep_nullable, result_type));
+        }
+
+        if (isVariant(from_type))
+        {
+            auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & to_type) -> ColumnPtr
+            {
+                return executeInternal(args, to_type, args[0].column->size(), /*to_nullable=*/ false);
+            };
+
+            return ConvertImplFromVariantToColumn::execute(
                 arguments, result_type, input_rows_count, nested_convert,
                 ConvertImplFromDynamicToColumn::shouldThrowOnNull(settings.cast_keep_nullable, result_type));
         }
@@ -3426,7 +3579,7 @@ private:
 template <typename ToDataType, typename Name,
     ConvertFromStringExceptionMode exception_mode,
     ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Basic>
-class FunctionConvertFromString : public IFunction
+class FunctionConvertFromString final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -4400,7 +4553,7 @@ using FunctionParseDateTime64BestEffortUSOrNull = FunctionConvertFromString<
     DataTypeDateTime64, NameParseDateTime64BestEffortUSOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffortUS>;
 
 
-class ExecutableFunctionCast : public IExecutableFunction
+class ExecutableFunctionCast final : public IExecutableFunction
 {
 public:
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
@@ -4555,7 +4708,7 @@ private:
 
     WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const;
 
-    using ElementWrappers = std::vector<WrapperType>;
+    using ElementWrappers = VectorWithMemoryTracking<WrapperType>;
 
     ElementWrappers getElementWrappers(const DataTypes & from_element_types, const DataTypes & to_element_types) const;
 
@@ -4663,5 +4816,14 @@ FunctionBasePtr createFunctionBaseCast(
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
     CastType cast_type);
+
+FunctionBasePtr createFunctionBaseCast(
+    ContextPtr context,
+    const char * name,
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & return_type,
+    std::optional<CastDiagnostic> diagnostic,
+    CastType cast_type,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
 
 }

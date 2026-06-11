@@ -265,7 +265,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationVariant::deserializeD
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
-        UInt64 mode;
+        UInt64 mode = 0;
         readBinaryLittleEndian(mode, *discriminators_stream);
         discriminators_state = std::make_shared<DeserializeBinaryBulkStateVariantDiscriminators>(mode);
         addToSubstreamsDeserializeStatesCache(cache, settings.path, discriminators_state);
@@ -511,7 +511,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
     DB::ISerialization::SerializeBinaryBulkStatePtr & state) const
 {
     UnorderedMapWithMemoryTracking<String, size_t> tmp_statistics;
-    size_t tmp_size;
+    size_t tmp_size = 0;
     serializeBinaryBulkWithMultipleStreamsAndUpdateVariantStatistics(column, offset, limit, settings, state, tmp_statistics, tmp_size);
 }
 
@@ -694,7 +694,12 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
             }
 
             if (col.getVariantByLocalDiscriminator(i).size() < variant_limits[i])
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of variant {} is expected to be not less than {} according to discriminators, but it is {}", variant_names[i], variant_limits[i], col.getVariantByLocalDiscriminator(i).size());
+                throw Exception(
+                    settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+                    "Size of variant {} is expected to be not less than {} according to discriminators, but it is {}",
+                    variant_names[i],
+                    variant_limits[i],
+                    col.getVariantByLocalDiscriminator(i).size());
 
             variant_offsets.push_back(col.getVariantByLocalDiscriminator(i).size() - variant_limits[i]);
         }
@@ -824,10 +829,10 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
 
 void SerializationVariant::readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, DB::ReadBuffer * stream)
 {
-    UInt64 granule_size;
+    UInt64 granule_size = 0;
     readVarUInt(granule_size, *stream);
     state.remaining_rows_in_granule = granule_size;
-    UInt8 granule_format;
+    UInt8 granule_format = 0;
     readBinaryLittleEndian(granule_format, *stream);
     if (granule_format != CompactDiscriminatorsGranuleFormat::COMPACT && granule_format != CompactDiscriminatorsGranuleFormat::PLAIN)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected format of compact discriminators granule: {}", UInt32(granule_format));
@@ -865,7 +870,7 @@ void SerializationVariant::serializeBinary(const IColumn & column, size_t row_nu
 void SerializationVariant::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     ColumnVariant & col = assert_cast<ColumnVariant &>(column);
-    ColumnVariant::Discriminator global_discr;
+    ColumnVariant::Discriminator global_discr = 0;
     readBinaryLittleEndian(global_discr, istr);
     if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
     {

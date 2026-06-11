@@ -7,7 +7,6 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
@@ -100,6 +99,8 @@ public:
 
     bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
 
+    bool isIcebergStorage() const { return configuration->isIcebergConfiguration(); }
+
     bool isObjectStorage() const override { return true; }
 
     bool supportsReplication() const override { return configuration->isDataLakeConfiguration(); }
@@ -156,9 +157,9 @@ public:
         bool /*cleanup*/,
         ContextPtr context) override;
 
-    bool supportsDelete() const override { return configuration->supportsDelete(); }
+    bool supportsDelete() const override;
 
-    bool supportsParallelInsert() const override { return configuration->supportsParallelInsert(); }
+    bool supportsParallelInsert() const override;
 
     void mutate(const MutationCommands &, ContextPtr) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;

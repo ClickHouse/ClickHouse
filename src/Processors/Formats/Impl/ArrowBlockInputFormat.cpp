@@ -103,7 +103,8 @@ Chunk ArrowBlockInputFormat::read()
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
-    res = arrow_column_to_ch_column->arrowTableToCHChunk(*table_result, (*table_result)->num_rows(), file_reader ? file_reader->metadata() : nullptr, block_missing_values_ptr);
+    auto schema_metadata = stream ? stream_reader->schema()->metadata() : file_reader->schema()->metadata();
+    res = arrow_column_to_ch_column->arrowTableToCHChunk(*table_result, (*table_result)->num_rows(), schema_metadata, block_missing_values_ptr);
 
     /// There is no easy way to get original record batch size from Arrow metadata.
     /// Let's just use the number of bytes read from read buffer.
@@ -152,7 +153,7 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
 
     if (in.available() >= sizeof(int32_t))
     {
-        int32_t first_int;
+        int32_t first_int = 0;
         memcpy(&first_int, in.position(), sizeof(int32_t));
         /// Arrow IPC uses little-endian byte order on the wire.
         first_int = DB::fromLittleEndian(first_int);
@@ -262,7 +263,7 @@ NamesAndTypesList ArrowSchemaReader::readSchema()
 
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema,
-        file_reader ? file_reader->metadata() : nullptr,
+        schema->metadata(),
         stream ? "ArrowStream" : "Arrow",
         format_settings,
         format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference,
@@ -286,6 +287,7 @@ std::optional<size_t> ArrowSchemaReader::readNumberOrRows()
     return *rows;
 }
 
+void registerInputFormatArrow(FormatFactory & factory);
 void registerInputFormatArrow(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -309,6 +311,7 @@ void registerInputFormatArrow(FormatFactory & factory)
         });
 }
 
+void registerArrowSchemaReader(FormatFactory & factory);
 void registerArrowSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
@@ -341,6 +344,8 @@ void registerArrowSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatArrow(FormatFactory &);
+void registerArrowSchemaReader(FormatFactory &);
 void registerInputFormatArrow(FormatFactory &)
 {
 }

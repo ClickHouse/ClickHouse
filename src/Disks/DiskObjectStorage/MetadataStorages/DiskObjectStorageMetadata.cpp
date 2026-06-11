@@ -30,7 +30,7 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
             "Unknown metadata file version. Path: {}. Version: {}. Maximum expected version: {}",
             metadata_file_path, toString(version), toString(VERSION_FULL_OBJECT_KEY));
 
-    UInt32 keys_count;
+    UInt32 keys_count = 0;
     readIntText(keys_count, buf);
     assertChar('\t', buf);
     objects.reserve(keys_count);

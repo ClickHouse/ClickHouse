@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexSet.h>
 
+#include <Columns/ColumnConst.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
@@ -167,7 +168,7 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
     }
     max_granule = granule_num;
 
-    UInt64 rows_to_read;
+    UInt64 rows_to_read = 0;
     readBinary(rows_to_read, istr);
     if (rows_to_read == 0)
         return;
@@ -346,7 +347,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
     return granule;
 }
 
-KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
+static KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
 {
     return KeyCondition{filter_dag, context, index.column_names, index.expression};
 }
@@ -577,25 +578,18 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             }
             else
             {
-                ColumnWithTypeAndName unknown_field_column_with_type;
-
-                unknown_field_column_with_type.name = calculateConstantActionNodeName(UNKNOWN_FIELD);
-                unknown_field_column_with_type.type = std::make_shared<DataTypeUInt8>();
-                unknown_field_column_with_type.column = unknown_field_column_with_type.type->createColumnConst(1, UNKNOWN_FIELD);
-
-                result_node = &result_dag.addColumn(unknown_field_column_with_type);
+                auto name = calculateConstantActionNodeName(UNKNOWN_FIELD);
+                auto type = std::make_shared<DataTypeUInt8>();
+                ColumnConstPtr column = type->createColumnConst(1, UNKNOWN_FIELD);
+                result_node = &result_dag.addColumn(std::move(column), std::move(type), std::move(name));
             }
         }
     }
     else
     {
-        ColumnWithTypeAndName unknown_field_column_with_type;
-
-        unknown_field_column_with_type.name = calculateConstantActionNodeName(UNKNOWN_FIELD);
-        unknown_field_column_with_type.type = std::make_shared<DataTypeUInt8>();
-        unknown_field_column_with_type.column = unknown_field_column_with_type.type->createColumnConst(1, UNKNOWN_FIELD);
-
-        result_node = &result_dag.addColumn(unknown_field_column_with_type);
+        auto unknown_field_type = std::make_shared<DataTypeUInt8>();
+        auto unknown_field_column = unknown_field_type->createColumnConst(0, UNKNOWN_FIELD);
+        result_node = &result_dag.addColumn(std::move(unknown_field_column), unknown_field_type, calculateConstantActionNodeName(UNKNOWN_FIELD));
     }
 
     node_to_result_node.emplace(&node, result_node);
@@ -610,7 +604,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
         node_to_check = node_to_check->children[0];
 
-    if (node_to_check->column && (isColumnConst(*node_to_check->column) || WhichDataType(node.result_type).isSet()))
+    if (node_to_check->column)
         return &node;
 
     RPNBuilderTreeContext tree_context(context);
@@ -664,7 +658,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
         node_to_check = node_to_check->children[0];
 
-    if (node_to_check->column && (isColumnConst(*node_to_check->column) || WhichDataType(node.result_type).isSet()))
+    if (node_to_check->column)
         return nullptr;
 
     if (node_to_check->type != ActionsDAG::ActionType::FUNCTION)
@@ -735,7 +729,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
             sets_to_prepare.push_back(set);
         return false;
     }
-    if (node.column && isColumnConst(*node.column))
+    if (node.column)
     {
         return !atomic && node.column->getBool(0);
     }
@@ -760,7 +754,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
                 /// check above returns false (not useless) for `getBool(0) == 0`,
                 /// which would incorrectly make the entire OR appear non-useless
                 /// even when no indexed columns are referenced.
-                if (function_name == "or" && arg->column && isColumnConst(*arg->column) && !arg->column->getBool(0))
+                if (function_name == "or" && arg->column && !arg->column->getBool(0))
                     continue;
 
                 bool u = checkDAGUseless(*arg, context, sets_to_prepare, atomic);

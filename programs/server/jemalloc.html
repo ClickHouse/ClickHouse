@@ -2290,7 +2290,7 @@
                 if (error.name === 'AbortError') {
                     resultDiv.innerHTML = `<p>Profile request cancelled.</p>`;
                 } else {
-                    resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                    resultDiv.innerHTML = `<div class="error">Error: ${escapeHtml(error.message)}</div>`;
                 }
             } finally {
                 profileAbortController = null;
@@ -2447,7 +2447,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                     const msg = flushFailed
                         ? '<p style="color: var(--warning-color);">⚠ Could not flush logs. There may be a delay before recent queries appear in trace_log.</p>'
                         : '';
-                    resultDiv.innerHTML = msg + `<div class="error">No JemallocSample events found for query_id: ${queryId}</div>`;
+                    resultDiv.innerHTML = msg + `<div class="error">No JemallocSample events found for query_id: ${escapeHtml(queryId)}</div>`;
                     return;
                 }
 
@@ -2593,7 +2593,7 @@ SETTINGS jemalloc_enable_profiler = 1,
 
             } catch (error) {
                 console.error('Error getting query profile:', error);
-                resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                resultDiv.innerHTML = `<div class="error">Error: ${escapeHtml(error.message)}</div>`;
             } finally {
                 button.disabled = false;
                 button.textContent = 'Profile';
@@ -2645,7 +2645,7 @@ SETTINGS jemalloc_enable_profiler = 1,
 
             } catch (error) {
                 console.error('Error getting query profile:', error);
-                resultDiv.innerHTML = `<div class="error" style="margin-top: 1rem;">Error: ${error.message}</div>`;
+                resultDiv.innerHTML = `<div class="error" style="margin-top: 1rem;">Error: ${escapeHtml(error.message)}</div>`;
             } finally {
                 button.disabled = false;
                 button.textContent = 'Get Profile';
