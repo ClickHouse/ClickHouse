@@ -62,7 +62,7 @@ In these documentation file all mandatory positional arguments are referred as `
 * `read (r) <path-from> [--path-to path]`
   Read a file from `path-from` to `path` (`stdout` if not supplied).
 * `sed <expression> <path>`
-  Apply the `sed` `expression` to the file at `path` on the current disk, in place. Requires `sed` to be installed on the host.
+  Apply the `sed` `expression` to the file at `path` on the current disk, in place. Requires `sed` to be installed on the host. Only a single `sed` expression with no options is supported (e.g. `'s/foo/bar/g'`, `'/foo/d'`), not multiple expressions (`-e ... -e ...`) or options combined with an address (e.g. `-n` with `4,10p`).
 * `switch-disk [--path path] <disk>`
   Switch to disk `disk` on path `path` (if `path` is not specified default value is a previous path on disk `disk`).
 * `write (w) [--path-from path] <path-to>`.

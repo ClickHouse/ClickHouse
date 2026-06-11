@@ -25,7 +25,10 @@ public:
     CommandSed() : ICommand("CommandSed")
     {
         command_name = "sed";
-        description = "Apply a `sed` expression to a file on the current disk, in place";
+        /// Only a single `sed` expression with no options is supported: the expression is passed
+        /// to `sed` as one argument. Multiple expressions (`-e ... -e ...`) or per-expression
+        /// options (e.g. `-n` together with an address like `4,10p`) are not supported.
+        description = "Apply a single `sed` expression to a file on the current disk, in place";
         options_description.add_options()(
             "expression", po::value<String>(), "sed expression to apply (mandatory, positional)")(
             "path", po::value<String>(), "file to edit in place (mandatory, positional)");
