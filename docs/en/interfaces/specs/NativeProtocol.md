@@ -115,7 +115,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | COLUMN_DEFAULTS_METADATA        | 54410   | TableColumns           | Server may send the [`TableColumns`](#tablecolumns) packet (type 11) with column-default metadata before the INSERT/input schema block. Sent only when negotiated version ≥ 54410 **and** `input_format_defaults_for_omitted_fields` is enabled. Below this version the packet is never sent; clients must not wait for it. |
 | WRITE_CLIENT_INFO               | 54420   | Progress               | Adds `wrote_rows` and `wrote_bytes` to Progress. (Despite the name, this does **not** gate the ClientInfo block — that is `CLIENT_INFO` (v54032).) |
 | SETTINGS_SERIALIZED_AS_STRINGS  | 54429   | Query (settings encoding) | Changes **how** the always-present settings list is encoded; does **not** gate whether settings are sent. v54429+ writes each setting as `(name, flags, value-as-string)`; older peers write `(name, type-specific-binary-value)` with no flags. See [Setting](#setting). |
-| INTERSERVER_SECRET              | 54441   | Query                  | Adds the `cluster_secret` field to Query. |
+| INTERSERVER_SECRET              | 54441   | Query                  | Adds the inter-server `auth_hash` field to Query — a salted SHA-256 over the cluster secret, not the raw secret. External clients send an empty string. See [Inter-server authentication](#inter-server-authentication). |
 | OPEN_TELEMETRY                  | 54442   | ClientInfo             | Adds the OpenTelemetry trace context to ClientInfo. |
 | DISTRIBUTED_DEPTH               | 54448   | ClientInfo             | Adds the `distributed_depth` field to ClientInfo. |
 | INITIAL_QUERY_START_TIME        | 54449   | ClientInfo             | Adds the `initial_time` field (Int64, fixed-width). |
@@ -514,7 +514,7 @@ Client → Server.
 | 2 | client_info    | ClientInfo  | universal    | CLIENT_INFO (v54032)                     | See [ClientInfo](#clientinfo) |
 | 3 | settings       | Setting[]   | universal    | always                                   | See [Setting](#setting). **Always present** (terminated by an empty key); only the per-setting *encoding* is version-gated — see the encoding note in [Setting](#setting). A client must not omit this field for negotiated versions below `54429`. |
 | 3a | external_roles | String     | universal    | INTERSERVER_EXTERNALLY_GRANTED_ROLES (v54472) | Serialized list of externally-granted role names. Empty list = byte `0x00` (VarUInt 0) wrapped in a String envelope (`[VarUInt 1][0x00]` on the wire). External clients always send empty. |
-| 4 | cluster_secret | String      | inter-server | INTERSERVER_SECRET (v54441)              | Cluster auth. External clients send empty string. |
+| 4 | auth_hash      | String      | inter-server | INTERSERVER_SECRET (v54441)              | Inter-server authentication hash — **not** the raw cluster secret. See [Inter-server authentication](#inter-server-authentication) below. External clients (and any `InitialQuery`) send an empty string. |
 | 5 | stage          | VarUInt     | universal    | always                                   | 0 = FetchColumns, 1 = WithMergeableState, 2 = Complete |
 | 6 | compression    | VarUInt     | universal    | always                                   | 0 = disabled, 1 = enabled |
 | 7 | query_body     | String      | universal    | always                                   | SQL text |
@@ -572,6 +572,17 @@ If has_trace == 1:
   [String:   trace_state]       W3C trace state
   [UInt8:    trace_flags]       W3C trace flags
 ```
+
+### Inter-server authentication {#inter-server-authentication}
+
+The Query field 4 (`auth_hash`) is **not** the shared cluster secret on the wire. Sending the raw secret would both fail authentication and leak it. Instead, a server acting as an inter-server client proves it knows the secret with a salted SHA-256 hash:
+
+1. **Enter inter-server mode.** The connecting server signals it during the handshake: `ClientHello` carries the inter-server user marker, and the client then sends the cluster name and a freshly-generated 32-byte `salt` (`encodeSHA256` of a random value) right after the Hello exchange.
+2. **Obtain the nonce.** `ServerHello` carries an 8-byte `UInt64` nonce when `INTERSERVER_SECRET_V2` (v54462) is negotiated.
+3. **Compute the hash.** For every non-`InitialQuery` Query packet, the client writes `encodeSHA256(salt + nonce + cluster_secret + query + query_id + initial_user + external_roles)` into field 4 — a 32-byte digest. (`nonce` is its decimal string form, present only when negotiated ≥ v54462; `external_roles` is appended only when `INTERSERVER_EXTERNALLY_GRANTED_ROLES` (v54472) is negotiated.) For an `InitialQuery`, or when no cluster secret is configured, the client writes an empty string instead.
+4. **Verify.** The server reads field 4 with a 32-byte cap and recomputes the same concatenation using its own copy of the cluster secret; the connection is rejected if the digests differ.
+
+External (non-inter-server) clients never enter this mode and always send an empty `auth_hash`.
 
 ### Setting {#setting}
 
