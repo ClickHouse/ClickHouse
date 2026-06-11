@@ -1038,6 +1038,8 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster, db, unique):
     """
     )
 
+    instance.wait_for_log_line("Started streaming to 1 attached views")
+
     for thread in threads:
         thread.join()
 
