@@ -86,6 +86,8 @@ namespace ProfileEvents
     extern const Event DataLakeRestCatalogCreateTableMicroseconds;
     extern const Event DataLakeRestCatalogUpdateTable;
     extern const Event DataLakeRestCatalogUpdateTableMicroseconds;
+    extern const Event DataLakeRestCatalogUpdateSchema;
+    extern const Event DataLakeRestCatalogUpdateSchemaMicroseconds;
     extern const Event DataLakeRestCatalogDropTable;
     extern const Event DataLakeRestCatalogDropTableMicroseconds;
 }
@@ -1381,6 +1383,8 @@ bool RestCatalog::updateSchema(
 
     try
     {
+        ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogUpdateSchema);
+        auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogUpdateSchemaMicroseconds);
         sendRequest(endpoint, request_body);
     }
     catch (const DB::HTTPException & ex)
