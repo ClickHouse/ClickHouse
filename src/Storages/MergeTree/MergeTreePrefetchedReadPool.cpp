@@ -66,18 +66,32 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     ThreadPool & pool,
     MergeTreeReadTask::Readers readers_,
     Priority priority_,
-    MergeTreePrefetchedReadPool & read_prefetch)
+    MergeTreePrefetchedReadPool & read_prefetch,
+    bool issue_prefetch_synchronously)
     : is_valid(true)
     , readers(std::move(readers_))
     , prefetch_runner(pool, ThreadName::PREFETCH_READER)
 {
-    prefetch_runner.enqueueAndKeepTrack(read_prefetch.createPrefetchedTask(readers.main.get(), priority_));
-
+    /// Collect all readers that need a prefetch, then either schedule them on `pool` (default
+    /// path: called from a reader thread, so prefetching is offloaded) or issue them inline
+    /// (deferred warmup path: already running on `pool`, so scheduling onto the same pool again
+    /// could self-deadlock when its queue is full). Both paths run the same task closure (which
+    /// keeps the PrefetchIncrement / async-read metrics accounting identical).
+    std::vector<IMergeTreeReader *> readers_to_prefetch;
+    readers_to_prefetch.push_back(readers.main.get());
     for (const auto & reader : readers.prewhere)
-        prefetch_runner.enqueueAndKeepTrack(read_prefetch.createPrefetchedTask(reader.get(), priority_));
-
+        readers_to_prefetch.push_back(reader.get());
     for (const auto & patch_reader : readers.patches)
-        prefetch_runner.enqueueAndKeepTrack(read_prefetch.createPrefetchedTask(patch_reader->getReader(), priority_));
+        readers_to_prefetch.push_back(patch_reader->getReader());
+
+    for (auto * reader : readers_to_prefetch)
+    {
+        auto prefetch_task = read_prefetch.createPrefetchedTask(reader, priority_);
+        if (issue_prefetch_synchronously)
+            prefetch_task();
+        else
+            prefetch_runner.enqueueAndKeepTrack(std::move(prefetch_task));
+    }
 
     fiu_do_on(FailPoints::prefetched_reader_pool_failpoint,
     {
@@ -139,6 +153,7 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     , log(getLogger(
           "MergeTreePrefetchedReadPool("
           + (parts_ranges.empty() ? "" : parts_ranges.front().data_part->storage.getStorageID().getNameForLogs()) + ")"))
+    , prefetch_warmup_runner(prefetch_threadpool, ThreadName::PREFETCH_READER)
 {
     /// Tasks creation might also create a lost of readers - check they do not
     /// do any time consuming operations in ctor.
@@ -164,11 +179,9 @@ std::function<void()> MergeTreePrefetchedReadPool::createPrefetchedTask(IMergeTr
     };
 }
 
-void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & task)
+std::unique_ptr<MergeTreePrefetchedReadPool::PrefetchedReaders>
+MergeTreePrefetchedReadPool::buildReadersForTask(const ThreadTask & task, bool on_warmup_thread)
 {
-    if (task.isValidReadersFuture())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Task already has a reader");
-
     if (pool_settings.defer_reader_creation)
     {
         const auto & read_info = *task.read_info;
@@ -176,12 +189,25 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
                 read_info.part_index_in_query,
                 storage_snapshot->metadata,
                 read_info.alter_conversions->getAllUpdatedColumns()))
-            return;
+            return nullptr;
     }
 
     auto extras = getExtras();
     auto readers = MergeTreeReadTask::createReaders(task.read_info, extras, task.ranges, task.patches_ranges);
-    task.readers_future = std::make_unique<PrefetchedReaders>(prefetch_threadpool, std::move(readers), task.priority, *this);
+    /// When already running on the prefetch threadpool (deferred warmup path), issue the prefetch
+    /// inline instead of scheduling it onto the same pool again, to avoid a self-deadlock.
+    return std::make_unique<PrefetchedReaders>(
+        prefetch_threadpool, std::move(readers), task.priority, *this, /*issue_prefetch_synchronously=*/on_warmup_thread);
+}
+
+void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & task)
+{
+    if (task.isValidReadersFuture())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Task already has a reader");
+
+    /// Synchronous path: invoked from startPrefetches() while holding `mutex`, so the result can be
+    /// stored directly. The async (deferred) path schedules buildReadersForTask on the warmup runner.
+    task.readers_future = buildReadersForTask(task, /*on_warmup_thread=*/false);
 }
 
 void MergeTreePrefetchedReadPool::startPrefetches()
@@ -200,7 +226,44 @@ void MergeTreePrefetchedReadPool::startPrefetches()
     while (!prefetch_queue.empty())
     {
         const auto & top = prefetch_queue.top();
-        createPrefetchedReadersForTask(*top.task);
+
+        if (pool_settings.defer_reader_creation)
+        {
+            /// With `use_skip_indexes_on_data_read`, reader creation is gated on skip-index
+            /// filtering (partHasSelectedGranules), which is expensive and may read from remote
+            /// storage. Doing it inline here would serialize filtering across all parts while
+            /// holding `mutex`, blocking every reader thread until the slowest part finishes
+            /// filtering. Instead schedule one warmup job per part: filtering then runs
+            /// concurrently and each selected part starts prefetching as soon as its own filtering
+            /// completes. getOrBuildIndexReadResult dedupes per part via a promise/future registry,
+            /// so concurrent jobs are safe. The task is shared_ptr-owned so it outlives this job
+            /// even if a reader thread takes it from per_thread_tasks first; the result is stored
+            /// back under `mutex` so it cannot race getTask()/createTask().
+            auto task = top.task;
+            prefetch_warmup_runner.enqueueAndKeepTrack(
+                [this, task]
+                {
+                    std::unique_ptr<PrefetchedReaders> readers_future;
+                    std::exception_ptr warmup_exception;
+                    try
+                    {
+                        readers_future = buildReadersForTask(*task, /*on_warmup_thread=*/true);
+                    }
+                    catch (...)
+                    {
+                        warmup_exception = std::current_exception();
+                    }
+
+                    std::lock_guard lock(mutex);
+                    task->readers_future = std::move(readers_future);
+                    task->warmup_exception = std::move(warmup_exception);
+                },
+                top.task->priority);
+        }
+        else
+        {
+            createPrefetchedReadersForTask(*top.task);
+        }
 #ifndef NDEBUG
         if (prev.task)
         {
@@ -342,10 +405,21 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
 
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::createTask(ThreadTask & task, MergeTreeReadTask * previous_task)
 {
+    /// Called under `mutex` (from getTask/stealTask), the same lock the async warmup job uses to
+    /// publish its result, so reading these fields here is race-free. If the warmup job threw
+    /// while filtering or creating readers, rethrow so the error reaches the query instead of
+    /// being silently swallowed (the synchronous path propagates such errors directly).
+    if (task.warmup_exception)
+        std::rethrow_exception(task.warmup_exception);
+
     if (task.isValidReadersFuture())
         return MergeTreeReadPoolBase::createTask(task.read_info, task.readers_future->get(), task.ranges, task.patches_ranges, updater);
-    else
-        return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task, updater);
+
+    /// No prefetched readers: either the part was fully filtered out by the warmup job, or a reader
+    /// thread reached this task before its warmup job ran. Fall through to the base pool, which (in
+    /// the deferred path) defers reader creation to MergeTreeReadTask::initializeReadersChain ->
+    /// createColumnReadersIfNeeded, where skip-index filtering is re-checked (cached) on this thread.
+    return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task, updater);
 }
 
 void MergeTreePrefetchedReadPool::fillPerPartStatistics()
@@ -573,10 +647,10 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
 
             const auto & read_info = per_part_infos[part_idx];
             auto patch_ranges = ranges_in_patch_parts.getRanges(read_info->data_part, read_info->patch_parts, ranges_to_get_from_part);
-            auto thread_task = std::make_unique<ThreadTask>(read_info, ranges_to_get_from_part, std::move(patch_ranges), priority);
+            auto thread_task = std::make_shared<ThreadTask>(read_info, ranges_to_get_from_part, std::move(patch_ranges), priority);
 
             if (allow_prefetch)
-                prefetch_queue.emplace(TaskHolder{thread_task.get(), i});
+                prefetch_queue.emplace(TaskHolder{thread_task, i});
 
             per_thread_tasks[i].push_back(std::move(thread_task));
 

@@ -60,8 +60,13 @@ private:
     class PrefetchedReaders
     {
     public:
+        /// When `issue_prefetch_synchronously` is true, prefetches are issued inline in the
+        /// constructor instead of being scheduled on `pool`. Used by the deferred warmup path,
+        /// which already runs on a background thread, so it must not recursively enqueue onto the
+        /// same prefetch threadpool (that could self-deadlock when the pool queue is full).
         PrefetchedReaders(
-            ThreadPool & pool, MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & read_prefetch);
+            ThreadPool & pool, MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & read_prefetch,
+            bool issue_prefetch_synchronously = false);
 
         void wait();
         MergeTreeReadTask::Readers get();
@@ -96,16 +101,22 @@ private:
         std::vector<MarkRanges> patches_ranges;
         Priority priority;
         std::unique_ptr<PrefetchedReaders> readers_future;
+        /// Set by the asynchronous warmup job (deferred path) when skip-index filtering or reader
+        /// creation throws. Rethrown by the reader thread in createTask() so the error is not lost
+        /// (the synchronous path propagates such errors directly).
+        std::exception_ptr warmup_exception;
     };
 
     struct TaskHolder
     {
-        ThreadTask * task = nullptr;
+        std::shared_ptr<ThreadTask> task;
         size_t thread_id = 0;
         bool operator<(const TaskHolder & other) const;
     };
 
-    using ThreadTaskPtr = std::unique_ptr<ThreadTask>;
+    /// Shared so an in-flight asynchronous warmup job (deferred path) can co-own the task and keep
+    /// it alive even after a reader thread takes it from per_thread_tasks via getTask().
+    using ThreadTaskPtr = std::shared_ptr<ThreadTask>;
     using ThreadTasks = std::deque<ThreadTaskPtr>;
     using TasksPerThread = std::map<size_t, ThreadTasks>;
     using PartStatistics = std::vector<PartStatistic>;
@@ -115,6 +126,13 @@ private:
 
     void startPrefetches();
     void createPrefetchedReadersForTask(ThreadTask & task);
+    /// Does the expensive part of reader creation for a single task WITHOUT holding `mutex`:
+    /// skip-index filtering (deferred path) and reader construction + prefetch issuing. Returns
+    /// nullptr when the part is fully filtered out. The caller stores the result into
+    /// `task.readers_future` (under `mutex` in the async path; already-locked in the sync path).
+    /// `on_warmup_thread` is true when invoked from a prefetch_warmup_runner job, in which case
+    /// prefetches are issued inline rather than scheduled onto the same threadpool.
+    std::unique_ptr<PrefetchedReaders> buildReadersForTask(const ThreadTask & task, bool on_warmup_thread);
     std::function<void()> createPrefetchedTask(IMergeTreeReader * reader, Priority priority);
 
     MergeTreeReadTaskPtr stealTask(size_t thread, MergeTreeReadTask * previous_task);
@@ -132,6 +150,12 @@ private:
     std::priority_queue<TaskHolder> prefetch_queue; /// the smallest on top
     bool started_prefetches = false;
     LoggerPtr log;
+
+    /// Runs per-task skip-index filtering + reader creation concurrently across parts on
+    /// `prefetch_threadpool` (deferred path only). Declared after every member its jobs touch
+    /// (mutex, prefetch_threadpool, per_thread_tasks, ...) so it is destroyed FIRST: its
+    /// destructor drains all in-flight jobs while everything they reference is still alive.
+    ThreadPoolCallbackRunnerLocal<void> prefetch_warmup_runner;
 
     /// A struct which allows to track max number of tasks which were in the
     /// threadpool simultaneously (similar to CurrentMetrics, but the result
