@@ -717,8 +717,8 @@ def test_timestamps(started_cluster):
                       SETTINGS iceberg_timezone_for_timestamptz='Foo/Bar'
                       """)
 
-    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` SETTINGS iceberg_timezone_for_timestamptz='UTC'") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
-    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` SETTINGS iceberg_timezone_for_timestamptz='Europe/Berlin'") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'Europe/Berlin\\'))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` SETTINGS iceberg_timezone_for_timestamptz='UTC'") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` SETTINGS iceberg_timezone_for_timestamptz='Europe/Berlin'") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'Europe/Berlin\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
 
     assert node.query(f"SELECT timezoneOf(timestamptz) FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` LIMIT 1") == "UTC\n"
     assert node.query(f"SELECT timezoneOf(timestamptz) FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` LIMIT 1 SETTINGS iceberg_timezone_for_timestamptz='UTC'") == "UTC\n"
