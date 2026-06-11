@@ -61,11 +61,6 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
                 res.compression_level = static_cast<int>(SettingFieldInt64{setting.value}.value);
             else if (setting.name == "data_file_name_prefix_length")
                 res.data_file_name_prefix_length = setting.value.safeGet<UInt64>();
-            /// `s3_storage_class_name` is an alias for `s3_storage_class`: the disk configuration uses the
-            /// former (the canonical request setting name) while the BACKUP command uses the latter. Accept
-            /// both spellings in both places so they are interchangeable. See issue #68551.
-            else if (setting.name == "s3_storage_class_name")
-                res.s3_storage_class = SettingFieldString{setting.value}.value;
             else
 #define GET_BACKUP_SETTINGS_FROM_QUERY(TYPE, NAME) \
             if (setting.name == #NAME) \
@@ -99,43 +94,6 @@ bool BackupSettings::isAsync(const ASTBackupQuery & query)
             return field->safeGet<bool>();
     }
     return false; /// `async` is false by default.
-}
-
-SettingsChanges BackupSettings::extractCoreSettingsFromQuery(const ASTBackupQuery & query)
-{
-    SettingsChanges core;
-
-    if (!query.settings)
-        return core;
-
-    const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
-    for (const auto & setting : settings)
-    {
-        /// These two are handled specially in `fromBackupQuery` and are not
-        /// part of `LIST_OF_BACKUP_SETTINGS`, so list them explicitly.
-        if (setting.name == "compression_level")
-            continue;
-        if (setting.name == "data_file_name_prefix_length")
-            continue;
-        /// Alias for `s3_storage_class`, handled specially in `fromBackupQuery` and not part of
-        /// `LIST_OF_BACKUP_SETTINGS`, so it would otherwise be treated as a core setting. See issue #68551.
-        if (setting.name == "s3_storage_class_name")
-            continue;
-
-        bool is_backup_specific = false;
-
-#define CHECK_BACKUP_SETTING_NAME(TYPE, NAME) \
-        if (setting.name == #NAME) \
-            is_backup_specific = true;
-
-        LIST_OF_BACKUP_SETTINGS(CHECK_BACKUP_SETTING_NAME)
-#undef CHECK_BACKUP_SETTING_NAME
-
-        if (!is_backup_specific)
-            core.emplace_back(setting);
-    }
-
-    return core;
 }
 
 void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const

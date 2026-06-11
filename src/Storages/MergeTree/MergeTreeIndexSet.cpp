@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexSet.h>
 
-#include <Columns/ColumnConst.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
@@ -168,7 +167,7 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
     }
     max_granule = granule_num;
 
-    UInt64 rows_to_read = 0;
+    UInt64 rows_to_read;
     readBinary(rows_to_read, istr);
     if (rows_to_read == 0)
         return;
@@ -309,19 +308,13 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
     for (size_t i = 0; i < limit; ++i)
     {
         auto emplace_result = state.emplaceKey(method.data, pos + i, variants.string_pool);
-        const bool inserted = emplace_result.isInserted();
 
-        if (inserted)
+        if (emplace_result.isInserted())
             has_new_data = true;
 
         /// Emit the record if there is no such key in the current set yet.
         /// Skip it otherwise.
-        filter[pos + i] = inserted;
-
-        /// `set(N)` granules with more than `N` values are serialized as empty.
-        /// Keeping more rows only wastes CPU and memory.
-        if (inserted && max_rows && variants.getTotalRowCount() > max_rows)
-            break;
+        filter[pos + i] = emplace_result.isInserted();
     }
     return has_new_data;
 }
@@ -347,7 +340,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
     return granule;
 }
 
-static KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
+KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
 {
     return KeyCondition{filter_dag, context, index.column_names, index.expression};
 }
@@ -578,18 +571,25 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             }
             else
             {
-                auto name = calculateConstantActionNodeName(UNKNOWN_FIELD);
-                auto type = std::make_shared<DataTypeUInt8>();
-                ColumnConstPtr column = type->createColumnConst(1, UNKNOWN_FIELD);
-                result_node = &result_dag.addColumn(std::move(column), std::move(type), std::move(name));
+                ColumnWithTypeAndName unknown_field_column_with_type;
+
+                unknown_field_column_with_type.name = calculateConstantActionNodeName(UNKNOWN_FIELD);
+                unknown_field_column_with_type.type = std::make_shared<DataTypeUInt8>();
+                unknown_field_column_with_type.column = unknown_field_column_with_type.type->createColumnConst(1, UNKNOWN_FIELD);
+
+                result_node = &result_dag.addColumn(unknown_field_column_with_type);
             }
         }
     }
     else
     {
-        auto unknown_field_type = std::make_shared<DataTypeUInt8>();
-        auto unknown_field_column = unknown_field_type->createColumnConst(0, UNKNOWN_FIELD);
-        result_node = &result_dag.addColumn(std::move(unknown_field_column), unknown_field_type, calculateConstantActionNodeName(UNKNOWN_FIELD));
+        ColumnWithTypeAndName unknown_field_column_with_type;
+
+        unknown_field_column_with_type.name = calculateConstantActionNodeName(UNKNOWN_FIELD);
+        unknown_field_column_with_type.type = std::make_shared<DataTypeUInt8>();
+        unknown_field_column_with_type.column = unknown_field_column_with_type.type->createColumnConst(1, UNKNOWN_FIELD);
+
+        result_node = &result_dag.addColumn(unknown_field_column_with_type);
     }
 
     node_to_result_node.emplace(&node, result_node);
@@ -604,7 +604,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
         node_to_check = node_to_check->children[0];
 
-    if (node_to_check->column)
+    if (node_to_check->column && (isColumnConst(*node_to_check->column) || WhichDataType(node.result_type).isSet()))
         return &node;
 
     RPNBuilderTreeContext tree_context(context);
@@ -658,7 +658,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
         node_to_check = node_to_check->children[0];
 
-    if (node_to_check->column)
+    if (node_to_check->column && (isColumnConst(*node_to_check->column) || WhichDataType(node.result_type).isSet()))
         return nullptr;
 
     if (node_to_check->type != ActionsDAG::ActionType::FUNCTION)
@@ -729,7 +729,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
             sets_to_prepare.push_back(set);
         return false;
     }
-    if (node.column)
+    if (node.column && isColumnConst(*node.column))
     {
         return !atomic && node.column->getBool(0);
     }
@@ -754,7 +754,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
                 /// check above returns false (not useless) for `getBool(0) == 0`,
                 /// which would incorrectly make the entire OR appear non-useless
                 /// even when no indexed columns are referenced.
-                if (function_name == "or" && arg->column && !arg->column->getBool(0))
+                if (function_name == "or" && arg->column && isColumnConst(*arg->column) && !arg->column->getBool(0))
                     continue;
 
                 bool u = checkDAGUseless(*arg, context, sets_to_prepare, atomic);

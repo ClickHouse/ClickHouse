@@ -3,6 +3,7 @@
 #include <memory>
 #include <mutex>
 #include <type_traits>
+#include <variant>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
@@ -11,8 +12,8 @@
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <Common/Logger.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
+#include <Common/filesystemHelpers.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
@@ -185,12 +186,11 @@ public:
         Block getHeader(const Block & header_, bool final) const { return getHeader(header_, only_merge, keys, aggregates, final); }
 
         /// Returns keys and aggregated for EXPLAIN query
-        void explain(ExplainFormatSettings & settings) const;
+        void explain(WriteBuffer & out, const std::string & prefix) const;
         void explain(JSONBuilder::JSONMap & map) const;
     };
 
     explicit Aggregator(const Block & header_, const Params & params_);
-    ~Aggregator();
 
     const Params & getParams() const { return params; }
 
@@ -274,11 +274,7 @@ public:
     /// Merge several partially aggregated chunks into one.
     /// Precondition: for all chunks the is_overflows flag must be the same.
     /// (either all chunks are from overflow data or none are).
-    AggregatedChunk mergeBlocks(
-        AggregatedChunks & chunks,
-        bool final,
-        std::atomic<bool> & is_cancelled,
-        const RuntimeDataflowStatisticsCacheUpdaterPtr & dataflow_cache_updater);
+    AggregatedChunk mergeBlocks(AggregatedChunks & chunks, bool final, std::atomic<bool> & is_cancelled);
 
     /** Split block with partially-aggregated data to many blocks, as if two-level method of aggregation was used.
       * This is needed to simplify merging of that data with other results, that are already two-level.
@@ -325,7 +321,7 @@ private:
     AggregateFunctionsPlainPtrs aggregate_functions;
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
-    using NestedColumnsHolder = VectorWithMemoryTracking<VectorWithMemoryTracking<const IColumn *>>;
+    using NestedColumnsHolder = std::vector<std::vector<const IColumn *>>;
 
     Sizes offsets_of_aggregate_states;    /// The offset to the n-th aggregate function in a row of aggregate functions.
     size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.
@@ -361,11 +357,14 @@ private:
 
     std::vector<bool> is_aggregate_function_compiled;
 
-    mutable std::unique_ptr<ThreadPool> thread_pool;
+    mutable ThreadPool thread_pool;
 
     /** Try to compile aggregate functions.
       */
     void compileAggregateFunctionsIfNeeded();
+
+    /** Select the aggregation method based on the number and types of keys. */
+    AggregatedDataVariants::Type chooseAggregationMethod(const Block & header);
 
     /** Create states of aggregate functions for one key.
       */

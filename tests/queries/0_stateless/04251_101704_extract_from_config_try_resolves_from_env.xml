@@ -1,5 +1,0 @@
-<clickhouse>
-    <http_port from_env="TEST_HTTP_PORT_101704"></http_port>
-    <https_port from_env="TEST_HTTPS_PORT_101704"></https_port>
-    <tcp_port from_env="TEST_NATIVE_PORT_101704"></tcp_port>
-</clickhouse>
