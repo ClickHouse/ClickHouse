@@ -41,9 +41,12 @@ constexpr bool use_offset = true;
 /// method `HashMethodSingleLowCardinalityColumn`, this one is const-correct on the probe side
 /// (probe maps expose `const RowRef`/`const RowRefList` and `ConstLookupResult`), produces an
 /// offset-carrying `FindResult` (HashJoin indexes `JoinUsedFlags` by it), and has no null-key
-/// path (chooseMethod only routes here for non-nullable dictionaries). It wraps a base method
-/// that operates on the dictionary's nested column to produce key holders, and deduplicates the
-/// hash-table work per dictionary index within a block — that dedup is the whole point.
+/// path (chooseMethod only routes here for non-nullable dictionaries). It wraps a base method that
+/// operates on the dictionary's nested column to produce key holders, and deduplicates the
+/// hash-table work per dictionary index within a block — that dedup is the whole point. The
+/// probe/left key may be a plain (non-LowCardinality) column even when this map is chosen (joins
+/// allow plain T vs LowCardinality(T)); such a column is handled by running the base method on it
+/// directly, with no dictionary indirection or deduplication.
 template <typename BaseMethod, typename Mapped>
 struct LowCardinalityKeyGetterForJoin
 {
@@ -70,31 +73,41 @@ struct LowCardinalityKeyGetterForJoin
     PaddedPODArray<Mapped *> mapped_cache;
     PaddedPODArray<size_t> offset_cache;
 
-    static const ColumnLowCardinality & getLowCardinalityColumn(const IColumn * column)
+    /// The base method runs on the dictionary's nested column for a LowCardinality key, or directly
+    /// on the column itself for a plain key.
+    static const IColumn * getBaseColumn(const IColumn * column)
     {
-        const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(column);
-        if (!low_cardinality_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Expected LowCardinality column for LowCardinalityKeyGetterForJoin, got {}", column->getName());
-        return *low_cardinality_column;
+        if (const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(column))
+            return low_cardinality_column->getDictionary().getNestedNotNullableColumn().get();
+        return column;
     }
 
     LowCardinalityKeyGetterForJoin(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, const ColumnsHashing::HashMethodContextPtr &)
-        : base({getLowCardinalityColumn(key_columns[0]).getDictionary().getNestedNotNullableColumn().get()}, key_sizes, nullptr)
+        : base({getBaseColumn(key_columns[0])}, key_sizes, nullptr)
     {
-        const auto & low_cardinality_column = getLowCardinalityColumn(key_columns[0]);
-        const auto & dictionary = low_cardinality_column.getDictionary();
+        /// The build/right key is always LowCardinality (that is why this map was chosen), but the
+        /// probe/left key may be a plain column: joins allow plain T vs LowCardinality(T) without a
+        /// cast. For a plain column there is no dictionary, so `positions` stays null and the base
+        /// method is used directly (no per-dictionary deduplication). The map stores key values, so a
+        /// plain probe and a dictionary-encoded build still produce compatible keys.
+        const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(key_columns[0]);
+        if (!low_cardinality_column)
+            return;
 
-        dictionary_holder = low_cardinality_column.getDictionaryPtr();
+        const auto & dictionary = low_cardinality_column->getDictionary();
+        dictionary_holder = low_cardinality_column->getDictionaryPtr();
         saved_hash = dictionary.tryGetSavedHash();
-        size_of_index_type = low_cardinality_column.getSizeOfIndexType();
-        positions = low_cardinality_column.getIndexesPtr().get();
+        size_of_index_type = low_cardinality_column->getSizeOfIndexType();
+        positions = low_cardinality_column->getIndexesPtr().get();
 
         const size_t dictionary_size = dictionary.getNestedNotNullableColumn()->size();
         visit_cache.assign(dictionary_size, static_cast<UInt8>(0));
         mapped_cache.assign(dictionary_size, static_cast<Mapped *>(nullptr));
         offset_cache.assign(dictionary_size, static_cast<size_t>(0));
     }
+
+    /// True when the current column is LowCardinality (dictionary path); false for a plain column.
+    ALWAYS_INLINE bool isLowCardinality() const { return positions != nullptr; }
 
     ALWAYS_INLINE size_t getIndexAt(size_t row) const
     {
@@ -110,14 +123,16 @@ struct LowCardinalityKeyGetterForJoin
 
     ALWAYS_INLINE auto getKeyHolder(size_t row, Arena & pool) const
     {
-        return base.getKeyHolder(getIndexAt(row), pool);
+        return base.getKeyHolder(isLowCardinality() ? getIndexAt(row) : row, pool);
     }
 
     /// Used by ConcurrentHashJoin to shard rows; the hash must be of the key value, which is what
-    /// the dictionary's saved hash / the base method over the dictionary column both produce.
+    /// the dictionary's saved hash / the base method over the (dictionary or plain) column produce.
     template <typename Data>
     ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool)
     {
+        if (!isLowCardinality())
+            return base.getHash(data, row, pool);
         const size_t index = getIndexAt(row);
         if (saved_hash)
             return saved_hash[index];
@@ -130,6 +145,11 @@ struct LowCardinalityKeyGetterForJoin
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row_, Arena & pool)
     {
+        /// A plain key (no dictionary) is handled directly by the base method. The build side is
+        /// always LowCardinality, so this branch is only reached when a plain key reaches a build.
+        if (!isLowCardinality())
+            return base.emplaceKey(data, row_, pool);
+
         const size_t row = getIndexAt(row_);
 
         auto key_holder = base.getKeyHolder(row, pool);
@@ -150,6 +170,11 @@ struct LowCardinalityKeyGetterForJoin
     template <typename Data>
     ALWAYS_INLINE FindResult findKey(Data & data, size_t row_, Arena & pool)
     {
+        /// A plain probe key (no dictionary) is looked up directly by the base method. The map stores
+        /// key values, so this finds the rows inserted from the dictionary-encoded build side.
+        if (!isLowCardinality())
+            return base.findKey(data, row_, pool);
+
         const size_t row = getIndexAt(row_);
 
         if (visit_cache[row] != 0)
