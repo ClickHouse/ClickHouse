@@ -14,10 +14,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # --- Case 1: query read path (MergeTreeMarksLoader::loadMarksImpl) ---
 
+# ratio_of_defaults_for_sparse_serialization = 1: keep dense per-column marks. With sparse
+# serialization a column gains a .sparse.idx substream and the missing main marks file is caught
+# by the checksum consistency check (a different, already-typed error) instead of the marks loader.
 $CLICKHOUSE_CLIENT -q "drop table if exists t_missing_marks sync;"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_missing_marks (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, replace_long_file_name_to_hash = 0, prewarm_mark_cache = 0"
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, replace_long_file_name_to_hash = 0, prewarm_mark_cache = 0, ratio_of_defaults_for_sparse_serialization = 1"
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_missing_marks SELECT number, number FROM numbers(1000)"
 
@@ -67,7 +70,7 @@ $CLICKHOUSE_CLIENT --send_logs_level=none -q "drop table t_missing_marks sync;"
 $CLICKHOUSE_CLIENT -q "drop table if exists t_missing_granularity_marks sync;"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_missing_granularity_marks (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, replace_long_file_name_to_hash = 0, prewarm_mark_cache = 0"
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, replace_long_file_name_to_hash = 0, prewarm_mark_cache = 0, ratio_of_defaults_for_sparse_serialization = 1"
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_missing_granularity_marks SELECT number, number FROM numbers(1000)"
 
@@ -101,17 +104,17 @@ echo "--- index granularity load path ---"
 $CLICKHOUSE_CLIENT -q "SELECT reason FROM system.detached_parts WHERE database = currentDatabase() AND table = 't_missing_granularity_marks'"
 
 # the broken-part handler logs our typed diagnostic; confirm the enriched message reached the log
-# (without the fix this path logs only the opaque, path-only error). Filter on the storage logger
-# (its name contains the table name) to skip this very query's own logged text under logger 'executeQuery'.
-# Match the table name without a trailing space: the storage logger is 'db.table (uuid)' under Atomic
-# but plain 'db.table' under Ordinary, so a trailing space would miss the Ordinary case.
-# Pin the text_log read settings: system.text_log can hold many rows under load, so randomized
-# read limits / parallel-read / projection / query-condition-cache settings must not skew this scan.
+# (without the fix this path logs only the opaque, path-only error). Anchor the logger on the
+# current database (the storage logger is 'db.table (uuid)' under Atomic, plain 'db.table' under
+# Ordinary): this matches both engines and excludes a same-named table from another test's database
+# in the server-wide text_log. Pin the read settings: system.text_log can hold many rows under
+# load, so randomized read limits / parallel-read / projection / query-condition-cache settings
+# must not skew this scan.
 $CLICKHOUSE_CLIENT -q "system flush logs text_log"
 $CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.text_log
 WHERE event_date >= yesterday()
   AND event_time > now() - INTERVAL 5 MINUTE
-  AND logger_name LIKE '%t_missing_granularity_marks%'
+  AND logger_name LIKE '%' || currentDatabase() || '.t_missing_granularity_marks%'
   AND message LIKE '%does not exist on disk in part%'
   AND message LIKE '%listed in the part%checksums%'
 SETTINGS max_rows_to_read = 0, max_bytes_to_read = 0, max_threads = 1, use_query_condition_cache = 0, optimize_use_implicit_projections = 0"
