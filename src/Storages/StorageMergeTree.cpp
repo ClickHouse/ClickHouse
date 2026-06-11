@@ -659,6 +659,8 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
         author = !client_info.initial_user.empty()
             ? client_info.initial_user
             : client_info.current_user;
+        if (author.size() > 256)
+            author.resize(256);
     }
 
     MergeTreeMutationEntry entry(commands, disk, relative_data_path, author, insert_increment.get(), current_tid, getContext()->getWriteSettings());

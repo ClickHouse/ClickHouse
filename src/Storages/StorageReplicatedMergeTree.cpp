@@ -8200,6 +8200,8 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
         mutation_entry.author = !client_info.initial_user.empty()
             ? client_info.initial_user
             : client_info.current_user;
+        if (mutation_entry.author.size() > 256)
+            mutation_entry.author.resize(256);
     }
 
     const String mutations_path = fs::path(zookeeper_path) / "mutations";
