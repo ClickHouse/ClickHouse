@@ -94,3 +94,24 @@ SELECT count() FROM t_106533_partlevel_finite WHERE val > 500 SETTINGS use_skip_
 SELECT countIf(explain LIKE '%Parts: 0/1%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_partlevel_finite WHERE val > 500);
 
 DROP TABLE t_106533_partlevel_finite;
+
+-- Sparse float column: the part-level minmax runs before sparse removal, and ColumnSparse::getExtremes
+-- delegates to the values column which skips NaN, so a sparse part mixing finite floats with NaN stored a
+-- finite [min, max] and was wrongly pruned for the negated range. use_statistics_for_part_pruning = 0
+-- isolates the part-level minmax from the auto-statistics pruner (which use_skip_indexes = 0 does not disable).
+
+DROP TABLE IF EXISTS t_106533_sparse;
+
+CREATE TABLE t_106533_sparse (id UInt64, val Float64)
+ENGINE = MergeTree PARTITION BY (val > 1e30) ORDER BY id
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_106533_sparse SELECT number, 0. FROM numbers(1000);
+INSERT INTO t_106533_sparse VALUES (2000, 3.0), (2001, nan);
+OPTIMIZE TABLE t_106533_sparse FINAL;
+
+SELECT count() FROM t_106533_sparse WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_statistics_for_part_pruning = 0;
+SELECT count() FROM t_106533_sparse WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0, use_statistics_for_part_pruning = 0;
+SELECT countIf(explain LIKE '%Parts: 0/1%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_sparse WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_statistics_for_part_pruning = 0);
+
+DROP TABLE t_106533_sparse;
