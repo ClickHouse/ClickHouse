@@ -615,8 +615,14 @@ def test_optimize_manifest_files_dropped_partition_source_column(
     dropped, the current schema no longer contains that column, yet the current snapshot still
     references manifests written under the old spec. Deriving the partition types from the current
     schema would throw (the column is absent) or encode the preserved partition tuple under the
-    wrong type. The end-to-end check is that compaction succeeds and Spark (a reference reader) can
-    still read the table back correctly.
+    wrong type. The end-to-end check is that compaction succeeds and the data is still read back
+    correctly.
+
+    Note: once the source column is dropped, Spark itself can no longer bind the orphaned spec 0
+    (`SerializableTable.specs` eagerly binds every historical spec against the current schema and
+    throws `Cannot find source column for partition field`), so any Spark write or read of the
+    table fails. The mixed-spec data is therefore written before dropping the column, and the
+    post-drop state is verified through ClickHouse only.
     """
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
@@ -636,14 +642,16 @@ def test_optimize_manifest_files_dropped_partition_source_column(
     )
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (4, 'e', 'us'), (5, 'f', 'eu')")
 
-    # Evolve: drop the partition field, then drop the source column. The current snapshot still
-    # references the spec-0 manifests above, whose partition source column no longer exists in the
-    # current schema.
+    # Evolve: drop the partition field → new unpartitioned spec 1.
     spark.sql(f"ALTER TABLE {TABLE_NAME} DROP PARTITION FIELD region")
-    spark.sql(f"ALTER TABLE {TABLE_NAME} DROP COLUMN region")
 
-    # Insert more rows under the new (unpartitioned) spec and schema so specs are mixed.
-    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (6, 'g'), (7, 'h')")
+    # Insert more rows under the new (unpartitioned) spec so specs are mixed. This must happen
+    # while 'region' still exists, because dropping it leaves spec 0 unbindable by Spark.
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (6, 'g', 'us'), (7, 'h', 'eu')")
+
+    # Now drop the source column. The current snapshot still references the spec-0 manifests above,
+    # whose partition source column no longer exists in the current schema.
+    spark.sql(f"ALTER TABLE {TABLE_NAME} DROP COLUMN region")
 
     default_upload_directory(
         started_cluster_iceberg_with_spark,
@@ -664,23 +672,12 @@ def test_optimize_manifest_files_dropped_partition_source_column(
         },
     )
 
+    # Re-read through ClickHouse after compaction to confirm partition metadata is not corrupted.
+    # (Spark cannot read this table: it fails to bind the orphaned spec 0 — see the docstring.)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 8
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == instance.query(
         "SELECT number FROM numbers(0, 8)"
     )
-
-    # Spark must still read the table back correctly (partition metadata not corrupted).
-    default_download_directory(
-        started_cluster_iceberg_with_spark,
-        storage_type,
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
-    )
-    spark_rows = spark.read.format("iceberg").load(
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
-    ).collect()
-    assert len(spark_rows) == 8
-    assert sorted(row["id"] for row in spark_rows) == list(range(0, 8))
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
