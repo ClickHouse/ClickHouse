@@ -408,7 +408,7 @@ public:
         return it->second->value;
     }
 
-    void clearOutdatedNodes()
+    void clearOutdatedNodes(bool optimize_after_cleanup = true)
     {
         chassert(!snapshot_mode);
 
@@ -422,7 +422,8 @@ public:
             list.erase(itr);
         }
         snapshot_invalid_iters.clear();
-        optimizeIfNeeded();
+        if (optimize_after_cleanup)
+            optimizeIfNeeded();
     }
 
     bool optimizeIfNeeded()
@@ -458,7 +459,9 @@ public:
 
     void clear()
     {
-        clearOutdatedNodes();
+        /// The map is discarded right below, so rehashing it in `optimizeIfNeeded` would be wasted
+        /// O(N) work on the shutdown / storage replacement paths.
+        clearOutdatedNodes(/*optimize_after_cleanup=*/false);
         map.clear();
         for (auto itr = list.begin(); itr != list.end(); ++itr)
             arena.free(const_cast<char *>(itr->key.data()), itr->key.size());

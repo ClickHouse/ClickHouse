@@ -474,6 +474,45 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapReserveSurvivesAutoOptimize)
         EXPECT_EQ(map.getValue("/node" + std::to_string(i)), i);
 }
 
+TYPED_TEST(CoordinationTest, SnapshotableHashMapClearSkipsAutoOptimize)
+{
+    /// `clear` (also called from the destructor) discards the whole map, so the cleanup of outdated
+    /// nodes it performs must not trigger the automatic `rehash(0)` - that would be wasted O(N) work
+    /// right before the index is dropped. `clearOutdatedNodes(/*optimize_after_cleanup=*/false)`
+    /// covers this path; the default call must still shrink the table.
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    /// Low threshold so that growth-rehashes during the inserts do not trigger optimization,
+    /// while the sparse map after the bulk erase is far below it.
+    (*settings)[DB::CoordinationSetting::hash_map_min_load_factor] = 0.2f;
+    (*settings)[DB::CoordinationSetting::min_node_count_for_auto_optimize] = 8;
+    auto context = std::make_shared<DB::KeeperContext>(true, settings);
+
+    DB::SnapshotableHashTable<IntNode> map;
+    map.initialize(context);
+
+    static constexpr int node_count = 2000;
+    for (int i = 0; i < node_count; ++i)
+        EXPECT_TRUE(map.insert("/node" + std::to_string(i), i).second);
+
+    /// Make the map sparse: erase almost everything inside snapshot mode.
+    map.enableSnapshotMode(map.snapshotSizeWithVersion().second);
+    for (int i = 0; i < node_count - 10; ++i)
+        EXPECT_TRUE(map.erase("/node" + std::to_string(i)));
+    map.disableSnapshotMode();
+
+    const size_t buckets_before_cleanup = map.getBucketCount();
+    map.clearOutdatedNodes(/*optimize_after_cleanup=*/false);
+    EXPECT_EQ(map.size(), 10);
+    /// Cleanup without optimization must not rehash even though the load factor is below the threshold.
+    EXPECT_EQ(map.getBucketCount(), buckets_before_cleanup);
+
+    /// The default cleanup still optimizes: the sparse table shrinks.
+    map.clearOutdatedNodes();
+    EXPECT_LT(map.getBucketCount(), buckets_before_cleanup);
+    for (int i = node_count - 10; i < node_count; ++i)
+        EXPECT_EQ(map.getValue("/node" + std::to_string(i)), i);
+}
+
 TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
 {
     ChangelogDirTest test("./snapshots");
