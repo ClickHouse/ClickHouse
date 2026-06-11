@@ -655,38 +655,27 @@ namespace
 {
 
 /// `MODIFY COLUMN c COMMENT 'x'` parses as `MODIFY_COLUMN`, but the resolved
-/// `AlterCommand::isCommentAlter` treats it as comment-only, so the storage layer
-/// applies it as local metadata. Recognise the same shape here, intentionally
-/// stricter: any extra column property or surrounding modifier rejects it, which
-/// just routes the ALTER to every replica (the safe default).
+/// `AlterCommand::isCommentAlter` (Storages/AlterCommands.cpp) treats it as
+/// comment-only and the storage layer applies it as local metadata, so the
+/// routing predicate must recognise the same shape. Mirror that resolved check
+/// exactly: a comment plus no type / codec / default / TTL change. Placement
+/// (AFTER/FIRST) and per-column settings are deliberately not inspected because
+/// `AlterCommand::isCommentAlter` ignores them too; treating those shapes as
+/// non-replicated keeps DDLWorker routing in step with the storage fast path.
 bool isCommentOnlyModifyColumn(const ASTAlterCommand & command)
 {
     if (command.type != ASTAlterCommand::MODIFY_COLUMN)
         return false;
 
     const auto * col_decl = command.col_decl ? command.col_decl->as<ASTColumnDeclaration>() : nullptr;
-    if (!col_decl || col_decl->getComment() == nullptr)
+    if (!col_decl)
         return false;
 
-    if (col_decl->getType() || col_decl->getDefaultExpression() || col_decl->getCodec()
-        || col_decl->getTTL() || col_decl->getStatisticsDesc() || col_decl->getSettings()
-        || col_decl->getCollation())
-        return false;
-
-    if (col_decl->null_modifier.has_value()
-        || col_decl->default_specifier != ColumnDefaultSpecifier::Empty
-        || col_decl->ephemeral_default
-        || col_decl->primary_key_specifier)
-        return false;
-
-    if (!command.remove_property.empty()
-        || command.settings_changes != nullptr
-        || command.settings_resets != nullptr
-        || command.column != nullptr
-        || command.first)
-        return false;
-
-    return true;
+    return col_decl->getComment() != nullptr
+        && col_decl->getType() == nullptr
+        && col_decl->getCodec() == nullptr
+        && col_decl->getDefaultExpression() == nullptr
+        && col_decl->getTTL() == nullptr;
 }
 
 }

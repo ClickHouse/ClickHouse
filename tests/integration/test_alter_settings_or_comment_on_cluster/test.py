@@ -151,6 +151,27 @@ def test_modify_column_comment_only_on_cluster(started_cluster):
         assert "modcol-comment-v3" in show_create, (node.name, show_create)
         assert "table-comment-modcol" in show_create, (node.name, show_create)
 
+    # Comment-only `MODIFY COLUMN ... FIRST`: a positional modifier still parses
+    # as comment-only (no type change), so the storage layer applies it as local
+    # metadata via the comment fast path. The column comment and the new column
+    # order must both converge on every replica.
+    ch1.query(
+        database="test_db",
+        sql="ALTER TABLE modcol_comment ON CLUSTER 'cluster' MODIFY COLUMN x COMMENT 'modcol-placement-comment' FIRST",
+    )
+
+    for node in [ch1, ch2]:
+        show_create = node.query(
+            database="test_db",
+            sql="SHOW CREATE modcol_comment FORMAT TSVRaw",
+        )
+        assert "modcol-placement-comment" in show_create, (node.name, show_create)
+        order = node.query(
+            database="test_db",
+            sql="SELECT name FROM system.columns WHERE database = 'test_db' AND table = 'modcol_comment' ORDER BY position FORMAT TSVRaw",
+        ).split()
+        assert order == ["x", "id"], (node.name, order)
+
     # Negative case: `MODIFY COLUMN` with a real type change must still route as a
     # full replicated ALTER and converge across replicas through the replication log.
     ch1.query(
