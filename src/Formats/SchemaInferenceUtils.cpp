@@ -22,6 +22,7 @@
 
 #include <Core/Block.h>
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 #include <Common/SipHash.h>
 #include <Core/TypeId.h>
 
@@ -1450,6 +1451,8 @@ void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, D
 
 static void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info, bool remain_nothing_types = false)
 {
+    checkStackSize();
+
     if (!data_type)
         return;
 
@@ -1666,6 +1669,10 @@ DataTypePtr tryInferDataTypeForSingleJSONField(std::string_view field, const For
 
 static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullable, const FormatSettings & settings)
 {
+    /// The inferred type tree can be arbitrarily deep (e.g. a deeply nested Array/Map/Tuple from a
+    /// crafted input). This walk runs after the per-format schema reader, so guard the native stack.
+    checkStackSize();
+
     if (!type)
         return nullptr;
 
@@ -1762,6 +1769,8 @@ NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, cons
 
 bool checkIfTypeIsComplete(const DataTypePtr & type)
 {
+    checkStackSize();
+
     if (!type)
         return false;
 
