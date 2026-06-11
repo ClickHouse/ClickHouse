@@ -257,21 +257,10 @@ void Rope::append(Rope && other)
         return;
     }
 
-    /// Splice nodes then in-place merge — both halves are individually sorted
-    /// by `logical_offset` by invariant.
-    size_t split_idx = nodes.size();
-    nodes.insert(
-        nodes.end(),
-        std::make_move_iterator(other.nodes.begin()),
-        std::make_move_iterator(other.nodes.end()));
-    std::inplace_merge(
-        nodes.begin(),
-        nodes.begin() + static_cast<std::ptrdiff_t>(split_idx),
-        nodes.end(),
-        [](const RopeNode & a, const RopeNode & b) { return a.logical_offset < b.logical_offset; });
-
-    for (const auto & iv : other.intervals)
-        mergeInterval(iv);
+    /// Route each moved node through single-node `append` so the cursor-trim and zero-size
+    /// guard apply uniformly -- a raw splice would bypass them when `*this` is consumed.
+    for (auto & node : other.nodes)
+        append(std::move(node));
 
     other.nodes.clear();
     other.intervals.clear();

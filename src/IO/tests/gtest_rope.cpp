@@ -872,3 +872,25 @@ TEST(Rope, SliceTrimsConsumedBytesAcrossOverlap)
     }
     EXPECT_EQ(out.size(), 25u);  /// [100, 125) served once despite overlapping nodes
 }
+
+TEST(Rope, AppendRopeToConsumedDestinationTrims)
+{
+    /// append(Rope&&) into a partly-consumed destination must trim moved nodes against the
+    /// cursor too (the splice path used to bypass the single-node trim).
+    auto a = std::make_shared<OwnedRopeBuffer>(100);
+    std::memset(a->data(), 'A', 100);
+    Rope dst;
+    dst.append(RopeNode{a, 0, 100, 100});  /// [100, 200)
+    dst.advance(50);                        /// cursor at 150
+    ASSERT_EQ(dst.peek().logical_offset, 150u);
+
+    auto b = std::make_shared<OwnedRopeBuffer>(60);
+    std::memset(b->data(), 'B', 60);
+    Rope other;
+    other.append(RopeNode{b, 0, 60, 50});  /// [50, 110), entirely behind the cursor
+    dst.append(std::move(other));
+
+    EXPECT_EQ(dst.range().offset, 150u);     /// consumed bytes not re-covered
+    EXPECT_EQ(dst.peek().logical_offset, 150u);
+    EXPECT_EQ(dst.peek().size, 50u);         /// front node still [150, 200), no OOB peek
+}
