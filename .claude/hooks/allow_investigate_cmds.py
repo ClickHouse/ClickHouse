@@ -54,6 +54,11 @@ def play_ok(command: str) -> bool:
 
 
 def fetch_ok(command: str) -> bool:
+    # Reject path traversal: the tmp/investigate path class permits '.', so '..'
+    # would otherwise let --download-logs / > escape the scratch dir. Legit fetch
+    # commands (URL + flags + tmp paths) never contain '..'.
+    if ".." in command:
+        return False
     return bool(FETCH.fullmatch(command))
 
 

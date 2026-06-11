@@ -287,10 +287,15 @@ node .claude/tools/fetch_ci_report.js "<report-url>" --failed --download-logs tm
 ```
 
 The tool prints the saved path and lists the archive's pytest logs. The compression may be zstd
-despite the `.gz` name; extract with auto-detection (`-xf`, not `-xzf`):
+despite the `.gz` name; extract with auto-detection (`-xf`, not `-xzf`). **Do not swallow the
+`tar` error** — a failed extraction (expired/corrupt bundle, no `zstd` support, or the member
+absent) is itself a finding; surface it instead of letting the later `grep | jq` silently yield
+nothing and look "inconclusive":
 
 ```bash
-tar -xf tmp/investigate/ci_logs.tar.gz -C tmp/investigate/ ci/tmp/pytest_parallel.jsonl 2>/dev/null || true
+tar -xf tmp/investigate/ci_logs.tar.gz -C tmp/investigate/ ci/tmp/pytest_parallel.jsonl
+test -f tmp/investigate/ci/tmp/pytest_parallel.jsonl \
+  || echo "extraction FAILED — report the artifact problem (bundle expired/corrupt, missing zstd, or member absent), do not proceed as inconclusive"
 ```
 
 For other artifacts (server logs, core dumps, query masks), list them with `--links` and pull
