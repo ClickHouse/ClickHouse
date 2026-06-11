@@ -1734,36 +1734,13 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
     if (nearest_query_scope)
         table_expression_data = &nearest_query_scope->getTableExpressionDataOrThrow(table_expression_node);
 
-    QueryTreeNodes matched_column_nodes;
-
-    for (const auto & column : matched_columns)
-    {
-        const auto & column_name = column.name;
-        if (!matcher_node_typed.isMatchingColumn(column_name))
-            continue;
-
-        if (table_expression_data)
-        {
-            const auto & node_map = table_expression_data->getColumnNodeMap();
-            auto column_node_it = node_map.find(column_name);
-            if (column_node_it != node_map.end())
-            {
-                matched_column_nodes.emplace_back(column_node_it->second);
-                continue;
-            }
-        }
-
-        matched_column_nodes.emplace_back(std::make_shared<ColumnNode>(column, table_expression_node));
-    }
-
-    const auto & qualify_matched_column_nodes_scope = nearest_query_scope ? *nearest_query_scope : scope;
-    qualifyColumnNodesWithProjectionNames(matched_column_nodes, table_expression_node, qualify_matched_column_nodes_scope);
-
     /// If the matched table expression is a subquery (plain or union) whose duplicate output column
     /// names were made internally unique (see `disambiguateDuplicateProjectionColumnNames` /
-    /// `disambiguateDuplicateUnionProjectionColumnNames`), restore the original display names here so
-    /// the user-visible header is unchanged. The internal (unique) name stays on the column node so
-    /// the planner resolves each duplicate to a distinct column identifier.
+    /// `disambiguateDuplicateUnionProjectionColumnNames`), build the mapping from each unique
+    /// internal name back to its original display name. The matcher is name-sensitive and the user
+    /// writes it against the display names, so it must be evaluated on the display name (in the loop
+    /// below). The internal (unique) name stays on the column node so the planner resolves each
+    /// duplicate to a distinct column identifier, and the user-visible header is restored afterwards.
     std::unordered_map<std::string_view, std::string_view> internal_name_to_display_name;
     auto collect_internal_to_display = [&](const NamesAndTypes & internal_columns, const Names & display_names)
     {
@@ -1783,6 +1760,45 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
         if (!display_names.empty())
             collect_internal_to_display(union_subquery_node->computeProjectionColumns(), display_names);
     }
+
+    auto display_name_of = [&](const std::string & internal_name) -> std::string
+    {
+        if (!internal_name_to_display_name.empty())
+        {
+            auto it = internal_name_to_display_name.find(internal_name);
+            if (it != internal_name_to_display_name.end())
+                return std::string(it->second);
+        }
+        return internal_name;
+    };
+
+    QueryTreeNodes matched_column_nodes;
+
+    for (const auto & column : matched_columns)
+    {
+        const auto & column_name = column.name;
+        /// Match the user-written matcher (`*`, `COLUMNS('...')`, `COLUMNS(a, b)`) against the
+        /// display name: a column internally renamed for disambiguation must still match (and be
+        /// addressable) under its original name, not its generated internal name.
+        if (!matcher_node_typed.isMatchingColumn(display_name_of(column_name)))
+            continue;
+
+        if (table_expression_data)
+        {
+            const auto & node_map = table_expression_data->getColumnNodeMap();
+            auto column_node_it = node_map.find(column_name);
+            if (column_node_it != node_map.end())
+            {
+                matched_column_nodes.emplace_back(column_node_it->second);
+                continue;
+            }
+        }
+
+        matched_column_nodes.emplace_back(std::make_shared<ColumnNode>(column, table_expression_node));
+    }
+
+    const auto & qualify_matched_column_nodes_scope = nearest_query_scope ? *nearest_query_scope : scope;
+    qualifyColumnNodesWithProjectionNames(matched_column_nodes, table_expression_node, qualify_matched_column_nodes_scope);
 
     QueryAnalyzer::QueryTreeNodesWithNames matched_column_nodes_with_names;
     matched_column_nodes_with_names.reserve(matched_column_nodes.size());
@@ -6353,20 +6369,28 @@ void QueryAnalyzer::disambiguateDuplicateUnionProjectionColumnNames(UnionNode & 
     if (!union_node.isSubquery() || union_node.isCorrelated())
         return;
 
-    /// "Different expression" is decided by the first branch's projection nodes, and the rename is
-    /// applied to that branch. A first branch that is itself a union has no directly comparable
-    /// projection expression list, so skip it (rare and not the reported case).
     const auto & query_nodes = union_node.getQueries().getNodes();
     if (query_nodes.empty())
         return;
-    auto * first_branch = query_nodes.front()->as<QueryNode>();
+
+    /// A union's output column names come from its first branch (SQL rule), applied recursively when
+    /// that first branch is itself a union. Descend the chain of first branches to the leaf QueryNode
+    /// whose projection determines the union's output names. Renaming a duplicate column on that leaf
+    /// propagates up through every enclosing `computeProjectionColumns()`, so the outer union exposes
+    /// unique internal names and a nested first branch does not leak an internal name into the header.
+    QueryTreeNodePtr branch = query_nodes.front();
+    while (auto * branch_union = branch->as<UnionNode>())
+    {
+        const auto & branch_queries = branch_union->getQueries().getNodes();
+        if (branch_queries.empty())
+            return;
+        branch = branch_queries.front();
+    }
+    auto * first_branch = branch->as<QueryNode>();
     if (!first_branch)
         return;
 
     const auto & first_branch_columns = first_branch->getProjectionColumns();
-    const auto & first_branch_nodes = first_branch->getProjection().getNodes();
-    if (first_branch_columns.size() != first_branch_nodes.size())
-        return;
 
     /// Snapshot the original names up front: they are the display names, and renaming a column below
     /// would otherwise mutate the names of columns we have not visited yet.
@@ -6383,13 +6407,15 @@ void QueryAnalyzer::disambiguateDuplicateUnionProjectionColumnNames(UnionNode & 
     for (size_t i = 0; i < original_names.size(); ++i)
     {
         const auto & name = original_names[i];
-        auto [it, inserted] = name_to_first_index.emplace(name, i);
-        if (inserted)
+        if (name_to_first_index.emplace(name, i).second)
             continue;
 
-        /// Equal first-branch expressions with the same name collapse harmlessly (same value).
-        if (first_branch_nodes[i]->isEqual(*first_branch_nodes[it->second]))
-            continue;
+        /// Unlike a plain subquery, equal first-branch expressions do NOT make the duplicate
+        /// positions interchangeable here: a union takes its output names from the first branch but
+        /// maps values by position across every branch. For example in
+        /// `(SELECT number, number) UNION ALL (SELECT 5, 6)` the first-branch duplicates are equal,
+        /// but the second branch's positions hold 5 and 6 - collapsing the two same-named columns
+        /// would return 5, 5. So always disambiguate duplicate first-branch names for a union.
 
         std::string unique_name;
         size_t suffix = 1;

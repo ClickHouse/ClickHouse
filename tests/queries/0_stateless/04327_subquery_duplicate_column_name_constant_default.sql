@@ -60,7 +60,23 @@ SELECT * FROM (SELECT materialize(100) AS a, * FROM (SELECT materialize(1) AS a,
 -- values instead of collapsing them; the duplicate display names are preserved.
 SELECT * FROM ((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`))) ORDER BY 1;
 SELECT * FROM (SELECT * FROM ((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`)))) ORDER BY 1;
--- Equal expressions in the first branch collapse harmlessly (same value).
+
+-- A union maps values by position across branches but names them from the first branch, so equal
+-- first-branch expressions do NOT make the duplicate positions interchangeable: the `5, 6` branch
+-- must stay `5, 6`, not collapse to `5, 5`.
 SELECT * FROM ((SELECT number, number FROM numbers(2)) UNION ALL (SELECT 5, 6)) ORDER BY 1;
--- A nested union as the first branch of an outer union still keeps both values.
+
+-- A nested union as the first branch of an outer union still keeps both values, and must not leak
+-- the generated internal name into the outer header (the names come recursively from the first
+-- branch). Both a value form and a DESCRIBE header form are checked.
 SELECT * FROM (((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION ALL (SELECT 1, 2)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`))) ORDER BY 1, 2;
+DESCRIBE (SELECT * FROM (((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION ALL (SELECT 1, 2)) UNION ALL (SELECT 9, * FROM (SELECT materialize(1) AS `9`))));
+-- Mixed union modes keep the first branch a genuine UnionNode (no flattening); the leaf first
+-- branch's duplicate names are disambiguated so the outer SELECT * keeps `7, 0`, not `7, 7`.
+SELECT * FROM (((SELECT 7, * FROM (SELECT materialize(0) AS `7`)) UNION DISTINCT (SELECT 8, 8)) UNION ALL (SELECT 9, 9)) ORDER BY 1, 2;
+
+-- The disambiguation renames duplicates only internally: an outer name-sensitive matcher must see
+-- the original display names, so `COLUMNS('^7$')` selects BOTH `7` columns (values 7 and 0), and
+-- the generated internal name `7_1` is not user-addressable.
+SELECT COLUMNS('^7$') FROM (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`));
+SELECT COLUMNS('^7_1$') FROM (SELECT 7, * FROM (SELECT 2 AS x, materialize(0) AS `7`)); -- { serverError EMPTY_LIST_OF_COLUMNS_QUERIED }
