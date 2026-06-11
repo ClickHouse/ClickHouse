@@ -39,9 +39,13 @@ INSERT INTO t_minmax_nan_mixed VALUES (4, 100.0), (5, 150.0), (6, 200.0);
 SELECT count() FROM t_minmax_nan_mixed WHERE NOT ((val >= 0.) AND (val <= 3.));
 SELECT count() FROM t_minmax_nan_mixed WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
 
--- A NaN-containing granule must still be pruned by a positive range it cannot satisfy: no value > 500.
+-- The NaN granule's stored max is NaN, so an upper-bounded range conservatively reads it (it is not
+-- pruned). NaN-widening must not disable pruning entirely though: the sibling all-finite granule
+-- [100, 200] is still pruned for val > 500. The result matches the no-index result, and EXPLAIN shows
+-- exactly one of the two granules pruned (1/2).
 SELECT count() FROM t_minmax_nan_mixed WHERE val > 500;
 SELECT count() FROM t_minmax_nan_mixed WHERE val > 500 SETTINGS use_skip_indexes = 0;
+SELECT countIf(explain LIKE '%Granules: 1/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_minmax_nan_mixed WHERE val > 500);
 
 -- Positive equality on a finite value sharing the NaN granule must still find it.
 SELECT count() FROM t_minmax_nan_mixed WHERE val = 100.0;
