@@ -1008,6 +1008,6 @@ These settings are sometimes mistaken for protocol-level settings, but they cont
 
 **Settings list** — a sequence of `(key, flags, value)` tuples in the Query body, terminated by an empty key. Carries per-query application-layer configuration. See [Setting](#setting).
 
-**Stage** — a VarUInt field in the [Query](#query) packet (field 5) controlling how far the server executes the query: `0` = FetchColumns, `1` = WithMergeableState, `2` = Complete. External clients typically send `2`.
+**Stage** — a VarUInt field in the [Query](#query) packet (field 5) controlling how far the server executes the query. External clients typically send `2` (Complete); distributed queries and serialized query plans use the higher values. See [Query](#query) field 5 for the full set of wire values.
 
 **Terminator** — a packet that ends a stream. The Query response ends on `EndOfStream` (success) or `Exception` (failure). The client's input stream ends on the empty Data marker.
