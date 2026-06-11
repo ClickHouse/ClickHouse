@@ -2,7 +2,6 @@
 
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/filesystemHelpers.h>
 #include <Core/Settings.h>
@@ -206,10 +205,8 @@ const DateLUTImpl & DateLUT::getImplementation(std::string_view time_zone) const
 
 DateLUT & DateLUT::getInstance()
 {
-    /// Intentionally leaked: must outlive the asynchronous logger threads that may still
-    /// be formatting `LocalDateTime` values when other static destructors run.
-    static DateLUT * ret = new DateLUT;
-    return *ret;
+    static DateLUT ret;
+    return ret;
 }
 
 ExtendedDayNum makeDayNum(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num)

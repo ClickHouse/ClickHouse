@@ -156,7 +156,7 @@ size_t ColumnIndex::getMaxIndexForCurrentType() const
 
 size_t ColumnIndex::getIndexAt(size_t row) const
 {
-    size_t index = 0;
+    size_t index;
     auto get_index = [&](auto type)
     {
         using CurIndexType = decltype(type);

@@ -64,7 +64,7 @@ public:
 
     virtual UUID uuid() const { return UUIDHelpers::Nil; }
 
-    const String & databaseName() const { chassert(!database_name.empty()); return database_name; }
+    const String & databaseName() const { assert(!database_name.empty()); return database_name; }
 
 protected:
     String database_name;
