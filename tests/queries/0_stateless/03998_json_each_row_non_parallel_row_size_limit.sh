@@ -27,6 +27,22 @@ for _ in range(20):
     | ${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --min_chunk_bytes_for_parallel_parsing=1000000 --max_memory_usage=0 \
         --input-format=JSONEachRow --structure="a String" -q "SELECT count(), sum(length(a)) FROM table"
 
+# The per-row cap is floored at 1 MiB (effective 10 MiB), so a tiny min_chunk_bytes_for_parallel_parsing
+# cannot turn this OOM guard into a sub-megabyte limit that rejects ordinary rows. With min_chunk=1024
+# the un-floored cap would be 10*1024=10 KiB; this ~100 KiB row is above that but below the floored
+# 10 MiB cap, so it must still parse. If the floor regressed to the raw setting this row would be
+# wrongly rejected.
+python3 -c "import sys; sys.stdout.buffer.write(b'{\"a\":\"' + b'y' * (99 * 1024) + b'\"}\n')" 2>/dev/null \
+    | ${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --min_chunk_bytes_for_parallel_parsing=1024 --max_memory_usage=0 \
+        --input-format=JSONEachRow --structure="a String" -q "SELECT length(a) FROM table"
+
+# The floor only raises a too-small cap, it never disables the OOM guard. A row above the floored
+# 10 MiB cap is still rejected even when min_chunk_bytes_for_parallel_parsing is 1024.
+python3 -c "import sys; sys.stdout.buffer.write(b'{\"a\":\"' + b'x' * (30 * 1024 * 1024) + b'\"}\n')" 2>/dev/null \
+    | ${CLICKHOUSE_LOCAL} --input_format_parallel_parsing=0 --min_chunk_bytes_for_parallel_parsing=1024 --max_memory_usage=0 \
+        --input-format=JSONEachRow --structure="a String" -q "SELECT length(a) FROM table" 2>&1 \
+    | grep -q "min_chunk_bytes_for_parallel_parsing" && echo "Ok." || echo "FAIL"
+
 # The same cap must apply during schema inference, i.e. when no structure is given (the issue's
 # actual reproducer is file(..., 'JSONEachRow') without a structure). Otherwise the schema reader
 # buffers the whole huge object while inferring the first row and OOMs before the read path is reached.
