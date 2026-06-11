@@ -22,6 +22,17 @@ SELECT CAST('a', 'Enum8(\'z\' = 18446744073709551615, \'a\')'); -- { serverError
 CREATE TABLE t_04327 (x Enum8('a' = 200)) ENGINE = Memory; -- { serverError ARGUMENT_OUT_OF_BOUND }
 CREATE TABLE t_04327 (x Enum8('a' = 18446744073709551615)) ENGINE = Memory; -- { serverError ARGUMENT_OUT_OF_BOUND }
 
+-- Auto-assignment continues from the previous element. A negative first value must keep its
+-- sign: 'a' = -1000 makes 'b' = -999 (not a wrapped-around huge UInt64). This is the case that
+-- broke after the above-Int64 guard was added (see 00757_enum_defaults).
+SELECT toInt16(CAST('b', 'Enum(\'a\' = -1000, \'b\')'));
+SELECT toInt8(CAST('c', 'Enum8(\'a\' = -5, \'b\', \'c\')'));
+
+-- A first value at Int64 max followed by an auto-assigned element overflows Int64 when the next
+-- number is synthesized; it must be rejected cleanly, not wrapped, before the range check.
+SELECT CAST('a', 'Enum8(\'z\' = 9223372036854775807, \'a\')'); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT CAST('a', 'Enum(\'z\' = 9223372036854775807, \'a\')'); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
 -- Boundary values are valid.
 SELECT toInt8(CAST('a', 'Enum8(\'a\' = 127, \'b\' = -128)'));
 SELECT toInt16(CAST('a', 'Enum16(\'a\' = 32767, \'b\' = -32768)'));

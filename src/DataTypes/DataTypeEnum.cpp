@@ -16,6 +16,8 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 
+#include <base/arithmeticOverflow.h>
+
 #include <limits>
 
 
@@ -230,7 +232,14 @@ static void autoAssignNumberForEnum(const ASTPtr & arguments)
         if (child->as<ASTLiteral>())
         {
             assign_count += !is_first_child;
-            ASTPtr func = makeASTOperator("equals", child, make_intrusive<ASTLiteral>(literal_child_assign_num + assign_count));
+            /// Keep the addition signed and checked: Int64 + size_t would run unsigned (negative
+            /// base wraps to a huge UInt64), and a plain signed add overflows near Int64 max.
+            Int64 assign_num;
+            if (common::addOverflow(literal_child_assign_num, static_cast<Int64>(assign_count), assign_num))
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "Auto-assigned value for Enum element overflows Int64 (base {} + offset {})",
+                    literal_child_assign_num, assign_count);
+            ASTPtr func = makeASTOperator("equals", child, make_intrusive<ASTLiteral>(assign_num));
             assign_number_child.emplace_back(func);
         }
         else if (child->as<ASTFunction>())
