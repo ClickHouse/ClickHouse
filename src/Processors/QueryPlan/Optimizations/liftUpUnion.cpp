@@ -34,7 +34,10 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
         /// Expression - Union - Something
         ///                    - Something
 
-        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isSQLUnion());
+        auto new_union = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isSQLUnion());
+        if (union_step->mustPreserveOrder())
+            new_union->setMustPreserveOrder();
+        child = std::move(new_union);
 
         std::swap(parent, child);
         std::swap(parent_node->children, child_node->children);

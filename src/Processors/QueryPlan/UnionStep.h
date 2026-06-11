@@ -27,6 +27,14 @@ public:
     size_t getMaxThreads() const { return max_threads; }
     bool isSQLUnion() const { return is_sql_union; }
 
+    /// Downstream steps rely on each output stream of this union staying individually
+    /// sorted (e.g. a `SortingStep` converted to FinishSorting, or DISTINCT-in-order).
+    /// Narrowing via `max_streams_for_union_step*` concatenates streams through
+    /// `ConcatProcessor` in random order, destroying per-stream sortedness, so it must
+    /// be skipped when this flag is set. See `optimizeReadInOrder` and `applyOrder`.
+    void setMustPreserveOrder() { must_preserve_order = true; }
+    bool mustPreserveOrder() const { return must_preserve_order; }
+
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
@@ -39,6 +47,7 @@ private:
 
     size_t max_threads;
     bool is_sql_union;
+    bool must_preserve_order = false;
 };
 
 }

@@ -1,4 +1,5 @@
 #include <Common/NaNUtils.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -125,10 +126,24 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
 
     if (effective_max_streams && pipeline->getNumStreams() > effective_max_streams)
     {
-        QueryPipelineProcessorsCollector collector(*pipeline, this);
-        pipeline->narrow(effective_max_streams);
-        auto added_processors = collector.detachProcessors();
-        processors.insert(processors.end(), added_processors.begin(), added_processors.end());
+        if (must_preserve_order)
+        {
+            /// Narrowing concatenates streams via `ConcatProcessor` in random order, which
+            /// would break the per-stream sortedness that downstream steps (FinishSorting,
+            /// DISTINCT-in-order) rely on. Correctness wins over the stream cap.
+            LOG_TRACE(
+                getLogger("UnionStep"),
+                "Not narrowing union pipeline from {} to {} streams because downstream steps require "
+                "each stream to stay sorted",
+                pipeline->getNumStreams(), effective_max_streams);
+        }
+        else
+        {
+            QueryPipelineProcessorsCollector collector(*pipeline, this);
+            pipeline->narrow(effective_max_streams);
+            auto added_processors = collector.detachProcessors();
+            processors.insert(processors.end(), added_processors.begin(), added_processors.end());
+        }
     }
 
     return pipeline;
