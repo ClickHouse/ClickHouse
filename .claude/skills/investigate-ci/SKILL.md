@@ -304,7 +304,7 @@ nothing and look "inconclusive":
 ```bash
 tar -xf tmp/investigate/ci_logs.tar.gz -C tmp/investigate/ ci/tmp/pytest_parallel.jsonl
 test -f tmp/investigate/ci/tmp/pytest_parallel.jsonl \
-  || echo "extraction FAILED — report the artifact problem (bundle expired/corrupt, missing zstd, or member absent), do not proceed as inconclusive"
+  || { echo "extraction FAILED — report the artifact problem (bundle expired/corrupt, missing zstd, or member absent), do not proceed as inconclusive"; false; }
 ```
 
 For other artifacts (server logs, core dumps, query masks), list them with `--links` and pull
