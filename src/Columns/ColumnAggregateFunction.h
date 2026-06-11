@@ -141,7 +141,9 @@ public:
 
     bool isDefaultAt(size_t) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for ColumnAggregateFunction");
+        /// Aggregate function states have no meaningful default representation, so they are never considered default.
+        /// This is consistent with getNumberOfDefaultRows returning 0.
+        return false;
     }
 
     bool hasOnlyTypeDefaults() const override { return false; }
