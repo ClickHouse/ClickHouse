@@ -256,7 +256,7 @@ public:
         const size_t rows = value.size() / columns_num;
 
         /// Build columns from the flat buffer.
-        std::vector<MutableColumnPtr> columns;
+        std::vector<MutableColumnPtr> columns; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         columns.reserve(columns_num);
         for (const auto & type : this->argument_types)
         {
@@ -285,7 +285,7 @@ public:
 
         /// Pass only the leading columns (nested-function arguments) to the nested aggregate.
         const size_t nested_args_count = nested_func->getArgumentTypes().size();
-        std::vector<const IColumn *> nested_columns;
+        std::vector<const IColumn *> nested_columns; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         nested_columns.reserve(nested_args_count);
         for (size_t i = 0; i < nested_args_count; ++i)
             nested_columns.push_back(block.getByPosition(i).column.get());

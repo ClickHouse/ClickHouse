@@ -267,11 +267,11 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 "Nested identical combinator '{}' is not supported",
                 combinator_name);
         }
-        
+
         size_t nested_args_count = combinator->getNumberOfNestedArguments(argument_types, parameters);
         DataTypes types_for_nested(argument_types.begin(), argument_types.begin() + nested_args_count);
         DataTypes nested_types = combinator->transformArguments(types_for_nested);
-        
+
         Array nested_parameters = combinator->transformParameters(parameters);
 
         AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);

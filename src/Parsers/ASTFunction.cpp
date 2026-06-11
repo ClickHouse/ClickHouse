@@ -163,7 +163,7 @@ ASTPtr ASTFunction::clone() const
 
     if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
     if (parameters) { res->parameters = parameters->clone(); res->children.push_back(res->parameters); }
-    if (order_by_combinator_columns) { 
+    if (order_by_combinator_columns) {
         res->order_by_combinator_columns = order_by_combinator_columns->clone();
         res->children.push_back(res->order_by_combinator_columns);
     }
