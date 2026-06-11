@@ -169,7 +169,7 @@ void ProcessorsProfileWebUIRequestHandler::handleRequest(HTTPServerRequest & req
     handle(request, response, {reinterpret_cast<const char *>(resource_processors_profile_html), std::size(resource_processors_profile_html)}, http_response_headers_override);
 }
 
-std::string ClickStackUIRequestHandler::getResourcePath(const std::string & uri) const
+std::optional<std::string> ClickStackUIRequestHandler::getResourcePath(const std::string & uri) const
 {
     std::string_view path = uri;
     if (path.starts_with("/clickstack"))
@@ -191,13 +191,25 @@ std::string ClickStackUIRequestHandler::getResourcePath(const std::string & uri)
     if (!path.empty() && path.back() == '/')
         path.remove_suffix(1);
 
+    /// `Poco::URI::decode` throws `Poco::URISyntaxException` on malformed
+    /// percent-encoding (e.g. lone `%`, `%X`, `%ZZ`). Without this catch the
+    /// exception would unwind into the server error handler and produce a 500
+    /// for any client that sends a malformed URI; returning std::nullopt lets
+    /// the request handler answer with a deterministic 400.
     std::string decoded;
-    Poco::URI::decode(std::string(path), decoded);
+    try
+    {
+        Poco::URI::decode(std::string(path), decoded);
+    }
+    catch (const Poco::URISyntaxException &)
+    {
+        return std::nullopt;
+    }
 
     // Handle clean URLs - map page routes to .html files
     // If path is empty or just "/", serve index.html
     if (decoded.empty())
-        return "index.html";
+        return std::string("index.html");
 
     if (decoded.find('.') != std::string::npos)
         return decoded;
@@ -265,8 +277,14 @@ const ClickStack::EmbeddedResource * resolveDynamicRoute(const std::string & res
 
 void ClickStackUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    // Get the resource path from URI
-    std::string resource_path = getResourcePath(request.getURI());
+    auto resource_path_opt = getResourcePath(request.getURI());
+    if (!resource_path_opt)
+    {
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+        *response.send() << "Malformed URL.\n";
+        return;
+    }
+    const std::string & resource_path = *resource_path_opt;
 
     const ClickStack::EmbeddedResource * resource = findEmbeddedResource(resource_path);
 

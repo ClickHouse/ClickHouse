@@ -13,8 +13,12 @@ ${CLICKHOUSE_CURL} --compressed -sS "${BASE}/clickstack/search/%5BsavedSearchId%
     | grep -oF 'ClickStack' | head -n 1
 
 ${CLICKHOUSE_CURL} --compressed -sS "${BASE}/clickstack/dashboards/list" \
-    | grep -oF 'ClickStack' | head -n 1
+    | grep -oF '"page":"/dashboards/list"' | head -n 1
 
 ${CLICKHOUSE_CURL} -sS "${BASE}/clickstack/no-such-page" \
     | grep -oF 'Not found'
 
+# Malformed percent-encoding must produce a deterministic 400 instead of
+# letting Poco::URISyntaxException propagate as a 500 from the server stack.
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{http_code}\n' "${BASE}/clickstack/%"
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{http_code}\n' "${BASE}/clickstack/%zz"
