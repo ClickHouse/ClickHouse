@@ -379,7 +379,7 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, const Actions
         return estimated;
     }
 
-    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step); expression_step && !expression_step->getExpression().hasArrayJoin())
     {
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
@@ -647,11 +647,25 @@ constexpr bool isInnerOrCross(JoinKind kind)
 
 static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
 {
-    if (isTrivialStep(node))
-        node = node->children[0];
+    auto * join_node = node;
+    auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
+    if (expression_step && node->children.size() == 1  && !expression_step->getExpression().hasArrayJoin())
+    {
+        if (isPassthroughActions(expression_step->getExpression()))
+        {
+            /// Just skip trivial expression step, it doesn't change any columns
+            expression_step = nullptr;
+            join_node = node->children[0];
+            node = node->children[0];
+        }
+        else if (graph.context->optimization_settings.merge_expression_into_join)
+        {
+            join_node = node->children[0];
+        }
+    }
 
     {
-        auto * child_join_step = typeid_cast<JoinStepLogical *>(node->step.get());
+        auto * child_join_step = typeid_cast<JoinStepLogical *>(join_node->step.get());
         if (child_join_step && !child_join_step->isOptimized())
         {
             auto child_join_kind = child_join_step->getJoinOperator().kind;
@@ -667,13 +681,20 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
             if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
             {
                 QueryGraphBuilder child_graph(graph.context);
-                buildQueryGraph(child_graph, *node, nodes, join_steps_limit);
+                buildQueryGraph(child_graph, *join_node, nodes, join_steps_limit);
+
+                if (expression_step)
+                {
+                    ActionsDAG::NodeMapping node_mapping;
+                    child_graph.expression_actions.getActionsDAG()->mergeInplace(std::move(expression_step->getExpression()), node_mapping, true);
+                }
+
                 size_t count = child_graph.inputs.size();
                 uniteGraphs(graph, std::move(child_graph));
                 return count;
             }
             /// Optimize child subplan before continuing to get size estimation
-            optimizeJoinLogicalImpl(child_join_step, *node, nodes, graph.context->optimization_settings);
+            optimizeJoinLogicalImpl(child_join_step, *join_node, nodes, graph.context->optimization_settings);
         }
     }
 
@@ -728,8 +749,50 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
 
     auto type_changing_sides = join_step->typeChangingSides();
     bool allow_left_subgraph = !type_changing_sides.contains(JoinTableSide::Left) && (isInnerOrCross(join_kind) || isLeft(join_kind));
-    size_t lhs_count = addChildQueryGraph(query_graph, lhs_plan, nodes, lhs_label, allow_left_subgraph ? join_steps_limit - 1 : 0);
     bool allow_right_subgraph = !type_changing_sides.contains(JoinTableSide::Right) && (isInnerOrCross(join_kind) || isRight(join_kind));
+
+    /// Check if flattening children would cause column name clashes between sides.
+    if (allow_left_subgraph || allow_right_subgraph)
+    {
+        auto get_exposed_columns = [&](QueryPlan::Node * plan, bool allow_flatten) -> NameSet
+        {
+            NameSet names;
+            auto * check = plan;
+            if (allow_flatten)
+            {
+                bool merge_expression_into_join = query_graph.context->optimization_settings.merge_expression_into_join;
+                auto * expr = typeid_cast<ExpressionStep *>(check->step.get());
+                if (expr && !expr->getExpression().hasArrayJoin()
+                    && (isPassthroughActions(expr->getExpression()) || merge_expression_into_join))
+                {
+                    check = check->children[0];
+                }
+                auto * js = typeid_cast<JoinStepLogical *>(check->step.get());
+                if (js && !js->isOptimized() && check->children.size() == 2)
+                {
+                    for (auto * child : check->children)
+                        for (const auto & col : *child->step->getOutputHeader())
+                            names.insert(col.name);
+                    return names;
+                }
+            }
+            for (const auto & col : *plan->step->getOutputHeader())
+                names.insert(col.name);
+            return names;
+        };
+
+        auto lhs_cols = get_exposed_columns(lhs_plan, allow_left_subgraph);
+        auto rhs_cols = get_exposed_columns(rhs_plan, allow_right_subgraph);
+
+        if (std::ranges::any_of(lhs_cols, [&](const auto & name) { return rhs_cols.contains(name); }))
+        {
+            LOG_DEBUG(getLogger("optimizeJoin"), "Column name clash detected between join sides, disabling subgraph flattening");
+            allow_left_subgraph = false;
+            allow_right_subgraph = false;
+        }
+    }
+
+    size_t lhs_count = addChildQueryGraph(query_graph, lhs_plan, nodes, lhs_label, allow_left_subgraph ? join_steps_limit - 1 : 0);
     size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label, allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0);
 
     size_t total_inputs = query_graph.inputs.size();
@@ -879,8 +942,14 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
                 if (!graph_edge)
                     continue;
                 auto edge_sources = graph_edge.getSourceRelations();
-                if (edge_sources.test(tainted_rel) && !edge_sources.test(null_rel))
-                    query_graph.pinned[graph_edge].set(null_rel);
+                if (!edge_sources.test(tainted_rel) || edge_sources.test(null_rel))
+                    continue;
+
+                auto pin_it = query_graph.pinned.find(graph_edge);
+                if (pin_it != query_graph.pinned.end() && pin_it->second.test(tainted_rel))
+                    continue;
+
+                query_graph.pinned[graph_edge].set(null_rel);
             }
         }
     }
@@ -1214,7 +1283,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                     {
                         auto mapped_it = join_expression_map.find(input_node);
                         if (mapped_it == join_expression_map.end())
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", input_node->result_name);
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in join expression map", input_node->result_name);
                         first_dropped_node = mapped_it->second;
                         first_dropped_node_pos = input_pos;
                     }
@@ -1224,9 +1293,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
                 auto mapped_it = join_expression_map.find(input_node);
                 if (mapped_it == join_expression_map.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", input_node->result_name);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in join expression map", input_node->result_name);
                 dag_outputs.push_back(mapped_it->second);
             }
+            auto actions_after_join = dag_outputs;
 
             /// Last step, output should correspond to the global actions DAG
             if (entry_idx == sequence.size() - 1)
@@ -1236,9 +1306,21 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 {
                     auto mapped_it = join_expression_map.find(output_node);
                     if (mapped_it == join_expression_map.end())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in join expression map", output_node->result_name);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in join expression map", output_node->result_name);
                     dag_outputs.push_back(mapped_it->second);
+                    /// Include COLUMN Const nodes (like `__join_result_dummy`) in actions_after_join.
+                    /// These are `fromNone` and will be placed in left_dag, ensuring the left pre-join
+                    /// always produces at least one output column (so blocks have correct row count).
+                    if (mapped_it->second->type == ActionsDAG::ActionType::COLUMN)
+                        actions_after_join.push_back(mapped_it->second);
                 }
+            }
+
+            if (actions_after_join.empty())
+            {
+                if (!first_dropped_node)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns returned from join: {}", current_dag->dumpDAG());
+                actions_after_join.push_back(first_dropped_node);
             }
 
             if (dag_outputs.empty())
@@ -1257,7 +1339,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 right_header_ptr,
                 std::move(join_operator),
                 std::move(current_expression_actions),
-                dag_outputs,
+                actions_after_join,
                 join_settings,
                 sorting_settings);
 
