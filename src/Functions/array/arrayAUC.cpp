@@ -256,6 +256,56 @@ public:
         return column_array;
     }
 
+    ColumnPtr normalizePartialOffsetsNullRows(
+        const ColumnArray & partial_offsets,
+        const ColumnUInt8 * null_map,
+        size_t input_rows_count) const
+    {
+        if (!null_map)
+            return partial_offsets.getPtr();
+
+        const auto & null_map_data = null_map->getData();
+        bool has_null_row = false;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            if (null_map_data[row])
+            {
+                has_null_row = true;
+                break;
+            }
+        }
+
+        if (!has_null_row)
+            return partial_offsets.getPtr();
+
+        const auto & source_offsets = partial_offsets.getOffsets();
+        const auto & source_data = partial_offsets.getData();
+
+        auto data = source_data.cloneEmpty();
+        auto offsets = ColumnArray::ColumnOffsets::create();
+        auto & offsets_data = offsets->getData();
+        offsets_data.reserve_exact(input_rows_count);
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            if (null_map_data[row])
+            {
+                for (size_t i = 0; i < array_partial_offsets_size; ++i)
+                    data->insertDefault();
+            }
+            else
+            {
+                const size_t previous_offset = row == 0 ? 0 : source_offsets[row - 1];
+                const size_t current_offset = source_offsets[row];
+                data->insertRangeFrom(source_data, previous_offset, current_offset - previous_offset);
+            }
+
+            offsets_data.push_back(data->size());
+        }
+
+        return ColumnArray::create(std::move(data), std::move(offsets));
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         size_t argument_count = arguments.size();
@@ -266,6 +316,15 @@ public:
 
         const ColumnArray * col_array1 = unwrapNullableArrayColumn(col1, null_map);
         const ColumnArray * col_array2 = unwrapNullableArrayColumn(col2, null_map);
+
+        /// Handle the 'arr_partial_offsets' argument (if passed)
+        ColumnPtr col_offsets = nullptr;
+        const ColumnArray * col_array_offsets = nullptr;
+        if (argument_count == array_partial_offsets_arg_index + 1)
+        {
+            col_offsets = arguments[array_partial_offsets_arg_index].column->convertToFullColumnIfConst();
+            col_array_offsets = unwrapNullableArrayColumn(col_offsets, null_map);
+        }
 
         const auto * row_null_map = null_map ? null_map.get() : nullptr;
         if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*col_array1, row_null_map, input_rows_count))
@@ -287,19 +346,15 @@ public:
         if (!is_pr && argument_count >= 3 && input_rows_count > 0)
             scale = arguments[2].column->getBool(0);
 
-        /// Handle the 'arr_partial_offsets' argument (if passed)
-        ColumnPtr col_offsets = nullptr;
-        const ColumnArray * col_array_offsets = nullptr;
         if (argument_count == array_partial_offsets_arg_index + 1)
         {
-            col_offsets = arguments[array_partial_offsets_arg_index].column->convertToFullColumnIfConst();
-            col_array_offsets = unwrapNullableArrayColumn(col_offsets, null_map);
-            row_null_map = null_map ? null_map.get() : nullptr;
+            col_offsets = normalizePartialOffsetsNullRows(*col_array_offsets, row_null_map, input_rows_count);
+            col_array_offsets = assert_cast<const ColumnArray *>(col_offsets.get());
 
             /// The partial offsets argument must be a column containing 3-elements (PR AUC) or 4-elements (ROC AUC) arrays on each row
             const auto & offsets = col_array_offsets->getOffsets();
 
-            if ((col_array_offsets->getData().size() != array_partial_offsets_size * input_rows_count) || (offsets.size() != input_rows_count))
+            if (offsets.size() != input_rows_count)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "{} argument (arr_partial_offsets) for function {} must contain Arrays of size {}",
