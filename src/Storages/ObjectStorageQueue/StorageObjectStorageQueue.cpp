@@ -76,6 +76,7 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
+    extern const SettingsUInt64 interactive_delay;
 }
 
 namespace FailPoints
@@ -151,6 +152,11 @@ namespace ErrorCodes
     extern const int KEEPER_EXCEPTION;
     extern const int QUERY_WAS_CANCELLED;
     extern const int TIMEOUT_EXCEEDED;
+}
+
+namespace ActionLocks
+{
+    extern const StorageActionBlockType StreamConsume;
 }
 
 namespace
@@ -530,6 +536,38 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
     LOG_TRACE(log, "Shut down storage");
 }
 
+ActionLock StorageObjectStorageQueue::getActionLock(StorageActionBlockType action_type)
+{
+    if (action_type == ActionLocks::StreamConsume)
+        return stream_control.block();
+    return {};
+}
+
+void StorageObjectStorageQueue::onActionLockRemove(StorageActionBlockType action_type)
+{
+    if (action_type == ActionLocks::StreamConsume)
+        triggerBackgroundActivity();
+}
+
+void StorageObjectStorageQueue::triggerBackgroundActivity()
+{
+    if (shutdown_called)
+        return;
+    for (auto & task : streaming_tasks)
+        task->schedule();
+}
+
+void StorageObjectStorageQueue::refreshBackgroundActivity()
+{
+    stream_control.requestRefreshOnce();
+    triggerBackgroundActivity();
+}
+
+void StorageObjectStorageQueue::cancelBackgroundActivity()
+{
+    stream_control.requestCancel();
+}
+
 void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
 {
     const auto prev_storage_id = getStorageID();
@@ -746,7 +784,18 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
     const auto storage_id = getStorageID();
 
-    if (getContext()->getS3QueueDisableStreaming())
+    if (!stream_control.shouldRunCycle())
+    {
+        /// SYSTEM STOP/PAUSE blocks polling: skip processing. SYSTEM START wakes the task promptly
+        /// via `onActionLockRemove`; meanwhile reschedule with a moderate period to avoid busy-looping.
+        static constexpr auto paused_reschedule_period = 5000;
+
+        LOG_TRACE(log, "Background consumption is stopped, rescheduling next check in {} ms", paused_reschedule_period);
+
+        std::lock_guard lock(mutex);
+        reschedule_processing_interval_ms = paused_reschedule_period;
+    }
+    else if (getContext()->getS3QueueDisableStreaming())
     {
         static constexpr auto disabled_streaming_reschedule_period = 5000;
 
@@ -824,6 +873,10 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
 
+    /// A fresh round of consumption starts: clear any pending SYSTEM CANCEL/STOP interrupt request
+    /// so it only affects the poll that was in flight when it was issued.
+    stream_control.resetCancel();
+
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
@@ -870,7 +923,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
         threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
 
-    while (!shutdown_called && !file_iterator->isFinished())
+    while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested())
     {
         /// All tasks share a single batch size override so that the halving
         /// converges regardless of which task encounters the bad file.
@@ -941,7 +994,15 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         try
         {
             CompletedPipelineExecutor executor(block_io.pipeline);
+            executor.setCancelCallback(
+                [this] { return stream_control.isCancelRequested(); },
+                std::max<UInt64>(100, queue_context->getSettingsRef()[Setting::interactive_delay] / 1000));
             executor.execute();
+
+            /// If the pipeline was cancelled because of an interrupt request, route to the failure
+            /// path below so the files are reset for reprocessing instead of marked Processed.
+            if (stream_control.isCancelRequested())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Consumption was interrupted");
         }
         catch (...)
         {

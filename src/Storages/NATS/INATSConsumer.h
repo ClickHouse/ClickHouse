@@ -17,6 +17,7 @@ namespace DB
 {
 
 using NATSSubscriptionPtr = std::unique_ptr<natsSubscription, decltype(&natsSubscription_Destroy)>;
+using NatsMsgPtr = std::unique_ptr<natsMsg, decltype(&natsMsg_Destroy)>;
 
 class INATSConsumer
 {
@@ -34,11 +35,16 @@ public:
     {
         String message;
         String subject;
+        /// Only kept for JetStream, null for core NATS, which has no ack.
+        NatsMsgPtr msg{nullptr, &natsMsg_Destroy};
     };
 
     bool isSubscribed() const;
     virtual void subscribe() = 0;
     void unsubscribe();
+
+    void ackConsumed();
+    void dropConsumed();
 
     size_t subjectsCount() { return subjects.size(); }
 
@@ -53,6 +59,7 @@ public:
     /// Return read buffer containing next available message
     /// or nullptr if there are no messages to process.
     ReadBufferPtr consume();
+    ReadBufferPtr consume(UInt64 timeout_ms);
 
 protected:
     const NATSConnectionPtr & getConnection() { return connection; }
@@ -67,6 +74,8 @@ protected:
 
     static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * consumer);
 
+    virtual bool needsAck() const { return false; }
+
 private:
     NATSConnectionPtr connection;
     std::vector<NATSSubscriptionPtr> subscriptions;
@@ -78,6 +87,7 @@ private:
 
     ConcurrentBoundedQueue<MessageData> received;
     MessageData current;
+    std::vector<NatsMsgPtr> consumed_messages;
 };
 
 }

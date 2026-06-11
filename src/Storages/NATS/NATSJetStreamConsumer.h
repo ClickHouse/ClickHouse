@@ -25,6 +25,8 @@ public:
 
     void subscribe() override;
 
+    bool needsAck() const override { return true; }
+
 protected:
     NATSSubscriptionPtr subscribeToSubject(const String & subject);
 

@@ -38,6 +38,7 @@ public:
     void updateChannel();
     bool sendAck();
     bool sendNack();
+    bool sendRequeue();
 
 private:
     StorageRabbitMQ & storage;

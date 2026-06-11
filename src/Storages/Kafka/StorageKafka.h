@@ -5,7 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Storages/Kafka/Kafka_fwd.h>
-#include <Common/ActionBlocker.h>
+#include <Storages/StreamingBackgroundControl.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadPool_fwd.h>
@@ -54,6 +54,8 @@ public:
 
     bool isMessageQueue() const override { return true; }
 
+    bool isStreamingStorage() const override { return true; }
+
     bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
@@ -62,8 +64,9 @@ public:
     ActionLock getActionLock(StorageActionBlockType action_type) override;
     void onActionLockRemove(StorageActionBlockType action_type) override;
     void triggerBackgroundActivity() override;
+    void refreshBackgroundActivity() override;
     void cancelBackgroundActivity() override;
-    bool isConsumeCancelRequested() const { return consume_cancel_requested.load(); }
+    bool isConsumeCancelRequested() const { return stream_control.isCancelRequested(); }
 
     void renameInMemory(const StorageID & new_table_id) override;
 
@@ -165,8 +168,7 @@ private:
 
     std::atomic<bool> shutdown_called = false;
 
-    ActionBlocker stream_consume_blocker;
-    std::atomic<bool> consume_cancel_requested = false;
+    StreamingBackgroundControl stream_control;
 
     void threadFunc(size_t idx);
 

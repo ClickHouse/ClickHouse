@@ -9,6 +9,7 @@
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <Storages/RabbitMQ/RabbitMQ_fwd.h>
+#include <Storages/StreamingBackgroundControl.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
 #include <uv.h>
@@ -37,10 +38,19 @@ public:
 
     bool isMessageQueue() const override { return true; }
 
+    bool isStreamingStorage() const override { return true; }
+
     bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
+
+    ActionLock getActionLock(StorageActionBlockType action_type) override;
+    void onActionLockRemove(StorageActionBlockType action_type) override;
+    void triggerBackgroundActivity() override;
+    void refreshBackgroundActivity() override;
+    void cancelBackgroundActivity() override;
+    bool isConsumeCancelRequested() const { return stream_control.isCancelRequested(); }
 
     void renameInMemory(const StorageID & new_table_id) override;
 
@@ -160,6 +170,8 @@ private:
     std::atomic<size_t> readers_count = 0;
     std::atomic<bool> mv_attached = false;
 
+    StreamingBackgroundControl stream_control;
+
     /// In select query we start event loop, but do not stop it
     /// after that select is finished. Then in a thread, which
     /// checks for MV we also check if we have select readers.
@@ -175,7 +187,7 @@ private:
     std::atomic<bool> initialized = false;
 
     /// Functions working in the background
-    void streamingToViewsFunc();
+    void threadFunc();
     void loopingFunc();
     void connectionFunc();
 
@@ -197,9 +209,8 @@ private:
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
-    void streamToViewsImpl();
     /// Return true on successful stream attempt.
-    bool tryStreamToViews();
+    bool streamToViews();
     bool hasDependencies(const StorageID & table_id);
 
     static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);

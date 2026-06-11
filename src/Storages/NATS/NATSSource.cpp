@@ -14,6 +14,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMilliseconds rabbitmq_max_wait_ms;
+    extern const SettingsUInt64 interactive_delay;
 }
 
 static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
@@ -72,6 +73,8 @@ NATSSource::~NATSSource()
 
     if (unsubscribe_on_destroy)
         consumer->unsubscribe();
+
+    consumer->dropConsumed();
 
     storage.pushConsumer(consumer);
 }
@@ -142,15 +145,32 @@ Chunk NATSSource::generate()
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
+    bool aborted = false;
+
     while (true)
     {
-        if (consumer->queueEmpty())
+        if (storage.isConsumeCancelRequested())
+        {
+            aborted = true;
+            break;
+        }
+
+        if (consumer->isConsumerStopped() || !checkTimeLimit())
             break;
 
         exception_message.reset();
         size_t new_rows = 0;
-        if (auto buf = consumer->consume())
+
+        ReadBufferPtr buf;
+        if (wait_for_flush_interval)
+            buf = consumer->consume(std::max<UInt64>(100, context->getSettingsRef()[Setting::interactive_delay] / 1000));
+        else
+            buf = consumer->consume();
+
+        if (buf)
             new_rows = executor.execute(*buf);
+        else if (!wait_for_flush_interval)
+            break;
 
         if (new_rows)
         {
@@ -175,11 +195,12 @@ Chunk NATSSource::generate()
             total_rows = total_rows + new_rows;
         }
 
-        if (total_rows >= max_block_size || consumer->queueEmpty() || consumer->isConsumerStopped() || !checkTimeLimit())
+        if (total_rows >= max_block_size)
             break;
     }
 
-    if (total_rows == 0)
+    /// Discard the in-flight block on abort, the rows read this cycle are not pushed to the views.
+    if (aborted || total_rows == 0)
         return {};
 
     auto result_columns = executor.getResultColumns();

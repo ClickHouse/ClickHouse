@@ -969,7 +969,7 @@ BlockIO InterpreterSystemQuery::execute()
             for (const auto & task : getAccessibleRefreshTasks())
                 task->run();
             for (const auto & streaming_storage : getAccessibleStreamingStorages())
-                streaming_storage->triggerBackgroundActivity();
+                streaming_storage->refreshBackgroundActivity();
             break;
         case Type::DROP_REPLICA:
             dropReplica(query);
@@ -2407,7 +2407,7 @@ std::vector<StoragePtr> InterpreterSystemQuery::getAccessibleStreamingStorages()
         for (auto iterator = elem.second->getTablesIterator(ctx); iterator->isValid(); iterator->next())
         {
             StoragePtr table = iterator->table();
-            if (table && table->isMessageQueue()
+            if (table && table->isStreamingStorage()
                 && access->isGranted(AccessType::SYSTEM_BACKGROUND, database_name, iterator->name()))
                 result.push_back(table);
         }
@@ -2421,7 +2421,7 @@ void InterpreterSystemQuery::controlBackgroundActivity(ASTSystemQuery & query)
     const auto type = query.type;
     auto storage = DatabaseCatalog::instance().getTable(table_id, getContext());
 
-    if (storage->isMessageQueue())
+    if (storage->isStreamingStorage())
     {
         /// Streaming engines, guarded by SYSTEM BACKGROUND
         switch (type)
@@ -2442,7 +2442,7 @@ void InterpreterSystemQuery::controlBackgroundActivity(ASTSystemQuery & query)
                 break;
             case Type::REFRESH:
                 getContext()->checkAccess(AccessType::SYSTEM_BACKGROUND, table_id);
-                storage->triggerBackgroundActivity();
+                storage->refreshBackgroundActivity();
                 break;
             default:
                 break;

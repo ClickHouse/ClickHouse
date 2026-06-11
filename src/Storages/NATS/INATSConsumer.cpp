@@ -47,28 +47,61 @@ ReadBufferPtr INATSConsumer::consume()
     if (stopped || !received.tryPop(current))
         return nullptr;
 
+    if (current.msg)
+        consumed_messages.push_back(std::move(current.msg));
+
     return std::make_shared<ReadBufferFromMemory>(current.message);
+}
+
+ReadBufferPtr INATSConsumer::consume(UInt64 timeout_ms)
+{
+    if (stopped || !received.tryPop(current, timeout_ms))
+        return nullptr;
+
+    if (current.msg)
+        consumed_messages.push_back(std::move(current.msg));
+
+    return std::make_shared<ReadBufferFromMemory>(current.message);
+}
+
+void INATSConsumer::ackConsumed()
+{
+    for (auto & msg : consumed_messages)
+        natsMsg_Ack(msg.get(), nullptr);
+    consumed_messages.clear();
+}
+
+void INATSConsumer::dropConsumed()
+{
+    /// Release without acking, for JetStream the server redelivers these messages.
+    consumed_messages.clear();
 }
 
 void INATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, void * consumer)
 {
     auto * nats_consumer = static_cast<INATSConsumer *>(consumer);
-    const int msg_length = natsMsg_GetDataLength(msg);
 
+    /// For JetStream, keep the message so it can be acknowledged only after it has been inserted.
+    /// For core NATS there is no ack, so it is destroyed right away.
+    NatsMsgPtr owned_msg(nats_consumer->needsAck() ? msg : nullptr, &natsMsg_Destroy);
+
+    const int msg_length = natsMsg_GetDataLength(msg);
     if (msg_length)
     {
-        String message_received = std::string(natsMsg_GetData(msg), msg_length);
-        String subject = natsMsg_GetSubject(msg);
-
         MessageData data = {
-            .message = message_received,
-            .subject = subject,
+            .message = std::string(natsMsg_GetData(msg), msg_length),
+            .subject = natsMsg_GetSubject(msg),
+            .msg = std::move(owned_msg),
         };
         if (!nats_consumer->received.push(std::move(data)))
             throw Exception(ErrorCodes::INVALID_STATE, "Could not push to received queue");
     }
 
-    natsMsg_Destroy(msg);
+    if (!nats_consumer->needsAck())
+        natsMsg_Destroy(msg);                 /// core NATS: we own the message and never ack it
+    else if (msg_length == 0)
+        natsMsg_Ack(owned_msg.get(), nullptr); /// empty JetStream message: ack so it is not redelivered
+    /// else (JetStream with payload): ownership moved into the queue, acked after insertion
 }
 
 }

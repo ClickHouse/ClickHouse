@@ -125,6 +125,93 @@ def test_system_refresh_consuming(started_cluster):
     wait_dst_count(node, table, 10 * ROWS_PER_FILE)
 
 
+def test_refresh_runs_once_while_start_keeps_consuming(started_cluster):
+    # REFRESH runs exactly one processing cycle out of order without resuming polling; START resumes
+    # continuous polling. With the stream STOPped, a single REFRESH processes exactly the files
+    # present at that moment, and files added afterwards stay unprocessed until START — whereas after
+    # START every later batch is processed without any further command.
+    node = started_cluster.instances["instance"]
+    table = f"s3queue_refreshonce_{generate_random_string()}"
+    files_path = setup_consuming_table(started_cluster, node, table)
+
+    node.query(f"SYSTEM STOP {table}")
+
+    # First batch, then one REFRESH: the single cycle processes exactly these files.
+    generate_random_files(started_cluster, files_path, count=5, start_ind=0)
+    node.query(f"SYSTEM REFRESH {table}")
+    wait_dst_count(node, table, 5 * ROWS_PER_FILE)
+
+    # Second batch, no further REFRESH: polling is still stopped, so REFRESH having run once does not
+    # keep processing — these files stay unprocessed.
+    generate_random_files(started_cluster, files_path, count=5, start_ind=5)
+    assert_dst_count_stable(node, table, 5 * ROWS_PER_FILE)
+
+    # START resumes continuous polling: the pending files are processed and later batches keep being
+    # processed "forever" without any further command.
+    node.query(f"SYSTEM START {table}")
+    wait_dst_count(node, table, 10 * ROWS_PER_FILE)
+    generate_random_files(started_cluster, files_path, count=5, start_ind=10)
+    wait_dst_count(node, table, 15 * ROWS_PER_FILE)
+
+
+def test_stop_aborts_inflight_batch_pause_commits_it(started_cluster):
+    # The durable boundary for S3Queue is a file being marked Processed in Keeper. PAUSE lets the
+    # in-flight batch reach it (files committed); STOP aborts before it, so the files are left
+    # Cancelled (reset, not Failed) and reprocessed on resume. A materialized view that sleeps per
+    # row keeps the batch in-flight long enough for the command to arrive mid-processing.
+    node = started_cluster.instances["instance"]
+    n_files = 10
+    for verb in ["PAUSE", "STOP"]:
+        table = f"s3queue_inflight_{verb.lower()}_{generate_random_string()}"
+        files_path = f"{table}_data"
+        # A large commit threshold keeps all files in a single batch (one commit), so STOP aborts the
+        # whole in-flight batch rather than just the file being read. A single processing thread keeps
+        # the files strictly sequential so the slow materialized view actually stretches the batch
+        # out in time (otherwise the files are processed in parallel and the batch finishes before the
+        # command arrives).
+        create_table(
+            started_cluster,
+            node,
+            table,
+            "unordered",
+            files_path,
+            additional_settings={
+                "max_processed_files_before_commit": 1000,
+                "processing_threads_num": 1,
+            },
+        )
+        node.query(f"DROP TABLE IF EXISTS {table}_dst")
+        node.query(
+            f"CREATE TABLE {table}_dst (column1 UInt32, column2 UInt32, column3 UInt32) "
+            f"ENGINE = MergeTree ORDER BY column1"
+        )
+        # `sleepEachRow` slows the per-file blocks (0.1s * 10 rows = 1s/file, under the per-block
+        # sleep limit) so the batch stays in-flight for ~n_files seconds.
+        node.query(
+            f"CREATE MATERIALIZED VIEW {table}_mv TO {table}_dst AS "
+            f"SELECT column1, column2, column3 FROM {table} WHERE sleepEachRow(0.1) = 0"
+        )
+
+        # Pre-load while halted, then resume so a fresh batch opens over all the files and processes
+        # them slowly; the files are not marked Processed until the batch commits.
+        node.query(f"SYSTEM STOP {table}")
+        generate_random_files(started_cluster, files_path, count=n_files, start_ind=0)
+        node.query(f"SYSTEM START {table}")
+
+        time.sleep(3)  # the batch is now in-flight: files being read, none committed yet
+        node.query(f"SYSTEM {verb} {table}")
+
+        if verb == "PAUSE":
+            # The in-flight batch finishes and commits on its own, without START.
+            wait_dst_count(node, table, n_files * ROWS_PER_FILE)
+        else:
+            # The in-flight batch is aborted before any file is marked Processed, so nothing is
+            # visible until START reprocesses the reset files.
+            assert_dst_count_stable(node, table, 0, seconds=10)
+            node.query(f"SYSTEM START {table}")
+            wait_dst_count(node, table, n_files * ROWS_PER_FILE)
+
+
 def test_system_stop_all_background(started_cluster):
     node = started_cluster.instances["instance"]
     table = f"s3queue_allbg_{generate_random_string()}"

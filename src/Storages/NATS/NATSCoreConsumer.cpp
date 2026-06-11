@@ -28,6 +28,12 @@ void NATSCoreConsumer::subscribe()
 
         natsSubscription_SetPendingLimits(subscription, -1, -1);
     }
+
+    /// Prevent early message loss by forcing the server to process the async subscription.
+    auto status = natsConnection_Flush(getNativeConnection());
+    if (status != NATS_OK)
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Failed to flush subscriptions for consumer {}", static_cast<void*>(this));
+
     LOG_DEBUG(getLogger(), "Consumer {} subscribed to {} subjects", static_cast<void*>(this), created_subscriptions.size());
 
     setSubscriptions(std::move(created_subscriptions));

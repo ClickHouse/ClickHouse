@@ -13,6 +13,7 @@
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StreamingBackgroundControl.h>
 #include <base/defines.h>
 
 
@@ -39,7 +40,16 @@ public:
 
     String getName() const override { return engine_name; }
 
+    bool isStreamingStorage() const override { return true; }
+
     ObjectStorageType getType() { return type; }
+
+    ActionLock getActionLock(StorageActionBlockType action_type) override;
+    void onActionLockRemove(StorageActionBlockType action_type) override;
+    void triggerBackgroundActivity() override;
+    void refreshBackgroundActivity() override;
+    void cancelBackgroundActivity() override;
+    bool isConsumeCancelRequested() const { return stream_control.isCancelRequested(); }
 
     void read(
         QueryPlan & query_plan,
@@ -159,6 +169,8 @@ private:
     std::atomic<bool> shutdown_called = false;
     std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;
+
+    StreamingBackgroundControl stream_control;
 
     mutable std::mutex streaming_mutex;
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;

@@ -100,6 +100,11 @@ namespace ErrorCodes
     extern const int QUERY_NOT_ALLOWED;
 }
 
+namespace ActionLocks
+{
+    extern const StorageActionBlockType StreamConsume;
+}
+
 namespace ExchangeType
 {
     /// Note that default here means default by implementation and not by rabbitmq settings
@@ -248,7 +253,7 @@ StorageRabbitMQ::StorageRabbitMQ(
     looping_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "RabbitMQLoopingTask", [this]{ loopingFunc(); });
     looping_task->deactivate();
 
-    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "RabbitMQStreamingTask", [this]{ streamingToViewsFunc(); });
+    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "RabbitMQStreamingTask", [this]{ threadFunc(); });
     streaming_task->deactivate();
 
     init_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "RabbitMQConnectionTask", [this]{ connectionFunc(); });
@@ -896,6 +901,37 @@ void StorageRabbitMQ::startup()
     StreamingStorageRegistry::instance().registerTable(getStorageID());
 }
 
+ActionLock StorageRabbitMQ::getActionLock(StorageActionBlockType action_type)
+{
+    if (action_type == ActionLocks::StreamConsume)
+        return stream_control.block();
+    return {};
+}
+
+void StorageRabbitMQ::onActionLockRemove(StorageActionBlockType action_type)
+{
+    if (action_type == ActionLocks::StreamConsume)
+        triggerBackgroundActivity();
+}
+
+void StorageRabbitMQ::triggerBackgroundActivity()
+{
+    if (shutdown_called)
+        return;
+    streaming_task->schedule();
+}
+
+void StorageRabbitMQ::refreshBackgroundActivity()
+{
+    stream_control.requestRefreshOnce();
+    triggerBackgroundActivity();
+}
+
+void StorageRabbitMQ::cancelBackgroundActivity()
+{
+    stream_control.requestCancel();
+}
+
 
 void StorageRabbitMQ::shutdown(bool)
 {
@@ -1059,11 +1095,55 @@ bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
     return !DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext()).empty();
 }
 
-void StorageRabbitMQ::streamingToViewsFunc()
+void StorageRabbitMQ::threadFunc()
 {
     try
     {
-        streamToViewsImpl();
+        if (initialized)
+        {
+            auto table_id = getStorageID();
+
+            // Check if at least one direct dependency is attached
+            size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+            bool rabbit_connected = connection->isConnected() || connection->reconnect();
+
+            if (num_views && rabbit_connected && stream_control.shouldRunCycle())
+            {
+                auto start_time = std::chrono::steady_clock::now();
+
+                mv_attached.store(true);
+
+                // Keep streaming as long as there are attached views and streaming is not cancelled
+                while (!shutdown_called && num_created_consumers > 0)
+                {
+                    if (!hasDependencies(table_id))
+                        break;
+
+                    LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
+
+                    bool continue_reading = streamToViews();
+                    if (!continue_reading)
+                        break;
+
+                    if (stream_control.isBlocked())
+                        break;
+
+                    auto end_time = std::chrono::steady_clock::now();
+                    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+                    if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
+                    {
+                        LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
+                        break;
+                    }
+
+                    milliseconds_to_wait = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms];
+                }
+            }
+        }
+        else
+        {
+            chassert(false);
+        }
     }
     catch (...)
     {
@@ -1099,53 +1179,11 @@ void StorageRabbitMQ::streamingToViewsFunc()
     }
 }
 
-void StorageRabbitMQ::streamToViewsImpl()
+bool StorageRabbitMQ::streamToViews()
 {
-    if (!initialized)
-    {
-        chassert(false);
-        return;
-    }
 
-    auto table_id = getStorageID();
+    stream_control.resetCancel();
 
-    // Check if at least one direct dependency is attached
-    size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-    bool rabbit_connected = connection->isConnected() || connection->reconnect();
-
-    if (num_views && rabbit_connected)
-    {
-        auto start_time = std::chrono::steady_clock::now();
-
-        mv_attached.store(true);
-
-        // Keep streaming as long as there are attached views and streaming is not cancelled
-        while (!shutdown_called && num_created_consumers > 0)
-        {
-            if (!hasDependencies(table_id))
-                break;
-
-            LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
-
-            bool continue_reading = tryStreamToViews();
-            if (!continue_reading)
-                break;
-
-            auto end_time = std::chrono::steady_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-            if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
-            {
-                LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
-                break;
-            }
-
-            milliseconds_to_wait = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms];
-        }
-    }
-}
-
-bool StorageRabbitMQ::tryStreamToViews()
-{
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
@@ -1225,6 +1263,8 @@ bool StorageRabbitMQ::tryStreamToViews()
 
     LOG_TRACE(log, "Processed {} rows", rows.load());
 
+    const bool aborted = isConsumeCancelRequested();
+
     /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
      * error occurs or connection is lost while ack is being sent
      */
@@ -1253,7 +1293,8 @@ bool StorageRabbitMQ::tryStreamToViews()
     }
     else
     {
-        LOG_TEST(log, "Will {} messages for {} channels", write_failed ? "nack" : "ack", sources.size());
+        LOG_TEST(log, "Will {} messages for {} channels",
+            aborted ? "requeue" : (write_failed ? "nack" : "ack"), sources.size());
 
         /// Commit
         for (auto & source : sources)
@@ -1280,7 +1321,9 @@ bool StorageRabbitMQ::tryStreamToViews()
                 *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
                 *    will ever happen.
                 */
-                if (write_failed ? source->sendNack() : source->sendAck())
+                bool send_result = aborted ? source->sendRequeue()
+                                           : (write_failed ? source->sendNack() : source->sendAck());
+                if (send_result)
                 {
                     /// Iterate loop to activate error callbacks if they happened
                     connection->getHandler().iterateLoop();
@@ -1291,6 +1334,12 @@ bool StorageRabbitMQ::tryStreamToViews()
                 connection->getHandler().iterateLoop();
             }
         }
+    }
+
+    if (aborted)
+    {
+        LOG_TRACE(log, "Consumption interrupted, reschedule");
+        return true;
     }
 
     if (write_failed)

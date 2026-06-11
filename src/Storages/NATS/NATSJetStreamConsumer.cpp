@@ -52,6 +52,7 @@ void NATSJetStreamConsumer::subscribe()
 
     subscribe_options.Stream = stream_name.c_str();
     subscribe_options.Consumer = consumer_name.c_str();
+    subscribe_options.ManualAck = true;
 
     if (!getQueueName().empty())
         subscribe_options.Queue = getQueueName().c_str();

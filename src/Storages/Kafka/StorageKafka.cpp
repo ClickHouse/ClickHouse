@@ -310,7 +310,7 @@ void StorageKafka::startup()
 ActionLock StorageKafka::getActionLock(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::StreamConsume)
-        return stream_consume_blocker.cancel();
+        return stream_control.block();
     return {};
 }
 
@@ -322,13 +322,21 @@ void StorageKafka::onActionLockRemove(StorageActionBlockType action_type)
 
 void StorageKafka::triggerBackgroundActivity()
 {
+    if (shutdown_called)
+        return;
     for (auto & task : tasks)
         task->holder->schedule();
 }
 
+void StorageKafka::refreshBackgroundActivity()
+{
+    stream_control.requestRefreshOnce();
+    triggerBackgroundActivity();
+}
+
 void StorageKafka::cancelBackgroundActivity()
 {
-    consume_cancel_requested = true;
+    stream_control.requestCancel();
 }
 
 
@@ -636,14 +644,14 @@ void StorageKafka::threadFunc(size_t idx)
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-        if (num_views && !stream_consume_blocker.isCancelled())
+        if (num_views && stream_control.shouldRunCycle())
         {
             auto start_time = std::chrono::steady_clock::now();
 
             mv_attached.store(true);
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
-            while (!task->stream_cancelled && !stream_consume_blocker.isCancelled())
+            while (!task->stream_cancelled)
             {
                 if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
                 {
@@ -660,6 +668,9 @@ void StorageKafka::threadFunc(size_t idx)
                     LOG_TRACE(log, "Stream(s) stalled. Rescheduling in {} ms.", (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
                     break;
                 }
+
+                if (stream_control.isBlocked())
+                    break;
 
                 auto ts = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time);
@@ -702,7 +713,7 @@ void StorageKafka::threadFunc(size_t idx)
 bool StorageKafka::streamToViews()
 {
     Stopwatch watch;
-    consume_cancel_requested = false;
+    stream_control.resetCancel();
 
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());

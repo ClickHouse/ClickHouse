@@ -18,18 +18,30 @@ NATS_DIR="$CERT_DIR/nats"
 mkdir -p "$CA_DIR" "$NATS_DIR"
 
 # 1. CA private key + self-signed certificate.
+#    OpenSSL 3.x strict verification (used by the Python `ssl` module) requires a CA
+#    certificate to carry `basicConstraints=CA:TRUE` together with a `keyUsage` extension
+#    that includes `keyCertSign`; otherwise the client rejects the chain with
+#    "CA cert does not include key usage extension".
 openssl req -newkey rsa:4096 -x509 -days 3650 -nodes -batch \
     -keyout "$CA_DIR/ca-key.pem" -out "$CA_DIR/ca-cert.pem" \
-    -subj "/O=ClickHouse/CN=nats-test-ca"
+    -subj "/O=ClickHouse/CN=nats-test-ca" \
+    -addext "basicConstraints=critical,CA:TRUE" \
+    -addext "keyUsage=critical,keyCertSign,cRLSign"
 
 # 2. Server private key + certificate signing request.
 openssl req -newkey rsa:4096 -nodes -batch \
     -keyout "$NATS_DIR/server-key.pem" -out "$NATS_DIR/server-req.pem" \
     -subj "/O=ClickHouse/CN=nats1"
 
-# 3. Sign the server CSR with the CA, adding SANs for the broker hostname and localhost.
+# 3. Sign the server CSR with the CA, adding SANs for the broker hostname and localhost
+#    plus the key usages a TLS server certificate needs for strict verification.
 SAN_CNF="$NATS_DIR/server-ext.cnf"
-printf "subjectAltName=DNS:nats1,DNS:localhost,IP:127.0.0.1\n" > "$SAN_CNF"
+cat > "$SAN_CNF" <<'EOF'
+subjectAltName=DNS:nats1,DNS:localhost,IP:127.0.0.1
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+EOF
 openssl x509 -req -days 3650 -in "$NATS_DIR/server-req.pem" \
     -CA "$CA_DIR/ca-cert.pem" -CAkey "$CA_DIR/ca-key.pem" -CAcreateserial \
     -extfile "$SAN_CNF" -out "$NATS_DIR/server-cert.pem"

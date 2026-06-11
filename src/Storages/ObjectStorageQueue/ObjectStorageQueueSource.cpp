@@ -1048,8 +1048,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
             }
 
             auto started_file = processed_files.back().metadata;
-            /// Something must have been already read.
-            chassert(started_file->getFileStatus()->processed_rows > 0);
             /// Mark file as Cancelled, such files will not be set as Failed.
             processed_files.back().state = FileState::Cancelled;
             /// Throw exception to avoid inserting half processed file to destination table.

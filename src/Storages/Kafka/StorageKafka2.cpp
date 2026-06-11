@@ -592,7 +592,7 @@ void StorageKafka2::startup()
 ActionLock StorageKafka2::getActionLock(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::StreamConsume)
-        return stream_consume_blocker.cancel();
+        return stream_control.block();
     return {};
 }
 
@@ -604,13 +604,21 @@ void StorageKafka2::onActionLockRemove(StorageActionBlockType action_type)
 
 void StorageKafka2::triggerBackgroundActivity()
 {
+    if (shutdown_called)
+        return;
     for (auto & task : tasks)
         task->holder->schedule();
 }
 
+void StorageKafka2::refreshBackgroundActivity()
+{
+    stream_control.requestRefreshOnce();
+    triggerBackgroundActivity();
+}
+
 void StorageKafka2::cancelBackgroundActivity()
 {
-    consume_cancel_requested = true;
+    stream_control.requestCancel();
 }
 
 
@@ -1200,7 +1208,7 @@ void StorageKafka2::threadFunc(size_t idx)
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-        if (num_views && !stream_consume_blocker.isCancelled())
+        if (num_views && stream_control.shouldRunCycle())
         {
             /// Atomically check that no direct readers are active and register this MV streamer.
             /// This is done under consumers_mutex to prevent a TOCTOU race with makePipe,
@@ -1224,7 +1232,7 @@ void StorageKafka2::threadFunc(size_t idx)
                 auto start_time = std::chrono::steady_clock::now();
 
                 // Keep streaming as long as there are attached views and streaming is not cancelled
-                while (!task->stream_cancelled && num_created_consumers > 0 && !stream_consume_blocker.isCancelled())
+                while (!task->stream_cancelled && num_created_consumers > 0)
                 {
                     maybe_stall_reason.reset();
                     if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
@@ -1244,6 +1252,9 @@ void StorageKafka2::threadFunc(size_t idx)
                             (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
                         break;
                     }
+
+                    if (stream_control.isBlocked())
+                        break;
 
                     auto ts = std::chrono::steady_clock::now();
                     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
@@ -1281,7 +1292,7 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::streamToViews");
 
-    consume_cancel_requested = false;
+    stream_control.resetCancel();
     // This function is written assuming that each consumer has their own thread. This means once this is changed, this
     // function should be revisited. The return values should be revisited, as stalling all consumers because of a
     // single one stalled is not a good idea.

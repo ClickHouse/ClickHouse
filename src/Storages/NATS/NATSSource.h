@@ -31,6 +31,8 @@ public:
 
     void setTimeLimit(Poco::Timespan max_execution_time_) { max_execution_time = max_execution_time_; }
 
+    void setWaitForFlushInterval(bool value) { wait_for_flush_interval = value; }
+
 private:
     bool checkTimeLimit() const;
 
@@ -49,6 +51,7 @@ private:
     bool unsubscribe_on_destroy = false;
 
     Poco::Timespan max_execution_time = 0;
+    bool wait_for_flush_interval = false;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
     NATSSource(

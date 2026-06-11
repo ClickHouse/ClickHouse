@@ -215,9 +215,17 @@ Chunk RabbitMQSource::generateImpl()
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
+    bool aborted = false;
+
     /// Channel id will not change during read.
     while (true)
     {
+        if (storage.isConsumeCancelRequested())
+        {
+            aborted = true;
+            break;
+        }
+
         exception_message.reset();
         size_t new_rows = 0;
         is_dead_letter = false;
@@ -234,7 +242,7 @@ Chunk RabbitMQSource::generateImpl()
                 catch (...)
                 {
                     /// The message was already dequeued by `consume`. Record its
-                    /// delivery tag so that `nackMessages` in `tryStreamToViews`
+                    /// delivery tag so that `nackMessages` in `streamToViews`
                     /// can properly reject it. Without this, the tag is lost and
                     /// the message stays unacked in RabbitMQ forever.
                     /// See https://github.com/ClickHouse/ClickHouse/issues/73541
@@ -358,6 +366,12 @@ Chunk RabbitMQSource::generateImpl()
         }
     }
 
+    if (aborted)
+    {
+        LOG_TRACE(log, "Consumption interrupted: discarding in-flight block of {} rows", total_rows);
+        return {};
+    }
+
     LOG_TEST(
         log,
         "Flushing {} rows (max block size: {}, time: {} / {} ms)",
@@ -385,6 +399,11 @@ bool RabbitMQSource::sendAck()
 bool RabbitMQSource::sendNack()
 {
     return consumer && consumer->nackMessages(commit_info);
+}
+
+bool RabbitMQSource::sendRequeue()
+{
+    return consumer && consumer->requeueMessages(commit_info);
 }
 
 }

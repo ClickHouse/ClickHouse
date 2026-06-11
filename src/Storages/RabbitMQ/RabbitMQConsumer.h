@@ -68,6 +68,8 @@ public:
 
     bool ackMessages(const CommitInfo & commit_info);
     bool nackMessages(const CommitInfo & commit_info);
+    /// Reject the messages up to `commit_info.delivery_tag` and ask the broker to requeue them
+    bool requeueMessages(const CommitInfo & commit_info);
 
     bool hasPendingMessages() { return !received.empty(); }
 
