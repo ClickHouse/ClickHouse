@@ -113,9 +113,10 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
 
 DataTypePtr NullableSubcolumnCreator::create(const DataTypePtr & prev) const
 {
-    if (!canExtractedSubcolumnsBeInsideNullable(prev))
-        return prev;
-    return makeNullableSafe(prev);
+    /// A non-nullable `LowCardinality(T)` element cannot be wrapped in `Nullable`, but it must still
+    /// be able to represent the outer tuple's NULLs, so it is promoted to `LowCardinality(Nullable(T))`.
+    /// For every other type this matches the previous `canBeInsideNullable ? makeNullableSafe : prev`.
+    return makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(prev);
 }
 
 SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const
@@ -154,11 +155,20 @@ ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
             return ColumnNullable::create(prev_nullable->getNestedColumnPtr(), std::move(combined_null_map));
         }
 
-        /// `LowCardinality(Nullable(T))` carries nullability via its dictionary, not an
-        /// `IColumn::isNullable`/`ColumnNullable` wrapper, so it reaches here unchanged. Fold the
-        /// outer mask into it by repointing the outer-`NULL` rows at the dictionary's null index.
-        if (const auto * prev_lc = checkAndGetColumn<ColumnLowCardinality>(prev.get()); prev_lc && prev_lc->nestedIsNullable())
-            return prev_lc->applyExternalNullMap(outer_null_data);
+        /// A `LowCardinality(...)` element carries nullability via its dictionary, not an
+        /// `IColumn::isNullable`/`ColumnNullable` wrapper, so it reaches here unchanged. The type
+        /// creator promotes it to `LowCardinality(Nullable(T))`; mirror that here and fold in the
+        /// outer mask by repointing the outer-`NULL` rows at the dictionary's null index.
+        if (const auto * prev_lc = checkAndGetColumn<ColumnLowCardinality>(prev.get()))
+        {
+            if (prev_lc->nestedIsNullable())
+                return prev_lc->applyExternalNullMap(outer_null_data);
+
+            /// Non-nullable `LowCardinality(T)`: promote to `LowCardinality(Nullable(T))` first so it
+            /// can carry the outer NULLs, matching the type `create(DataTypePtr)` returns above.
+            auto lc_nullable = prev_lc->cloneNullable();
+            return assert_cast<const ColumnLowCardinality &>(*lc_nullable).applyExternalNullMap(outer_null_data);
+        }
     }
 
     return prev;
