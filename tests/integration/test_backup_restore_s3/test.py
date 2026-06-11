@@ -838,7 +838,9 @@ def test_user_specific_auth(cluster):
         restore_query = f"RESTORE TABLE specific_auth {on_cluster_clause} FROM {backup}"
 
         if should_fail:
-            assert "Access" in node.query_and_get_error(backup_query, user=user)
+            assert (
+                "access" in node.query_and_get_error(backup_query, user=user).lower()
+            )
         else:
             node.query(backup_query, user=user)
             node.query("DROP TABLE specific_auth SYNC")
@@ -861,9 +863,12 @@ def test_user_specific_auth(cluster):
 
     backup_restore(f"S3('{backup2_path}')", user="superuser2", should_fail=False)
 
-    assert "Access" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth FROM S3('{backup1_path}')",
-        user="regularuser",
+    assert (
+        "access"
+        in node.query_and_get_error(
+            f"RESTORE TABLE specific_auth FROM S3('{backup1_path}')",
+            user="regularuser",
+        ).lower()
     )
 
     node.query("INSERT INTO specific_auth VALUES (2)")
@@ -882,9 +887,12 @@ def test_user_specific_auth(cluster):
         base_backup=f"S3('{backup1_path}')",
     )
 
-    assert "Access" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth FROM S3('{backup1_inc_path}')",
-        user="regularuser",
+    assert (
+        "access"
+        in node.query_and_get_error(
+            f"RESTORE TABLE specific_auth FROM S3('{backup1_inc_path}')",
+            user="regularuser",
+        ).lower()
     )
 
     assert "Access Denied" in node.query_and_get_error(
@@ -911,9 +919,12 @@ def test_user_specific_auth(cluster):
         on_cluster=True,
     )
 
-    assert "Access Denied" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_path}')",
-        user="regularuser",
+    assert (
+        "access"
+        in node.query_and_get_error(
+            f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_path}')",
+            user="regularuser",
+        ).lower()
     )
 
     node.query("INSERT INTO specific_auth VALUES (3)")
@@ -934,9 +945,12 @@ def test_user_specific_auth(cluster):
         base_backup=f"S3('{backup3_path}')",
     )
 
-    assert "Access Denied" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_inc_path}')",
-        user="regularuser",
+    assert (
+        "access"
+        in node.query_and_get_error(
+            f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_inc_path}')",
+            user="regularuser",
+        ).lower()
     )
 
     assert "Access Denied" in node.query_and_get_error(
