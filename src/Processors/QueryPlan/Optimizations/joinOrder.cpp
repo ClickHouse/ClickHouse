@@ -709,18 +709,16 @@ template <typename DPTable, std::unsigned_integral Tuint>
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable & dptable, const Tuint & S) const
 {
     auto entry = dptable[S];
+    if (!entry.left && !entry.right)
+    {
+        return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.column_stats);
+    }
 
     JoinOperator join_operator(
         JoinKind::Inner,
         JoinStrictness::All,
         JoinLocality::Unspecified,
         std::ranges::to<std::vector>(entry.edges | std::views::transform([](const auto * e) { return *e; })));
-
-    if (!entry.left && !entry.right)
-    {
-        const size_t relation_id = std::countr_zero(S);
-        return std::make_shared<DPJoinEntry>(relation_id, entry.estimated_rows, entry.column_stats);
-    }
 
     // This is a join node - create using the join constructor
     auto left = buildPhysicalPlan(dptable, entry.left);
