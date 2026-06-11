@@ -52,10 +52,9 @@ struct TopKAggregationHeap
     bool is_composite = false;
 
     /// True when the heap tracks only a prefix of the GROUP BY keys (`ORDER BY`
-    /// uses fewer columns than `GROUP BY`).  In this case the evicted heap value
-    /// does not represent the full hash-table key, so hash-table pruning must
-    /// be skipped — reading `KeyType` bytes from the prefix column would be an
-    /// out-of-bounds read or match the wrong entry.
+    /// uses fewer columns than `GROUP BY`).  An evicted prefix does not identify
+    /// a single hash-table entry — every entry sharing the prefix matches — so
+    /// hash-table pruning must be skipped in this mode.
     bool is_prefix_mode = false;
 
     TopKAggregationHeap() = default;
@@ -139,7 +138,7 @@ struct TopKAggregationHeap
     /// Dispatches to single-column or composite insertion based on `is_composite`.
     void push(const ColumnRawPtrs & source_columns, size_t source_row)
     {
-        size_t new_idx;
+        size_t new_idx = 0;
         if (is_composite)
         {
             auto & tuple = assert_cast<ColumnTuple &>(*heap_column);
@@ -171,24 +170,18 @@ struct TopKAggregationHeap
     ///
     /// `on_evict` receives the `heap_column` index of each evicted key and is responsible
     /// for erasing it from the hash table and destroying aggregate states if needed.
+    /// The caller decides whether pruning is possible (see
+    /// `Aggregator::trimHeapAndPruneHashTable`) and passes a no-op callback otherwise.
     template <typename EvictCallback>
     void trimAndCompact(EvictCallback && on_evict)
     {
-        /// Pop excess entries from the heap, calling the callback for each.
-        /// Hash-table pruning is only safe when the heap stores the full
-        /// `GROUP BY` key as a single column.  Skip when composite (multi-column
-        /// heap — can't reconstruct the hash key) or when in prefix mode
-        /// (heap column is narrower than the hash-table key — reading `KeyType`
-        /// bytes would be an out-of-bounds read or match the wrong entry).
-        const bool prune_hash_table = !is_composite && !is_prefix_mode;
         const HeapComparator cmp{this};
         while (heap_indices.size() > capacity)
         {
             std::pop_heap(heap_indices.begin(), heap_indices.end(), cmp);
             const size_t evicted = heap_indices.back();
             heap_indices.pop_back();
-            if (prune_hash_table)
-                on_evict(evicted);
+            on_evict(evicted);
         }
 
         /// Now compact the `heap_column`: filter out dead slots and remap indices.

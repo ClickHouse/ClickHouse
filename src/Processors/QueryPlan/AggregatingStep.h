@@ -62,7 +62,8 @@ public:
         std::vector<int> directions,
         std::vector<int> nulls_directions,
         std::vector<const Collator *> collators,
-        size_t num_key_columns);
+        size_t num_key_columns,
+        bool requires_pruning);
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
 

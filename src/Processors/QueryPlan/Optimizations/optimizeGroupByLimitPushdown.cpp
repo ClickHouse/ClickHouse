@@ -160,7 +160,13 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
             return 0;
 
         size_t num_key_columns = sort_description.size();
-        aggregating_step->applyLimitPushdown(limit, std::move(directions), std::move(nulls_directions), std::move(collators), num_key_columns);
+        aggregating_step->applyLimitPushdown(
+            limit,
+            std::move(directions),
+            std::move(nulls_directions),
+            std::move(collators),
+            num_key_columns,
+            /*requires_pruning=*/ false);
         return 0;
     }
 
@@ -190,7 +196,17 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
         std::vector<int> nulls_directions(num_key_columns, 1);
         std::vector<const Collator *> collators(num_key_columns, nullptr);
 
-        aggregating_step->applyLimitPushdown(limit, std::move(directions), std::move(nulls_directions), std::move(collators), num_key_columns);
+        /// Without a downstream sort, a group evicted from the heap but left in
+        /// the hash table with a partially-aggregated state could surface in the
+        /// result.  Require hash-table pruning: the aggregator disables the heap
+        /// at runtime for methods that cannot erase evicted keys.
+        aggregating_step->applyLimitPushdown(
+            limit,
+            std::move(directions),
+            std::move(nulls_directions),
+            std::move(collators),
+            num_key_columns,
+            /*requires_pruning=*/ true);
         return 0;
     }
 }

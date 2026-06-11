@@ -564,7 +564,10 @@ void Aggregator::Params::explain(ExplainFormatSettings & settings) const
                 out << ',';
             out << top_k_keys_directions[i];
         }
-        out << "]\n";
+        out << "]";
+        if (top_k_requires_pruning)
+            out << ", requires_pruning=1";
+        out << "\n";
     }
 }
 
@@ -600,6 +603,8 @@ void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
         for (int direction : top_k_keys_directions)
             directions->add(direction);
         top_k_map->add("Directions", std::move(directions));
+        if (top_k_requires_pruning)
+            top_k_map->add("Requires Pruning", true);
         map.add("Top-K", std::move(top_k_map));
     }
 }
@@ -1015,7 +1020,13 @@ void Aggregator::executeImpl(
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
-    const bool top_k = params.top_k_keys > 0;
+    /// When the plan has no sort above the aggregation (`GROUP BY ... LIMIT`
+    /// without `ORDER BY`), the heap is only sound if evicted keys are erased
+    /// from the hash table; methods whose hash table cannot erase
+    /// (`FixedHashTable`-based ones) must not use the heap in that mode.
+    constexpr bool can_prune
+        = requires(typename Method::Data d, typename Method::Key k) { d.erase(k); };
+    const bool top_k = params.top_k_keys > 0 && (can_prune || !params.top_k_requires_pruning);
 
     if (top_k)
         method.top_k_heap.initIfNeeded(
@@ -1073,31 +1084,63 @@ void Aggregator::executeImpl(
 }
 
 template <typename Method>
-void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destroy_states, std::vector<AggregateDataPtr> * destroyed_states) const
+void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, Arena & pool, std::vector<AggregateDataPtr> * destroyed_states) const
 {
     using DataType = typename Method::Data;
     using KeyType = typename Method::Key;
-    if constexpr (requires(DataType d, KeyType k) { { d.erase(k) } -> std::same_as<bool>; })
+
+    /// Hash-table pruning is only possible when:
+    ///   * the hash table exposes `erase` (`FixedHashTable` and `StringHashTable` do not), and
+    ///   * the heap stores the full GROUP BY key (in prefix mode an evicted prefix
+    ///     identifies every hash-table entry sharing it, not a single entry).
+    /// Otherwise just trim the heap and leave the hash table alone - the heap
+    /// still rejects rows in flight, only the memory saving is reduced.
+    if constexpr (!requires(DataType d, KeyType k) { d.erase(k); })
     {
-        auto on_evicted = [&](size_t evicted)
+        method.top_k_heap.trimAndCompact([](size_t) {});
+    }
+    else if (method.top_k_heap.is_prefix_mode)
+    {
+        method.top_k_heap.trimAndCompact([](size_t) {});
+    }
+    else
+    {
+        auto destroy_state = [&](AggregateDataPtr mapped)
         {
+            if (!mapped)
+                return;
+            destroyed_states->push_back(mapped);
+            for (size_t j = 0; j < aggregate_functions.size(); ++j)
+                aggregate_functions[j]->destroy(mapped + offsets_of_aggregate_states[j]);
+        };
+
+        /// A hashing state over the heap's own storage: each evicted key is
+        /// reconstructed through the same typed accessors used during emplace,
+        /// so the resulting key matches the hash-table key by construction
+        /// (including numeric widening, NULL maps, key packing and serialization).
+        ColumnRawPtrs heap_columns;
+        if (method.top_k_heap.is_composite)
+        {
+            const auto & tuple = assert_cast<const ColumnTuple &>(*method.top_k_heap.heap_column);
+            for (size_t i = 0; i < tuple.tupleSize(); ++i)
+                heap_columns.push_back(&tuple.getColumn(i));
+        }
+        else
+            heap_columns.push_back(method.top_k_heap.heap_column.get());
+
+        typename Method::StateNoCache trim_state(heap_columns, key_sizes, aggregation_state_cache);
+
+        method.top_k_heap.trimAndCompact([&](size_t evicted)
+        {
+            /// A NULL key lives in the special null slot, not in the hash table.
             if (method.top_k_heap.heap_column->isNullAt(evicted))
             {
                 if constexpr (requires { method.data.hasNullKeyData(); })
                 {
                     if (method.data.hasNullKeyData())
                     {
-                        if (destroy_states)
-                        {
-                            AggregateDataPtr null_mapped = method.data.getNullKeyData();
-                            if (null_mapped)
-                            {
-                                if (destroyed_states)
-                                    destroyed_states->push_back(null_mapped);
-                                for (size_t j = 0; j < aggregate_functions.size(); ++j)
-                                    aggregate_functions[j]->destroy(null_mapped + offsets_of_aggregate_states[j]);
-                            }
-                        }
+                        if (destroyed_states)
+                            destroy_state(method.data.getNullKeyData());
                         method.data.hasNullKeyData() = false;
                         method.data.getNullKeyData() = nullptr;
                     }
@@ -1105,44 +1148,19 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destr
                 return;
             }
 
-            KeyType evicted_key;
-            if constexpr (std::is_same_v<KeyType, std::string_view>)
-            {
-                auto ref = method.top_k_heap.heap_column->getDataAt(evicted);
-                evicted_key = std::string_view(ref.data(), ref.size());
-            }
-            else
-            {
-                auto ref = method.top_k_heap.heap_column->getDataAt(evicted);
-                evicted_key = unalignedLoad<KeyType>(ref.data());
-            }
+            auto key_holder = trim_state.getKeyHolder(evicted, pool);
+            const auto & key = keyHolderGetKey(key_holder);
 
-            if (destroy_states)
+            if (destroyed_states)
             {
-                auto it = method.data.find(evicted_key);
+                auto it = method.data.find(key);
                 if (it != nullptr)
-                {
-                    AggregateDataPtr mapped = it->getMapped();
-                    if (mapped)
-                    {
-                        if (destroyed_states)
-                            destroyed_states->push_back(mapped);
-                        for (size_t j = 0; j < aggregate_functions.size(); ++j)
-                            aggregate_functions[j]->destroy(mapped + offsets_of_aggregate_states[j]);
-                    }
-                }
+                    destroy_state(it->getMapped());
             }
 
-            method.data.erase(evicted_key);
-        };
-
-        method.top_k_heap.trimAndCompact(on_evicted);
-    }
-    else
-    {
-        (void)destroyed_states;
-        auto noop = [](size_t) {};
-        method.top_k_heap.trimAndCompact(noop);
+            method.data.erase(key);
+            keyHolderDiscardKey(key_holder);
+        });
     }
 }
 
@@ -1349,7 +1367,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if constexpr (top_k)
                 {
                     if (method.top_k_heap.needsTrim())
-                        trimHeapAndPruneHashTable(method, false);
+                        trimHeapAndPruneHashTable(method, *aggregates_pool, nullptr);
                 }
             }
         }
@@ -1479,7 +1497,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if (method.top_k_heap.needsTrim())
                 {
                     destroyed_states.clear();
-                    trimHeapAndPruneHashTable(method, !is_simple_count, !is_simple_count ? &destroyed_states : nullptr);
+                    trimHeapAndPruneHashTable(method, *aggregates_pool, &destroyed_states);
 
                     if (!destroyed_states.empty())
                     {

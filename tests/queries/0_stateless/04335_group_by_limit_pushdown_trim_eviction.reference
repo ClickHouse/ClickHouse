@@ -1,0 +1,174 @@
+UInt32 key (key32)
+0	2	2998
+1	2	2996
+2	2	2994
+3	2	2992
+4	2	2990
+5	2	2988
+6	2	2986
+7	2	2984
+8	2	2982
+9	2	2980
+UInt32 key, DESC
+999	2
+998	2
+997	2
+996	2
+995	2
+994	2
+993	2
+992	2
+991	2
+990	2
+UInt64 key (key64)
+0	2
+1	2
+2	2
+3	2
+4	2
+5	2
+6	2
+7	2
+8	2
+9	2
+Int32 key with negatives
+-500	2
+-499	2
+-498	2
+-497	2
+-496	2
+-495	2
+-494	2
+-493	2
+-492	2
+-491	2
+Float64 key with nan
+0	2
+1	2
+2	2
+3	2
+4	2
+5	2
+6	2
+7	2
+8	2
+9	2
+Float64 key with nan, DESC
+999	2
+998	2
+997	2
+Float32 key
+0	2
+1	2
+2	2
+3	2
+4	2
+DateTime key
+2020-01-01 00:00:00	2
+2020-01-01 00:00:01	2
+2020-01-01 00:00:02	2
+2020-01-01 00:00:03	2
+2020-01-01 00:00:04	2
+Date key (key16, no hash-table pruning)
+2020-01-01	2
+2020-01-02	2
+2020-01-03	2
+2020-01-04	2
+2020-01-05	2
+String key
+key_0000	2
+key_0001	2
+key_0002	2
+key_0003	2
+key_0004	2
+FixedString key
+0000	2
+0001	2
+0002	2
+0003	2
+0004	2
+LowCardinality(String) key
+key_0000	2
+key_0001	2
+key_0002	2
+key_0003	2
+key_0004	2
+Nullable(UInt32) key, NULLS LAST (null slot is evicted)
+0	2
+1	2
+2	2
+3	2
+4	2
+Nullable(UInt32) key, NULLS FIRST (null slot stays in the heap)
+\N	2
+0	2
+1	2
+2	2
+3	2
+Tuple key (single serialized GROUP BY column)
+(0,'1')	2
+(1,'0')	2
+(2,'1')	2
+(3,'0')	2
+(4,'1')	2
+Composite fixed key (UInt32, UInt16)
+0	0	2
+0	1	2
+0	2	2
+0	3	2
+0	4	2
+0	5	2
+0	6	2
+0	7	2
+0	8	2
+0	9	2
+Composite serialized key (UInt32, String)
+0	0	2
+0	1	2
+0	2	2
+0	3	2
+0	4	2
+0	5	2
+0	6	2
+0	7	2
+0	8	2
+0	9	2
+Composite nullable key (Nullable(UInt32), String)
+0	0	2
+0	1	2
+0	2	2
+0	3	2
+0	4	2
+0	6	2
+0	7	2
+0	8	2
+0	9	2
+1	0	2
+Composite LowCardinality key (LowCardinality(String), UInt32)
+000	0	2
+000	1	2
+000	2	2
+000	3	2
+000	4	2
+000	5	2
+000	6	2
+000	7	2
+000	8	2
+000	9	2
+Prefix mode (ORDER BY is a prefix of GROUP BY, no hash-table pruning)
+0	0	2
+0	1	2
+0	2	2
+0	3	2
+0	4	2
+0	5	2
+0	6	2
+0	7	2
+0	8	2
+0	9	2
+Stateful aggregate under eviction (uniqExact)
+0	2
+1	2
+2	2
+3	2
+4	2

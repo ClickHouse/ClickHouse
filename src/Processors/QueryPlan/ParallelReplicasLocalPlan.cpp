@@ -326,7 +326,12 @@ static void tryPushDownTopKToPartialAggregation(QueryPlan & remote_plan, const A
 
     const size_t num_key_columns = order_by_list->children.size();
     agg_step->applyLimitPushdown(
-        limit, std::move(directions), std::move(nulls_directions), std::move(collators), num_key_columns);
+        limit,
+        std::move(directions),
+        std::move(nulls_directions),
+        std::move(collators),
+        num_key_columns,
+        /*requires_pruning=*/ false);
 }
 
 std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(

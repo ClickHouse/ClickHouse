@@ -141,6 +141,14 @@ public:
         /// How many leading GROUP BY key columns the heap compares on.
         /// Equals the number of ORDER BY columns (which is a prefix of GROUP BY keys).
         size_t top_k_key_columns = 0;
+        /// True when the heap is only sound if evicted keys are erased from the
+        /// hash table.  `GROUP BY ... LIMIT` without `ORDER BY` requires this:
+        /// there is no downstream sort to rank stale partially-aggregated groups
+        /// below complete ones, so a group evicted from the heap but left in the
+        /// hash table could surface in the result.  When the chosen aggregation
+        /// method cannot erase (`FixedHashTable`-based ones), the heap is
+        /// disabled at runtime instead.
+        bool top_k_requires_pruning = false;
 
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
@@ -439,8 +447,13 @@ private:
 
     /// Trim the bounded heap back to capacity by batch-popping excess entries,
     /// erasing evicted keys from the hash table and destroying their aggregate states.
+    /// When `destroyed_states` is non-null, evicted aggregate states are destroyed and
+    /// their pointers appended so the caller can redirect stale `places[]` entries.
+    /// When null (the simple-count path), entries are only erased - inline counts are
+    /// not real aggregate states, so destroying them would be undefined behaviour.
+    /// `pool` provides transient storage for reconstructed serialized keys.
     template <typename Method>
-    void trimHeapAndPruneHashTable(Method & method, bool destroy_states, std::vector<AggregateDataPtr> * destroyed_states = nullptr) const;
+    void trimHeapAndPruneHashTable(Method & method, Arena & pool, std::vector<AggregateDataPtr> * destroyed_states) const;
 
     void executeAggregateInstructions(
         Arena * aggregates_pool,

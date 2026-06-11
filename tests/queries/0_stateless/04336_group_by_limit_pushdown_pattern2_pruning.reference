@@ -1,0 +1,14 @@
+Pattern 2 plan is marked with requires_pruning
+Top-K: limit=5, columns=1, directions=[1], requires_pruning=1
+Pattern 1 plan is not
+Top-K: limit=5, columns=1, directions=[1]
+UInt32 key (erasable hash table, heap + pruning active)
+5	5
+Composite key (pruning of composite heaps)
+5	5
+String key (StringHashTable supports erase)
+5	5
+UInt8 key (FixedHashTable cannot erase, heap disabled at runtime)
+5	5
+Date key (key16, FixedHashTable cannot erase, heap disabled at runtime)
+5	5

@@ -183,13 +183,15 @@ void AggregatingStep::applyLimitPushdown(
     std::vector<int> directions_,
     std::vector<int> nulls_directions_,
     std::vector<const Collator *> collators_,
-    size_t num_key_columns)
+    size_t num_key_columns,
+    bool requires_pruning)
 {
     params.top_k_keys = top_k;
     params.top_k_keys_directions = std::move(directions_);
     params.top_k_keys_nulls_directions = std::move(nulls_directions_);
     params.top_k_keys_collators = std::move(collators_);
     params.top_k_key_columns = num_key_columns;
+    params.top_k_requires_pruning = requires_pruning;
 }
 
 const SortDescription & AggregatingStep::getSortDescription() const
@@ -1035,6 +1037,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
             writeIntBinary(dir, ctx.out);
             writeIntBinary(nulls_dir, ctx.out);
         }
+        writeIntBinary(static_cast<UInt8>(params.top_k_requires_pruning), ctx.out);
     }
 }
 
@@ -1159,8 +1162,15 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
             directions[i] = dir;
             nulls_directions[i] = nulls_dir;
         }
+        UInt8 requires_pruning = 0;
+        readIntBinary(requires_pruning, ctx.in);
         aggregating_step->applyLimitPushdown(
-            top_k, std::move(directions), std::move(nulls_directions), std::move(collators), top_k_key_columns);
+            top_k,
+            std::move(directions),
+            std::move(nulls_directions),
+            std::move(collators),
+            top_k_key_columns,
+            requires_pruning != 0);
     }
 
     return aggregating_step;
