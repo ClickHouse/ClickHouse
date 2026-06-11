@@ -3,6 +3,9 @@ SET optimize_on_insert = 1;
 
 DROP TABLE IF EXISTS agg_table;
 
+-- Same test with allow_tuple_element_aggregation = true: two_values Tuple is flattened into
+-- sub-columns, but AggregatingMergeTree only aggregates AggregateFunction/SimpleAggregateFunction
+-- columns, so the output is identical.
 CREATE TABLE IF NOT EXISTS agg_table
 (
     time DateTime CODEC(DoubleDelta, LZ4),
@@ -12,7 +15,8 @@ CREATE TABLE IF NOT EXISTS agg_table
     agg SimpleAggregateFunction(sumMap, Tuple(Array(Int16), Array(UInt64)))
 )
 ENGINE = AggregatingMergeTree()
-ORDER BY (xxx, time);
+ORDER BY (xxx, time)
+SETTINGS allow_tuple_element_aggregation = true;
 
 INSERT INTO agg_table SELECT toDateTime('2020-10-01 19:20:30'), 'hello', ([any(number)], sum(number)), sum(number),
     sumMap((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13)))) FROM numbers(10);
