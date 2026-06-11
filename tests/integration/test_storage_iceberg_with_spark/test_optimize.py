@@ -683,6 +683,68 @@ def test_optimize_manifest_files_dropped_partition_source_column(
     assert sorted(row["id"] for row in spark_rows) == list(range(0, 8))
 
 
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_optimize_manifest_files_bucket_partition(started_cluster_iceberg_with_spark, storage_type):
+    """
+    OPTIMIZE TABLE ... MANIFEST on a bucket-partitioned table must recompute the manifest-list
+    partition summary for the bucket value. The `icebergBucket` transform resolves to ClickHouse
+    `UInt32`, which `getAvroType` maps to Avro `int`; the byte encoder must serialize that unsigned
+    type instead of throwing 'Can not dump such stats', otherwise a valid Iceberg bucket partition
+    cannot be compacted.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_manifest_bucket_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg
+        PARTITIONED BY (bucket(4, id))
+        TBLPROPERTIES ('format-version' = '2')
+        """
+    )
+    for lo in range(0, 80, 20):
+        spark.sql(
+            f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range({lo}, {lo + 20})"
+        )
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 2,
+        },
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == instance.query(
+        "SELECT number FROM numbers(0, 80)"
+    )
+
+    # Spark must still read the table back correctly after the bucket-partition manifest rewrite.
+    default_download_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+    )
+    spark_rows = spark.read.format("iceberg").load(
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    ).collect()
+    assert len(spark_rows) == 80
+    assert sorted(row["id"] for row in spark_rows) == list(range(0, 80))
+
+
 def test_optimize_manifest_files_preserves_entry_lineage(started_cluster_iceberg_with_spark):
     """
     OPTIMIZE TABLE ... MANIFEST is metadata-only, so each rewritten manifest entry must stay an
@@ -1536,18 +1598,21 @@ def test_optimize_manifest_parent_summary_missing_totals(
 
     # Locate the latest metadata file and strip several total-* fields from the
     # current snapshot's summary, mimicking older Spark / removeOrphanFiles output.
+    # Same deterministic tie-break as _load_latest_metadata: when two files share
+    # last-updated-ms, the higher metadata version wins (independent of os.listdir order).
     metadata_dir = f"{TABLE_PATH}/metadata/"
     latest_path = None
-    latest_ts = -1
+    best_key = None
     for filename in os.listdir(metadata_dir):
-        if filename.endswith(".json"):
-            fp = os.path.join(metadata_dir, filename)
-            with _open_metadata_file(fp) as f:
-                data = json.load(f)
-            ts = data.get("last-updated-ms", 0)
-            if ts > latest_ts:
-                latest_ts = ts
-                latest_path = fp
+        if not filename.endswith(".json"):
+            continue
+        fp = os.path.join(metadata_dir, filename)
+        with _open_metadata_file(fp) as f:
+            data = json.load(f)
+        key = (data.get("last-updated-ms", 0), _metadata_version_from_name(filename))
+        if best_key is None or key > best_key:
+            best_key = key
+            latest_path = fp
     assert latest_path is not None, "Could not locate latest metadata file"
 
     with _open_metadata_file(latest_path) as f:

@@ -48,6 +48,7 @@
 #include <Poco/JSON/Array.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
@@ -156,6 +157,18 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
             return dumpValue(field.safeGet<Int32>());
         case TypeIndex::Int64:
             return dumpValue(field.safeGet<Int64>());
+        /// Iceberg schema types are always signed, but a resolved partition type can be an unsigned
+        /// ClickHouse type whose value `getAvroType` maps to Avro `int`/`long` — most importantly
+        /// `icebergBucket`, which returns `UInt32`. The underlying value decodes into the `Field` as a
+        /// signed integer, so read it generically (the `Field`'s storage signedness need not match the
+        /// resolved type) and serialize it like the corresponding signed case.
+        case TypeIndex::UInt8:
+        case TypeIndex::Int8:
+        case TypeIndex::UInt16:
+        case TypeIndex::Int16:
+        case TypeIndex::UInt32:
+        case TypeIndex::UInt64:
+            return dumpValue(applyVisitor(FieldVisitorConvertToNumber<Int64>(), field));
         case TypeIndex::DateTime64:
             return dumpValue(field.safeGet<Decimal64>().getValue().value);
         case TypeIndex::String:
