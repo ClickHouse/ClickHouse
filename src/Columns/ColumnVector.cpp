@@ -1295,6 +1295,17 @@ std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
     return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
 }
 
+template <typename T>
+void ColumnVector<T>::getNanMask(PaddedPODArray<UInt8> & mask) const
+{
+    if constexpr (is_floating_point<T>)
+    {
+        chassert(mask.size() == data.size());
+        for (size_t i = 0, size = data.size(); i < size; ++i)
+            mask[i] |= static_cast<UInt8>(isNaN(data[i]));
+    }
+}
+
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class ColumnVector<UInt8>;
 template class ColumnVector<UInt16>;

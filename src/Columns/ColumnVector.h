@@ -377,6 +377,12 @@ public:
         return data[n];
     }
 
+    /// Append a `1` for every row whose value is `NaN` into `mask` (OR-folded, never cleared).
+    /// `mask` must be sized to `size()`. No-op for non-floating-point `T`. Used by `JOIN ON`
+    /// to treat `NaN` keys as never-matching, since the hash table / sort cursor compares
+    /// floats bitwise and would otherwise match `NaN` against `NaN` (issue #106531).
+    void getNanMask(PaddedPODArray<UInt8> & mask) const;
+
 protected:
     Container data;
 };

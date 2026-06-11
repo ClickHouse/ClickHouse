@@ -8,8 +8,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/FilterDescription.h>
 
-#include <Common/NaNUtils.h>
-
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -394,37 +392,31 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
 namespace
 {
 
-/// Mark `NaN` rows of one float key column into `mutable_null_map`, skipping rows where
-/// `is_null[i] != 0`. Returns whether any new `NaN` was found. The caller has already
-/// verified `column` is the matching `ColumnVector<T>`. `is_null == nullptr` means there
-/// is no outer null map to respect (top-level non-Nullable case).
-template <typename T>
-bool markNaNsOfFloatColumn(const ColumnVector<T> & vec, PaddedPODArray<UInt8> & mutable_null_map, const UInt8 * is_null)
+/// Leaf: if `column` is a float `ColumnVector`, OR its `NaN` rows into `mutable_null_map`,
+/// skipping rows where `is_null[i] != 0`. Returns whether any `NaN` was found. `NaN` detection
+/// itself lives in `ColumnVector<T>::getNanMask`; here we only respect the outer null map.
+/// Returns false for non-float columns.
+bool markFloatColumnNaNs(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_map, const UInt8 * is_null)
 {
-    const auto & data = vec.getData();
-    chassert(data.size() == mutable_null_map.size());
+    const size_t size = mutable_null_map.size();
+    PaddedPODArray<UInt8> nan_mask(size, 0);
+
+    if (const auto * f32 = typeid_cast<const ColumnFloat32 *>(&column))
+        f32->getNanMask(nan_mask);
+    else if (const auto * f64 = typeid_cast<const ColumnFloat64 *>(&column))
+        f64->getNanMask(nan_mask);
+    else if (const auto * bf16 = typeid_cast<const ColumnVector<BFloat16> *>(&column))
+        bf16->getNanMask(nan_mask);
+    else
+        return false;
 
     bool found = false;
-    if (is_null)
+    for (size_t i = 0; i < size; ++i)
     {
-        for (size_t i = 0, size = data.size(); i < size; ++i)
+        if (nan_mask[i] && (!is_null || is_null[i] == 0))
         {
-            if (is_null[i] == 0 && isNaN(data[i]))
-            {
-                mutable_null_map[i] = 1;
-                found = true;
-            }
-        }
-    }
-    else
-    {
-        for (size_t i = 0, size = data.size(); i < size; ++i)
-        {
-            if (isNaN(data[i]))
-            {
-                mutable_null_map[i] = 1;
-                found = true;
-            }
+            mutable_null_map[i] = 1;
+            found = true;
         }
     }
     return found;
@@ -434,12 +426,10 @@ bool markFloatNaNRowsAsNullImpl(const IColumn & column, PaddedPODArray<UInt8> & 
 
 bool markFloatNaNRowsAsNullImpl(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_map, const UInt8 * is_null)
 {
-    if (const auto * f32 = typeid_cast<const ColumnFloat32 *>(&column))
-        return markNaNsOfFloatColumn<Float32>(*f32, mutable_null_map, is_null);
-    if (const auto * f64 = typeid_cast<const ColumnFloat64 *>(&column))
-        return markNaNsOfFloatColumn<Float64>(*f64, mutable_null_map, is_null);
-    if (const auto * bf16 = typeid_cast<const ColumnVector<BFloat16> *>(&column))
-        return markNaNsOfFloatColumn<BFloat16>(*bf16, mutable_null_map, is_null);
+    if (typeid_cast<const ColumnFloat32 *>(&column)
+        || typeid_cast<const ColumnFloat64 *>(&column)
+        || typeid_cast<const ColumnVector<BFloat16> *>(&column))
+        return markFloatColumnNaNs(column, mutable_null_map, is_null);
 
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
     {
