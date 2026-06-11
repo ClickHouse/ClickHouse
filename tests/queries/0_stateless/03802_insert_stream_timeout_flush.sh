@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-async-insert, no-fasttest, no-random-detach
+# Tags: no-async-insert, no-fasttest
 # no-fasttest: Too slow for fast test (~14s), covered by regular stateless runs.
 # no-async-insert: Test expects new part for each time interval
-# no-random-detach: a randomized DETACH/ATTACH before the streaming INSERT disrupts the
-#                   timing-sensitive partial flush.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
