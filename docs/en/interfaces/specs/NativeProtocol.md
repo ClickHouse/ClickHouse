@@ -127,7 +127,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | PASSWORD_COMPLEXITY_RULES       | 54461   | ServerHello            | Adds a list of password-policy regex patterns and human-readable messages to ServerHello. |
 | INTERSERVER_SECRET_V2           | 54462   | ServerHello            | Adds an 8-byte `UInt64` nonce to ServerHello. Used by inter-server query signing; external clients decode and ignore. |
 | TOTAL_BYTES_IN_PROGRESS         | 54463   | Progress               | Adds the `total_bytes_to_read` (VarUInt) field to Progress, between `total_rows` and `wrote_rows`. |
-| TIMEZONE_UPDATES                | 54464   | TimezoneUpdate         | Adds the `TimezoneUpdate` server packet (type 17). Body: single `String` carrying the new session timezone. Sent when `SET session_timezone` mutates the session-default tz mid-query. |
+| TIMEZONE_UPDATES                | 54464   | TimezoneUpdate         | Adds the `TimezoneUpdate` server packet (type 17). Body: single `String` carrying the session timezone. Sent only by the `input` table function initializer, right after the input-schema block, so the client parses the rows it sends with the server's `session_timezone`. See [TimezoneUpdate](#timezoneupdate). |
 | SPARSE_SERIALIZATION            | 54465   | Block (Column)         | Server may set `has_custom_serialization = 1` and emit a sparse-encoded column. Wire format: 1-byte kind (0x01 = SPARSE), then VarUInt offset stream terminated by EOG, then the non-default values densely encoded in the inner type. See [kind_stack and sparse encoding](/interfaces/specs/NativeFormat#kind-stack-and-sparse-encoding). |
 | SSH_AUTHENTICATION              | 54466   | Auth flow              | Adds SSH challenge-response authentication. Opt-in: client sends a `user` of the form `" SSH KEY AUTHENTICATION " + <real_user>` with empty password to trigger it. See [SSH challenge-response authentication](#ssh-authentication). |
 | TABLE_READ_ONLY_CHECK           | 54467   | TablesStatusResponse   | Adds an `is_readonly` flag to each table's row in TablesStatusResponse. External clients that don't issue `TablesStatusRequest` see no wire change. |
@@ -733,13 +733,13 @@ At negotiated version ≥ 54481 (`COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS`) the s
 
 ### TimezoneUpdate (packet type 17) {#timezoneupdate}
 
-Server → Client, gated by `TIMEZONE_UPDATES` (v54464). Sent when the session-default timezone changes mid-query — for example, a `SET session_timezone = '...'` runs as part of the query and the server wants the client to use the new default when formatting subsequent `DateTime` values.
+Server → Client, gated by `TIMEZONE_UPDATES` (v54464). Sent in exactly one place: the initializer for the `input` table function (a query of the form `INSERT INTO <table> SELECT ... FROM input('<structure>')`, which streams rows from the client). Right after the server sends the input-schema `Data` block (see the [INSERT phase](#insert-phase)), it emits `TimezoneUpdate` carrying the query context's current `session_timezone` so the client parses the rows it is about to send with the same timezone. The server does **not** emit this packet for arbitrary mid-query `SET session_timezone` changes, nor to tell the client how to format later result blocks.
 
 | # | Field    | Type   | Role      | Description |
 |---|----------|--------|-----------|-------------|
 | 1 | timezone | String | universal | The new session-default timezone (e.g., `"UTC"`, `"Europe/Berlin"`). |
 
-The packet may arrive at any point in the query response stream, between Data, Progress, or Log packets. A decoder that ignores `TimezoneUpdate` MUST still consume the trailing `String` to keep the wire aligned.
+The packet arrives once, immediately after the input-schema block and before the client starts sending row blocks. A decoder that ignores `TimezoneUpdate` MUST still consume the trailing `String` to keep the wire aligned.
 
 ### SSH challenge-response authentication (packet types 11, 12, 18) {#ssh-authentication}
 
