@@ -286,7 +286,10 @@ TEST(SimpleMergeSelector, SmallPartsMinCountReducesWriteAmplification)
 TEST(SimpleMergeSelector, SmallPartsMinCountSurvivesRightTailTrim)
 {
     SimpleMergeSelector::Settings settings;
-    settings.base = 5;
+    /// base = 2 so that the full 8-part range passes the base-ratio check in `allow`
+    /// (ratio is ~3.5 here; with base = 5 and fresh parts the range would be rejected
+    /// before ever reaching the post-trim gate, making the test vacuous).
+    settings.base = 2;
     settings.small_parts_threshold = 10 * 1024 * 1024;
     settings.small_parts_min_count = 8;
     settings.small_parts_max_age = 600;
