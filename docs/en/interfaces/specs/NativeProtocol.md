@@ -551,6 +551,17 @@ Client → Server, embedded in the Query body (field 2). Gated by `CLIENT_INFO` 
 | 23 | jwt                          | String  | inter-server | JWT_IN_INTERSERVER (v54476), if jwt_present=1 | JWT bearer token, only present when field 22 = `1`. |
 | 24 | client_agent                 | String  | client       | CLIENT_AGENT_IN_CLIENT_INFO (v54485)   | Trailing field. Identifier of the client tool/agent, auto-detected from the environment (e.g. `claude-code`, `cursor`, `gemini-cli`, or the `AGENT` env var). External clients with no detected agent send an empty string. Present on the normal Query path once negotiated version ≥ 54485 (sent on all interfaces, not only TCP). |
 
+:::note Interface-dependent layout (fields 7–12)
+Fields 7–12 above are the **TCP** branch. When `query_interface` (field 6) is **not** TCP, these fields are *replaced* by a different wire layout — they are not merely optional omissions, so a decoder must branch on field 6.
+
+- `query_interface = 2` (**HTTP**): the server-forwarded HTTP request info is written instead — `http_method` (`UInt8`), `http_user_agent` (`String`), then `forwarded_for` (`String`, gated by `X_FORWARDED_FOR_IN_CLIENT_INFO` v54443) and `http_referer` (`String`, gated by `REFERER_IN_CLIENT_INFO` v54447). No `os_user`/`client_hostname`/`client_name`/`version_*`/`protocol_version` fields are present.
+- Any other interface: none of the TCP fields (7–12) and none of the HTTP fields are written; the stream continues directly with `quota_key`.
+
+After this branch the layout rejoins: `quota_key` (field 13) and `distributed_depth` (field 14) follow for all interfaces, then `version_patch` (field 15) is written only for TCP.
+
+This branch matters mainly for inter-server traffic, where the initiating server forwards a query that originally arrived over HTTP. A decoder that always reads the TCP fields will misread such packets — treating `http_method` or `http_user_agent` as `quota_key`.
+:::
+
 OpenTelemetry encoding (field 16):
 
 ```text
