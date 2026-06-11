@@ -1,4 +1,5 @@
 import logging
+import re
 import traceback
 import random
 from pyspark.sql import SparkSession
@@ -52,10 +53,19 @@ class SparkAndClickHouseCheck:
 
     def _clickhouse_engine_matches(self, client, table: SparkTable):
         expected = "Iceberg" if table.lake_format == LakeFormat.Iceberg else "DeltaLake"
-        engine = client.query(
-            f"SELECT engine FROM system.tables WHERE database = '{table.database_name}' AND name = '{table.table_name}';"
-        )
-        engine = engine.rstrip() if isinstance(engine, str) else ""
+        # Read the declared engine from the DDL rather than system.tables.engine:
+        # with lazy_load_tables, system.tables reports StorageTableProxy's name
+        # ("TableProxy") until the table is first materialized, which is not an
+        # engine swap. SHOW CREATE reflects the real (possibly REPLACEd) engine
+        # without forcing a load.
+        ddl = client.query(f"SHOW CREATE TABLE {table.get_clickhouse_path()};")
+        ddl = ddl if isinstance(ddl, str) else ""
+        match = re.search(r"ENGINE\s*=\s*([A-Za-z0-9_]+)", ddl)
+        if not match:
+            # Could not determine the engine: proceed with the check rather than
+            # silently skip it.
+            return False, ddl.strip()
+        engine = match.group(1)
         return engine.startswith(expected), engine
 
     def check_table(self, cluster, spark: SparkSession, table: SparkTable) -> bool:
