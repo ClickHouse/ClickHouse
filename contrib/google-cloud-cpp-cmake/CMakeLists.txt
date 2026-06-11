@@ -78,8 +78,7 @@ google_cloud_cpp_add_library_protos(storage)
 
 # Storage needs rest_internal, and both need nlohmann_json
 
-# Let google_cloud_cpp use our own version of curl and crc32c
-add_library(CURL::libcurl ALIAS _curl)
+# Let google_cloud_cpp use our own version of crc32c
 add_library(Crc32c::crc32c ALIAS _crc32c)
 add_library(nlohmann_json::nlohmann_json ALIAS _nlohmann_json)
 
@@ -105,7 +104,6 @@ list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS
 
 list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS_EXTRA
     ch_contrib::crc32c
-    ch_contrib::curl
     ch_contrib::nlohmann_json
 )
 
