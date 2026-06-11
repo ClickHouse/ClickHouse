@@ -36,8 +36,8 @@ static size_t getStackSize(void ** out_address)
 {
     using namespace DB;
 
-    size_t size = 0;
-    void * address = nullptr;
+    size_t size;
+    void * address;
 
 #if defined(OS_DARWIN)
     // pthread_get_stacksize_np() returns a value too low for the main thread on

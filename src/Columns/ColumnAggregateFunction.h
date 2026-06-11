@@ -141,9 +141,7 @@ public:
 
     bool isDefaultAt(size_t) const override
     {
-        /// Aggregate function states have no meaningful default representation, so they are never considered default.
-        /// This is consistent with getNumberOfDefaultRows returning 0.
-        return false;
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for ColumnAggregateFunction");
     }
 
     std::string_view getDataAt(size_t n) const override;

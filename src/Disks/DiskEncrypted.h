@@ -3,8 +3,6 @@
 #include "config.h"
 
 #if USE_SSL
-#include <mutex>
-
 #include <Disks/IDisk.h>
 #include <Common/MultiVersion.h>
 #include <Disks/FakeDiskTransaction.h>
@@ -126,11 +124,10 @@ public:
         const WriteSettings & write_settings,
         const std::function<void()> & cancellation_hook) override;
 
-    void prepareRead(
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        ReadPipeline & pipeline) const override;
+        std::optional<size_t> read_hint) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -375,14 +372,7 @@ public:
 
     MetadataStoragePtr getMetadataStorage() override
     {
-        /// Cache the wrapper so that the metadata storage pointer is stable across calls (like `DiskObjectStorage`),
-        /// which code such as `isStoredOnTheSameDisk` relies on to hardlink parts instead of copying them; lazily,
-        /// because a non-object-storage delegate does not implement `getMetadataStorage`.
-        std::call_once(metadata_storage_init_flag, [this]
-        {
-            metadata_storage = std::make_shared<MetadataStorageWithPathWrapper>(delegate->getMetadataStorage(), disk_path);
-        });
-        return metadata_storage;
+        return std::make_shared<MetadataStorageWithPathWrapper>(delegate->getMetadataStorage(), disk_path);
     }
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const override;
@@ -422,10 +412,6 @@ private:
     const String disk_absolute_path;
     MultiVersion<DiskEncryptedSettings> current_settings;
     bool use_fake_transaction;
-
-    /// Lazily-initialized stable wrapper returned by getMetadataStorage(); see the comment there.
-    std::once_flag metadata_storage_init_flag;
-    MetadataStoragePtr metadata_storage;
 };
 
 }
