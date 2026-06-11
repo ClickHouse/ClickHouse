@@ -1738,6 +1738,8 @@ std::optional<UInt64> JoinStepLogical::getInputRowsEstimation(JoinTableSide side
         return right_rows_estimation;
 }
 
+void registerJoinStep(QueryPlanStepRegistry & registry);
+
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Join", JoinStepLogical::deserialize);
