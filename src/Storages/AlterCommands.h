@@ -230,6 +230,10 @@ public:
     /// All commands modify comments only.
     bool isCommentAlter() const;
 
+    /// At least one command adds, drops, modifies or renames a column,
+    /// i.e. changes the set or types of the table's columns.
+    bool changesColumns() const;
+
     /// Return mutation commands which some storages may execute as part of
     /// alter. If alter can be performed as pure metadata update, than result is
     /// empty. If some TTL changes happened than, depending on materialize_ttl

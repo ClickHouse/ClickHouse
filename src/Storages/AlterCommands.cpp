@@ -1938,6 +1938,20 @@ bool AlterCommands::isCommentAlter() const
     return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isCommentAlter(); });
 }
 
+bool AlterCommands::changesColumns() const
+{
+    return std::any_of(begin(), end(), [](const AlterCommand & c)
+    {
+        /// A comment-only MODIFY COLUMN does not change the column set or types.
+        if (c.isCommentAlter())
+            return false;
+        return c.type == AlterCommand::ADD_COLUMN
+            || c.type == AlterCommand::DROP_COLUMN
+            || c.type == AlterCommand::MODIFY_COLUMN
+            || c.type == AlterCommand::RENAME_COLUMN;
+    });
+}
+
 static MutationCommand createMaterializeTTLCommand()
 {
     MutationCommand command;

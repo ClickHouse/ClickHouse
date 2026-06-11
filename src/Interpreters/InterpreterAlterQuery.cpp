@@ -347,8 +347,10 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             /// materialized views stale (DESCRIBE / SHOW CREATE), and even break reads from them when
             /// the new types are incompatible with the frozen ones. Capture the views that are in sync
             /// with their SELECT output *before* the change, then re-infer their columns afterwards.
+            /// Restricted to column-changing alters so that unrelated alters (TTL, settings, ...) do
+            /// not pay the cost of analyzing dependent views' SELECT queries.
             std::vector<StoragePtr> dependent_views;
-            if (!alter_commands->isSettingsAlter() && !alter_commands->isCommentAlter())
+            if (alter_commands->changesColumns())
                 dependent_views = collectInferredDependentMaterializedViews(table->getStorageID(), context);
 
             table->alter(*alter_commands, context, alter_lock);

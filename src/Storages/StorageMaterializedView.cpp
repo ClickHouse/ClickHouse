@@ -784,6 +784,11 @@ std::optional<ColumnsDescription> StorageMaterializedView::tryInferColumnsFromSe
     {
         /// The SELECT may be temporarily unanalyzable (e.g. an upstream table mid-ALTER or missing).
         /// Leave the stored columns as-is rather than failing the triggering ALTER.
+        LOG_DEBUG(
+            getLogger("StorageMaterializedView"),
+            "Could not re-infer columns from the SELECT of {}, leaving stored columns unchanged: {}",
+            getStorageID().getNameForLogs(),
+            getCurrentExceptionMessage(false));
         return {};
     }
 }
