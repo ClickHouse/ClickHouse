@@ -679,7 +679,7 @@ They share three structural properties:
 
 Composites are recursive — an inner type may itself be a composite.
 
-**Prefix phase before the data streams.** Reading a column is two phases, in this order: a **state-prefix phase** and then the **data-stream phase**. A composite wrapper has no prefix bytes of its own, but it *delegates* the prefix phase to its inner serialization before writing any of its own data streams: `SerializationArray` runs its inner type's prefix phase before the array offsets are written, and `Tuple`, `Map`, and `Nested` do the same through their element serializations.
+**Prefix phase before the data streams.** Reading a column is two phases, in this order: a **state-prefix phase** and then the **data-stream phase**. A composite wrapper has no prefix bytes of its own, but it *delegates* the prefix phase to its inner serialization before writing any of its own data streams: `SerializationArray` runs its inner type's prefix phase before the array offsets are written, and `Tuple`, `Map`, `Nested`, and `Nullable` do the same through their element serializations (`Nullable` runs the inner prefix before its null map).
 
 So when a composite wraps a [versioned/stateful type](#versioned-types) (`LowCardinality`, `Variant`, `Dynamic`, `JSON`), that inner type's version/state prefix is emitted *first*, ahead of the wrapper's offsets and element payload. For example, `Array(LowCardinality(String))` is laid out as `[LowCardinality state prefix]` → `[array offsets]` → `[flattened LowCardinality element payload]`, not offsets-first.
 
@@ -689,11 +689,14 @@ A decoder that reads offsets before running the inner prefix phase will desynchr
 
 Type string: `Nullable(InnerType)`. Examples: `Nullable(UInt32)`, `Nullable(String)`, `Nullable(FixedString(16))`, `Nullable(DateTime('UTC'))`.
 
-The wire layout is two concatenated streams, null-map first:
+Like the other composites, `Nullable` delegates the [prefix phase](#composite-types) to its inner serialization before writing the null map: when the inner is versioned, the inner's state prefix is emitted **first**. So `Nullable(Tuple(LowCardinality(String)))` starts with the `LowCardinality` state prefix, not the null map. When the inner is a leaf or another non-versioned type, the prefix phase emits no bytes.
+
+The wire layout is the inner prefix phase (empty unless the inner is versioned) followed by two concatenated streams, null-map first:
 
 ```text
-[null-map stream]  num_rows × UInt8
-[values stream]    inner type's encoding for num_rows values
+[inner type's state prefix]   empty for leaf/non-versioned inners; emitted first when the inner is versioned
+[null-map stream]             num_rows × UInt8
+[values stream]               inner type's encoding for num_rows values
 ```
 
 The null-map is exactly `num_rows` bytes, one per row:
