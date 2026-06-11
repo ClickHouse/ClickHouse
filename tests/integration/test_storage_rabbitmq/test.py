@@ -1038,7 +1038,11 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster, db, unique):
     """
     )
 
-    instance.wait_for_log_line("Started streaming to 1 attached views")
+    # db is per-test unique, so scoping to it avoids matching a stale
+    # "Started streaming" line from an earlier RabbitMQ test in the tail buffer.
+    instance.wait_for_log_line(
+        rf"StorageRabbitMQ \({db}\.rabbitmq_consume\).*Started streaming to 1 attached views"
+    )
 
     for thread in threads:
         thread.join()
