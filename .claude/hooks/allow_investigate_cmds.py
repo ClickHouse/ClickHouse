@@ -7,13 +7,15 @@ prompt. Two families:
 
   1. The play.clickhouse.com read-only SELECT history query.
   2. node .claude/tools/fetch_ci_report.js against known CI-report hosts, with
-     only read/report flags, and --download-logs restricted to tmp/investigate.
+     only read/report flags (NO file-writing forms).
 
-Everything else falls through to the normal permission prompt -- this is an
-allowlist (default-deny). Both families reject shell composition/substitution
-and redirections outside tmp/investigate, so the dangerous variants (curl
---data-binary @<file>, fetch_ci_report --download-logs /etc/x, $(...), a second
-piped command, an arbitrary URL/host) prompt instead of running.
+The hook never auto-approves a write: --download-logs and stdout redirection are
+deliberately excluded, because a string-pinned path cannot be made symlink-safe
+(a planted tmp/investigate symlink would redirect the write outside). Those write
+forms, and everything else, fall through to the normal permission prompt -- this
+is an allowlist (default-deny). Both families also reject shell composition/
+substitution, so the dangerous variants (curl --data-binary @<file>, $(...), a
+second piped command, an arbitrary URL/host) prompt instead of running.
 
 Output contract: print a PreToolUse "allow" decision only on a match; otherwise
 print nothing and exit 0 so normal handling (the prompt) runs. Never emits "deny".
@@ -42,9 +44,7 @@ FETCH = re.compile(
     r'|https://github\.com/ClickHouse/ClickHouse/(?:pull|issues)/)[^"$`]*"'
     r"(?: (?:--failed|--cidb|--all|--links"
     r"|--report [0-9]+"
-    r"|--credentials [^\s\"$`;|&<>]+"
-    r"|--download-logs tmp/investigate/[A-Za-z0-9._/-]+))*"
-    r"(?: > tmp/investigate/[A-Za-z0-9._/-]+)?"
+    r"|--credentials [^\s\"$`;|&<>]+))*"
     r"(?: 2>&1| 2>/dev/null)?"
 )
 

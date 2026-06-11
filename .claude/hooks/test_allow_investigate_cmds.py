@@ -42,15 +42,16 @@ CASES = [
     ("play non-SELECT body", "curl -sS 'https://play.clickhouse.com/?user=play' --data-binary \"DROP TABLE x\"", "prompt"),
     ("play different host", "curl -sS 'https://evil.example.com/?user=play' --data-binary \"SELECT 1\"", "prompt"),
 
-    # --- fetch_ci_report.js (family 2) -- allowed shapes ---
-    ("fetch failed+cidb + redirect, & in url", f'node {T} "{S3}json.html?PR=1&sha=x" --failed --cidb > tmp/investigate/failed.txt 2>&1', "allow"),
+    # --- fetch_ci_report.js (family 2) -- allowed read/report shapes (no writes) ---
+    ("fetch failed+cidb + 2>&1, & in url", f'node {T} "{S3}json.html?PR=1&sha=x" --failed --cidb 2>&1', "allow"),
     ("fetch PR url failed+cidb", f'node {T} "https://github.com/ClickHouse/ClickHouse/pull/107085" --failed --cidb', "allow"),
-    ("fetch --all redirect", f'node {T} "{S3}json.html?PR=1" --all > tmp/investigate/all.txt 2>&1', "allow"),
-    ("fetch --download-logs to tmp", f'node {T} "{S3}x" --failed --download-logs tmp/investigate/ci_logs.tar.gz', "allow"),
+    ("fetch --all (no redirect)", f'node {T} "{S3}json.html?PR=1" --all', "allow"),
     ("fetch private host + creds", f'node {T} "{CF}json.html?PR=1&sha=y" --failed --cidb --credentials ch-s-priv,tn#4pq@*K', "allow"),
     ("fetch issues url --report N", f'node {T} "https://github.com/ClickHouse/ClickHouse/issues/1" --report 2', "allow"),
 
-    # --- fetch_ci_report.js -- dangerous variants must prompt ---
+    # --- fetch_ci_report.js -- write forms are NOT auto-approved (symlink-unsafe) ---
+    ("fetch --download-logs to tmp (write)", f'node {T} "{S3}x" --failed --download-logs tmp/investigate/ci_logs.tar.gz', "prompt"),
+    ("fetch redirect to tmp (write)", f'node {T} "{S3}json.html?PR=1&sha=x" --failed --cidb > tmp/investigate/failed.txt 2>&1', "prompt"),
     ("fetch download-logs outside tmp", f'node {T} "{S3}x" --download-logs /etc/cron.d/x', "prompt"),
     ("fetch redirect outside tmp", f'node {T} "{S3}x" --failed > /etc/passwd', "prompt"),
     ("fetch .. traversal download-logs", f'node {T} "{S3}x" --download-logs tmp/investigate/../../.claude/settings.investigate.json', "prompt"),

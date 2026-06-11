@@ -85,13 +85,16 @@ command -v node
 If `node` is present, fetch the failed tests and their output:
 
 ```bash
-node .claude/tools/fetch_ci_report.js "$0" --failed --cidb > tmp/investigate/failed.txt 2>&1
+node .claude/tools/fetch_ci_report.js "$0" --failed --cidb 2>&1
 ```
 
-This pulls the failed tests **and their output** straight from the praktika `result_*.json` (no
-copy-paste) and prints a CIDB link per failed test; read `tmp/investigate/failed.txt`. If `node`
-is **absent**, skip the report fetch (and the step-4 download) and rely on the issue body's
-failure output plus step 3 — do not treat a missing `node` as a fatal error.
+This prints the failed tests **and their output** straight from the praktika `result_*.json` (no
+copy-paste), with a CIDB link per failed test. Read it from the command output — do **not** add a
+`> tmp/investigate/…` redirect (a redirect is a file write the hook won't auto-approve, since it
+can't be made symlink-safe, so it would prompt); the harness persists large output to a file you
+can re-read or `grep`. If `node` is **absent**, skip the report fetch (and the step-4 download)
+and rely on the issue body's failure output plus step 3 — do not treat a missing `node` as a
+fatal error.
 
 - If `$0` is a PR URL with many reports and the noise is high, narrow with `--report <n>`
   after listing reports (run the tool with no `--failed` to see the index).
@@ -289,7 +292,9 @@ the gap, not the whole bundle reflexively (it is large and sometimes truncates).
 only against a **single concrete report** (an S3 `json.html`/`result_*.json` URL). A bare PR URL
 takes the multi-report path and returns after the summary **without downloading**, so substitute
 `<report-url>` — the S3 report URL for the failing check, or narrow the PR with `--report <n>`
-first (list reports by running the tool with no `--failed`):
+first (list reports by running the tool with no `--failed`). This writes a file, so the hook does
+**not** auto-approve it — it prompts under the investigate profile; approve it (this is the one
+expected write, and it's the rare artifact-needed path):
 
 ```bash
 node .claude/tools/fetch_ci_report.js "<report-url>" --failed --download-logs tmp/investigate/ci_logs.tar.gz
