@@ -52,6 +52,23 @@ def get_current_snapshot_summary(path_to_table):
             return snap.get("summary", {})
     return {}
 
+
+def get_all_snapshot_ids(path_to_table):
+    """Return the set of all snapshot-ids recorded in the latest metadata file."""
+    metadata_dir = f"{path_to_table}/metadata/"
+    last_timestamp = -1
+    best = None
+    for filename in os.listdir(metadata_dir):
+        if filename.endswith(".json"):
+            filepath = os.path.join(metadata_dir, filename)
+            with _open_metadata_file(filepath) as f:
+                data = json.load(f)
+            ts = data.get("last-updated-ms", 0)
+            if ts > last_timestamp:
+                last_timestamp = ts
+                best = data
+    return {snap.get("snapshot-id") for snap in (best or {}).get("snapshots", [])}
+
 @pytest.mark.parametrize("storage_type", ["local", "s3", "azure"])
 def test_optimize(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
@@ -630,6 +647,10 @@ def test_optimize_manifest_files_preserves_entry_lineage(started_cluster_iceberg
         )
 
     manifests_before = list_data_manifests()
+    # Snapshot-ids that exist before compaction; every preserved entry must reference one of these
+    # (its original adder), never the brand-new replace snapshot created by the compaction.
+    original_snapshot_ids = get_all_snapshot_ids(table_path)
+    assert original_snapshot_ids, "expected the pre-compaction metadata to record snapshots"
 
     instance.query(
         f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
@@ -638,9 +659,6 @@ def test_optimize_manifest_files_preserves_entry_lineage(started_cluster_iceberg
             "iceberg_manifest_min_count_to_compact": 2,
         },
     )
-
-    # The replace snapshot created by the compaction.
-    new_snapshot_id = get_last_snapshot(table_path)
 
     new_manifests = sorted(list_data_manifests() - manifests_before)
     assert new_manifests, "OPTIMIZE TABLE ... MANIFEST did not produce a consolidated manifest"
@@ -668,10 +686,12 @@ def test_optimize_manifest_files_preserves_entry_lineage(started_cluster_iceberg
             # ADDED, so the new snapshot is consistent with the manifest list (which reports them as
             # existing) and incremental planning can tell them apart from additions.
             assert int(status) == 0, f"expected EXISTING entry (status 0), got {status}"
-            # The original adding snapshot is preserved, not re-stamped with the new replace snapshot.
-            assert snapshot_id != "\\N" and int(snapshot_id) != new_snapshot_id, (
-                f"entry snapshot_id {snapshot_id} should be the original adder, not the "
-                f"replace snapshot {new_snapshot_id}"
+            # The original adding snapshot is preserved: the entry references one of the original
+            # snapshots, not the brand-new replace snapshot created by the compaction.
+            assert snapshot_id != "\\N", "snapshot_id must be preserved (non-null)"
+            assert int(snapshot_id) in original_snapshot_ids, (
+                f"entry snapshot_id {snapshot_id} should be an original adder, "
+                f"not a snapshot created by the compaction"
             )
             # EXISTING entries require an explicit, preserved (non-null) data sequence number.
             assert sequence_number != "\\N", "sequence_number must be preserved (non-null)"
