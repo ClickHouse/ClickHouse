@@ -3180,7 +3180,7 @@ std::vector<KeyCondition::KeyFunctionChain> KeyCondition::extractMonotonicFuncti
                         const bool has_string_argument = !func_arg_types.empty() && isStringOrFixedString(func_arg_types[0]);
                         const bool has_session_timezone = !context->getSettingsRef()[Setting::session_timezone].value.empty();
 
-                        // Skipping analysis in case when is requires parsing datetime from string
+                        // Skipping analysis in case when it requires parsing datetime from string
                         // with `session_timezone` specified
                         if (has_string_argument && has_session_timezone)
                         {
