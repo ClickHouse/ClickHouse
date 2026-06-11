@@ -1234,7 +1234,7 @@ Rope ReaderExecutor::readNextWindow()
                 const ByteRange requested_phys{prefetch_range.offset + data_start_offset, prefetch_range.size};
                 Rope result;
                 IntervalSet covered;
-                backfillBytes(prefetch_physical_window, source_bytes, result, covered, stats);
+                backfillBytes(prefetch_physical_window, requested_phys, source_bytes, result, covered, stats);
                 rope = finalizeAssembledWindow(requested_phys, prefetch_physical_window.end(),
                     result, foreground_connection_state, reached_eof);
                 if (data_start_offset)
@@ -1980,19 +1980,17 @@ bool ReaderExecutor::fetchAndBackfillGaps(
     MemoryPressureLevel pressure_level,
     Stats & out_stats)
 {
-    /// Synchronous foreground gap read: whatever the plan left uncovered in the ALIGNED
-    /// `fetch_window` is a remote gap. First re-credit any grown committed prefix of the
-    /// plan's held write buffers (so a concurrently/self-grown prefix is served from cache,
-    /// not re-fetched), then serve any late cache hit, then read the still-missing ranges
-    /// from the source in one pass (assembling `result` from the SOURCE Rope) and push them
-    /// into the held write buffers. Over-read is accounted against `requested_window`.
+    /// Synchronous foreground gap path: serve any grown committed prefix and late cache hit
+    /// FIRST (so a concurrently/self-cached gap is served from cache, not re-fetched), then
+    /// read the still-missing gaps of the ALIGNED `fetch_window` from the source - merged
+    /// into fewer requests by `min_bytes_for_seek` - into one `source_bytes` Rope, and hand
+    /// it to the shared `assembleAndWriteBack` (append + over-read + cache fill).
     recreditCommittedPrefixes(fetch_window, result, covered, out_stats);
     serveLateHits(fetch_window, result, covered, out_stats);
     VectorWithMemoryTracking<ByteRange> remaining = covered.subtract(fetch_window);
 
-    /// Merge close-together gaps into fewer source requests. The merge may bridge
-    /// already-covered bytes; the overlap is dropped below (only the uncovered
-    /// portion of each fetched range is appended).
+    /// Merge close-together gaps into fewer source requests. A merge may bridge already-
+    /// covered bytes; `assembleAndWriteBack` appends only the still-uncovered sub-ranges.
     auto fetch_ranges = mergeRanges(remaining, min_bytes_for_seek);
     if (fetch_ranges.size() < remaining.size())
         LOG_TRACE(log, "fetchAndBackfillGaps: merged {} gaps into {} fetch ranges (min_gap={})",
@@ -2001,6 +1999,7 @@ bool ReaderExecutor::fetchAndBackfillGaps(
     /// Block size for the source-read tiles, from the per-plan cached pressure level.
     const size_t window_block_size = effectiveBlockSize(pressure_level);
 
+    Rope source_bytes;
     for (const auto & fr : fetch_ranges)
     {
         auto physical_ranges = offset_map.map(fr);
@@ -2024,13 +2023,13 @@ bool ReaderExecutor::fetchAndBackfillGaps(
 
             auto blocks = allocateBlocks(pr.size, window_block_size, splits);
             StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
-            /// Foreground gap read: keep the connection live iff the current plan holds
-            /// the lease (a wide plan); a narrow tail plan reads a one-shot.
-            Rope source_rope = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos,
+            /// Keep the connection live iff the current plan holds the lease (a wide plan);
+            /// a narrow tail plan reads a one-shot.
+            Rope sr = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos,
                 /*keep_live=*/static_cast<bool>(connection_lease), conn, out_stats);
             HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
-            size_t actual = source_rope.totalBytes();
+            const size_t actual = sr.totalBytes();
             out_stats.add(Stats::BytesFromSource, actual);
             /// Size-known short reads are fatal (the map promised those bytes).
             /// Size-unknown short reads are how EOF is learned - latch it.
@@ -2042,33 +2041,12 @@ bool ReaderExecutor::fetchAndBackfillGaps(
                         pr.object.remote_path, pr.object_offset, pr.size, actual);
                 eof_latch = true;
             }
-
-            /// Use `actual` so the recorded range tracks what the source delivered
-            /// - diverges from `pr.size` only at EOF.
-            ByteRange pr_range{logical_pos, actual};
-            /// Over-read: fetched bytes that do not serve the REQUESTED window (alignment
-            /// slack outside it, or bytes a bridged gap already covered).
-            {
-                const size_t lo = std::max(pr_range.offset, requested_window.offset);
-                const size_t hi = std::min(pr_range.end(), requested_window.end());
-                size_t needed = 0;
-                if (hi > lo)
-                    for (const auto & sub : covered.subtract(ByteRange{lo, hi - lo}))
-                        needed += sub.size;
-                out_stats.add(Stats::OverReadBytes, actual - needed);
-            }
-            for (const auto & sub : covered.subtract(pr_range))
-            {
-                result.append(source_rope.extract(sub));
-                covered.add(sub);
-            }
-
+            source_bytes.append(std::move(sr));
             logical_pos += pr.size;
         }
     }
 
-    pushAssembledToWriteBuffers(fetch_window, result, out_stats);
-
+    assembleAndWriteBack(fetch_window, requested_window, source_bytes, result, covered, out_stats);
     return !fetch_ranges.empty();
 }
 
@@ -2127,29 +2105,33 @@ Rope ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_pr
 }
 
 void ReaderExecutor::backfillBytes(
-    ByteRange physical_window, const Rope & source_bytes,
+    ByteRange physical_window, ByteRange requested_window, const Rope & source_bytes,
     Rope & result, IntervalSet & covered, Stats & out_stats)
 {
-    /// Assemble the window from `source_bytes` (the whole window already fetched from
-    /// the source - the worker's raw gap bytes at consume, or the foreground's own
-    /// `fetchGapsFromSource` read) plus any cache LATE-HIT. FOREGROUND-only
-    /// (`this->stats`, synchronous writes into the held buffers): the worker does no
-    /// cache work, so a prefetched window is backfilled here at consume. Re-credit the
-    /// grown committed prefixes first, then serve late hits, both BEFORE the source so a
-    /// concurrently-cached gap is served from cache, not the source copy.
+    /// The prefetch-CONSUME gap path: the worker already fetched the whole aligned
+    /// `physical_window` into `source_bytes` (it does no cache work). Serve any grown
+    /// committed prefix and late cache hit first (BEFORE the worker's bytes, so a
+    /// concurrently-cached gap is served from cache, not the redundant source copy), then
+    /// hand the bytes to the shared `assembleAndWriteBack` - the same tail the sync path
+    /// uses, so over-read counts identically.
     recreditCommittedPrefixes(physical_window, result, covered, out_stats);
     serveLateHits(physical_window, result, covered, out_stats);
+    assembleAndWriteBack(physical_window, requested_window, source_bytes, result, covered, out_stats);
+}
 
-    /// Serve the still-missing ranges from the already-fetched `source_bytes` (assembly
-    /// truth is the SOURCE Rope, `[CF-contiguity]`). CLAMP every append to the range
-    /// `source_bytes` ACTUALLY delivered: a size-unknown EOF read returns fewer bytes
-    /// than the window, so a miss can extend past the delivered tail. A cold-segment miss
-    /// head can also sit BEFORE the window; those head bytes were never fetched, so they
-    /// are left a hole here and the held write buffer's `write` skips them (it can only
-    /// append from a segment's current offset).
+void ReaderExecutor::assembleAndWriteBack(
+    ByteRange fetch_window, ByteRange requested_window,
+    const Rope & source_bytes, Rope & result, IntervalSet & covered, Stats & out_stats)
+{
+    /// Append the source bytes for the still-uncovered gaps of `fetch_window`, in offset
+    /// order (assembly truth is the SOURCE Rope, `[CF-contiguity]`). CLAMP every append to
+    /// what `source_bytes` ACTUALLY delivered: a size-unknown EOF read returns fewer bytes
+    /// than the window, and a cold-segment miss head can sit BEFORE the window - those head
+    /// bytes were never fetched, so they stay a hole here and the held write buffer's
+    /// append-at-`cwo` skips them.
     const ByteRange delivered = source_bytes.range();
-    size_t appended_from_source = 0;
-    for (const auto & miss : covered.subtract(physical_window))
+    size_t served_requested = 0;
+    for (const auto & miss : covered.subtract(fetch_window))
     {
         const size_t lo = std::max(miss.offset, delivered.offset);
         const size_t hi = std::min(miss.end(), delivered.end());
@@ -2159,18 +2141,20 @@ void ReaderExecutor::backfillBytes(
         {
             result.append(source_bytes.slice(sub));
             covered.add(sub);
-            appended_from_source += sub.size;
+            const size_t rlo = std::max(sub.offset, requested_window.offset);
+            const size_t rhi = std::min(sub.end(), requested_window.end());
+            if (rhi > rlo)
+                served_requested += rhi - rlo;
         }
     }
 
-    /// Over-read: source bytes that did NOT serve the window - the late-hit ranges
-    /// another reader cached since planning (served from cache above, so the source
-    /// copy is redundant) plus any sub-`min_bytes_for_seek` hole between them that the
-    /// single whole-window read fetched through. `source_bytes` is exactly the window,
-    /// so this is precisely what was delivered minus what was appended from it.
-    out_stats.add(Stats::OverReadBytes, source_bytes.totalBytes() - appended_from_source);
+    /// Over-read - the single rule for both gap paths: source bytes that did NOT serve the
+    /// REQUESTED window. That is the alignment slack fetched only to fill a cache cell,
+    /// redundant copies of late-hit ranges another reader cached since planning, and any
+    /// bridged sub-`min_bytes_for_seek` hole (`[CF-overread]`).
+    out_stats.add(Stats::OverReadBytes, source_bytes.totalBytes() - served_requested);
 
-    pushAssembledToWriteBuffers(physical_window, result, out_stats);
+    pushAssembledToWriteBuffers(fetch_window, result, out_stats);
 }
 
 void ReaderExecutor::pushAssembledToWriteBuffers(ByteRange physical_window, const Rope & result, Stats & out_stats)

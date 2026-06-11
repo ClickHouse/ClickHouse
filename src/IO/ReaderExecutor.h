@@ -295,7 +295,18 @@ private:
     /// (not a per-window collection) take the writes, so their deferred LRU-bump runs
     /// after the writes and the in-flight segment can be pinned from them.
     void backfillBytes(
-        ByteRange physical_window, const Rope & source_bytes,
+        ByteRange physical_window, ByteRange requested_window, const Rope & source_bytes,
+        Rope & result, IntervalSet & covered, Stats & out_stats);
+
+    /// Shared assembly tail of both gap paths (sync `fetchAndBackfillGaps` and prefetch
+    /// `backfillBytes`), run AFTER `recreditCommittedPrefixes` + `serveLateHits`: append the
+    /// `source_bytes` for the still-uncovered gaps of `fetch_window` into `result` (in offset
+    /// order, clamped to what the source actually delivered), account OVER-READ, and push the
+    /// assembled window into the held write buffers. Over-read is the single rule for both
+    /// paths: source bytes that did NOT serve `requested_window` (alignment slack fetched only
+    /// to fill a cache cell, redundant copies of late-hit ranges, bridged holes) (`[CF-overread]`).
+    void assembleAndWriteBack(
+        ByteRange fetch_window, ByteRange requested_window, const Rope & source_bytes,
         Rope & result, IntervalSet & covered, Stats & out_stats);
 
     /// Shared tail of an assembled window: re-point the Strategy-A pin to the partial
