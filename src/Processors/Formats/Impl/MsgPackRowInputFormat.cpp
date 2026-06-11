@@ -444,7 +444,7 @@ bool MsgPackVisitor::end_array_item() // NOLINT
         info_stack.pop();
     else
     {
-        assert(info_stack.top().array_size.has_value());
+        chassert(info_stack.top().array_size.has_value());
         auto & current_array_size = *info_stack.top().array_size;
         --current_array_size;
         if (current_array_size == 0)
@@ -704,6 +704,7 @@ std::optional<DataTypes> MsgPackSchemaReader::readRowAndGetDataTypes()
     return data_types;
 }
 
+void registerInputFormatMsgPack(FormatFactory & factory);
 void registerInputFormatMsgPack(FormatFactory & factory)
 {
     factory.registerInputFormat("MsgPack", [](
@@ -717,6 +718,7 @@ void registerInputFormatMsgPack(FormatFactory & factory)
     factory.registerFileExtension("messagepack", "MsgPack");
 }
 
+void registerMsgPackSchemaReader(FormatFactory & factory);
 void registerMsgPackSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("MsgPack", [](ReadBuffer & buf, const FormatSettings & settings)
@@ -739,6 +741,8 @@ void registerMsgPackSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatMsgPack(FormatFactory &);
+void registerMsgPackSchemaReader(FormatFactory &);
 void registerInputFormatMsgPack(FormatFactory &)
 {
 }

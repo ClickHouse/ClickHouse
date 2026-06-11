@@ -10,6 +10,8 @@
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Common/logger_useful.h>
 
+#include <cstdint>
+
 using namespace DB;
 
 namespace DB
@@ -18,6 +20,29 @@ namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int LOGICAL_ERROR;
+
+}
+
+namespace
+{
+
+/// Diagnostic predicate for the bounds-corruption class of bug tracked in
+/// `https://github.com/ClickHouse/ClickHouse/issues/104692`. Validates that
+/// `inner` is fully contained in `outer` WITHOUT touching `Buffer::size` or
+/// `begin + size` arithmetic on `inner`. If `inner` is corrupt (inverted, or
+/// `begin`/`end` from different allocations), `Buffer::size` would be a huge
+/// unsigned and `begin + size` would overflow before `chassert` ever reports
+/// anything. Compare the four stored pointers as integer addresses instead.
+void assertWorkingBufferContainedIn(BufferBase::Buffer inner, BufferBase::Buffer outer)
+{
+    auto inner_begin = reinterpret_cast<std::uintptr_t>(inner.begin());
+    auto inner_end = reinterpret_cast<std::uintptr_t>(inner.end());
+    auto outer_begin = reinterpret_cast<std::uintptr_t>(outer.begin());
+    auto outer_end = reinterpret_cast<std::uintptr_t>(outer.end());
+    chassert(inner_begin <= inner_end);
+    chassert(inner_begin >= outer_begin);
+    chassert(inner_end <= outer_end);
+}
 
 }
 
@@ -133,6 +158,13 @@ bool ReadBufferFromRemoteFSGather::readImpl()
                 "offset: {}, buf offset: {}, available: {}, nextimpl offset: {}",
                 file_offset_of_buffer_end, current_buf->getFileOffsetOfBufferEnd(),
                 current_buf->available(), nextimpl_working_buffer_offset));
+
+        /// While the `SwapHelper` is in scope our external buffer lives on
+        /// `current_buf->internalBuffer`, not on `this->internal_buffer`.
+        /// The asserts must run on the same side of the swap as the working
+        /// buffer they validate.
+        if (use_external_buffer)
+            assertWorkingBufferContainedIn(current_buf->buffer(), current_buf->internalBuffer());
     }
 
     return result;
@@ -195,8 +227,8 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
             && static_cast<size_t>(offset) < file_offset_of_buffer_end)
         {
             pos = working_buffer.end() - (file_offset_of_buffer_end - offset);
-            assert(pos >= working_buffer.begin());
-            assert(pos < working_buffer.end());
+            chassert(pos >= working_buffer.begin());
+            chassert(pos < working_buffer.end());
 
             return getPosition();
         }

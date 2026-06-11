@@ -175,6 +175,7 @@ AggregateFunctionPtr createAggregateFunctionEntropy(
 
 }
 
+void registerAggregateFunctionEntropy(AggregateFunctionFactory & factory);
 void registerAggregateFunctionEntropy(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
