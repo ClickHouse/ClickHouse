@@ -1284,26 +1284,25 @@ void NO_INLINE Aggregator::executeImplBatch(
         heap_key_cols.assign(key_columns.begin(), key_columns.begin() + heap_key_count);
     }
 
+    /// For `AggregationMethodOneNumber` we can hand the heap a raw typed pointer
+    /// to the source column data so it skips the virtual `IColumn::compareAt`.
+    /// Excluded (silently fall back to the virtual path):
+    ///  - `HashMethodSingleLowCardinalityColumn`, which inherits `getKeyData()`
+    ///    but the pointer addresses dictionary entries, not source rows;
+    ///  - nullable key methods, where the heap column is `ColumnNullable` and
+    ///    its `getDataType()` does not match a concrete numeric `TypeIndex`.
     static constexpr bool has_typed_key = requires(const State & s) { s.getKeyData(); }
         && !requires(const State & s) { s.positions; }
         && !Method::one_key_nullable_optimization;
 
-    [[maybe_unused]] const KeyHolder * typed_key_data = nullptr;
+    [[maybe_unused]] const void * typed_key_data = nullptr;
     if constexpr (top_k && has_typed_key)
-    {
-        if (method.top_k_heap.hasNumericSkipFn())
-            typed_key_data = state.getKeyData();
-    }
+        typed_key_data = state.getKeyData();
 
     [[maybe_unused]] auto heap_should_skip = [&](size_t row) -> bool
     {
-        if constexpr (top_k && has_typed_key)
-        {
-            if (typed_key_data)
-                return method.top_k_heap.shouldSkipNumeric(typed_key_data, row);
-        }
         if constexpr (top_k)
-            return method.top_k_heap.shouldSkip(heap_key_cols, row);
+            return method.top_k_heap.shouldSkip(typed_key_data, heap_key_cols, row);
         return false;
     };
 
@@ -1415,13 +1414,16 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     state.resetCache();
 
-    [[maybe_unused]] AggregateDataPtr discarded_row_state = nullptr;
+    /// Rows skipped by the heap leave `places[i] = nullptr`, and the non-JIT
+    /// batch paths do `if (places[i]) add(...)` — see `IAggregateFunction.h`.
+    /// This forces the non-JIT path below (the JIT-compiled `addBatch` does not
+    /// null-check), but avoids accumulating garbage state for stateful
+    /// aggregates (`uniqExact`, `groupArray`, ...).
+    ///
+    /// `destroyed_states` collects aggregate state pointers destroyed by
+    /// `trimHeapAndPruneHashTable`; after each trim, `places[key_start..i]`
+    /// entries pointing into it are cleared to avoid use-after-destroy.
     [[maybe_unused]] std::vector<AggregateDataPtr> destroyed_states;
-    if constexpr (top_k)
-    {
-        discarded_row_state = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-        createAggregateStates(discarded_row_state);
-    }
 
     /// For all rows.
     if (!no_more_keys)
@@ -1449,7 +1451,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if (method.top_k_heap.size() >= params.top_k_keys
                     && heap_should_skip(i))
                 {
-                    places[i] = discarded_row_state;
+                    places[i] = nullptr;
                     continue;
                 }
             }
@@ -1505,16 +1507,19 @@ void NO_INLINE Aggregator::executeImplBatch(
                         for (size_t j = key_start; j < i; ++j)
                         {
                             if (destroyed_set.contains(places[j]))
-                                places[j] = discarded_row_state;
+                                places[j] = nullptr;
                         }
 
+                        /// The current row's key may have been inserted and then
+                        /// immediately evicted by the trim that just ran.
                         if (destroyed_set.contains(aggregate_data))
-                            aggregate_data = discarded_row_state;
+                            aggregate_data = nullptr;
                     }
                 }
             }
 
-            chassert(aggregate_data != nullptr);
+            if constexpr (!top_k)
+                chassert(aggregate_data != nullptr);
             places[i] = aggregate_data;
         }
     }
@@ -1533,24 +1538,27 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
     }
 
-    bool has_only_one_value = top_k ? false : state.hasOnlyOneValueSinceLastReset();
+    /// When top-K is active some rows have `places[i] = nullptr` (skipped or
+    /// evicted), which only the non-JIT batch paths tolerate.  In addition,
+    /// `addBatchSinglePlace` (taken when `has_only_one_value` is true, or
+    /// unconditionally when `all_keys_are_const`) is incompatible with mixed
+    /// kept/skipped rows, so it must not see a null place either: when the sole
+    /// constant key was skipped, there is nothing to aggregate at all.
+    const bool has_only_one_value = top_k ? false : state.hasOnlyOneValueSinceLastReset();
+    const bool use_jit = use_compiled_functions && !top_k;
+    const bool skip_aggregation = top_k && all_keys_are_const && places[key_start] == nullptr;
 
-    executeAggregateInstructions(
-        aggregates_pool,
-        row_begin,
-        row_end,
-        aggregate_instructions,
-        places.get(),
-        key_start,
-        has_only_one_value,
-        all_keys_are_const,
-        use_compiled_functions);
-
-    if constexpr (top_k)
-    {
-        for (size_t j = 0; j < aggregate_functions.size(); ++j)
-            aggregate_functions[j]->destroy(discarded_row_state + offsets_of_aggregate_states[j]);
-    }
+    if (!skip_aggregation)
+        executeAggregateInstructions(
+            aggregates_pool,
+            row_begin,
+            row_end,
+            aggregate_instructions,
+            places.get(),
+            key_start,
+            has_only_one_value,
+            all_keys_are_const,
+            use_jit);
 }
 
 void Aggregator::executeAggregateInstructions(

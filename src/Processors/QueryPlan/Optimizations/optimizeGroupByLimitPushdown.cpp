@@ -3,13 +3,11 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Common/logger_useful.h>
 
 namespace DB::QueryPlanOptimizations
 {
 
-/// Validates that the AggregatingStep is eligible for the top-N heap optimization.
-/// Returns a pointer to the step if valid, nullptr otherwise.
+/// Returns the AggregatingStep if it is eligible for the top-K heap optimization.
 static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
 {
     auto * aggregating_step = typeid_cast<AggregatingStep *>(node->step.get());
@@ -37,41 +35,31 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
     return aggregating_step;
 }
 
-/// Optimization for GROUP BY ... [ORDER BY ...] LIMIT queries.
+/// Optimization for `GROUP BY ... [ORDER BY ...] LIMIT N` queries: maintain a
+/// bounded heap of the top-N keys during aggregation and skip rows whose
+/// grouping key cannot make it into the final result.
 ///
-/// Two patterns are supported:
+/// Two plan shapes are matched, differing only in the presence of a SortingStep:
 ///
-/// Pattern 1: GROUP BY <keys> ORDER BY <prefix of keys> LIMIT N
-///   Plan: LimitStep -> SortingStep -> [ExpressionStep] -> AggregatingStep
-///   The heap tracks ORDER BY columns (a leading prefix of GROUP BY keys).
-///   Supports per-column direction, NULLS direction, and collators from the ORDER BY clause.
+/// Pattern 1: LimitStep -> SortingStep -> [ExpressionStep] -> AggregatingStep
+///   `GROUP BY <keys> ORDER BY <prefix of keys> LIMIT N`.  The heap tracks the
+///   ORDER BY columns (a leading prefix of the GROUP BY keys) with per-column
+///   direction, NULLS direction, and collators.
 ///
-/// Pattern 2: GROUP BY <keys> LIMIT N (no ORDER BY)
-///   Plan: LimitStep -> [ExpressionStep] -> AggregatingStep
-///   The heap tracks all GROUP BY keys using default ascending order.
-///   Since the user did not request any particular order, any N groups
-///   are a valid result. The heap retains groups with the smallest keys,
-///   and the LimitStep produces the final N rows.
+/// Pattern 2: LimitStep -> [ExpressionStep] -> AggregatingStep
+///   `GROUP BY <keys> LIMIT N` without ORDER BY.  Any N groups are a valid
+///   result; the heap tracks all GROUP BY keys in default ascending order.
+///   There is no downstream sort to rank stale partially-aggregated groups
+///   below complete ones, so this pattern is only sound with hash-table
+///   pruning — `requires_pruning` makes the aggregator disable the heap at
+///   runtime for methods that cannot erase evicted keys.
 ///
-/// For both patterns, a bounded max-heap of size N is maintained during
-/// aggregation to prune GROUP BY keys that won't appear in the result.
-///
-/// The ORDER BY columns (pattern 1) must be a leading prefix of the GROUP BY keys.
-/// For example, GROUP BY x, y, z ORDER BY x, y LIMIT 10 is supported:
-/// the heap tracks (x, y) pairs and skips rows where (x, y) is strictly
-/// greater than the heap boundary.
-///
-/// Conditions:
-///   - Pattern 1: ORDER BY columns are a prefix of GROUP BY keys
-///   - No GROUPING SETS
-///   - No overflow row (WITH TOTALS)
-///   - Not LIMIT WITH TIES
-///   - Not exact_rows_before_limit mode (always_read_till_end)
-///
-/// Note on partial aggregation: as documented in `validateAggregatingStep`,
-/// the optimization is inherently safe for Pattern 1 even if the matched
-/// `AggregatingStep` is partial (`final = false`), but no plan tree
-/// currently exposes such a pair to this optimizer.
+/// Note on partial aggregation: the optimization is inherently safe for
+/// Pattern 1 even if the matched `AggregatingStep` is partial (`final = false`)
+/// — a key rejected by the heap has at least N better-ranked keys locally,
+/// hence at least N better-ranked keys globally.  No plan tree currently
+/// exposes such a pair to this optimizer; the parallel-replicas mirror in
+/// `ParallelReplicasLocalPlan.cpp` applies the same logic from the AST.
 size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     if (!settings.enable_group_by_top_k_optimization)
@@ -81,14 +69,12 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
     if (!limit_step)
         return 0;
 
-    /// LIMIT WITH TIES may produce more rows than the limit value,
-    /// so we cannot safely prune keys.
+    /// LIMIT WITH TIES may produce more rows than the limit value.
     if (limit_step->withTies())
         return 0;
 
-    /// When exact_rows_before_limit is set, we need to count all rows
-    /// that would have been returned without the LIMIT, so pruning
-    /// aggregation keys would produce a wrong count.
+    /// exact_rows_before_limit promises the count of all rows that would have
+    /// been returned without the LIMIT; pruning groups would undercount it.
     if (limit_step->alwaysReadTillEnd())
         return 0;
 
@@ -99,41 +85,44 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
     if (parent_node->children.size() != 1)
         return 0;
 
-    auto * child_node = parent_node->children.front();
+    auto * next_node = parent_node->children.front();
 
-    /// Pattern 1: LimitStep -> SortingStep -> [ExpressionStep] -> AggregatingStep
-    if (auto * sorting_step = typeid_cast<SortingStep *>(child_node->step.get()))
+    auto * sorting_step = typeid_cast<SortingStep *>(next_node->step.get());
+    if (sorting_step)
     {
         if (sorting_step->getType() != SortingStep::Type::Full)
             return 0;
-
-        if (child_node->children.size() != 1)
+        if (next_node->children.size() != 1)
             return 0;
+        next_node = next_node->children.front();
+    }
 
-        /// Allow an optional ExpressionStep between SortingStep and AggregatingStep.
-        /// The planner inserts "Before ORDER BY" expression steps there.
-        auto * next_node = child_node->children.front();
-        if (typeid_cast<ExpressionStep *>(next_node->step.get()))
-        {
-            if (next_node->children.size() != 1)
-                return 0;
-            next_node = next_node->children.front();
-        }
-
-        auto * aggregating_step = validateAggregatingStep(next_node);
-        if (!aggregating_step)
+    /// Allow an optional ExpressionStep ("Before ORDER BY" / projection).
+    if (typeid_cast<ExpressionStep *>(next_node->step.get()))
+    {
+        if (next_node->children.size() != 1)
             return 0;
+        next_node = next_node->children.front();
+    }
 
-        const auto & params = aggregating_step->getParams();
+    auto * aggregating_step = validateAggregatingStep(next_node);
+    if (!aggregating_step)
+        return 0;
+
+    const auto & params = aggregating_step->getParams();
+
+    std::vector<int> directions;
+    std::vector<int> nulls_directions;
+    std::vector<const Collator *> collators;
+    size_t num_key_columns = 0;
+
+    if (sorting_step)
+    {
+        /// ORDER BY columns must be a leading prefix of the GROUP BY keys (in order).
         const auto & sort_description = sorting_step->getSortDescription();
-
-        /// ORDER BY columns must be a prefix of GROUP BY keys (in order).
         if (sort_description.empty() || sort_description.size() > params.keys.size())
             return 0;
 
-        std::vector<int> directions;
-        std::vector<int> nulls_directions;
-        std::vector<const Collator *> collators;
         directions.reserve(sort_description.size());
         nulls_directions.reserve(sort_description.size());
         collators.reserve(sort_description.size());
@@ -151,64 +140,31 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
                 has_collator = true;
         }
 
-        /// Skip when partial aggregation will be shipped across the wire: collators
-        /// are not serialized through `AggregatingStep::serialize`, so we can't
-        /// faithfully reproduce the heap's ordering on a follower.  This keeps the
-        /// serialization path simple - the collator case is rare enough that
-        /// foregoing the pushdown is preferable to plumbing collators across nodes.
+        /// Collators are not serialized through `AggregatingStep::serialize`, so
+        /// when this partial aggregation may be shipped across the wire we could
+        /// not reproduce the heap's ordering on the follower.
         if (has_collator && !aggregating_step->getFinal())
             return 0;
 
-        size_t num_key_columns = sort_description.size();
-        aggregating_step->applyLimitPushdown(
-            limit,
-            std::move(directions),
-            std::move(nulls_directions),
-            std::move(collators),
-            num_key_columns,
-            /*requires_pruning=*/ false);
-        return 0;
+        num_key_columns = sort_description.size();
     }
-
-    /// Pattern 2: LimitStep -> [ExpressionStep] -> AggregatingStep (no ORDER BY)
-    /// When the user writes GROUP BY <keys> LIMIT N without ORDER BY,
-    /// apply the heap optimization using all GROUP BY keys in their
-    /// declaration order. Any N groups are a valid result since no
-    /// particular order was requested.
+    else
     {
-        auto * next_node = child_node;
-        if (typeid_cast<ExpressionStep *>(next_node->step.get()))
-        {
-            if (next_node->children.size() != 1)
-                return 0;
-            next_node = next_node->children.front();
-        }
-
-        auto * aggregating_step = validateAggregatingStep(next_node);
-        if (!aggregating_step)
-            return 0;
-
-        const auto & params = aggregating_step->getParams();
-        size_t num_key_columns = params.keys.size();
-
-        /// No explicit ORDER BY, so use default ascending order with NULLS LAST.
-        std::vector<int> directions(num_key_columns, 1);
-        std::vector<int> nulls_directions(num_key_columns, 1);
-        std::vector<const Collator *> collators(num_key_columns, nullptr);
-
-        /// Without a downstream sort, a group evicted from the heap but left in
-        /// the hash table with a partially-aggregated state could surface in the
-        /// result.  Require hash-table pruning: the aggregator disables the heap
-        /// at runtime for methods that cannot erase evicted keys.
-        aggregating_step->applyLimitPushdown(
-            limit,
-            std::move(directions),
-            std::move(nulls_directions),
-            std::move(collators),
-            num_key_columns,
-            /*requires_pruning=*/ true);
-        return 0;
+        /// No explicit ORDER BY: default ascending order with NULLS LAST over all keys.
+        num_key_columns = params.keys.size();
+        directions.assign(num_key_columns, 1);
+        nulls_directions.assign(num_key_columns, 1);
+        collators.assign(num_key_columns, nullptr);
     }
+
+    aggregating_step->applyLimitPushdown(
+        limit,
+        std::move(directions),
+        std::move(nulls_directions),
+        std::move(collators),
+        num_key_columns,
+        /*requires_pruning=*/ sorting_step == nullptr);
+    return 0;
 }
 
 }

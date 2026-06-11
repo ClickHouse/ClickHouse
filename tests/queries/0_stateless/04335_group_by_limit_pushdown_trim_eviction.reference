@@ -172,3 +172,5 @@ Stateful aggregate under eviction (uniqExact)
 2	2
 3	2
 4	2
+Const-key block arriving after its key was evicted
+1	5	5

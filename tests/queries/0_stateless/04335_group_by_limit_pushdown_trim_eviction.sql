@@ -71,3 +71,6 @@ SELECT * FROM (SELECT a, b, count() FROM (SELECT toUInt32(99 - intDiv(number % 1
 
 SELECT 'Stateful aggregate under eviction (uniqExact)';
 SELECT k, uniqExact(v) FROM (SELECT toUInt32(999 - (number % 1000)) AS k, number % 3 AS v FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 5;
+
+SELECT 'Const-key block arriving after its key was evicted';
+SELECT k, count(), sum(v) FROM (SELECT 2::UInt32 AS k, 1 AS v FROM numbers(5) UNION ALL SELECT 1::UInt32, 1 FROM numbers(5) UNION ALL SELECT 2::UInt32, 1 FROM numbers(5)) GROUP BY k ORDER BY k ASC LIMIT 1;

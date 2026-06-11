@@ -60,14 +60,9 @@ struct TopKAggregationHeap
     TopKAggregationHeap() = default;
     TopKAggregationHeap(const TopKAggregationHeap &) = delete;
     TopKAggregationHeap & operator=(const TopKAggregationHeap &) = delete;
-
-    /// The heap container holds plain `size_t` indices and the comparator is
-    /// constructed transiently per call, so move and move-assignment are trivial.
     TopKAggregationHeap(TopKAggregationHeap &&) noexcept = default;
     TopKAggregationHeap & operator=(TopKAggregationHeap &&) noexcept = default;
 
-    /// Initialize the heap if not already initialized.
-    /// Dispatches to the single-column or composite `init` based on `heap_key_count`.
     /// `total_group_by_keys` is the total number of `GROUP BY` key columns;
     /// when `heap_key_count < total_group_by_keys`, the heap is in prefix mode.
     void initIfNeeded(
@@ -101,11 +96,9 @@ struct TopKAggregationHeap
     }
 
     size_t size() const { return heap_indices.size(); }
-    bool empty() const { return heap_indices.empty(); }
 
     /// Returns true if the source key at `source_row` is worse than the current boundary
     /// (the heap root), meaning it should be skipped.
-    /// Dispatches to single-column or composite comparison based on `is_composite`.
     /// Precondition: heap is non-empty. Callers guard with `size() >= top_k_keys`,
     /// and `top_k_keys >= 1` whenever the top-k path is active.
     bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
@@ -117,25 +110,23 @@ struct TopKAggregationHeap
         return sourceAboveHeap(*source_columns[0], source_row, boundary);
     }
 
-    /// Whether the typed numeric fast path is available for `shouldSkipNumeric`.
-    /// Resolved once at init time; false for composite keys, collated keys, or
-    /// non-numeric column types.
-    bool hasNumericSkipFn() const { return should_skip_numeric_fn != nullptr; }
-
-    /// Typed fast path for single-column numeric keys (no collation).
-    /// Avoids virtual `IColumn::compareAt` dispatch by reading the raw typed values directly.
-    /// The actual column element type (which may differ in signedness from the hash key type)
-    /// is resolved once at init time via the stored function pointer.
-    /// The caller passes the raw key data as `const void *`; the function pointer
-    /// reinterprets it to the correct actual type internally.
-    bool shouldSkipNumeric(const void * source_data, size_t source_row) const
+    /// Same as above, but for callers that have a raw typed pointer to the
+    /// source column data (`AggregationMethodOneNumber`).  When the heap was
+    /// initialised with a known numeric column type, this bypasses the virtual
+    /// `IColumn::compareAt` dispatch.  Otherwise (collated, composite, or
+    /// unknown numeric type) it transparently falls back to the virtual path;
+    /// `source_typed_data` may be `nullptr` to opt out.
+    bool shouldSkip(const void * source_typed_data, const ColumnRawPtrs & source_columns, size_t source_row) const
     {
-        chassert(!heap_indices.empty());
-        return should_skip_numeric_fn(*this, source_data, source_row);
+        if (should_skip_numeric_fn && source_typed_data)
+        {
+            chassert(!heap_indices.empty());
+            return should_skip_numeric_fn(*this, source_typed_data, source_row);
+        }
+        return shouldSkip(source_columns, source_row);
     }
 
     /// Push a new key from `source_columns[source_row]` into the heap.
-    /// Dispatches to single-column or composite insertion based on `is_composite`.
     void push(const ColumnRawPtrs & source_columns, size_t source_row)
     {
         size_t new_idx = 0;
@@ -156,8 +147,6 @@ struct TopKAggregationHeap
         std::push_heap(heap_indices.begin(), heap_indices.end(), HeapComparator{this});
     }
 
-    /// Returns true when the heap has grown past the compaction threshold
-    /// and needs to be trimmed back down to `capacity`.
     bool needsTrim() const
     {
         return heap_indices.size() > compaction_threshold;
@@ -184,20 +173,16 @@ struct TopKAggregationHeap
             on_evict(evicted);
         }
 
-        /// Now compact the `heap_column`: filter out dead slots and remap indices.
+        /// Compact the `heap_column`: filter out dead slots and remap indices.
         const size_t col_size = heap_column->size();
-        const size_t heap_size = heap_indices.size();
-        if (col_size <= heap_size)
+        if (col_size <= heap_indices.size())
             return;
 
-        /// Build filter: mark live slots as 1, dead as 0.
         IColumn::Filter filter(col_size, 0);
         for (size_t idx : heap_indices)
             filter[idx] = 1;
 
-        /// Compute prefix sum for index remapping: `old_to_new[old_idx] = new_idx`.
-        /// Entries for dead slots are never read (only live indices are remapped below),
-        /// so leaving them at the default zero is safe.
+        /// `old_to_new[old_idx] = new_idx`; entries for dead slots are never read.
         std::vector<size_t> old_to_new(col_size);
         size_t new_idx = 0;
         for (size_t i = 0; i < col_size; ++i)
@@ -206,16 +191,11 @@ struct TopKAggregationHeap
                 old_to_new[i] = new_idx++;
         }
 
-        /// Filter `heap_column` in-place, keeping only live rows.
-        /// For `ColumnTuple` this filters all sub-columns and updates `column_length`.
         heap_column->filter(filter);
 
-        /// Remap all indices in lockstep with the filter: the row formerly at
-        /// `idx` now lives at `old_to_new[idx]`, so each heap entry resolves to
-        /// the same physical data as before.  Because the comparator reads
-        /// column data via the index, every parent/child pair compares the same
-        /// values as before the compaction — the heap invariant is preserved by
-        /// construction and no `std::make_heap` is needed.
+        /// Each remapped index resolves to the same physical data as before, and
+        /// the comparator reads column data through the index, so the heap
+        /// invariant is preserved by construction — no `std::make_heap` needed.
         for (auto & idx : heap_indices)
             idx = old_to_new[idx];
     }
@@ -266,26 +246,20 @@ private:
         for (size_t i = 0; i < null_dirs.size() && i < n; ++i)
             nulls_directions[i] = null_dirs[i];
 
-        /// Pad or copy the collators vector to match the number of key columns.
         collators.assign(n, nullptr);
         for (size_t i = 0; i < cols.size() && i < n; ++i)
             collators[i] = cols[i];
 
-        /// Build a `ColumnTuple` of cloned-empty sub-columns.
         MutableColumns sub_columns;
         sub_columns.reserve(n);
         for (const auto * col : source_columns)
             sub_columns.emplace_back(col->cloneEmpty());
         heap_column = ColumnTuple::create(std::move(sub_columns));
-        /// The heap fills up to `compaction_threshold + 1` rows before each
-        /// trim; `ColumnTuple::reserve` forwards to each sub-column.
         heap_column->reserve(compaction_threshold + 1);
 
         heap_indices.clear();
         heap_indices.reserve(compaction_threshold + 1);
-        /// Composite keys never use the typed numeric fast paths; reset the
-        /// pointers defensively in case the heap is re-initialized after a
-        /// previous single-column setup.
+        /// Composite keys never use the typed numeric fast paths.
         should_skip_numeric_fn = nullptr;
         numeric_cmp_fn = nullptr;
     }
@@ -406,7 +380,7 @@ private:
         numeric_cmp_fn = &heapCompareNumericImpl<ActualKeyType>;
     }
 
-    /// Resolve the typed numeric fast paths for `shouldSkipNumeric` and the heap comparator.
+    /// Resolve the typed numeric fast paths for `shouldSkip` and the heap comparator.
     /// Called once at init time from the single-column `init`; `collators` has
     /// exactly one entry at that point.
     void initNumericSkipFn()
