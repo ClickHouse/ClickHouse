@@ -953,6 +953,74 @@ DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types)
     return getLeastSupertype<LeastSupertypeOnError::Variant>(types);
 }
 
+namespace
+{
+/// Opt-in lossy fallback used when there is no lossless common type for a set of
+/// numeric branches (e.g. Decimal + Float64, or Int64 + Float64). It promotes to
+/// Float64, matching binary arithmetic promotion, so the result can be aggregated
+/// instead of becoming a Variant. Returns nullptr when the promotion does not apply
+/// (some branch is not numeric, or none of them is floating point - in the latter
+/// case there is no obvious lossy numeric supertype).
+DataTypePtr tryGetLossyNumericSupertype(const DataTypes & types)
+{
+    bool has_float = false;
+    bool has_nullable = false;
+    for (const auto & type : types)
+    {
+        if (canContainNull(*type))
+            has_nullable = true;
+        /// Skip NULL-only branches (a bare NULL literal is Nullable(Nothing)). The lossless
+        /// resolver drops them while tracking nullability, so a normal conditional shape like
+        /// multiIf(c1, NULL, c2, toDecimal64(1, 2), 0.) reaches the fallback as [Decimal, Float64]
+        /// and promotes to Nullable(Float64) instead of falling through to a Variant.
+        if (type->onlyNull())
+            continue;
+        const auto bare_type = removeLowCardinalityAndNullable(type);
+        if (!isNumber(bare_type))
+            return nullptr;
+        if (isFloat(bare_type))
+            has_float = true;
+    }
+
+    if (!has_float)
+        return nullptr;
+
+    DataTypePtr result = std::make_shared<DataTypeFloat64>();
+    if (has_nullable)
+        result = makeNullable(result);
+    return result;
+}
+}
+
+DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types, bool allow_lossy_numeric)
+{
+    if (allow_lossy_numeric)
+    {
+        if (auto common_type = getLeastSupertype<LeastSupertypeOnError::Null>(types))
+            return common_type;
+        if (auto lossy_type = tryGetLossyNumericSupertype(types))
+            return lossy_type;
+    }
+    return getLeastSupertype<LeastSupertypeOnError::Variant>(types);
+}
+
+String getNumericVariantSupertypeHint(const DataTypePtr & type)
+{
+    const auto * variant_type = typeid_cast<const DataTypeVariant *>(removeLowCardinalityAndNullable(type).get());
+    if (!variant_type)
+        return {};
+
+    /// Only suggest the setting when enabling it would actually replace the Variant with a
+    /// numeric supertype. Mirror the fallback eligibility (all numeric, at least one float):
+    /// integer-only sets such as Variant(Int64, UInt64) stay a Variant even with the setting on,
+    /// so pointing users at it there would be misleading.
+    if (!tryGetLossyNumericSupertype(variant_type->getVariants()))
+        return {};
+
+    return ". Its alternatives are all numeric; enable setting 'allow_lossy_numeric_supertype' so that "
+           "if/multiIf/coalesce/array over mixed numeric types resolve to a numeric supertype instead of a Variant";
+}
+
 DataTypePtr tryGetLeastSupertype(const DataTypes & types)
 {
     return getLeastSupertype<LeastSupertypeOnError::Null>(types);

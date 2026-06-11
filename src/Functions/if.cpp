@@ -41,6 +41,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace ErrorCodes
@@ -279,13 +280,20 @@ public:
     static constexpr auto name = "if";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIf>(context->getSettingsRef()[Setting::use_variant_as_common_type]);
+        const auto & settings = context->getSettingsRef();
+        return std::make_shared<FunctionIf>(
+            settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype]);
     }
 
-    explicit FunctionIf(bool use_variant_when_no_common_type_ = false) : FunctionIfBase(), use_variant_when_no_common_type(use_variant_when_no_common_type_) {}
+    explicit FunctionIf(bool use_variant_when_no_common_type_ = false, bool allow_lossy_numeric_supertype_ = false)
+        : FunctionIfBase()
+        , use_variant_when_no_common_type(use_variant_when_no_common_type_)
+        , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
+    {}
 
 private:
     bool use_variant_when_no_common_type = false;
+    bool allow_lossy_numeric_supertype = false;
 
     template <typename T0, typename T1>
     static UInt32 decimalScale(const ColumnsWithTypeAndName & arguments [[maybe_unused]])
@@ -1368,7 +1376,7 @@ public:
         }
 
         if (use_variant_when_no_common_type)
-            return getLeastSupertypeOrVariant(DataTypes{arguments[1], arguments[2]});
+            return getLeastSupertypeOrVariant(DataTypes{arguments[1], arguments[2]}, allow_lossy_numeric_supertype);
 
         return getLeastSupertype(DataTypes{arguments[1], arguments[2]});
     }
@@ -1555,9 +1563,9 @@ SELECT if(1, 2 + 2, 2 + 6) AS res;
     factory.registerFunction<FunctionIf>(documentation, FunctionFactory::Case::Insensitive);
 }
 
-FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool use_variant_as_common_type)
+FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool use_variant_as_common_type, bool allow_lossy_numeric_supertype)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(use_variant_as_common_type));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(use_variant_as_common_type, allow_lossy_numeric_supertype));
 }
 
 }

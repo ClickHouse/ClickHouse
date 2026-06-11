@@ -38,8 +38,24 @@ DataTypePtr getLeastSupertypeOrString(const DataTypes & types);
 /// (Variant(UInt64, String), Array(UInt32)) -> Variant(UInt64, String, Array(UInt32))
 DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types);
 
+/// Same as above, but when allow_lossy_numeric is set and there is no lossless common
+/// type for an all-numeric set of types (e.g. Decimal + Float64, Int64 + Float64),
+/// returns the numeric supertype Float64 (matching arithmetic promotion) instead of a
+/// Variant. Used by if/multiIf/coalesce/ifNull/array/map under the
+/// allow_lossy_numeric_supertype setting. With allow_lossy_numeric = false this is
+/// identical to getLeastSupertypeOrVariant(types).
+DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types, bool allow_lossy_numeric);
+
 /// Same as above but return nullptr instead of throwing exception.
 DataTypePtr tryGetLeastSupertype(const DataTypes & types);
+
+/// If `type` is a Variant whose alternatives are all numeric (after removing any
+/// Nullable/LowCardinality wrappers), returns a hint pointing at the
+/// `allow_lossy_numeric_supertype` setting, suitable for appending to an aggregate
+/// function "illegal type" error. Such Variants are typically produced by
+/// if/multiIf/coalesce/array over mixed numeric types. Returns an empty string for
+/// any other type, so callers can append it unconditionally.
+String getNumericVariantSupertypeHint(const DataTypePtr & type);
 
 using TypeIndexSet = std::unordered_set<TypeIndex>;
 

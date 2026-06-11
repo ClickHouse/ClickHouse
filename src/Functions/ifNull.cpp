@@ -16,6 +16,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace
@@ -29,16 +30,19 @@ class FunctionIfNull final : public IFunction
 public:
     static constexpr auto name = "ifNull";
 
-    explicit FunctionIfNull(ContextPtr context, bool use_variant_as_common_type_)
+    explicit FunctionIfNull(ContextPtr context, bool use_variant_as_common_type_, bool allow_lossy_numeric_supertype_)
         : is_not_null(FunctionFactory::instance().get("isNotNull", context))
         , assume_not_null(FunctionFactory::instance().get("assumeNotNull", context))
         , if_function(FunctionFactory::instance().get("if", context))
         , use_variant_as_common_type(use_variant_as_common_type_)
+        , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
     {}
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIfNull>(context, context->getSettingsRef()[Setting::use_variant_as_common_type]);
+        const auto & settings = context->getSettingsRef();
+        return std::make_shared<FunctionIfNull>(
+            context, settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype]);
     }
 
     std::string getName() const override
@@ -79,7 +83,7 @@ public:
         auto args = DataTypes{removeNullable(arguments[0]), arguments[1]};
         bool has_variant = std::any_of(args.begin(), args.end(), [](const auto & t) { return isVariant(t); });
         if (use_variant_as_common_type || has_variant)
-            return getLeastSupertypeOrVariant(args);
+            return getLeastSupertypeOrVariant(args, allow_lossy_numeric_supertype);
         return getLeastSupertype(args);
     }
 
@@ -118,6 +122,7 @@ private:
     FunctionOverloadResolverPtr assume_not_null;
     FunctionOverloadResolverPtr if_function;
     bool use_variant_as_common_type = false;
+    bool allow_lossy_numeric_supertype = false;
 };
 
 }
