@@ -130,8 +130,11 @@ public:
     /// That method either creates a new thread group linked to current thread group which has to exist
     static ThreadGroupPtr createForScope();
 
-    /// Creates a new thread group for materialized view execution
-    static ThreadGroupPtr createForMaterializedView();
+    /// Creates a new thread group for materialized view execution: linked to the current thread
+    /// group if it exists, otherwise created from the given query context. The context matters for
+    /// background-initiated inserts (e.g. S3Queue streaming, Buffer flush): it carries the insert's
+    /// query_id, which has to reach `system.part_log` rows written under this group.
+    static ThreadGroupPtr createForMaterializedView(ContextPtr query_context);
 
     /// That method creates a new thread group linked to flush_query_thread_group which has to exist, and is used for flushing async insert query
     /// Current threads are not linked to the flush_query_thread_group, that is why createForBackgroundOps is not used here

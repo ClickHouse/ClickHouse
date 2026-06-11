@@ -4,6 +4,7 @@
 /// without pulling in the full CurrentThread.h (which includes ThreadStatus.h).
 
 #include <memory>
+#include <string>
 #include <boost/core/noncopyable.hpp>
 #include <Common/setThreadName.h>
 
@@ -45,6 +46,10 @@ private:
     ThreadStatus * prev_thread = nullptr;
     ThreadGroupPtr prev_thread_group;
     ThreadGroupPtr thread_group;
+    /// The thread may have a query_id that attaching to a group cannot reestablish, e.g.
+    /// `BgSchPool::<uuid>` assigned directly by BackgroundSchedulePool without any group.
+    /// Since detaching clears the thread's query_id, it has to be preserved manually.
+    std::string prev_query_id;
 };
 
 

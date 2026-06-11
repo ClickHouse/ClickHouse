@@ -276,6 +276,9 @@ ThreadGroupPtr ThreadGroup::createForScope()
         LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for scope, no current thread group to inherit, master_thread_id: {}", CurrentThread::get().thread_id);
         auto query_context = Context::createCopy(Context::getGlobalContextInstance());
         query_context->makeQueryContext();
+        /// NOTE: the group stores only a weak pointer, so this freshly created query context
+        /// expires as soon as this function returns: threads attached to the group will not get
+        /// any query context (`ThreadStatus::applyQuerySettings` is skipped for them).
         res_group = create(query_context);
         res_group->memory_tracker.setParent(&background_memory_tracker);
     }
@@ -283,9 +286,24 @@ ThreadGroupPtr ThreadGroup::createForScope()
     return res_group;
 }
 
-ThreadGroupPtr ThreadGroup::createForMaterializedView()
+ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr query_context)
 {
-    auto res_group = createForScope();
+    ThreadGroupPtr res_group;
+    if (auto current_group = CurrentThread::getGroup())
+    {
+        LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for materialized view, inheriting from current thread group with master_thread_id {}", current_group->master_thread_id);
+        res_group = std::make_shared<ThreadGroup>(current_group);
+    }
+    else
+    {
+        LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for materialized view, no current thread group to inherit, master_thread_id: {}", CurrentThread::get().thread_id);
+        /// The given context is the insert's query context: unlike a copy of the global context,
+        /// it carries the insert's query_id (e.g. `BgSchPool::<uuid>` of an S3Queue streaming
+        /// task), which has to reach the threads attached to this group and the
+        /// `system.part_log` rows they produce.
+        res_group = create(query_context);
+        res_group->memory_tracker.setParent(&background_memory_tracker);
+    }
     res_group->memory_tracker.setDescription("MaterializedView");
     return res_group;
 }
